@@ -100,7 +100,7 @@ function harpSample(sr, midi) {
     const r = rng(1000 + midi * 17);
     const ex = new Float32Array(N);
     let lp = 0;
-    const bright = clamp(0.6 - (midi - 60) * 0.006, 0.3, 0.75);
+    const bright = clamp(0.46 - (midi - 60) * 0.006, 0.22, 0.6);
     for (let i = 0; i < N; i++) {
       lp += bright * (r() * 2 - 1 - lp);
       ex[i] = lp;
@@ -130,7 +130,7 @@ function harpSample(sr, midi) {
       if (++idx >= N) idx = 0;
     }
     // gentle one-pole low-pass: rounder, less "guitar"
-    const k = clamp(0.35 + (midi - 50) * 0.012, 0.35, 0.85);
+    const k = clamp(0.28 + (midi - 50) * 0.01, 0.28, 0.62);
     let y = 0;
     for (let n = 0; n < len; n++) {
       y += k * (out[n] - y);
@@ -246,9 +246,9 @@ class Composer {
     if (this.sustains.length > 8) this.sustains = this.sustains.filter((s) => s.end > now);
   }
 
-  schedule(c, out, until) {
+  schedule(c, out, until, maxSteps = 8) {
     let guard = 0;
-    while (this.cursor < until && guard++ < 8) {
+    while (this.cursor < until && guard++ < maxSteps) {
       if (!this.piece) {
         if (this.restEnd > this.cursor) {
           if (this.restEnd > until) return;
@@ -449,7 +449,7 @@ class Composer {
   drone(c, out, t, dur, P) {
     const root = P.M.pad + ((((P.root - P.M.pad) % 12) + 12) % 12) - 12;
     const g = gain(c, 0);
-    env(g.gain, t, [[0, 0], [4, 0.05], [dur, 0.05], [dur + 4, 0]]);
+    env(g.gain, t, [[0, 0], [4, 0.032], [dur, 0.032], [dur + 4, 0]]);
     const lp = filt(c, 'lowpass', 240, 0.8);
     link(lp, g, out.pad);
     for (const [m, det] of [[root, -5], [root, 5], [root + 7, 0]]) {
@@ -507,7 +507,7 @@ class Composer {
     vg.connect(o2.frequency);
     link(vg, gain(c, 2), o3.frequency);
     const g = gain(c, 0);
-    const lvl = 0.085;
+    const lvl = P.mood === 'tense' ? 0.03 : 0.042;
     link(o1, g);
     link(o2, gain(c, 0.22), g);
     link(o3, gain(c, 0.06), g);
@@ -543,7 +543,7 @@ class Composer {
     const car = osc(c, 'sine', f, t, 3.2);
     const mod = osc(c, 'sine', f * 3.5, t, 3.2);
     const mg = gain(c, 0);
-    env(mg.gain, t, [[0, 0], [0.004, f * 1.6], [0.004, 0, 0.35]]);
+    env(mg.gain, t, [[0, 0], [0.004, f * 1.1], [0.004, 0, 0.35]]);
     link(mod, mg, car.frequency);
     const g = gain(c, 0);
     env(g.gain, t, [[0, 0], [0.004, 0.045], [0.004, 0, 0.7]]);
@@ -564,11 +564,11 @@ class Composer {
       const o = osc(c, 'sine', 90, at, 1.2);
       env(o.frequency, at, [[0, low ? 92 : 150], [0.09, low ? 52 : 96, 'e']]);
       const g = gain(c, 0);
-      env(g.gain, at, [[0, 0], [0.004, v * 0.34], [0.004, 0, low ? 0.2 : 0.08]]);
+      env(g.gain, at, [[0, 0], [0.006, v * 0.17], [0.006, 0, low ? 0.18 : 0.07]]);
       link(o, g, out.perc);
       const s = noise(c, 'pink', at, 0.25, { r });
       const sg = gain(c, 0);
-      env(sg.gain, at, [[0, 0], [0.002, v * 0.08], [0.002, 0, 0.025]]);
+      env(sg.gain, at, [[0, 0], [0.002, v * 0.05], [0.002, 0, 0.022]]);
       link(s, filt(c, 'lowpass', low ? 700 : 1600, 0.7), sg, out.perc);
       this.reg(o, at);
       this.reg(s, at);
@@ -636,7 +636,7 @@ export class Music {
     const T = opts.offset || 0;
     comp.cursor = T + 0.1;
     comp.restEnd = T + 0.1;
-    comp.schedule(oc, out, T + seconds - 2);
+    comp.schedule(oc, out, T + seconds - 2, 10000);
     for (const g of [out.dry.gain, out.wet.gain]) env(g, T, [[0, 1], [seconds - 1.5, 1], [seconds - 0.05, 0]]);
   }
 

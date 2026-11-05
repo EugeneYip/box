@@ -408,6 +408,7 @@ const EVENT_MIX = {
 };
 
 // ---- beds --------------------------------------------------------------------
+const FIRE_CRACKLE = { seconds: 7, seed: 101, rate: 95, ch: 2, dec: [0.12, 1.6], pops: 0.4, cluster: 0.35 };
 // build(c, out, t, r) -> {tick(t, aux), stop(t)}
 
 const BEDS = {
@@ -418,7 +419,7 @@ const BEDS = {
       const dir = panNode(c, 0);
       dir.connect(out);
       const srcs = [];
-      const base = 0.12;
+      const base = 0.06;
       const lanes = [-0.6, 0.6].map((p, i) => {
         const s = loopSrc(c, noiseBuffer(sr, 'pink', 1), t, 0, r);
         const lp = filt(c, 'lowpass', 380, 0.6);
@@ -432,16 +433,18 @@ const BEDS = {
         return { lp, g, fg, next: t + 0.05 + i * rr(r, 2.5, 4) };
       });
       const wash = loopSrc(c, noiseBuffer(sr, 'brown', 2), t, 0, r);
-      const wg = gain(c, 0.5);
+      const wg = gain(c, 0.25);
       link(wash, filt(c, 'lowpass', 380, 0.6), wg, out);
       srcs.push(wash);
+      // one wave: the swell builds and brightens, breaks into a fizz of foam
+      // that hisses away, then the water draws back
       const wave = (lane, at) => {
-        const rise = rr(r, 1.5, 2.6),
-          fall = rr(r, 2.4, 4.0),
-          A = rr(r, 0.55, 1.0);
-        env(lane.g.gain, at, [[0, base], [rise * 0.6, A * 0.7], [rise, A], [rise + 0.3, A * 0.8], [rise + fall, base]]);
-        env(lane.lp.frequency, at, [[0, 380], [rise, rr(r, 1300, 2100), 'e'], [rise + fall, 380, 'e']]);
-        env(lane.fg.gain, at, [[0, 0], [rise * 0.85, 0], [rise + 0.15, A * 0.5], [rise + fall * 0.85, 0]]);
+        const rise = rr(r, 1.4, 2.6),
+          fall = rr(r, 2.6, 4.2),
+          A = rr(r, 0.5, 1.0);
+        env(lane.g.gain, at, [[0, base], [rise * 0.7, A * 0.5], [rise, A], [rise + 0.25, A * 0.7], [rise + fall, base]]);
+        env(lane.lp.frequency, at, [[0, 320], [rise, rr(r, 1500, 2500), 'e'], [rise + fall, 320, 'e']]);
+        env(lane.fg.gain, at, [[0, 0], [rise * 0.8, 0.02], [rise + 0.06, A * 0.75], [rise + 0.08, 0, fall * 0.22]]);
         return rise + fall + rr(r, 0.4, 2.5);
       };
       return {
@@ -451,7 +454,7 @@ const BEDS = {
             while (lane.next < now + 1.0) lane.next += wave(lane, lane.next);
           }
           dir.pan.setTargetAtTime(aux.surfPan || 0, now, 1.2);
-          wg.gain.setTargetAtTime(0.3 + 0.5 * (aux.openWater || 0), now, 1.5);
+          wg.gain.setTargetAtTime(0.12 + 0.35 * (aux.openWater || 0), now, 1.5);
         },
         stop(at) {
           for (const s of srcs) s.stop(at);
@@ -463,12 +466,17 @@ const BEDS = {
     send: 0.1,
     build(c, out, t, r) {
       const sr = c.sampleRate;
+      // a resonant body that swells and sweeps with each gust, a hollow howl
+      // an octave up, a thin whistle in strong wind and a low buffeting
       const s1 = loopSrc(c, noiseBuffer(sr, 'pink', 2), t, 0, r);
-      const bp = filt(c, 'bandpass', 500, 0.8);
-      const g = gain(c, 0.6);
+      const bp = filt(c, 'bandpass', 500, 1.5);
+      const g = gain(c, 0.5);
       link(s1, bp, g, out);
+      const bpH = filt(c, 'bandpass', 1000, 3);
+      const hg = gain(c, 0.2);
+      link(s1, bpH, hg, out);
       const s2 = loopSrc(c, noiseBuffer(sr, 'white', 2), t, 0, r);
-      const bp2 = filt(c, 'bandpass', 900, 9);
+      const bp2 = filt(c, 'bandpass', 900, 10);
       const wg = gain(c, 0);
       link(s2, bp2, wg, out);
       const s3 = loopSrc(c, noiseBuffer(sr, 'brown', 2), t, 0, r);
@@ -480,13 +488,16 @@ const BEDS = {
           const s = aux.wind || 0.3;
           if (next < now) next = now;
           while (next < now + 0.8) {
-            const d = rr(r, 1.0, 3.2);
-            const a = rr(r, 0.35, 1);
-            g.gain.setTargetAtTime(0.35 + 0.65 * a, next, d * 0.35);
-            bp.frequency.setTargetAtTime(rr(r, 260, 620) * (1 + s * 0.5), next, d * 0.4);
-            bp2.frequency.setTargetAtTime(rr(r, 600, 1400) * (1 + s * 0.3), next, d * 0.5);
-            wg.gain.setTargetAtTime(a * a * clamp((s - 0.3) * 1.1, 0, 0.7), next, d * 0.4);
-            rg.gain.setTargetAtTime((0.15 + 0.5 * a) * clamp(s, 0, 1), next, d * 0.3);
+            const d = rr(r, 1.0, 3.4);
+            const a = Math.pow(r(), 0.8);
+            const f = rr(r, 230, 680) * (1 + s * 0.6);
+            g.gain.setTargetAtTime(0.12 + 0.88 * a, next, d * 0.32);
+            bp.frequency.setTargetAtTime(f, next, d * 0.4);
+            bpH.frequency.setTargetAtTime(f * 2.1, next, d * 0.4);
+            hg.gain.setTargetAtTime(0.05 + 0.3 * a * a, next, d * 0.35);
+            bp2.frequency.setTargetAtTime(rr(r, 600, 1500) * (1 + s * 0.3), next, d * 0.5);
+            wg.gain.setTargetAtTime(a * a * clamp((s - 0.25) * 1.2, 0, 0.8), next, d * 0.4);
+            rg.gain.setTargetAtTime((0.1 + 0.55 * a) * clamp(s, 0, 1), next, d * 0.3);
             next += d;
           }
         },
@@ -532,10 +543,10 @@ const BEDS = {
       const sr = c.sampleRate;
       const pn = panNode(c, 0);
       pn.connect(out);
-      const s1 = loopSrc(c, crackleBuffer(sr, { seconds: 7, seed: 101, rate: 45, ch: 2, dec: [0.15, 1.8], pops: 0.35, cluster: 0.3 }), t, 0, r);
-      link(s1, filt(c, 'bandpass', 2400, 0.45), gain(c, 0.85), pn);
+      const s1 = loopSrc(c, crackleBuffer(sr, FIRE_CRACKLE), t, 0, r);
+      link(s1, filt(c, 'bandpass', 2400, 0.45), gain(c, 1.3), pn);
       const s2 = loopSrc(c, noiseBuffer(sr, 'brown', 2), t, 0, r);
-      const rg = gain(c, 0.5);
+      const rg = gain(c, 0.3);
       link(s2, filt(c, 'lowpass', 420, 0.7), rg, pn);
       const s3 = loopSrc(c, noiseBuffer(sr, 'pink', 2), t, 0, r);
       link(s3, filt(c, 'bandpass', 4500, 0.8), gain(c, 0.06), pn);
@@ -544,7 +555,7 @@ const BEDS = {
         tick(now, aux) {
           if (next < now) next = now;
           while (next < now + 0.6) {
-            rg.gain.setTargetAtTime(rr(r, 0.3, 0.75), next, 0.07);
+            rg.gain.setTargetAtTime(rr(r, 0.15, 0.45), next, 0.07);
             next += rr(r, 0.1, 0.3);
           }
           pn.pan.setTargetAtTime(aux.firePan || 0, now, 0.8);
@@ -583,7 +594,7 @@ const BEDS = {
   },
 };
 // base output gain per bed (level 1)
-const BED_GAIN = { surf: 0.5, wind: 0.32, rain: 0.42, fire: 0.6, crickets: 0.12, murmur: 0.42 };
+const BED_GAIN = { surf: 0.6, wind: 0.6, rain: 0.42, fire: 0.6, crickets: 0.4, murmur: 0.42 };
 
 class Bed {
   constructor(amb, name) {
@@ -657,7 +668,7 @@ export class Ambience {
       () => noiseBuffer(sr, 'white', 2),
       () => cricketBuffer(sr),
       () => dropsBuffer(sr),
-      () => crackleBuffer(sr, { seconds: 7, seed: 101, rate: 45, ch: 2, dec: [0.15, 1.8], pops: 0.35, cluster: 0.3 }),
+      () => crackleBuffer(sr, FIRE_CRACKLE),
       () => murmurBuffer(sr),
     ];
   }
