@@ -62,7 +62,7 @@ Every module is a class constructed with `game`, kept as `game.<name>`. Optional
 |---|---|---|
 | Core engine (loop, world model, camera, input, picker, registry, params, tools) | Integrator | `src/core/*`, `src/world/World.js`, `src/world/constants.js`, `src/powers/registry.js`, `src/powers/index.js`, `src/main.js`, `tools/*`, `docs/*` |
 | Landscape: terrain mesh and shading, water and shores, world generation, terrain powers | Landscape | `src/render/terrain/*`, `src/render/water/*`, `src/world/worldgen.js`, `src/powers/terrainPowers.js` |
-| Atmosphere: lights, shadows, sky, fog, clouds, day–night, weather visuals, post-processing | Atmosphere | `src/render/atmosphere/*`, `src/render/RenderPipeline.js` |
+| Atmosphere: lights, shadows, sky, fog, clouds, day–night, weather (visuals and state), post-processing | Atmosphere | `src/render/atmosphere/*`, `src/render/RenderPipeline.js`, `src/powers/weatherPowers.js` |
 | Nature: trees, plants and props rendering, wind sway, flora growth and spread | Nature | `src/render/nature/*`, `src/sim/flora/*`, `src/powers/naturePowers.js` |
 | Life: creatures (sim, AI, models, animation), fauna, birds and fish | Life | `src/sim/units/*`, `src/render/units/*`, `src/powers/lifePowers.js` |
 | Civilization: villages, kingdoms, buildings, borders, war, diplomacy | Civilization | `src/sim/civ/*`, `src/render/buildings/*`, `src/powers/civPowers.js` |
@@ -119,6 +119,39 @@ Every module is a class constructed with `game`, kept as `game.<name>`. Optional
 - **Game helpers**: `usePower(id,tx,ty,radius)`, `fastForward(s)`, `notify(text, kind, pos)`,
   `focus(x,z,dist)`, `regenerate(seed,preset,civs)`, `setSpeed`, `setPaused`, `selectPower`,
   `inspect(hit)`, `stats()`.
+
+## Cross-team hooks (agreed up front so teams can work in parallel)
+
+- **Terrain overlay** (Landscape provides, Civilization uses): `game.terrain.setOverlay(tex)`,
+  where `tex` is a `w × h` RGBA `THREE.DataTexture` (one texel per tile, NearestFilter
+  welcome). RGB is the tint colour and A is the strength (0 = none). The terrain shader
+  draws a soft territory tint plus crisp, glowing border lines where neighbouring texels
+  differ. Call `tex.needsUpdate = true` after editing. Passing `null` clears it.
+  `game.terrain.heightTexture` (a float DataTexture of `world.height`, kept up to date)
+  is also public for other shaders.
+- **Cloud shadows** (Atmosphere provides, Landscape and Nature consume when present):
+  `game.env.cloudShadow = { texture, params: THREE.Vector4(offsetX, offsetZ, 1/scale, strength) }`.
+  Ground-space UV = `(worldXZ + offset) * (1/scale)`; shadow factor =
+  `1 - strength * texture.r`. Consumers must treat it as optional.
+- **Lava & special tiles** are drawn by the terrain shader (Landscape): LAVA glows with
+  animated emissive crust, ASH looks charred, FARMLAND shows furrows, ROAD shows packed dirt
+  or cobbles, ICE is glossy. Effects adds sparks and heat haze on top.
+- **Weather** (Atmosphere): `game.atmosphere.setWeather(type, intensity=1, duration=null)`,
+  where type is `'clear'|'rain'|'storm'|'snow'|'fog'`. It updates `game.env.weather`. During
+  rain, `world.wetness` may be raised, and fires should die down (Effects reads `env.weather`).
+- **Lightning** (Atmosphere draws storm bolts; Effects owns the strike power):
+  `game.atmosphere.strike?.(x, z)` draws a bolt and flash. Gameplay damage is applied by the
+  caller.
+- **Combat** (Life provides, Civilization uses): `game.units.engage(attacker, target)` runs
+  the approach and melee/ranged attack against a unit until one dies or they disengage.
+  `unit.data.hostile(other)` may be set by Civilization to define enemies.
+- **Unit appearance** (Civilization sets, Life renders): `unit.job` (`'woodcutter'|'farmer'|
+  'builder'|'miner'|'soldier'|'fisher'|'king'|'child'|null`), `unit.carry` (`{type:'wood'|
+  'stone'|'food'|'gold', amount}`), `unit.kingdom` (colour via `game.civ.kingdomColor`),
+  `unit.data.culture` (string), `unit.state` `'work'` with `unit.data.workAnim`
+  (`'chop'|'dig'|'hammer'|'harvest'`).
+- **Selection** (UI): when the player inspects a unit or building, UI sets `game.selected =
+  {kind:'unit'|'building', ref}` and emits `'select'`. Renderers may draw a highlight.
 
 ## Quality bar
 
