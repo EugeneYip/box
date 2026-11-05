@@ -1,0 +1,12 @@
+[
+  { "name": "01-world-far-noon", "q": "seed=7&title=0&ui=0&hour=12&ff=240&cam=128,128,270,20" },
+  { "name": "02-coast-mid-morning", "q": "seed=7&title=0&ui=0&hour=9&ff=240&cam=128,128,70,35" },
+  { "name": "03-village-close-golden", "q": "seed=7&title=0&ui=0&hour=17.6&ff=400", "eval": "const v=(game.civ.villages||[])[0]; if(v){game.cameraRig.set(v.x,v.z,20,40);} " },
+  { "name": "04-forest-close", "q": "seed=7&title=0&ui=0&hour=10.5", "eval": "const w=game.world; let best=null; for(let i=0;i<w.size;i+=7){ if(w.type[i]===2 && w.flora[i]){best=i;break;} } if(best!=null){ game.cameraRig.set(best%w.w, Math.floor(best/w.w), 16, 120); }" },
+  { "name": "05-night-town", "q": "seed=7&title=0&ui=0&hour=22&ff=600", "eval": "const v=(game.civ.villages||[])[0]; if(v){game.cameraRig.set(v.x,v.z,32,200);} " },
+  { "name": "06-meteor", "q": "seed=7&title=0&ui=0&hour=14&ff=200&cam=128,128,60,0", "eval": "const h=game.picker.intersect({origin:game.cameraRig.camera.position.clone(),direction:game.cameraRig.target.clone().sub(game.cameraRig.camera.position).normalize()}); try{game.usePower('meteor', h?h.tx:128, h?h.ty:128);}catch(e){}", "wait": 1800, "frames": 20 },
+  { "name": "07-storm", "q": "seed=7&title=0&ui=0&hour=15&weather=storm&ff=120&cam=110,140,90,60" },
+  { "name": "08-kingdoms-far", "q": "seed=7&title=0&ui=0&hour=13&ff=1500&cam=128,128,250,0" },
+  { "name": "09-hud", "q": "seed=7&title=0&hour=11&ff=300&cam=128,128,90,25", "eval": "game.selectPower('raise');" },
+  { "name": "10-title", "q": "seed=7&hour=8", "wait": 2500 }
+]
