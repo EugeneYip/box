@@ -13,6 +13,7 @@
 //
 // Definition fields:
 //   dur       seconds rendered per variant (tail included)
+//   sr        optional bake sample rate (lower for band-limited rumbles)
 //   variants  number of baked variants
 //   stereo    bake in stereo (wide sounds) instead of mono
 //   peak      dBFS the variant is normalised to before the mix
@@ -50,7 +51,7 @@ function modal(c, out, t, f, ratios, amps, taus, amp = 1, o = {}) {
 export const SFX = {
   // ------------------------------------------------------------------ UI
   'ui-hover': {
-    dur: 0.12, variants: 4, peak: -16, pri: 1, gap: 0.045, max: 2, pj: 0.025, vj: 1.5, wet: 0.04, ui: true,
+    dur: 0.12, variants: 4, peak: -5.8, pri: 1, gap: 0.045, max: 2, pj: 0.025, vj: 1.5, wet: 0.04, ui: true,
     fn(c, out, t, r) {
       const f = rr(r, 1750, 1950);
       const lp = filt(c, 'lowpass', 5200, 0.6);
@@ -61,7 +62,7 @@ export const SFX = {
     },
   },
   'ui-click': {
-    dur: 0.18, variants: 4, peak: -8, pri: 2, gap: 0.03, max: 3, pj: 0.03, vj: 1, wet: 0.05, ui: true,
+    dur: 0.18, variants: 4, peak: -4.5, pri: 2, gap: 0.03, max: 3, pj: 0.03, vj: 1, wet: 0.05, ui: true,
     fn(c, out, t, r) {
       const f = rr(r, 1080, 1180);
       const lp = filt(c, 'lowpass', 7000, 0.5);
@@ -74,25 +75,25 @@ export const SFX = {
     },
   },
   'ui-open': {
-    dur: 0.9, variants: 3, peak: -7, pri: 2, gap: 0.08, max: 2, pj: 0.02, vj: 1, wet: 0.25, ui: true,
+    dur: 0.9, variants: 3, peak: -5.0, pri: 2, gap: 0.08, max: 2, pj: 0.02, vj: 1, wet: 0.25, ui: true,
     fn(c, out, t, r) {
       // airy upward swish
       const bp = filt(c, 'bandpass', 700, 1.3);
       env(bp.frequency, t, [[0, 650], [0.2, 3400, 'e'], [0.45, 2600]]);
-      nz(c, out, t, 0.5, 'pink', [bp], [[0, 0], [0.09, 0.45], [0.12, 0.45], [0.12, 0, 0.07]], { r });
-      // two-note glassy chime, a fifth apart
+      nz(c, out, t, 0.5, 'pink', [bp], [[0, 0], [0.09, 0.14], [0.12, 0.14], [0.12, 0, 0.05]], { r });
+      // two-note glassy chime, a fifth apart: short and light
       const base = mtof(pick(r, [88, 86, 84]));
       const lp = filt(c, 'lowpass', 9000, 0.5);
       lp.connect(out);
       for (const [dt, ratio, a] of [[0.035, 1, 0.42], [0.1, 1.5, 0.34]]) {
-        tone(c, lp, t + dt, base * ratio, a, 0.16, { attack: 0.003 });
-        tone(c, lp, t + dt, base * ratio * 2.0, a * 0.18, 0.07, { attack: 0.002 });
-        tone(c, lp, t + dt, base * ratio * 0.5, a * 0.25, 0.12, { attack: 0.006 });
+        tone(c, lp, t + dt, base * ratio, a, 0.055, { attack: 0.002 });
+        tone(c, lp, t + dt, base * ratio * 2.0, a * 0.2, 0.025, { attack: 0.0015 });
+        tone(c, lp, t + dt, base * ratio * 0.5, a * 0.1, 0.05, { attack: 0.004 });
       }
     },
   },
   error: {
-    dur: 0.55, variants: 2, peak: -9, pri: 2, gap: 0.15, max: 1, pj: 0.01, vj: 0.5, wet: 0.1, ui: true,
+    dur: 0.55, variants: 2, peak: -5.0, pri: 2, gap: 0.15, max: 1, pj: 0.01, vj: 0.5, wet: 0.1, ui: true,
     fn(c, out, t, r) {
       // soft two-step descending "bwom-bom": gentle, never a buzzer
       const lp = filt(c, 'lowpass', 1800, 0.6);
@@ -103,7 +104,7 @@ export const SFX = {
         o1.frequency.exponentialRampToValueAtTime(f * ratio, t + dt + 0.03);
         const o2 = osc(c, 'sine', f * ratio * 0.5, t + dt, 0.4);
         const g = gain(c, 0);
-        env(g.gain, t + dt, [[0, 0], [0.006, a], [0.05, a * 0.6], [0.05, 0, 0.05]]);
+        env(g.gain, t + dt, [[0, 0], [0.005, a], [0.005, 0, 0.045]]);
         o1.connect(g);
         const g2 = gain(c, 0.5);
         o2.connect(g2).connect(g);
@@ -114,52 +115,64 @@ export const SFX = {
 
   // ------------------------------------------------------------- terrain
   raise: {
-    dur: 1.6, variants: 3, stereo: true, peak: -4, pri: 3, gap: 0.1, max: 2, pj: 0.05, vj: 1, wet: 0.12, zoom: 0.7,
+    dur: 1.6, sr: 22050, variants: 3, stereo: true, peak: -2.0, pri: 3, gap: 0.1, max: 2, pj: 0.05, vj: 1, wet: 0.12, zoom: 0.7,
     fn(c, out, t, r) {
-      // sub swell rising in pitch: the land pushing upward
+      // a punchy earthen crunch up front, then a quieter rising rumble, so it
+      // reads as weighty without dominating the mix while sculpting
+      tone(c, out, t, 150, 0.8, 0.05, { attack: 0.003, f1: 70, glide: 0.07 });
+      nz(c, out, t, 0.6, 'pink', [filt(c, 'bandpass', 700, 0.6)], [[0, 0], [0.003, 0.9], [0.003, 0, 0.04]], { ch: 2, r });
+      // sub swell rising in pitch: the land pushing upward (felt on good speakers)
       const sub = osc(c, 'sine', 40, t, 1.6);
-      env(sub.frequency, t, [[0, rr(r, 36, 42)], [1.1, rr(r, 58, 66), 'e']]);
+      env(sub.frequency, t, [[0, rr(r, 38, 44)], [1.1, rr(r, 60, 68), 'e']]);
       const sg = gain(c, 0);
-      env(sg.gain, t, [[0, 0], [0.16, 0.85], [0.55, 0.7], [0.6, 0, 0.22]]);
-      link(sub, shaper(c, 1.6), sg, out);
-      // earthy rumble body, filter opening as it rises
-      const lp = filt(c, 'lowpass', 150, 0.9);
-      env(lp.frequency, t, [[0, 130], [0.9, 360, 'e'], [1.4, 220]]);
-      nz(c, out, t, 1.6, 'brown', [lp, shaper(c, 1.8)], [[0, 0], [0.18, 0.9], [0.5, 0.8], [0.55, 0, 0.25]], { ch: 2, r });
-      // initial push
-      tone(c, out, t, 95, 0.55, 0.07, { attack: 0.006, f1: 48, glide: 0.09 });
-      // gravel and stones shifting
-      const cb = loopSrc(c, crackleBuffer(c.sampleRate, { seed: 21, rate: 55, ch: 2, dec: [0.3, 1.4] }), t, 1.6, r);
-      const cbp = filt(c, 'bandpass', 1300, 0.7);
+      env(sg.gain, t, [[0, 0], [0.14, 0.26], [0.5, 0.2], [0.55, 0, 0.2]]);
+      link(sub, shaper(c, 2.2), sg, out);
+      // grinding earth in the mids, rising: this is what carries on small speakers
+      const bp = filt(c, 'bandpass', 260, 1.1);
+      env(bp.frequency, t, [[0, 220], [1.0, rr(r, 520, 640), 'e']]);
+      const grind = gain(c, 0.55);
+      const am = osc(c, 'sine', rr(r, 11, 16), t, 1.6);
+      link(am, gain(c, 0.35), grind.gain);
+      nz(c, grind, t, 1.6, 'pink', [bp, shaper(c, 2)], [[0, 0], [0.12, 1.1], [0.5, 0.85], [0.55, 0, 0.22]], { ch: 2, r });
+      grind.connect(out);
+      // gravel and stones tumbling off the rising ground
+      const cb = loopSrc(c, crackleBuffer(c.sampleRate, { seed: 21, rate: 70, ch: 2, dec: [0.3, 1.4] }), t, 1.6, r);
+      const cbp = filt(c, 'bandpass', 1500, 0.6);
       const cg = gain(c, 0);
-      env(cg.gain, t, [[0, 0], [0.12, 0.32], [0.7, 0.22], [0.75, 0, 0.18]]);
+      env(cg.gain, t, [[0, 0], [0.1, 0.5], [0.7, 0.32], [0.75, 0, 0.18]]);
       link(cb, cbp, cg, out);
     },
   },
   lower: {
-    dur: 1.5, variants: 3, stereo: true, peak: -4.5, pri: 3, gap: 0.1, max: 2, pj: 0.05, vj: 1, wet: 0.12, zoom: 0.7,
+    dur: 1.5, sr: 22050, variants: 3, stereo: true, peak: -2.0, pri: 3, gap: 0.1, max: 2, pj: 0.05, vj: 1, wet: 0.12, zoom: 0.7,
     fn(c, out, t, r) {
-      // sinking: sub falls, filter closes, sand trickles in
+      // sinking: a hollow drop up front, then the sub falls, the filter closes
+      // and sand trickles in
+      tone(c, out, t, 170, 0.75, 0.06, { attack: 0.003, f1: 75, glide: 0.09 });
+      nz(c, out, t, 0.6, 'pink', [filt(c, 'bandpass', 500, 0.6)], [[0, 0], [0.004, 0.8], [0.004, 0, 0.05]], { ch: 2, r });
       const sub = osc(c, 'sine', 60, t, 1.5);
-      env(sub.frequency, t, [[0, rr(r, 60, 68)], [1.0, rr(r, 32, 36), 'e']]);
+      env(sub.frequency, t, [[0, rr(r, 62, 70)], [1.0, rr(r, 34, 38), 'e']]);
       const sg = gain(c, 0);
-      env(sg.gain, t, [[0, 0], [0.1, 0.8], [0.45, 0.6], [0.5, 0, 0.22]]);
-      link(sub, shaper(c, 1.5), sg, out);
-      const lp = filt(c, 'lowpass', 320, 0.9);
-      env(lp.frequency, t, [[0, 360], [1.0, 110, 'e']]);
-      nz(c, out, t, 1.5, 'brown', [lp, shaper(c, 1.6)], [[0, 0], [0.1, 0.85], [0.45, 0.65], [0.5, 0, 0.24]], { ch: 2, r });
+      env(sg.gain, t, [[0, 0], [0.1, 0.26], [0.42, 0.18], [0.47, 0, 0.2]]);
+      link(sub, shaper(c, 2.2), sg, out);
+      // the ground subsiding: a mid grind sinking in pitch
+      const bp = filt(c, 'bandpass', 560, 1.1);
+      env(bp.frequency, t, [[0, rr(r, 560, 660)], [1.0, 190, 'e']]);
+      const grind = gain(c, 0.55);
+      const am = osc(c, 'sine', rr(r, 9, 13), t, 1.5);
+      link(am, gain(c, 0.3), grind.gain);
+      nz(c, grind, t, 1.5, 'pink', [bp, shaper(c, 2)], [[0, 0], [0.08, 1.05], [0.42, 0.7], [0.47, 0, 0.22]], { ch: 2, r });
+      grind.connect(out);
       // trickling sand / settling grains
       const cb = loopSrc(c, crackleBuffer(c.sampleRate, { seed: 33, rate: 140, ch: 2, dec: [0.08, 0.5], pops: 0 }), t, 1.5, r);
       const hp = filt(c, 'bandpass', 3200, 0.6);
       const cg = gain(c, 0);
-      env(cg.gain, t, [[0, 0], [0.25, 0.22], [0.8, 0.14], [0.9, 0, 0.15]]);
+      env(cg.gain, t, [[0, 0], [0.2, 0.34], [0.8, 0.2], [0.9, 0, 0.15]]);
       link(cb, hp, cg, out);
-      // a soft settling thud
-      tone(c, out, t + 0.04, 80, 0.4, 0.09, { attack: 0.01, f1: 42, glide: 0.12 });
     },
   },
   paint: {
-    dur: 0.6, variants: 4, stereo: true, peak: -8, pri: 2, gap: 0.08, max: 2, pj: 0.06, vj: 1, wet: 0.08, zoom: 0.5,
+    dur: 0.6, variants: 4, stereo: true, peak: -5.8, pri: 2, gap: 0.08, max: 2, pj: 0.06, vj: 1, wet: 0.08, zoom: 0.5,
     fn(c, out, t, r) {
       // a soft brush stroke: band-passed noise sweeping, bristle flutter, slight L→R motion
       const len = rr(r, 0.34, 0.42);
@@ -182,7 +195,7 @@ export const SFX = {
     },
   },
   plant: {
-    dur: 0.5, variants: 4, peak: -6, pri: 2, gap: 0.05, max: 3, pj: 0.06, vj: 1, wet: 0.1, zoom: 0.5,
+    dur: 0.5, variants: 4, peak: -4.3, pri: 2, gap: 0.05, max: 3, pj: 0.06, vj: 1, wet: 0.1, zoom: 0.5,
     fn(c, out, t, r) {
       // bright organic pop: a rising "bloop", a sparkle and a leafy rustle
       const f = rr(r, 380, 460);
@@ -196,7 +209,7 @@ export const SFX = {
     },
   },
   splash: {
-    dur: 1.5, variants: 3, stereo: true, peak: -4, pri: 3, gap: 0.08, max: 3, pj: 0.06, vj: 1, wet: 0.15, zoom: 0.6,
+    dur: 1.5, variants: 3, stereo: true, peak: -3.8, pri: 3, gap: 0.08, max: 3, pj: 0.06, vj: 1, wet: 0.15, zoom: 0.6,
     fn(c, out, t, r) {
       // impact
       nz(c, out, t, 0.6, 'white', [filt(c, 'highpass', 350), filt(c, 'lowpass', 4200)], [[0, 0], [0.004, 0.85], [0.004, 0, 0.07]], { ch: 2, r });
@@ -219,7 +232,7 @@ export const SFX = {
 
   // ----------------------------------------------------------- disasters
   explosion: {
-    dur: 3.6, variants: 3, stereo: true, peak: -1.5, pri: 6, gap: 0.06, max: 4, pj: 0.06, vj: 0.8, wet: 0.22, range: 2.2, zoom: 0.25,
+    dur: 3.6, sr: 22050, variants: 3, stereo: true, peak: 2.6, pri: 6, gap: 0.06, max: 4, pj: 0.06, vj: 0.8, wet: 0.22, range: 2.2, zoom: 0.25,
     fn(c, out, t, r) {
       // 1. thump — pitch-dropping sine, saturated for punch
       const th = osc(c, 'sine', 110, t, 1.2);
@@ -248,7 +261,7 @@ export const SFX = {
     },
   },
   thunder: {
-    dur: 7.5, variants: 3, stereo: true, peak: -1.5, pri: 6, gap: 0.3, max: 3, pj: 0.08, vj: 1.5, wet: 0.3, range: 6, zoom: 0.1,
+    dur: 7.5, sr: 22050, variants: 3, stereo: true, peak: 2.4, pri: 6, gap: 0.3, max: 3, pj: 0.08, vj: 1.5, wet: 0.3, range: 6, zoom: 0.1,
     fn(c, out, t, r, v) {
       const near = v !== 2; // variant 2 is a distant roll
       const d0 = near ? 0 : rr(r, 0.2, 0.4);
@@ -292,7 +305,7 @@ export const SFX = {
     },
   },
   'fire-start': {
-    dur: 1.6, variants: 3, stereo: true, peak: -4, pri: 4, gap: 0.12, max: 3, pj: 0.06, vj: 1, wet: 0.12, zoom: 0.6,
+    dur: 1.6, sr: 22050, variants: 3, stereo: true, peak: -0.6, pri: 4, gap: 0.12, max: 3, pj: 0.06, vj: 1, wet: 0.12, zoom: 0.6,
     fn(c, out, t, r) {
       // "fwoomph": accelerating whoosh with an opening filter
       const lp = filt(c, 'lowpass', 300, 1.1);
@@ -308,7 +321,7 @@ export const SFX = {
     },
   },
   meteor: {
-    dur: 2.6, variants: 3, stereo: true, peak: -2.5, pri: 5, gap: 0.15, max: 3, pj: 0.05, vj: 1, wet: 0.2, range: 3, zoom: 0.25,
+    dur: 2.6, sr: 22050, variants: 3, stereo: true, peak: 0.4, pri: 5, gap: 0.15, max: 3, pj: 0.05, vj: 1, wet: 0.2, range: 3, zoom: 0.25,
     fn(c, out, t, r) {
       const T = rr(r, 1.9, 2.2);
       // descending roar: bandpass sweeping down while it grows
@@ -335,7 +348,7 @@ export const SFX = {
     },
   },
   quake: {
-    dur: 4.2, variants: 2, stereo: true, peak: -2, pri: 5, gap: 0.5, max: 2, pj: 0.04, vj: 0.8, wet: 0.12, range: 4, zoom: 0.2,
+    dur: 4.2, sr: 22050, variants: 2, stereo: true, peak: 1.2, pri: 5, gap: 0.5, max: 2, pj: 0.04, vj: 0.8, wet: 0.12, range: 4, zoom: 0.2,
     fn(c, out, t, r) {
       const L = rr(r, 3.0, 3.4);
       // irregular tremor amplitude
@@ -353,10 +366,12 @@ export const SFX = {
       for (let x = 0.1; x < L; x += 0.15) sj.push([x, rr(r, 28, 40), 0.06]);
       env(sub.frequency, t, sj);
       link(sub, shaper(c, 2.2), gain(c, 0.45), trem);
-      nz(c, trem, t, 4.2, 'pink', [filt(c, 'bandpass', 420, 1.1)], [[0, 0.45]], { ch: 2, r });
+      // rock grinding against rock: mid-band body that survives small speakers
+      nz(c, trem, t, 4.2, 'pink', [filt(c, 'bandpass', 380, 1.0), shaper(c, 2.4)], [[0, 0.8]], { ch: 2, r });
+      nz(c, trem, t, 4.2, 'pink', [filt(c, 'bandpass', 900, 1.4)], [[0, 0.25]], { ch: 2, r });
       // rattles and stone cracks
       const cb = loopSrc(c, crackleBuffer(c.sampleRate, { seed: 77, rate: 45, ch: 2, dec: [0.3, 2.0], pops: 0.2 }), t, 4.2, r);
-      const cg = gain(c, 0.3);
+      const cg = gain(c, 0.45);
       link(cb, filt(c, 'bandpass', 2400, 0.6), cg, shape);
       for (let i = 0; i < 4; i++) {
         burst(c, out, t + rr(r, 0.3, L - 0.5), { amp: rr(r, 0.25, 0.45), tau: rr(r, 0.015, 0.04), bp: rr(r, 900, 1800), q: 1.2, ch: 2, r, pan: rr(r, -0.7, 0.7) });
@@ -366,7 +381,7 @@ export const SFX = {
 
   // ------------------------------------------------------------- civ work
   build: {
-    dur: 0.85, variants: 4, peak: -6, pri: 2, gap: 0.09, max: 3, pj: 0.05, vj: 1.5, wet: 0.1, zoom: 0.9,
+    dur: 0.85, variants: 4, peak: -4.6, pri: 2, gap: 0.09, max: 3, pj: 0.05, vj: 1.5, wet: 0.1, zoom: 0.9,
     fn(c, out, t, r, v) {
       // two or three hammer blows on timber, the odd one ringing a nail
       const n = 2 + (v % 2);
@@ -383,7 +398,7 @@ export const SFX = {
     },
   },
   chop: {
-    dur: 0.45, variants: 4, peak: -5, pri: 2, gap: 0.07, max: 3, pj: 0.06, vj: 1.5, wet: 0.08, zoom: 0.9,
+    dur: 0.45, variants: 4, peak: -4.1, pri: 2, gap: 0.07, max: 3, pj: 0.06, vj: 1.5, wet: 0.08, zoom: 0.9,
     fn(c, out, t, r) {
       // the axe bites: sharp transient, wooden "thock" body, low thunk
       burst(c, out, t, { amp: 0.7, tau: 0.005, hp: 1600, r });
@@ -394,7 +409,7 @@ export const SFX = {
     },
   },
   mine: {
-    dur: 0.6, variants: 4, peak: -6, pri: 2, gap: 0.07, max: 3, pj: 0.05, vj: 1.5, wet: 0.1, zoom: 0.9,
+    dur: 0.6, variants: 4, peak: -4.6, pri: 2, gap: 0.07, max: 3, pj: 0.05, vj: 1.5, wet: 0.1, zoom: 0.9,
     fn(c, out, t, r) {
       // pick on stone: inharmonic metallic tink, gritty crunch, pebbles
       const f = rr(r, 2100, 2700);
@@ -406,7 +421,7 @@ export const SFX = {
     },
   },
   hit: {
-    dur: 0.35, variants: 4, peak: -6, pri: 3, gap: 0.05, max: 4, pj: 0.07, vj: 1.5, wet: 0.06, zoom: 0.9,
+    dur: 0.35, variants: 4, peak: -4.6, pri: 3, gap: 0.05, max: 4, pj: 0.07, vj: 1.5, wet: 0.06, zoom: 0.9,
     fn(c, out, t, r, v) {
       tone(c, out, t, rr(r, 160, 190), 0.9, 0.04, { attack: 0.001, f1: 68, glide: 0.05 });
       burst(c, out, t, { amp: 0.7, tau: 0.02, bp: rr(r, 1000, 1400), q: 1, r });
@@ -417,54 +432,56 @@ export const SFX = {
 
   // ----------------------------------------------------------------- life
   death: {
-    dur: 0.9, variants: 3, peak: -8, pri: 2, gap: 0.08, max: 3, pj: 0.05, vj: 1.5, wet: 0.15, zoom: 0.9,
+    dur: 0.9, variants: 3, peak: -5.5, pri: 2, gap: 0.08, max: 3, pj: 0.05, vj: 1.5, wet: 0.15, zoom: 0.9,
     fn(c, out, t, r) {
       // gentle: a soft puff, a falling sigh, the body settling
-      nz(c, out, t, 0.6, 'pink', [filt(c, 'bandpass', 700, 0.8)], [[0, 0], [0.02, 0.45], [0.02, 0, 0.08]], { r });
+      nz(c, out, t, 0.6, 'pink', [filt(c, 'bandpass', 700, 0.8)], [[0, 0], [0.006, 0.6], [0.006, 0, 0.05]], { r });
       const f = rr(r, 480, 560);
       const o = osc(c, 'triangle', f, t, 0.9);
-      env(o.frequency, t, [[0, f], [0.55, f * 0.55, 'e']]);
+      env(o.frequency, t, [[0, f], [0.5, f * 0.55, 'e']]);
       const g = gain(c, 0);
-      env(g.gain, t, [[0, 0], [0.05, 0.42], [0.25, 0.3], [0.65, 0]]);
+      env(g.gain, t, [[0, 0], [0.04, 0.2], [0.2, 0.13], [0.55, 0]]);
       link(o, filt(c, 'lowpass', 1400, 0.6), g, out);
-      tone(c, out, t + 0.09, 120, 0.4, 0.06, { attack: 0.003, f1: 60, glide: 0.06 });
+      tone(c, out, t + 0.09, 120, 0.55, 0.05, { attack: 0.002, f1: 60, glide: 0.05 });
     },
   },
   birth: {
-    dur: 1.1, variants: 3, peak: -8, pri: 2, gap: 0.12, max: 2, pj: 0.02, vj: 1, wet: 0.3, zoom: 0.9,
+    dur: 1.1, variants: 3, peak: -4.4, pri: 2, gap: 0.12, max: 2, pj: 0.02, vj: 1, wet: 0.3, zoom: 0.9,
     fn(c, out, t, r) {
       // three soft rising pentatonic notes with a breath of air
       const root = 79 + pick(r, [0, 2, 5]);
       const seq = [0, 2, 4].map((i) => root + PENTA[i]);
       seq.forEach((m, i) => {
         const at = t + i * 0.075;
-        tone(c, out, at, mtof(m), 0.45, 0.2, { attack: 0.004 });
-        tone(c, out, at, mtof(m) * 2, 0.07, 0.08, { attack: 0.003 });
+        // a bright pling on the strike, a softer ring behind it
+        tone(c, out, at, mtof(m), 0.26, 0.07, { attack: 0.003 });
+        tone(c, out, at, mtof(m) * 3, 0.16, 0.018, { attack: 0.001 });
+        tone(c, out, at, mtof(m) * 2, 0.06, 0.06, { attack: 0.002 });
       });
-      nz(c, out, t, 0.9, 'white', [filt(c, 'highpass', 5000), filt(c, 'lowpass', 11000)], [[0, 0], [0.18, 0.08], [0.6, 0]], { r });
+      nz(c, out, t, 0.9, 'white', [filt(c, 'highpass', 5000), filt(c, 'lowpass', 11000)], [[0, 0], [0.15, 0.05], [0.5, 0]], { r });
     },
   },
   spawn: {
-    dur: 1.6, variants: 3, stereo: true, peak: -5, pri: 3, gap: 0.08, max: 3, pj: 0.03, vj: 1, wet: 0.35, zoom: 0.7,
+    dur: 1.6, variants: 3, stereo: true, peak: -3.8, pri: 3, gap: 0.08, max: 3, pj: 0.03, vj: 1, wet: 0.35, zoom: 0.7,
     fn(c, out, t, r) {
       // magical shimmer: rising airy sweep + a cascade of twinkling partials
       const bp = filt(c, 'bandpass', 1500, 3);
       env(bp.frequency, t, [[0, 1400], [0.45, 7000, 'e']]);
-      nz(c, out, t, 1.2, 'white', [bp], [[0, 0], [0.25, 0.4], [0.3, 0, 0.18]], { ch: 2, r });
-      const root = 84 + pick(r, [0, 2, 5, 7]);
-      const n = 12;
+      nz(c, out, t, 1.2, 'white', [bp], [[0, 0], [0.25, 0.16], [0.3, 0, 0.14]], { ch: 2, r });
+      // two octaves of pentatonic twinkles (kept below ~4 kHz: sparkly, not piercing)
+      const root = 79 + pick(r, [0, 2, 5, 7]);
+      const n = 10;
       for (let i = 0; i < n; i++) {
         const m = root + PENTA[i % 5] + 12 * Math.floor(i / 5);
-        const at = t + 0.02 + i * rr(r, 0.024, 0.034);
-        const g = tone(c, out, at, mtof(m), 0.26 * (1 - i / (n + 4)), 0.24, { attack: 0.004, pan: rr(r, -0.8, 0.8) });
-        void g;
+        const at = t + 0.02 + i * rr(r, 0.026, 0.036);
+        tone(c, out, at, mtof(m), 0.3 * (1 - i / (n + 4)), 0.1, { attack: 0.003, pan: rr(r, -0.8, 0.8) });
       }
       // a warm low glow underneath
-      tone(c, out, t, mtof(root - 24), 0.25, 0.35, { attack: 0.08 });
+      tone(c, out, t, mtof(root - 24), 0.08, 0.26, { attack: 0.08 });
     },
   },
   magic: {
-    dur: 1.7, variants: 3, stereo: true, peak: -4, pri: 3, gap: 0.08, max: 3, pj: 0.03, vj: 1, wet: 0.35, zoom: 0.6,
+    dur: 1.7, variants: 3, stereo: true, peak: -2.6, pri: 3, gap: 0.08, max: 3, pj: 0.03, vj: 1, wet: 0.35, zoom: 0.6,
     fn(c, out, t, r) {
       // swirling resonant whoosh
       const bp = filt(c, 'bandpass', 1800, 4);
@@ -472,22 +489,22 @@ export const SFX = {
       const lfo = osc(c, 'sine', rr(r, 4.5, 6.5), t, 1.7);
       const lg = gain(c, 500);
       link(lfo, lg, bp.frequency);
-      nz(c, out, t, 1.7, 'pink', [bp], [[0, 0], [0.22, 0.7], [0.3, 0, 0.32]], { ch: 2, r });
+      nz(c, out, t, 1.7, 'pink', [bp], [[0, 0], [0.22, 0.5], [0.3, 0, 0.3]], { ch: 2, r });
       // an open, bright chord bloom (root, fifth, ninth)
       const root = 72 + pick(r, [0, 2, 5]);
       [0, 7, 14, 19].forEach((iv, i) => {
         const f = mtof(root + iv);
-        tone(c, out, t + 0.04 + i * 0.03, f, 0.2, 0.32, { attack: 0.03, pan: (i - 1.5) * 0.4 });
-        tone(c, out, t + 0.04 + i * 0.03, f * 1.004, 0.12, 0.32, { attack: 0.03, pan: -(i - 1.5) * 0.4 });
+        tone(c, out, t + 0.04 + i * 0.03, f, 0.13, 0.24, { attack: 0.03, pan: (i - 1.5) * 0.4 });
+        tone(c, out, t + 0.04 + i * 0.03, f * 1.004, 0.08, 0.24, { attack: 0.03, pan: -(i - 1.5) * 0.4 });
       });
-      tone(c, out, t, 150, 0.4, 0.22, { attack: 0.015, f1: 105, glide: 0.3 });
+      tone(c, out, t, 150, 0.4, 0.18, { attack: 0.015, f1: 105, glide: 0.3 });
       for (let i = 0; i < 6; i++) tone(c, out, t + rr(r, 0.1, 0.7), rr(r, 3500, 6500), 0.06, 0.03, { pan: rr(r, -0.9, 0.9) });
     },
   },
 
   // ------------------------------------------------------------ civ events
   'war-horn': {
-    dur: 3.4, variants: 2, stereo: true, peak: -3, pri: 5, gap: 1.0, max: 1, pj: 0.02, vj: 0.5, wet: 0.45, range: 4, zoom: 0.2,
+    dur: 3.4, sr: 22050, variants: 2, stereo: true, peak: -0.6, pri: 5, gap: 1.0, max: 1, pj: 0.02, vj: 0.5, wet: 0.45, range: 4, zoom: 0.2,
     fn(c, out, t, r) {
       const f0 = rr(r, 98, 108);
       const sum = gain(c, 1);
@@ -525,7 +542,7 @@ export const SFX = {
     },
   },
   bell: {
-    dur: 5.0, variants: 2, peak: -4, pri: 4, gap: 0.6, max: 2, pj: 0.015, vj: 0.5, wet: 0.4, range: 3, zoom: 0.4,
+    dur: 5.0, sr: 22050, variants: 2, peak: -2.5, pri: 4, gap: 0.6, max: 2, pj: 0.015, vj: 0.5, wet: 0.4, range: 3, zoom: 0.4,
     fn(c, out, t, r) {
       // bronze bell: hum, prime, minor-third tierce, quint, nominal and upper partials
       const hum = rr(r, 150, 172);
@@ -549,21 +566,21 @@ export const SFX = {
     },
   },
   coin: {
-    dur: 0.65, variants: 4, peak: -6, pri: 3, gap: 0.05, max: 3, pj: 0.03, vj: 1, wet: 0.15, zoom: 0.8,
+    dur: 0.65, variants: 4, peak: -3.4, pri: 3, gap: 0.05, max: 3, pj: 0.03, vj: 1, wet: 0.15, zoom: 0.8,
     fn(c, out, t, r) {
       // a metallic clink, a smaller settling clink, and a soft rising chime
       const f = rr(r, 3200, 3650);
       const R = [1, 1.38, 1.77, 2.41];
-      modal(c, out, t, f, R, [0.5, 0.32, 0.22, 0.12], [0.11, 0.07, 0.055, 0.035], 0.7);
+      modal(c, out, t, f, R, [0.5, 0.32, 0.22, 0.12], [0.08, 0.05, 0.04, 0.025], 0.7);
       const d = rr(r, 0.065, 0.09);
-      modal(c, out, t + d, f * 1.07, R, [0.5, 0.32, 0.22, 0.12], [0.08, 0.05, 0.04, 0.025], 0.42);
+      modal(c, out, t + d, f * 1.07, R, [0.5, 0.32, 0.22, 0.12], [0.055, 0.035, 0.028, 0.018], 0.42);
       const m = 88 + pick(r, [0, 2]);
-      tone(c, out, t + 0.01, mtof(m), 0.2, 0.12, { attack: 0.002 });
-      tone(c, out, t + 0.07, mtof(m + 7), 0.18, 0.16, { attack: 0.002 });
+      tone(c, out, t + 0.01, mtof(m), 0.12, 0.08, { attack: 0.002 });
+      tone(c, out, t + 0.07, mtof(m + 7), 0.1, 0.1, { attack: 0.002 });
     },
   },
   growl: {
-    dur: 1.2, variants: 3, peak: -6, pri: 3, gap: 0.3, max: 2, pj: 0.06, vj: 1, wet: 0.12, zoom: 0.9,
+    dur: 1.2, variants: 3, peak: -3.8, pri: 3, gap: 0.3, max: 2, pj: 0.06, vj: 1, wet: 0.12, zoom: 0.9,
     fn(c, out, t, r) {
       const L = rr(r, 0.75, 0.95);
       const f0 = rr(r, 72, 92);
@@ -586,10 +603,10 @@ export const SFX = {
     },
   },
   bleat: {
-    dur: 1.0, variants: 4, peak: -7, pri: 3, gap: 0.25, max: 2, pj: 0.08, vj: 1, wet: 0.12, zoom: 0.9,
+    dur: 1.0, variants: 4, peak: -4.6, pri: 3, gap: 0.25, max: 2, pj: 0.08, vj: 1, wet: 0.12, zoom: 0.9,
     fn(c, out, t, r) {
       // "meh-eh-eh": a nasal voiced tone with the bleating tremolo
-      const L = rr(r, 0.55, 0.75);
+      const L = rr(r, 0.34, 0.48);
       const f0 = rr(r, 330, 420);
       const o = osc(c, 'sawtooth', f0, t, 1.0);
       env(o.frequency, t, [[0, f0 * 0.94], [0.08, f0 * 1.03], [L * 0.7, f0], [L, f0 * 0.86]]);
@@ -599,7 +616,8 @@ export const SFX = {
       const trem = gain(c, 0.6);
       link(vib, gain(c, 0.4), trem.gain);
       const g = gain(c, 0);
-      env(g.gain, t, [[0, 0], [0.04, 0.9], [L - 0.12, 0.8], [L, 0]]);
+      // accented onset, then the bleat tails away
+      env(g.gain, t, [[0, 0], [0.025, 1], [0.08, 0.45], [L - 0.1, 0.3], [L, 0]]);
       o.connect(trem);
       for (const [f, q, a] of [[rr(r, 650, 760), 5, 1], [rr(r, 1650, 1900), 7, 0.5], [2650, 8, 0.2]]) link(trem, filt(c, 'bandpass', f, q), gain(c, a), g);
       link(trem, filt(c, 'lowpass', 500, 0.7), gain(c, 0.15), g);

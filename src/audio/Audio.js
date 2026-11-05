@@ -96,9 +96,12 @@ class Bank {
     const def = SFX[name];
     const n = def.variants || 3;
     const ch = def.stereo ? 2 : 1;
+    // rumble-heavy sounds carry nothing near Nyquist: bake them at a lower
+    // rate (half the memory); the buffer source resamples on playback
+    const bsr = def.sr ? Math.min(sr, def.sr) : sr;
     const jobs = [];
     for (let v = 0; v < n; v++) {
-      const oc = new OfflineAudioContext(ch, Math.ceil((def.dur + 0.01) * sr), sr);
+      const oc = new OfflineAudioContext(ch, Math.ceil((def.dur + 0.01) * bsr), bsr);
       // remove any DC / infrasonic offset the recipe might produce
       const hp = filt(oc, 'highpass', 20, 0.6);
       hp.connect(oc.destination);
@@ -171,7 +174,9 @@ class Voice {
     const s = this.c.createBufferSource();
     s.buffer = buf;
     s.playbackRate.value = rate;
-    const e = gain(this.c, vol);
+    // equal-power panning drops a centred mono source by 3 dB; compensate so
+    // mono and stereo variants share one level scale
+    const e = gain(this.c, buf.numberOfChannels === 1 ? vol * Math.SQRT2 : vol);
     link(s, e, this.filter);
     s.onended = () => {
       try {
@@ -522,30 +527,38 @@ export class AudioSystem {
     const sr = opts.sampleRate || this.ctx?.sampleRate || 48000;
     const def = SFX[name];
     const dur = seconds ?? (def ? def.dur + 0.5 : 12);
-    const oc = new OfflineAudioContext(2, Math.ceil(dur * sr), sr);
-    const mix = buildMixer(oc, { volume: opts.volume ?? 1, buses: opts.buses || {} });
+    // A fresh compressor/limiter starts in a gain-reduced state; give the
+    // chain a silent lead-in so measurements match a long-running mix.
+    const lead = 1.0;
+    const oc = new OfflineAudioContext(2, Math.ceil((dur + lead) * sr), sr);
+    const mix = buildMixer(oc, { volume: opts.volume ?? 1, buses: opts.buses || {}, reverb: opts.reverb !== false });
+    const t0 = lead + 0.05;
     if (def) {
       if (opts.raw) {
-        def.fn(oc, oc.destination, 0.05, rng(hashStr(name) + (opts.variant || 0) * 7919), opts.variant || 0);
+        def.fn(oc, oc.destination, t0, rng(hashStr(name) + (opts.variant || 0) * 7919), opts.variant || 0);
       } else {
         const bufs = await this.bank.ensure(name, sr);
-        const v = new Voice(oc, mix.buses.sfx);
         const sp = opts.pos ? this._spatial(opts.pos, def) : { g: 1, pan: 0, cut: 20000 };
         const count = opts.count || 1;
         for (let i = 0; i < count; i++) {
-          const vc = i === 0 ? v : new Voice(oc, mix.buses.sfx);
-          vc.start(bufs[(opts.variant ?? i) % bufs.length], opts.pitch || 1, (opts.volume ?? 1) * sp.g, sp.pan, sp.cut, def.wet ?? 0.1, 0.05 + i * (opts.spacing ?? 0), name, def.pri);
+          new Voice(oc, mix.buses.sfx).start(bufs[(opts.variant ?? i) % bufs.length], opts.pitch || 1, (opts.volume ?? 1) * sp.g, sp.pan, sp.cut, def.wet ?? 0.1, t0 + i * (opts.spacing ?? 0), name, def.pri);
         }
       }
     } else if (name.startsWith('amb:')) {
-      await this.ambience.renderDebug(oc, mix, name.slice(4), dur, opts);
+      await this.ambience.renderDebug(oc, mix, name.slice(4), dur, { ...opts, offset: lead });
     } else if (name.startsWith('music:')) {
-      this.music.renderDebug(oc, mix, name.slice(6), dur, opts);
+      this.music.renderDebug(oc, mix, name.slice(6), dur, { ...opts, offset: lead });
     } else return null;
-    const out = await oc.startRendering();
-    const { analyze } = await import('./analysis.js');
+    const full = await oc.startRendering();
+    const s0 = Math.floor(lead * sr);
+    const out = makeBuffer(2, full.length - s0, sr);
     const channels = [];
-    for (let i = 0; i < out.numberOfChannels; i++) channels.push(out.getChannelData(i));
+    for (let i = 0; i < 2; i++) {
+      const d = full.getChannelData(i).slice(s0);
+      out.copyToChannel(d, i);
+      channels.push(d);
+    }
+    const { analyze } = await import('./analysis.js');
     return { name, sampleRate: sr, channels, metrics: analyze(out) };
   }
 

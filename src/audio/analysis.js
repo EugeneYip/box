@@ -1,5 +1,26 @@
 // Worldseed audio — offline measurement helpers (loaded lazily by the debug
 // hooks only; never on the normal play path).
+import { Biquad } from './dsp.js';
+
+// Loudest 400 ms window of a mono signal after a filter chain (dB).
+function shortTerm(mono, sr, stages) {
+  const fs = stages.map(([type, f, q, g]) => new Biquad(type, f, q, sr, g));
+  const win = Math.floor(sr * 0.4);
+  const sq = new Float32Array(mono.length);
+  for (let i = 0; i < mono.length; i++) {
+    let v = mono[i];
+    for (const b of fs) v = b.run(v);
+    sq[i] = v * v;
+  }
+  let w = 0,
+    wmax = 0;
+  for (let i = 0; i < sq.length; i++) {
+    w += sq[i];
+    if (i >= win) w -= sq[i - win];
+    if (w > wmax) wmax = w;
+  }
+  return 10 * Math.log10(wmax / Math.min(win, mono.length) + 1e-20);
+}
 
 const db = (v) => (v > 0 ? 20 * Math.log10(v) : -Infinity);
 const r1 = (v) => (Number.isFinite(v) ? Math.round(v * 10) / 10 : v);
@@ -123,6 +144,10 @@ export function analyze(buf) {
     rmsDb: r1(db(Math.sqrt(sum / (n * chs.length)))),
     rmsActiveDb: r1(db(rmsActive)),
     shortTermDb: r1(db(st)),
+    // BS.1770-style K-weighting (high shelf + 38 Hz high-pass): LUFS-like
+    lufsST: r1(shortTerm(mono, sr, [['peaking', 1681, 0.71, 4], ['highpass', 38, 0.5]]) - 0.691),
+    // what survives a small laptop / phone speaker (>~200 Hz)
+    spkST: r1(shortTerm(mono, sr, [['highpass', 200, 0.7], ['highpass', 200, 0.7]])),
     crestDb: r1(db(peak) - db(rmsActive)),
     dc: dc.map((v) => Math.round(v * 1e5) / 1e5),
     startAbs: Math.round(edge(0) * 1e4) / 1e4,

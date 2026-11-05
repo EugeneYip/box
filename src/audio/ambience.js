@@ -967,6 +967,7 @@ export class Ambience {
   async renderDebug(oc, mix, layer, seconds, opts = {}) {
     const r = rng(opts.seed ?? 99);
     const bus = mix.buses.ambience;
+    const T = opts.offset || 0;
     if (BEDS[layer]) {
       if (layer === 'murmur') {
         // wait for the async render of the babble loop
@@ -975,12 +976,12 @@ export class Ambience {
       const out = gain(oc, 0);
       out.connect(bus.in);
       out.connect(gain(oc, BEDS[layer].send)).connect(bus.send);
-      const lvl = opts.level ?? 1;
-      env(out.gain, 0, [[0, 0], [1.0, lvl * BED_GAIN[layer]], [seconds - 1.0, lvl * BED_GAIN[layer]], [seconds - 0.05, 0]]);
-      const inst = BEDS[layer].build(oc, out, 0, r);
+      const lvl = (opts.level ?? 1) * BED_GAIN[layer];
+      env(out.gain, T, [[0, 0], [1.0, lvl], [seconds - 1.0, lvl], [seconds - 0.05, 0]]);
+      const inst = BEDS[layer].build(oc, out, T, r);
       const aux = { near: 0.6, wind: opts.wind ?? 0.6, surfPan: 0, openWater: 0.5, firePan: 0, villagePan: 0, leafy: 0.5 };
-      for (let t = 0; t < seconds; t += 0.25) inst?.tick(t, aux);
-      inst?.stop(seconds);
+      for (let t = T; t < T + seconds; t += 0.25) inst?.tick(t, aux);
+      inst?.stop(T + seconds);
       return;
     }
     const saved = { c: this.c, events: this.events };
@@ -988,9 +989,9 @@ export class Ambience {
     this.events = [];
     try {
       const kinds = EVENTS[layer] ? [layer] : layer === 'birds' ? SONGBIRDS : Object.keys(EVENTS);
-      let t = 0.2;
+      let t = T + 0.2;
       let i = 0;
-      while (t < seconds - 3) {
+      while (t < T + seconds - 3) {
         const kind = kinds[i++ % kinds.length];
         this.spawn(kind, null, t, bus, r);
         t += kind === 'owl' ? 3 : rr(r, 1.0, 2.0);

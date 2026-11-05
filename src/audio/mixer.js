@@ -12,8 +12,11 @@ export const BUS_NAMES = ['sfx', 'ambience', 'music'];
 // Fixed internal trims (the user-facing bus volumes multiply these).
 export const BUS_TRIM = { sfx: 1.0, ambience: 0.9, music: 0.8 };
 const SEND_TRIM = { sfx: 1.0, ambience: 0.8, music: 1.0 };
+// Chromium's convolver normalisation leaves the hall ~11 dB under the dry path
+// for a unity send; this return brings a unity send to roughly dry level.
+const REVERB_RETURN = 1.4;
 
-export function buildMixer(c, { volume = 1, buses = {} } = {}) {
+export function buildMixer(c, { volume = 1, buses = {}, reverb = true } = {}) {
   const m = { c, buses: {} };
   m.out = gain(c, volume);
   m.out.connect(c.destination);
@@ -50,7 +53,7 @@ export function buildMixer(c, { volume = 1, buses = {} } = {}) {
 
   m.reverb = c.createConvolver();
   m.reverb.buffer = reverbIR(c.sampleRate);
-  m.reverbReturn = gain(c, 0.5);
+  m.reverbReturn = gain(c, reverb ? REVERB_RETURN : 0);
   // keep the wash out of the lows so it never muddies the mix
   m.reverbHP = filt(c, 'highpass', 180, 0.6);
   m.reverb.connect(m.reverbHP).connect(m.reverbReturn).connect(m.sum);

@@ -633,10 +633,11 @@ export class Music {
     const out = makeOut(oc, mix.buses.music);
     const m = MOODS[mood] ? mood : 'day';
     const comp = new Composer(rng(opts.seed ?? 5), () => m);
-    comp.cursor = 0.1;
-    comp.restEnd = 0.1;
-    comp.schedule(oc, out, seconds - 2);
-    for (const g of [out.dry.gain, out.wet.gain]) env(g, 0, [[0, 1], [seconds - 1.5, 1], [seconds - 0.05, 0]]);
+    const T = opts.offset || 0;
+    comp.cursor = T + 0.1;
+    comp.restEnd = T + 0.1;
+    comp.schedule(oc, out, T + seconds - 2);
+    for (const g of [out.dry.gain, out.wet.gain]) env(g, T, [[0, 1], [seconds - 1.5, 1], [seconds - 0.05, 0]]);
   }
 
   debugInfo() {
