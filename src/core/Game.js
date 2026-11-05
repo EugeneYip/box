@@ -233,6 +233,13 @@ export class Game {
     if (this.params.ff > 0) this.fastForward(this.params.ff);
     let last = performance.now();
     const loop = (now) => {
+      // Tooling hook: window.__hold = true freezes rendering so headless
+      // screenshots can capture the last presented frame without starving.
+      if (window.__hold) {
+        last = now;
+        requestAnimationFrame(loop);
+        return;
+      }
       const dt = Math.min(0.1, Math.max(0, (now - last) / 1000));
       last = now;
       try {

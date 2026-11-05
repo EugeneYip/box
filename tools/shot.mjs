@@ -73,12 +73,21 @@ for (const s of plan) {
   await page.waitForFunction((n) => (window.__frames || 0) >= n || window.__error, start + frames, { timeout: 240000, polling: 50 });
   const wait = +(s.wait ?? opt.wait ?? 300);
   if (wait > 0) await page.waitForTimeout(wait);
-  if (s.after) await page.evaluate(`(async () => { ${s.after} })()`);
+  if (s.after) {
+    await page.evaluate(`(async () => { ${s.after} })()`);
+    const f = await page.evaluate(() => window.__frames || 0);
+    await page.waitForFunction((n) => (window.__frames || 0) >= n || window.__error, f + 2, { timeout: 240000, polling: 50 });
+  }
   const err = await page.evaluate(() => window.__error || null);
   if (err) errors.push('frame error: ' + err);
-  await page.screenshot({ path: out });
+  // Freeze the render loop so the compositor can present the last frame.
+  await page.evaluate(() => (window.__hold = true));
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: out, timeout: 240000 });
+  await page.evaluate(() => (window.__hold = false));
   const fps = await page.evaluate(() => window.__frames || 0);
-  console.log(`saved ${out}  (${((Date.now() - t0) / 1000).toFixed(1)}s, frames=${fps})`);
+  const ms = await page.evaluate(() => { const i = window.game?.pipeline?.renderer?.info?.render; return i ? i.calls + ' calls, ' + Math.round(i.triangles / 1000) + 'k tris' : ''; });
+  console.log(`saved ${out}  (${((Date.now() - t0) / 1000).toFixed(1)}s, frames=${fps}, ${ms})`);
 }
 if (errors.length) {
   const uniq = [...new Set(errors)].slice(0, 40);
