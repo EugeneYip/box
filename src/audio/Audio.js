@@ -230,7 +230,7 @@ export class AudioSystem {
     this.music = new Music(this);
     this.hidden = typeof document !== 'undefined' && document.hidden;
     this.lastError = null;
-    this._count = { played: 0, dropped: 0, stolen: 0, culled: 0, throttled: 0, early: 0 };
+    this._count = { played: 0, dropped: 0, stolen: 0, culled: 0, throttled: 0, early: 0, pending: 0 };
     this._last = new Map();
     this._lastVar = new Map();
     this._autoThunder = null;
@@ -387,6 +387,7 @@ export class AudioSystem {
     const bufs = this.bank.get(name, c.sampleRate);
     if (!bufs) {
       // first use before it is baked: bake it now and play it if still timely
+      this._count.pending++;
       if (!retry) {
         const req = now;
         this.bank.ensure(name, c.sampleRate).then(() => {

@@ -138,8 +138,9 @@ export function noiseBuffer(sr, kind = 'white', ch = 1, seconds = 6) {
 
 // Sparse crackle: heavy-tailed impulses with short noisy/resonant decays.
 // Used for fire, debris, gravel and sizzle textures.
-export function crackleBuffer(sr, { seconds = 5, rate = 40, seed = 3, ch = 1, dec = [0.25, 2.2], pops = 0.3, cluster = 0.25 } = {}) {
-  return cached(`crackle:${sr}:${seconds}:${rate}:${seed}:${ch}:${dec}:${pops}:${cluster}`, () => {
+// `shape` is the amplitude exponent: higher = mostly faint ticks, rare pops.
+export function crackleBuffer(sr, { seconds = 5, rate = 40, seed = 3, ch = 1, dec = [0.25, 2.2], pops = 0.3, cluster = 0.25, shape = 2.4 } = {}) {
+  return cached(`crackle:${sr}:${seconds}:${rate}:${seed}:${ch}:${dec}:${pops}:${cluster}:${shape}`, () => {
     const len = Math.floor(sr * seconds);
     const fade = Math.floor(sr * 0.2);
     const buf = makeBuffer(ch, len, sr);
@@ -150,7 +151,7 @@ export function crackleBuffer(sr, { seconds = 5, rate = 40, seed = 3, ch = 1, de
       while (t < raw.length) {
         const burst = r() < cluster;
         t += Math.floor((-Math.log(1 - r() * 0.999) * sr) / rate) * (burst ? 0.12 : 1) + 1;
-        const amp = Math.pow(r(), 2.4) * (r() < 0.5 ? -1 : 1);
+        const amp = Math.pow(r(), shape) * (r() < 0.5 ? -1 : 1);
         const d = (rr(r, dec[0], dec[1]) * sr) / 1000;
         const n = Math.min(raw.length - t, Math.floor(d * 7));
         const isPop = r() < pops;

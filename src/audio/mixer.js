@@ -22,12 +22,13 @@ export function buildMixer(c, { volume = 1, buses = {}, reverb = true } = {}) {
   m.out.connect(c.destination);
 
   m.clip = c.createWaveShaper();
-  m.clip.curve = softClipCurve(0.9, 0.985);
+  // safety clipper: transparent to -1.7 dBFS, output never above -1.0 dBFS
+  m.clip.curve = softClipCurve(0.82, 0.891);
   m.clip.connect(m.out);
 
   // brick-ish limiter (WebAudio's compressor has a ~6 ms look-ahead)
   m.limiter = c.createDynamicsCompressor();
-  m.limiter.threshold.value = -4;
+  m.limiter.threshold.value = -4.5;
   m.limiter.knee.value = 0;
   m.limiter.ratio.value = 20;
   m.limiter.attack.value = 0.001;

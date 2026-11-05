@@ -408,7 +408,7 @@ const EVENT_MIX = {
 };
 
 // ---- beds --------------------------------------------------------------------
-const FIRE_CRACKLE = { seconds: 7, seed: 101, rate: 95, ch: 2, dec: [0.12, 1.6], pops: 0.4, cluster: 0.35 };
+const FIRE_CRACKLE = { seconds: 7, seed: 101, rate: 70, ch: 2, dec: [0.12, 1.6], pops: 0.4, cluster: 0.35, shape: 1.5 };
 // build(c, out, t, r) -> {tick(t, aux), stop(t)}
 
 const BEDS = {
