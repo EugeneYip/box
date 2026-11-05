@@ -1,116 +1,338 @@
-import { CATEGORIES, listPowers } from '../powers/registry.js';
+import '@fontsource/cinzel/700.css';
+import { CATEGORIES, listPowers, getPower } from '../powers/registry.js';
+import { el, safe } from './dom.js';
+import { TopBar, PRESET_NAMES } from './TopBar.js';
+import { Toolbar, SLOT_CODES } from './Toolbar.js';
+import { Minimap } from './Minimap.js';
+import { Inspector } from './Inspector.js';
+import { Feed } from './Feed.js';
+import { Modals, KingdomsPanel } from './Panels.js';
+import { TitleScreen } from './TitleScreen.js';
 
-// BASELINE implementation (to be replaced by the UI owner).
-// Bottom toolbar (categories + powers), speed controls, brush size, inspector,
-// notification feed. Hidden entirely with ?ui=0.
+const PREF_KEY = 'worldseed.ui.v1';
+
+// Worldseed HUD ("obsidian glass" over the living diorama).
+//   top-left  brand plate + menu      top-centre  day dial, year, speed
+//   top-right live world stats        left        chronicle / kingdoms
+//   right     inspector               bottom      god-powers dock, minimap
+// Everything is hidden with ?ui=0; ?title=0 skips the title screen.
+// Debug / tooling hooks: game.ui.debugShowTooltip(id), game.ui.debugHover(x,y),
+// game.ui.open('settings'|'newworld'|'help'|'kingdoms'), game.ui.setCategory(id),
+// game.ui.inspectAt(x,z), game.ui.begin().
 export class UI {
   constructor(game) {
     this.game = game;
     this.root = document.getElementById('ui-root');
-    if (!game.params.ui) {
-      this.root.style.display = 'none';
+    this.enabled = !!game.params.ui && !!this.root;
+    if (!this.enabled) {
+      if (this.root) this.root.style.display = 'none';
       return;
     }
-    this.cat = CATEGORIES[0].id;
-    this.root.innerHTML = `
-      <div class="ui-top">
-        <div class="ui-brand">Worldseed</div>
-        <div class="ui-speed"></div>
-        <div class="ui-stats"></div>
-      </div>
-      <div class="ui-inspector hidden"></div>
-      <div class="ui-feed"></div>
-      <div class="ui-bottom">
-        <div class="ui-cats"></div>
-        <div class="ui-powers"></div>
-        <div class="ui-brush">Brush <input type="range" min="1" max="24" value="4" /><span></span></div>
-      </div>`;
-    this.$ = (s) => this.root.querySelector(s);
-    this.buildCats();
-    this.buildPowers();
-    this.buildSpeed();
-    const slider = this.$('.ui-brush input');
-    slider.addEventListener('input', () => game.setBrushSize(+slider.value));
-    game.events.on('brush', ({ size }) => {
-      slider.value = size;
-      this.$('.ui-brush span').textContent = size;
+    this.prefs = this.loadPrefs();
+    const root = this.root;
+    root.classList.add('ws-root');
+    if (matchMedia('(pointer: coarse)').matches) root.classList.add('is-touch');
+
+    // layers
+    this.hud = el('div', { class: 'ws-hud' });
+    this.layer = el('div', { class: 'ws-layer' }); // floating (tooltips)
+    this.toastEl = el('div', { class: 'ws-toast' });
+    this.veil = el('div', { class: 'ws-veil' }, el('div', { class: 'ws-veil__txt' }, el('span', { class: 'ws-veil__spin' }), el('span', { class: 'ws-veil__label', text: 'Seeding a new world' })));
+    root.append(this.hud, this.layer);
+
+    // components
+    this.modals = new Modals(this);
+    this.kingdoms = new KingdomsPanel(this);
+    this.topbar = new TopBar(this);
+    this.toolbar = new Toolbar(this);
+    this.minimap = new Minimap(this);
+    this.inspector = new Inspector(this);
+    this.feed = new Feed(this);
+    this.hud.append(this.topbar.el, this.feed.el, this.kingdoms.el, this.inspector.el, this.minimap.wrap, this.toolbar.el, this.toastEl);
+    root.append(this.modals.layer, this.veil);
+    this.parts = [this.topbar, this.toolbar, this.minimap, this.inspector, this.feed, this.kingdoms];
+
+    // initial prefs (audio/time only when not forced by URL params)
+    this.applyPrefs(true);
+
+    // title screen
+    if (game.params.title) {
+      root.classList.add('is-intro');
+      this.title = new TitleScreen(this);
+    } else {
+      root.classList.add('is-ready');
+    }
+
+    // input
+    addEventListener('keydown', (e) => this.onKeyCapture(e), true);
+    addEventListener('keydown', (e) => this.onKey(e));
+    // mouse clicks should not leave focus on buttons (Space would re-trigger them)
+    root.addEventListener('click', (e) => {
+      const b = e.target.closest?.('button');
+      if (b && e.detail > 0) b.blur();
     });
-    game.events.on('power:select', () => this.buildPowers());
-    game.events.on('inspect', (hit) => this.showInspector(hit));
-    game.events.on('notify', (n) => this.pushFeed(n));
-    game.events.on('speed', () => this.buildSpeed());
-    this._statT = 0;
+    // keep the brush cursor away while the pointer is over UI
+    root.addEventListener('pointerover', (e) => {
+      if (e.target !== root && game.input) game.input.mouse.inside = false;
+    });
+    game.events.on('world:regenerated', () => this.onRegenerated());
+    this._powerCheckT = 2;
   }
-  buildCats() {
-    const el = this.$('.ui-cats');
-    el.innerHTML = '';
-    for (const c of CATEGORIES) {
-      const b = document.createElement('button');
-      b.textContent = c.name;
-      b.className = c.id === this.cat ? 'active' : '';
-      b.onclick = () => {
-        this.cat = c.id;
-        this.buildCats();
-        this.buildPowers();
-      };
-      el.appendChild(b);
+
+  // ---------------------------------------------------------------- prefs
+  loadPrefs() {
+    try {
+      return JSON.parse(localStorage.getItem(PREF_KEY) || '{}') || {};
+    } catch {
+      return {};
     }
   }
-  buildPowers() {
-    const el = this.$('.ui-powers');
-    el.innerHTML = '';
-    for (const p of listPowers(this.cat)) {
-      const b = document.createElement('button');
-      b.textContent = p.name;
-      b.title = p.description;
-      b.className = this.game.activePower === p ? 'active' : '';
-      b.onclick = () => this.game.selectPower(this.game.activePower === p ? null : p);
-      el.appendChild(b);
+  savePrefs(patch) {
+    Object.assign(this.prefs, patch);
+    try {
+      localStorage.setItem(PREF_KEY, JSON.stringify(this.prefs));
+    } catch {
+      /* storage unavailable */
     }
   }
-  buildSpeed() {
-    const el = this.$('.ui-speed');
-    el.innerHTML = '';
+  applyPrefs(initial = false) {
     const g = this.game;
-    const mk = (label, active, fn) => {
-      const b = document.createElement('button');
-      b.textContent = label;
-      b.className = active ? 'active' : '';
-      b.onclick = fn;
-      el.appendChild(b);
-    };
-    mk('❚❚', g.paused, () => g.setPaused(!g.paused));
-    for (const s of [1, 2, 4, 8, 16]) mk(s + 'x', !g.paused && g.speed === s, () => g.setSpeed(s));
+    const p = this.prefs;
+    this.root.classList.toggle('no-blur', !this.blurOn());
+    this.minimap.setVisible(p.minimap !== false);
+    this.feed.el.classList.toggle('is-off', p.feed === false);
+    if (initial) {
+      const narrow = innerWidth <= 720;
+      this.minimap.setCollapsed(p.mapCollapsed ?? narrow, true);
+      if (g.params.audio !== false) {
+        if (p.volume != null) safe(() => g.audio?.setVolume?.(p.volume));
+        if (p.muted != null) safe(() => g.audio?.setMuted?.(p.muted));
+      }
+      if (p.autoWeather != null && g.settings) {
+        g.settings.autoWeather = p.autoWeather;
+        safe(() => g.atmosphere?.setAutoWeather?.(p.autoWeather));
+      }
+      if (p.quality && !g.params.quality && g.pipeline?.quality !== p.quality) safe(() => g.pipeline?.setQuality?.(p.quality));
+    }
   }
-  showInspector(hit) {
-    const el = this.$('.ui-inspector');
-    const info = this.game.inspect(hit);
-    if (!info.length) {
-      el.classList.add('hidden');
+
+  // Frosted glass is costly where the GPU is emulated (SwiftShader / software
+  // GL): default it off there, on everywhere else.
+  softwareGL() {
+    if (this._soft != null) return this._soft;
+    this._soft = !!safe(() => {
+      const gl = this.game.pipeline.renderer.getContext();
+      const ext = gl.getExtension('WEBGL_debug_renderer_info');
+      const name = String(gl.getParameter(ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER) || '');
+      return /swiftshader|llvmpipe|software|basic render/i.test(name);
+    }, false);
+    return this._soft;
+  }
+  blurOn() {
+    return this.prefs.blur ?? !this.softwareGL();
+  }
+
+  // ---------------------------------------------------------------- flow
+  reveal() {
+    const r = this.root;
+    r.classList.remove('is-intro');
+    r.classList.add('is-ready', 'is-revealing');
+    setTimeout(() => r.classList.remove('is-revealing'), 1800);
+    this.title && (this.title.active = false);
+  }
+  begin() {
+    if (this.title?.active) this.title.begin();
+  }
+
+  toast(text, ms = 2200) {
+    const t = this.toastEl;
+    t.textContent = text;
+    t.classList.add('is-shown');
+    clearTimeout(this._toastT);
+    this._toastT = setTimeout(() => t.classList.remove('is-shown'), ms);
+  }
+
+  // Fade to a veil, regenerate on the next frame, fade back.
+  regenerate(seed, preset, civs, { quiet = false, after = null } = {}) {
+    const g = this.game;
+    const label = this.veil.querySelector('.ws-veil__label');
+    label.textContent = `Seeding ${/^[aeiou]/i.test(PRESET_NAMES[preset] || '') ? 'an' : 'a'} ${PRESET_NAMES[preset] || 'new'} world`;
+    this.veil.classList.add('is-shown');
+    setTimeout(() => {
+      requestAnimationFrame(() => {
+        safe(() => g.regenerate(seed, preset, civs), null, 'regenerate');
+        g.params.civs = civs;
+        after?.();
+        if (!quiet) setTimeout(() => g.notify(`A new ${(PRESET_NAMES[preset] || 'world').toLowerCase()} rises from the deep. Seed ${seed}.`, 'good'), 400);
+        setTimeout(() => this.veil.classList.remove('is-shown'), 120);
+      });
+    }, 360);
+  }
+
+  onRegenerated() {
+    this.inspector.close();
+    this.feed.clear();
+    this.topbar.refreshWorld();
+    this.minimap.markAll();
+    if (this.kingdoms.open) this.kingdoms.render();
+  }
+
+  reset() {
+    /* handled by the 'world:regenerated' event */
+  }
+
+  togglePhoto() {
+    const on = !this.root.classList.contains('is-photo');
+    this.root.classList.toggle('is-photo', on);
+    if (on) this.toast('Interface hidden — press U to bring it back', 2600);
+  }
+
+  // ---------------------------------------------------------------- keyboard
+  isTyping(e) {
+    const t = e.target;
+    return t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
+  }
+
+  // Runs before Input's handlers: owns Escape and shields modals / title.
+  onKeyCapture(e) {
+    if (this.title?.active) {
+      if (this.modals.current) {
+        if (e.code === 'Escape') this.modals.close(), e.stopPropagation();
+        return;
+      }
+      if (this.isTyping(e)) return;
+      if (e.code === 'Enter' || e.code === 'NumpadEnter') {
+        e.preventDefault();
+        this.title.begin();
+      }
+      e.stopPropagation();
       return;
     }
-    const top = info[0];
-    el.classList.remove('hidden');
-    el.innerHTML = `<h3>${top.title}</h3>${top.subtitle ? `<div class="sub">${top.subtitle}</div>` : ''}<table>${(top.stats || []).map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join('')}</table>`;
-  }
-  pushFeed(n) {
-    const el = this.$('.ui-feed');
-    const d = document.createElement('div');
-    d.className = 'feed-item ' + (n.kind || 'info');
-    d.textContent = n.text;
-    el.prepend(d);
-    while (el.children.length > 6) el.lastChild.remove();
-    setTimeout(() => d.classList.add('fade'), 6000);
-    setTimeout(() => d.remove(), 7000);
-  }
-  update(dt) {
-    if (!this.game.params.ui) return;
-    this._statT -= dt;
-    if (this._statT <= 0) {
-      this._statT = 0.5;
-      const s = this.game.stats();
-      const t = this.game.time;
-      this.$('.ui-stats').textContent = `Year ${Math.floor(t.year)} · ${String(Math.floor(t.hour)).padStart(2, '0')}:00 · Pop ${s.population ?? 0} · Animals ${s.animals ?? 0}`;
+    if (e.code === 'Escape') {
+      if (this.modals.current) {
+        this.modals.close();
+        e.stopPropagation();
+      } else if (this.root.classList.contains('is-photo')) {
+        this.togglePhoto();
+        e.stopPropagation();
+      } else if (this.game.activePower) {
+        /* let Input deselect the power */
+      } else if (this.kingdoms.open) {
+        this.kingdoms.toggle(false);
+        e.stopPropagation();
+      } else if (this.inspector.open) {
+        this.inspector.close();
+        e.stopPropagation();
+      }
+      return;
     }
+    if (this.modals.current && !this.isTyping(e)) {
+      // only the panel's own toggle key passes through while a dialog is up
+      const own = { help: 'KeyH', settings: 'KeyO', newworld: 'KeyG' }[this.modals.current];
+      if (e.code === own) {
+        this.modals.close();
+        e.preventDefault();
+      }
+      if (e.code !== 'Tab') e.stopPropagation();
+    }
+  }
+
+  onKey(e) {
+    if (this.isTyping(e) || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (this.title?.active || this.modals.current) return;
+    const g = this.game;
+    const code = e.code;
+    if (e.key === '?') return this.modals.toggle('help');
+    const slot = SLOT_CODES.indexOf(code);
+    if (slot >= 0 && !e.shiftKey) {
+      this.toolbar.pickSlot(slot);
+      e.preventDefault();
+      return;
+    }
+    switch (code) {
+      case 'Tab':
+        e.preventDefault();
+        this.toolbar.cycleCategory(e.shiftKey ? -1 : 1);
+        break;
+      case 'KeyI': {
+        const p = getPower('inspect');
+        if (p) {
+          g.selectPower(g.activePower === p ? null : p);
+          if (g.activePower === p) this.toolbar.setCategory(p.category, { quiet: true });
+        }
+        break;
+      }
+      case 'KeyK':
+        this.kingdoms.toggle();
+        break;
+      case 'KeyO':
+        this.modals.toggle('settings');
+        break;
+      case 'KeyH':
+        this.modals.toggle('help');
+        break;
+      case 'KeyG':
+        this.modals.toggle('newworld');
+        break;
+      case 'KeyU':
+        this.togglePhoto();
+        break;
+      case 'KeyF':
+        if (this.inspector.open && this.inspector.track?.unit) this.inspector.toggleFollow();
+        break;
+      default:
+        break;
+    }
+  }
+
+  // ---------------------------------------------------------------- debug / tooling
+  open(name) {
+    if (name === 'kingdoms') this.kingdoms.toggle(true);
+    else this.modals.open(name);
+  }
+  setCategory(id) {
+    this.toolbar.setCategory(id, { quiet: true });
+  }
+  debugShowTooltip(id) {
+    const p = getPower(id);
+    if (!p) return false;
+    if (p.category !== this.toolbar.cat) this.toolbar.setCategory(p.category, { quiet: true });
+    this.toolbar.showTip(p, this.toolbar.tiles.get(id));
+    const tile = this.toolbar.tiles.get(id);
+    tile?.classList.add('is-hover');
+    return true;
+  }
+  // Pretend the pointer hovers the canvas at client (x, y): drives the brush cursor.
+  debugHover(x, y) {
+    const inp = this.game.input;
+    if (!inp) return;
+    inp.mouse.x = x;
+    inp.mouse.y = y;
+    inp.mouse.inside = true;
+    this._debugHover = { x, y };
+  }
+  inspectAt(x, z) {
+    const W = this.game.world;
+    this.game.events.emit('inspect', { x, z, tx: Math.floor(x), ty: Math.floor(z), y: W.surfaceAt(x, z) });
+  }
+
+  // ---------------------------------------------------------------- frame
+  update(dt) {
+    if (!this.enabled) return;
+    if (this._debugHover && this.game.input) this.game.input.mouse.inside = true;
+    if (this.title?.active) safe(() => this.title.update(dt), null, 'title');
+    for (const p of this.parts) safe(() => p.update(dt), null, p.constructor.name);
+    this._powerCheckT -= dt;
+    if (this._powerCheckT <= 0) {
+      this._powerCheckT = 2;
+      safe(() => this.toolbar.refreshIfChanged(), null, 'powers');
+    }
+  }
+
+  resize() {
+    if (!this.enabled) return;
+    this.toolbar.hideTip(true);
   }
 }
+
+export { CATEGORIES, listPowers };
