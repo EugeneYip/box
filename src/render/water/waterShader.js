@@ -40,8 +40,8 @@ vec2 swell(vec2 p, vec2 d, float k, float a, float w, float t) {
 vec2 waveSlope(vec2 p, float t, float fw, float calm) {
   vec2 g = vec2(0.0);
   float f1 = 1.0 - smoothstep(0.6, 2.5, fw);
-  float f2 = 1.0 - smoothstep(0.25, 1.1, fw);
-  float f3 = 1.0 - smoothstep(0.08, 0.45, fw);
+  float f2 = 1.0 - smoothstep(0.12, 0.6, fw);
+  float f3 = 1.0 - smoothstep(0.05, 0.25, fw);
   g += swell(p, vec2(0.83, 0.56), 0.33, 0.20, 0.85, t);
   g += swell(p, vec2(-0.45, 0.89), 0.47, 0.13, 1.05, t);
   g += swell(p, vec2(0.97, -0.24), 0.71, 0.08, 1.35, t) * f1;
@@ -112,7 +112,12 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   vec3 Hs = normalize(L + V);
   float nh = max(dot(N, Hs), 0.0);
   float sunUp = smoothstep(-0.02, 0.12, L.y);
-  float glint = pow(nh, 900.0) * 14.0 + pow(nh, 140.0) * 1.1 + pow(nh, 18.0) * 0.06;
+  // sharp sparkles only where they can be resolved (no far-zoom aliasing)
+  float sharpK = 1.0 - smoothstep(0.06, 0.32, fw);
+  float glint = (pow(nh, 1200.0) * 10.0 + pow(nh, 160.0) * 0.8) * sharpK + pow(nh, 30.0) * 0.07;
+  // broad, stable sun sheen from the large swell only (reads at any zoom)
+  vec3 Nb = normalize(vec3(-sl.x * 0.25, 1.0, -sl.y * 0.25));
+  glint += pow(max(dot(Nb, Hs), 0.0), 220.0) * 0.9 * (1.0 - sharpK);
   vec3 spec = uSunCol * glint * sunUp * uDay * lightVis;
   vec3 Lm = normalize(uMoonDirW);
   vec3 Hm = normalize(Lm + V);
@@ -136,17 +141,19 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   float breakup = smoothstep(0.12, 0.55, fc.g + (fn.r - 0.5) * 0.5) * 0.65 + smoothstep(0.05, 0.4, fc2.g) * 0.35;
   float breath = 0.5 + 0.5 * sin(t * 0.9 + fn.g * 6.0);
   float contactW = 0.30 + 0.25 * breath + 0.15 * fn.b;
-  float contact = 1.0 - smoothstep(contactW * 0.55, contactW, shoreD);
-  contact *= 0.75 + 0.25 * breakup;
+  float contact = 1.0 - smoothstep(contactW * 0.25, contactW * 1.15, shoreD);
+  contact *= (0.45 + 0.55 * breakup) * mix(0.22, 1.0, open);
+  // soft lighter wash just off the beach
+  float wash = (1.0 - smoothstep(0.0, 1.6 + 0.6 * breath, shoreD)) * 0.35 * open;
   // travelling bands that wash toward the shore and fade out
   float ph = shoreD * 0.95 - t * 0.32 + (fn.r - 0.5) * 1.3;
   float bandWave = fract(ph);
   float band = smoothstep(0.0, 0.10, bandWave) * (1.0 - smoothstep(0.10, 0.34, bandWave));
-  float bandMask = exp(-shoreD * 0.55) * smoothstep(0.15, 0.6, shoreD) * (0.35 + 0.65 * open);
+  float bandMask = exp(-shoreD * 0.55) * smoothstep(0.15, 0.6, shoreD) * open * 0.8;
   float bands = band * bandMask * smoothstep(0.30, 0.75, breakup + 0.1);
   // a faint lace of foam on wider open water
   float lace = smoothstep(0.82, 0.96, 1.0 - fc2.g) * smoothstep(0.62, 0.8, fn.g) * open * 0.18 * (1.0 - smoothstep(0.4, 1.6, fw));
-  float foam = clamp(max(contact, bands * 0.85) + lace + crest * 0.0, 0.0, 1.0);
+  float foam = clamp(max(contact * 0.9, bands * 0.75) + lace, 0.0, 1.0);
   foam *= 1.0 - outK;
   foam *= smoothstep(0.0, 0.02, depth + 0.02);
   vec3 foamCol = vec3(0.92, 0.96, 1.0) * (waterIrradiance() * 0.80 * mix(1.0, lightVis, 0.6 * uDay) + vec3(0.02));
@@ -167,6 +174,9 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   vec3 refl = sky * F;
   float a = 1.0 - (1.0 - veil) * (1.0 - F);
   vec3 col = scat * veil * (1.0 - F) + refl + scat * crest;
+  // shore wash: brighten towards the turquoise of sunlit shallows
+  col += waterShallowColor() * 1.6 * wash * (1.0 - outK);
+  a = clamp(a + wash * 0.25, 0.0, 1.0);
   // foam is diffuse and opaque
   col = mix(col, foamCol, foam);
   a = mix(a, 1.0, foam);

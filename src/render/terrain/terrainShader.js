@@ -105,25 +105,28 @@ Mat matDesert(NS s) {
   return mk(c, 0.95, 0.22 + 0.15 * dune, 0.05 + 0.03 * rip * ripFade);
 }
 Mat matGrass(NS s) {
-  vec3 lush = vec3(0.115, 0.330, 0.050);
-  vec3 dry = vec3(0.300, 0.330, 0.085);
-  vec3 cold = vec3(0.110, 0.240, 0.110);
+  vec3 lush = vec3(0.085, 0.340, 0.040);
+  vec3 dry = vec3(0.230, 0.330, 0.060);
+  vec3 cold = vec3(0.090, 0.250, 0.100);
   vec3 c = mix(dry, lush, smoothstep(0.22, 0.72, s.moist));
   c = mix(cold, c, smoothstep(0.18, 0.48, s.temp));
   // soft meadow patches (sunny yellow-green / deeper green)
   float patchv = s.macro.r * 0.65 + s.meso.g * 0.35;
   c *= 0.80 + 0.40 * patchv;
-  c = mix(c, c * vec3(1.30, 1.12, 0.62), smoothstep(0.58, 0.85, s.meso.r) * 0.55);
+  c = mix(c, c * vec3(1.22, 1.12, 0.70), smoothstep(0.60, 0.88, s.meso.r) * 0.40);
   c = mix(c, c * vec3(0.70, 0.95, 0.95), smoothstep(0.62, 0.9, s.macro.g) * 0.4);
-  // clumps & blades
+  // clumps & blades (fine detail fades in up close)
+  float near = 1.0 - smoothstep(0.03, 0.16, s.fw);
   float clump = s.det.r * 0.55 + s.micro.r * 0.45;
   float blade = s.micro.a;
-  c *= 0.80 + 0.36 * clump + 0.10 * (blade - 0.5);
+  float tuft = smoothstep(0.6, 0.1, s.cellS.r);
+  c *= 0.80 + 0.36 * clump + (blade - 0.5) * mix(0.10, 0.34, near);
+  c *= mix(1.0, 0.86 + 0.24 * tuft, near);
   // tiny bright flower / seed specks at close range
-  float near = 1.0 - smoothstep(0.03, 0.12, s.fw);
-  float speck = smoothstep(0.12, 0.05, s.cellS.r) * step(0.90, s.cellS.a) * near;
+  float nearS = 1.0 - smoothstep(0.03, 0.12, s.fw);
+  float speck = smoothstep(0.12, 0.05, s.cellS.r) * step(0.90, s.cellS.a) * nearS;
   c = mix(c, mix(vec3(0.9, 0.85, 0.35), vec3(0.85, 0.55, 0.7), s.cellS.b), speck * 0.7);
-  return mk(c, 0.86, 0.38 + 0.45 * clump, 0.05);
+  return mk(c, 0.86, 0.38 + 0.45 * clump, 0.05 + 0.05 * near * tuft);
 }
 Mat matForest(NS s) {
   vec3 c = vec3(0.060, 0.155, 0.040);
@@ -154,12 +157,15 @@ Mat matSavanna(NS s) {
   float v = s.macro.r * 0.5 + s.meso.g * 0.5;
   vec3 c = mix(gold, olive, smoothstep(0.45, 0.85, v + (s.moist - 0.4) * 0.5));
   // bare red soil patches
-  float bare = smoothstep(0.68, 0.82, s.meso.r * 0.6 + s.det.b * 0.4);
+  float bare = smoothstep(0.66, 0.84, s.meso.r * 0.7 + s.det.g * 0.3);
   c = mix(c, vec3(0.38, 0.20, 0.09), bare * 0.7);
-  // straw streaks
-  float streak = nz(vec2(s.p.x * 0.9, s.p.z * 0.25) * 0.5).a;
-  c *= 0.84 + 0.26 * s.det.r + 0.10 * (streak - 0.5);
-  return mk(c, 0.92, 0.36 + 0.35 * s.det.r, 0.05);
+  // dry grass tufts (isotropic cells) and fine straw noise up close
+  float near = 1.0 - smoothstep(0.03, 0.16, s.fw);
+  float tuft = smoothstep(0.55, 0.15, s.cellS.r) * (0.6 + 0.4 * s.cellS.b);
+  c *= 0.84 + 0.26 * s.det.r;
+  c = mix(c, c * mix(vec3(1.18, 1.10, 0.85), vec3(0.78, 0.74, 0.62), s.cellS.a), tuft * 0.45 * near);
+  c *= 1.0 + (s.micro.a - 0.5) * 0.30 * near;
+  return mk(c, 0.92, 0.36 + 0.35 * s.det.r + tuft * 0.25 * near, 0.05 + 0.05 * tuft * near);
 }
 Mat matSwamp(NS s) {
   vec3 mud = vec3(0.090, 0.085, 0.045);
@@ -175,11 +181,12 @@ Mat matSwamp(NS s) {
   return m;
 }
 Mat matTundra(NS s) {
-  vec3 c = vec3(0.230, 0.245, 0.170);
+  vec3 c = vec3(0.200, 0.235, 0.120);
   float lichen = smoothstep(0.5, 0.75, s.det.r * 0.6 + s.micro.r * 0.4);
-  c = mix(c, vec3(0.36, 0.33, 0.20), lichen * 0.6);
-  float frost = smoothstep(0.62, 0.85, s.meso.r);
-  c = mix(c, vec3(0.55, 0.60, 0.62), frost * 0.45);
+  c = mix(c, vec3(0.40, 0.31, 0.15), lichen * 0.55);
+  c = mix(c, vec3(0.30, 0.16, 0.10), smoothstep(0.62, 0.8, s.meso.g) * 0.35);
+  float frost = smoothstep(0.70, 0.90, s.meso.r);
+  c = mix(c, vec3(0.62, 0.66, 0.68), frost * 0.30);
   float stones = smoothstep(0.16, 0.08, s.cellS.r) * step(0.6, s.cellS.b);
   c = mix(c, vec3(0.32, 0.31, 0.30) * (0.8 + 0.4 * s.cellS.a), stones);
   c *= 0.86 + 0.24 * s.macro.g;
@@ -194,8 +201,8 @@ Mat matSnow(NS s) {
   return mk(c, 0.62, 0.55 + 0.3 * drift, 0.06);
 }
 Mat matRock(NS s) {
-  vec3 warm = vec3(0.250, 0.215, 0.180);
-  vec3 cool = vec3(0.195, 0.200, 0.205);
+  vec3 warm = vec3(0.340, 0.300, 0.255);
+  vec3 cool = vec3(0.280, 0.285, 0.290);
   vec3 c = mix(warm, cool, s.macro.g);
   // slabs with crack seams
   float seam = smoothstep(0.0, 0.10, s.cellL.g);
@@ -324,13 +331,13 @@ Mat matCliff(NS s, out vec3 facetN) {
   float band = fract(sy);
   float layer = floor(sy);
   float lr = hash12(vec2(layer, 3.7));
-  vec3 cA = vec3(0.265, 0.225, 0.185);
-  vec3 cB = vec3(0.175, 0.165, 0.160);
-  vec3 cC = vec3(0.330, 0.270, 0.200);
+  vec3 cA = vec3(0.380, 0.330, 0.275);
+  vec3 cB = vec3(0.265, 0.250, 0.235);
+  vec3 cC = vec3(0.450, 0.385, 0.300);
   vec3 c = mix(mix(cB, cA, smoothstep(0.2, 0.6, lr)), cC, smoothstep(0.75, 0.95, lr));
   c *= 0.78 + 0.34 * d.r;
   float crease = smoothstep(0.0, 0.10, band) * smoothstep(1.0, 0.88, band);
-  c *= 0.62 + 0.38 * crease;
+  c *= 0.82 + 0.18 * crease;
   // facets: cells on the projected plane, each with its own tilt
   vec4 fX = cz(vec2(p.z * 0.16, p.y * 0.30 + p.x * 0.05));
   vec4 fZ = cz(vec2(p.x * 0.16, p.y * 0.30 + p.z * 0.05));
@@ -341,8 +348,8 @@ Mat matCliff(NS s, out vec3 facetN) {
   facetN = normalize(n + (tA * (f.b - 0.5) * 0.9 + tB * (f.a - 0.5) * 0.7) * near);
   c *= 0.85 + 0.3 * f.b;
   float seam = 1.0 - smoothstep(0.0, 0.07, f.g);
-  c *= 1.0 - seam * 0.35 * near;
-  return mk(c, 0.82, 0.8, 0.10 * (1.0 - crease) + 0.04);
+  c *= 1.0 - seam * 0.16 * near;
+  return mk(c, 0.82, 0.8, 0.06 * (1.0 - crease) + 0.03);
 }
 
 // Seabed: rippled sand in the shallows, silt and rock in the deep.
@@ -445,7 +452,7 @@ void terrainSurface() {
   s.fire = clim.a;
 
   // ---- organic tile blending
-  vec2 warp = (s.meso.rg - 0.5) * 0.95 + (s.det.gb - 0.5) * 0.40;
+  vec2 warp = (s.meso.rg - 0.5) * 1.5 + (s.det.gb - 0.5) * 0.55 + (s.micro.rg - 0.5) * 0.12;
   vec2 g = p + warp - 0.5;
   vec2 i0 = floor(g);
   vec2 f = g - i0;
@@ -485,7 +492,7 @@ void terrainSurface() {
   // ---- slope driven cliffs
   vec3 nrm = s.n;
   float slopeN = s.n.y + (s.meso.b - 0.5) * 0.10 + (s.det.r - 0.5) * 0.06;
-  float cliff = smoothstep(0.80, 0.62, slopeN) * (1.0 - lavaRaw) * (1.0 - iceB);
+  float cliff = smoothstep(0.76, 0.60, slopeN) * (1.0 - lavaRaw) * (1.0 - iceB);
   vec3 facetN = nrm;
   if (cliff > 0.001) {
     Mat cm = matCliff(s, facetN);
@@ -503,7 +510,11 @@ void terrainSurface() {
   float hb = 0.0;
   vec3 sea = seabedColor(s, max(depth, 0.0), hb);
   float under = smoothstep(-0.05, 0.9, depth + (s.det.r - 0.5) * 0.5);
-  albedo = mix(albedo, sea, under * (1.0 - cliff * 0.6));
+  // sandy floors take the rippled seabed look; other beds keep their material, wet
+  float sandy = dot(vec4(equal(vec4(t0, t1, t2, t3), vec4(0.0))) * live, b);
+  vec3 wetBed = albedo * 0.62;
+  float deepK = smoothstep(1.8, 4.5, depth + (s.macro.r - 0.5) * 2.5);
+  albedo = mix(albedo, mix(wetBed, sea, max(sandy, deepK)), under * (1.0 - cliff * 0.6));
   H = mix(H, hb * 0.05, under);
   rough = mix(rough, 0.6, under);
   // wet band above the waterline (with a slow swash)

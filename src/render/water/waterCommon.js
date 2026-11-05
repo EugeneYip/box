@@ -103,11 +103,11 @@ vec3 waterIrradiance() {
 
 // In-scattered colour of an infinitely deep column (deep sapphire), lit.
 vec3 waterDeepColor() {
-  return vec3(0.010, 0.060, 0.150) * waterIrradiance();
+  return vec3(0.0055, 0.034, 0.105) * waterIrradiance();
 }
 // A lighter, greener scatter colour used for the shallow shelf haze.
 vec3 waterShallowColor() {
-  return vec3(0.030, 0.200, 0.220) * waterIrradiance();
+  return vec3(0.018, 0.150, 0.165) * waterIrradiance();
 }
 
 float cloudShadowAt(vec2 xz) {

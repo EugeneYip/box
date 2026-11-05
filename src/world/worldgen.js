@@ -220,7 +220,8 @@ export function generateWorld(world, seed = 1, options = {}) {
   _t('lakes');
   // --------------------------------------------------------------- 5. rivers
   const moistPre = coarse(3, (u, v) => 0.5 + 0.5 * fbm(nMoist, u * 3.1 + oy, v * 3.1 + ox, 3));
-  carveRivers(world, land, moistPre, P, sc, rand);
+  const sea = oceanMask(hgt, W, H); // before rivers join everything to the ocean
+  const riverMask = carveRivers(world, land, moistPre, P, sc, rand);
 
   _t('rivers');
   // ---------------------------------------------------------------- 6. climate
@@ -228,7 +229,7 @@ export function generateWorld(world, seed = 1, options = {}) {
   const wet = new Uint8Array(N);
   for (let i = 0; i < N; i++) wet[i] = hgt[i] < SEA_LEVEL ? 1 : 0;
   const dWater = distanceField(wet, W, H, 0, true); // land tiles: dist to any water
-  const dOcean = distanceField(ocean, W, H, 0, true); // land tiles: dist to ocean
+  const dOcean = distanceField(sea, W, H, 0, true); // land tiles: dist to the open sea (not rivers)
   const tempN = coarse(3, (u, v) => fbm(nTemp, u * 2.6 + ox, v * 2.6 + oy, 3));
   const flip = rand() < 0.5;
   const eq = 0.82 + rand() * 0.25; // the warm side of the map
@@ -265,8 +266,9 @@ export function generateWorld(world, seed = 1, options = {}) {
       if (h < SEA_LEVEL) {
         const depth = -h;
         const polar = shape[i] < 0.14 + bn * 0.04;
-        if (polar && depth < 3.2 && ocean[i]) type[i] = TILE.ICE;
-        else if (polar && !ocean[i]) type[i] = TILE.ICE;
+        if (polar && depth < 3.2 && sea[i]) type[i] = TILE.ICE;
+        else if (polar && !sea[i]) type[i] = TILE.ICE;
+        else if (!sea[i]) type[i] = riverMask[i] || depth > 1.1 + bn * 0.5 ? TILE.SOIL : TILE.SAND; // river & lake beds
         else type[i] = depth < 2.8 + bn * 1.2 ? TILE.SAND : TILE.ROCK;
         continue;
       }
@@ -276,12 +278,12 @@ export function generateWorld(world, seed = 1, options = {}) {
       const dOc = Math.sqrt(dOcean[i]);
       const dW = Math.sqrt(dWater[i]);
       let t;
-      if (h > snowLine || (temp < 0.1 + jn * 0.03 && h > 2)) t = TILE.SNOW;
+      if (h > snowLine || (temp < 0.1 + bn * 0.03 && h > 2)) t = TILE.SNOW;
       else if (h > rockLine || slope > 2.1 + bn * 0.4) t = TILE.ROCK;
       else if (dOc <= 2.2 + bn * 1.2 && h < 1.05 + bn * 0.35 && slope < 0.75) t = TILE.SAND;
       else if (dOc <= 1.5 && slope >= 0.75) t = TILE.ROCK; // sea cliffs
       else if (dW <= 1.1 && h < 0.42 && !ocean[i] && temp > 0.3 && moist < 0.62) t = TILE.SAND; // lake beaches
-      else t = biomeFor(temp + jn * 0.05 + bn * 0.05, moist + jn * 0.06 - bn * 0.05, h, dW);
+      else t = biomeFor(temp + bn * 0.06 + jn * 0.01, moist - bn * 0.07 + jn * 0.012, h, dW);
       type[i] = t;
     }
   }
@@ -718,7 +720,7 @@ function carveRivers(world, land, moist, P, sc, rand) {
     const size = Math.min(1, Math.log2(acc[i] / T + 1) / 3.2);
     const w = (0.12 + 0.62 * size) * Math.max(1, sc * 0.8);
     const bed = -(0.30 + 0.45 * size);
-    const R = Math.ceil(w + 9);
+    const R = Math.ceil(w + 15);
     const x = i % W,
       y = (i / W) | 0;
     for (let yy = y - R; yy <= y + R; yy++)
@@ -730,13 +732,19 @@ function carveRivers(world, land, moist, P, sc, rand) {
         if (d2 > R * R) continue;
         const d = Math.sqrt(d2);
         const e = Math.max(0, d - w);
-        const t = bed + e * 1.0 + e * e * 0.26;
+        const ev = Math.max(0, e - 1.1);
+        const t = bed + (0.45 - bed) * smoothstep(0, 1.1, e) + ev * 0.27 + ev * ev * 0.034;
         const j = yy * W + xx;
         if (t < target[j]) target[j] = t;
       }
   }
+  // the returned mask marks river channel tiles (centrelines and newly
+  // flooded banks) so their beds can be typed as pebbly soil
   for (let i = 0; i < N; i++) {
-    if (target[i] < hgt[i]) hgt[i] = target[i];
+    if (target[i] < hgt[i]) {
+      if (target[i] < SEA_LEVEL && hgt[i] >= SEA_LEVEL) keep[i] = 1;
+      hgt[i] = target[i];
+    }
   }
   return keep;
 }
