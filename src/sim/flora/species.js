@@ -1,0 +1,242 @@
+import { TILE, FLORA, SEA_LEVEL, MAX_HEIGHT } from '../../world/constants.js';
+
+// Shared ecology tables for the flora simulation, the nature powers and the
+// vegetation renderer. Pure data + small pure helpers; no game state.
+//
+// suit[tile] = 0..1 how happy a species is on a surface material.
+//   >= 0.5  thrives and may spread there
+//   <  0.15 hostile: the plant dries out and dies
+const T = TILE;
+const habitat = (o) => {
+  const a = new Float32Array(16);
+  for (const k in o) a[T[k]] = o[k];
+  return a;
+};
+
+// growTime: game seconds from seed to maturity on perfect soil.
+// spread:   chance per sweep visit that a mature plant seeds a neighbour.
+// life:     average game seconds a mature plant lives (0 = forever).
+// cap:      max same-group plants allowed in the 5x5 around a new seed.
+export const SPECIES = [];
+function def(id, o) {
+  SPECIES[id] = {
+    id,
+    tree: false,
+    growTime: 60,
+    spread: 0,
+    spreadRadius: 2,
+    life: 0,
+    stressTime: 10,
+    deadAs: FLORA.NONE,
+    cap: 8,
+    suit: habitat({}),
+    ...o,
+  };
+}
+def(FLORA.OAK, {
+  tree: true, growTime: 110, spread: 0.035, life: 2400, deadAs: FLORA.DEAD_TREE, cap: 11,
+  suit: habitat({ GRASS: 1, FOREST: 1, SOIL: 0.7, JUNGLE: 0.45, SAVANNA: 0.35, SWAMP: 0.3, TUNDRA: 0.2, FARMLAND: 0.3, SAND: 0.12, ASH: 0.3 }),
+});
+def(FLORA.BIRCH, {
+  tree: true, growTime: 80, spread: 0.04, life: 1600, deadAs: FLORA.DEAD_TREE, cap: 11,
+  suit: habitat({ GRASS: 0.9, FOREST: 1, TUNDRA: 0.6, SOIL: 0.7, SWAMP: 0.35, SAVANNA: 0.25, SNOW: 0.16, FARMLAND: 0.3, ASH: 0.3 }),
+});
+def(FLORA.PINE, {
+  tree: true, growTime: 100, spread: 0.035, life: 2600, deadAs: FLORA.DEAD_TREE, cap: 12,
+  suit: habitat({ FOREST: 1, TUNDRA: 1, GRASS: 0.7, SNOW: 0.55, ROCK: 0.3, SOIL: 0.6, SAVANNA: 0.2, SWAMP: 0.25, FARMLAND: 0.25, ASH: 0.3 }),
+});
+def(FLORA.SNOW_PINE, {
+  tree: true, growTime: 120, spread: 0.03, life: 3000, deadAs: FLORA.DEAD_TREE, cap: 11,
+  suit: habitat({ SNOW: 1, TUNDRA: 0.9, ROCK: 0.4, ICE: 0.16, FOREST: 0.3, GRASS: 0.2, ASH: 0.25 }),
+});
+def(FLORA.PALM, {
+  tree: true, growTime: 85, spread: 0.03, spreadRadius: 3, life: 2000, deadAs: FLORA.DEAD_TREE, cap: 4,
+  suit: habitat({ SAND: 1, JUNGLE: 0.8, SAVANNA: 0.55, DESERT: 0.4, GRASS: 0.3, SWAMP: 0.25, SOIL: 0.3, ASH: 0.25 }),
+});
+def(FLORA.JUNGLE_TREE, {
+  tree: true, growTime: 120, spread: 0.045, life: 2600, deadAs: FLORA.DEAD_TREE, cap: 13,
+  suit: habitat({ JUNGLE: 1, SWAMP: 0.5, FOREST: 0.45, GRASS: 0.3, SAVANNA: 0.2, SOIL: 0.35, ASH: 0.3 }),
+});
+def(FLORA.ACACIA, {
+  tree: true, growTime: 95, spread: 0.025, spreadRadius: 3, life: 2400, deadAs: FLORA.DEAD_TREE, cap: 3,
+  suit: habitat({ SAVANNA: 1, DESERT: 0.3, GRASS: 0.5, SAND: 0.25, SOIL: 0.4, ASH: 0.3 }),
+});
+def(FLORA.SWAMP_TREE, {
+  tree: true, growTime: 100, spread: 0.035, life: 2600, deadAs: FLORA.DEAD_TREE, cap: 8,
+  suit: habitat({ SWAMP: 1, FOREST: 0.4, JUNGLE: 0.4, GRASS: 0.3, SOIL: 0.3, ASH: 0.25 }),
+});
+def(FLORA.DEAD_TREE, {
+  tree: true, growTime: 1, life: 160, deadAs: FLORA.STUMP,
+  suit: habitat({ SAND: 1, GRASS: 1, FOREST: 1, JUNGLE: 1, SAVANNA: 1, SWAMP: 1, TUNDRA: 1, SNOW: 1, ROCK: 1, ASH: 1, SOIL: 1, FARMLAND: 1, DESERT: 1, ROAD: 1, ICE: 1 }),
+});
+def(FLORA.BUSH, {
+  growTime: 40, spread: 0.03, spreadRadius: 2, life: 900, cap: 5,
+  suit: habitat({ GRASS: 1, FOREST: 1, JUNGLE: 1, SAVANNA: 0.7, SWAMP: 0.6, TUNDRA: 0.5, SOIL: 0.55, SAND: 0.2, FARMLAND: 0.2, ASH: 0.3 }),
+});
+def(FLORA.BERRY_BUSH, {
+  growTime: 55, spread: 0.02, life: 900, cap: 3,
+  suit: habitat({ GRASS: 1, FOREST: 0.9, TUNDRA: 0.5, SAVANNA: 0.35, SOIL: 0.5, JUNGLE: 0.5, ASH: 0.3 }),
+});
+def(FLORA.FLOWERS, {
+  growTime: 22, spread: 0.05, spreadRadius: 2, life: 260, cap: 6,
+  suit: habitat({ GRASS: 1, FOREST: 0.55, SAVANNA: 0.5, TUNDRA: 0.45, JUNGLE: 0.5, SWAMP: 0.3, SOIL: 0.4, ASH: 0.3 }),
+});
+def(FLORA.CACTUS, {
+  growTime: 120, spread: 0.012, spreadRadius: 3, life: 3000, deadAs: FLORA.NONE, cap: 2,
+  suit: habitat({ DESERT: 1, SAND: 0.6, SAVANNA: 0.5, ROCK: 0.25, SOIL: 0.2 }),
+});
+def(FLORA.REEDS, {
+  growTime: 30, spread: 0.04, spreadRadius: 2, life: 900, cap: 9,
+  suit: habitat({ SWAMP: 1, SAND: 0.12, GRASS: 0.12, SOIL: 0.12, FOREST: 0.12, JUNGLE: 0.12, TUNDRA: 0.12, SAVANNA: 0.12 }),
+});
+def(FLORA.MUSHROOM, {
+  growTime: 25, spread: 0.03, spreadRadius: 2, life: 220, cap: 4,
+  suit: habitat({ FOREST: 1, SWAMP: 1, JUNGLE: 0.7, GRASS: 0.3, TUNDRA: 0.25, SOIL: 0.3 }),
+});
+def(FLORA.WHEAT, {
+  growTime: 60, stressTime: 20,
+  suit: habitat({ FARMLAND: 1, SOIL: 0.6, GRASS: 0.45, SAVANNA: 0.35 }),
+});
+def(FLORA.STUMP, {
+  growTime: 1, life: 140,
+  suit: habitat({ SAND: 1, GRASS: 1, FOREST: 1, JUNGLE: 1, SAVANNA: 1, SWAMP: 1, TUNDRA: 1, SNOW: 1, ROCK: 1, ASH: 1, SOIL: 1, FARMLAND: 1, DESERT: 1, ROAD: 1, ICE: 1 }),
+});
+// Minerals are eternal.
+const MINERAL = habitat({ SAND: 1, GRASS: 1, FOREST: 1, JUNGLE: 1, SAVANNA: 1, SWAMP: 1, TUNDRA: 1, SNOW: 1, ROCK: 1, ASH: 1, SOIL: 1, FARMLAND: 1, DESERT: 1, ROAD: 1, ICE: 1, LAVA: 1 });
+def(FLORA.ROCK_SMALL, { growTime: 1, suit: MINERAL });
+def(FLORA.BOULDER, { growTime: 1, suit: MINERAL });
+
+export const isTreeId = (f) => !!SPECIES[f]?.tree && f !== FLORA.DEAD_TREE;
+export const isMineral = (f) => f === FLORA.ROCK_SMALL || f === FLORA.BOULDER;
+export const isLiving = (f) => f !== FLORA.NONE && !isMineral(f) && f !== FLORA.STUMP && f !== FLORA.DEAD_TREE;
+
+// Groups used for density caps when spreading.
+export function densityGroup(f) {
+  if (isTreeId(f)) return 1;
+  if (f === FLORA.BUSH || f === FLORA.BERRY_BUSH) return 2;
+  if (f === FLORA.FLOWERS) return 3;
+  if (f === FLORA.MUSHROOM) return 4;
+  if (f === FLORA.REEDS) return 5;
+  if (f === FLORA.CACTUS) return 6;
+  return 0;
+}
+
+// Max trees in a 5x5 neighbourhood by biome (keeps forests from taking over).
+export const TREE_CAP = new Uint8Array(16);
+TREE_CAP[T.FOREST] = 13;
+TREE_CAP[T.JUNGLE] = 15;
+TREE_CAP[T.SWAMP] = 7;
+TREE_CAP[T.GRASS] = 4;
+TREE_CAP[T.TUNDRA] = 7;
+TREE_CAP[T.SNOW] = 6;
+TREE_CAP[T.SAVANNA] = 2;
+TREE_CAP[T.SAND] = 2;
+TREE_CAP[T.DESERT] = 1;
+TREE_CAP[T.SOIL] = 3;
+TREE_CAP[T.ROCK] = 2;
+TREE_CAP[T.ASH] = 2;
+
+// Surfaces nothing new may sprout on.
+export const BARREN = new Uint8Array(16);
+for (const t of [T.LAVA, T.ROAD, T.ICE]) BARREN[t] = 1;
+
+// Weighted species choice for a seed landing on a biome.
+const MIX = [];
+MIX[T.GRASS] = [[FLORA.OAK, 6], [FLORA.BIRCH, 3], [FLORA.PINE, 1]];
+MIX[T.FOREST] = [[FLORA.OAK, 5], [FLORA.BIRCH, 3], [FLORA.PINE, 2]];
+MIX[T.SOIL] = [[FLORA.OAK, 5], [FLORA.BIRCH, 3]];
+MIX[T.ASH] = [[FLORA.BIRCH, 4], [FLORA.OAK, 3], [FLORA.PINE, 2]];
+MIX[T.FARMLAND] = [[FLORA.OAK, 1]];
+MIX[T.JUNGLE] = [[FLORA.JUNGLE_TREE, 8], [FLORA.PALM, 2]];
+MIX[T.SAVANNA] = [[FLORA.ACACIA, 1]];
+MIX[T.SWAMP] = [[FLORA.SWAMP_TREE, 1]];
+MIX[T.TUNDRA] = [[FLORA.PINE, 6], [FLORA.SNOW_PINE, 2], [FLORA.BIRCH, 2]];
+MIX[T.SNOW] = [[FLORA.SNOW_PINE, 1]];
+MIX[T.ROCK] = [[FLORA.PINE, 2], [FLORA.SNOW_PINE, 1]];
+MIX[T.SAND] = [[FLORA.PALM, 1]];
+MIX[T.DESERT] = [[FLORA.CACTUS, 3], [FLORA.PALM, 1]];
+MIX[T.ICE] = [[FLORA.SNOW_PINE, 1]];
+
+function pickWeighted(list, r) {
+  if (!list || !list.length) return FLORA.NONE;
+  let sum = 0;
+  for (const [, w] of list) sum += w;
+  let x = r * sum;
+  for (const [f, w] of list) {
+    if ((x -= w) <= 0) return f;
+  }
+  return list[list.length - 1][0];
+}
+
+// A tree species that suits the tile (temperature nudges cold / warm picks).
+export function pickTree(tileType, temperature = 0.5, r = Math.random()) {
+  if (tileType === T.GRASS || tileType === T.FOREST || tileType === T.SOIL) {
+    if (temperature < 0.36) return r < 0.6 ? FLORA.PINE : FLORA.BIRCH;
+    if (temperature > 0.72 && r < 0.25) return FLORA.ACACIA;
+  }
+  return pickWeighted(MIX[tileType], r);
+}
+
+const UNDERGROWTH = [];
+UNDERGROWTH[T.GRASS] = [[FLORA.FLOWERS, 5], [FLORA.BUSH, 3], [FLORA.BERRY_BUSH, 1.5]];
+UNDERGROWTH[T.FOREST] = [[FLORA.BUSH, 4], [FLORA.MUSHROOM, 3], [FLORA.FLOWERS, 1.5], [FLORA.BERRY_BUSH, 1.5]];
+UNDERGROWTH[T.JUNGLE] = [[FLORA.BUSH, 5], [FLORA.FLOWERS, 1], [FLORA.MUSHROOM, 1]];
+UNDERGROWTH[T.SAVANNA] = [[FLORA.BUSH, 3], [FLORA.FLOWERS, 1]];
+UNDERGROWTH[T.SWAMP] = [[FLORA.REEDS, 5], [FLORA.MUSHROOM, 2], [FLORA.BUSH, 1]];
+UNDERGROWTH[T.TUNDRA] = [[FLORA.BUSH, 2], [FLORA.BERRY_BUSH, 1], [FLORA.FLOWERS, 1], [FLORA.ROCK_SMALL, 1]];
+UNDERGROWTH[T.SOIL] = [[FLORA.BUSH, 2], [FLORA.FLOWERS, 1]];
+UNDERGROWTH[T.ASH] = [[FLORA.BUSH, 2], [FLORA.FLOWERS, 2]];
+UNDERGROWTH[T.DESERT] = [[FLORA.CACTUS, 1]];
+UNDERGROWTH[T.SAND] = [[FLORA.REEDS, 1]];
+export function pickUndergrowth(tileType, r = Math.random()) {
+  return pickWeighted(UNDERGROWTH[tileType], r);
+}
+
+export function suitability(f, tileType) {
+  const s = SPECIES[f];
+  if (!s) return 1;
+  return s.suit[tileType] ?? 0;
+}
+
+// Reeds want water nearby; everything else uses the habitat table.
+export function suitAt(world, f, tx, ty, i) {
+  const t = world.type[i];
+  let s = suitability(f, t);
+  if (f === FLORA.REEDS) {
+    if (world.height[i] < SEA_LEVEL) return world.height[i] > SEA_LEVEL - 0.7 ? 1 : 0;
+    if (t !== T.SWAMP && world.isCoastal(tx, ty)) s = Math.max(s, t === T.ROCK || t === T.SNOW || t === T.LAVA ? 0 : 0.9);
+  }
+  return s;
+}
+
+// What a tile would naturally be, from its climate (mirrors worldgen so that
+// burnt land heals back into the right biome).
+export function naturalBiome(world, i) {
+  const hgt = world.height[i];
+  const temp = world.temperature[i];
+  const moist = world.moisture[i];
+  if (hgt < SEA_LEVEL) return T.SAND;
+  if (hgt < SEA_LEVEL + 0.7 && temp > 0.25) return T.SAND;
+  if (hgt > MAX_HEIGHT * 0.72 || (temp < 0.12 && hgt > MAX_HEIGHT * 0.35)) return T.SNOW;
+  if (hgt > MAX_HEIGHT * 0.5) return T.ROCK;
+  if (temp < 0.18) return T.SNOW;
+  if (temp < 0.32) return T.TUNDRA;
+  if (temp > 0.78) {
+    if (moist < 0.35) return T.DESERT;
+    if (moist < 0.55) return T.SAVANNA;
+    return T.JUNGLE;
+  }
+  if (moist > 0.82 && hgt < SEA_LEVEL + 2.5) return T.SWAMP;
+  if (moist > 0.58) return T.FOREST;
+  if (moist < 0.22) return T.SAVANNA;
+  return T.GRASS;
+}
+
+// Growth stage label used by the inspector.
+export function stageName(f, g) {
+  if (f === FLORA.WHEAT) return g < 0.25 ? 'Sprouting' : g < 0.6 ? 'Growing' : g < 0.95 ? 'Ripening' : 'Ripe';
+  if (f === FLORA.FLOWERS) return g < 0.35 ? 'Budding' : g < 0.9 ? 'Opening' : 'In bloom';
+  if (isMineral(f) || f === FLORA.STUMP || f === FLORA.DEAD_TREE) return null;
+  if (isTreeId(f)) return g < 0.3 ? 'Sapling' : g < 0.7 ? 'Young' : g < 0.97 ? 'Growing' : 'Mature';
+  return g < 0.4 ? 'Seedling' : g < 0.97 ? 'Growing' : 'Mature';
+}
