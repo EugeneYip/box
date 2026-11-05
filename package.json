@@ -1,0 +1,35 @@
+{
+  "name": "worldseed",
+  "version": "1.0.0",
+  "description": "Worldseed — a Three.js god-simulation sandbox",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "shot": "node tools/shot.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/EugeneYip/box.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/EugeneYip/box/issues"
+  },
+  "homepage": "https://github.com/EugeneYip/box#readme",
+  "dependencies": {
+    "@fontsource-variable/inter": "^5.1.0",
+    "@fontsource/cinzel": "^5.1.0",
+    "n8ao": "^1.9.4",
+    "postprocessing": "^6.36.4",
+    "simplex-noise": "^4.0.3",
+    "three": "^0.170.0"
+  },
+  "devDependencies": {
+    "vite": "^6.4.5"
+  },
+  "private": true,
+  "type": "module"
+}
