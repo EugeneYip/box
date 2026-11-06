@@ -61,11 +61,40 @@ function herbivore(u, U, g, now) {
   if (u.fleeUntil > now && u.target) return;
   if (U.sleepLogic(u)) return;
   if (u.busyUntil > now) return;
-  // hunger: graze here or walk to pasture
+  // the herd leader keeps the herd moving onto good pasture (rotational grazing)
+  if (now > (u._pastureT || 0)) {
+    const fr0 = U.forageAt(u.x, u.z);
+    if (fr0 < 0.5) {
+      u._pastureT = now + 7;
+      const h0 = def.herd && u.herd ? herdInfo(u, U) : null;
+      if (!h0 || h0.n === 0 || h0.leader === u) {
+        const best = U.bestPasture(u, 3);
+        if (best && U.forageAt(best.x, best.z) > fr0 + 0.2 && U.moveTo(u, best.x + rng.float(-2.5, 2.5), best.z + rng.float(-2.5, 2.5))) {
+          u.state = 'walk';
+          u.home = { x: best.x, z: best.z };
+          return;
+        }
+      }
+    }
+  }
+  // hunger: graze here, or lead / follow the herd to fresher pasture
   if (u.hunger > 0.4) {
-    if (onGraze(u, w)) {
+    const fr = U.forageAt(u.x, u.z);
+    if (onGraze(u, w) && fr > 0.12) {
       U.startActivity(u, 'eat', rng.float(2.5, 4.5));
       return;
+    }
+    if (fr <= 0.25 && now > (u._pastureT || 0)) {
+      u._pastureT = now + 6;
+      const best = U.bestPasture(u, u.hunger > 0.7 ? 3 : 2);
+      if (best && U.forageAt(best.x, best.z) > fr + 0.15) {
+        const ok = U.moveTo(u, best.x + rng.float(-2.5, 2.5), best.z + rng.float(-2.5, 2.5));
+        if (ok) {
+          u.state = 'walk';
+          if (def.herd && u.herd) u.home = { x: best.x, z: best.z };
+          return;
+        }
+      }
     }
     const t = U.findNearestTile(u.x, u.z, u.hunger > 0.7 ? 16 : 7, (tx, ty, i) => def.grazes.includes(w.type[i]) && walkableTile(w, i));
     if (t) {
@@ -100,10 +129,32 @@ function herbivore(u, U, g, now) {
         u.state = 'walk';
         return;
       }
-      if (h.leader === u && rng.chance(0.25)) {
-        // the herd leader drifts towards fresh pasture, the rest follow
-        U.wander(u, 5);
-        return;
+      if (h.leader === u) {
+        // keep clear of other species' herds
+        let ox = 0,
+          oz = 0,
+          on = 0;
+        U.forEachNear(u.x, u.z, 4, (o) => {
+          if (o.species !== u.species && o.def.kind === 'animal' && o.def.diet !== 'carnivore') {
+            ox += o.x;
+            oz += o.z;
+            on++;
+          }
+        });
+        if (on >= 3) {
+          const ax = u.x - ox / on,
+            az = u.z - oz / on;
+          const l = Math.hypot(ax, az) || 1;
+          if (U.moveTo(u, u.x + (ax / l) * 5 + rng.float(-1, 1), u.z + (az / l) * 5 + rng.float(-1, 1))) {
+            u.state = 'walk';
+            return;
+          }
+        }
+        if (rng.chance(0.25)) {
+          // the herd leader drifts towards fresh pasture, the rest follow
+          U.wander(u, 5);
+          return;
+        }
       }
     }
   }
@@ -125,6 +176,25 @@ function predator(u, U, g, now) {
     if (t && t.def.mass > def.mass) {
       U.flee(u, t.x, t.z, 6);
       return;
+    }
+  }
+  // refuge: wild predators shun people and towns unless starving
+  if (u.hunger < 0.8) {
+    const person = U.nearest(u.x, u.z, 5, (o) => o.species === 'human' && o.age >= o.def.maturity);
+    const [ptx, pty] = g.world.tileOf(u.x, u.z);
+    const owned = g.world.owner[g.world.idx(ptx, pty)] >= 0;
+    if (person || (owned && rng.chance(0.5))) {
+      const fx = person ? person.x : u.home.x * 2 - u.x;
+      const fz = person ? person.z : u.home.z * 2 - u.z;
+      if (U.flee(u, fx, fz, 7)) {
+        u.state = 'walk';
+        u.fleeUntil = 0;
+        if (person && u.pack) {
+          const p = U.packs.get(u.pack);
+          if (p) p.home = { x: u.target.x, z: u.target.z };
+        }
+        return;
+      }
     }
   }
   if (U.sleepLogic(u)) return;

@@ -94,7 +94,7 @@ registerSpecies({
   id: 'cow', name: 'Cow', diet: 'herbivore', herd: true, flees: true,
   speed: 0.7, runMul: 1.7, hp: 42, damage: 3, lifespan: 18, maturity: 2, gestation: 0.45, litter: [1, 1],
   birthInterval: 0.9, fertility: 0.3, maxPopulation: 90, sight: 6, height: 0.5, radius: 0.24, mass: 2.5, food: 1.2,
-  sound: 'bleat', seed: { tiles: [TILE.GRASS, TILE.SAVANNA], groups: 5, size: [3, 5] },
+  crowd: 8, sound: 'bleat', seed: { tiles: [TILE.GRASS, TILE.SAVANNA], groups: 5, size: [3, 5] },
 });
 registerSpecies({
   id: 'pig', name: 'Pig', diet: 'herbivore', herd: true, flees: true,
@@ -119,8 +119,8 @@ registerSpecies({
 });
 registerSpecies({
   id: 'rabbit', name: 'Rabbit', diet: 'herbivore', herd: true, flees: true, fleeRange: 0.8,
-  speed: 1.0, runMul: 2.0, hp: 5, damage: 0, lifespan: 6, maturity: 0.45, gestation: 0.12, litter: [2, 4],
-  birthInterval: 0.5, fertility: 0.3, maxPopulation: 150, sight: 6, height: 0.17, radius: 0.08, mass: 0.25, food: 0.35,
+  speed: 1.0, runMul: 2.0, hp: 5, damage: 0, lifespan: 6, maturity: 0.5, gestation: 0.15, litter: [1, 3],
+  birthInterval: 0.6, fertility: 0.2, maxPopulation: 150, crowd: 9, sight: 6, height: 0.17, radius: 0.08, mass: 0.25, food: 0.35,
   grazes: [TILE.GRASS, TILE.FOREST, TILE.TUNDRA, TILE.SAVANNA, TILE.FARMLAND, TILE.SNOW],
   seed: { tiles: [TILE.GRASS, TILE.FOREST, TILE.TUNDRA], groups: 9, size: [2, 4] },
 });
@@ -128,7 +128,7 @@ registerSpecies({
   id: 'wolf', name: 'Wolf', diet: 'carnivore', pack: true, nocturnal: true,
   speed: 1.35, runMul: 1.75, hp: 30, damage: 6, attackRange: 0.55, attackCooldown: 1.1, lifespan: 13, maturity: 1.8,
   gestation: 0.4, litter: [1, 3], birthInterval: 1.0, fertility: 0.35, maxPopulation: 40, sight: 12, aggressive: true,
-  height: 0.36, radius: 0.18, hungerRate: 0.0052, food: 0.7, sound: 'growl',
+  height: 0.36, radius: 0.18, hungerRate: 0.0052, food: 0.7, sound: 'growl', predRatio: 12,
   prey: ['sheep', 'deer', 'rabbit', 'chicken', 'pig', 'cow'],
   seed: { tiles: [TILE.FOREST, TILE.TUNDRA, TILE.GRASS], groups: 4, size: [3, 4] },
 });
@@ -136,7 +136,7 @@ registerSpecies({
   id: 'bear', name: 'Bear', diet: 'omnivore', brain: 'bear', solitary: true,
   speed: 0.95, runMul: 1.7, hp: 85, damage: 12, attackRange: 0.7, attackCooldown: 1.6, knockback: 1.4, mass: 4,
   lifespan: 24, maturity: 2.5, gestation: 0.5, litter: [1, 2], birthInterval: 1.2, fertility: 0.5, maxPopulation: 16,
-  sight: 9, height: 0.55, radius: 0.28, hungerRate: 0.0045, food: 1.4, sound: 'growl',
+  sight: 9, height: 0.55, radius: 0.28, hungerRate: 0.0045, food: 1.4, sound: 'growl', predRatio: 32,
   prey: ['deer', 'sheep', 'pig', 'rabbit', 'cow'],
   seed: { tiles: [TILE.FOREST, TILE.TUNDRA], groups: 4, size: [1, 2] },
 });
@@ -144,7 +144,7 @@ registerSpecies({
   id: 'fox', name: 'Fox', diet: 'carnivore', solitary: true, nocturnal: true,
   speed: 1.15, runMul: 2.05, hp: 12, damage: 3, attackRange: 0.45, attackCooldown: 0.9, lifespan: 10, maturity: 0.9,
   gestation: 0.3, litter: [2, 3], birthInterval: 0.8, fertility: 0.45, maxPopulation: 30, sight: 9, aggressive: true,
-  height: 0.26, radius: 0.12, hungerRate: 0.006, food: 0.4, flees: true, mouses: true,
+  height: 0.26, radius: 0.12, hungerRate: 0.006, food: 0.4, flees: true, mouses: true, predRatio: 4,
   prey: ['rabbit', 'chicken'],
   seed: { tiles: [TILE.FOREST, TILE.GRASS, TILE.TUNDRA], groups: 4, size: [2, 2] },
 });

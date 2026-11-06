@@ -54,6 +54,11 @@ const YEAR = 30; // == YEAR_SECONDS (src/core/Game.js); duplicated to avoid an i
 const CELL = 4;
 const THINK_INTERVAL = 0.6;
 const PATH_BUDGET = 40;
+const FCELL = 8;
+const FORAGE_REGROW = 0.008; // fraction of a cell's capacity regrown per second
+const FORAGE_COST = 7; // forage per unit of hunger per unit of body mass
+// minimum viable populations: below these, migrants wander in from the map edge
+const MVP = { wolf: 6, fox: 5, bear: 3 };
 
 const KIND_ORDER = { humanoid: 0, animal: 1, monster: 2 };
 
@@ -77,6 +82,8 @@ export class Units {
     this.lastTick = 0;
     this._tickN = 0;
     this._migrateT = 0;
+    this._rescueAt = new Map();
+    this._forage = null;
     this._initGrid();
   }
 
@@ -98,7 +105,96 @@ export class Units {
     this.projectiles.length = 0;
     this._extinct.clear();
     this._dead.length = 0;
+    this._rescueAt.clear();
+    this._forage = null;
     this._initGrid();
+  }
+
+  // ---- grazing forage: the soft carrying capacity of the land -----------------
+  // The map is split into 8x8-tile cells. Each holds forage proportional to its
+  // fertile, open land; grazing eats it and it regrows slowly. Hungry herds move
+  // to fresher pasture; overgrazed cells starve and stop breeding.
+  _initForage() {
+    const w = this.game.world;
+    const fw = Math.ceil(w.w / FCELL),
+      fh = Math.ceil(w.h / FCELL);
+    const first = !this._forage || this._forage.length !== fw * fh;
+    if (first) {
+      this._fw = fw;
+      this._fh = fh;
+      this._forage = new Float32Array(fw * fh);
+      this._forageCap = new Float32Array(fw * fh);
+    }
+    const cap = this._forageCap;
+    cap.fill(0);
+    for (let ty = 0; ty < w.h; ty++)
+      for (let tx = 0; tx < w.w; tx++) {
+        const i = ty * w.w + tx;
+        if (w.height[i] < SEA_LEVEL || w.building[i] >= 0) continue;
+        const t = w.type[i];
+        if (t === TILE.FARMLAND || t === TILE.ROAD) continue;
+        const f = TILE_INFO[t].fertile;
+        if (f < 0.25) continue;
+        cap[Math.floor(ty / FCELL) * fw + Math.floor(tx / FCELL)] += f;
+      }
+    for (let c = 0; c < cap.length; c++) if (first || this._forage[c] > cap[c]) this._forage[c] = cap[c];
+  }
+  _fcell(x, z) {
+    const cx = Math.max(0, Math.min(this._fw - 1, Math.floor(x / FCELL)));
+    const cz = Math.max(0, Math.min(this._fh - 1, Math.floor(z / FCELL)));
+    return cz * this._fw + cx;
+  }
+  // Fraction (0..1) of forage left around a point.
+  forageAt(x, z) {
+    if (!this._forage) this._initForage();
+    const c = this._fcell(x, z);
+    const cap = this._forageCap[c];
+    return cap > 0.5 ? this._forage[c] / cap : 0;
+  }
+  // Centre of the best nearby pasture cell (within r cells), or null.
+  bestPasture(u, r = 2) {
+    if (!this._forage) this._initForage();
+    const cx = Math.floor(u.x / FCELL),
+      cz = Math.floor(u.z / FCELL);
+    let best = null,
+      bs = -1;
+    for (let dz = -r; dz <= r; dz++)
+      for (let dx = -r; dx <= r; dx++) {
+        const x = cx + dx,
+          z = cz + dz;
+        if (x < 0 || z < 0 || x >= this._fw || z >= this._fh) continue;
+        const c = z * this._fw + x;
+        const cap = this._forageCap[c];
+        if (cap < 8) continue;
+        const sc = this._forage[c] - Math.hypot(dx, dz) * 2.5 + Math.random() * 3;
+        if (sc > bs) {
+          bs = sc;
+          best = { x: (x + 0.5) * FCELL, z: (z + 0.5) * FCELL, c };
+        }
+      }
+    return best;
+  }
+  _forageTick(dt) {
+    if (!this._forage) this._initForage();
+    const f = this._forage,
+      cap = this._forageCap;
+    const k = FORAGE_REGROW * dt;
+    for (let c = 0; c < f.length; c++) {
+      const cp = cap[c];
+      if (f[c] < cp) f[c] = Math.min(cp, f[c] + cp * k + 0.02 * dt);
+    }
+  }
+  // Graze: convert forage into reduced hunger. Returns hunger gained back.
+  _graze(u, dt) {
+    if (!this._forage) this._initForage();
+    const c = this._fcell(u.x, u.z);
+    const want = Math.min(dt * 0.09, u.hunger);
+    if (want <= 1e-5) return 0;
+    const cost = want * Math.pow(u.def.mass, 0.7) * FORAGE_COST;
+    const take = Math.min(this._forage[c], cost);
+    this._forage[c] -= take;
+    // bare pasture still yields a little (roots, weeds): overgrazing mostly halts breeding
+    return Math.max(0.3, take / cost) * want;
   }
 
   registerBrain(speciesId, fn) {
@@ -449,6 +545,8 @@ export class Units {
       if (!u.def.canSwim) return false;
       return u.swimming || h > SEA_LEVEL - SHALLOW_DEPTH;
     }
+    const b = w.building[i];
+    if (b >= 0 && b !== u._allowB && b !== u._curB) return false;
     return TILE_INFO[w.type[i]].walkable && !FLORA_INFO[w.flora[i]].blocksMovement;
   }
   _pathable(u, tx, ty) {
@@ -458,6 +556,8 @@ export class Units {
     const h = w.height[i];
     if (u.def.habitat === 'water') return h < SEA_LEVEL - 0.3;
     if (h < SEA_LEVEL) return u.def.canSwim && h > SEA_LEVEL - SHALLOW_DEPTH * 0.85;
+    const b = w.building[i];
+    if (b >= 0 && b !== u._allowB) return false;
     return TILE_INFO[w.type[i]].walkable && !FLORA_INFO[w.flora[i]].blocksMovement;
   }
   _pathCost(tx, ty) {
@@ -520,6 +620,7 @@ export class Units {
     u.target = { x, z };
     u.blockedT = 0;
     u._wantPath = false;
+    u._allowB = w.building[w.idx(gx, gy)];
     if (u.def.habitat === 'air' || Math.abs(sx - gx) + Math.abs(sy - gy) <= 2) {
       u.path = null;
       return true;
@@ -594,6 +695,14 @@ export class Units {
         u.x = nx;
         u.z = nz;
       }
+    }
+    if (def.habitat === 'land') {
+      const W = w.w;
+      u._curB = w.building[Math.floor(u.z) * W + Math.floor(u.x)] ?? -1;
+      let gi = -1;
+      if (u.path && u.path.length) gi = u.path[u.path.length - 1];
+      else if (u.target) gi = Math.floor(u.target.z) * W + Math.floor(u.target.x);
+      u._allowB = gi >= 0 ? w.building[gi] : -1;
     }
     if (u._wantPath && u.target && this._pathBudget > 0) this._computePath(u);
     let tx, tz;
@@ -682,14 +791,17 @@ export class Units {
     u.moving = true;
   }
 
-  // Push overlapping units apart (staggered: each unit every 4th tick).
+  // Personal space (staggered: each unit every 4th tick). Herd-mates keep a
+  // loose spacing, different species keep clearly apart, and units are pushed
+  // out of buildings they are not entering.
   _separate(u) {
     const r = u.def.radius;
     let sx = 0,
       sz = 0;
     const x = u.x,
       z = u.z;
-    const R = r + 0.35;
+    const animal = u.def.kind === 'animal';
+    const R = (r + 0.3) * 2.6 + 0.2;
     const x0 = Math.max(0, Math.floor((x - R) / CELL)),
       x1 = Math.min(this._gw - 1, Math.floor((x + R) / CELL));
     const z0 = Math.max(0, Math.floor((z - R) / CELL)),
@@ -698,14 +810,18 @@ export class Units {
     for (let cz = z0; cz <= z1; cz++)
       for (let cx = x0; cx <= x1; cx++) {
         const cell = this._cells[cz * this._gw + cx];
-        for (let i = 0; i < cell.length && n < 8; i++) {
+        for (let i = 0; i < cell.length && n < 10; i++) {
           const o = cell[i];
           if (o === u || !o.alive) continue;
           if ((o.def.habitat === 'air') !== (u.def.habitat === 'air')) continue;
           const dx = x - o.x,
             dz = z - o.z;
-          const minD = (r + o.def.radius) * 0.95;
           const d2 = dx * dx + dz * dz;
+          if (d2 > R * R) continue;
+          let f;
+          if (o.species === u.species) f = animal ? (o.herd === u.herd ? 1.65 : 2.1) : 1.15;
+          else f = animal && o.def.kind === 'animal' ? 2.6 : 1.5;
+          const minD = (r + o.def.radius) * f + (f > 2 ? 0.15 : 0);
           if (d2 >= minD * minD) continue;
           const d = Math.sqrt(d2) || 0.001;
           const push = (minD - d) / minD;
@@ -715,6 +831,37 @@ export class Units {
           n++;
         }
       }
+    // building repulsion (except the building being entered)
+    if (u.def.habitat === 'land') {
+      const w = this.game.world;
+      const tx = Math.floor(x),
+        tz = Math.floor(z);
+      for (let dy = -1; dy <= 1; dy++)
+        for (let dx = -1; dx <= 1; dx++) {
+          const bx = tx + dx,
+            by = tz + dy;
+          if (bx < 0 || by < 0 || bx >= w.w || by >= w.h) continue;
+          const b = w.building[by * w.w + bx];
+          if (b < 0 || b === u._allowB) continue;
+          const qx = Math.max(bx, Math.min(bx + 1, x)),
+            qz = Math.max(by, Math.min(by + 1, z));
+          let ex = x - qx,
+            ez = z - qz;
+          let d = Math.hypot(ex, ez);
+          const pad = r + 0.12;
+          if (d >= pad) continue;
+          if (d < 1e-4) {
+            ex = x - (bx + 0.5);
+            ez = z - (by + 0.5);
+            d = Math.hypot(ex, ez) || 1;
+            sx += (ex / d) * 2.5;
+            sz += (ez / d) * 2.5;
+          } else {
+            sx += (ex / d) * ((pad - d) / pad) * 2;
+            sz += (ez / d) * ((pad - d) / pad) * 2;
+          }
+        }
+    }
     u.sepx = sx * 1.6;
     u.sepz = sz * 1.6;
   }
@@ -1111,7 +1258,7 @@ export class Units {
     m.pregnant = 0;
     m.lastBirth = g.time.total;
     for (let i = 0; i < n; i++) {
-      if (this.count(m.species) >= this.capacity(m.species) * 1.05) break;
+      if (this.count(m.species) >= this.capacity(m.species) * 2.5) break;
       const baby = this.spawn(m.species, m.x + g.rng.float(-0.3, 0.3), m.z + g.rng.float(-0.3, 0.3), {
         age: 0,
         herd: m.herd,
@@ -1140,15 +1287,27 @@ export class Units {
     if (u.hunger > 0.4 || u.energy < 0.3 || u.sleeping) return false;
     if ((now - u.lastBirth) / YEAR < def.birthInterval) return false;
     const n = this.count(u.species);
-    let K = this.capacity(u.species);
+    const hardK = this.capacity(u.species) * 2.5;
+    if (n >= hardK) return false;
+    let p;
+    let K = hardK;
     if (def.diet === 'carnivore' || def.brain === 'bear') {
+      // predators: limited by the prey they can find
       let prey = 0;
-      for (const p of def.prey) prey += this.count(p);
-      K = Math.min(K, Math.floor(prey / (def.pack ? 7 : 9)));
-      if (u.hunger > 0.45) return false;
+      for (const q of def.prey) prey += this.count(q) * (SPECIES[q]?.mass ?? 1);
+      K = Math.max(MVP[u.species] || 2, Math.floor(prey / (def.predRatio || 9)));
+      if (u.hunger > 0.45 || n >= K) return false;
+      p = def.fertility * (1 - n / K) * (n < (MVP[u.species] || 0) * 2 ? 1.8 : 1);
+    } else {
+      // grazers: limited by local pasture and crowding (soft carrying capacity)
+      const fr = this.forageAt(u.x, u.z);
+      let crowd = 0;
+      this.forEachNear(u.x, u.z, 5, (o) => {
+        if (o.species === u.species) crowd++;
+      });
+      if (fr < 0.35 || crowd > (def.crowd || 12)) return false;
+      p = def.fertility * Math.min(1, (fr - 0.35) / 0.4);
     }
-    if (n >= K) return false;
-    const p = def.fertility * (1 - n / K) * (n < K * 0.25 ? 1.6 : 1);
     if (!g.rng.chance(p)) return false;
     const isMate = (o) => o.species === u.species && o.sex === 'm' && o.age >= def.maturity && !o.sleeping;
     const mate = this.nearest(u.x, u.z, 6, isMate);
@@ -1346,7 +1505,8 @@ export class Units {
       u.stateTime += dt;
       // ---- needs
       const active = u.state === 'run' || u.state === 'flee' || u.state === 'hunt' || u.state === 'attack';
-      u.hunger = Math.min(1, u.hunger + dt * def.hungerRate * (u.sleeping ? 0.5 : active ? 1.6 : 1));
+      const lean = MVP[u.species] && (this._counts.get(u.species) || 0) < MVP[u.species] * 2 ? 0.6 : 1;
+      u.hunger = Math.min(1, u.hunger + dt * def.hungerRate * lean * (u.sleeping ? 0.5 : active ? 1.6 : 1));
       if (u.sleeping) u.energy = Math.min(1, u.energy + dt * 0.0075);
       else u.energy = Math.max(0, u.energy - dt * def.energyRate * (active ? 2.5 : 1) * (u.swimming ? 4 : 1));
       if (u.pregnant > 0) {
@@ -1397,6 +1557,7 @@ export class Units {
       }
       if (u.state === 'eat') {
         let gain = dt * 0.09;
+        if (!u._carcass && def.kind === 'animal' && def.diet !== 'carnivore' && u.activity !== 'fish') gain = this._graze(u, dt);
         if (u._carcass) {
           const c = u._carcass;
           gain = Math.min(c.food, dt * 0.12);
@@ -1439,6 +1600,8 @@ export class Units {
       this._gridUpdate(u);
     }
     this._projectilesTick(dt);
+    if (tickN % 15 === 0) this._forageTick(dt * 15);
+    if (tickN % 900 === 1) this._initForage();
     // carcasses rot away
     if (this.carcasses.length && tickN % 15 === 0) this.carcasses = this.carcasses.filter((c) => c.food > 0.01 && c.until > now);
     if (this._dead.length) {
@@ -1553,18 +1716,43 @@ export class Units {
     for (const def of Object.values(SPECIES)) {
       if (!def.seed) continue;
       const n = this.count(def.id);
-      if (n > 1) {
-        this._extinct.delete(def.id);
-        continue;
-      }
-      const since = this._extinct.get(def.id);
-      if (since == null) this._extinct.set(def.id, now);
-      else if (now - since > 150) {
-        this._extinct.delete(def.id);
-        const grp = this.spawnGroup(def.id, null, null, this.game.rng);
-        if (grp.length) this._extinct.set(def.id, now + 300);
+      const mvp = MVP[def.id] || 5;
+      if (n >= mvp) continue;
+      // rare migrants arrive from the map edge (at most one party per 100 s)
+      if (now - (this._rescueAt.get(def.id) ?? -1e9) < (n === 0 ? 30 : 75)) continue;
+      const spot = this._edgeSpot(def);
+      if (!spot) continue;
+      const grp = this.spawnGroup(def.id, spot.x, spot.z, this.game.rng, def.pack ? 3 : def.solitary ? 2 : null);
+      if (grp.length) {
+        this._rescueAt.set(def.id, now);
+        if (grp.length >= 2 && !grp.some((g) => g.sex === 'm')) grp[1].sex = 'm';
+        if (!grp.some((g) => g.sex === 'f')) grp[0].sex = 'f';
       }
     }
+  }
+  _edgeSpot(def) {
+    const w = this.game.world;
+    const rng = this.game.rng;
+    const tiles = def.seed?.tiles;
+    for (let t = 0; t < 200; t++) {
+      const side = rng.int(0, 3);
+      const d = rng.int(3, 22);
+      const tx = side === 0 ? d : side === 1 ? w.w - 1 - d : rng.int(3, w.w - 4);
+      const ty = side === 2 ? d : side === 3 ? w.h - 1 - d : rng.int(3, w.h - 4);
+      if (!w.isWalkable(tx, ty) || w.owner[w.idx(tx, ty)] >= 0) continue;
+      if (tiles && t < 150 && !tiles.includes(w.type[w.idx(tx, ty)])) continue;
+      return { x: tx + 0.5, z: ty + 0.5 };
+    }
+    // no usable map edge (islands): any wild spot in suitable habitat away from towns
+    for (let t = 0; t < 600; t++) {
+      const tx = rng.int(2, w.w - 3),
+        ty = rng.int(2, w.h - 3);
+      const i = w.idx(tx, ty);
+      if (!w.isWalkable(tx, ty) || w.owner[i] >= 0 || w.building[i] >= 0) continue;
+      if (tiles && t < 450 && !tiles.includes(w.type[i])) continue;
+      return { x: tx + 0.5, z: ty + 0.5 };
+    }
+    return null;
   }
 
   // ---- inspector ------------------------------------------------------------
