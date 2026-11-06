@@ -145,7 +145,7 @@ void main() {
       float dd = dot(d, d);
       float r = uPL[k].w;
       float win = clamp(1.0 - dd / max(r * r, 1e-3), 0.0, 1.0);
-      pl += uPLC[k] * (win * win / (1.0 + dd * 0.12));
+      pl += uPLC[k] * (win * win / (1.0 + dd * 0.025));
     }
   }
   vPL = pl;

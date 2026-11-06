@@ -111,6 +111,6 @@ export class LightPool {
     // mirror into the particle shader so smoke / dust are lit too
     const U = this.fx.uniforms;
     U.uPL.value[i].set(c.x, c.y, c.z, c.range);
-    U.uPLC.value[i].set(c.color.r, c.color.g, c.color.b).multiplyScalar(c.intensity * 0.35);
+    U.uPLC.value[i].set(c.color.r, c.color.g, c.color.b).multiplyScalar(c.intensity * 0.45);
   }
 }

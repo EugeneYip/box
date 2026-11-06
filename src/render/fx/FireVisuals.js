@@ -242,15 +242,15 @@ export class FireVisuals {
       const gr = tree ? 0.4 + 0.6 * growth[i] : 0;
       const ground = world.heightAt(x, z);
       // flames
-      let e = (tree ? 8 : 4.5) * f * dt * rateK;
+      let e = (tree ? 5.5 : 3.2) * f * dt * rateK;
       while (e > 0) {
         if (e < 1 && rnd() > e) break;
         e -= 1;
         const jx = (rnd() - 0.5) * 0.85,
           jz = (rnd() - 0.5) * 0.85;
         const fy = tree ? ground + gr * (0.2 + rnd() * 1.2) : ground + 0.02;
-        const size = (tree ? 0.7 + rnd() * 0.75 : 0.35 + rnd() * 0.45) * (0.5 + 0.65 * f) * lod;
-        flame(fx, x + jx, fy, z + jz, size, { bright: 1.15 + f * 0.5 });
+        const size = (tree ? 0.85 + rnd() * 0.8 : 0.42 + rnd() * 0.5) * (0.5 + 0.65 * f) * lod;
+        flame(fx, x + jx, fy, z + jz, size, { bright: 1.15 + f * 0.5, aspect: 1.15 + rnd() * 0.4 });
       }
       // soft volumetric halo behind the tongues
       e = (tree ? 2.2 : 1.2) * f * dt * rateK;
@@ -279,7 +279,7 @@ export class FireVisuals {
       e = (tree ? 1.6 : 0.45) * f * dt * budget / lod;
       if (rnd() < e) ember(fx, x, ground + (tree ? gr * 1.2 : 0.3), z, { size: lod * 0.9 });
       // smoke: big overlapping puffs that build a drifting column
-      e = (tree ? 0.75 : 0.4) * f * dt * rateK;
+      e = (tree ? 1.15 : 0.6) * f * dt * rateK;
       if (rnd() < e) {
         smokePuff(fx, x + (rnd() - 0.5) * 0.6, ground + (tree ? gr * 1.7 : 0.6), z + (rnd() - 0.5) * 0.6, {
           size: (tree ? 1.5 : 1.1) * lod,
