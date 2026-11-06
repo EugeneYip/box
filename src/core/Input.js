@@ -110,10 +110,13 @@ export class Input {
   onUp(e) {
     this.pointers.delete(e.pointerId);
     if (this.pointers.size < 2) this.pinch = null;
-    if (this.drag && this.drag.button === 0 && this.drag.moved < 6 && !this.game.activePower) {
-      // simple click with no power: inspect
-      const hit = this.game.picker.pick(e.clientX, e.clientY);
-      if (hit) this.game.events.emit('inspect', hit);
+    if (this.drag && this.drag.button === 0 && !this.game.activePower) {
+      if (this.drag.moved < 6) {
+        // simple click with no power: inspect
+        // (a click that hits nothing, e.g. the sky, clears the inspector)
+        const hit = this.game.picker.pick(e.clientX, e.clientY);
+        this.game.events.emit('inspect', hit || null);
+      }
     }
     this.drag = null;
     this._pressed = false;
