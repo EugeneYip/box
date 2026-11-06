@@ -212,14 +212,19 @@ export class Game {
     this.time.realTime += dt;
     if (!this.paused) {
       this._acc += dt * this.speed;
-      let n = 0;
-      const maxTicks = 48;
-      while (this._acc >= TICK && n < maxTicks) {
+      // Budget simulation by wall-clock time, not tick count, so high game
+      // speeds on slow machines degrade gracefully (the sim runs slower than
+      // requested) instead of spiralling into ever-longer frames.
+      const budgetMs = this.simBudgetMs ?? 9;
+      const t0 = performance.now();
+      while (this._acc >= TICK) {
         this.tick(TICK);
         this._acc -= TICK;
-        n++;
+        if (performance.now() - t0 > budgetMs) {
+          this._acc = Math.min(this._acc, TICK); // drop the backlog
+          break;
+        }
       }
-      if (n >= maxTicks) this._acc = 0;
     }
     this.input.update(dt);
     this.cameraRig.update(dt);

@@ -63,6 +63,7 @@ export class Input {
       const [a, b] = [...this.pointers.values()];
       this.pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), ang: Math.atan2(b.y - a.y, b.x - a.x), cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 };
       this._pressed = false;
+      this._pendingTouch = null; // a second finger means pinch, not a power stroke
       this.drag = null;
       return;
     }
@@ -72,6 +73,11 @@ export class Input {
     const power = g.activePower;
     const rotate = e.altKey || (e.button === 2 && e.ctrlKey);
     if (e.button === 0 && power && !rotate) {
+      if (e.pointerType === 'touch') {
+        // Wait briefly for tap intent so a two-finger pinch never casts the power.
+        this._pendingTouch = { t: 0, shift: e.shiftKey };
+        return;
+      }
       this._pressed = true;
       this._applyTimer = 0;
       this.applyPower(0, true, e);
@@ -110,6 +116,14 @@ export class Input {
   onUp(e) {
     this.pointers.delete(e.pointerId);
     if (this.pointers.size < 2) this.pinch = null;
+    if (this._pendingTouch && this.pointers.size === 0 && this.game.activePower) {
+      // a quick single tap (shorter than the intent delay) still casts once
+      this._pendingTouch = null;
+      this.mouse.x = e.clientX;
+      this.mouse.y = e.clientY;
+      this.applyPower(0, true, e);
+    }
+    this._pendingTouch = null;
     if (this.drag && this.drag.button === 0 && !this.game.activePower) {
       if (this.drag.moved < 6) {
         // simple click with no power: inspect
@@ -152,6 +166,17 @@ export class Input {
 
   update(dt) {
     this.hover = this.mouse.inside ? this.game.picker.pick(this.mouse.x, this.mouse.y) : null;
+    if (this._pendingTouch) {
+      this._pendingTouch.t += dt;
+      if (this.pointers.size !== 1 || !this.game.activePower) this._pendingTouch = null;
+      else if (this._pendingTouch.t >= 0.1) {
+        const shift = this._pendingTouch.shift;
+        this._pendingTouch = null;
+        this._pressed = true;
+        this._applyTimer = 0;
+        this.applyPower(0, true, { shiftKey: shift });
+      }
+    }
     if (this._pressed && this.game.activePower && this.game.activePower.mode === 'brush') {
       this._applyTimer += dt;
       const iv = this.game.activePower.interval || 0;
