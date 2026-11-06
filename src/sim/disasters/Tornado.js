@@ -82,6 +82,29 @@ export class Tornado {
     if (vt <= 0) return true;
     // ---- particles: base skirt, debris spiral, top cloud ----
     const k = fx.budget * S;
+    // physical debris chunks whirled around the funnel and flung out
+    this._chunks = (this._chunks || 0) + vt * 7 * S;
+    while (this._chunks >= 1) {
+      this._chunks -= 1;
+      const a = Math.random() * Math.PI * 2;
+      const rr = rand(1.8, 3.6);
+      const tang = a + Math.PI / 2;
+      const sp = rand(8, 12);
+      fx.debris.spawn({
+        x: this.x + Math.cos(a) * rr,
+        y: y + rand(1, 6),
+        z: this.z + Math.sin(a) * rr,
+        vx: Math.cos(tang) * sp - Math.cos(a) * 2 + Math.cos(this.heading) * this.speed,
+        vy: rand(3, 7),
+        vz: Math.sin(tang) * sp - Math.sin(a) * 2 + Math.sin(this.heading) * this.speed,
+        size: rand(0.2, 0.45),
+        color: water ? 0x7a8a90 : Math.random() < 0.5 ? 0x5a4a38 : 0x6a6058,
+        wood: !water && Math.random() < 0.4,
+        spin: 10,
+        trail: water ? 0 : TRAIL.DUST,
+        life: rand(4, 7),
+      });
+    }
     this._dust += dt * 70 * k;
     while (this._dust >= 1) {
       this._dust -= 1;
@@ -104,6 +127,12 @@ export class Tornado {
       P.spin = rand(-1, 1);
       P.frame = PF.SMOKE0 + ((Math.random() * 4) | 0);
       P.ramp = water ? RAMP.SPLASH : RAMP.DUST_THICK;
+      if (!water) {
+        // darker, earthier skirt churned up at the base
+        P.r = 0.5;
+        P.g = 0.44;
+        P.b = 0.38;
+      }
       P.lit = 1;
       P.soft = 0.5;
       fx.pSmoke();

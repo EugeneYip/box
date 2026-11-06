@@ -81,12 +81,14 @@ void main() {
   float rim = pow(1.0 - facing, 1.6);
   float ends = smoothstep(0.0, 0.04, vH) * (1.0 - smoothstep(0.86, 1.0, vH));
   float dens = smoothstep(0.28, 0.85, streak) * (0.35 + 0.9 * rim) * uDensity;
+  // internal banding: inclined debris-laden rings spiralling up the vortex
+  float band = smoothstep(0.35, 0.75, 0.5 + 0.5 * sin(vH * 34.0 + a * 6.2831853 * 2.0 - uTime * 3.2));
   // the core layer has an opacity floor so the vortex reads as solid mass
-  dens = max(dens, uFloor * (0.85 + 0.3 * streak)) * ends;
-  float alpha = clamp(dens * uAlpha, 0.0, 0.97);
+  dens = max(dens, uFloor * (0.8 + 0.25 * streak + 0.15 * band)) * ends;
+  float alpha = clamp(dens * uAlpha, 0.0, 0.98);
   if (alpha < 0.004) discard;
   float ndl = dot(N, uSunDir) * 0.5 + 0.5;
-  vec3 col = uColor * (uAmbient + uSunCol * ndl) * (0.75 + 0.45 * streak);
+  vec3 col = uColor * (uAmbient + uSunCol * ndl) * (0.7 + 0.45 * streak) * mix(0.72, 1.12, band);
   col *= mix(0.7, 1.0, vH);
   float fog = smoothstep(fogNear, fogFar, length(cameraPosition - vWorld));
   col = mix(col, fogColor, fog);
@@ -187,8 +189,8 @@ export class TornadoFunnel {
       this.layers.push({ mesh: m, u, r0, r1, base: u.uColor.value.clone() });
     };
     // dark opaque core + lighter churning dust sleeve (radii doubled)
-    mk(THREE.BackSide, 16, 0x3e3630, 1.4, 0.6, 6.2, 1.1, 0.6);
-    mk(THREE.FrontSide, 17, 0x3e3630, 1.4, 0.6, 6.2, 1.1, 0.6);
+    mk(THREE.BackSide, 16, 0x2a2420, 1.6, 0.6, 6.2, 1.1, 0.88);
+    mk(THREE.FrontSide, 17, 0x2a2420, 1.6, 0.6, 6.2, 1.1, 0.88);
     mk(THREE.BackSide, 18, 0x847a6c, 0.8, 1.1, 9.0, 0.75);
     mk(THREE.FrontSide, 19, 0x847a6c, 0.8, 1.1, 9.0, 0.75);
     // rotating cloud cap (what a top-down camera mostly sees)

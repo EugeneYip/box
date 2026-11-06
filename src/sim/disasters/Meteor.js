@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { SEA_LEVEL, FLORA } from '../../world/constants.js';
 import { carveCrater, hurt, play, rand } from './util.js';
 import { PF, DF, RAMP, TRAIL, glowFlash, sparks, smokePuff, dustPuff } from '../../render/fx/Effects.js';
+import { heatMaterial } from '../../render/fx/Debris.js';
 
 // A meteor streaks in at a shallow angle trailing fire and smoke, then hits:
 // white flash, fireball, expanding shock dome + ground ring + dust wall,
@@ -20,7 +21,12 @@ function meteorMesh() {
       p.setXYZ(i, p.getX(i) * s, p.getY(i) * s, p.getZ(i) * s);
     }
     sharedGeo.computeVertexNormals();
-    sharedMat = new THREE.MeshStandardMaterial({ color: 0x2a221e, emissive: 0xff6a1a, emissiveIntensity: 2.2, roughness: 0.8, flatShading: true });
+    // textured hot rock: per-vertex heat drives glowing veins over a dark,
+    // faceted crust (shared heat shader with the debris)
+    const heat = new Float32Array(p.count);
+    for (let i = 0; i < p.count; i++) heat[i] = 0.62 + 0.38 * Math.abs(Math.sin(p.getX(i) * 7.3 + p.getZ(i) * 4.1 - p.getY(i) * 5.7));
+    sharedGeo.setAttribute('aHeat', new THREE.BufferAttribute(heat, 1));
+    sharedMat = heatMaterial(0x3a302a, 0.85);
   }
   const m = new THREE.Mesh(sharedGeo, sharedMat);
   m.castShadow = true;
@@ -47,7 +53,7 @@ export class Meteor {
     this.T = opts.flight ?? 1.5 + this.size * 0.04;
     this.t = -(opts.delay || 0);
     this.mesh = meteorMesh();
-    this.radius = 0.45 + this.size * 0.16;
+    this.radius = 0.6 + this.size * 0.18;
     this.mesh.scale.setScalar(this.radius);
     this.mesh.visible = false;
     g.scene.add(this.mesh);
@@ -159,22 +165,22 @@ export class Meteor {
       P.x = this.pos.x;
       P.y = this.pos.y;
       P.z = this.pos.z;
-      P.vx = -dx * vel * 0.35;
-      P.vy = -dy * vel * 0.35;
-      P.vz = -dz * vel * 0.35;
+      P.vx = dx * vel * 0.35; // along the travel direction: sheath trails behind
+      P.vy = dy * vel * 0.35;
+      P.vz = dz * vel * 0.35;
       P.tx = P.vx;
       P.ty = P.vy;
       P.tz = P.vz;
       P.drag = 0.02;
       P.life = 0.1;
-      P.s0 = r * (k ? 1.6 : 3.0);
+      P.s0 = r * (k ? 0.8 : 1.5);
       P.s1 = P.s0 * 0.9;
       P.mode = 1;
       P.aspect = 1;
-      P.stretch = k ? 0.12 : 0.22;
+      P.stretch = k ? 0.12 : 0.4;
       P.frame = k ? PF.SPARK : PF.GLOW;
-      P.ramp = k ? RAMP.FLASH : RAMP.EXPLOSION;
-      P.bright = k ? 2.2 : 1.6;
+      P.ramp = k ? RAMP.FLASH : RAMP.FIRE;
+      P.bright = k ? 2.0 : 1.3;
       P.add = 1;
       P.soft = 0;
       fx.pGlow();
@@ -241,7 +247,7 @@ export class Meteor {
     const R = size;
     carveCrater(g, x, z, R, R * 0.55, { ignite: 0.65, rim: R * 0.22 });
     // lighter soot so the carved bowl keeps its shading, plus an ejecta blanket
-    fx.decal({ frame: DF.CRATER, x, z, size: R * 2.7, life: 160, color: 0x4a3a2e, alpha: 0.6, fadeIn: 0.0005, fadeOut: 0.85, grain: 0.7 });
+    fx.decal({ frame: DF.CRATER, x, z, size: R * 2.7, life: 160, color: 0x4a3a2e, alpha: 0.6, fadeIn: 0.0005, fadeOut: 0.85, grain: 0.7, lift: 0.15 });
     fx.decal({ frame: DF.SCORCH0, x, z, size: R * 4.2, life: 120, color: 0x3a2e24, alpha: 0.42, fadeIn: 0.0005, fadeOut: 0.8, grain: 0.8 });
     fx.decal({ frame: DF.BLAST, x, z, size: R * 5.8, life: 140, color: 0x5e4c3a, alpha: 0.38, fadeIn: 0.001, fadeOut: 0.85, grain: 0.9 });
     w.forEachInRadius(x, z, R * 2, (tx, ty, dn, i) => {
@@ -249,8 +255,8 @@ export class Meteor {
       if (d > 1.05 && d < 1.9 && w.height[i] >= SEA_LEVEL && !w.flora[i] && w.building[i] < 0 && Math.random() < 0.22) w.setFlora(tx, ty, Math.random() < 0.15 ? FLORA.BOULDER : FLORA.ROCK_SMALL, 1);
     });
     // HDR molten floor + glowing cracks that cool over ~30 s
-    fx.decal({ frame: DF.CRATER, x, z, size: R * 2.4, life: 34, additive: true, color: 0xff5a14, intensity: 3.6, cool: 1.1, fadeIn: 0.002, fadeOut: 0.5, grain: 0.6 });
-    fx.decal({ frame: DF.CRACK0, x, z, size: R * 3.2, life: 30, additive: true, color: 0xff4a10, intensity: 2.6, cool: 1.15, fadeIn: 0.003, fadeOut: 0.45, grain: 0.3 });
+    fx.decal({ frame: DF.CRATER, x, z, size: R * 2.4, life: 34, additive: true, color: 0xff5a14, intensity: 4.6, cool: 1.05, fadeIn: 0.002, fadeOut: 0.55, grain: 0.6, lift: 0.3 });
+    fx.decal({ frame: DF.CRACK0, x, z, size: R * 3.2, life: 30, additive: true, color: 0xff4a10, intensity: 3.2, cool: 1.1, fadeIn: 0.003, fadeOut: 0.5, grain: 0.3, lift: 0.3 });
     this.ds.add(new CraterAftermath(this.ds, x, z, R));
     // glowing ejecta that arc and bounce
     const nd = Math.round(18 + size * 5);
@@ -321,14 +327,14 @@ class CraterAftermath {
     this._acc += vt * (1.5 + 10 * k * k) * fx.budget;
     while (this._acc >= 1) {
       this._acc -= 1;
-      smokePuff(fx, this.x + rand(-1, 1) * this.R * 0.35, y + 0.6, this.z + rand(-1, 1) * this.R * 0.35, {
+      smokePuff(fx, this.x + rand(-1, 1) * this.R * 0.35, y + 2.2, this.z + rand(-1, 1) * this.R * 0.35, {
         size: rand(1.6, 2.6) * (0.7 + this.R * 0.08),
         grow: 3,
         ramp: RAMP.PLUME,
         glow: 1.1 * k,
-        rise: rand(2, 3.2),
+        rise: rand(4, 5.5),
         drift: 2.4,
-        drag: 0.35,
+        drag: 0.22,
         life: rand(8, 12),
       });
     }

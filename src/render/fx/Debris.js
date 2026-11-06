@@ -42,7 +42,7 @@ function woodGeometry() {
   return g;
 }
 
-function heatMaterial(color, roughness) {
+export function heatMaterial(color, roughness) {
   const m = new THREE.MeshStandardMaterial({ color, roughness, metalness: 0, flatShading: true });
   m.onBeforeCompile = (sh) => {
     sh.vertexShader = sh.vertexShader

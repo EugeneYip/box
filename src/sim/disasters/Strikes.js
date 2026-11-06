@@ -15,7 +15,8 @@ export function lightningStrike(ds, x, z, opts = {}) {
   let drawn = false;
   try {
     if (typeof g.atmosphere?.strike === 'function') {
-      g.atmosphere.strike(x, z, { sound: false }); // we play our own thunder
+      // we play our own thunder and draw our own (thin) impact ring
+      g.atmosphere.strike(x, z, { sound: false, ring: false });
       drawn = true;
     }
   } catch (err) {
@@ -27,6 +28,8 @@ export function lightningStrike(ds, x, z, opts = {}) {
     fx.screenFlash(0xd8e4ff, 0.5);
     ds.flashSky(1);
   }
+  // thin additive impact ring: blooms within ~0.25 s and is gone by 0.6 s
+  fx.decal({ frame: DF.RING, x, z, size: 1.4, grow: 4.2, life: 0.6, additive: true, surface: 2, color: 0xbcd4ff, intensity: 2.2, fadeIn: 0.05, fadeOut: 0.4, grain: 0 });
   glowFlash(fx, x, y + 0.5, z, 6, { life: 0.3, bright: 5, color: 0xe0ecff });
   glowFlash(fx, x, y + 0.3, z, 2.2, { life: 0.9, bright: 3, ramp: RAMP.ELECTRIC });
   sparks(fx, x, y + 0.2, z, fx.k(22), { speed: 7, ramp: RAMP.ELECTRIC, bright: 4.5, up: true, size: 1.2 });
@@ -134,22 +137,27 @@ export class Smite {
     fx.shake(x, z, 1.3);
     fx.shockwave(x, z, r * 5, { color: 0xffd890, life: 0.8, intensity: 1.6 });
     glowFlash(fx, x, y + 0.5, z, r * 2.6, { life: 0.3, bright: 2, color: 0xfff2d0 });
+    // impact crown + ring at 3-4x the beam radius, drawn OVER trees so the
+    // hit stays readable beside the pillar
+    fx.decal({ frame: DF.BLAST, x, z, size: r * 2.2, grow: 3.4, life: 1.1, overlay: true, additive: true, surface: 2, color: 0xffd27a, intensity: 2.6, fadeIn: 0.01, fadeOut: 0.3, grain: 0 });
+    fx.decal({ frame: DF.RING, x, z, size: r * 1.6, grow: 4.6, life: 0.9, overlay: true, additive: true, surface: 2, color: 0xfff0c0, intensity: 3, fadeIn: 0.01, fadeOut: 0.25, grain: 0 });
+    fx.decal({ frame: DF.GLOW, x, z, size: r * 6.5, life: 0.5, overlay: true, additive: true, surface: 2, color: 0xffe0a0, intensity: 2.2, fadeIn: 0.01, fadeOut: 0.1, grain: 0 });
     // crown splash: golden sparks sprayed low and outward around the base
-    sparks(fx, x, y + 0.3, z, fx.k(46), { speed: 10, ramp: RAMP.GOLD, bright: 2.2, size: 1.6, gravity: 10, stretch: 0.08 });
-    for (let k = 0; k < fx.k(18); k++) {
-      const a = (k / 18) * Math.PI * 2 + Math.random() * 0.3;
+    sparks(fx, x, y + 0.3, z, fx.k(46), { speed: 12, ramp: RAMP.GOLD, bright: 2.2, size: 1.8, gravity: 10, stretch: 0.08 });
+    for (let k = 0; k < fx.k(24); k++) {
+      const a = (k / 24) * Math.PI * 2 + Math.random() * 0.3;
       const P = fx.P.reset();
-      P.x = x + Math.cos(a) * r * 0.4;
-      P.y = y + 0.3;
-      P.z = z + Math.sin(a) * r * 0.4;
-      P.vx = Math.cos(a) * rand(5, 8);
+      P.x = x + Math.cos(a) * r * 0.5;
+      P.y = y + 1.4;
+      P.z = z + Math.sin(a) * r * 0.5;
+      P.vx = Math.cos(a) * rand(8, 12);
       P.vy = rand(3, 6);
-      P.vz = Math.sin(a) * rand(5, 8);
+      P.vz = Math.sin(a) * rand(8, 12);
       P.drag = 1.2;
       P.ty = -8;
       P.life = rand(0.6, 0.9);
-      P.s0 = r * 0.9;
-      P.s1 = r * 0.4;
+      P.s0 = r * 1.5;
+      P.s1 = r * 0.6;
       P.mode = 1;
       P.aspect = 1;
       P.stretch = 0.12;
@@ -162,10 +170,10 @@ export class Smite {
     }
     fx.emit('sparkle', { x, y, z }, { scale: 2.6, count: 18, color: 0xfff0c0 });
     // outward debris
-    for (let k = 0; k < 12; k++) {
-      const a = Math.random() * Math.PI * 2,
-        v = rand(4, 8);
-      fx.debris.spawn({ x, y: y + 0.3, z, vx: Math.cos(a) * v, vy: rand(4, 8), vz: Math.sin(a) * v, size: rand(0.18, 0.36), color: 0x5a5048, heat: rand(0.3, 0.7), cool: 0.3, trail: TRAIL.DUST, life: rand(6, 10) });
+    for (let k = 0; k < 26; k++) {
+      const a = (k / 26) * Math.PI * 2 + rand(-0.15, 0.15),
+        v = rand(6, 11);
+      fx.debris.spawn({ x: x + Math.cos(a) * r * 0.4, y: y + 0.4, z: z + Math.sin(a) * r * 0.4, vx: Math.cos(a) * v, vy: rand(4, 9), vz: Math.sin(a) * v, size: rand(0.2, 0.42), color: 0x5a5048, heat: rand(0.4, 0.9), cool: 0.3, trail: TRAIL.DUST, life: rand(6, 10) });
     }
     // ground ring that stays visible beside the beam, bigger scorch
     fx.decal({ frame: DF.BLAST, x, z, size: r * 5.2, life: 90, color: 0x1e160e, alpha: 0.8, fadeIn: 0.001, fadeOut: 0.8 });

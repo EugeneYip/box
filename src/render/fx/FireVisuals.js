@@ -262,7 +262,7 @@ export class FireVisuals {
           }
       }
       // flames: strongly varied sizes (0.5x .. 2x), redder ramp
-      let e = (tree ? 4.2 : 2.4) * f * dt * rateK;
+      let e = (tree ? 2.4 : 1.3) * f * dt * rateK;
       while (e > 0) {
         if (e < 1 && rnd() > e) break;
         e -= 1;
@@ -274,15 +274,21 @@ export class FireVisuals {
         const size = (tree ? 0.8 : 0.45) * mul * (0.55 + 0.6 * f) * lod;
         flame(fx, x + jx, fy, z + jz, size, { bright: 0.9 + f * 0.45, aspect: 1.05 + rnd() * 0.55, ramp: rnd() < 0.4 ? RAMP.FIRE_DEEP : RAMP.FIRE });
       }
-      // wide flame sheets rolling along the front
-      if (front && rnd() < (tree ? 2.4 : 1.6) * f * dt * rateK) {
-        const along = rnd() - 0.5;
-        flame(fx, x + along * 0.9, ground + (tree ? gr * 0.35 : 0.02), z - along * 0.9, (tree ? 2.0 : 1.4) * (0.8 + 0.5 * rnd()) * lod, {
-          bright: 1.0 + f * 0.4,
-          aspect: 0.72 + rnd() * 0.25,
-          ramp: RAMP.FIRE_DEEP,
-          life: 0.7 + rnd() * 0.4,
-        });
+      // wide flame sheets rolling along the burning edge: broad, low,
+      // overlapping tongues that merge into a continuous wall of fire
+      if (front) {
+        let es = (tree ? 5 : 3.5) * f * dt * rateK;
+        while (es > 0) {
+          if (es < 1 && rnd() > es) break;
+          es -= 1;
+          const along = rnd() - 0.5;
+          flame(fx, x + along * 1.1, ground + (tree ? gr * 0.3 : 0.02), z - along * 1.1, (tree ? 2.6 : 2.0) * (0.8 + 0.45 * rnd()) * lod, {
+            bright: 0.85 + f * 0.35,
+            aspect: 0.62 + rnd() * 0.26,
+            ramp: rnd() < 0.6 ? RAMP.FIRE_DEEP : RAMP.FIRE,
+            life: 0.8 + rnd() * 0.4,
+          });
+        }
       }
       // soft volumetric halo behind the tongues
       e = (tree ? 2.2 : 1.2) * f * dt * rateK;
@@ -311,7 +317,7 @@ export class FireVisuals {
       e = (tree ? 1.6 : 0.45) * f * dt * budget / lod;
       if (rnd() < e) ember(fx, x, ground + (tree ? gr * 1.2 : 0.3), z, { size: lod * 0.9 });
       // thin per-tile wisps only; the big plumes are emitted per cluster below
-      e = (tree ? 0.25 : 0.12) * f * dt * rateK;
+      e = (tree ? 0.06 : 0.03) * f * dt * rateK;
       if (rnd() < e) {
         smokePuff(fx, x + (rnd() - 0.5) * 0.6, ground + (tree ? gr * 1.7 : 0.6), z + (rnd() - 0.5) * 0.6, {
           size: (tree ? 1.1 : 0.8) * lod,
@@ -334,19 +340,19 @@ export class FireVisuals {
       const cxm = c.x / c.n,
         czm = c.z / c.n;
       const avg = c.f / c.n;
-      const rate = (0.5 + Math.sqrt(c.n) * 0.75) * avg * dt * budget / Math.sqrt(lod);
+      const rate = (0.3 + Math.sqrt(c.n) * 0.4) * avg * dt * budget / Math.sqrt(lod);
 
       if (rnd() < rate) {
         const spread = 1.2 + Math.sqrt(c.n) * 0.35;
-        smokePuff(fx, cxm + (rnd() - 0.5) * spread, (c.gy ?? 0) + 1.2 + rnd() * 1.2, czm + (rnd() - 0.5) * spread, {
-          size: (1.8 + Math.sqrt(c.n) * 0.32) * Math.pow(lod, 0.75),
+        smokePuff(fx, cxm + (rnd() - 0.5) * spread, (c.gy ?? 0) + 3 + rnd() * 1.5, czm + (rnd() - 0.5) * spread, {
+          size: (2.0 + Math.sqrt(c.n) * 0.38) * Math.pow(lod, 0.75),
           grow: 3.4,
           ramp: raining && rnd() < 0.6 ? RAMP.STEAM : RAMP.PLUME,
           glow: 0.7,
-          rise: 1.9 + rnd() * 0.8,
-          drift: 3.6,
-          drag: 0.4,
-          life: (11 + rnd() * 5) * (0.85 + lod * 0.15),
+          rise: 2.8 + rnd() * 0.8,
+          drift: 2.6,
+          drag: 0.3,
+          life: (13 + rnd() * 5) * (0.85 + lod * 0.15),
         });
       }
     }
@@ -383,7 +389,7 @@ export class FireVisuals {
           dz = z - cz;
         if (dx * dx + dz * dz > R2) continue;
         if (rnd() < h * dt * 0.5 * budget) PRESETS.lavaPop(fx, { x: x + (rnd() - 0.5) * 0.8, y: world.heightAt(x, z), z: z + (rnd() - 0.5) * 0.8 }, { scale: 0.6 + rnd() * 0.5 });
-        if (rnd() < h * dt * 0.25 * rateK) smokePuff(fx, x, world.heightAt(x, z) + 0.2, z, { size: 0.6 * lod, ramp: RAMP.HOT_SMOKE, glow: 0.7, rise: 1, life: 2.5 + rnd() * 2, alpha: 0.6 });
+        if (rnd() < h * dt * 0.08 * rateK) smokePuff(fx, x, world.heightAt(x, z) + 0.2, z, { size: 0.6 * lod, ramp: RAMP.HOT_SMOKE, glow: 0.7, rise: 1, life: 2.5 + rnd() * 2, alpha: 0.6 });
       }
     }
     // ---- lights on the biggest clusters near the camera ----
@@ -405,7 +411,7 @@ export class FireVisuals {
         const inten = Math.min(4.5, 0.7 + Math.sqrt(c.f) * 0.5) * fl * (0.6 + 1.1 * night);
         const y = world.surfaceAt(c.x, c.z) + 2.4 + Math.min(3, Math.sqrt(c.n) * 0.3);
         const col = c.lava ? this._lavaCol : this._fireCol;
-        fx.lights.request('fl' + key, c.x, y, c.z, col, inten, 14 + Math.sqrt(c.n) * 2.6, 1.3);
+        fx.lights.request('fl' + key, c.x, y, c.z, col, inten, 14 + Math.sqrt(c.n) * 2.6, 0.6 + 0.8 * night);
       }
     }
   }

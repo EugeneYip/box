@@ -45,16 +45,22 @@ void main() {
   float h = fxGroundAt(xz);
   float y;
   float vis = 1.0;
+  float lift = dE.z;
   if (dD.y < 0.5) {
     y = h;
     vis = smoothstep(-0.25, 0.02, h);
   } else if (dD.y < 1.5) {
     y = 0.0;
     vis = 1.0 - smoothstep(-0.12, 0.05, h);
-  } else {
+  } else if (dD.y < 2.5) {
     y = max(h, 0.0);
+  } else {
+    // flat plane at an absolute height (lift): e.g. the black void inside a
+    // chasm, hidden wherever the terrain rises above it
+    y = dE.z;
+    lift = 0.0;
   }
-  vec4 mv = viewMatrix * vec4(xz.x, y + 0.035 + dE.z, xz.y, 1.0);
+  vec4 mv = viewMatrix * vec4(xz.x, y + 0.035 + lift, xz.y, 1.0);
   mv.xyz *= 0.9985;
   gl_Position = projectionMatrix * mv;
   vFogDepth = -mv.z;
@@ -126,7 +132,7 @@ void main() {
 `;
 
 class DecalBatch {
-  constructor(fx, capacity, multiply, renderOrder) {
+  constructor(fx, capacity, multiply, renderOrder, depthTest = true) {
     this.fx = fx;
     this.capacity = capacity;
     this.death = new Float32Array(capacity).fill(-1);
@@ -161,7 +167,7 @@ class DecalBatch {
       fragmentShader: FRAG,
       transparent: true,
       depthWrite: false,
-      depthTest: true,
+      depthTest,
       fog: true,
       polygonOffset: true,
       polygonOffsetFactor: -2,
@@ -255,27 +261,32 @@ export class Decals {
     this.fx = fx;
     this.mul = new DecalBatch(fx, 320, true, 4);
     this.add = new DecalBatch(fx, 256, false, 5);
+    // additive glows drawn over trees and props (impact crowns, flashes)
+    this.over = new DecalBatch(fx, 48, false, 30, false);
     this._c = new THREE.Color();
   }
   addTo(scene) {
-    scene.add(this.mul.mesh, this.add.mesh);
+    scene.add(this.mul.mesh, this.add.mesh, this.over.mesh);
   }
   // d: {x, z, size, frame, life, color(hex|Color), alpha, additive, rot,
   //     fadeIn, fadeOut, grow, surface, intensity, cool, grain, delay, spin}
   spawn(d) {
     const c = d.color instanceof THREE.Color ? d.color : this._c.setHex(d.color ?? (d.additive ? 0xffa040 : 0x1a1410));
     const rec = { ...d, color: c };
-    (d.additive ? this.add : this.mul).add(rec, this.fx.time);
+    (d.overlay ? this.over : d.additive ? this.add : this.mul).add(rec, this.fx.time);
   }
   update() {
     const now = this.fx.time;
     this.mul.trim(now);
     this.add.trim(now);
+    this.over.trim(now);
     this.mul.flushRanges();
     this.add.flushRanges();
+    this.over.flushRanges();
   }
   clear() {
     this.mul.clear();
     this.add.clear();
+    this.over.clear();
   }
 }

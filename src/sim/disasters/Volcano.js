@@ -154,19 +154,22 @@ export class Volcano {
         },
       });
     }
-    // ash plume
-    this._acc.plume += vt * (erupting ? 9 : 4) * Math.max(k, erupting ? 1 : 0.15) * fx.budget;
+    // ash plume: a narrow charcoal column that shoots up fast and only
+    // spreads / drifts once it is high above the cone, so the crater, cone
+    // and lava rivers stay readable underneath
+    this._acc.plume += vt * (erupting ? 6 : 2.5) * Math.max(k, erupting ? 1 : 0.15) * fx.budget;
     while (this._acc.plume >= 1) {
       this._acc.plume -= 1;
-      const up = rand(3.5, 6) * (erupting ? 1 : 0.6);
-      smokePuff(fx, x + rand(-0.6, 0.6), top + rand(0, 1.5), z + rand(-0.6, 0.6), {
-        size: rand(2.2, 3.4) * (erupting ? 1 : 0.7),
-        ramp: Math.random() < 0.85 ? RAMP.SMOKE_BLACK : RAMP.HOT_SMOKE,
-        glow: 1.4,
+      const up = rand(7, 10) * (erupting ? 1 : 0.6);
+      smokePuff(fx, x + rand(-0.35, 0.35), top + rand(1.5, 3), z + rand(-0.35, 0.35), {
+        size: rand(1.0, 1.5) * (erupting ? 1 : 0.8),
+        grow: 3.4,
+        ramp: RAMP.SMOKE_BLACK,
+        glow: 0.6,
         rise: up,
-        drift: 3.2,
-        drag: 0.25,
-        life: rand(8, 13),
+        drift: 1.6,
+        drag: 0.16,
+        life: rand(7, 9),
       });
     }
     // ash fall downwind
@@ -188,7 +191,7 @@ export class Volcano {
     }
     // glow + rumble
     const fl = 0.85 + 0.15 * Math.sin(this.t * 17) * Math.sin(this.t * 5.3);
-    fx.lights.request('volcano' + x, x, top + 2.5, z, this._lc, (2.5 + 5 * k) * fl, 44, 2.2);
+    fx.lights.request('volcano' + x, x, top + 2.5, z, this._lc, (2.5 + 5 * k) * fl, 44, 0.8);
     if (Math.random() < vt * 4 * k) glowFlash(fx, x, top + 0.5, z, 3, { life: 0.5, bright: 1.2, ramp: RAMP.LAVA, from: 0.6 });
     fx.shake(x, z, dt * 2.2 * 0.25 * k + (Math.random() < vt * 1.2 * k ? 0.35 : 0));
     hurt(g, x, z, 2.2, 30 * vt * k, 20 * vt * k, 'volcano');
@@ -204,13 +207,13 @@ export class Volcano {
     const fx = g.fx;
     const { x, z } = this;
     const top = g.world.heightAt(x, z) + 0.4;
-    fx.emit('explosion', { x, y: top, z }, { scale: 2.2 });
+    fx.emit('explosion', { x, y: top, z }, { scale: 1.2 });
     fx.shell(x, top, z, 8, { life: 0.45, color: 0xffc890, intensity: 1.1, power: 4, squash: 0.8 });
     fx.screenFlash(0xffd0a0, 0.45);
     fx.addLight({ x, y: top + 3, z }, 0xff9050, 9, 1.2);
     fx.shake(x, z, 1.4);
     fx.decal({ frame: DF.GLOW, x, z, size: 5, life: this.eruptT + this.waneT, additive: true, color: 0xff7a24, intensity: 1.3, fadeIn: 0.03, fadeOut: 0.7 });
-    for (let k = 0; k < 12; k++) smokePuff(fx, x + rand(-1, 1), top + rand(0, 2), z + rand(-1, 1), { size: rand(2, 3), ramp: RAMP.SMOKE_BLACK, glow: 1.2, rise: rand(5, 8), drift: 2, drag: 0.3, life: rand(8, 12) });
+    for (let k = 0; k < 10; k++) smokePuff(fx, x + rand(-0.5, 0.5), top + rand(1, 3), z + rand(-0.5, 0.5), { size: rand(1.2, 1.8), grow: 3.2, ramp: RAMP.SMOKE_BLACK, glow: 0.8, rise: rand(8, 11), drift: 1.4, drag: 0.16, life: rand(7, 9) });
     play(g, 'explosion', { x, z }, 1, 0.6);
   }
 }

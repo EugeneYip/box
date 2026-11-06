@@ -238,7 +238,7 @@ export class Effects {
         P.soft = 0.1;
         this.pGlow();
       }
-      smokePuff(this, x, y, z, { size: 0.3 + size * 0.7, ramp: heat > 0.3 ? RAMP.HOT_SMOKE : RAMP.SMOKE_DARK, rise: 0.4, life: 1.6 + Math.random() * 1.4, drift: 1.4, glow: heat * 0.8, vx: -vx * 0.05, vz: -vz * 0.05 });
+      if (kind !== TRAIL.LAVA || Math.random() < 0.35) smokePuff(this, x, y, z, { size: 0.3 + size * 0.7, ramp: heat > 0.3 ? RAMP.HOT_SMOKE : RAMP.SMOKE_DARK, rise: 0.4, life: 1.6 + Math.random() * 1.4, drift: 1.4, glow: heat * 0.8, vx: -vx * 0.05, vz: -vz * 0.05 });
     } else if (kind === TRAIL.LEAF) {
       if (Math.random() < 0.25) this.emit('leaves', { x, y: y - 0.8, z }, { count: 1, scale: 0.8 });
     }
