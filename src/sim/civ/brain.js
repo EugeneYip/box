@@ -39,6 +39,14 @@ export const brain = {
     if (!u.data.hostile) u.data.hostile = (o) => this.hostileTo(u, o);
     const v = this.villages[u.village];
     const now = g.time.total;
+    // a fight in progress is driven by the creature module's combat system
+    if (u.combat) {
+      const foe = g.units.byId.get(u.combat.target);
+      if (foe && foe.alive) {
+        if (this.rng.chance(0.25) && Math.hypot(foe.x - u.x, foe.z - u.z) < 1.4) this._fx('sparks', (foe.x + u.x) / 2, (foe.z + u.z) / 2, 0.5);
+        return;
+      }
+    }
     if (!v || !v.alive) return this._homeless(u, d, dt);
     if (!u.data.culture) u.data.culture = v.culture;
     if (u.kingdom !== v.kingdom) u.kingdom = v.kingdom;
@@ -119,8 +127,7 @@ export const brain = {
         const b = this._bById.get(w.building[i]);
         if (!b) return 1;
         if (b.type === 'gate') return 0.55;
-        if (BUILDING_TYPES[b.type].wall && b.progress >= 0.3) return Infinity;
-        return 7;
+        return Infinity; // never cut through houses
       }
       if (use === USE.PLOT) return 1.4;
       if (w.fire[i] > 0.3) return 8;
@@ -484,7 +491,8 @@ export const brain = {
     switch (t.act) {
       case 'harvest':
         if (f === FLORA.WHEAT && w.floraGrowth[i] >= 0.98) {
-          w.setFlora(tx, ty, FLORA.NONE);
+          // reap and resow in one pass so fields never stand bare for long
+          w.setFlora(tx, ty, FLORA.WHEAT, 0.05);
           let y = 5;
           if (v.hasWindmill) y += 2;
           if (this.game.time.total < (this.kingdoms[v.kingdom]?.goldenUntil || 0)) y += 1;
@@ -564,8 +572,8 @@ export const brain = {
 
   _forage(u, v, d, dt) {
     const w = this.world;
-    // tend a growing crop now and then
-    if (v.plots.length && this.rng.chance(0.5)) {
+    // tend a growing crop (farmers stay inside their fences)
+    if (v.plots.length) {
       const p = v.plots[(this.rng.next() * v.plots.length) | 0];
       const i = p.tiles[(this.rng.next() * p.tiles.length) | 0];
       if (i != null && w.flora[i] === FLORA.WHEAT && w.floraGrowth[i] < 0.98 && !this._reservedByOther(i, u)) {
@@ -575,6 +583,7 @@ export const brain = {
         this._reserve(i, u, 20);
         return;
       }
+      if (v.fieldCount >= 8) return this._jobIdle(u, v, d, dt);
     }
     // berries
     const cx = Math.floor(v.cx),
@@ -1056,6 +1065,7 @@ export const brain = {
       g.units.damage(foe, dmg, u);
       u.attackCd = u.def.attackCooldown || 1.2;
       this._fx('blood', foe.x, foe.z, 0.5);
+      this._fx('sparks', (foe.x + u.x) / 2, (foe.z + u.z) / 2, 0.5);
       if (!foe.alive) {
         d.foe = null;
         d.engaged = null;
@@ -1078,17 +1088,40 @@ export const brain = {
     const tv = this.villages[army.target];
     if (!tv) return;
     if (army.state === 'march') {
-      const x = tv.cx + Math.cos(ang) * (rad + 2),
-        z = tv.cz + Math.sin(ang) * (rad + 2);
-      const r = this._go(u, x, z, 1.2, true);
-      if (r === FAIL) {
-        d.armyFail = (d.armyFail || 0) + 1;
-        if (d.armyFail > 3) {
-          army.units.delete(u);
-          d.army = null;
+      const bearer = this.game.units.byId.get(army.bearer);
+      if (!bearer || !bearer.alive || bearer === u) {
+        // the standard-bearer leads the column straight for the enemy hall
+        const r = this._go(u, tv.cx + 1.5, tv.cz + 1.5, 2.5, true);
+        if (r === FAIL) {
+          d.armyFail = (d.armyFail || 0) + 1;
+          if (d.armyFail > 3) {
+            army.units.delete(u);
+            d.army = null;
+          }
         }
+        if (r === ARRIVED) this._idle(u);
+        if (this.rng.chance(0.35)) this._fx('dust', u.x, u.z, 0.9);
+        return;
       }
-      if (r === ARRIVED) this._idle(u);
+      // everyone else falls in behind in ranks of three
+      const rank = d.rank ?? (d.rank = [...army.units].indexOf(u));
+      const row = 1 + Math.floor(rank / 3),
+        col = (rank % 3) - 1;
+      let hx = Math.sin(bearer.heading),
+        hz = Math.cos(bearer.heading);
+      const sx = bearer.x - hx * row * 0.75 + hz * col * 0.6,
+        sz = bearer.z - hz * row * 0.75 - hx * col * 0.6;
+      const far = Math.hypot(sx - u.x, sz - u.z);
+      if (far > 7) this._go(u, sx, sz, 1.0, true);
+      else if (far > 0.25) {
+        u.path = null;
+        u.target = { x: sx, z: sz };
+        u.state = far > 2 ? 'run' : 'walk';
+        d.gx = null;
+      } else this._idle(u);
+      if (this.rng.chance(0.12)) this._fx('dust', u.x, u.z, 0.7);
+      void ang;
+      void rad;
       return;
     }
     // siege: strike the nearest enemy building (hall first when close)
@@ -1126,8 +1159,9 @@ export const brain = {
     if (t.t <= 0) {
       t.t = 1.3;
       this.damageBuilding(b, 5 + this.rng.next() * 4, 'siege');
-      if (this.rng.chance(0.05)) b.burning = Math.max(b.burning, 0.35);
+      if (this.rng.chance(0.14)) b.burning = Math.max(b.burning, 0.45);
       this._fx('debris', b.x + this.rng.float(-0.5, 0.5), b.z + this.rng.float(-0.5, 0.5), 0.4);
+      if (this.rng.chance(0.4)) this._fx('sparks', (u.x + b.x) / 2, (u.z + b.z) / 2, 0.6);
     }
   },
 

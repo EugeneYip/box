@@ -141,21 +141,27 @@ export function cultureForSite(world, tx, ty, radius = 6) {
   return best;
 }
 
-// Curated heraldic palette: saturated, distinct from each other and from the
-// terrain greens / sands so territory tints stay readable.
+// Curated heraldic palette: saturated, bright enough to glow as a border at
+// map zoom, and distinct from each other. No white, no near-black.
 export const HERALDRY = [
-  { name: 'Crimson', color: 0xd23b3b },
-  { name: 'Azure', color: 0x2f6fe0 },
-  { name: 'Gold', color: 0xf0b62a },
-  { name: 'Violet', color: 0x8c46d0 },
-  { name: 'Teal', color: 0x17b3a6 },
-  { name: 'Ember', color: 0xf27420 },
-  { name: 'Rose', color: 0xe9559e },
-  { name: 'Ivory', color: 0xf3ede0 },
-  { name: 'Indigo', color: 0x3b3fa8 },
-  { name: 'Burgundy', color: 0x8e1f3a },
-  { name: 'Sky', color: 0x3cc2ee },
-  { name: 'Sable', color: 0x3a3842 },
-  { name: 'Copper', color: 0xb5651d },
-  { name: 'Lilac', color: 0xc29be8 },
+  { name: 'Crimson', color: 0xd8333a },
+  { name: 'Azure', color: 0x2f6fe8 },
+  { name: 'Gold', color: 0xf2b51e },
+  { name: 'Violet', color: 0x9a46e0 },
+  { name: 'Teal', color: 0x12b8a8 },
+  { name: 'Ember', color: 0xf26a1b },
+  { name: 'Rose', color: 0xf0509e },
+  { name: 'Cobalt', color: 0x4a54f0 },
+  { name: 'Raspberry', color: 0xc8204f },
+  { name: 'Sky', color: 0x31c4f2 },
+  { name: 'Magenta', color: 0xd630c8 },
+  { name: 'Copper', color: 0xc8682a },
 ];
+
+// Colours that would vanish against a culture's homeland biome.
+export const HERALDRY_AVOID = {
+  vale: ['Teal'], // meadows and forests are green
+  mire: ['Teal'], // swamp and jungle greens
+  frost: ['Sky', 'Cobalt', 'Azure'], // snow and ice read pale blue-white
+  dune: ['Gold', 'Copper', 'Ember'], // sand and savanna are yellow-orange
+};

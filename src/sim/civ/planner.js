@@ -609,6 +609,8 @@ export const planner = {
     if (!p) return false;
     const last = p[p.length - 1];
     if (Math.hypot((last % W) - sb[0], ((last / W) | 0) - sb[1]) > 3) return false;
+    a.tradeLinks = (a.tradeLinks || 0) + 1;
+    b.tradeLinks = (b.tradeLinks || 0) + 1;
     const mid = (p.length / 2) | 0;
     for (let k = 0; k < p.length; k++) {
       const i = p[k];

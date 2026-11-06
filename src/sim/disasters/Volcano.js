@@ -115,11 +115,11 @@ export class Volcano {
       this.ds.lava.pour(this.cx + d[0], this.cz + d[1], rate * vt * 0.4, 1);
     }
     // fountain
-    this._acc.fount += vt * 30 * k * fx.budget;
+    this._acc.fount += vt * 20 * k * fx.budget;
     while (this._acc.fount >= 1) {
       this._acc.fount -= 1;
-      sparks(fx, x + rand(-0.5, 0.5), top, z + rand(-0.5, 0.5), 1, { speed: rand(6, 11), up: true, ramp: RAMP.LAVA, gravity: 15, size: 2.4, life: 1.6, bright: 3.4, stretch: 0.05 });
-      if (Math.random() < 0.35) fx.emit('fireball', { x, y: top + 0.5, z }, { scale: 1.1, count: 1 });
+      sparks(fx, x + rand(-0.5, 0.5), top, z + rand(-0.5, 0.5), 1, { speed: rand(6, 11), up: true, ramp: RAMP.LAVA, gravity: 15, size: 2.2, life: 1.6, bright: 1.9, stretch: 0.05 });
+      if (Math.random() < 0.06) fx.emit('fireball', { x, y: top + 0.5, z }, { scale: 1.1, count: 1 });
     }
     // lava bombs
     this._acc.bomb += vt * (erupting ? 3.2 : 0.8) * k;
@@ -161,8 +161,8 @@ export class Volcano {
       this._acc.plume -= 1;
       const up = rand(3.5, 6) * (erupting ? 1 : 0.6);
       smokePuff(fx, x + rand(-0.6, 0.6), top + rand(0, 1.5), z + rand(-0.6, 0.6), {
-        size: rand(1.8, 2.8) * (erupting ? 1 : 0.7),
-        ramp: Math.random() < 0.5 ? RAMP.SMOKE_BLACK : RAMP.HOT_SMOKE,
+        size: rand(2.2, 3.4) * (erupting ? 1 : 0.7),
+        ramp: Math.random() < 0.85 ? RAMP.SMOKE_BLACK : RAMP.HOT_SMOKE,
         glow: 1.4,
         rise: up,
         drift: 3.2,
@@ -189,8 +189,8 @@ export class Volcano {
     }
     // glow + rumble
     const fl = 0.85 + 0.15 * Math.sin(this.t * 17) * Math.sin(this.t * 5.3);
-    fx.lights.request('volcano' + x, x, top + 2.5, z, this._lc, (2 + 4 * k) * fl, 30);
-    if (Math.random() < vt * 4 * k) glowFlash(fx, x, top + 0.5, z, 4.5, { life: 0.5, bright: 2.2, ramp: RAMP.LAVA, from: 0.6 });
+    fx.lights.request('volcano' + x, x, top + 2.5, z, this._lc, (2.5 + 5 * k) * fl, 44, 2.2);
+    if (Math.random() < vt * 4 * k) glowFlash(fx, x, top + 0.5, z, 3, { life: 0.5, bright: 1.2, ramp: RAMP.LAVA, from: 0.6 });
     fx.shake(x, z, dt * 2.2 * 0.25 * k + (Math.random() < vt * 1.2 * k ? 0.35 : 0));
     hurt(g, x, z, 2.2, 30 * vt * k, 20 * vt * k, 'volcano');
     if (erupting && this.t >= this.eruptT) {
