@@ -249,7 +249,7 @@ export class Decals {
   // d: {x, z, size, frame, life, color(hex|Color), alpha, additive, rot,
   //     fadeIn, fadeOut, grow, surface, intensity, cool, grain, delay, spin}
   spawn(d) {
-    const c = d.color instanceof THREE.Color ? d.color : this._c.setHex(d.color ?? (d.additive ? 0xffa040 : 0x1a1410)).convertSRGBToLinear();
+    const c = d.color instanceof THREE.Color ? d.color : this._c.setHex(d.color ?? (d.additive ? 0xffa040 : 0x1a1410));
     const rec = { ...d, color: c };
     (d.additive ? this.add : this.mul).add(rec, this.fx.time);
   }

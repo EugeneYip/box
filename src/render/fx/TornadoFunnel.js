@@ -68,7 +68,9 @@ float tnoise(vec2 q, float p) {
   return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
 }
 void main() {
-  float a = vUv.x + vH * 0.9 - uTime * uSpin * (0.6 + 0.6 * vH);
+  // twist with height, rotate with time (never multiply time by height:
+  // that would make the streak frequency grow without bound)
+  float a = vUv.x + vH * 0.9 - uTime * uSpin * 0.8 + 0.05 * sin(vH * 6.0 + uTime * 2.0);
   float n1 = tnoise(vec2(a * 12.0, vH * 7.0 - uTime * 1.6), 12.0);
   float n2 = tnoise(vec2(a * 24.0, vH * 15.0 - uTime * 2.8), 24.0);
   float streak = n1 * 0.65 + n2 * 0.35;
@@ -107,7 +109,7 @@ export class TornadoFunnel {
         uBend: { value: new THREE.Vector2() },
         uSpin: { value: spin },
         uAlpha: { value: 0 },
-        uColor: { value: new THREE.Color(color).convertSRGBToLinear() },
+        uColor: { value: new THREE.Color(color) },
         uSunDir: { value: new THREE.Vector3(0, 1, 0) },
         uSunCol: fx.uniforms.uSunCol,
         uAmbient: fx.uniforms.uAmbient,

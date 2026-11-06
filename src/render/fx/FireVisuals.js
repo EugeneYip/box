@@ -250,7 +250,7 @@ export class FireVisuals {
           jz = (rnd() - 0.5) * 0.85;
         const fy = tree ? ground + gr * (0.2 + rnd() * 1.2) : ground + 0.02;
         const size = (tree ? 0.7 + rnd() * 0.75 : 0.35 + rnd() * 0.45) * (0.5 + 0.65 * f) * lod;
-        flame(fx, x + jx, fy, z + jz, size, { bright: 1.5 + f * 0.6 });
+        flame(fx, x + jx, fy, z + jz, size, { bright: 1.15 + f * 0.5 });
       }
       // soft volumetric halo behind the tongues
       e = (tree ? 2.2 : 1.2) * f * dt * rateK;

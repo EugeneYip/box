@@ -137,7 +137,7 @@ export class Beams {
 
   // Jagged branching lightning from (x0,y0,z0) down to (x1,y1,z1).
   bolt(x0, y0, z0, x1, y1, z1, opts = {}) {
-    const color = this._c.setHex(opts.color ?? 0xbcd8ff).convertSRGBToLinear().clone();
+    const color = this._c.setHex(opts.color ?? 0xbcd8ff).clone();
     const life = opts.life ?? 0.5;
     const width = opts.width ?? 0.35;
     const seed = Math.random();

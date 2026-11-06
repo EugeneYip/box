@@ -139,7 +139,7 @@ export class Meteor {
     fx.addLight({ x, y: y + 3, z }, 0xffc080, 6 + s * 4, 1.4);
     fx.shake(x, z, 1.1 + s * 0.6);
     fx.shockwave(x, z, size * 3.2, { life: 0.8, color: water ? 0xd8f0ff : 0xffe0b0 });
-    fx.shell(x, y, z, size * 2.6, { life: 0.45, color: 0xfff0d8, intensity: 3, squash: 0.65 });
+    fx.shell(x, y, z, size * 1.7, { life: 0.32, color: 0xfff0d8, intensity: 1.1, power: 4, squash: 0.6 });
     play(g, 'explosion', { x, z }, 1, 0.8);
     if (water) {
       for (let k = 0; k < 4; k++) fx.emit('splash', { x: x + rand(-1, 1) * s, y: SEA_LEVEL, z: z + rand(-1, 1) * s }, { scale: 2.2 * s + 1 });

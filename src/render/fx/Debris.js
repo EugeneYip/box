@@ -170,7 +170,7 @@ export class Debris {
     pool.trailAcc[i] = Math.random();
     pool.flags[i] = 0;
     pool.onLand[i] = o.onLand || null;
-    this._c.setHex(o.color ?? 0x7a7068).convertSRGBToLinear();
+    this._c.setHex(o.color ?? 0x7a7068);
     const v = 0.85 + Math.random() * 0.3;
     pool.col[i3] = this._c.r * v;
     pool.col[i3 + 1] = this._c.g * v;

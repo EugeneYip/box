@@ -152,7 +152,7 @@ export class Effects {
     this.lights.transient(pos, color, intensity, duration);
   }
   screenFlash(color = 0xffffff, intensity = 1) {
-    this._tmpC.set(color).convertSRGBToLinear();
+    this._tmpC.set(color);
     const f = this.flash;
     // combine with any running flash
     f.color.lerp(this._tmpC, f.alpha > 0 ? 0.5 : 1);
@@ -174,7 +174,7 @@ export class Effects {
     const y = this.game.world.surfaceAt(x, z);
     this.decal({ frame: DF.RING, x, z, size: radius * 0.25, grow: 4, life: o.life ?? 0.7, additive: true, surface: 2, color: o.color ?? 0xffe2b0, intensity: o.intensity ?? 1.6, fadeIn: 0.01, fadeOut: 0.15, grain: 0.2 });
     this.decal({ frame: DF.RING, x, z, size: radius * 0.2, grow: 5, life: (o.life ?? 0.7) * 1.4, color: 0x8a7a68, alpha: 0.35, fadeIn: 0.01, fadeOut: 0.1, grain: 0.6 });
-    if (o.shell !== false) this.shell(x, y, z, radius * 0.9, { life: (o.life ?? 0.7) * 0.8, color: o.color ?? 0xffe8c8 });
+    if (o.shell !== false) this.shell(x, y, z, radius * 0.7, { life: (o.life ?? 0.7) * 0.6, color: o.color ?? 0xffe8c8, intensity: 0.9, power: 4 });
     // ground-hugging dust wall
     const n = this.k(Math.min(40, 10 + radius * 3));
     for (let i = 0; i < n; i++) {
@@ -191,7 +191,7 @@ export class Effects {
     s.life = o.life ?? 0.5;
     s.r0 = radius * (o.from ?? 0.1);
     s.r1 = radius;
-    s.mesh.material.uniforms.uColor.value.set(o.color ?? 0xffe8c8).convertSRGBToLinear().multiplyScalar(o.intensity ?? 2.2);
+    s.mesh.material.uniforms.uColor.value.set(o.color ?? 0xffe8c8).multiplyScalar(o.intensity ?? 2.2);
     s.mesh.material.uniforms.uPower.value = o.power ?? 3;
     s.mesh.scale.set(1, o.squash ?? 0.55, 1);
     s.mesh.visible = true;

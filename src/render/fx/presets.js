@@ -10,7 +10,7 @@ const R = Math.random;
 const rr = (a, b) => a + (b - a) * R();
 const TAU = Math.PI * 2;
 const tmpC = new THREE.Color();
-const lin = (hex) => tmpC.setHex(hex).convertSRGBToLinear();
+const lin = (hex) => tmpC.setHex(hex);
 
 function tint(P, hex, a = 1) {
   if (hex == null) return P;
@@ -45,7 +45,7 @@ export function flame(fx, x, y, z, size, o = {}) {
   P.frames = 4;
   P.ramp = o.ramp ?? RAMP.FIRE;
   P.heat = 0.42;
-  P.bright = o.bright ?? 2;
+  P.bright = o.bright ?? 1.6;
   P.add = 1;
   P.soft = 0.12;
   if (o.color != null) tint(P, o.color);

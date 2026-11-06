@@ -352,8 +352,8 @@ export function createRampTexture() {
       const s0 = stops[k],
         s1 = stops[k + 1];
       const f = clamp01((t - s0[0]) / Math.max(1e-5, s1[0] - s0[0]));
-      c0.setHex(s0[1]);
-      c1.setHex(s1[1]);
+      c0.setHex(s0[1], THREE.LinearSRGBColorSpace); // raw sRGB bytes (texture decodes)
+      c1.setHex(s1[1], THREE.LinearSRGBColorSpace);
       // interpolate in sRGB (the texture is decoded to linear on the GPU)
       const i = (row * W + x) * 4;
       data[i] = Math.round((c0.r + (c1.r - c0.r) * f) * 255);

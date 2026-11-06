@@ -120,7 +120,7 @@ export class Smite {
     const fx = g.fx;
     const { x, z, r } = this;
     const y = g.world.surfaceAt(x, z);
-    const gold = new THREE.Color(0xffd27a).convertSRGBToLinear();
+    const gold = new THREE.Color(0xffd27a);
     const white = new THREE.Color(1, 0.97, 0.9);
     const top = y + 70;
     fx.beams.segment(x, top, z, x, y, z, { color: gold, width: r * 1.6, life: 0.9, intensity: 1.6, flicker: 0.15, taper: 1.15 });
