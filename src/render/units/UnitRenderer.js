@@ -54,6 +54,21 @@ function jitter(c, r) {
   const k = 0.93 + r * 0.14;
   return [c[0] * k, c[1] * k, c[2] * k];
 }
+// Civilian clothing by culture (unit.data.culture); soldiers, guards and rulers
+// wear their kingdom's colour, everyone else only a kingdom-coloured sash.
+const CULTURE_CLOTH = {
+  vale: [0xd9c9a3, 0x6f8a4e, 0xa0583a, 0xc8b27a, 0x5f7690, 0x8a6f8f, 0x7a5a3e, 0x93a47a, 0xb8a07a],
+  dune: [0xe8d2a6, 0xf2ede2, 0xe0a040, 0xc0603a, 0x3c4a8a, 0x2f8a88, 0xc86a70, 0xc89040, 0xefe2c4],
+  frost: [0x9a9a9e, 0x34507a, 0xe6e0d2, 0x7a2e2e, 0x3e5a4a, 0x6a5040, 0x5a5a62, 0x9ab4c8, 0xc8c0b0],
+  mire: [0x6a7a3a, 0x4a6a3a, 0xa89a5a, 0x2e7a6a, 0x6a4a30, 0xb06a4a, 0x7aa04a, 0x5a4a6a, 0x8a8a50],
+};
+const UNIFORMED = new Set(['soldier', 'guard', 'king', 'queen']);
+// Brighten a linear colour for far-zoom dots so it reads against terrain.
+function bright(c) {
+  const m = Math.max(c[0], c[1], c[2], 1e-3);
+  const k = Math.max(1, 0.8 / m);
+  return [Math.min(1, c[0] * k + 0.06), Math.min(1, c[1] * k + 0.06), Math.min(1, c[2] * k + 0.06)];
+}
 function easeOutBack(t) {
   const c1 = 1.7,
     c3 = c1 + 1;
@@ -70,6 +85,10 @@ export class UnitRenderer {
     for (const d of [humanModel, ...ANIMAL_MODELS, ...MONSTER_MODELS, ...AMBIENT_MODELS]) this.defs.set(d.id, d);
     this.models = new Map();
     this.lo = new Map();
+    // shared per-frame uniforms: kingdom palette (slot 1 + id % 15) and outline strength
+    this._kingPal = Array.from({ length: 16 }, () => new THREE.Color(0.5, 0.5, 0.5));
+    this._outlineU = { value: 0 };
+    this._kingHex = new Array(16).fill(-1);
     for (const id of this.defs.keys()) this.model(id);
     this.overlays = new Overlays(game);
     this.ambient = new AmbientFauna(game, this);
@@ -104,6 +123,8 @@ export class UnitRenderer {
       const def = this.defs.get(id);
       if (!def) return null;
       m = new RigModel(this.group, def);
+      m.uniforms.uKing.value = this._kingPal;
+      m.uniforms.uOutline = this._outlineU;
       this.models.set(id, m);
       this.lo.set(id, new RigModel(this.group, def, def.loDetail ?? 0.45, m));
     }
@@ -185,9 +206,9 @@ export class UnitRenderer {
       b: jitter(B, r(4)),
       c: C,
       sec: 0,
-      var: [v[0] + v[1] * 16 + v[2] * 256, v[3] + v[4] * 16 + v[5] * 256, v[6] + v[7] * 16 + v[8] * 256, seed],
+      var: [v[0] + v[1] * 16 + v[2] * 256, v[3] + v[4] * 16 + v[5] * 256, v[6] + v[7] * 16 + v[8] * 256, seed * 0.98],
     };
-    rs.dot = rs.ap.a;
+    rs.dot = bright(rs.ap.a);
   }
 
   _humanLook(u, rs, r, seed, child) {
@@ -258,7 +279,10 @@ export class UnitRenderer {
     if (u.data?.ranged && tool === TOOL_OPT.none) tool = TOOL_OPT.bow;
     const back = BACK_OPT[u.carry?.type] || 0;
     const kc = this._kingdomColor(u.kingdom);
-    const cloth = u.color != null ? lin(u.color) : kc || lin(NEUTRAL_CLOTH[Math.floor(r(9) * NEUTRAL_CLOTH.length)]);
+    const pal = CULTURE_CLOTH[u.data?.culture] || NEUTRAL_CLOTH;
+    const civvies = jitter(lin(pal[Math.floor(r(9) * pal.length)]), r(12));
+    const cloth = u.color != null ? lin(u.color) : kc && UNIFORMED.has(job) ? kc : civvies;
+    const kslot = u.kingdom >= 0 ? 1 + (u.kingdom % 15) : 0;
     let sec = Math.floor(r(10) * 8);
     if (job === 'soldier') sec = r(10) < 0.5 ? 1 : 7;
     if (job === 'king') sec = 5;
@@ -269,9 +293,9 @@ export class UnitRenderer {
       b: cloth,
       c: lin(hairC),
       sec,
-      var: [hair + hat * 16 + beard * 256, tool + offhand * 16 + back * 256, cape + outfit * 16 + armor * 256, seed],
+      var: [hair + hat * 16 + beard * 256, tool + offhand * 16 + back * 256, cape + outfit * 16 + armor * 256, kslot + seed * 0.98],
     };
-    rs.dot = cloth;
+    rs.dot = bright(kc || [0.85, 0.8, 0.7]);
   }
 
   _initRS(u, rm) {
@@ -353,6 +377,20 @@ export class UnitRenderer {
     const day = g.env?.daylight ?? 1;
     this._rim.copy(this._rimNight).lerp(this._rimDay, day);
     for (const m of this.models.values()) m.setRim(this._rim);
+    // kingdom palette (slot = 1 + id % 15)
+    for (const k of g.civ?.kingdoms || []) {
+      if (!k || k.id == null || k.color == null) continue;
+      const slot = 1 + (k.id % 15);
+      if (this._kingHex[slot] !== k.color) {
+        this._kingHex[slot] = k.color;
+        this._kingPal[slot].setHex(k.color).convertSRGBToLinear();
+      }
+    }
+    // readability: creatures grow and gain a kingdom-coloured rim as the camera pulls back
+    const camDist = g.cameraRig.cur?.dist ?? 40;
+    const boost = Math.min(2.6, Math.max(1, 0.55 + camDist / 28));
+    this.boost = boost;
+    this._outlineU.value = smoothstep(14, 60, camDist) * 0.6;
     for (const m of this.models.values()) m.begin();
     for (const m of this.lo.values()) m.begin();
     const ov = this.overlays;
@@ -385,7 +423,7 @@ export class UnitRenderer {
       const def = u.def;
       // scale: species size, individual variation, growth
       const child = u.age < def.maturity ? 1 - u.age / Math.max(0.01, def.maturity) : 0;
-      let scale = def.size * (u.scale || 1) * rs.size;
+      let scale = def.size * (u.scale || 1) * rs.size * (def.kind === 'monster' ? 1 + (boost - 1) * 0.35 : boost);
       if (def.kind === 'humanoid') scale *= 1 - 0.42 * child;
       else if (child > 0) scale *= 1 - 0.5 * Math.pow(child, 0.8);
       const ix = u.px + (u.x - u.px) * alpha,
@@ -494,7 +532,7 @@ export class UnitRenderer {
         ov.ground.add(ix, gy, iz, md.radius * 1.3 * scale * (1.4 - altK * 0.4), 0, 1, 0, DECAL.shadow, 0.02, 0.02, 0.05, 0.38 * altK);
       }
       if (lod < 0.999) {
-        const dsz = Math.max(0.28, (4.2 / ppu)) * (def.kind === 'humanoid' ? 1 : 0.85);
+        const dsz = Math.max(0.3, 6 / ppu) * (def.kind === 'humanoid' ? 1 : 0.8);
         const c = rs.dot || [0.8, 0.8, 0.8];
         ov.ground.add(ix, Math.max(ground, SEA_LEVEL), iz, dsz, 0, 1, 0, DECAL.dot, c[0], c[1], c[2], 1 - lod);
       }
@@ -577,7 +615,7 @@ export class UnitRenderer {
       this.corpses[j++] = c;
       const def = u.def;
       const child = u.age < def.maturity ? 1 - u.age / Math.max(0.01, def.maturity) : 0;
-      let scale = def.size * (u.scale || 1) * rs.size;
+      let scale = def.size * (u.scale || 1) * rs.size * (def.kind === 'monster' ? 1 + ((this.boost || 1) - 1) * 0.35 : this.boost || 1);
       if (def.kind === 'humanoid') scale *= 1 - 0.42 * child;
       else if (child > 0) scale *= 1 - 0.5 * Math.pow(child, 0.8);
       const ground = Math.max(w.heightAt(c.x, c.z), def.habitat === 'water' ? -99 : -99);

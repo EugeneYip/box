@@ -41,7 +41,8 @@ export const humanModel = {
     gold: { color: 0xf2c14e, rough: 0.28, metal: 1 },
     eye: { color: 0x1a120e, rough: 0.2 },
     straw: { color: 0xe6c870, noise: 'cloth', rough: 0.9 },
-    band: { color: 0xb8402a, rough: 0.7 },
+    band: { src: 'K', color: 0xb8402a, rough: 0.7 },
+    sash: { src: 'K', color: 0x5b3a26, noise: 'cloth', rough: 0.75 },
     stone: { color: 0x9a968f, noise: 'stone', rough: 0.9 },
     burlap: { color: 0xbca06c, noise: 'cloth', rough: 0.95 },
     white: { color: 0xf2efe8, rough: 0.6 },
@@ -71,11 +72,12 @@ export const humanModel = {
     const robe = [[0.0, 0.012], [0.104, 0.012], [0.1, 0.05], [0.088, 0.14], [0.074, 0.23], [0.074, 0.3], [0.08, 0.34], [0.076, 0.37], [0.056, 0.392], [0.03, 0.405], [0.0, 0.41]];
     B.with({ bone: 'torso', slot: 'outfit' }, () => {
       B.add(P.lathe(tunic, 14), { scl: [1, 1, 0.82], mat: 'cloth', opt: 0 });
-      B.add(P.torus(0.07, 0.009, 5, 16), { pos: [0, 0.245, 0], rot: [Math.PI / 2, 0, 0], scl: [1, 0.82, 1], mat: 'leather', opt: 0 });
+      B.add(P.torus(0.071, 0.013, 5, 16), { pos: [0, 0.245, 0], rot: [Math.PI / 2, 0, 0], scl: [1, 0.82, 1], mat: 'sash', opt: 0 });
+      B.add(P.sphere(1, 6, 4), { pos: [0.045, 0.232, 0.05], scl: [0.014, 0.03, 0.008], rot: [0.2, 0, -0.3], mat: 'sash', opt: 0, minor: true });
       B.add(P.box(0.024, 0.018, 0.008), { pos: [0, 0.245, 0.059], mat: 'gold', opt: 0, minor: true });
       B.add(P.torus(0.085, 0.006, 4, 16), { pos: [0, 0.153, 0], rot: [Math.PI / 2, 0, 0], scl: [1, 0.82, 1], mat: 'pants', opt: 0, minor: true });
       B.add(P.lathe(dress, 14), { scl: [1, 1, 0.82], mat: 'cloth', opt: 1 });
-      B.add(P.torus(0.068, 0.012, 5, 16), { pos: [0, 0.243, 0], rot: [Math.PI / 2, 0, 0], scl: [1, 0.82, 1], mat: 'pants', opt: 1 });
+      B.add(P.torus(0.069, 0.014, 5, 16), { pos: [0, 0.243, 0], rot: [Math.PI / 2, 0, 0], scl: [1, 0.82, 1], mat: 'sash', opt: 1 });
       B.add(P.slab([[-0.05, 0.09], [0.05, 0.09], [0.042, 0.235], [-0.042, 0.235]], 0.006), { pos: [0, 0, 0.074], rot: [-0.11, 0, 0], mat: 'linen', opt: 1 });
       B.add(P.lathe(robe, 14), { scl: [1, 1, 0.84], mat: 'cloth', opt: 2 });
       B.add(P.torus(0.102, 0.008, 4, 18), { pos: [0, 0.018, 0], rot: [Math.PI / 2, 0, 0], scl: [1, 0.84, 1], mat: 'gold', opt: 2 });

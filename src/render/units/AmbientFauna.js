@@ -364,7 +364,7 @@ export class AmbientFauna {
       const bm = this.r.pick(model, px * (gull ? 0.5 : 0.22) * 3);
       this._e.set(b.landed ? 0 : -b.vy * 0.15, b.heading, b.landed ? 0 : Math.max(-0.7, Math.min(0.7, b.bank)), 'YXZ');
       this._q.setFromEuler(this._e);
-      const s = b.landed && day < 0.15 ? 0.0001 : 1;
+      const s = b.landed && day < 0.15 ? 0.0001 : Math.max(1, 1 + ((this.r.boost || 1) - 1) * 0.6);
       this._m.compose(this._p.set(b.x, b.y + (b.landed ? 0.035 * (gull ? 1.3 : 0.55) : 0), b.z), this._q, this._s.set(s, s, s));
       bm.write(this._m, P, b.ap, 0, 1, 0);
     }
@@ -459,7 +459,7 @@ export class AmbientFauna {
       const fm = this.r.pick(model, ctx.pixelsPerUnit(f.x, y, f.z) * 0.25 * f.size * 2);
       this._e.set(pitch, f.heading, 0, 'YXZ');
       this._q.setFromEuler(this._e);
-      const sc = f.size * 1.25;
+      const sc = f.size * 1.25 * Math.max(1, 1 + ((this.r.boost || 1) - 1) * 0.5);
       this._m.compose(this._p.set(f.x, y, f.z), this._q, this._s.set(sc, sc, sc));
       fm.write(this._m, P, f.ap, 0, 1, 0);
     }

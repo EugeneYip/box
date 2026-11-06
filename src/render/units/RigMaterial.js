@@ -8,13 +8,14 @@ import * as THREE from 'three';
 //   iCol0           colour A (rgb) + hit flash (a)
 //   iCol1           colour B (rgb) + fade (a, dithered; 1 = opaque)
 //   iCol2           colour C (rgb) + secondary palette index + bless glow (a = idx + glow*0.9)
-//   iVar            variant options (3 slots per float, base 16) and a seed (w)
+//   iVar            variant options (3 slots per float, base 16); w = kingdom slot + seed
+//                   (integer part indexes uKing, the shared kingdom palette; 0 = none)
 // Bones are baked into the shader as constants: rigid bones rotate about a
 // pivot (Z, then X, then Y, optional uniform scale); spine bones bend the mesh
 // along a travelling wave (serpents, fish, wyrms). Children inherit parents.
 
 export const NOISE = { none: 0, cloth: 1, wool: 2, fur: 3, spots: 4, stone: 5, scales: 6, counter: 7, socks: 8, feather: 9 };
-const SRC = { A: 1, B: 2, C: 3, D: 4 };
+const SRC = { A: 1, B: 2, C: 3, D: 4, K: 5 };
 export const MAX_MATS = 40;
 
 const f = (v) => (Number.isInteger(v) ? v.toFixed(1) : String(v));
@@ -135,6 +136,8 @@ export function makeRigMaterial(model, opts = {}) {
     uRim: { value: model.rim ?? 0.16 },
     uRimCol: { value: new THREE.Color(1, 0.95, 0.85) },
     uBump: { value: model.bump ?? 1 },
+    uKing: { value: Array.from({ length: 16 }, () => new THREE.Color(0.5, 0.5, 0.5)) },
+    uOutline: { value: 0 },
   };
   const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8, metalness: 0 });
   mat.userData.rigUniforms = uniforms;
@@ -151,18 +154,22 @@ uniform vec4 uMatA[${MAX_MATS}];
 uniform vec4 uMatB[${MAX_MATS}];
 uniform vec4 uMatC[${MAX_MATS}];
 uniform vec3 uSec[8];
+uniform vec3 uKing[16];
 varying vec3 vRigCol;
 varying vec3 vRigCol2;
 varying vec4 vRigMat;
 varying vec3 vRestPos;
 varying vec3 vRestN;
 varying vec4 vFx;
+varying vec4 vKing;
 vec3 rigSrc(float src, vec3 c) {
   if (src < 0.5) return c;
   if (src < 1.5) return iCol0.rgb;
   if (src < 2.5) return iCol1.rgb;
   if (src < 3.5) return iCol2.rgb;
-  return uSec[int(mod(floor(iCol2.a + 0.001), 8.0))];
+  if (src < 4.5) return uSec[int(mod(floor(iCol2.a + 0.001), 8.0))];
+  float ks = floor(iVar.w + 0.0001);
+  return ks > 0.5 ? uKing[int(ks)] : c;
 }`,
       )
       .replace(
@@ -179,7 +186,9 @@ vec4 rmc = uMatC[rmi];
 vRigCol = rigSrc(rma.w, rma.rgb);
 vRigCol2 = rigSrc(rmc.w, rmc.rgb);
 vRigMat = uMatB[rmi];
-vFx = vec4(iCol0.a, iCol1.a, iVar.w, fract(iCol2.a) / 0.9);`,
+float rks = floor(iVar.w + 0.0001);
+vKing = rks > 0.5 ? vec4(uKing[int(rks)], 1.0) : vec4(0.0);
+vFx = vec4(iCol0.a, iCol1.a, fract(iVar.w), fract(iCol2.a) / 0.9);`,
       )
       .replace('#include <begin_vertex>', 'vec3 transformed = rigPos;');
 
@@ -193,6 +202,8 @@ varying vec3 vRigCol2;
 varying vec4 vRigMat;
 varying vec3 vRestPos;
 varying vec3 vRestN;
+varying vec4 vKing;
+uniform float uOutline;
 uniform float uAoH;
 uniform float uAoMin;
 uniform float uRim;
@@ -253,7 +264,11 @@ normal = rigPerturb(-vViewPosition, normal, vec2(dFdx(rigBumpH), dFdy(rigBumpH))
 float rndv = clamp(dot(normal, normalize(vViewPosition)), 0.0, 1.0);
 float rrim = pow(1.0 - rndv, 3.0);
 totalEmissiveRadiance += vRigCol * vRigMat.z;
+// readability outline: a kingdom-coloured (or warm) rim that strengthens with distance
+vec3 rimC = mix(uRimCol, vKing.rgb * 1.5 + 0.12, vKing.a);
+float rimW = pow(1.0 - rndv, 2.2);
 totalEmissiveRadiance += uRimCol * rrim * uRim;
+totalEmissiveRadiance += rimC * rimW * uOutline * (0.35 + 0.85 * vKing.a);
 totalEmissiveRadiance += vec3(1.0, 0.72, 0.22) * vFx.w * (0.18 + 1.1 * rrim);
 totalEmissiveRadiance += vec3(0.9, 0.1, 0.04) * vFx.x * 0.5;`,
       );
@@ -277,7 +292,7 @@ varying vec4 vFx;`,
 vec3 transformed = vec3(position);
 rigApply(transformed, rigN);
 if (rigHidden()) transformed = vec3(0.0, -60.0, 0.0);
-vFx = vec4(iCol0.a, iCol1.a, iVar.w, 0.0);`,
+vFx = vec4(iCol0.a, iCol1.a, fract(iVar.w), 0.0);`,
       );
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>\n${FRAG_COMMON}`)
