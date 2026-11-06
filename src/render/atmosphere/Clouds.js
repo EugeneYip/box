@@ -13,6 +13,7 @@ import { mulberry32 } from './util.js';
 
 const CLOUD_VERT = /* glsl */ `
 attribute vec4 aCloud;   // x: fade, y: base height (world), z: thickness, w: seed
+uniform float uOpacity;
 varying vec3 vN;
 varying vec3 vW;
 varying float vFade;
@@ -35,7 +36,9 @@ void main() {
   vSeed = aCloud.w;
   gl_Position = projectionMatrix * viewMatrix * wp;
   #ifdef PREPASS
-  if (aCloud.x < 0.03) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+  // only near-opaque clouds claim depth: faint (zoom-faded or dissolving)
+  // clouds must not hide rain, lightning or particles drawn after them
+  if (aCloud.x * uOpacity < 0.5) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
   #endif
 }
 `;

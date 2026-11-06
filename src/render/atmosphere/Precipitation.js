@@ -19,6 +19,7 @@ uniform float uLen;
 uniform float uWidth;
 uniform float uPix;
 uniform float uAmount;
+uniform float uNear;
 varying float vA;
 varying vec2 vQ;
 void main() {
@@ -36,7 +37,7 @@ void main() {
   float w = max(uWidth, minW);
   p += side * position.x * w;
   vec3 e = smoothstep(vec3(0.5), vec3(0.36), abs(rel));
-  vA = e.x * e.y * e.z * isOn * smoothstep(0.8, 4.0, dist) * clamp(uWidth / minW, 0.35, 1.0);
+  vA = e.x * e.y * e.z * isOn * smoothstep(uNear * 0.4, uNear, dist) * clamp(uWidth / minW, 0.35, 1.0);
   vQ = position.xy;
   gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
 }
@@ -64,6 +65,7 @@ uniform float uSize;
 uniform float uPix;
 uniform float uAmount;
 uniform float uTime;
+uniform float uNear;
 varying float vA;
 varying vec2 vQ;
 void main() {
@@ -77,11 +79,11 @@ void main() {
   vec4 mv = viewMatrix * vec4(c, 1.0);
   float dist = -mv.z;
   float s = uSize * (0.6 + 0.8 * fract(aSeed.w * 7.31));
-  float minS = dist * uPix * 1.6;
+  float minS = dist * uPix * 1.8;
   float sz = max(s, minS);
   mv.xy += position.xy * sz;
   vec3 e = smoothstep(vec3(0.5), vec3(0.36), abs(rel));
-  vA = e.x * e.y * e.z * isOn * smoothstep(0.6, 3.0, dist) * clamp(s / minS, 0.3, 1.0);
+  vA = e.x * e.y * e.z * isOn * smoothstep(uNear * 0.4, uNear, dist) * clamp(s / minS, 0.3, 1.0);
   vQ = position.xy;
   gl_Position = projectionMatrix * mv;
 }
@@ -160,11 +162,12 @@ export class Precipitation {
       uAmount: { value: 0 },
       uColor: { value: new THREE.Color(0.7, 0.75, 0.8) },
       uOpacity: { value: 0.4 },
+      uNear: { value: 4 },
     });
     this.rainU = { ...common(), uVel: { value: new THREE.Vector3(0.2, -1, 0.1) }, uLen: { value: 0.8 }, uWidth: { value: 0.02 } };
     this.rain = new THREE.Mesh(
       makeQuadInstances(rainN, 77),
-      new THREE.ShaderMaterial({ name: 'Rain', uniforms: this.rainU, vertexShader: RAIN_VERT, fragmentShader: RAIN_FRAG, transparent: true, depthWrite: false }),
+      new THREE.ShaderMaterial({ name: 'Rain', uniforms: this.rainU, vertexShader: RAIN_VERT, fragmentShader: RAIN_FRAG, transparent: true, depthWrite: false, side: THREE.DoubleSide }),
     );
     // billboard corners for snow: remap rain quad (y 0..1) to (-1..1)
     const sg = makeQuadInstances(snowN, 91);
@@ -172,7 +175,7 @@ export class Precipitation {
     this.snowU = { ...common(), uSize: { value: 0.06 }, uTime: { value: 0 } };
     this.snow = new THREE.Mesh(
       sg,
-      new THREE.ShaderMaterial({ name: 'Snow', uniforms: this.snowU, vertexShader: SNOW_VERT, fragmentShader: SNOW_FRAG, transparent: true, depthWrite: false }),
+      new THREE.ShaderMaterial({ name: 'Snow', uniforms: this.snowU, vertexShader: SNOW_VERT, fragmentShader: SNOW_FRAG, transparent: true, depthWrite: false, side: THREE.DoubleSide }),
     );
 
     // ground splashes (close-up only)
@@ -245,20 +248,21 @@ export class Precipitation {
       const u = this.rainU;
       const fall = 14 + D * 1.15;
       const wind = env.wind;
-      const slant = 0.18 + 0.55 * wind.strength;
+      const slant = 0.08 + 0.22 * wind.strength;
       u.uVel.value.set(wind.x * fall * slant, -fall, wind.z * fall * slant);
       this.rainOffset.addScaledVector(u.uVel.value, dt);
       u.uBox.value.set(boxW, boxH, boxW);
       wrapOffset(this.rainOffset, u.uBox.value);
       u.uOffset.value.copy(this.rainOffset);
       u.uCenter.value.copy(center);
-      u.uLen.value = 0.5 + D * 0.055;
-      u.uWidth.value = 0.012 + D * 0.0006;
+      u.uLen.value = 0.35 + D * 0.03;
+      u.uWidth.value = 0.008 + D * 0.0003;
+      u.uNear.value = 2 + D * 0.3;
       u.uPix.value = pix;
       u.uAmount.value = 0.15 + 0.85 * rain;
       const c = u.uColor.value;
-      c.setRGB(0.62, 0.68, 0.76).multiplyScalar(0.45 + 0.6 * ambient).addScalar(flash * 0.8);
-      u.uOpacity.value = (0.22 + 0.22 * rain) * (D < 40 ? 1.15 : 1);
+      c.setRGB(0.6, 0.66, 0.74).multiplyScalar(0.4 + 0.5 * ambient).addScalar(flash * 0.25);
+      u.uOpacity.value = 0.1 + 0.12 * rain;
     }
 
     // ---- splashes ------------------------------------------------------
@@ -316,12 +320,13 @@ export class Precipitation {
       wrapOffset(this.snowOffset, u.uBox.value);
       u.uOffset.value.copy(this.snowOffset);
       u.uCenter.value.copy(center);
-      u.uSize.value = 0.05 + D * 0.0022;
+      u.uSize.value = 0.06 + D * 0.0026;
+      u.uNear.value = 2 + D * 0.32;
       u.uPix.value = pix;
       u.uTime.value = time;
       u.uAmount.value = 0.1 + 0.9 * snow;
       u.uColor.value.setRGB(0.92, 0.95, 1.0).multiplyScalar(0.35 + 0.75 * ambient).addScalar(flash * 0.6);
-      u.uOpacity.value = 0.55 + 0.3 * snow;
+      u.uOpacity.value = 0.42 + 0.2 * snow;
     }
   }
 }

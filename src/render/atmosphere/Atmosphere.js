@@ -152,7 +152,10 @@ export class Atmosphere {
   strike(x, z, opts = {}) {
     const world = this.game.world;
     const y = world.surfaceAt(x, z);
-    const bolt = this.lightning.spawn(x, y, z, { intensity: opts.intensity ?? 1 });
+    // start under the camera so the whole bolt is in frame from the god view
+    const camY = this.game.cameraRig.camera.position.y;
+    const top = y + Math.min(50, Math.max(12, camY * 0.72 - y));
+    const bolt = this.lightning.spawn(x, y, z, { intensity: opts.intensity ?? 1, top });
     this._boltFlash(bolt, opts.sound !== false);
     return bolt;
   }
@@ -251,7 +254,7 @@ export class Atmosphere {
     this.hemi.intensity = M.hemiIntensity * (1 + flash * 0.6);
     this.flashLight.intensity = flash * 3.2;
     this.fitShadow(camera, M.keyDir);
-    game.scene.environmentIntensity = 0.62 + 0.12 * mix.overcast + 0.1 * W.wetness;
+    game.scene.environmentIntensity = (0.62 + 0.12 * mix.overcast + 0.1 * W.wetness) * (1 - 0.35 * mix.storm);
 
     // ---- sky, clouds, precipitation ----------------------------------------
     this.sky.sync(M, mix, dt, time);
@@ -432,9 +435,10 @@ export class Atmosphere {
     }
     P.fogColor.copy(M.horizon).lerp(M.groundHaze, 0.4);
 
-    P.bloom.threshold = 1.15 / Math.max(0.5, M.exposure);
+    // high threshold by day (only true highlights glow), lower at night for lamps
+    P.bloom.threshold = (1.7 - 0.7 * M.night) / Math.max(0.5, M.exposure);
     P.bloom.smoothing = 0.4;
-    P.bloom.intensity = 0.5 + 0.2 * M.night + 0.3 * flash;
+    P.bloom.intensity = 0.42 + 0.25 * M.night + 0.3 * flash;
 
     // depth of field: focus on the ground at the screen centre
     let focus = dist;

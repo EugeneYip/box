@@ -216,13 +216,13 @@ export class SkyModel {
 
     this.hemiSky.copy(this._k.hemiS);
     this.hemiGround.copy(this._k.hemiG);
-    this.hemiIntensity = n.hemiI * 1.3 * (1 + 0.18 * oc - 0.25 * storm);
+    this.hemiIntensity = n.hemiI * 1.3 * (1 + 0.1 * oc - 0.45 * storm - 0.12 * w.rain);
     // overcast skylight is greyer
     const hl = this.hemiSky.r * 0.3 + this.hemiSky.g * 0.59 + this.hemiSky.b * 0.11;
     this.hemiSky.lerp(this._tmp.setRGB(hl * 0.96, hl, hl * 1.07), oc * 0.6);
     if (w.snow > 0) this.hemiGround.lerp(this._tmp.setRGB(0.55, 0.6, 0.68), w.snow * 0.5);
 
-    this.exposure = n.exp * (1 + 0.06 * oc) * (1 - 0.1 * storm);
+    this.exposure = n.exp * (1 - 0.18 * storm);
 
     // ---- visible discs -----------------------------------------------
     this.sunVis = smooth(-0.03, 0.02, s) * (1 - smooth(0.25, 0.75, oc + w.fog * 0.6));

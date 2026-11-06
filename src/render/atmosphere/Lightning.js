@@ -29,7 +29,7 @@ void main() {
   float e = abs(vEdge);
   float core = 1.0 - smoothstep(0.35, 1.0, e);
   float halo = pow(1.0 - e, 2.0);
-  float a = mix(core * 3.0, halo * 0.22, vGlow) * vBright;
+  float a = mix(core * 4.0, halo * 0.3, vGlow) * vBright;
   if (a < 0.002) discard;
   vec3 c = mix(vec3(1.0), uColor, vGlow * 0.8 + 0.15);
   gl_FragColor = vec4(c * a, 1.0);
@@ -75,6 +75,7 @@ export class Lightning {
         fragmentShader: FRAG,
         transparent: true,
         depthWrite: false,
+        side: THREE.DoubleSide,
         blending: THREE.AdditiveBlending,
       }),
     );
@@ -148,7 +149,7 @@ export class Lightning {
     let v = 0;
     for (const s of b.strokes) {
       const t = b.age - s;
-      if (t >= 0) v = Math.max(v, Math.exp(-t * 14) * (s === 0 ? 1 : 0.8));
+      if (t >= 0) v = Math.max(v, Math.exp(-t * 7) * (s === 0 ? 1 : 0.8));
     }
     v *= 1 - THREE.MathUtils.smoothstep(b.age, b.life * 0.6, b.life);
     return v * b.intensity;

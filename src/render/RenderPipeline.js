@@ -178,7 +178,7 @@ export class RenderPipeline {
         luminanceThreshold: 1.0,
         luminanceSmoothing: 0.35,
         intensity: 0.6,
-        radius: 0.72,
+        radius: 0.6,
         levels: t.bloomLevels,
       });
       lens.push(p.bloom);
