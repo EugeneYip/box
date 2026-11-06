@@ -47,12 +47,16 @@ void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor)
     if (dot(nrm, dir) > 0.0) nrm = -nrm;
     float valid = 1.0 - smoothstep(dist * 0.01, dist * 0.03, max(length(dx), length(dy)));
     float up = smoothstep(0.35, 0.85, nrm.y);
-    float fres = 0.04 + 0.96 * pow(1.0 - max(dot(nrm, -dir), 0.0), 5.0);
-    vec3 r = reflect(dir, nrm);
+    // Depth-derived normals are faceted per terrain triangle, so a sharp
+    // glint would light up whole tiles. Use a heavily smoothed normal and a
+    // broad, dim sheen instead.
+    vec3 ns = normalize(mix(vec3(0.0, 1.0, 0.0), nrm, 0.25));
+    float fres = 0.04 + 0.96 * pow(1.0 - max(dot(ns, -dir), 0.0), 5.0);
+    vec3 r = reflect(dir, ns);
     vec3 refl = skyBase(normalize(vec3(r.x, max(r.y, 0.03), r.z)));
-    float glint = pow(max(dot(r, uLightDir), 0.0), 90.0) * 0.5 + pow(max(dot(r, uLightDir), 0.0), 12.0) * 0.04;
-    col = mix(col, col * 0.86, uWet * up * valid * 0.6); // darker when soaked
-    col += uWet * up * valid * (refl * fres * 0.55 + uLightCol * glint);
+    float sheen = pow(max(dot(r, uLightDir), 0.0), 8.0) * 0.03;
+    col = mix(col, col * 0.88, uWet * up * valid * 0.5); // darker when soaked
+    col += uWet * up * valid * (refl * fres * 0.4 + uLightCol * sheen);
   }
 
   // ---- ground mist (exponential height fog, integrated along the ray) ---
