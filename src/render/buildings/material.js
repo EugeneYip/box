@@ -20,8 +20,10 @@ export function createBuildingMaterial(uniforms, { clip = false } = {}) {
         `#include <common>
 attribute float aTint;
 attribute float aGlow;
+attribute vec2 aRoof;
 attribute vec3 iColor;
 attribute vec4 iState;
+varying vec2 vRoof;
 varying float vTint;
 varying float vGlow;
 varying vec3 vKCol;
@@ -31,7 +33,7 @@ varying vec3 vLocal;`,
       .replace(
         '#include <begin_vertex>',
         `#include <begin_vertex>
-vTint = aTint; vGlow = aGlow; vKCol = iColor; vState = iState; vLocal = position;`,
+vTint = aTint; vGlow = aGlow; vKCol = iColor; vState = iState; vLocal = position; vRoof = aRoof;`,
       );
     sh.fragmentShader = sh.fragmentShader
       .replace(
@@ -44,12 +46,44 @@ varying float vGlow;
 varying vec3 vKCol;
 varying vec4 vState;
 varying vec3 vLocal;
+varying vec2 vRoof;
 float wsHash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }`,
       )
       .replace(
         '#include <color_fragment>',
         `#include <color_fragment>
-${clip ? 'if (vLocal.y > vState.w) discard;' : ''}
+${clip ? 'if (vLocal.y > vState.w) discard; if (!gl_FrontFacing) diffuseColor.rgb = vec3(0.2, 0.135, 0.085);' : ''}
+// roof surface detail: courses, tiles, slate, turf, eave shadow, weathering
+if (vRoof.x > 0.5) {
+  float kind = vRoof.x;
+  float v = vRoof.y;
+  float along = vLocal.x * 0.8 + vLocal.z * 0.6;
+  float courses = kind < 1.5 ? 8.0 : kind < 2.5 ? 11.0 : kind < 3.5 ? 13.0 : 5.0;
+  float row = v * courses;
+  float fr = fract(row);
+  float ri = floor(row);
+  float lip = mix(0.74, 1.0, smoothstep(0.0, 0.3, fr));
+  float m = 1.0;
+  if (kind < 1.5) {
+    float st = wsHash(vec3(floor(along * 46.0), ri, 1.0));
+    float st2 = wsHash(vec3(floor(along * 17.0 + 0.5), ri, 4.0));
+    m = lip * (0.88 + 0.1 * st + 0.06 * st2);
+  } else if (kind < 3.5) {
+    float cols = kind < 2.5 ? 9.0 : 12.0;
+    float c = along * cols + mod(ri, 2.0) * 0.5;
+    float fc = fract(c);
+    float joint = smoothstep(0.0, 0.07, fc) * smoothstep(1.0, 0.93, fc);
+    float tv = wsHash(vec3(floor(c), ri, 2.0 + vState.z));
+    m = lip * (0.8 + 0.2 * joint) * (0.88 + 0.2 * tv);
+  } else {
+    float tv = wsHash(vec3(floor(along * 12.0), floor(v * 9.0), 3.0));
+    m = 0.84 + 0.22 * tv;
+  }
+  m *= mix(0.6, 1.0, smoothstep(0.0, 0.09, v));
+  float wear = wsHash(vec3(floor(along * 2.5), floor(v * 3.0), vState.z * 9.0));
+  diffuseColor.rgb *= m * (0.92 + 0.1 * wear);
+  if (kind < 1.5 || kind > 3.5) diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.8, 0.92, 0.62), 0.3 * (1.0 - v) * wear);
+}
 {
   float lum = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
   vec3 kc = vKCol;

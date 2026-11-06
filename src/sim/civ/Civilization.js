@@ -74,6 +74,8 @@ export class Civilization {
     this._seenFrame = -1;
     this._ticksSinceFrame = 0;
     this._famineNote = new Map();
+    this._noteT = new Map();
+    this.battles = [];
     this._computeLand();
   }
 
@@ -337,7 +339,7 @@ export class Civilization {
       let ruler = null;
       for (const u of v.members) if (u.age >= ADULT_AGE + 2 && (!ruler || u.age > ruler.age)) ruler = u;
       if (ruler) this.crown(k, ruler);
-      if (!opts.silent) g.notify(`The ${k.name} is founded at ${v.name}.`, 'good', { x: v.cx, z: v.cz });
+      if (!opts.silent) this._note(`The ${k.name} is founded at ${v.name}.`, 'good', { x: v.cx, z: v.cz });
     }
     this._assignJobs(v);
     this._territory();
@@ -475,9 +477,9 @@ export class Civilization {
     const kk = this.kingdoms[nv.kingdom];
     if (independent && kk) {
       kk.parent = exp.kingdom;
-      kk.founded = this.game.time.total - YEAR * 3;
-      this.game.notify(`Settlers from ${from?.name || 'afar'} strike out on their own and found the ${kk.name}.`, 'good', { x: nv.cx, z: nv.cz });
-    } else this.game.notify(`Settlers from ${from?.name || 'afar'} found the village of ${nv.name}${kk ? ' for the ' + kk.name : ''}.`, 'good', { x: nv.cx, z: nv.cz });
+      this._note(`Settlers from ${from?.name || 'afar'} strike out on their own and found the ${kk.name}.`, 'good', { x: nv.cx, z: nv.cz });
+      this._noteT.set('settle' + exp.kingdom, this.game.time.total);
+    } else this._note(`Settlers from ${from?.name || 'afar'} found the village of ${nv.name}${kk ? ' for the ' + kk.name : ''}.`, 'good', { x: nv.cx, z: nv.cz }, 'settle' + nv.kingdom, 150);
   }
 
   _abortExpedition(exp) {
@@ -616,6 +618,19 @@ export class Civilization {
     const golden = now < (this.kingdoms[v.kingdom]?.goldenUntil || 0);
     const eat = ((adults * 2 + kids * 1.3) / YEAR) * dt;
     v.food -= eat;
+    // upkeep: firewood for every hearth and timber to keep roofs mended
+    const nb = v.buildings.length;
+    v.wood = Math.max(0, v.wood - ((pop * 0.35 + nb * 0.12) / YEAR) * dt);
+    // storage: what does not fit in the stores rots or is carted off
+    v.woodCap = 160 + (v.hasWorkshop ? 160 : 0) + (v.hall ? v.hall.level * 80 : 0) + v.tier * 80;
+    v.stoneCap = 120 + (v.hasWorkshop ? 140 : 0) + (v.hall ? v.hall.level * 60 : 0) + v.tier * 80;
+    if (v.wood > v.woodCap) v.wood = v.woodCap;
+    if (v.stone > v.stoneCap) v.stone = v.stoneCap;
+    // gold: markets trade, road links carry merchants, soldiers draw pay
+    const markets = v.buildings.reduce((n, b) => n + (b.alive && b.type === 'market' && !b.constructing ? 1 : 0), 0);
+    v.gold += ((markets * (0.8 + pop * 0.02) + (v.tradeLinks || 0) * 0.35) / YEAR) * dt;
+    v.gold = Math.max(0, v.gold - (((v.jobCount.soldier || 0) * 0.04) / YEAR) * dt);
+    v.gold = Math.min(v.gold, 60 + v.tier * 60);
     v.foodCap = Math.max(v.foodCap, 60);
     if (v.food > v.foodCap) v.food = v.foodCap;
     if (v.food <= 0) {
@@ -625,10 +640,13 @@ export class Civilization {
         const last = this._famineNote.get(v.id) || -999;
         if (now - last > 90) {
           this._famineNote.set(v.id, now);
-          g.notify(`Famine strikes ${v.name}.`, 'bad', { x: v.cx, z: v.cz });
+          this._note(`Famine strikes ${v.name}.`, 'bad', { x: v.cx, z: v.cz }, 'famine' + v.id, 300);
         }
       }
     } else if (v.food > pop * 0.6 + 3) v.starving = false;
+    // famine strikes hard but never wipes out a settlement: relief caravans and
+    // foraging keep the last families alive
+    if (v.starving && pop <= 8) v.food += (pop * 2.2 / YEAR) * dt;
 
     // crops ripen (farmers plant and harvest; growth is helped along here)
     const rain = g.env.weather?.type === 'rain' || g.env.weather?.type === 'storm';
@@ -690,7 +708,7 @@ export class Civilization {
     else if (v.tier > 0 && pop < 8 + v.tier * 8) v.tier--;
     if (v.tier > prevTier) {
       const k = this.kingdoms[v.kingdom];
-      g.notify(`${v.name} has grown into a ${v.tier === 1 ? 'town' : 'city'}${k ? ' of the ' + k.name : ''}.`, 'good', { x: v.cx, z: v.cz });
+      this._note(`${v.name} has grown into a ${v.tier === 1 ? 'town' : 'city'}${k ? ' of the ' + k.name : ''}.`, 'good', { x: v.cx, z: v.cz }, 'tier' + v.id + v.tier, 600);
     }
   }
 
@@ -718,7 +736,7 @@ export class Civilization {
         else if (k.capital === v.id) this._chooseCapital(k);
       }
     }
-    if (why !== 'silent') this.game.notify(`${v.name} has been ${why === 'razed' ? 'razed and abandoned' : 'abandoned'}.`, 'bad', { x: v.cx, z: v.cz });
+    if (why !== 'silent' && v.pop0 !== 0) this._note(`${v.name} has been ${why === 'razed' ? 'razed and abandoned' : 'abandoned'}.`, 'bad', { x: v.cx, z: v.cz });
     this.version++;
     this.colorVersion++;
   }
@@ -758,7 +776,8 @@ export class Civilization {
     const stoneFull = v.stone > 60 + v.tier * 120;
     give('farmer', v.fieldCount ? Math.max(1, Math.min(Math.ceil(v.fieldCount / (foodFull ? 14 : 9)), n * 0.45)) : 0);
     give('fisher', v.docks ? Math.min(v.docks * 2, 1 + n * 0.15) : foodLow && n >= 5 && v.coastal ? 1 : 0);
-    if (atWar) give('soldier', Math.max(2, n * 0.28) + (v.hasBarracks ? 3 : 0));
+    const drafting = this.game.time.total - (v.draft ?? -99) < 45;
+    if (atWar) give('soldier', Math.max(3, n * (drafting ? 0.45 : 0.3)) + (v.hasBarracks ? 3 : 0));
     give('builder', sites ? Math.min(Math.max(1, Math.ceil(sites * 1.1)), 1 + Math.floor(n / 6)) : repairs ? 1 : 0);
     give('woodcutter', woodFull ? (n >= 6 ? 1 : 0) : v.wood < 40 + v.tier * 30 ? 1 + Math.floor(n / 8) : n >= 4 ? 1 + Math.floor(n / 16) : 0);
     if (!atWar && n >= 6) give('soldier', Math.max(1, n * 0.09) + (v.hasBarracks ? 2 : 0));
@@ -1023,9 +1042,7 @@ export class Civilization {
     this.version++;
     const v = this.villages[b.village];
     if (v) this._updateVillageDerived(v);
-    if (['temple', 'market', 'barracks', 'docks', 'windmill'].includes(b.type) && v) {
-      this.game.notify(`${v.name} completes its ${buildingLabel(b).toLowerCase()}.`, 'info', { x: b.x, z: b.z });
-    }
+    if (b.type === 'temple' && v) this._note(`${v.name} completes its ${buildingLabel(b).toLowerCase()}.`, 'info', { x: b.x, z: b.z }, 'temple' + v.id, 600);
     this._fx('sparkle', b.x, b.z, 0.8);
   }
 
@@ -1039,7 +1056,7 @@ export class Civilization {
     this.version++;
     const v = this.villages[b.village];
     if (v) this._updateVillageDerived(v);
-    if (b.type === 'hall' && v) this.game.notify(`${v.name} raises a ${buildingLabel(b).toLowerCase()}.`, 'good', { x: b.x, z: b.z });
+    if (b.type === 'hall' && v) this._note(`${v.name} raises a ${buildingLabel(b).toLowerCase()}.`, 'good', { x: b.x, z: b.z });
     this._fx('sparkle', b.x, b.z, 1);
   }
 
@@ -1092,7 +1109,7 @@ export class Civilization {
     this._fx('debris', b.x, b.z, 1.2, true);
     this._fx('dust', b.x, b.z, 1.6, true);
     this._fx('smoke', b.x, b.z, 1.2, true);
-    if (b.type === 'hall' && v && v.alive && !b.abandoned) this.game.notify(`The ${buildingLabel(b).toLowerCase()} of ${v.name} has been destroyed!`, 'bad', { x: b.x, z: b.z });
+    if (b.type === 'hall' && v && v.alive && !b.abandoned) this._note(`The ${buildingLabel(b).toLowerCase()} of ${v.name} has been destroyed!`, 'bad', { x: b.x, z: b.z });
     this.version++;
     if (v && v.alive && !v.buildings.some((o) => o.alive && !BUILDING_TYPES[o.type].wall) && (v.razed || v.pop < 3)) this._abandon(v, v.razed ? 'razed' : 'empty');
   }
@@ -1320,6 +1337,20 @@ export class Civilization {
   }
 
   // ------------------------------------------------------------------ helpers
+  // Notifications, de-duplicated: the same key (or text) within `cooldown`
+  // seconds is dropped, and the feed is limited to meaningful events.
+  _note(text, kind = 'info', pos = null, key = null, cooldown = 45) {
+    const now = this.game.time.total;
+    const k = key || text;
+    const last = this._noteT.get(k);
+    if (last != null && now - last < cooldown) return false;
+    this._noteT.set(k, now);
+    if (this._noteT.size > 400) for (const [kk, t] of this._noteT) if (now - t > 600) this._noteT.delete(kk);
+    this.noteCount = (this.noteCount || 0) + 1;
+    this.game.notify(text, kind, pos);
+    return true;
+  }
+
   _fx(type, x, z, scale = 1, force = false) {
     const g = this.game;
     if (!g.fx?.emit) return;
@@ -1353,7 +1384,7 @@ export class Civilization {
     this.fieldVersion++;
     this.game.fx?.burst?.('sparkle', { x: v.cx, z: v.cz }, 16, { scale: 2 });
     this.game.fx?.burst?.('heal', { x: v.cx, z: v.cz }, 6, { scale: 1.5 });
-    this.game.notify(`A season of plenty blesses ${v.name}: granaries overflow and the fields stand ripe.`, 'good', { x: v.cx, z: v.cz });
+    this._note(`A season of plenty blesses ${v.name}: granaries overflow and the fields stand ripe.`, 'good', { x: v.cx, z: v.cz });
     return true;
   }
 

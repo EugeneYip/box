@@ -1,4 +1,4 @@
-import { CULTURES, HERALDRY, placeName, kingdomName as makeKingdomName, rulerTitle } from './cultures.js';
+import { CULTURES, HERALDRY, HERALDRY_AVOID, placeName, kingdomName as makeKingdomName, rulerTitle } from './cultures.js';
 import { BUILDING_TYPES } from './catalog.js';
 import { YEAR, ADULT_AGE, clamp } from './util.js';
 
@@ -13,10 +13,10 @@ export const politics = {
     const rng = this.rng;
     const id = this.kingdoms.length;
     const used = new Set(this.kingdoms.filter((k) => k.alive).map((k) => k.color));
-    let free = HERALDRY.filter((h) => !used.has(h.color));
-    // early kingdoms take the boldest colours first
-    if (this.kingdoms.length < 6) free = free.filter((h) => HERALDRY.indexOf(h) < 9);
-    const her = free.length ? (opts.color != null ? HERALDRY.find((h) => h.color === opts.color) || free[0] : free[(rng.next() * free.length) | 0]) : HERALDRY[id % HERALDRY.length];
+    const avoid = new Set(HERALDRY_AVOID[culture] || []);
+    let free = HERALDRY.filter((h) => !used.has(h.color) && !avoid.has(h.name));
+    if (!free.length) free = HERALDRY.filter((h) => !avoid.has(h.name));
+    const her = opts.color != null ? HERALDRY.find((h) => h.color === opts.color) || free[0] : free[(rng.next() * free.length) | 0];
     const base = opts.baseName || placeName(culture, rng, this.usedNames);
     const k = {
       id,
@@ -107,7 +107,7 @@ export const politics = {
     for (const v of pools) {
       if (!v || !v.alive) continue;
       for (const u of v.members) {
-        if (!u.alive || u.age < ADULT_AGE + 2) continue;
+        if (!u.alive || u.age < ADULT_AGE) continue;
         // the eldest of those still in their prime, else simply the eldest
         const prime = u.age < 52;
         const hp = heir ? heir.age < 52 : false;
@@ -115,10 +115,17 @@ export const politics = {
       }
       if (heir) break;
     }
+    if (!heir) {
+      // no adult left: the eldest child rules under a regency
+      for (const v of pools) {
+        if (!v || !v.alive) continue;
+        for (const u of v.members) if (u.alive && (!heir || u.age > heir.age)) heir = u;
+      }
+    }
     if (heir) {
       if (heir.village !== k.capital && cap && cap.alive) this._moveMember(heir, cap);
       this.crown(k, heir);
-      this.game.notify(`${deadName} of ${k.name} has died. ${heir.name} takes the throne.`, 'info', { x: heir.x, z: heir.z });
+      this._note(`${deadName} of the ${k.name} has died. ${heir.name} takes the throne.`, 'info', { x: heir.x, z: heir.z }, 'succ' + k.id, 20);
       // a contested succession can split a large realm
       if (k.villages.length >= 3 && this.rng.chance(0.3)) {
         let claimant = null;
@@ -128,14 +135,14 @@ export const politics = {
           if (!claimant || v.pop - v.loyalty * 0.3 > claimant.pop - claimant.loyalty * 0.3) claimant = v;
         }
         if (claimant && claimant.pop >= 10) {
-          this.game.notify(`The succession is contested! ${claimant.name} refuses to bow to ${heir.name}.`, 'war', { x: claimant.cx, z: claimant.cz });
+          this._note(`The succession is contested! ${claimant.name} refuses to bow to ${heir.name}.`, 'war', { x: claimant.cx, z: claimant.cz });
           this.rebel(claimant);
         }
       }
     } else {
       k.ruler = -1;
       k.interregnumUntil = this.game.time.total + YEAR * 5;
-      this.game.notify(`${deadName} of ${k.name} died without an heir. The realm falls into turmoil.`, 'bad', cap ? { x: cap.cx, z: cap.cz } : null);
+      this._note(`${deadName} of the ${k.name} died without an heir. The realm falls into turmoil.`, 'bad', cap ? { x: cap.cx, z: cap.cz } : null);
     }
   },
 
@@ -161,7 +168,7 @@ export const politics = {
     }
     for (const a of this.armies) if (a.kingdom === k.id) this._disbandArmy(a);
     const cap = this.villages[k.capital];
-    this.game.notify(`The ${k.name} has ${cause === 'absorbed' ? 'been absorbed' : 'fallen'}.`, 'bad', cap ? { x: cap.cx, z: cap.cz } : null);
+    this._note(`The ${k.name} has ${cause === 'absorbed' ? 'been absorbed' : 'fallen'}.`, 'bad', cap ? { x: cap.cx, z: cap.cz } : null);
     this.colorVersion++;
   },
 
@@ -198,18 +205,25 @@ export const politics = {
           r.opinion *= 0.98;
           continue;
         }
-        let target = 5;
-        target -= Math.min(42, border * 0.55);
-        if (near < 40) target -= (40 - near) * 0.4;
-        target += A.culture === B.culture ? 12 : -16;
-        target -= (A.aggression + B.aggression) * 14;
+        let target = 8;
+        target -= Math.min(26, border * 0.32);
+        if (near < 34) target -= (34 - near) * 0.3;
+        target += A.culture === B.culture ? 14 : -14;
+        target -= (A.aggression + B.aggression) * 9;
         target -= r.grievance;
         if (r.ally) target += 30;
-        if (A.parent === B.id || B.parent === A.id) target -= 12; // breakaway grudges
+        if (A.parent === B.id || B.parent === A.id) target -= 8; // breakaway grudges
         const ea = this.enemiesOf(A.id),
           eb = this.enemiesOf(B.id);
         if (ea.some((e) => eb.includes(e))) target += 22;
         if (r.war) target -= 25;
+        else {
+          // long peace and trade build trust
+          r.peaceT = (r.peaceT || 0) + 4;
+          target += Math.min(30, (r.peaceT / YEAR) * 1.6);
+          if (r.border > 0 && r.border < 30) target += 4;
+        }
+        if (r.war) r.peaceT = 0;
         r.opinion += (target - r.opinion) * 0.12;
         r.opinion = clamp(r.opinion, -100, 100);
         r.grievance = Math.max(0, r.grievance - 0.25);
@@ -220,12 +234,12 @@ export const politics = {
         }
         if (r.ally && r.opinion < 5) {
           r.ally = false;
-          g.notify(`The alliance between the ${A.name} and the ${B.name} has dissolved.`, 'info', this._kingdomPos(A));
+          this._note(`The alliance between the ${A.name} and the ${B.name} has dissolved.`, 'info', this._kingdomPos(A));
         }
         // alliance
-        if (!r.ally && r.opinion > 40 && (A.culture === B.culture || ea.some((e) => eb.includes(e))) && rng.chance(0.06)) {
+        if (!r.ally && r.opinion > 25 && (A.culture === B.culture || ea.some((e) => eb.includes(e)) || r.opinion > 32) && rng.chance(0.08)) {
           r.ally = true;
-          g.notify(`The ${A.name} and the ${B.name} swear an alliance.`, 'good', this._kingdomPos(A));
+          this._note(`🤝 The ${A.name} and the ${B.name} swear an alliance.`, 'good', this._kingdomPos(A));
           continue;
         }
         // war
@@ -234,7 +248,7 @@ export const politics = {
           [A, B],
           [B, A],
         ]) {
-          if (now - att.founded < YEAR * 6) continue;
+          if (now - att.founded < YEAR * 6 || now - def.founded < YEAR * 5) continue;
           if (this.warCount(att.id) >= 2) continue;
           const ratio = att.strength / Math.max(1, def.strength);
           const hostile = r.opinion < -30;
@@ -298,7 +312,7 @@ export const politics = {
       alliance: 'to honour an alliance',
       god: 'at the whim of the gods',
     }[reason] || 'over old grievances';
-    if (!silent) this.game.notify(`⚔ The ${A.name} declares war on the ${B.name} ${why}!`, 'war', this._kingdomPos(B));
+    if (!silent) this._note(`⚔ The ${A.name} declares war on the ${B.name} ${why}!`, 'war', this._kingdomPos(B));
     // allies of the defender may join
     if (reason !== 'alliance') {
       for (const k of this.kingdoms) {
@@ -313,7 +327,7 @@ export const politics = {
             rr.attacker = k.id;
             rr.losses = [0, 0];
             rr.startPop = [k.population || 1, A.population || 1];
-            this.game.notify(`The ${k.name} joins the war against the ${A.name}, honouring its alliance.`, 'war', this._kingdomPos(k));
+            this._note(`The ${k.name} joins the war against the ${A.name}, honouring its alliance.`, 'war', this._kingdomPos(k));
           }
         }
       }
@@ -333,7 +347,7 @@ export const politics = {
     }
     const A = this.kingdoms[a],
       B = this.kingdoms[b];
-    if (!silent && A && B) this.game.notify(`🕊 The ${A.name} and the ${B.name} sign a peace treaty.`, 'good', this._kingdomPos(A));
+    if (!silent && A && B) this._note(`🕊 The ${A.name} and the ${B.name} sign a peace treaty.`, 'good', this._kingdomPos(A));
     return true;
   },
 
@@ -394,6 +408,23 @@ export const politics = {
       this._raiseArmy(k, home, best);
     }
     for (const a of [...this.armies]) this._updateArmy(a, now);
+    // active battles (for the crossed-swords markers)
+    const battles = [];
+    for (const a of this.armies) {
+      if (a.dead || a.state === 'gather') continue;
+      let fighting = 0,
+        x = 0,
+        z = 0;
+      for (const u of a.units) {
+        if (u.combat || u.state === 'attack') {
+          fighting++;
+          x += u.x;
+          z += u.z;
+        }
+      }
+      if (fighting >= 2) battles.push({ x: x / fighting, z: z / fighting, a: a.kingdom, b: a.enemy, n: fighting, siege: a.state === 'siege' });
+    }
+    this.battles = battles;
   },
 
   _raiseArmy(k, home, target) {
@@ -407,7 +438,11 @@ export const politics = {
       for (let i = keep; i < own.length; i++) soldiers.push(own[i]);
     }
     k.lastArmy = this.game.time.total;
-    if (soldiers.length < 3) return null;
+    if (soldiers.length < 6) {
+      // not enough men under arms yet: draft more soldiers in the home village
+      home.draft = this.game.time.total;
+      return null;
+    }
     const dx = target.cx - home.cx,
       dz = target.cz - home.cz;
     const l = Math.hypot(dx, dz) || 1;
@@ -424,17 +459,20 @@ export const politics = {
       t: this.game.time.total,
       announced: false,
     };
+    soldiers.sort((a, b) => Math.hypot(a.x - rally.x, a.z - rally.z) - Math.hypot(b.x - rally.x, b.z - rally.z));
     for (const u of soldiers) {
       army.units.add(u);
       u.data.civ.army = army.id;
       u.data.civ.task = null;
     }
+    army.bearer = soldiers[0].id;
     this.armies.push(army);
     return army;
   },
 
   _disbandArmy(a) {
     for (const u of a.units) if (u.data?.civ) u.data.civ.army = null;
+    a.dead = true;
     a.units.clear();
     const i = this.armies.indexOf(a);
     if (i >= 0) this.armies.splice(i, 1);
@@ -452,9 +490,11 @@ export const politics = {
     if (!this.atWar(a.kingdom, a.enemy) || !this.kingdoms[a.kingdom]?.alive) return this._disbandArmy(a);
     if (!a.units.size) {
       const k = this.kingdoms[a.kingdom];
-      if (a.state !== 'gather') this.game.notify(`The army of the ${k.name} has been routed.`, 'war', target ? { x: target.cx, z: target.cz } : null);
+      if (a.state !== 'gather' && a.size0 >= 6) this._note(`The army of the ${k.name} is routed at ${target ? target.name : 'the front'}.`, 'war', target ? { x: target.cx, z: target.cz } : null, 'rout' + a.kingdom, 90);
       return this._disbandArmy(a);
     }
+    // a new standard-bearer picks up a fallen banner
+    if (!a.units.has(this.game.units.byId.get(a.bearer))) a.bearer = a.units.values().next().value.id;
     if (!target || !target.alive || target.kingdom !== a.enemy) {
       // pick another target of the same enemy, else go home
       const k = this.kingdoms[a.kingdom];
@@ -486,7 +526,8 @@ export const politics = {
         a.state = 'march';
         a.t = now;
         const k = this.kingdoms[a.kingdom];
-        this.game.notify(`An army of ${a.units.size} from the ${k.name} marches on ${target.name}.`, 'war', { x: a.rally.x, z: a.rally.z });
+        a.size0 = a.units.size;
+        this._note(`An army of ${a.units.size} from the ${k.name} marches on ${target.name}.`, 'war', { x: a.rally.x, z: a.rally.z }, 'march' + a.kingdom, 120);
       }
     } else if (a.state === 'march') {
       const c = this._armyCentre(a);
@@ -524,7 +565,7 @@ export const politics = {
     const r = this.rel(K.id, old.id);
     r.grievance = Math.min(80, r.grievance + 25);
     if (raze) {
-      this.game.notify(`🔥 ${v.name} is put to the torch by the ${K.name}!`, 'war', { x: v.cx, z: v.cz });
+      this._note(`🔥 ${v.name} is put to the torch by the ${K.name}!`, 'war', { x: v.cx, z: v.cz });
       for (const b of v.buildings) if (b.alive) b.burning = Math.max(b.burning, 0.7 + this.rng.next() * 0.3);
       v.razed = true;
       for (const u of [...v.members]) if (u.job !== 'soldier') this._makeRefugee(u, old);
@@ -581,11 +622,11 @@ export const politics = {
     if (old && old.ruler >= 0) {
       const ru = this.game.units.byId.get(old.ruler);
       if (ru && ru.village === v.id && cause === 'conquest') {
-        this.game.notify(`${ru.name} has been captured as ${v.name} falls!`, 'war', { x: v.cx, z: v.cz });
+        this._note(`${ru.name} has been captured as ${v.name} falls!`, 'war', { x: v.cx, z: v.cz });
         this.game.units.kill(ru, 'executed');
       }
     }
-    if (cause === 'conquest') this.game.notify(`⚑ ${v.name} has been conquered by the ${K.name}.`, 'war', { x: v.cx, z: v.cz });
+    if (cause === 'conquest') this._note(`⚑ ${v.name} has been conquered by the ${K.name}.`, 'war', { x: v.cx, z: v.cz });
     this.version++;
     this.colorVersion++;
     if (old && old.alive) {
@@ -593,7 +634,7 @@ export const politics = {
         this._killKingdom(old, 'fallen');
       } else if (old.capital === v.id) {
         const nc = this._chooseCapital(old);
-        if (nc) this.game.notify(`The ${old.name} moves its capital to ${nc.name}.`, 'info', { x: nc.cx, z: nc.cz });
+        if (nc) this._note(`The ${old.name} moves its capital to ${nc.name}.`, 'info', { x: nc.cx, z: nc.cz });
         const ru = this.game.units.byId.get(old.ruler);
         if (!ru || !ru.alive || ru.kingdom !== old.id) this._succession(old, old.rulerName || 'The ruler');
       }
@@ -644,14 +685,14 @@ export const politics = {
     let leader = null;
     for (const u of v.members) if (u.alive && u.age >= ADULT_AGE + 2 && (!leader || (u.job === 'soldier') > (leader.job === 'soldier') || u.age > leader.age)) leader = u;
     if (leader) this.crown(K, leader);
-    if (!silent) this.game.notify(`✊ ${v.name} rises in rebellion against the ${oldName} and proclaims the ${K.name}!`, 'war', { x: v.cx, z: v.cz });
+    if (!silent) this._note(`✊ ${v.name} rises in rebellion against the ${oldName} and proclaims the ${K.name}!`, 'war', { x: v.cx, z: v.cz });
     // discontented neighbours join
     for (const vid of [...old.villages]) {
       const o = this.villages[vid];
       if (!o?.alive || o.id === old.capital) continue;
       if (Math.hypot(o.cx - v.cx, o.cz - v.cz) < 34 && o.loyalty < 40 && this.rng.chance(0.6)) {
         this.transferVillage(o, K.id, 'rebellion');
-        this.game.notify(`${o.name} joins the rebellion.`, 'war', { x: o.cx, z: o.cz });
+        this._note(`${o.name} joins the rebellion.`, 'war', { x: o.cx, z: o.cz }, 'joinreb' + K.id, 60);
       }
     }
     if (old.alive) this.declareWar(K.id, old.id, 'rebellion', true);
@@ -668,7 +709,7 @@ export const politics = {
       v.loyalty = Math.min(100, v.loyalty + 25);
       this.game.fx?.burst?.('sparkle', { x: v.cx, z: v.cz }, 12, { scale: 2 });
     }
-    this.game.notify(`✨ A golden age dawns over the ${k.name}!`, 'good', this._kingdomPos(k));
+    this._note(`✨ A golden age dawns over the ${k.name}!`, 'good', this._kingdomPos(k));
     return true;
   },
 };
