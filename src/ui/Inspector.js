@@ -1,5 +1,6 @@
+import * as THREE from 'three';
 import { TILE_INFO, FLORA_INFO, SEA_LEVEL, SHALLOW_DEPTH, TILE } from '../world/constants.js';
-import { powerIcon, uiIcon, tileTint } from './icons.js';
+import { powerIcon, uiIcon, tileTint, hasIcon } from './icons.js';
 import { getPower } from '../powers/registry.js';
 import { el, esc, safe, hexCss } from './dom.js';
 
@@ -21,7 +22,30 @@ const TILE_POWER = {
   [TILE.ROAD]: 'paint-road',
   [TILE.ICE]: 'paint-ice',
 };
-const KIND_LABEL = { unit: 'Creature', building: 'Building', village: 'Village', kingdom: 'Kingdom', flora: 'Flora', tile: 'Land', info: 'Detail' };
+const KIND_LABEL = { unit: 'Creature', building: 'Building', village: 'Settlement', kingdom: 'Kingdom', flora: 'Flora', tile: 'Land', info: 'Detail' };
+const JOB = {
+  woodcutter: ['job-woodcutter', '#d9a466', 'Woodcutter'],
+  farmer: ['job-farmer', '#f0cf6a', 'Farmer'],
+  builder: ['job-builder', '#e0b47a', 'Builder'],
+  miner: ['job-miner', '#b8c4d0', 'Miner'],
+  soldier: ['job-soldier', '#ff8a7a', 'Soldier'],
+  fisher: ['job-fisher', '#7fc8ff', 'Fisher'],
+  king: ['job-king', '#ffd36a', 'Ruler'],
+  child: ['job-child', '#ffc3a6', 'Child'],
+};
+const BUILDING_ICON = [
+  [/hall|keep|castle|palace|citadel/, 'found-kingdom', '#ffd36a'],
+  [/barrack|tower|wall|gate|fort/, 'job-soldier', '#ff8a7a'],
+  [/farm|field|mill|granar|barn/, 'farmland', '#f0cf6a'],
+  [/market|trade|shop/, 'trade', '#9fd0ff'],
+  [/temple|shrine|chapel|church|monument/, 'bless', '#ffe08a'],
+  [/mine|quarry/, 'job-miner', '#b8c4d0'],
+  [/lumber|saw|wood/, 'job-woodcutter', '#d9a466'],
+  [/dock|pier|fish|harbo/, 'job-fisher', '#7fc8ff'],
+  [/smith|forge|work/, 'build', '#e0b47a'],
+  [/store|warehouse|treasur/, 'gold', '#ffd36a'],
+];
+const HIDE_STATS = /^(mood)$/i;
 
 function kindOf(r) {
   if (!r) return 'info';
@@ -33,20 +57,29 @@ function kindOf(r) {
   return 'info';
 }
 const word = (v, words) => words[Math.min(words.length - 1, Math.max(0, Math.floor(v * words.length)))];
+const cap = (v) => (typeof v === 'string' && /^[a-z]/.test(v) ? v[0].toUpperCase() + v.slice(1) : v);
+const isPhone = () => matchMedia('(max-width: 720px)').matches;
 
-// Inspector panel. Shows the highest-priority result of game.inspect(hit)
-// plus the other things under the cursor, refreshes live, supports following
-// a unit and implements the Selection hook (game.selected + 'select').
+// Inspector panel (desktop card / phone bottom sheet). Shows the top result
+// of game.inspect(hit), the other things under the cursor as chips, refreshes
+// live, can follow a unit, implements the Selection hook (game.selected +
+// 'select') and pins the selection on screen so it stays findable under
+// canopy or behind hills.
 export class Inspector {
   constructor(ui) {
     this.ui = ui;
     this.game = ui.game;
     this.el = el('aside', { class: 'ws-insp ws-glass', 'aria-live': 'polite' });
+    this.pin = el('div', { class: 'ws-pin' }, el('span', { class: 'ws-pin__label' }), el('span', { class: 'ws-pin__stem' }));
+    ui.layer.append(this.pin);
     this.hit = null;
     this.results = [];
     this.index = 0;
     this._t = 0;
-    this.game.events.on('inspect', (hit) => this.show(hit));
+    this._v = new THREE.Vector3();
+    this.expanded = false;
+    this.game.events.on('inspect', (hit) => (hit ? this.show(hit) : this.close()));
+    this.bindSheet();
   }
 
   get open() {
@@ -80,7 +113,7 @@ export class Inspector {
       kind: 'tile',
       tile: { tx, ty, type: W.type[i], water, owner: o },
       title: water ? (hh < SEA_LEVEL - SHALLOW_DEPTH ? 'Deep Ocean' : 'Shallow Water') : info.name,
-      subtitle: kname ? `Territory of ${kname}` : water ? 'Open waters' : 'Unclaimed wilds',
+      subtitle: kname ? `Territory of the ${kname.replace(/^the\s+/i, '')}` : water ? 'Open waters' : 'Unclaimed wilds',
       stats,
       x: tx + 0.5,
       z: ty + 0.5,
@@ -94,15 +127,17 @@ export class Inspector {
   }
 
   show(hit, keepIndex = false) {
-    if (!hit) return;
+    if (!hit) return this.close();
     this.hit = { x: hit.x, z: hit.z, tx: hit.tx ?? Math.floor(hit.x), ty: hit.ty ?? Math.floor(hit.z) };
     this.results = this.collect(this.hit);
     if (!keepIndex) this.index = 0;
     this.track = this.results[this.index];
+    this._deadShown = false;
     this.render();
     this.el.classList.add('is-open');
     this.ui.root.classList.add('has-insp');
     this.applySelection();
+    if (isPhone()) this.setExpanded(false);
     this.game.audio?.play?.('ui-open', { volume: 0.35 });
   }
 
@@ -122,6 +157,7 @@ export class Inspector {
     this.track = null;
     this.hit = null;
     this.setSelected(null);
+    this.pin.classList.remove('is-shown');
   }
 
   applySelection() {
@@ -139,11 +175,21 @@ export class Inspector {
     g.events.emit('select', sel);
   }
 
+  kingdomTint(r) {
+    const u = r.unit;
+    const kid = u?.kingdom ?? r.building?.kingdom ?? r.village?.kingdom ?? (typeof r.kingdom === 'object' ? r.kingdom?.id : null) ?? (kindOf(r) === 'tile' ? r.tile?.owner : null);
+    if (kid == null || kid < 0) return null;
+    return hexCss(safe(() => this.game.civ.kingdomColor(kid), null));
+  }
+
   iconFor(r) {
     const k = kindOf(r);
     if (k === 'unit' && r.unit) {
-      const sp = r.unit.species || r.unit.def?.id;
-      const p = getPower('spawn-' + sp) || { id: 'spawn-' + sp, name: r.unit.def?.name || sp, category: 'life' };
+      const u = r.unit;
+      const job = JOB[u.job] || (u.def?.kind === 'humanoid' && u.age < (u.def?.maturity ?? 0) ? JOB.child : null);
+      if (job) return { svg: uiIcon(job[0]), tint: job[1], label: job[2] };
+      const sp = u.species || u.def?.id;
+      const p = getPower('spawn-' + sp) || { id: 'spawn-' + sp, name: u.def?.name || sp, category: 'life' };
       return powerIcon(p);
     }
     if (k === 'tile') {
@@ -151,19 +197,23 @@ export class Inspector {
       const pid = TILE_POWER[r.tile?.type] || 'paint-grass';
       return { svg: powerIcon({ id: pid, category: 'biome' }).svg, tint: tileTint(r.tile?.type) };
     }
-    if (k === 'flora') return powerIcon({ id: 'plant-forest', category: 'nature' });
-    if (k === 'building') return { svg: uiIcon('house'), tint: '#9fbcff' };
-    if (k === 'village') return { svg: uiIcon('village'), tint: '#9fbcff' };
-    if (k === 'kingdom') return { svg: uiIcon('crown'), tint: '#ffd36a' };
+    if (k === 'flora') return powerIcon({ id: hasIcon('plant-' + String(r.title || '').toLowerCase()) ? 'plant-' + String(r.title).toLowerCase() : 'plant-tree', category: 'nature' });
+    if (k === 'building') {
+      const t = String(r.building?.type || r.title || '').toLowerCase();
+      const hit = BUILDING_ICON.find(([re]) => re.test(t));
+      return hit ? { svg: uiIcon(hit[1]), tint: hit[2] } : { svg: uiIcon('house'), tint: '#9fbcff' };
+    }
+    if (k === 'village') return { svg: uiIcon('found-village'), tint: this.kingdomTint(r) || '#9fbcff' };
+    if (k === 'kingdom') return { svg: uiIcon('banner'), tint: this.kingdomTint(r) || '#ffd36a' };
     return { svg: uiIcon('info'), tint: '#7fdcec' };
   }
 
-  // A stat value like "32 / 40" or "45%" renders as a meter.
+  // A stat value like "32 / 40" or "45%" (or "Well fed (76%)") renders as a meter.
   meter(v) {
     const s = String(v);
     let m = s.match(/^\s*(-?[\d.]+)\s*\/\s*([\d.]+)\s*$/);
     if (m) return Math.max(0, Math.min(1, +m[1] / Math.max(1e-6, +m[2])));
-    m = s.match(/^\s*(-?[\d.]+)\s*%\s*$/);
+    m = s.match(/(-?[\d.]+)\s*%\s*\)?\s*$/);
     if (m) return Math.max(0, Math.min(1, +m[1] / 100));
     return null;
   }
@@ -172,59 +222,54 @@ export class Inspector {
     const r = this.track;
     if (!r) return;
     const k = kindOf(r);
-    const { svg: ico, tint } = this.iconFor(r);
+    const ic = this.iconFor(r);
     const u = r.unit;
     const dead = u && u.alive === false;
-    let kTint = null;
-    const kid = u?.kingdom ?? r.building?.kingdom ?? r.village?.kingdom ?? (k === 'tile' ? r.tile?.owner : null);
-    if (kid != null && kid >= 0) kTint = hexCss(safe(() => this.game.civ.kingdomColor(kid), null));
-    const stats = (r.stats || []).filter((s) => Array.isArray(s) && s.length >= 2);
-    const cap = (v) => (typeof v === 'string' && /^[a-z]/.test(v) ? v[0].toUpperCase() + v.slice(1) : v);
-    const rows = stats
+    const kTint = this.kingdomTint(r);
+    const stats = (r.stats || []).filter((s) => Array.isArray(s) && s.length >= 2 && !HIDE_STATS.test(String(s[0])));
+    const cells = stats
       .map(([key, v]) => {
         v = cap(v);
         const lower = String(key).toLowerCase();
         const m = this.meter(v);
-        const bad = /hunger|damage|fire|danger/.test(lower);
+        const bad = /damage|fire|danger/.test(lower);
+        const hp = /health|hp/.test(lower);
+        const shown = m != null && /\(\s*[\d.]+%\s*\)\s*$/.test(String(v)) ? String(v).replace(/\s*\(\s*[\d.]+%\s*\)\s*$/, '') : v;
         if (m != null)
-          return `<div class="ws-insp__row ws-insp__row--meter"><span class="ws-insp__k">${esc(key)}</span><span class="ws-insp__v">${esc(v)}</span><span class="ws-meter ${bad ? 'is-bad' : /health|hp/.test(lower) ? 'is-hp' : ''}"><i style="width:${(m * 100).toFixed(1)}%"></i></span></div>`;
-        return `<div class="ws-insp__row"><span class="ws-insp__k">${esc(key)}</span><span class="ws-insp__v">${esc(v)}</span></div>`;
+          return `<div class="ws-cell ws-cell--meter"><span class="ws-cell__k">${esc(key)}</span><span class="ws-cell__v">${esc(shown)}</span><span class="ws-meter ${bad ? 'is-bad' : hp ? 'is-hp' : ''}"><i style="width:${(m * 100).toFixed(1)}%"></i></span></div>`;
+        const long = String(v).length > 16;
+        return `<div class="ws-cell${long ? ' ws-cell--wide' : ''}"><span class="ws-cell__k">${esc(key)}</span><span class="ws-cell__v">${esc(v)}</span></div>`;
       })
       .join('');
-    const others = this.results
+    const chips = this.results
       .map((o, i) => ({ o, i }))
       .filter(({ i }) => i !== this.index)
       .map(({ o, i }) => {
-        const ic = this.iconFor(o);
-        return `<button class="ws-insp__other" type="button" data-i="${i}" style="--tint:${ic.tint}"><span class="ws-insp__oico">${ic.svg}</span><span class="ws-insp__otxt"><b>${esc(o.title || KIND_LABEL[kindOf(o)])}</b><small>${esc(KIND_LABEL[kindOf(o)] || '')}</small></span>${uiIcon('chev-right', 'ws-insp__ochev')}</button>`;
+        const c = this.iconFor(o);
+        return `<button class="ws-chip2" type="button" data-i="${i}" style="--tint:${c.tint}" title="${esc(KIND_LABEL[kindOf(o)] || '')}"><span class="ws-chip2__ico">${c.svg}</span><span>${esc(o.title || KIND_LABEL[kindOf(o)])}</span></button>`;
       })
       .join('');
     const following = u && this.game.cameraRig.follow === u;
-    let subtitle = r.subtitle;
-    if (u && (!subtitle || subtitle === r.title)) {
-      const sex = u.sex === 'f' ? 'Female' : u.sex === 'm' ? 'Male' : '';
-      const mat = u.def?.maturity ?? 1;
-      const stage = u.age < mat ? 'Young' : u.age > (u.def?.lifespan ?? 99) * 0.8 ? 'Elder' : 'Adult';
-      subtitle = [u.def?.name && u.def.name !== r.title ? u.def.name : null, sex, stage].filter(Boolean).join(' · ');
-    }
     const actions = [];
     if (u && !dead) actions.push(`<button class="ws-btn ws-btn--sm ${following ? 'is-on' : ''}" type="button" data-act="follow">${uiIcon('follow')}<span>${following ? 'Following' : 'Follow'}</span><kbd class="ws-key">F</kbd></button>`);
-    if (r.x != null || u || r.building || r.village || this.hit) actions.push(`<button class="ws-btn ws-btn--sm ws-btn--ghost" type="button" data-act="focus">${uiIcon('focus')}<span>Focus</span></button>`);
+    actions.push(`<button class="ws-btn ws-btn--sm ws-btn--ghost" type="button" data-act="focus">${uiIcon('focus')}<span>Focus</span></button>`);
+    const kindLabel = k === 'tile' && r.tile?.water ? 'Waters' : u && ic.label ? ic.label : KIND_LABEL[k] || 'Detail';
 
-    this.el.style.setProperty('--tint', tint);
+    this.el.style.setProperty('--tint', ic.tint);
     this.el.innerHTML = `
+      <div class="ws-insp__grab" data-act="sheet" aria-hidden="true"><i></i></div>
       <header class="ws-insp__head">
-        <span class="ws-insp__badge">${ico}</span>
+        <span class="ws-insp__badge">${ic.svg}${kTint ? `<i class="ws-insp__kdot" style="--k:${kTint}"></i>` : ''}</span>
         <div class="ws-insp__titles">
-          <div class="ws-insp__kind">${esc(k === 'tile' && r.tile?.water ? 'Waters' : KIND_LABEL[k] || 'Detail')}${dead ? ' <em class="ws-insp__dead">Fallen</em>' : ''}</div>
+          <div class="ws-insp__kind">${esc(kindLabel)}${dead ? ' <em class="ws-insp__dead">Fallen</em>' : ''}</div>
           <h3 class="ws-insp__title">${esc(r.title || 'Unknown')}</h3>
-          ${subtitle ? `<div class="ws-insp__sub">${kTint ? `<i class="ws-crest" style="--k:${kTint}"></i>` : ''}${esc(subtitle)}</div>` : ''}
+          ${r.subtitle ? `<div class="ws-insp__sub">${kTint ? `<i class="ws-crest" style="--k:${kTint}"></i>` : ''}<span>${esc(r.subtitle)}</span></div>` : ''}
         </div>
         <button class="ws-iconbtn ws-iconbtn--sm ws-insp__x" type="button" aria-label="Close (Esc)" data-act="close">${uiIcon('close')}</button>
       </header>
-      ${rows ? `<div class="ws-insp__stats">${rows}</div>` : ''}
-      ${actions.length ? `<div class="ws-insp__actions">${actions.join('')}</div>` : ''}
-      ${others ? `<div class="ws-insp__also"><div class="ws-insp__also-h">Also here</div>${others}</div>` : ''}`;
+      ${chips ? `<div class="ws-insp__also" aria-label="Also here">${chips}</div>` : ''}
+      ${cells ? `<div class="ws-insp__grid">${cells}</div>` : ''}
+      <div class="ws-insp__actions">${actions.join('')}</div>`;
     this.el.onclick = (e) => {
       const b = e.target.closest('button');
       if (!b) return;
@@ -236,11 +281,13 @@ export class Inspector {
       this.game.audio?.play?.('ui-click', { volume: 0.45 });
     };
     this._sig = this.signature();
+    this.pin.querySelector('.ws-pin__label').textContent = r.title || '';
+    this.pin.style.setProperty('--tint', ic.tint);
   }
 
   signature() {
     const r = this.track;
-    return r ? JSON.stringify([r.title, r.subtitle, r.stats, r.unit?.alive, this.game.cameraRig.follow === r.unit, this.results.length]) : '';
+    return r ? JSON.stringify([r.title, r.subtitle, r.stats, r.unit?.alive, this.game.cameraRig.follow === r.unit, this.results.length, r.unit?.job]) : '';
   }
 
   toggleFollow() {
@@ -258,9 +305,43 @@ export class Inspector {
   focusCamera() {
     const r = this.track;
     const o = r?.unit || r?.building || r?.village;
-    const x = o?.x ?? r?.x ?? this.hit?.x,
-      z = o?.z ?? r?.z ?? this.hit?.z;
+    const x = o?.x ?? o?.cx ?? r?.x ?? this.hit?.x,
+      z = o?.z ?? o?.cz ?? r?.z ?? this.hit?.z;
     if (x != null) this.game.focus(x, z, Math.min(this.game.cameraRig.goal.dist, 40));
+  }
+
+  // ---- phone bottom sheet: drag the grip / header between peek and full
+  bindSheet() {
+    let start = null;
+    this.el.addEventListener('pointerdown', (e) => {
+      if (!isPhone() || !e.target.closest('.ws-insp__grab, .ws-insp__head') || e.target.closest('button')) return;
+      start = { y: e.clientY, h: this.el.getBoundingClientRect().height, moved: false };
+      this.el.setPointerCapture?.(e.pointerId);
+      this.el.classList.add('is-dragging');
+    });
+    this.el.addEventListener('pointermove', (e) => {
+      if (!start) return;
+      const dy = e.clientY - start.y;
+      if (Math.abs(dy) > 4) start.moved = true;
+      const h = Math.max(90, Math.min(innerHeight * 0.62, start.h - dy));
+      this.el.style.height = h + 'px';
+    });
+    const end = (e) => {
+      if (!start) return;
+      const dy = e.clientY - start.y;
+      this.el.classList.remove('is-dragging');
+      this.el.style.height = '';
+      if (!start.moved) this.setExpanded(!this.expanded);
+      else if (dy > 110 && !this.expanded) this.close();
+      else this.setExpanded(dy < -30 ? true : dy > 30 ? false : this.expanded);
+      start = null;
+    };
+    this.el.addEventListener('pointerup', end);
+    this.el.addEventListener('pointercancel', end);
+  }
+  setExpanded(x) {
+    this.expanded = x;
+    this.el.classList.toggle('is-expanded', x);
   }
 
   // Re-query the tracked entity so stats stay live.
@@ -276,7 +357,6 @@ export class Inspector {
     let idx = list.findIndex((o) => (u && o.unit === u) || (b && o.building === b) || (!u && !b && kindOf(o) === kindOf(r) && o.title === r.title));
     if (idx < 0) {
       if (u) {
-        // the unit died or wandered off: keep the last card, marked as fallen
         if (u.alive === false && !this._deadShown) {
           this._deadShown = true;
           this.render();
@@ -293,8 +373,33 @@ export class Inspector {
     if (this.signature() !== this._sig) this.render();
   }
 
+  // Screen-space pin over the selection: visible through canopy and hills.
+  updatePin() {
+    const ref = this.game.selected?.ref;
+    const pin = this.pin;
+    if (!this.open || !ref || ref.alive === false || ref.x == null || this.ui.root.classList.contains('is-photo')) {
+      pin.classList.remove('is-shown');
+      return;
+    }
+    const W = this.game.world;
+    const kind = this.game.selected.kind;
+    const y = (ref.y ?? W.surfaceAt(ref.x, ref.z)) + (kind === 'building' ? 3.2 : 1.6 * (ref.scale || 1) * (ref.def?.size || 1));
+    const v = this._v.set(ref.x, y, ref.z).project(this.game.cameraRig.camera);
+    if (v.z > 1 || v.z < -1) {
+      pin.classList.remove('is-shown');
+      return;
+    }
+    const x = Math.max(16, Math.min(innerWidth - 16, (v.x * 0.5 + 0.5) * innerWidth));
+    const sy = Math.max(70, Math.min(innerHeight - 40, (-v.y * 0.5 + 0.5) * innerHeight));
+    pin.style.transform = `translate(${x.toFixed(1)}px, ${sy.toFixed(1)}px)`;
+    pin.classList.add('is-shown');
+    // a followed or hidden creature keeps its name tag; otherwise show the marker only
+    pin.classList.toggle('has-label', this.game.cameraRig.follow === ref || kind === 'building');
+  }
+
   update(dt) {
     if (!this.open) return;
+    this.updatePin();
     this._t -= dt;
     if (this._t <= 0) {
       this._t = 0.35;

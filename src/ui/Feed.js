@@ -1,25 +1,19 @@
 import { uiIcon } from './icons.js';
 import { el, esc } from './dom.js';
+import { classify } from './Chronicle.js';
 
-const KINDS = {
-  info: { icon: 'info', tint: '#9cc8ff', label: 'News' },
-  good: { icon: 'good', tint: '#8fe3a0', label: 'Blessing' },
-  bad: { icon: 'bad', tint: '#ffbf6a', label: 'Trouble' },
-  war: { icon: 'war', tint: '#ff7a6e', label: 'War' },
-  disaster: { icon: 'disaster', tint: '#ff8a4a', label: 'Disaster' },
-};
-const MAX_VISIBLE = 5;
-const LIFETIME = 9; // seconds before an entry fades
+const LIFETIME = 7.5; // seconds before an entry fades
+const maxVisible = () => (innerHeight <= 760 ? 3 : 4);
 
-// World chronicle: short cards for 'notify' events. Clicking a card with a
-// position focuses the camera there. Hovering the feed holds the fade.
+// Toast-style feed of the newest chronicle entries. Clicking a card with a
+// position flies the camera there; hovering holds the fade. Every entry is
+// also recorded in the Chronicle panel (J).
 export class Feed {
   constructor(ui) {
     this.ui = ui;
     this.game = ui.game;
     this.el = el('div', { class: 'ws-feed', 'aria-live': 'polite' });
     this.items = [];
-    this.history = [];
     this.hover = false;
     this.el.addEventListener('pointerenter', () => (this.hover = true));
     this.el.addEventListener('pointerleave', () => (this.hover = false));
@@ -28,10 +22,9 @@ export class Feed {
 
   push(n) {
     if (!n || !n.text) return;
-    const kind = KINDS[n.kind] ? n.kind : 'info';
+    const e = this.ui.chronicle ? this.ui.chronicle.add(n) : classify(n);
     const now = performance.now() / 1000;
-    // collapse rapid duplicates into a counter
-    const dup = this.items.find((it) => it.text === n.text && now - it.born < 6 && !it.leaving);
+    const dup = this.items.find((it) => it.text === e.text && now - it.born < 6 && !it.leaving);
     if (dup) {
       dup.count++;
       dup.born = now;
@@ -42,23 +35,21 @@ export class Feed {
       dup.el.classList.add('is-ping');
       return;
     }
-    const K = KINDS[kind];
     const hasPos = n.x != null && n.z != null && !Number.isNaN(+n.x);
-    const year = Math.floor(this.game.time.year) + 1;
     const countEl = el('span', { class: 'ws-feed__count', hidden: true });
     const card = el(
       hasPos ? 'button' : 'div',
       {
-        class: `ws-feed__item ws-glass is-${kind}${hasPos ? ' is-link' : ''}`,
-        style: `--tint:${K.tint}`,
+        class: `ws-feed__item ws-glass is-${e.kind}${hasPos ? ' is-link' : ''}`,
+        style: `--tint:${e.tint}`,
         type: hasPos ? 'button' : null,
-        'aria-label': hasPos ? `${n.text} — show on map` : null,
+        'aria-label': hasPos ? `${e.text} — show on map` : null,
       },
-      el('span', { class: 'ws-feed__ico', html: uiIcon(K.icon) }),
-      el('span', { class: 'ws-feed__txt', html: esc(n.text) }),
-      el('span', { class: 'ws-feed__meta' }, countEl, el('span', { class: 'ws-feed__year', text: `Y${year}` }), hasPos ? el('span', { class: 'ws-feed__go', html: uiIcon('locate') }) : null),
+      el('span', { class: 'ws-feed__ico', html: uiIcon(e.icon) }),
+      el('span', { class: 'ws-feed__txt', html: esc(e.text) }),
+      el('span', { class: 'ws-feed__meta' }, countEl, hasPos ? el('span', { class: 'ws-feed__go', html: uiIcon('locate') }) : null),
     );
-    const item = { el: card, text: n.text, born: now, count: 1, countEl, leaving: false };
+    const item = { el: card, text: e.text, born: now, count: 1, countEl, leaving: false };
     if (hasPos) {
       card.addEventListener('click', () => {
         this.game.focus(+n.x, +n.z, Math.min(this.game.cameraRig.goal.dist, 46));
@@ -68,13 +59,11 @@ export class Feed {
     }
     this.el.prepend(card);
     this.items.unshift(item);
-    this.history.unshift({ ...n, kind, year });
-    if (this.history.length > 80) this.history.length = 80;
-    while (this.items.filter((it) => !it.leaving).length > MAX_VISIBLE) {
+    const cap = maxVisible();
+    while (this.items.filter((it) => !it.leaving).length > cap) {
       const old = [...this.items].reverse().find((it) => !it.leaving);
       this.remove(old);
     }
-    if (kind === 'war' || kind === 'disaster') this.game.audio?.play?.(kind === 'war' ? 'war-horn' : 'bell', { volume: 0.25 });
   }
 
   remove(it) {

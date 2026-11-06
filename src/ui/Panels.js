@@ -185,6 +185,20 @@ export class Modals {
           safe(() => g.audio?.setVolume?.(v / 100), null, 'setVolume');
           ui.savePrefs({ volume: v / 100 });
         }),
+        ...['music', 'ambience', 'sfx'].map((bus) =>
+          rangeRow(
+            { music: 'Music', ambience: 'Ambience', sfx: 'Effects' }[bus],
+            0,
+            100,
+            1,
+            Math.round((safe(() => g.audio?.getBusVolume?.(bus), null) ?? prefs.buses?.[bus] ?? 1) * 100),
+            (v) => `${v}%`,
+            (v) => {
+              safe(() => g.audio?.setBusVolume?.(bus, v / 100), null, 'setBusVolume');
+              ui.savePrefs({ buses: { ...(ui.prefs.buses || {}), [bus]: v / 100 } });
+            },
+          ),
+        ),
         toggleRow('Mute all sound', null, !!g.audio?.muted, (v) => {
           safe(() => g.audio?.setMuted?.(v), null, 'setMuted');
           ui.savePrefs({ muted: v });
@@ -208,7 +222,7 @@ export class Modals {
   // ---- new world
   newWorld() {
     const g = this.game;
-    const state = { seed: String(g.params.seed), preset: g.params.preset || 'continent', civs: clamp(g.params.civs ?? 3, 0, 8) };
+    const state = { seed: String(g.params.seed), preset: g.params.preset || 'continent', civs: clamp(g.params.civs ?? 3, 0, 8), size: g.world.w };
     const seedIn = el('input', { class: 'ws-input', type: 'text', inputmode: 'numeric', value: state.seed, 'aria-label': 'World seed', autofocus: true, spellcheck: 'false' });
     seedIn.addEventListener('input', () => (state.seed = seedIn.value));
     seedIn.addEventListener('keydown', (e) => e.key === 'Enter' && create());
@@ -255,10 +269,34 @@ export class Modals {
       civOut.textContent = civ.value;
       paint();
     });
+    const sizes = segRow(
+      'World size',
+      null,
+      [
+        { id: 128, name: 'Small · 128' },
+        { id: 192, name: 'Medium · 192' },
+        { id: 256, name: 'Large · 256' },
+      ],
+      [128, 192, 256].includes(state.size) ? state.size : 256,
+      (v) => (state.size = v),
+    );
     const create = () => {
       const n = parseInt(String(state.seed).replace(/[^0-9]/g, ''), 10);
       const seed = Number.isFinite(n) ? n : hashSeed(state.seed);
       this.close();
+      if (state.size !== g.world.w) {
+        // world size is fixed at construction: reload with the new parameters
+        const q = new URLSearchParams(location.search);
+        q.set('seed', seed);
+        q.set('preset', state.preset);
+        q.set('civs', state.civs);
+        q.set('size', state.size);
+        q.set('title', '0');
+        q.delete('cam');
+        this.ui.veil.classList.add('is-shown');
+        setTimeout(() => (location.search = q.toString()), 300);
+        return;
+      }
       this.ui.regenerate(seed, state.preset, state.civs);
     };
     const body = el(
@@ -271,6 +309,7 @@ export class Modals {
         el('div', { class: 'ws-field' }, el('label', { class: 'ws-field__label', text: 'Seed' }), el('div', { class: 'ws-seedbox' }, seedIn, dice)),
         el('div', { class: 'ws-field' }, el('label', { class: 'ws-field__label', text: 'Starting villages' }), el('div', { class: 'ws-row__ctl' }, civ, civOut)),
       ),
+      sizes,
       el('p', { class: 'ws-note', html: `${uiIcon('info')}<span>The current world will be replaced. Seeds are shareable — the same seed always grows the same world.</span>` }),
     );
     const foot = [
@@ -294,7 +333,8 @@ export class Modals {
       ]],
       ['Powers', [
         [k('Click'), 'Cast / hold to paint'],
-        [k(SLOT_LABELS[0], SLOT_LABELS[1], SLOT_LABELS[2], '…'), 'Powers in the open tab'],
+        [k(SLOT_LABELS[0], SLOT_LABELS[1], SLOT_LABELS[2], '…'), 'Powers 1–10 in the open tab'],
+        [k('Shift') + '+' + k(SLOT_LABELS[0], '…'), 'Powers 11–20'],
         [k('Tab'), 'Next power category'],
         [k('[', ']'), 'Brush size'],
         [k('I'), 'Inspect tool'],
@@ -306,6 +346,8 @@ export class Modals {
       ]],
       ['Panels', [
         [k('K'), 'Kingdoms'],
+        [k('J'), 'Chronicle'],
+        [k('`'), 'Fold power tray'],
         [k('G'), 'New world'],
         [k('O'), 'Settings'],
         [k('H'), 'This help'],
@@ -345,10 +387,11 @@ function idsOf(v) {
 export function relationsOf(civ, k) {
   const wars = new Set(idsOf(k.wars ?? k.enemies ?? k.atWarWith));
   const allies = new Set(idsOf(k.allies ?? k.alliances ?? k.friends));
+  for (const id of safe(() => civ.enemiesOf?.(k.id) || [], [])) wars.add(id?.id ?? id);
   for (const o of civ.kingdoms || []) {
-    if (!o || o === k) continue;
+    if (!o || o === k || o.alive === false) continue;
     if (safe(() => civ.isAtWar?.(k.id, o.id) || civ.atWar?.(k.id, o.id), false)) wars.add(o.id);
-    if (safe(() => civ.isAllied?.(k.id, o.id) || civ.areAllied?.(k.id, o.id), false)) allies.add(o.id);
+    if (safe(() => civ.isAllied?.(k.id, o.id) || civ.allied?.(k.id, o.id) || civ.areAllied?.(k.id, o.id), false)) allies.add(o.id);
   }
   for (const w of safe(() => (Array.isArray(civ.wars) ? civ.wars : []), [])) {
     const a = w?.a ?? w?.attacker ?? w?.[0],
@@ -358,7 +401,8 @@ export function relationsOf(civ, k) {
     if (ia === k.id && ib != null) wars.add(ib);
     else if (ib === k.id && ia != null) wars.add(ia);
   }
-  return { wars: [...wars], allies: [...allies] };
+  const alive = (id) => civ.kingdoms?.[id]?.alive !== false;
+  return { wars: [...wars].filter(alive), allies: [...allies].filter((id) => alive(id) && !wars.has(id)) };
 }
 
 export class KingdomsPanel {
@@ -366,6 +410,37 @@ export class KingdomsPanel {
     this.ui = ui;
     this.game = ui.game;
     this.el = el('aside', { class: 'ws-side ws-glass ws-orn', 'aria-label': 'Kingdoms' });
+    this.countEl = el('span', { class: 'ws-side__count', text: '0' });
+    this.list = el('div', { class: 'ws-side__list' });
+    this.empty = el(
+      'div',
+      { class: 'ws-empty' },
+      el('div', { class: 'ws-empty__art', html: uiIcon('crown') }),
+      el('div', { class: 'ws-empty__title', text: 'No crowns yet' }),
+      el('p', { class: 'ws-empty__txt', text: 'Kingdoms rise as villages grow. Found a settlement and watch a realm take shape.' }),
+      el('button', {
+        class: 'ws-btn ws-btn--gold ws-btn--sm',
+        type: 'button',
+        html: `${uiIcon('house')}<span>Found a village</span>`,
+        onclick: () => {
+          this.ui.toolbar.setCategory('civ');
+          this.game.selectPower('found-village');
+        },
+      }),
+    );
+    this.el.append(
+      el(
+        'header',
+        { class: 'ws-side__head' },
+        el('span', { class: 'ws-modal__ico', html: uiIcon('kingdoms') }),
+        el('h2', { class: 'ws-modal__title', text: 'Kingdoms' }),
+        this.countEl,
+        el('button', { class: 'ws-iconbtn ws-iconbtn--sm', type: 'button', 'aria-label': 'Close (K)', html: uiIcon('close'), onclick: () => this.toggle(false) }),
+      ),
+      this.list,
+      this.empty,
+    );
+    this.rows = new Map();
     this._t = 0;
   }
   get open() {
@@ -373,8 +448,9 @@ export class KingdomsPanel {
   }
   toggle(force) {
     const open = force ?? !this.open;
+    if (open && this.ui.chronicle?.open) this.ui.chronicle.toggle(false);
     this.el.classList.toggle('is-open', open);
-    this.ui.root.classList.toggle('has-side', open);
+    this.ui.root.classList.toggle('has-side', open || !!this.ui.chronicle?.open);
     if (open) {
       this._t = 0;
       this.render();
@@ -387,23 +463,66 @@ export class KingdomsPanel {
     const ks = safe(() => (civ.kingdoms || []).filter((k) => k && k.alive !== false && k.dead !== true), []);
     const pop = new Map(),
       vil = new Map(),
-      land = new Map();
-    for (const u of safe(() => g.units?.list || [], [])) if (u.alive !== false && u.kingdom != null && u.kingdom >= 0) pop.set(u.kingdom, (pop.get(u.kingdom) || 0) + 1);
+      land = new Map(),
+      army = new Map();
+    for (const u of safe(() => g.units?.list || [], [])) {
+      if (u.alive === false || u.kingdom == null || u.kingdom < 0) continue;
+      pop.set(u.kingdom, (pop.get(u.kingdom) || 0) + 1);
+      if (u.job === 'soldier') army.set(u.kingdom, (army.get(u.kingdom) || 0) + 1);
+    }
     for (const v of safe(() => civ.villages || [], [])) if (v && v.alive !== false && v.kingdom != null) vil.set(v.kingdom, (vil.get(v.kingdom) || 0) + 1);
     const own = g.world.owner;
     for (let i = 0; i < own.length; i++) if (own[i] >= 0) land.set(own[i], (land.get(own[i]) || 0) + 1);
     return ks
-      .map((k) => ({
-        k,
-        id: k.id,
-        name: k.name || safe(() => civ.kingdomName(k.id), 'Kingdom'),
-        color: hexCss(k.color ?? safe(() => civ.kingdomColor(k.id), 0xe9c77b)),
-        pop: k.population ?? pop.get(k.id) ?? 0,
-        villages: vil.get(k.id) ?? (Array.isArray(k.villages) ? k.villages.length : 0),
-        land: land.get(k.id) || 0,
-        rel: relationsOf(civ, k),
-      }))
+      .map((k) => {
+        const capV = safe(() => civ.villages?.[k.capital], null);
+        return {
+          k,
+          id: k.id,
+          name: k.name || safe(() => civ.kingdomName(k.id), 'Kingdom'),
+          color: hexCss(k.color ?? safe(() => civ.kingdomColor(k.id), 0xe9c77b)),
+          ruler: safe(() => civ.rulerLabel?.(k), null) || k.rulerName || '—',
+          capital: capV?.name || '—',
+          pop: k.population ?? pop.get(k.id) ?? 0,
+          villages: Array.isArray(k.villages) ? k.villages.length : vil.get(k.id) ?? 0,
+          army: k.soldiers ?? army.get(k.id) ?? 0,
+          land: land.get(k.id) || 0,
+          rel: relationsOf(civ, k),
+        };
+      })
       .sort((a, b) => b.pop - a.pop || b.land - a.land);
+  }
+
+  makeRow(x) {
+    const stat = (label, icon) => {
+      const v = el('b', { text: '—' });
+      return { box: el('span', { class: 'ws-king__stat' }, el('span', { class: 'ws-king__sl', html: `${uiIcon(icon)}${label}` }), v), v };
+    };
+    const S = { pop: stat('Population', 'population'), villages: stat('Villages', 'village'), army: stat('Army', 'job-soldier'), land: stat('Land', 'map') };
+    const R = {
+      el: el('button', { class: 'ws-king', type: 'button', onclick: () => this.focusKingdom(x.id) }),
+      crest: el('span', { class: 'ws-king__crest' }, el('span')),
+      name: el('span', { class: 'ws-king__name' }),
+      ruler: el('b'),
+      capital: el('b'),
+      bar: el('i'),
+      rel: el('span', { class: 'ws-king__rel' }),
+      S,
+      sig: {},
+    };
+    R.el.append(
+      R.crest,
+      el(
+        'span',
+        { class: 'ws-king__body' },
+        R.name,
+        el('span', { class: 'ws-king__court' }, el('span', null, el('small', { text: 'Ruler' }), R.ruler), el('span', null, el('small', { text: 'Capital' }), R.capital)),
+        el('span', { class: 'ws-king__stats' }, S.pop.box, S.villages.box, S.army.box, S.land.box),
+        el('span', { class: 'ws-king__bar' }, R.bar),
+        R.rel,
+      ),
+    );
+    return R;
   }
 
   render() {
@@ -412,73 +531,78 @@ export class KingdomsPanel {
     const nameOf = (id) => list.find((x) => x.id === id)?.name || safe(() => g.civ.kingdomName(id), 'a rival');
     const colorOf = (id) => list.find((x) => x.id === id)?.color || '#888';
     const totalPop = list.reduce((s, x) => s + x.pop, 0) || 1;
-    let html = `<header class="ws-side__head"><span class="ws-modal__ico">${uiIcon('kingdoms')}</span><h2 class="ws-modal__title">Kingdoms</h2><span class="ws-side__count">${list.length}</span><button class="ws-iconbtn ws-iconbtn--sm" type="button" data-act="close" aria-label="Close (K)">${uiIcon('close')}</button></header>`;
-    if (!list.length) {
-      html += `<div class="ws-empty">
-        <div class="ws-empty__art">${uiIcon('crown')}</div>
-        <div class="ws-empty__title">No crowns yet</div>
-        <p class="ws-empty__txt">Kingdoms rise as villages grow. Found a settlement and watch a realm take shape.</p>
-        <button class="ws-btn ws-btn--gold ws-btn--sm" type="button" data-act="found">${uiIcon('house')}<span>Found a village</span></button>
-      </div>`;
-    } else {
-      html += '<div class="ws-side__list">';
-      for (const x of list) {
-        const share = Math.max(2, (x.pop / totalPop) * 100);
-        const rel = [
-          ...x.rel.wars.map((id) => `<span class="ws-rel is-war" style="--k:${colorOf(id)}" title="At war">${uiIcon('war')}${esc(nameOf(id))}</span>`),
-          ...x.rel.allies.map((id) => `<span class="ws-rel is-ally" style="--k:${colorOf(id)}" title="Allied">${uiIcon('shield')}${esc(nameOf(id))}</span>`),
+    this.countEl.textContent = String(list.length);
+    this.empty.hidden = list.length > 0;
+    this.list.hidden = !list.length;
+    const seen = new Set();
+    let prev = null;
+    for (const x of list) {
+      seen.add(x.id);
+      let R = this.rows.get(x.id);
+      if (!R) this.rows.set(x.id, (R = this.makeRow(x)));
+      const set = (node, key, val) => {
+        if (R.sig[key] !== val) {
+          R.sig[key] = val;
+          node.textContent = val;
+        }
+      };
+      if (R.sig.color !== x.color) {
+        R.sig.color = x.color;
+        R.el.style.setProperty('--k', x.color);
+      }
+      set(R.name, 'name', x.name);
+      set(R.crest.firstChild, 'crest', (x.name || '?').replace(/^(the|kingdom of)\s+/i, '')[0] || '?');
+      set(R.ruler, 'ruler', x.ruler);
+      set(R.capital, 'capital', x.capital);
+      set(R.S.pop.v, 'pop', fmtNum(x.pop));
+      set(R.S.villages.v, 'vil', fmtNum(x.villages));
+      set(R.S.army.v, 'army', fmtNum(x.army));
+      set(R.S.land.v, 'land', fmtNum(x.land));
+      const share = Math.max(2, (x.pop / totalPop) * 100).toFixed(1) + '%';
+      if (R.sig.share !== share) R.bar.style.width = R.sig.share = share;
+      const relKey = JSON.stringify(x.rel);
+      if (R.sig.rel !== relKey) {
+        R.sig.rel = relKey;
+        const chips = [
+          ...x.rel.wars.map((id) => `<span class="ws-rel is-war" style="--k:${colorOf(id)}">${uiIcon('war')}<small>War</small>${esc(nameOf(id))}</span>`),
+          ...x.rel.allies.map((id) => `<span class="ws-rel is-ally" style="--k:${colorOf(id)}">${uiIcon('alliance')}<small>Ally</small>${esc(nameOf(id))}</span>`),
         ].join('');
-        html += `<button class="ws-king" type="button" data-id="${x.id}" style="--k:${x.color}">
-          <span class="ws-king__crest"><span>${esc((x.name || '?').replace(/^(the|kingdom of)\s+/i, '')[0] || '?')}</span></span>
-          <span class="ws-king__body">
-            <span class="ws-king__name">${esc(x.name)}</span>
-            <span class="ws-king__stats">
-              <span>${uiIcon('population')}${fmtNum(x.pop)}</span>
-              <span>${uiIcon('village')}${fmtNum(x.villages)}</span>
-              <span>${uiIcon('map')}${fmtNum(x.land)}</span>
-            </span>
-            <span class="ws-king__bar"><i style="width:${share.toFixed(1)}%"></i></span>
-            ${rel ? `<span class="ws-king__rel">${rel}</span>` : '<span class="ws-king__rel ws-king__rel--none">At peace with all</span>'}
-          </span>
-        </button>`;
+        R.rel.innerHTML = chips || '<span class="ws-king__peace">At peace with all realms</span>';
       }
-      html += '</div>';
+      // keep population order without rebuilding
+      const want = prev ? prev.nextSibling : this.list.firstChild;
+      if (want !== R.el) this.list.insertBefore(R.el, want);
+      prev = R.el;
     }
-    this.el.innerHTML = html;
-    this.el.onclick = (e) => {
-      const b = e.target.closest('button');
-      if (!b) return;
-      if (b.dataset.act === 'close') return this.toggle(false);
-      if (b.dataset.act === 'found') {
-        this.ui.toolbar.setCategory('civ');
-        g.selectPower('found-village');
-        return;
+    for (const [id, R] of this.rows)
+      if (!seen.has(id)) {
+        R.el.remove();
+        this.rows.delete(id);
       }
-      if (b.dataset.id != null) this.focusKingdom(+b.dataset.id);
-    };
   }
 
   focusKingdom(id) {
     const g = this.game;
     const k = safe(() => g.civ.kingdoms.find((x) => x && x.id === id), null);
-    let x = k?.capital?.x ?? k?.x,
-      z = k?.capital?.z ?? k?.z;
+    const capV = safe(() => g.civ.villages?.[k?.capital], null);
+    let x = capV?.x ?? capV?.cx,
+      z = capV?.z ?? capV?.cz;
     if (x == null) {
-      const v = safe(() => g.civ.villages.find((v) => v && v.kingdom === id), null);
-      x = v?.x;
-      z = v?.z;
+      const v = safe(() => g.civ.villages.find((v) => v && v.kingdom === id && v.alive !== false), null);
+      x = v?.x ?? v?.cx;
+      z = v?.z ?? v?.cz;
     }
     if (x == null) {
-      // centroid of territory
       const W = g.world;
       let sx = 0,
         sz = 0,
         n = 0;
-      for (let i = 0; i < W.owner.length; i += 3) if (W.owner[i] === id) {
-        sx += i % W.w;
-        sz += Math.floor(i / W.w);
-        n++;
-      }
+      for (let i = 0; i < W.owner.length; i += 3)
+        if (W.owner[i] === id) {
+          sx += i % W.w;
+          sz += Math.floor(i / W.w);
+          n++;
+        }
       if (n) {
         x = sx / n + 0.5;
         z = sz / n + 0.5;
@@ -495,7 +619,7 @@ export class KingdomsPanel {
     if (!this.open) return;
     this._t -= dt;
     if (this._t <= 0) {
-      this._t = 1.2;
+      this._t = 1;
       safe(() => this.render(), null, 'kingdoms render');
     }
   }
