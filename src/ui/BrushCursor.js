@@ -159,7 +159,9 @@ class GroundLoop {
     }
   }
   // Lay the band along the loop stored in px/pz; width in world units.
-  build(width, lift) {
+  // With yc set, heights are clamped to yc ± dev so small markers stay flat
+  // instead of climbing cliff faces.
+  build(width, lift, yc = null, dev = 0.3) {
     const W = this.game.world;
     const n = this.n;
     const px = this.px,
@@ -184,7 +186,9 @@ class GroundLoop {
           z = pz[k] + nz * o;
         const j = (i * 2 + s) * 3;
         pos[j] = x;
-        pos[j + 1] = W.surfaceAt(x, z) + lift;
+        let y = W.surfaceAt(x, z);
+        if (yc != null) y = y < yc - dev ? yc - dev : y > yc + dev ? yc + dev : y;
+        pos[j + 1] = y + lift;
         pos[j + 2] = z;
       }
     }
@@ -380,20 +384,21 @@ export class BrushCursor {
       this.fill.mesh.visible = false;
     }
 
-    // ---- hover highlight (inspect mode)
+    // ---- hover highlight (inspect mode; never in ?ui=0 captures)
     let hovered = false;
-    if (hit && inspectMode && !g.input?.drag) {
+    const uiOn = g.params.ui !== false;
+    if (uiOn && hit && inspectMode && !g.input?.drag) {
       const sel = g.selected?.ref;
       const u = g.units?.nearest?.(hit.x, hit.z, 0.9);
       if (u && u !== sel) {
         const r = 0.42 * (u.scale || 1) * (u.def?.size || 1) + 0.18;
         this.hover.circle(u.x, u.z, r);
-        this.hover.build(Math.max(0.05, lineW * 0.7), lift);
+        this.hover.build(Math.max(0.05, lineW * 0.7), lift, g.world.surfaceAt(u.x, u.z), 0.25);
         this.hover.style(this.white, 0.85, this.t, 0, 0, 0.6, 0.35);
         hovered = true;
       } else if (!hit.water || g.world.isLand(hit.tx, hit.ty)) {
         this.hover.square(hit.tx, hit.ty, hit.tx + 1, hit.ty + 1);
-        this.hover.build(Math.max(0.04, lineW * 0.55), lift);
+        this.hover.build(Math.max(0.04, lineW * 0.55), lift, g.world.surfaceAt(hit.tx + 0.5, hit.ty + 0.5), 0.45);
         this.hover.style(this.white, 0.55, this.t, 0, 0, 0.6, 0.25);
         hovered = true;
       }
@@ -403,13 +408,13 @@ export class BrushCursor {
     // ---- selection marker
     const s = g.selected;
     const ref = s?.ref;
-    if (ref && ref.alive !== false && ref.x != null) {
+    if (uiOn && ref && ref.alive !== false && ref.x != null) {
       let r;
       if (s.kind === 'building') r = Math.max(1, Math.max(ref.w || 1, ref.h || 1) * 0.72);
       else r = 0.5 * (ref.scale || 1) * (ref.def?.size || 1) + 0.25;
       r *= 1 + Math.sin(this.t * 3.2) * 0.04;
       this.sel.circle(ref.x, ref.z, r);
-      this.sel.build(Math.max(0.06, lineW * 0.85), lift);
+      this.sel.build(Math.max(0.06, lineW * 0.85), lift, g.world.surfaceAt(ref.x, ref.z), s.kind === 'building' ? 0.8 : 0.25);
       this.sel.style(this.gold, 1, this.t, 3, 0.18, 0.72, 0.45);
       this.sel.visible = true;
     } else this.sel.visible = false;

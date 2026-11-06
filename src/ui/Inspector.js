@@ -1,5 +1,5 @@
 import { TILE_INFO, FLORA_INFO, SEA_LEVEL, SHALLOW_DEPTH, TILE } from '../world/constants.js';
-import { powerIcon, uiIcon, tileTint, svg } from './icons.js';
+import { powerIcon, uiIcon, tileTint } from './icons.js';
 import { getPower } from '../powers/registry.js';
 import { el, esc, safe, hexCss } from './dom.js';
 
@@ -179,8 +179,10 @@ export class Inspector {
     const kid = u?.kingdom ?? r.building?.kingdom ?? r.village?.kingdom ?? (k === 'tile' ? r.tile?.owner : null);
     if (kid != null && kid >= 0) kTint = hexCss(safe(() => this.game.civ.kingdomColor(kid), null));
     const stats = (r.stats || []).filter((s) => Array.isArray(s) && s.length >= 2);
+    const cap = (v) => (typeof v === 'string' && /^[a-z]/.test(v) ? v[0].toUpperCase() + v.slice(1) : v);
     const rows = stats
       .map(([key, v]) => {
+        v = cap(v);
         const lower = String(key).toLowerCase();
         const m = this.meter(v);
         const bad = /hunger|damage|fire|danger/.test(lower);
@@ -198,6 +200,13 @@ export class Inspector {
       })
       .join('');
     const following = u && this.game.cameraRig.follow === u;
+    let subtitle = r.subtitle;
+    if (u && (!subtitle || subtitle === r.title)) {
+      const sex = u.sex === 'f' ? 'Female' : u.sex === 'm' ? 'Male' : '';
+      const mat = u.def?.maturity ?? 1;
+      const stage = u.age < mat ? 'Young' : u.age > (u.def?.lifespan ?? 99) * 0.8 ? 'Elder' : 'Adult';
+      subtitle = [u.def?.name && u.def.name !== r.title ? u.def.name : null, sex, stage].filter(Boolean).join(' · ');
+    }
     const actions = [];
     if (u && !dead) actions.push(`<button class="ws-btn ws-btn--sm ${following ? 'is-on' : ''}" type="button" data-act="follow">${uiIcon('follow')}<span>${following ? 'Following' : 'Follow'}</span><kbd class="ws-key">F</kbd></button>`);
     if (r.x != null || u || r.building || r.village || this.hit) actions.push(`<button class="ws-btn ws-btn--sm ws-btn--ghost" type="button" data-act="focus">${uiIcon('focus')}<span>Focus</span></button>`);
@@ -207,9 +216,9 @@ export class Inspector {
       <header class="ws-insp__head">
         <span class="ws-insp__badge">${ico}</span>
         <div class="ws-insp__titles">
-          <div class="ws-insp__kind">${esc(KIND_LABEL[k] || 'Detail')}${dead ? ' <em class="ws-insp__dead">Fallen</em>' : ''}</div>
+          <div class="ws-insp__kind">${esc(k === 'tile' && r.tile?.water ? 'Waters' : KIND_LABEL[k] || 'Detail')}${dead ? ' <em class="ws-insp__dead">Fallen</em>' : ''}</div>
           <h3 class="ws-insp__title">${esc(r.title || 'Unknown')}</h3>
-          ${r.subtitle ? `<div class="ws-insp__sub">${kTint ? `<i class="ws-crest" style="--k:${kTint}"></i>` : ''}${esc(r.subtitle)}</div>` : ''}
+          ${subtitle ? `<div class="ws-insp__sub">${kTint ? `<i class="ws-crest" style="--k:${kTint}"></i>` : ''}${esc(subtitle)}</div>` : ''}
         </div>
         <button class="ws-iconbtn ws-iconbtn--sm ws-insp__x" type="button" aria-label="Close (Esc)" data-act="close">${uiIcon('close')}</button>
       </header>
