@@ -72,6 +72,7 @@ struct NS {
   vec4 cellS; vec4 cellL;
   float moist; float temp; float ao; float fire;
   float fw;   // world-space pixel footprint
+  float fwy;  // screen-space rate of change of world y (for strata AA)
 };
 
 struct Mat { vec3 albedo; float rough; float h; float bump; vec3 emit; };
@@ -152,8 +153,8 @@ Mat matJungle(NS s) {
   return mk(c, 0.75, 0.5 + 0.35 * v, 0.06);
 }
 Mat matSavanna(NS s) {
-  vec3 gold = vec3(0.520, 0.380, 0.120);
-  vec3 olive = vec3(0.300, 0.285, 0.090);
+  vec3 gold = vec3(0.560, 0.430, 0.115);
+  vec3 olive = vec3(0.330, 0.320, 0.085);
   float v = s.macro.r * 0.5 + s.meso.g * 0.5;
   vec3 c = mix(gold, olive, smoothstep(0.45, 0.85, v + (s.moist - 0.4) * 0.5));
   // bare red soil patches
@@ -326,30 +327,28 @@ Mat matCliff(NS s, out vec3 facetN) {
   vec4 dX = nz(uvX * 0.37);
   vec4 dZ = nz(uvZ * 0.37);
   vec4 d = mix(dZ, dX, wx);
-  // strata: bands in y, warped
-  float sy = p.y * 0.95 + (t.r - 0.5) * 2.2 + (s.macro.r - 0.5) * 1.5;
-  float band = fract(sy);
+  // strata: soft-edged bands in y (no thin creases: they alias on steep faces)
+  float sy = p.y * 0.62 + (t.r - 0.5) * 1.8 + (s.macro.r - 0.5) * 1.4;
   float layer = floor(sy);
-  float lr = hash12(vec2(layer, 3.7));
-  vec3 cA = vec3(0.380, 0.330, 0.275);
-  vec3 cB = vec3(0.265, 0.250, 0.235);
-  vec3 cC = vec3(0.450, 0.385, 0.300);
-  vec3 c = mix(mix(cB, cA, smoothstep(0.2, 0.6, lr)), cC, smoothstep(0.75, 0.95, lr));
-  c *= 0.78 + 0.34 * d.r;
-  float crease = smoothstep(0.0, 0.10, band) * smoothstep(1.0, 0.88, band);
-  c *= 0.82 + 0.18 * crease;
-  // facets: cells on the projected plane, each with its own tilt
-  vec4 fX = cz(vec2(p.z * 0.16, p.y * 0.30 + p.x * 0.05));
-  vec4 fZ = cz(vec2(p.x * 0.16, p.y * 0.30 + p.z * 0.05));
+  float lt = smoothstep(0.30, 0.70, fract(sy));
+  float lr = mix(hash12(vec2(layer, 3.7)), hash12(vec2(layer + 1.0, 3.7)), lt);
+  float bandFade = 1.0 - smoothstep(0.25, 0.7, s.fwy * 0.62);
+  lr = mix(0.5, lr, bandFade);
+  vec3 cA = vec3(0.370, 0.325, 0.270);
+  vec3 cB = vec3(0.285, 0.270, 0.255);
+  vec3 cC = vec3(0.445, 0.380, 0.300);
+  vec3 c = mix(mix(cB, cA, smoothstep(0.15, 0.6, lr)), cC, smoothstep(0.72, 0.95, lr));
+  c *= 0.84 + 0.26 * d.r;
+  // chunky facets: large cells on the projected plane, each with its own tilt
+  vec4 fX = cz(vec2(p.z * 0.055, p.y * 0.085 + p.x * 0.02));
+  vec4 fZ = cz(vec2(p.x * 0.055, p.y * 0.085 + p.z * 0.02));
   vec4 f = mix(fZ, fX, wx);
   vec3 tA = normalize(cross(n, vec3(0.0, 1.0, 0.0)) + vec3(1e-4, 0.0, 0.0));
   vec3 tB = normalize(cross(tA, n));
-  float near = 1.0 - smoothstep(0.15, 0.6, s.fw);
-  facetN = normalize(n + (tA * (f.b - 0.5) * 0.9 + tB * (f.a - 0.5) * 0.7) * near);
-  c *= 0.85 + 0.3 * f.b;
-  float seam = 1.0 - smoothstep(0.0, 0.07, f.g);
-  c *= 1.0 - seam * 0.16 * near;
-  return mk(c, 0.82, 0.8, 0.06 * (1.0 - crease) + 0.03);
+  float near = 1.0 - smoothstep(0.25, 0.9, s.fw);
+  facetN = normalize(n + (tA * (f.b - 0.5) * 0.6 + tB * (f.a - 0.5) * 0.45) * near);
+  c *= 0.90 + 0.2 * f.b;
+  return mk(c, 0.82, 0.55 + 0.25 * lr + 0.2 * t.g, 0.05);
 }
 
 // Seabed: rippled sand in the shallows, silt and rock in the deep.
@@ -418,11 +417,12 @@ void applyOverlay(vec2 p, inout vec3 albedo, inout vec3 emissive) {
   if (fB > fo) { own = B; fo = fB; }
   if (fC > fo) { own = C; fo = fC; }
   if (fD > fo) { own = D; fo = fD; }
+  // derivative before any non-uniform branch
+  float fwd = max(fwidth(fo), 1e-4);
   if (own.a < 0.004) return;
   float uniformRegion = step(0.999, fo);
   // distance (in tiles) from the border contour, approximately
   float dist = (fo - 0.5);
-  float fwd = max(fwidth(fo), 1e-4);
   float lineW = max(0.07, fwd * 1.1);
   float line = (1.0 - smoothstep(lineW, lineW + fwd * 1.2, dist)) * (1.0 - uniformRegion);
   float glow = exp(-max(dist, 0.0) * 7.0) * (1.0 - uniformRegion);
@@ -439,6 +439,7 @@ void terrainSurface() {
   s.n = normalize(vWNormal);
   vec2 p = s.p.xz;
   s.fw = length(fwidth(s.p));
+  s.fwy = fwidth(s.p.y);
   s.macro = nz(p * (1.0 / 97.0));
   s.meso = nz(ROT1 * p * (1.0 / 23.0));
   s.det = nz(ROT2 * p * (1.0 / 5.3));
@@ -474,7 +475,7 @@ void terrainSurface() {
   if (w.w > 0.0) m3 = evalMat(t3, s);
   vec4 live = step(1e-5, w);
   vec4 hv = (w + vec4(m0.h, m1.h, m2.h, m3.h) * 0.6) * live;
-  float hm = max(max(hv.x, hv.y), max(hv.z, hv.w)) - 0.20;
+  float hm = max(max(hv.x, hv.y), max(hv.z, hv.w)) - 0.30;
   vec4 b = max(hv - hm, 0.0) * live;
   b /= max(b.x + b.y + b.z + b.w, 1e-5);
 

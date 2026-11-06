@@ -142,7 +142,7 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   float breath = 0.5 + 0.5 * sin(t * 0.9 + fn.g * 6.0);
   float contactW = 0.30 + 0.25 * breath + 0.15 * fn.b;
   float contact = 1.0 - smoothstep(contactW * 0.25, contactW * 1.15, shoreD);
-  contact *= (0.45 + 0.55 * breakup) * mix(0.22, 1.0, open);
+  contact *= (0.45 + 0.55 * breakup) * mix(0.08, 1.0, open);
   // soft lighter wash just off the beach
   float wash = (1.0 - smoothstep(0.0, 1.6 + 0.6 * breath, shoreD)) * 0.35 * open;
   // travelling bands that wash toward the shore and fade out

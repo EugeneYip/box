@@ -101,9 +101,10 @@ export class Terrain {
     this.cw = Math.ceil(W / CHUNK);
     this.ch = Math.ceil(H / CHUNK);
     this.chunks = [];
+    this._indexCache = new Map();
+    this._hpad = null;
     for (let cy = 0; cy < this.ch; cy++)
       for (let cx = 0; cx < this.cw; cx++) this.chunks.push(this._makeChunk(cx, cy));
-    this._indexCache = new Map();
     this.skirt = null;
 
     this._dirtyHeight = null;
@@ -117,7 +118,6 @@ export class Terrain {
     ev.on('world:height', (r) => (this._dirtyHeight = unionRect(this._dirtyHeight, r)));
     ev.on('world:type', (r) => (this._dirtyType = unionRect(this._dirtyType, r)));
     ev.on('world:fire', (r) => (this._dirtyFire = unionRect(this._dirtyFire, r)));
-    ev.on('world:regenerated', () => this.reset());
   }
 
   // ------------------------------------------------------------ public API
@@ -125,13 +125,8 @@ export class Terrain {
     if (tex && tex.image) {
       this.uniforms.uOverlay.value = tex;
       this.uniforms.uOverlayOn.value = 1;
+      // texels are read with texelFetch, so the texture's own filtering is irrelevant
       this.uniforms.uOverlaySize.value.set(tex.image.width || this.w, tex.image.height || this.h);
-      if (tex.minFilter !== THREE.NearestFilter) {
-        tex.minFilter = THREE.NearestFilter;
-        tex.magFilter = THREE.NearestFilter;
-        tex.generateMipmaps = false;
-        tex.needsUpdate = true;
-      }
     } else {
       this.uniforms.uOverlay.value = this._blank;
       this.uniforms.uOverlayOn.value = 0;
@@ -191,11 +186,6 @@ export class Terrain {
         ['Moisture', `${Math.round(world.moisture[i] * 100)}%`],
       ],
     };
-  }
-
-  stats() {
-    const info = this.game.pipeline?.renderer?.info?.render;
-    return info ? { terrainChunks: this.chunks.length } : {};
   }
 
   // ------------------------------------------------------------ internals
@@ -370,33 +360,62 @@ export class Terrain {
     return { cx, cy, nx, ny, geo, mesh, tilesX, tilesY };
   }
 
+  // Vertex heights come from the same bilinear rule as world.heightAt(); a
+  // padded grid (PAD vertices beyond the chunk) gives seam-free normals from
+  // central differences averaged over two spans (0.5 and 1.0 world units).
   _buildChunk(c) {
     const world = this.game.world;
+    const hgt = world.height;
+    const W = world.w,
+      H = world.h;
     const pos = c.geo.attributes.position.array;
     const nrm = c.geo.attributes.normal.array;
     const x0 = c.cx * CHUNK,
       z0 = c.cy * CHUNK;
     const step = 1 / RES;
-    const e = 0.75; // normal sampling half-distance (smooth, seam-free)
+    const PAD = 2;
+    const pw = c.nx + 1 + PAD * 2,
+      ph = c.ny + 1 + PAD * 2;
+    if (!this._hpad || this._hpad.length < pw * ph) this._hpad = new Float32Array(pw * ph);
+    const hp = this._hpad;
+    for (let j = 0; j < ph; j++) {
+      const fz = z0 + (j - PAD) * step - 0.5;
+      const zi = Math.floor(fz),
+        tz = fz - zi;
+      const za = zi < 0 ? 0 : zi >= H ? H - 1 : zi,
+        zb = zi + 1 < 0 ? 0 : zi + 1 >= H ? H - 1 : zi + 1;
+      for (let i = 0; i < pw; i++) {
+        const fx = x0 + (i - PAD) * step - 0.5;
+        const xi = Math.floor(fx),
+          tx = fx - xi;
+        const xa = xi < 0 ? 0 : xi >= W ? W - 1 : xi,
+          xb = xi + 1 < 0 ? 0 : xi + 1 >= W ? W - 1 : xi + 1;
+        const h00 = hgt[za * W + xa],
+          h10 = hgt[za * W + xb],
+          h01 = hgt[zb * W + xa],
+          h11 = hgt[zb * W + xb];
+        hp[j * pw + i] = (h00 * (1 - tx) + h10 * tx) * (1 - tz) + (h01 * (1 - tx) + h11 * tx) * tz;
+      }
+    }
     let ymin = Infinity,
       ymax = -Infinity;
     let k = 0;
     for (let j = 0; j <= c.ny; j++) {
       const z = z0 + j * step;
+      const row = (j + PAD) * pw + PAD;
       for (let i = 0; i <= c.nx; i++) {
-        const x = x0 + i * step;
-        const y = world.heightAt(x, z);
-        pos[k] = x;
+        const o = row + i;
+        const y = hp[o];
+        pos[k] = x0 + i * step;
         pos[k + 1] = y;
         pos[k + 2] = z;
-        const dx = world.heightAt(x + e, z) - world.heightAt(x - e, z);
-        const dz = world.heightAt(x, z + e) - world.heightAt(x, z - e);
-        const nx = -dx / (2 * e),
-          nz = -dz / (2 * e);
-        const inv = 1 / Math.hypot(nx, 1, nz);
-        nrm[k] = nx * inv;
+        // d/dx over spans 0.5 (+-1 vertex) and 1.0 (+-2 vertices), averaged
+        const gx = ((hp[o + 1] - hp[o - 1]) / (2 * step) + (hp[o + 2] - hp[o - 2]) / (4 * step)) * 0.5;
+        const gz = ((hp[o + pw] - hp[o - pw]) / (2 * step) + (hp[o + 2 * pw] - hp[o - 2 * pw]) / (4 * step)) * 0.5;
+        const inv = 1 / Math.sqrt(gx * gx + 1 + gz * gz);
+        nrm[k] = -gx * inv;
         nrm[k + 1] = inv;
-        nrm[k + 2] = nz * inv;
+        nrm[k + 2] = -gz * inv;
         if (y < ymin) ymin = y;
         if (y > ymax) ymax = y;
         k += 3;
@@ -492,7 +511,7 @@ export class Terrain {
         const h0 = world.heightAt(ex, ez);
         const t = Math.min(1, d / 70);
         const s = t * t * (3 - 2 * t);
-        const y = h0 + (Math.min(h0, deep) - h0) * s + (deep - Math.min(h0, deep)) * s;
+        const y = h0 + (deep - h0) * s;
         const o = (r * ringN + i) * 3;
         pos[o] = ex + ox * d;
         pos[o + 1] = r === 0 ? h0 : y;
