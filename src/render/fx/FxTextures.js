@@ -446,9 +446,33 @@ export function createDecalAtlas() {
     };
     ctx.strokeStyle = 'rgba(255,255,255,1)';
     if (lineMode) {
-      // a long fault line crossing the frame horizontally
-      branch(6, S / 2, (rnd() - 0.5) * 0.3, S * 1.1, 5, 1);
-      branch(S - 6, S / 2, Math.PI + (rnd() - 0.5) * 0.3, S * 0.6, 4, 1);
+      // a gaping chasm crossing the frame horizontally: a thick band with
+      // jagged lips (about a third of the frame wide) plus hairline cracks
+      // branching off both lips
+      ctx.fillStyle = 'rgba(255,255,255,1)';
+      const top = [],
+        bot = [];
+      let wt = 30,
+        wb = 30,
+        mid = S / 2;
+      for (let x = -4; x <= S + 4; x += 6) {
+        wt = Math.max(16, Math.min(46, wt + (rnd() - 0.5) * 14));
+        wb = Math.max(16, Math.min(46, wb + (rnd() - 0.5) * 14));
+        mid += (rnd() - 0.5) * 4;
+        mid = Math.max(S / 2 - 10, Math.min(S / 2 + 10, mid));
+        top.push([x, mid - wt]);
+        bot.push([x, mid + wb]);
+      }
+      ctx.beginPath();
+      ctx.moveTo(top[0][0], top[0][1]);
+      for (const p of top) ctx.lineTo(p[0], p[1]);
+      for (let k = bot.length - 1; k >= 0; k--) ctx.lineTo(bot[k][0], bot[k][1]);
+      ctx.closePath();
+      ctx.fill();
+      for (let k = 0; k < 7; k++) {
+        const p = (rnd() < 0.5 ? top : bot)[1 + ((rnd() * (top.length - 2)) | 0)];
+        branch(p[0], p[1], (p[1] < S / 2 ? -1 : 1) * (Math.PI / 2 + (rnd() - 0.5) * 1.2), 30 + rnd() * 40, 4, 2);
+      }
     } else {
       const n = 6;
       for (let i = 0; i < n; i++) branch(S / 2, S / 2, (i / n) * Math.PI * 2 + rnd() * 0.6, 70 + rnd() * 50, 5 - i * 0.3, 0);
@@ -464,7 +488,7 @@ export function createDecalAtlas() {
       const i = (y * S + x) * 4 + 3;
       const s = sharp[i] / 255,
         b = blurred[i] / 255;
-      const fade = lineMode ? 1 - smoothstep(0.85, 1, Math.abs(u)) : 1 - smoothstep(0.7, 1, Math.hypot(u, v));
+      const fade = lineMode ? 1 - smoothstep(0.9, 1, Math.abs(u)) : 1 - smoothstep(0.7, 1, Math.hypot(u, v));
       o[3] = clamp01((s + b * 0.6) * fade);
       o[0] = clamp01(s * 0.95 + b * 0.35);
       o[1] = clamp01(s);
