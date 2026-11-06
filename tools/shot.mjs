@@ -63,8 +63,8 @@ for (const s of plan) {
   const q = s.q || '';
   const url = base + (q ? (q.startsWith('?') ? q : '?' + q) : '');
   const t0 = Date.now();
-  await page.goto(url, { waitUntil: 'load', timeout: 120000 });
-  await page.waitForFunction(() => window.__ready === true || window.__error, null, { timeout: 180000 });
+  await page.goto(url, { waitUntil: 'commit', timeout: 120000 });
+  await page.waitForFunction(() => window.__ready === true || window.__error, null, { timeout: 900000, polling: 500 });
   if (s.eval) {
     await page.evaluate(`(async () => { ${s.eval} })()`);
   }
