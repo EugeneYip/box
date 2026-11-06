@@ -435,7 +435,62 @@ const P = {
   erase:
     '<path class="f" d="M4.6 20.4 16.4 8.6a2 2 0 0 1 2.8 0l5.4 5.4a2 2 0 0 1 0 2.8L13.8 27.6H9.2l-4.6-4.4a2 2 0 0 1 0-2.8z"/><path d="M4.6 20.4 16.4 8.6a2 2 0 0 1 2.8 0l5.4 5.4a2 2 0 0 1 0 2.8L13.8 27.6H9.2l-4.6-4.4a2 2 0 0 1 0-2.8zM10.4 14.6l8.2 8.2M13.8 27.6H28"/>',
   'time-skip': '<circle class="f" cx="16" cy="16" r="11.5"/><circle cx="16" cy="16" r="11.5"/><path d="M16 9v7l4.6 3"/><path class="s" d="M27.5 5.5v6h-6z"/>',
+  // --- added for the integrated power set ---------------------------------
+  inferno: (() => {
+    const side = '<path class="f" d="M8.2 11.5c.6 2.9 3.8 4.4 3.8 8.3a3.8 3.8 0 0 1-7.6 0c0-2.1 1-3.4 1.8-4 .2 1.3.7 2 1.5 2.2-.2-2.3 0-4.5.5-6.5z"/><path d="M8.2 11.5c.6 2.9 3.8 4.4 3.8 8.3a3.8 3.8 0 0 1-7.6 0c0-2.1 1-3.4 1.8-4 .2 1.3.7 2 1.5 2.2-.2-2.3 0-4.5.5-6.5z"/>';
+    return side + g('translate(32 0) scale(-1 1)', side) +
+      '<path class="f" d="M16 2.5c1.1 4.8 6.8 7.2 6.8 14.6a6.8 6.8 0 0 1-13.6 0c0-3.8 1.8-6.1 3.2-7.4.4 2.3 1.4 3.6 2.7 4.1C14.2 9.4 15 5.7 16 2.5z"/><path d="M16 2.5c1.1 4.8 6.8 7.2 6.8 14.6a6.8 6.8 0 0 1-13.6 0c0-3.8 1.8-6.1 3.2-7.4.4 2.3 1.4 3.6 2.7 4.1C14.2 9.4 15 5.7 16 2.5z"/>' +
+      '<path class="s" d="M16 26.4a3 3 0 0 1-3-3c0-2.4 3-4.4 3-6.6 1 1.9 3 3.8 3 6.6a3 3 0 0 1-3 3z" opacity=".9"/><path d="M3 29h26"/>';
+  })(),
+  'meteor-shower':
+    '<circle class="f" cx="21.5" cy="15.5" r="3.4"/><circle cx="21.5" cy="15.5" r="3.4"/><path d="M24 13 29 8M24.8 16.6l3.6-3.6"/>' +
+    '<circle class="f" cx="8" cy="22" r="2.8"/><circle cx="8" cy="22" r="2.8"/><path d="M10 20 15 15M10.8 23l2.8-2.8"/>' +
+    '<circle class="f" cx="16" cy="27" r="2"/><circle cx="16" cy="27" r="2"/><path d="M17.5 25.5l3.5-3.5"/>' +
+    '<path class="th" d="M12 7.5 15.5 4M5.5 13 8 10.5"/>',
+  'spawn-golem':
+    '<path class="f" d="M12.6 4.5h6.8l1.2 4.6-1.8 2.6h-5.6l-1.8-2.6z"/><path d="M12.6 4.5h6.8l1.2 4.6-1.8 2.6h-5.6l-1.8-2.6z"/><path class="s" d="M13.6 7.4h1.9v1.2h-1.9zM16.5 7.4h1.9v1.2h-1.9z"/>' +
+    '<path class="f" d="M9.6 13.2 16 11.7l6.4 1.5 1.6 7-3 4.4H11l-3-4.4z"/><path d="M9.6 13.2 16 11.7l6.4 1.5 1.6 7-3 4.4H11l-3-4.4z"/><path class="th" d="M16 11.7v6.6l-4.2 3.4M16 18.3l4.2 3.4"/>' +
+    '<path d="M9.6 13.6 5.8 15.4l-1.5 6.4 2.3 2.4 2.6-1.4M22.4 13.6l3.8 1.8 1.5 6.4-2.3 2.4-2.6-1.4M12.4 24.6v3.9h3v-3.9M16.6 24.6v3.9h3v-3.9"/>' +
+    '<circle class="ts" cx="11.4" cy="13.6" r="1.3"/><circle class="ts" cx="21" cy="13" r="1"/><circle class="ts" cx="13.6" cy="5" r=".9"/>',
+  'spawn-serpent':
+    `<path class="f" d="M4.5 24c0-5.6 2.8-9 6-9s6 3.4 6 9h-3.4c0-3.6-1.2-5.6-2.6-5.6S7.9 20.4 7.9 24z"/><path d="M4.5 24c0-5.6 2.8-9 6-9s6 3.4 6 9M7.9 24c0-3.6 1.2-5.6 2.6-5.6s2.6 2 2.6 5.6"/>` +
+    '<path class="f" d="M19 24c0-7.4 1.8-12.4 5.4-13.8 2.2-.8 4.4.4 4.8 2.6l-3.4.6c-.8 1.6-1.6 4.8-1.6 10.6z"/><path d="M19 24c0-7.4 1.8-12.4 5.4-13.8 2.2-.8 4.4.4 4.8 2.6l-3.4.6c-.8 1.6-1.6 4.8-1.6 10.6"/><circle class="s" cx="25.4" cy="12.2" r=".9"/><path class="t" d="M22.4 11.2l-2.2-3.6 3.6 1.4M20.4 15.2l-2.6-1.6"/>' +
+    `<path d="${wave(26.5, 2.5, 29.5, 4, 1.4)}"/>`,
+  'found-vale':
+    '<path class="f" d="M5 27V17.5h13V27z"/><path d="M5 17.5V27h13v-9.5M8.6 17.5V27M14.4 17.5V27M8.6 22.4l5.8-4.9"/>' +
+    '<path class="ts" d="M3 18.4c2.4-4.4 5.2-8 8.5-10.6 3.3 2.6 6.1 6.2 8.5 10.6z" opacity=".6"/><path d="M3 18.4c2.4-4.4 5.2-8 8.5-10.6 3.3 2.6 6.1 6.2 8.5 10.6z"/><path class="th" d="M7.6 13.4h7.8M5.6 16h11.8"/>' +
+    ROUND_TREE(25, 20.2, 0.46) + '<path d="M2.5 27.5h27"/>',
+  'found-dune':
+    '<path class="f" d="M5.5 27V19h14v8z"/><path d="M5.5 19v8h14v-8z"/><path class="ts" d="M7.6 19a4.9 4.9 0 0 1 9.8 0z" opacity=".6"/><path d="M7.6 19a4.9 4.9 0 0 1 9.8 0M12.5 14.1v-2.4"/><path d="M10.6 27v-3a1.9 1.9 0 0 1 3.8 0v3"/>' +
+    '<path class="f" d="M21.5 27V9.6h5V27z"/><path d="M21.5 27V9.6h5V27M20.8 9.6h6.4l-1.2-2.4h-4z"/><path class="th" d="M23 12.4h2M23 15h2"/><path d="M2.5 27.5h27"/>',
+  'found-frost':
+    '<path class="f" d="M3.8 19.4 11.5 5l7.7 14.4z"/><path d="M3.8 19.4 11.5 5l7.7 14.4"/><path class="s" d="M9.3 9.2 11.5 5l2.2 4.2-1-.6-1.2.9-1.2-.9z"/>' +
+    '<path d="M6 19.4v8.1h11v-8.1"/><path class="th" d="M6 23.4h5.4M11.4 23.4v4.1M13.4 21.4H17M9.6 19.4v4"/>' +
+    CONIFER(24.6, 19.4, 0.72) + '<path d="M2.5 27.5h27"/>',
+  'found-mire':
+    '<path class="ts" d="M4.6 12.6c3.6 1.7 7.4 1.7 11.4 0s7.8-1.7 11.4 0l-2.4-4.8c-2.6 1-5.6 1.5-9 1.5S9.6 8.8 7 7.8z" opacity=".6"/><path d="M4.6 12.6c3.6 1.7 7.4 1.7 11.4 0s7.8-1.7 11.4 0l-2.4-4.8c-2.6 1-5.6 1.5-9 1.5S9.6 8.8 7 7.8z"/>' +
+    '<path class="f" d="M8 13.4h16v5.8H8z"/><path d="M8 13.4v5.8h16v-5.8M14 19.2v-3.6h4v3.6"/><path d="M9.6 19.2v7.2M16 19.2v7.2M22.4 19.2v7.2"/>' +
+    `<path d="${wave(26.5, 2.5, 29.5, 4, 1.3)}"/>`,
+  'golden-age':
+    `<path class="ts" d="M8.6 23.5a7.4 7.4 0 0 1 14.8 0z" opacity=".6"/><path d="M8.6 23.5a7.4 7.4 0 0 1 14.8 0M3 23.5h26M7 27.5h18"/>` +
+    [-160, -132, -104, -76, -48, -20]
+      .map((a) => {
+        const r = (a * Math.PI) / 180;
+        return `<path d="M${r1(16 + Math.cos(r) * 10)} ${r1(23.5 + Math.sin(r) * 10)}L${r1(16 + Math.cos(r) * 13.4)} ${r1(23.5 + Math.sin(r) * 13.4)}"/>`;
+      })
+      .join('') +
+    `<path class="s" d="${sparkle(16, 4.2, 2.6)}"/>`,
+  'bountiful-harvest':
+    g('rotate(-24 16 24)', WHEAT(16, 13.5, 0.7)) + g('rotate(24 16 24)', WHEAT(16, 13.5, 0.7)) + WHEAT(16, 12.5, 0.74) + '<path d="M12.6 22.4h6.8" style="stroke-width:3"/>',
+  // job glyphs (inspector portraits)
+  'job-woodcutter': '<path d="M9 28 21 8.5"/><path class="f" d="M18.6 6.2c2.8-1.8 6.2-1.4 8 .8-1 3.2-3.6 5.4-6.8 5.8z"/><path d="M18.6 6.2c2.8-1.8 6.2-1.4 8 .8-1 3.2-3.6 5.4-6.8 5.8"/>',
+  'job-miner': '<path d="M10 28 19 9"/><path class="f" d="M5.5 12.2C10.4 6.4 19.4 4.8 26.6 9c-6.6-2-13.8-1-21.1 3.2z"/><path d="M5.5 12.2C10.4 6.4 19.4 4.8 26.6 9"/><path class="s" d="M21 25.5l2.4-2.4 3 1.4-1 3.4-3.2.4z"/>',
+  'job-farmer': '<path d="M10 28 21 6.5"/><path class="f" d="M21 6.5c4 .2 7 2.6 7.6 6.2-3.2-2-6.6-2.4-9.8-1.6z"/><path d="M21 6.5c4 .2 7 2.6 7.6 6.2-3.2-2-6.6-2.4-9.8-1.6"/>' + WHEAT(7.5, 16, 0.5),
+  'job-fisher': '<path d="M5 28 24 5"/><path class="th" d="M24 5c2 3 2.6 8 2.6 13"/><path d="M26.6 18v3.4a2.4 2.4 0 0 1-4.8 0v-1"/><path class="f" d="M4 22c2.4-2.6 5.4-3.6 8.6-2.6l2.4-2v6l-2.4-2C9.4 22.4 6.4 22 4 22z"/>',
+  'job-soldier': '<path class="f" d="M16 4.5 26 8v7.4c0 6-4.2 9.8-10 12.1C10.2 25.2 6 21.4 6 15.4V8z"/><path d="M16 4.5 26 8v7.4c0 6-4.2 9.8-10 12.1C10.2 25.2 6 21.4 6 15.4V8z"/><path d="M16 9v13M11.5 14h9"/>',
+  'job-child': '<circle class="f" cx="16" cy="13" r="4.2"/><circle cx="16" cy="13" r="4.2"/><path class="f" d="M9 27.5v-1c0-4 3.2-6.6 7-6.6s7 2.6 7 6.6v1z"/><path d="M9 27.5v-1c0-4 3.2-6.6 7-6.6s7 2.6 7 6.6v1"/>',
 };
+
 
 // Aliases / synonyms for ids other teams are likely to use.
 const ALIAS = {
@@ -457,6 +512,15 @@ const ALIAS = {
   'spawn-undead': 'spawn-skeleton',
   'spawn-zombie': 'spawn-skeleton',
   'spawn-wyvern': 'spawn-dragon',
+  'spawn-skywyrm': 'spawn-dragon',
+  'spawn-tidewyrm': 'spawn-serpent',
+  'spawn-sea-serpent': 'spawn-serpent',
+  'forge-alliance': 'alliance',
+  'incite-rebellion': 'rebellion',
+  'job-builder': 'build',
+  'job-king': 'crown',
+  'job-queen': 'crown',
+  'job-ruler': 'crown',
   'spawn-cod': 'spawn-fish',
   'spawn-salmon': 'spawn-fish',
   'spawn-fishes': 'spawn-fish',
@@ -699,6 +763,23 @@ const ID_TINT = {
   'spawn-bee': '#ffd36a',
   'spawn-dragon': '#ff7a5a',
   'spawn-skeleton': '#d8d2c4',
+  inferno: '#ff6a2a',
+  'meteor-shower': '#ffb36a',
+  'spawn-golem': '#a8d27a',
+  'spawn-serpent': '#6fe0d8',
+  'spawn-skywyrm': '#ffa040',
+  'found-vale': '#f0cf6a',
+  'found-dune': '#e8b872',
+  'found-frost': '#bfe0ff',
+  'found-mire': '#7fd09a',
+  'golden-age': '#ffd36a',
+  'bountiful-harvest': '#f0cf6a',
+  'forge-alliance': '#9fe0b0',
+  'incite-rebellion': '#ff8a5a',
+  tsunami: '#59c3e6',
+  wither: '#d0a060',
+  bloom: '#ffb0d8',
+  'plant-grass': '#9ad66a',
 };
 function hexStr(n) {
   return '#' + (n >>> 0).toString(16).padStart(6, '0').slice(-6);
@@ -788,11 +869,28 @@ export function powerIcon(p, cls = '') {
     const t = Object.values(TILE).find((v) => TILE_INFO[v]?.name.toLowerCase().includes(bare));
     if (t != null) tint = tileTint(t);
   }
-  if (typeof p.icon === 'string' && p.icon.trim().startsWith('<svg')) return { svg: p.icon, tint, custom: true };
-  let inner = resolveInner(id);
+  const own = P[id] || (ALIAS[id] && P[ALIAS[id]]);
+  if (!own && typeof p.icon === 'string' && /<svg\b/i.test(p.icon)) {
+    const norm = normalizeSvg(p.icon, cls);
+    if (norm) return { svg: norm, tint, custom: true };
+  }
+  let inner = own || resolveInner(id);
   if (!inner && id.startsWith('paint-')) inner = ground() + `<path class="f" d="M16 4c3.6 4.4 6 8 6 10.6a6 6 0 0 1-12 0C10 12 12.4 8.4 16 4z"/><path d="M16 4c3.6 4.4 6 8 6 10.6a6 6 0 0 1-12 0C10 12 12.4 8.4 16 4z"/>`;
   if (!inner) inner = fallbackInner(p);
   return { svg: svg(inner, cls), tint };
+}
+
+// Make a module-supplied SVG behave like ours: sized by font-size, styled by
+// the icon classes, keeping its own viewBox.
+function normalizeSvg(markup, cls = '') {
+  const m = String(markup).match(/<svg\b([^>]*)>/i);
+  if (!m) return null;
+  const vb = m[1].match(/viewBox\s*=\s*["']([^"']+)["']/i)?.[1] || '0 0 24 24';
+  const body = String(markup)
+    .slice(m.index + m[0].length)
+    .replace(/<\/svg>\s*$/i, '');
+  const w = +vb.split(/[\s,]+/)[2] || 24;
+  return `<svg class="ico ico--ext ${cls}" viewBox="${vb}" style="--sw:${((2 * w) / 32).toFixed(2)}" aria-hidden="true" focusable="false">${body}</svg>`;
 }
 
 export function categoryIcon(id, cls = '') {
@@ -856,5 +954,5 @@ const U = {
   village: HOUSE(11.5, 17.5, 0.95) + HOUSE(22, 19.5, 0.7),
 };
 export function uiIcon(name, cls = '') {
-  return svg(U[name] || U.info, cls);
+  return svg(U[name] || P[name] || (ALIAS[name] && P[ALIAS[name]]) || U.info, cls);
 }

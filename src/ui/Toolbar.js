@@ -5,6 +5,41 @@ import { el, esc } from './dom.js';
 // Power slots in the active category are bound to the bottom letter row.
 export const SLOT_CODES = ['KeyZ', 'KeyX', 'KeyC', 'KeyV', 'KeyB', 'KeyN', 'KeyM', 'Comma', 'Period', 'Slash'];
 export const SLOT_LABELS = ['Z', 'X', 'C', 'V', 'B', 'N', 'M', ',', '.', '/'];
+// slot i (0-based in display order): 0-9 plain, 10-19 with Shift
+export const slotLabel = (i) => (i < 10 ? SLOT_LABELS[i] : i < 20 ? '⇧' + SLOT_LABELS[i - 10] : null);
+
+const MONSTER = /golem|serpent|wyrm|dragon|troll|giant|kraken|monster|demon|skeleton|zombie|undead|behemoth/;
+// Optional sub-groups inside a category (a power may also set p.group).
+const GROUPS = {
+  life: [
+    { name: 'Creatures', test: (p) => p.id.startsWith('spawn-') && !MONSTER.test(p.id) },
+    { name: 'Monsters', test: (p) => MONSTER.test(p.id) },
+    { name: 'Miracles', test: () => true },
+  ],
+  civ: [
+    { name: 'Settle', test: (p) => /^found-|village|settle|colon/.test(p.id) },
+    { name: 'Diplomacy', test: (p) => /war|peace|allian|rebel|treaty|truce|pact/.test(p.id) },
+    { name: 'Blessings', test: () => true },
+  ],
+};
+export function groupPowers(cat) {
+  const list = listPowers(cat);
+  const defs = GROUPS[cat];
+  const out = [];
+  const byName = new Map();
+  const add = (name, p) => {
+    let gr = byName.get(name);
+    if (!gr) byName.set(name, (gr = { name, list: [] })) && out.push(gr);
+    gr.list.push(p);
+  };
+  for (const p of list) {
+    if (p.group) add(String(p.group), p);
+    else if (defs) add((defs.find((d) => d.test(p)) || defs[defs.length - 1]).name, p);
+    else add('', p);
+  }
+  if (defs) out.sort((a, b) => defs.findIndex((d) => d.name === a.name) - defs.findIndex((d) => d.name === b.name));
+  return out;
+}
 
 const CAT_BLURB = {
   terrain: 'Raise, carve and level the land',
@@ -42,7 +77,29 @@ export class Toolbar {
     );
     this.tabsEl = el('div', { class: 'ws-tabs', role: 'tablist' });
     this.gridEl = el('div', { class: 'ws-powers', role: 'toolbar' });
-    this.panel.append(this.handle, el('div', { class: 'ws-dock__body' }, this.tabsEl, this.gridEl));
+    this.minBtn = el('button', {
+      class: 'ws-iconbtn ws-iconbtn--sm ws-dock__min',
+      type: 'button',
+      'aria-label': 'Fold the power tray (`)',
+      'data-tip': 'Fold tray · `',
+      html: uiIcon('chev-down'),
+      onclick: () => this.setMin(!this.el.classList.contains('is-min')),
+    });
+    this.panel.append(this.handle, el('div', { class: 'ws-dock__body' }, el('div', { class: 'ws-tabrow' }, this.tabsEl, this.minBtn), this.gridEl));
+    const row = this.tabsEl.parentElement;
+    const hint = () => {
+      const t = this.tabsEl;
+      row.classList.toggle('is-scrolled', t.scrollLeft > 4);
+      row.classList.toggle('at-end', t.scrollLeft + t.clientWidth >= t.scrollWidth - 4);
+    };
+    this.tabsEl.addEventListener('scroll', hint, { passive: true });
+    requestAnimationFrame(hint);
+    let rt = 0;
+    addEventListener('resize', () => {
+      hint();
+      clearTimeout(rt);
+      rt = setTimeout(() => this.buildGrid(), 150);
+    });
     this.el.append(this.brush.el, this.panel);
 
     this.tip = el('div', { class: 'ws-tip ws-glass', role: 'tooltip' });
@@ -85,10 +142,20 @@ export class Toolbar {
     }
   }
 
+  setMin(min) {
+    this.el.classList.toggle('is-min', min);
+    this.minBtn.innerHTML = uiIcon(min ? 'chev-up' : 'chev-down');
+    this.minBtn.dataset.tip = min ? 'Unfold tray · `' : 'Fold tray · `';
+    this.ui.savePrefs?.({ dockMin: min });
+    this.hideTip(true);
+  }
+
   setCategory(id, { quiet = false } = {}) {
     if (!CATEGORIES.find((c) => c.id === id)) return;
+    if (this.el.classList.contains('is-min')) this.setMin(false);
     if (this.cat === id) return;
     this.cat = id;
+    this.tabEls?.get(id)?.scrollIntoView?.({ block: 'nearest', inline: 'center', behavior: 'smooth' });
     this.hideTip(true);
     this.buildGrid(true);
     this.syncActive();
@@ -103,37 +170,43 @@ export class Toolbar {
   }
 
   // ------------------------------------------------------------------ grid
+  // Balanced rows: if a category does not fit on one row, every group gets
+  // ceil(n / rows) columns so rows come out even (e.g. 6 + 6, not 11 + 1).
+  layout(groups) {
+    const cs = getComputedStyle(document.documentElement);
+    const tile = parseFloat(cs.getPropertyValue('--ws-tile')) || 56;
+    const map = parseFloat(cs.getPropertyValue('--ws-map')) || 214;
+    const edge = parseFloat(cs.getPropertyValue('--ws-edge')) || 14;
+    const cell = tile + 6;
+    const drawer = this.isDrawer();
+    const avail = drawer ? innerWidth - 2 * edge - 16 : Math.min(innerWidth - 2 * edge - 2 * (map + 16), 1500) - 22;
+    const n = groups.reduce((s, gr) => s + gr.list.length, 0);
+    const extra = (groups.length - 1) * 17;
+    if (drawer) return groups.map(() => Math.max(1, Math.floor((avail + 6) / cell)));
+    const rows = Math.max(1, Math.ceil((n * cell + extra) / Math.max(cell, avail)));
+    return groups.map((gr) => Math.max(1, Math.ceil(gr.list.length / rows)));
+  }
+
   buildGrid(animate = false) {
     const grid = this.gridEl;
     grid.innerHTML = '';
     this.tiles.clear();
-    const list = listPowers(this.cat);
-    grid.style.setProperty('--n', list.length);
-    list.forEach((p, i) => {
-      const { svg, tint } = powerIcon(p);
-      const key = SLOT_LABELS[i];
-      const b = el(
-        'button',
-        {
-          class: 'ws-pw',
-          type: 'button',
-          style: `--tint:${tint};--i:${i}`,
-          'data-id': p.id,
-          'aria-label': p.name + (key ? ` (${key})` : ''),
-          onclick: () => this.pick(p),
-          onpointerenter: (e) => {
-            if (e.pointerType !== 'touch') this.queueTip(p, b);
-          },
-          onpointerleave: () => this.hideTip(),
-          onfocus: () => this.queueTip(p, b, 0),
-          onblur: () => this.hideTip(),
-        },
-        el('span', { class: 'ws-pw__ico', html: svg }),
-        key ? el('span', { class: 'ws-pw__key', text: key }) : null,
-      );
-      grid.append(b);
-      this.tiles.set(p.id, b);
+    const groups = groupPowers(this.cat);
+    const cols = this.layout(groups);
+    this.order = groups.flatMap((gr) => gr.list);
+    const named = groups.length > 1 || (groups[0] && groups[0].name);
+    grid.classList.toggle('is-grouped', !!named);
+    let i = 0;
+    groups.forEach((gr, gi) => {
+      const box = el('div', { class: 'ws-pgroup', style: `--cols:${cols[gi]}` });
+      if (named) box.append(el('div', { class: 'ws-pgroup__cap', text: gr.name }));
+      const inner = el('div', { class: 'ws-pgroup__grid' });
+      box.append(inner);
+      grid.append(box);
+      for (const p of gr.list) this.makeTile(p, i++, inner);
     });
+    const list = this.order;
+    grid.style.setProperty('--n', list.length);
     if (!list.length) grid.append(el('div', { class: 'ws-powers__empty', text: 'No powers here yet' }));
     if (animate) {
       grid.classList.remove('is-swap');
@@ -141,6 +214,32 @@ export class Toolbar {
       grid.classList.add('is-swap');
     }
     this.handleCat?.();
+  }
+
+  makeTile(p, i, parent) {
+    const { svg, tint } = powerIcon(p);
+    const key = slotLabel(i);
+    const b = el(
+      'button',
+      {
+        class: 'ws-pw',
+        type: 'button',
+        style: `--tint:${tint};--i:${i}`,
+        'data-id': p.id,
+        'aria-label': p.name + (key ? ` (${key.replace('⇧', 'Shift+')})` : ''),
+        onclick: () => this.pick(p),
+        onpointerenter: (e) => {
+          if (e.pointerType !== 'touch') this.queueTip(p, b);
+        },
+        onpointerleave: () => this.hideTip(),
+        onfocus: () => this.queueTip(p, b, 0),
+        onblur: () => this.hideTip(),
+      },
+      el('span', { class: 'ws-pw__ico', html: svg }),
+      key ? el('span', { class: 'ws-pw__key' + (i >= 10 ? ' is-shift' : ''), text: key }) : null,
+    );
+    parent.append(b);
+    this.tiles.set(p.id, b);
   }
 
   // Rebuild if other modules registered powers after the UI was built.
@@ -164,8 +263,9 @@ export class Toolbar {
   }
 
   pickSlot(i) {
-    const p = listPowers(this.cat)[i];
+    const p = (this.order || listPowers(this.cat))[i];
     if (p) this.pick(p);
+    return !!p;
   }
 
   // ------------------------------------------------------------------ state sync
@@ -267,8 +367,9 @@ export class Toolbar {
     if (!p) return;
     if (!anchor) anchor = this.tiles.get(p.id);
     const { svg, tint } = powerIcon(p);
-    const idx = listPowers(p.category).indexOf(p);
-    const key = p.category === this.cat ? SLOT_LABELS[idx] : null;
+    const idx = (p.category === this.cat ? this.order || [] : groupPowers(p.category).flatMap((gr) => gr.list)).indexOf(p);
+    const key = idx >= 0 ? slotLabel(idx) : null;
+    const grp = groupPowers(p.category).find((gr) => gr.list.includes(p))?.name;
     const cat = CATEGORIES.find((c) => c.id === p.category);
     const brush = p.brush ? `Radius ${p.brush.min ?? 1}–${p.brush.max ?? 30}` : 'Single target';
     const how = p.mode === 'click' ? 'Click to cast' : 'Hold & drag to paint';
@@ -278,12 +379,12 @@ export class Toolbar {
         <span class="ws-tip__ico">${svg}</span>
         <div class="ws-tip__titles">
           <div class="ws-tip__name">${esc(p.name)}</div>
-          <div class="ws-tip__cat">${esc(cat?.name || p.category)} <i></i> ${esc(how)}</div>
+          <div class="ws-tip__cat">${esc(cat?.name || p.category)}${grp ? ` · ${esc(grp)}` : ''} <i></i> ${esc(how)}</div>
         </div>
       </div>
       ${p.description ? `<p class="ws-tip__desc">${esc(p.description)}</p>` : ''}
       <div class="ws-tip__foot">
-        <span>${key ? `<kbd class="ws-key">${esc(key)}</kbd> Hotkey` : '<span class="ws-tip__muted">No hotkey</span>'}</span>
+        <span class="ws-tip__hot">${key ? `${key.startsWith('⇧') ? '<kbd class="ws-key">Shift</kbd>' : ''}<kbd class="ws-key">${esc(key.replace('⇧', ''))}</kbd> Hotkey` : '<span class="ws-tip__muted">No hotkey</span>'}</span>
         <span class="ws-tip__muted">${esc(brush)}</span>
       </div>`;
     this.tip.classList.add('is-shown');
