@@ -335,6 +335,7 @@ export class Debris {
       count++;
     }
     mesh.count = count;
+    mesh.visible = count > 0;
     pool.live = count;
     if (count) {
       mesh.instanceMatrix.clearUpdateRanges();

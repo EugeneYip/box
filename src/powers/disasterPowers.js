@@ -1,7 +1,11 @@
 import { registerPower } from './registry.js';
+import { TILE, SEA_LEVEL } from '../world/constants.js';
 
 // Disaster powers (category 'disaster', shown under "Wrath"). Ids are stable;
 // the UI renders icons by id. All heavy lifting lives in game.disasters.
+// Every power posts one notice to the event feed ('disaster' kind, which
+// drives the tense music and the bell), naming the place by its direction
+// from the map centre; brush powers are throttled.
 const R = Math.random;
 const audio = (g, name, c, v = 1) => {
   try {
@@ -10,6 +14,67 @@ const audio = (g, name, c, v = 1) => {
     /* optional */
   }
 };
+
+const DIRS = ['northern', 'north-eastern', 'eastern', 'south-eastern', 'southern', 'south-western', 'western', 'north-western'];
+
+// "the northern hills", "the eastern waters near Oakridge", ...
+export function regionName(g, x, z) {
+  const w = g.world;
+  const dx = x - w.w / 2,
+    dz = z - w.h / 2;
+  const far = Math.hypot(dx, dz) > Math.min(w.w, w.h) * 0.16;
+  // north is -z (the top of the map at the default camera yaw)
+  const ang = Math.atan2(dx, -dz);
+  const dir = far ? DIRS[(Math.round(ang / (Math.PI / 4)) + 8) % 8] : 'central';
+  const [tx, ty] = w.tileOf(x, z);
+  const i = w.idx(tx, ty);
+  const h = w.height[i];
+  const t = w.type[i];
+  let place;
+  if (h < SEA_LEVEL) place = 'waters';
+  else if (h > 10) place = 'peaks';
+  else if (h > 5) place = 'hills';
+  else if (w.isCoastal?.(tx, ty)) place = 'shore';
+  else if (t === TILE.FOREST || t === TILE.JUNGLE) place = 'woods';
+  else if (t === TILE.DESERT) place = 'dunes';
+  else if (t === TILE.SNOW || t === TILE.TUNDRA || t === TILE.ICE) place = 'snowfields';
+  else if (t === TILE.SWAMP) place = 'marshes';
+  else if (t === TILE.SAVANNA) place = 'grasslands';
+  else place = 'plains';
+  let near = '';
+  try {
+    let best = 14 * 14;
+    for (const v of g.civ?.villages || []) {
+      if (!v || v.alive === false || !v.name) continue;
+      const vx = v.x ?? v.cx,
+        vz = v.z ?? v.cz;
+      if (vx == null) continue;
+      const d2 = (vx - x) ** 2 + (vz - z) ** 2;
+      if (d2 < best) {
+        best = d2;
+        near = ' near ' + v.name;
+      }
+    }
+  } catch (e) {
+    /* villages are optional */
+  }
+  return `the ${dir} ${place}${near}`;
+}
+
+const lastNotice = new Map();
+// Post a feed notice; repeated calls from one power are throttled unless
+// they happen far from the previous notice.
+function herald(g, id, c, line, minGap = 3) {
+  const now = g.time?.realTime ?? 0;
+  const last = lastNotice.get(id);
+  if (last && now - last.t < minGap && Math.hypot(c.x - last.x, c.z - last.z) < 40) return;
+  lastNotice.set(id, { t: now, x: c.x, z: c.z });
+  try {
+    g.notify?.(line.replace('%', regionName(g, c.x, c.z)), 'disaster', { x: c.x, z: c.z });
+  } catch (e) {
+    /* the feed is optional */
+  }
+}
 
 registerPower({
   id: 'fire',
@@ -30,7 +95,10 @@ registerPower({
         r = Math.sqrt(R()) * c.radius;
       g.fx.emit('fire', { x: c.x + Math.cos(a) * r, z: c.z + Math.sin(a) * r }, { scale: 0.9, count: 3 });
     }
-    if (c.first) audio(g, 'fire-start', c);
+    if (c.first) {
+      audio(g, 'fire-start', c);
+      if (g.world.isLand(c.tx, c.ty)) herald(g, 'fire', c, 'Wildfire takes hold in %.', 20);
+    }
   },
 });
 
@@ -58,7 +126,10 @@ registerPower({
     }
     g.fx.emit('embers', { x: c.x, z: c.z }, { count: 6, scale: 1.4 });
     g.fx.addLight({ x: c.x, z: c.z }, 0xff8a30, 2.5, 0.35);
-    if (c.first) audio(g, 'fire-start', c, 1);
+    if (c.first) {
+      audio(g, 'fire-start', c, 1);
+      if (g.world.isLand(c.tx, c.ty)) herald(g, 'inferno', c, 'An inferno engulfs %.', 20);
+    }
   },
 });
 
@@ -70,7 +141,10 @@ registerPower({
   mode: 'click',
   brush: { size: 4, min: 2, max: 9 },
   cursorColor: '#ffb070',
-  apply: (g, c) => g.disasters.meteor(c.x, c.z, { size: Math.max(2, c.radius || 4) }),
+  apply: (g, c) => {
+    g.disasters.meteor(c.x, c.z, { size: Math.max(2, c.radius || 4) });
+    herald(g, 'meteor', c, 'A meteor scars %.');
+  },
 });
 
 registerPower({
@@ -81,7 +155,10 @@ registerPower({
   mode: 'click',
   brush: { size: 14, min: 6, max: 24 },
   cursorColor: '#ffb070',
-  apply: (g, c) => g.disasters.meteorShower(c.x, c.z, c.radius || 14, 6 + Math.round((c.radius || 14) * 0.35)),
+  apply: (g, c) => {
+    g.disasters.meteorShower(c.x, c.z, c.radius || 14, 6 + Math.round((c.radius || 14) * 0.35));
+    herald(g, 'meteor-shower', c, 'Fire rains from the heavens over %.');
+  },
 });
 
 registerPower({
@@ -92,7 +169,10 @@ registerPower({
   mode: 'click',
   brush: null,
   cursorColor: '#b8d4ff',
-  apply: (g, c) => g.disasters.lightning(c.x, c.z),
+  apply: (g, c) => {
+    g.disasters.lightning(c.x, c.z);
+    herald(g, 'lightning', c, 'Lightning lashes %.', 6);
+  },
 });
 
 registerPower({
@@ -103,7 +183,10 @@ registerPower({
   mode: 'click',
   brush: { size: 2, min: 1, max: 5 },
   cursorColor: '#ffd27a',
-  apply: (g, c) => g.disasters.smite(c.x, c.z, { radius: Math.max(1.4, (c.radius || 2) * 1.1) }),
+  apply: (g, c) => {
+    g.disasters.smite(c.x, c.z, { radius: Math.max(1.4, (c.radius || 2) * 1.1) });
+    herald(g, 'smite', c, 'A pillar of divine light smites %.');
+  },
 });
 
 registerPower({
@@ -114,7 +197,10 @@ registerPower({
   mode: 'click',
   brush: { size: 14, min: 6, max: 30 },
   cursorColor: '#d8b080',
-  apply: (g, c) => g.disasters.earthquake?.(c.x, c.z, c.radius || 14),
+  apply: (g, c) => {
+    g.disasters.earthquake?.(c.x, c.z, c.radius || 14);
+    herald(g, 'earthquake', c, 'The earth splits open beneath %.');
+  },
 });
 
 registerPower({
@@ -125,7 +211,10 @@ registerPower({
   mode: 'click',
   brush: null,
   cursorColor: '#c8c0b0',
-  apply: (g, c) => g.disasters.tornado?.(c.x, c.z),
+  apply: (g, c) => {
+    g.disasters.tornado?.(c.x, c.z);
+    herald(g, 'tornado', c, 'A twister tears across %.');
+  },
 });
 
 registerPower({
@@ -136,7 +225,10 @@ registerPower({
   mode: 'click',
   brush: { size: 9, min: 6, max: 14 },
   cursorColor: '#ff6a2a',
-  apply: (g, c) => g.disasters.volcano?.(c.x, c.z, c.radius || 9),
+  apply: (g, c) => {
+    g.disasters.volcano?.(c.x, c.z, c.radius || 9);
+    herald(g, 'volcano', c, 'A volcano bursts from %.');
+  },
 });
 
 registerPower({
@@ -149,7 +241,10 @@ registerPower({
   cursorColor: '#ff6a2a',
   apply: (g, c) => {
     g.world.forEachInRadius(c.x, c.z, c.radius, (tx, ty, d) => g.disasters.pourLava(tx, ty, 0.12 * (1 - d * 0.5)));
-    if (c.first) audio(g, 'fire-start', c, 0.6);
+    if (c.first) {
+      audio(g, 'fire-start', c, 0.6);
+      if (g.world.isLand(c.tx, c.ty)) herald(g, 'lava', c, 'Molten rock spills across %.', 20);
+    }
   },
 });
 
@@ -161,7 +256,10 @@ registerPower({
   mode: 'click',
   brush: null,
   cursorColor: '#9ad8ff',
-  apply: (g, c) => g.disasters.tsunami?.(c.x, c.z),
+  apply: (g, c) => {
+    g.disasters.tsunami?.(c.x, c.z);
+    herald(g, 'tsunami', c, 'A great wave rises against %.');
+  },
 });
 
 registerPower({
@@ -172,5 +270,8 @@ registerPower({
   brush: { size: 3, min: 1, max: 8 },
   mode: 'click',
   cursorColor: '#a8d040',
-  apply: (g, c) => g.disasters.plague(c.x, c.z, c.radius || 3),
+  apply: (g, c) => {
+    g.disasters.plague(c.x, c.z, c.radius || 3);
+    herald(g, 'plague', c, 'A sickly miasma creeps through %.');
+  },
 });

@@ -272,7 +272,7 @@ export class ParticleLayer {
     this.death.fill(-1);
     const A = this.attrs.iB.array;
     for (let i = 0; i < capacity; i++) A[i * 4 + 3] = 0;
-    geo.instanceCount = capacity;
+    geo.instanceCount = 0;
     this.geo = geo;
     this.uniforms = {
       uTime: fx.uniforms.uTime,
@@ -308,6 +308,7 @@ export class ParticleLayer {
     this.mesh.frustumCulled = false;
     this.mesh.renderOrder = renderOrder;
     this.mesh.name = name;
+    this.mesh.visible = false;
     this._dmin = Infinity;
     this._dmax = -1;
     this._ranges = [];
@@ -381,18 +382,31 @@ export class ParticleLayer {
     A[o + 2] = p.aspect;
     A[o + 3] = p.glow;
     this._mark(i);
+    if (i >= this.geo.instanceCount) this.geo.instanceCount = i + 1;
+    this.mesh.visible = true;
     return i;
   }
 
+  // Count live particles and shrink the drawn instance range to the highest
+  // live slot; the layer is hidden (no draw call) when nothing is alive.
   countLive(now) {
-    let n = 0;
+    let n = 0,
+      hi = 0;
     const d = this.death;
-    for (let i = 0; i < d.length; i++) if (d[i] > now) n++;
+    for (let i = 0; i < d.length; i++)
+      if (d[i] > now) {
+        n++;
+        hi = i + 1;
+      }
     this.live = n;
+    this.geo.instanceCount = hi;
+    this.mesh.visible = hi > 0;
     return n;
   }
 
   clear() {
+    this.geo.instanceCount = 0;
+    this.mesh.visible = false;
     this.death.fill(-1);
     const A = this.attrs.iB.array;
     for (let i = 0; i < this.capacity; i++) A[i * 4 + 3] = 0;

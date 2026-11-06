@@ -51,7 +51,6 @@ export class Earthquake {
     this._jit = 0;
     this._acc = 0;
     play(this.game, 'quake', { x, z }, 1);
-    this.game.notify?.('The earth shakes!', 'disaster', { x, z });
   }
 
   envelope() {

@@ -132,7 +132,7 @@ class DecalBatch {
     this.death = new Float32Array(capacity).fill(-1);
     this.cursor = 0;
     const geo = new THREE.InstancedBufferGeometry();
-    const grid = new THREE.PlaneGeometry(1, 1, 14, 14);
+    const grid = new THREE.PlaneGeometry(1, 1, 12, 12);
     geo.index = grid.index;
     geo.setAttribute('position', grid.getAttribute('position'));
     this.attrs = {};
@@ -172,14 +172,15 @@ class DecalBatch {
     this.mesh = new THREE.Mesh(geo, this.material);
     this.mesh.frustumCulled = false;
     this.mesh.renderOrder = renderOrder;
+    this.mesh.visible = false;
     this.mesh.name = this.material.name;
   }
   add(d, now) {
-    // reuse a dead slot or the one dying soonest
+    // lowest dead slot first (keeps the drawn instance range tight), else
+    // steal the one dying soonest
     let slot = -1,
       best = Infinity;
-    for (let k = 0; k < this.capacity; k++) {
-      const i = (this.cursor + k) % this.capacity;
+    for (let i = 0; i < this.capacity; i++) {
       if (this.death[i] <= now) {
         slot = i;
         break;
@@ -188,9 +189,7 @@ class DecalBatch {
         best = this.death[i];
         slot = i;
       }
-      if (k > 64 && slot >= 0 && best < now + 2) break;
     }
-    this.cursor = (slot + 1) % this.capacity;
     const t0 = now + (d.delay || 0);
     this.death[slot] = t0 + d.life;
     const o = slot * 4;
@@ -214,6 +213,20 @@ class DecalBatch {
     }
     this.used = Math.max(this.used, slot + 1);
     this.geo.instanceCount = this.used;
+    this.mesh.visible = true;
+  }
+  // Shrink the drawn range to the highest live decal; hide when none live,
+  // so an idle decal pass costs no draw call and no vertices.
+  trim(now) {
+    let hi = 0;
+    for (let i = this.used - 1; i >= 0; i--)
+      if (this.death[i] > now) {
+        hi = i + 1;
+        break;
+      }
+    this.used = hi;
+    this.geo.instanceCount = hi;
+    this.mesh.visible = hi > 0;
   }
   flushRanges() {
     for (const k in this.attrs) if (this.attrs[k].updateRanges.length > 32) {
@@ -233,6 +246,7 @@ class DecalBatch {
     this.death.fill(-1);
     this.used = 0;
     this.geo.instanceCount = 0;
+    this.mesh.visible = false;
   }
 }
 
@@ -254,6 +268,9 @@ export class Decals {
     (d.additive ? this.add : this.mul).add(rec, this.fx.time);
   }
   update() {
+    const now = this.fx.time;
+    this.mul.trim(now);
+    this.add.trim(now);
     this.mul.flushRanges();
     this.add.flushRanges();
   }

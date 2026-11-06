@@ -33,7 +33,6 @@ export class Tornado {
     this._tint = new THREE.Color();
     this._water = 0;
     play(this.game, 'thunder', { x, z }, 0.5, 0.7);
-    this.game.notify?.('A tornado touches down!', 'disaster', { x, z });
   }
 
   update(vt, dt) {

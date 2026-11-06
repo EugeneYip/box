@@ -52,7 +52,6 @@ export class Volcano {
     this._lastP = 0;
     this._lc = new THREE.Color(1, 0.42, 0.12);
     play(this.game, 'quake', { x, z }, 1, 0.7);
-    this.game.notify?.('A volcano is rising!', 'disaster', { x, z });
   }
 
   update(vt, dt) {
@@ -213,6 +212,5 @@ export class Volcano {
     fx.decal({ frame: DF.GLOW, x, z, size: 5, life: this.eruptT + this.waneT, additive: true, color: 0xff7a24, intensity: 1.3, fadeIn: 0.03, fadeOut: 0.7 });
     for (let k = 0; k < 12; k++) smokePuff(fx, x + rand(-1, 1), top + rand(0, 2), z + rand(-1, 1), { size: rand(2, 3), ramp: RAMP.SMOKE_BLACK, glow: 1.2, rise: rand(5, 8), drift: 2, drag: 0.3, life: rand(8, 12) });
     play(g, 'explosion', { x, z }, 1, 0.6);
-    g.notify?.('The volcano erupts!', 'disaster', { x, z });
   }
 }
