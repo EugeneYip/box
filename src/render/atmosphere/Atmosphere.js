@@ -259,7 +259,7 @@ export class Atmosphere {
     }
     const bolts = this.lightning.update(dt, camera, rig.cur.dist);
     const boltFlash = bolts.flash;
-    if (bolts.strokes > 0) game.pipeline?.flash?.(0xc4ceff, 0.22);
+    if (bolts.strokes > 0) game.pipeline?.flash?.(0xc4ceff, 0.05);
     this._myFlash = Math.max(0, this._myFlash - dt * 3.5);
     // merge flashes raised by other modules (Effects may write env.lightning)
     if (env.lightning > this._lastFlash + 1e-4) this._extFlash = Math.max(this._extFlash, env.lightning);
@@ -450,7 +450,7 @@ export class Atmosphere {
     P.vignetteColor.setRGB(0.28, 0.22, 0.34).lerp(this._c1 || (this._c1 = new THREE.Color(0.1, 0.14, 0.3)), M.night * 0.6);
 
     // haze starts around the focus distance; thicker in rain / fog
-    const hazeDensity = 0.0026 + 0.004 * W.overcast + 0.012 * W.fog + 0.003 * W.rain + 0.0012 * W.snow;
+    const hazeDensity = 0.0026 + 0.0025 * W.overcast + 0.012 * W.fog + 0.0015 * W.rain + 0.0012 * W.snow;
     P.haze.set(dist * 0.9 + 8, hazeDensity, 0.022, 1);
     // ground mist: dawn wisps, thick in fog weather, a little in snow / rain
     const mistAmt = Math.max(W.fog, this.weather.morningMist);

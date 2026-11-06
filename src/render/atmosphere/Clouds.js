@@ -467,11 +467,11 @@ export class Clouds {
       const S = this.scudU;
       S.uScale.value = 14 + camDist * 0.55;
       S.uOff.value.copy(this.scudOff).multiplyScalar(30 / S.uScale.value);
-      S.uAmt.value = storm * 0.42;
+      S.uAmt.value = storm * 0.32;
       S.uCenter.value.set(t.x, y, t.z);
       S.uRadius.value = size * 0.5;
       S.uCol.value.copy(model.cloudShade).multiplyScalar(0.55).lerp(model.cloudLit, 0.12);
-      S.uFlash.value.setRGB(0.7, 0.78, 1.0).multiplyScalar(flash * 0.9);
+      S.uFlash.value.setRGB(0.7, 0.78, 1.0).multiplyScalar(flash * 0.35);
     }
     this.stormShadow.visible = weather.storm > 0.02 || weather.overcast > 0.6;
     const SS = this.stormShadowU;
