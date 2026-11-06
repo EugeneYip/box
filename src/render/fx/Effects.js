@@ -152,6 +152,15 @@ export class Effects {
     this.lights.transient(pos, color, intensity, duration);
   }
   screenFlash(color = 0xffffff, intensity = 1) {
+    // prefer the post pipeline's HDR flash (it also nudges exposure)
+    if (typeof this.game.pipeline?.flash === 'function') {
+      try {
+        this.game.pipeline.flash(color, intensity * 0.6);
+        return;
+      } catch (e) {
+        /* fall back to our overlay */
+      }
+    }
     this._tmpC.set(color);
     const f = this.flash;
     // combine with any running flash
@@ -160,6 +169,11 @@ export class Effects {
   }
 
   // ---- extra helpers ------------------------------------------------------------
+  // Brief hit-stop: effects and disaster set pieces nearly freeze for `s`
+  // real seconds so big impacts land with weight.
+  hitStop(s = 0.08) {
+    this._hitStop = Math.max(this._hitStop || 0, s);
+  }
   decal(d) {
     this.decals.spawn(d);
   }
@@ -307,6 +321,10 @@ export class Effects {
 
   update(dt) {
     const g = this.game;
+    if (this._hitStop > 0) {
+      this._hitStop -= dt;
+      dt *= 0.04;
+    }
     this.time += dt;
     const U = this.uniforms;
     U.uTime.value = this.time;

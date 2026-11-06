@@ -44,6 +44,7 @@ uniform vec3 uSunDir;
 uniform vec3 uSunCol;
 uniform vec3 uAmbient;
 uniform float uDensity;
+uniform float uFloor;
 uniform vec3 fogColor;
 uniform float fogNear;
 uniform float fogFar;
@@ -78,15 +79,65 @@ void main() {
   vec3 N = normalize(vN);
   float facing = abs(dot(N, V));
   float rim = pow(1.0 - facing, 1.6);
+  float ends = smoothstep(0.0, 0.04, vH) * (1.0 - smoothstep(0.86, 1.0, vH));
   float dens = smoothstep(0.28, 0.85, streak) * (0.35 + 0.9 * rim) * uDensity;
-  dens *= smoothstep(0.0, 0.05, vH) * (1.0 - smoothstep(0.82, 1.0, vH));
-  float alpha = clamp(dens * uAlpha, 0.0, 0.95);
+  // the core layer has an opacity floor so the vortex reads as solid mass
+  dens = max(dens, uFloor * (0.85 + 0.3 * streak)) * ends;
+  float alpha = clamp(dens * uAlpha, 0.0, 0.97);
   if (alpha < 0.004) discard;
   float ndl = dot(N, uSunDir) * 0.5 + 0.5;
   vec3 col = uColor * (uAmbient + uSunCol * ndl) * (0.75 + 0.45 * streak);
   col *= mix(0.7, 1.0, vH);
   float fog = smoothstep(fogNear, fogFar, length(cameraPosition - vWorld));
   col = mix(col, fogColor, fog);
+  gl_FragColor = vec4(col, 1.0);
+#include <tonemapping_fragment>
+#include <colorspace_fragment>
+  gl_FragColor = vec4(gl_FragColor.rgb * alpha, alpha);
+}`;
+
+const CAP_VERT = /* glsl */ `
+varying vec2 vP;
+varying vec3 vW;
+void main() {
+  vP = position.xz;
+  vec4 wp = modelMatrix * vec4(position, 1.0);
+  // slight dome so the cap bulges like a wall cloud
+  wp.y += (1.0 - dot(position.xz, position.xz)) * 1.6;
+  vW = wp.xyz;
+  gl_Position = projectionMatrix * viewMatrix * wp;
+}`;
+const CAP_FRAG = /* glsl */ `
+uniform float uTime;
+uniform float uAlpha;
+uniform vec3 uColor;
+uniform vec3 uSunDir;
+uniform vec3 uSunCol;
+uniform vec3 uAmbient;
+varying vec2 vP;
+varying vec3 vW;
+float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float vnoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1, 0)), u.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), u.x), u.y);
+}
+void main() {
+  float r = length(vP);
+  if (r > 1.0) discard;
+  float a = atan(vP.y, vP.x);
+  // logarithmic spiral arms rotating with time (faster near the eye)
+  float sw = a * 3.0 + log(r + 0.05) * 5.0 + uTime * (1.2 + 1.5 * (1.0 - r));
+  float arms = 0.5 + 0.5 * sin(sw);
+  vec2 q = vec2(cos(a + uTime * 0.6 * (1.2 - r)), sin(a + uTime * 0.6 * (1.2 - r))) * r * 4.0;
+  float n = vnoise(q + 3.0) * 0.6 + vnoise(q * 2.3) * 0.4;
+  float dens = mix(0.55, 1.0, arms) * (0.7 + 0.6 * n);
+  dens *= 1.0 - smoothstep(0.55, 1.0, r + (n - 0.5) * 0.3);
+  dens = max(dens, (1.0 - smoothstep(0.0, 0.45, r)) * 0.9);
+  float alpha = clamp(dens * uAlpha, 0.0, 0.96);
+  if (alpha < 0.005) discard;
+  float lit = 0.55 + 0.45 * arms * n;
+  vec3 col = uColor * (uAmbient * 1.2 + uSunCol * max(uSunDir.y, 0.15) * lit);
   gl_FragColor = vec4(col, 1.0);
 #include <tonemapping_fragment>
 #include <colorspace_fragment>
@@ -100,8 +151,9 @@ export class TornadoFunnel {
     geo.translate(0, 0.5, 0);
     this.group = new THREE.Group();
     this.layers = [];
-    const mk = (side, order, color, density, r0, r1, spin) => {
+    const mk = (side, order, color, density, r0, r1, spin, floor = 0) => {
       const u = {
+        uFloor: { value: floor },
         uTime: { value: 0 },
         uHeight: { value: 16 },
         uR0: { value: r0 },
@@ -134,10 +186,37 @@ export class TornadoFunnel {
       this.group.add(m);
       this.layers.push({ mesh: m, u, r0, r1, base: u.uColor.value.clone() });
     };
-    mk(THREE.BackSide, 16, 0x6e6458, 1.25, 0.28, 3.2, 1.1);
-    mk(THREE.FrontSide, 17, 0x6e6458, 1.25, 0.28, 3.2, 1.1);
-    mk(THREE.BackSide, 18, 0x9a9184, 0.7, 0.55, 4.6, 0.75);
-    mk(THREE.FrontSide, 19, 0x9a9184, 0.7, 0.55, 4.6, 0.75);
+    // dark opaque core + lighter churning dust sleeve (radii doubled)
+    mk(THREE.BackSide, 16, 0x3e3630, 1.4, 0.6, 6.2, 1.1, 0.6);
+    mk(THREE.FrontSide, 17, 0x3e3630, 1.4, 0.6, 6.2, 1.1, 0.6);
+    mk(THREE.BackSide, 18, 0x847a6c, 0.8, 1.1, 9.0, 0.75);
+    mk(THREE.FrontSide, 19, 0x847a6c, 0.8, 1.1, 9.0, 0.75);
+    // rotating cloud cap (what a top-down camera mostly sees)
+    this.capU = {
+      uTime: { value: 0 },
+      uAlpha: { value: 0 },
+      uColor: { value: new THREE.Color(0x35302c) },
+      uSunDir: { value: new THREE.Vector3(0, 1, 0) },
+      uSunCol: fx.uniforms.uSunCol,
+      uAmbient: fx.uniforms.uAmbient,
+    };
+    this.cap = new THREE.Mesh(
+      new THREE.CircleGeometry(1, 64, 0, Math.PI * 2).rotateX(-Math.PI / 2),
+      new THREE.ShaderMaterial({
+        uniforms: this.capU,
+        vertexShader: CAP_VERT,
+        fragmentShader: CAP_FRAG,
+        transparent: true,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+        blending: THREE.CustomBlending,
+        blendSrc: THREE.OneFactor,
+        blendDst: THREE.OneMinusSrcAlphaFactor,
+      }),
+    );
+    this.cap.frustumCulled = false;
+    this.cap.renderOrder = 21;
+    fx.game.scene.add(this.cap);
     fx.game.scene.add(this.group);
   }
 
@@ -156,10 +235,20 @@ export class TornadoFunnel {
       u.uColor.value.copy(L.base);
       if (opts.tint) u.uColor.value.multiply(opts.tint);
     }
+    // cap sits on top of the bent funnel
+    const capR = 9 + 9 * opts.width;
+    this.cap.position.set(x + opts.bendX, y + opts.height * 0.97, z + opts.bendZ);
+    this.cap.scale.set(capR, 1, capR);
+    this.capU.uTime.value = this.fx.time + (opts.seed || 0);
+    this.capU.uAlpha.value = opts.alpha;
+    if (env.sunDir) this.capU.uSunDir.value.copy(env.sunDir);
   }
 
   dispose() {
     this.fx.game.scene.remove(this.group);
+    this.fx.game.scene.remove(this.cap);
     for (const L of this.layers) L.mesh.material.dispose();
+    this.cap.material.dispose();
+    this.cap.geometry.dispose();
   }
 }

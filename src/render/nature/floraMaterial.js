@@ -29,6 +29,7 @@ export function createSharedUniforms(stateTexture, w, h) {
     uSnowCover: { value: 0 },
     uWet: { value: 0 },
     uFade: { value: new THREE.Vector2(40, 60) },
+    uFlowerFade: { value: new THREE.Vector2(28, 40) },
   };
 }
 
@@ -40,6 +41,7 @@ uniform vec4 uWind;
 uniform sampler2D uState;
 uniform vec2 uWorldSize;
 uniform vec2 uFade;
+uniform vec2 uFlowerFade;
 #ifndef FLORA_DEPTH
 varying vec4 vFState;
 varying vec3 vFInfo;
@@ -76,7 +78,11 @@ vec4 fState = texelFetch(uState, fTile, 0);
 float fG = fState.r;
 float fLeaf = aInfo.z;
 float fLeafK = mix(0.36, 1.0, smoothstep(0.04, 0.8, fG));
-transformed = mix(aPivot, transformed, mix(1.0, fLeafK, fLeaf));
+// petals close up with distance so mid-zoom meadows are not confetti
+float fPetal = 1.0 - step(0.5, abs(aInfo.w - 5.0));
+float fPetalK = 1.0 - smoothstep(uFlowerFade.x, uFlowerFade.y, distance(fOrigin, cameraPosition));
+fLeafK *= mix(1.0, fPetalK, fPetal);
+transformed = mix(aPivot, transformed, mix(1.0, fLeafK, max(fLeaf, fPetal)));
 float fThin = mix(0.42, 1.0, smoothstep(0.0, 0.85, fG));
 transformed.xz *= mix(fThin, 1.0, fLeaf);
 float fScale = 0.14 + 0.86 * fG;
@@ -104,6 +110,8 @@ float fDist = distance(fOrigin, cameraPosition);
 float fFade = 1.0 - smoothstep(uFade.x, uFade.y, fDist);
 float fBurn = clamp(max(fState.g * 1.5, fState.b), 0.0, 1.0);
 float fK = fFade * (1.0 - 0.8 * fBurn);
+float fPetal = 1.0 - step(0.5, abs(aInfo.w - 5.0));
+fK *= mix(1.0, 1.0 - smoothstep(uFlowerFade.x, uFlowerFade.y, fDist), fPetal);
 transformed.y *= fK;
 transformed.xz *= mix(0.35, 1.0, fK);
 vec3 fW = fWind(fOrigin, position, aInfo.x, aInfo.y, 1.0) * fK;
@@ -201,6 +209,8 @@ if (fFire > 0.002) {
 float fBack = clamp(-dot(fWN, uSunDir), 0.0, 1.0);
 float fTrans = fLeafM * (1.0 - fChar) * (1.0 - fSnowAmt) * uDaylight * (1.0 - fIsSnow);
 totalEmissiveRadiance += diffuseColor.rgb * uSunColor * fTrans * (0.05 + 0.2 * fBack * fBack);
+// canopy ambient lift: dense foliage never sinks to black in shadow
+totalEmissiveRadiance += diffuseColor.rgb * fLeafM * (1.0 - fChar) * (0.035 + 0.06 * uDaylight);
 `;
 
 const FRAG_LIGHT = /* glsl */ `

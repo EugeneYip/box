@@ -20,9 +20,9 @@ export const PAL = {
     stone2: 0x847c70,
     thatch: 0xd4a85a,
     thatch2: 0xb38842,
-    tile: 0xb5583f,
-    roofTint: 0.72,
-    thatchTint: 0.22,
+    tile: 0xb0563c,
+    roofTint: 0.13,
+    thatchTint: 0.06,
     door: 0x6e4526,
     glass: 0x2a3442,
     trim: 0x4e3320,
@@ -40,9 +40,9 @@ export const PAL = {
     stone2: 0xbf9662,
     thatch: 0xe0c48a,
     thatch2: 0xc9a56a,
-    tile: 0xf0ead8,
-    roofTint: 0.8,
-    thatchTint: 0.2,
+    tile: 0xf2ead6,
+    roofTint: 0.25,
+    thatchTint: 0.06,
     door: 0x5d3a22,
     glass: 0x2b2a30,
     trim: 0x8a6440,
@@ -53,17 +53,17 @@ export const PAL = {
     accent: 0x2f9e98,
   },
   frost: {
-    wall: 0x5e4634,
-    wall2: 0x735842,
-    timber: 0x3f2c1f,
-    timber2: 0x5a4130,
-    stone: 0x8e9196,
-    stone2: 0x6d7177,
-    thatch: 0x6f7a48,
-    thatch2: 0x5d6a3c,
-    tile: 0x56616e,
-    roofTint: 0.5,
-    thatchTint: 0.12,
+    wall: 0x6e4a30,
+    wall2: 0x84603f,
+    timber: 0x43291a,
+    timber2: 0x5e3e27,
+    stone: 0x9a958c,
+    stone2: 0x7a756c,
+    thatch: 0x6f8040,
+    thatch2: 0x5a6a34,
+    tile: 0x4b5562,
+    roofTint: 0.16,
+    thatchTint: 0.04,
     door: 0x3e2b1e,
     glass: 0x27313b,
     trim: 0xc09a45,
@@ -80,11 +80,11 @@ export const PAL = {
     timber2: 0x86603a,
     stone: 0x8f8c79,
     stone2: 0x737061,
-    thatch: 0xa69454,
-    thatch2: 0x857a3e,
-    tile: 0x9a8a4c,
-    roofTint: 0.28,
-    thatchTint: 0.28,
+    thatch: 0xbfa05a,
+    thatch2: 0x8f7a3c,
+    tile: 0xa88f52,
+    roofTint: 0.1,
+    thatchTint: 0.05,
     door: 0x4b3420,
     glass: 0x2b2a22,
     trim: 0x5a3e26,
@@ -94,6 +94,22 @@ export const PAL = {
     cloth: 0xece0c4,
   },
 };
+
+// Roof surface kinds, picked by material colour, drive the roof shader detail.
+const ROOF_KIND = new Map([
+  [PAL.vale.thatch, 1],
+  [PAL.vale.thatch2, 1],
+  [PAL.vale.tile, 2],
+  [PAL.dune.thatch, 1],
+  [PAL.frost.tile, 3],
+  [PAL.frost.thatch, 4],
+  [PAL.mire.thatch, 1],
+  [PAL.mire.thatch2, 1],
+  [PAL.mire.tile, 1],
+]);
+export function roofKind(col) {
+  return ROOF_KIND.get(col) || 0;
+}
 
 // ---------------------------------------------------------------- helpers
 // Place something on a wall face. face: 'F' (+Z) | 'B' (-Z) | 'R' (+X) | 'L' (-X)
@@ -589,6 +605,12 @@ function mireHouse(g, K, lv) {
     g.cone(0, top + 1.1, bz, 0.08, 0.2, 6, K.trim, { tint: 0.8 });
     g.box(0, top, bz + 0.42, 0.2, 0.32, 0.04, K.door);
     g.box(0.24, top + 0.36, bz + 0.37, 0.05, 0.06, 0.05, 0xffd48a, { glow: 1 });
+    for (const a of [Math.PI * 0.22, -Math.PI * 0.3, Math.PI * 0.75]) {
+      const wx = Math.sin(a) * 0.425,
+        wz = bz + Math.cos(a) * 0.425;
+      g.box(wx, top + 0.18, wz, 0.13, 0.12, 0.03, K.glass, { ry: a, glow: 1 });
+      g.box(wx, top + 0.165, wz, 0.17, 0.02, 0.05, K.timber2, { ry: a });
+    }
     g.anchor('lamps', 0, 0, 0.75, { r: 1 });
     railing(g, K, 0, top, bz, 1.2, 1.2, 'LR', 0.14);
     ladder(g, K, 0, bz + 0.6, top, 1);
@@ -1491,10 +1513,83 @@ export function foundation(w, h) {
   return g.build();
 }
 
+// Timber frame of a building under construction, sized from its finished bounds.
+export function frameFor(arch) {
+  const bb = arch.geo.boundingBox;
+  const g = new GeoBuilder(97);
+  const c = 0x9a7046,
+    c2 = 0x7d5836;
+  const base = arch.base;
+  const x0 = base ? base.x - base.w / 2 + 0.06 : bb.min.x + 0.2,
+    x1 = base ? base.x + base.w / 2 - 0.06 : bb.max.x - 0.2,
+    z0 = base ? base.z - base.d / 2 + 0.06 : bb.min.z + 0.2,
+    z1 = base ? base.z + base.d / 2 - 0.06 : bb.max.z - 0.2;
+  const top = Math.min(1.1, Math.max(0.45, arch.maxY * 0.42));
+  const ridge = Math.min(2.6, Math.max(top + 0.3, arch.maxY * 0.85));
+  const t = 0.05;
+  const along = x1 - x0 >= z1 - z0;
+  // sill beams & floor joists
+  g.box((x0 + x1) / 2, 0.0, z0, x1 - x0, 0.06, 0.07, c2);
+  g.box((x0 + x1) / 2, 0.0, z1, x1 - x0, 0.06, 0.07, c2);
+  g.box(x0, 0.0, (z0 + z1) / 2, 0.07, 0.06, z1 - z0, c2);
+  g.box(x1, 0.0, (z0 + z1) / 2, 0.07, 0.06, z1 - z0, c2);
+  const nx = Math.max(1, Math.round((x1 - x0) / 0.42)),
+    nz = Math.max(1, Math.round((z1 - z0) / 0.42));
+  for (let i = 0; i <= nx; i++) {
+    const x = x0 + ((x1 - x0) * i) / nx;
+    g.box(x, 0.0, z0, t, top, t, c);
+    g.box(x, 0.0, z1, t, top, t, c);
+  }
+  for (let i = 1; i < nz; i++) {
+    const z = z0 + ((z1 - z0) * i) / nz;
+    g.box(x0, 0.0, z, t, top, t, c);
+    g.box(x1, 0.0, z, t, top, t, c);
+  }
+  // wall plates
+  g.box((x0 + x1) / 2, top, z0, x1 - x0 + 0.06, 0.05, 0.07, c2);
+  g.box((x0 + x1) / 2, top, z1, x1 - x0 + 0.06, 0.05, 0.07, c2);
+  g.box(x0, top, (z0 + z1) / 2, 0.07, 0.05, z1 - z0, c2);
+  g.box(x1, top, (z0 + z1) / 2, 0.07, 0.05, z1 - z0, c2);
+  // braces
+  g.beam(x0, 0.04, z1 + 0.01, x0 + 0.3, top, z1 + 0.01, 0.03, c2);
+  g.beam(x1, 0.04, z0 - 0.01, x1 - 0.3, top, z0 - 0.01, 0.03, c2);
+  // rafters toward the ridge
+  const n = along ? nx : nz;
+  for (let i = 0; i <= n; i++) {
+    if (along) {
+      const x = x0 + ((x1 - x0) * i) / n;
+      g.beam(x, top, z0, x, ridge, (z0 + z1) / 2, 0.035, c);
+      g.beam(x, top, z1, x, ridge, (z0 + z1) / 2, 0.035, c);
+    } else {
+      const z = z0 + ((z1 - z0) * i) / n;
+      g.beam(x0, top, z, (x0 + x1) / 2, ridge, z, 0.035, c);
+      g.beam(x1, top, z, (x0 + x1) / 2, ridge, z, 0.035, c);
+    }
+  }
+  if (along) g.box((x0 + x1) / 2, ridge - 0.03, (z0 + z1) / 2, x1 - x0 + 0.04, 0.05, 0.05, c2);
+  else g.box((x0 + x1) / 2, ridge - 0.03, (z0 + z1) / 2, 0.05, 0.05, z1 - z0 + 0.04, c2);
+  // a ladder against the frame
+  for (const s of [-0.07, 0.07]) g.beam(x0 + 0.35 + s, 0, z1 + 0.25, x0 + 0.35 + s, top + 0.1, z1 + 0.03, 0.025, c);
+  return g.build();
+}
+
+// Building materials stacked beside a construction site.
+export function materialPile(style) {
+  const K = PAL[style] || PAL.vale;
+  const g = new GeoBuilder(13);
+  logs(g, K, 0, 0, 0, 3, 0.42);
+  g.box(0.3, -0.02, 0.05, 0.14, 0.12, 0.14, K.stone, { jit: 0.15 });
+  g.box(0.42, -0.02, -0.05, 0.13, 0.11, 0.12, K.stone2, { jit: 0.15 });
+  g.box(0.36, 0.1, 0.0, 0.13, 0.1, 0.12, K.stone, { jit: 0.15 });
+  g.box(-0.05, 0.16, 0.0, 0.5, 0.025, 0.12, K.plank);
+  g.box(-0.05, 0.19, 0.02, 0.48, 0.025, 0.12, shade(K.plank, 1.08));
+  return g.build();
+}
+
 export function scaffold(w, h, height) {
   const g = new GeoBuilder(w * 5 + h * 3 + Math.round(height * 10));
-  const c = 0xc49a68,
-    c2 = 0xa47a4c;
+  const c = 0x8e6a44,
+    c2 = 0x735535;
   const W = w * 0.92,
     D = h * 0.92;
   const top = Math.max(0.7, height);
@@ -1585,7 +1680,7 @@ const BUILDERS = {
 
 export function buildArchetype(type, style, level) {
   const K = PAL[style] || PAL.vale;
-  const g = new GeoBuilder(type.length * 131 + level * 17 + style.length * 7);
+  const g = new GeoBuilder(type.length * 131 + level * 17 + style.length * 7, { roofKind });
   const fn = BUILDERS[type];
   let info = {};
   if (fn) info = fn(g, K, style, level) || {};

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { buildArchetype, foundation, scaffold, ruin, wallPost, wallArm, lampPost, PAL, WALL_H } from './archetypes.js';
+import { buildArchetype, foundation, scaffold, ruin, wallPost, wallArm, lampPost, frameFor, materialPile, PAL, WALL_H } from './archetypes.js';
+import { Labels } from './labels.js';
 import { createBuildingMaterial, createPropMaterial } from './material.js';
 import { bannerGeometry, bannerMaterial, bladesGeometry, boatGeometry, FENCE, scarecrowGeometry, glowTexture, PuffSystem } from './props.js';
 import { TerritoryOverlay } from './TerritoryOverlay.js';
@@ -98,6 +99,8 @@ export class BuildingRenderer {
     this._initProps();
     this.chimneys = [];
     this.banners = [];
+    this.staffs = [];
+    this.labels = new Labels(game, this.group);
     this.blades = [];
     this.boats = [];
     this.burning = [];
@@ -155,6 +158,10 @@ export class BuildingRenderer {
       }
       this.fenceMeshes.set(st, { posts, rails, cap: 64 });
     }
+    // tall staffs for capital standards and army standard-bearers
+    this.staffGeo = new THREE.CylinderGeometry(0.03, 0.04, 1, 6).translate(0, 0.5, 0);
+    this.staffMesh = this._inst(this.staffGeo, new THREE.MeshStandardMaterial({ color: 0x5a3c24, roughness: 0.8 }), 16, true);
+    this.staffMap = new Map([['s', this.staffMesh]]);
     this.scarecrows = new Map();
     for (const st of ['vale', 'frost', 'mire']) this.scarecrows.set(st, this._inst(scarecrowGeometry(st), this.propMat, 16, true));
     // selection ring
@@ -210,6 +217,10 @@ export class BuildingRenderer {
     else if (kind === 'wpost') a = { geo: wallPost(p1), anchors: null, maxY: WALL_H + 0.1 };
     else if (kind === 'warm') a = { geo: wallArm(p1, 0.5), anchors: null, maxY: WALL_H + 0.1 };
     else if (kind === 'wdiag') a = { geo: wallArm(p1, Math.SQRT1_2), anchors: null, maxY: WALL_H + 0.1 };
+    else if (kind === 'frame') {
+      const fin = this._arch(`${p1}|${p2}|${p3}`);
+      a = { geo: frameFor(fin), anchors: null, maxY: fin.maxY };
+    } else if (kind === 'pile') a = { geo: materialPile(p1), anchors: null, maxY: 0.3 };
     else if (kind === 'lamppost') {
       const l = lampPost();
       a = { geo: l.geo, anchors: l.anchors, maxY: 0.8 };
@@ -232,7 +243,7 @@ export class BuildingRenderer {
   // ------------------------------------------------------------------ rebuild
   _stage(b) {
     if (!b.alive) return 'ruin';
-    if (b.constructing) return b.progress < 0.15 ? 'found' : 'build';
+    if (b.constructing) return b.progress < 0.12 ? 'found' : b.progress < 0.4 ? 'frame' : 'build';
     return b.upgrading ? 'upg' : 'done';
   }
 
@@ -296,11 +307,14 @@ export class BuildingRenderer {
       const lvl = Math.min(b.level || 1, def.levels);
       const akey = `${b.type}|${b.style}|${lvl}`;
       const a = this._arch(akey);
-      if (stage === 'found') {
-        push(`found|${b.w0 ?? def.w}|${def.h}`, false, M, col, b);
-      } else if (stage === 'build') {
-        push(akey, true, M, col, b, { maxY: a.maxY });
-        push(`scaf|${def.w}|${def.h}|${Math.min(3, Math.round(a.maxY * 2) / 2)}`, false, M, col, b);
+      if (stage === 'found' || stage === 'frame' || stage === 'build') {
+        // footings, then a timber frame, then walls rising, then the roof;
+        // timber and stone stacked by the site until it is done
+        if (stage === 'found') push(`found|${def.w}|${def.h}`, false, M, col, b);
+        else push(`frame|${akey}`, false, M, col, b);
+        if (stage === 'build') push(akey, true, M, col, b, { maxY: a.maxY });
+        const pm = this._m2.copy(M).multiply(new THREE.Matrix4().makeTranslation(def.w / 2 - 0.35, 0, def.h / 2 - 0.3));
+        push(`pile|${b.style}`, false, pm, col, b);
       } else {
         push(akey, false, M, col, b);
         if (stage === 'upg') push(`scaf|${def.w}|${def.h}|${Math.min(3, Math.round(a.maxY * 2) / 2)}`, false, M, col, b);
@@ -317,6 +331,21 @@ export class BuildingRenderer {
         fm.multiply(new THREE.Matrix4().makeScale(a.base.w + 0.04, top - bottom, a.base.d + 0.04));
         footings.push({ m: fm, style: b.style });
       }
+    }
+    // the realm's standard flies over every capital
+    this.staffs = [];
+    for (const k of civ.kingdoms) {
+      if (!k.alive) continue;
+      const v = civ.villages[k.capital];
+      const h = v?.hall;
+      if (!v || !v.alive || !h || !h.alive || h.constructing) continue;
+      const r = h.rotation || 0;
+      const side = 1.75;
+      const x = h.x + Math.cos(r) * side + Math.sin(r) * 1.2,
+        z = h.z - Math.sin(r) * side + Math.cos(r) * 1.2;
+      const gy = world.heightAt(x, z);
+      this.staffs.push([x, gy, z, 3.2]);
+      this.banners.push({ x: x + 0.03, y: gy + 3.15, z, s: 2.4, style: h.style, color: civ.kingdomColor(k.id) });
     }
     // lampposts along town streets
     for (const v of civ.villages) {
@@ -344,7 +373,7 @@ export class BuildingRenderer {
           z = ty + 0.5 + oz;
         const lm = this._m2.makeRotationY(Math.atan2(-oz, ox) + Math.PI).setPosition(x, world.heightAt(x, z), z);
         push('lamppost', false, lm, col, null);
-        decals.push([x - ox * 0.4, world.heightAt(x, z), z - oz * 0.4, 1.1]);
+        decals.push([x - ox * 0.4, world.heightAt(x, z), z - oz * 0.4, 0.6]);
       }
     }
     // write batches
@@ -397,7 +426,7 @@ export class BuildingRenderer {
     }
     for (let i = 0; i < decals.length; i++) {
       const [x, y, z, r] = decals[i];
-      this._m.compose(this._p.set(x, y + 0.04, z), this._q.identity(), this._s.set(r * 2.2, 1, r * 2.2));
+      this._m.compose(this._p.set(x, y + 0.03, z), this._q.identity(), this._s.set(r * 2, 1, r * 2));
       this.decals.setMatrixAt(i, this._m);
     }
     this.decals.count = decals.length;
@@ -430,9 +459,15 @@ export class BuildingRenderer {
       this.boats.push({ x: p.x, z: p.z, ry: (b.rotation || 0) + (c.ry || 0), style: b.style, phase: b.seed * 20 + this.boats.length });
     }
     for (const c of an.lamps) {
+      if (c.water) continue;
       p.set(c.x, c.y, c.z).applyMatrix4(M);
-      const y = c.water ? SEA_LEVEL : world.heightAt(p.x, p.z);
-      decals.push([p.x, Math.max(SEA_LEVEL, y), p.z, c.r || 1]);
+      const tx = Math.floor(p.x),
+        tz = Math.floor(p.z);
+      if (!world.inBounds(tx, tz)) continue;
+      const ti = tz * world.w + tx;
+      if (world.height[ti] < SEA_LEVEL + 0.05 || world.type[ti] === TILE.FARMLAND) continue;
+      if (world.slopeAt(tx, tz) > 0.5) continue;
+      decals.push([p.x, world.heightAt(p.x, p.z), p.z, Math.min(0.75, (c.r || 1) * 0.5)]);
     }
   }
 
@@ -457,9 +492,9 @@ export class BuildingRenderer {
       arr[k + 1] = b.burning || 0;
       arr[k + 2] = b.seed || 0;
       let clipY = 99;
-      if (b.constructing && b.progress >= 0.15) {
+      if (b.constructing && b.progress >= 0.4) {
         const maxY = batch.extra?.[i]?.maxY ?? (BUILDING_TYPES[b.type]?.wall ? WALL_H + 0.1 : 2);
-        const t = (b.progress - 0.15) / 0.85;
+        const t = (b.progress - 0.4) / 0.6;
         clipY = batch.extra?.[i]?.wall ? -0.5 + (WALL_H + 0.65) * b.progress : -0.1 + (maxY + 0.15) * t;
       } else if (b.constructing && batch.extra?.[i]?.wall) clipY = -0.5 + (WALL_H + 0.65) * b.progress;
       arr[k + 3] = clipY;
@@ -602,6 +637,8 @@ export class BuildingRenderer {
   // ------------------------------------------------------------------ animation
   _updateBanners() {
     const env = this.game.env;
+    const civ = this.game.civ;
+    const units = this.game.units;
     const wind = env.wind || { x: 1, z: 0, strength: 0.3 };
     const yaw = Math.atan2(-(wind.z || 0), wind.x || 1);
     const per = new Map();
@@ -610,6 +647,30 @@ export class BuildingRenderer {
       if (!L) per.set(b.style, (L = []));
       L.push(b);
     }
+    // army standards follow their bearers
+    const staffs = this.staffs.slice();
+    for (const a of civ.armies || []) {
+      const u = units.byId?.get(a.bearer);
+      if (!u || !u.alive) continue;
+      const h = Math.sin(u.heading || 0),
+        c = Math.cos(u.heading || 0);
+      const x = u.x + c * 0.14,
+        z = u.z - h * 0.14;
+      const y = (u.y ?? this.game.world.surfaceAt(u.x, u.z)) + 0.15;
+      staffs.push([x, y, z, 1.85]);
+      const st = CULTURES[civ.kingdoms[a.kingdom]?.culture]?.style || 'vale';
+      let L = per.get(st);
+      if (!L) per.set(st, (L = []));
+      L.push({ x: x + 0.02, y: y + 1.8, z, s: 1.7, style: st, color: civ.kingdomColor(a.kingdom) });
+    }
+    const sm = this._grow(this.staffMap, 's', staffs.length);
+    for (let i = 0; i < staffs.length; i++) {
+      const [x, y, z, hgt] = staffs[i];
+      this._m.compose(this._p.set(x, y, z), this._q.identity(), this._s.set(1, hgt, 1));
+      sm.setMatrixAt(i, this._m);
+    }
+    sm.count = staffs.length;
+    sm.instanceMatrix.needsUpdate = true;
     for (const [st, mesh0] of this.bannerMeshes) {
       const L = per.get(st) || [];
       const mesh = this._grow(this.bannerMeshes, st, L.length);
@@ -773,7 +834,7 @@ export class BuildingRenderer {
     this.uniforms.uNight.value += (night - this.uniforms.uNight.value) * Math.min(1, dt * 3 + (this._first ? 0 : 1));
     this._first = true;
     this.uniforms.uWind.value = env.wind?.strength ?? 0.35;
-    this.decalMat.opacity = this.uniforms.uNight.value * 0.55;
+    this.decalMat.opacity = this.uniforms.uNight.value * 0.42;
     this.decals.visible = this.decalMat.opacity > 0.01;
     const now = g.time.realTime;
     if ((civ.version !== this._ver || civ.colorVersion !== this._cver) && now - this._lastRebuild > 0.2) {
@@ -797,6 +858,7 @@ export class BuildingRenderer {
     this._smoke(dt);
     this._selection();
     this.overlay.update();
+    this.labels.update(dt);
   }
 
   inspect() {

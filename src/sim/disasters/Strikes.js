@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { SEA_LEVEL } from '../../world/constants.js';
 import { hurt, play, rand } from './util.js';
-import { DF, RAMP, PF, glowFlash, sparks, dustPuff } from '../../render/fx/Effects.js';
+import { DF, RAMP, PF, TRAIL, glowFlash, sparks, dustPuff } from '../../render/fx/Effects.js';
 
 // Lightning strike: the bolt itself is drawn by the atmosphere module when
 // it provides strike(); otherwise we draw our own branching bolt and flash.
@@ -15,7 +15,7 @@ export function lightningStrike(ds, x, z, opts = {}) {
   let drawn = false;
   try {
     if (typeof g.atmosphere?.strike === 'function') {
-      g.atmosphere.strike(x, z);
+      g.atmosphere.strike(x, z, { sound: false }); // we play our own thunder
       drawn = true;
     }
   } catch (err) {
@@ -123,21 +123,57 @@ export class Smite {
     const gold = new THREE.Color(0xffd27a);
     const white = new THREE.Color(1, 0.97, 0.9);
     const top = y + 70;
-    fx.beams.segment(x, top, z, x, y, z, { color: gold, width: r * 1.6, life: 0.9, intensity: 1.6, flicker: 0.15, taper: 1.15 });
-    fx.beams.segment(x, top, z, x, y, z, { color: white, width: r * 0.55, life: 0.7, intensity: 3, flicker: 0.1, taper: 1.3 });
-    fx.beams.segment(x, top, z, x, y, z, { color: gold, width: r * 4.5, life: 1.0, intensity: 0.35, flicker: 0.05, taper: 1.4 });
-    fx.screenFlash(0xffe6b0, 0.7);
-    fx.addLight({ x, y: y + 4, z }, 0xffe0a0, 9, 0.9);
-    fx.shake(x, z, 0.9);
-    fx.shockwave(x, z, r * 4, { color: 0xffe2a0, life: 0.7, intensity: 2.2 });
-    glowFlash(fx, x, y + 0.6, z, r * 5, { life: 0.4, bright: 5, color: 0xfff2d0 });
-    glowFlash(fx, x, y + 0.4, z, r * 2.6, { life: 1.4, bright: 2.5, ramp: RAMP.GOLD });
-    sparks(fx, x, y + 0.2, z, fx.k(40), { speed: 9, ramp: RAMP.GOLD, bright: 4, up: true, size: 1.4 });
-    fx.emit('sparkle', { x, y, z }, { scale: 2.4, count: 24, color: 0xfff0c0 });
-    fx.decal({ frame: DF.BLAST, x, z, size: r * 3.2, life: 80, color: 0x1a140e, alpha: 0.85, fadeIn: 0.001, fadeOut: 0.8 });
-    fx.decal({ frame: DF.RUNE, x, z, size: r * 2.6, life: 6, additive: true, color: 0xffc860, intensity: 2.2, cool: 0.6, fadeIn: 0.005, fadeOut: 0.3, grain: 0 });
-    fx.decal({ frame: DF.GLOW, x, z, size: r * 3, life: 4, additive: true, color: 0xffd080, intensity: 1.5, cool: 0.8, fadeIn: 0.005, fadeOut: 0.2 });
-    for (let k = 0; k < 10; k++) dustPuff(fx, x, y, z, 0.8, { out: rand(3, 6), life: rand(1.2, 2.2), drag: 2.4 });
+    // narrower, flickering core inside a restrained glow so the impact
+    // beside the beam stays readable (the pillar still reads from far zoom)
+    fx.beams.segment(x, top, z, x, y, z, { color: gold, width: r * 0.95, life: 0.95, intensity: 0.75, flicker: 0.35, taper: 1.1 });
+    fx.beams.segment(x, top, z, x, y, z, { color: white, width: r * 0.32, life: 0.8, intensity: 1.35, flicker: 0.6, taper: 1.2 });
+    fx.beams.segment(x, top, z, x, y, z, { color: gold, width: r * 2.4, life: 1.0, intensity: 0.12, flicker: 0.1, taper: 1.3 });
+    fx.screenFlash(0xffe6b0, 0.45);
+    fx.addLight({ x, y: y + 4, z }, 0xffd890, 8, 1.1);
+    fx.hitStop(0.06);
+    fx.shake(x, z, 1.3);
+    fx.shockwave(x, z, r * 5, { color: 0xffd890, life: 0.8, intensity: 1.6 });
+    glowFlash(fx, x, y + 0.5, z, r * 2.6, { life: 0.3, bright: 2, color: 0xfff2d0 });
+    // crown splash: golden sparks sprayed low and outward around the base
+    sparks(fx, x, y + 0.3, z, fx.k(46), { speed: 10, ramp: RAMP.GOLD, bright: 2.2, size: 1.6, gravity: 10, stretch: 0.08 });
+    for (let k = 0; k < fx.k(18); k++) {
+      const a = (k / 18) * Math.PI * 2 + Math.random() * 0.3;
+      const P = fx.P.reset();
+      P.x = x + Math.cos(a) * r * 0.4;
+      P.y = y + 0.3;
+      P.z = z + Math.sin(a) * r * 0.4;
+      P.vx = Math.cos(a) * rand(5, 8);
+      P.vy = rand(3, 6);
+      P.vz = Math.sin(a) * rand(5, 8);
+      P.drag = 1.2;
+      P.ty = -8;
+      P.life = rand(0.6, 0.9);
+      P.s0 = r * 0.9;
+      P.s1 = r * 0.4;
+      P.mode = 1;
+      P.aspect = 1;
+      P.stretch = 0.12;
+      P.frame = PF.FLAME0 + (k & 3);
+      P.ramp = RAMP.GOLD;
+      P.bright = 1.6;
+      P.add = 1;
+      P.soft = 0.1;
+      fx.pGlow();
+    }
+    fx.emit('sparkle', { x, y, z }, { scale: 2.6, count: 18, color: 0xfff0c0 });
+    // outward debris
+    for (let k = 0; k < 12; k++) {
+      const a = Math.random() * Math.PI * 2,
+        v = rand(4, 8);
+      fx.debris.spawn({ x, y: y + 0.3, z, vx: Math.cos(a) * v, vy: rand(4, 8), vz: Math.sin(a) * v, size: rand(0.18, 0.36), color: 0x5a5048, heat: rand(0.3, 0.7), cool: 0.3, trail: TRAIL.DUST, life: rand(6, 10) });
+    }
+    // ground ring that stays visible beside the beam, bigger scorch
+    fx.decal({ frame: DF.BLAST, x, z, size: r * 5.2, life: 90, color: 0x1e160e, alpha: 0.8, fadeIn: 0.001, fadeOut: 0.8 });
+    fx.decal({ frame: DF.SCORCH1, x, z, size: r * 6.5, life: 70, color: 0x3a2c20, alpha: 0.45, fadeIn: 0.001, fadeOut: 0.8 });
+    fx.decal({ frame: DF.RING, x, z, size: r * 1.2, grow: 3.4, life: 2.2, additive: true, surface: 2, color: 0xffc860, intensity: 2.4, fadeIn: 0.01, fadeOut: 0.35, grain: 0 });
+    fx.decal({ frame: DF.RUNE, x, z, size: r * 3.2, life: 6, additive: true, color: 0xffb040, intensity: 2.4, cool: 0.6, fadeIn: 0.005, fadeOut: 0.3, grain: 0, spin: 0.6 });
+    fx.decal({ frame: DF.GLOW, x, z, size: r * 3, life: 4, additive: true, color: 0xff9a30, intensity: 1.5, cool: 0.8, fadeIn: 0.005, fadeOut: 0.2 });
+    for (let k = 0; k < 16; k++) dustPuff(fx, x, y, z, 1.1, { out: rand(4, 8), life: rand(1.6, 2.8), drag: 2.2, ramp: RAMP.DUST_THICK, up: 0.4 });
     play(g, 'thunder', { x, z }, 1, 1.3);
     hurt(g, x, z, r, 999, 220, 'smite');
     hurt(g, x, z, r * 2, 25, 40, 'smite');
