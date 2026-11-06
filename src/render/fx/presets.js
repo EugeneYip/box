@@ -327,59 +327,68 @@ export const PRESETS = {
     const s = o.scale ?? 1;
     const { x, z } = p;
     const y = p.y;
-    glowFlash(fx, x, y + 0.6 * s, z, 6 * s, { life: 0.28, bright: 5, ramp: RAMP.FLASH, color: 0xfff0d0 });
-    glowFlash(fx, x, y + 0.4 * s, z, 3.5 * s, { life: 0.6, bright: 3, ramp: RAMP.EXPLOSION });
-    const nb = fx.k(16 * Math.sqrt(s));
+    // brief white-hot core (small, so bloom does not wash the frame out)
+    glowFlash(fx, x, y + 0.6 * s, z, 3.2 * s, { life: 0.18, bright: 2.2, ramp: RAMP.FLASH, color: 0xffe8c0 });
+    // fireball: ALPHA-blended billows with a hot shell and a sooty core,
+    // 2-3x the blast scale, so it occludes the ground and reads as mass
+    const nb = fx.k(22 * Math.sqrt(s));
     for (let i = 0; i < nb; i++) {
       const P = fx.P.reset();
       const a = R() * TAU,
-        el = rr(0.15, 1.4);
-      const v = rr(2, 6) * Math.sqrt(s);
-      P.x = x;
-      P.y = y + 0.3 * s;
-      P.z = z;
+        el = rr(0.2, 1.45);
+      const v = rr(2.5, 7) * Math.sqrt(s);
+      P.x = x + rr(-0.3, 0.3) * s;
+      P.y = y + 0.4 * s;
+      P.z = z + rr(-0.3, 0.3) * s;
       P.vx = Math.cos(a) * Math.cos(el) * v;
-      P.vy = Math.sin(el) * v;
+      P.vy = Math.sin(el) * v * 1.2;
       P.vz = Math.sin(a) * Math.cos(el) * v;
       P.tx = fx.wind.x;
-      P.ty = 1.6;
+      P.ty = 2.2;
       P.tz = fx.wind.z;
-      P.drag = 2.4;
-      P.life = rr(0.9, 1.6);
-      P.s0 = s * rr(0.8, 1.2);
-      P.s1 = s * rr(2.2, 3.2);
+      P.drag = 2.2;
+      P.life = rr(1.6, 2.6);
+      P.s0 = s * rr(1.4, 2.0);
+      P.s1 = s * rr(4.2, 6.0);
       P.rot = R() * TAU;
-      P.spin = rr(-1, 1);
+      P.spin = rr(-0.8, 0.8);
       P.frame = PF.SMOKE0 + ((R() * 4) | 0);
-      P.ramp = RAMP.EXPLOSION;
-      P.heat = 0.25;
-      P.bright = 3.2;
-      P.add = 0.85;
-      P.soft = 0.3;
-      fx.pGlow();
+      P.ramp = RAMP.FIREBALL;
+      P.heat = 0.32;
+      P.bright = 2.4;
+      P.lit = 0.45;
+      P.glow = 1.2;
+      P.add = 0;
+      P.soft = 0.25;
+      fx.pSmoke();
     }
-    sparks(fx, x, y + 0.3 * s, z, fx.k(10 * Math.sqrt(s)), { speed: 10 * Math.sqrt(s), up: true, size: 1.5, stretch: 0.09 });
+    sparks(fx, x, y + 0.3 * s, z, fx.k(8 * Math.sqrt(s)), { speed: 11 * Math.sqrt(s), up: true, size: 1.6, stretch: 0.09, bright: 2.5 });
     const ns = fx.k(12 * Math.sqrt(s));
     for (let i = 0; i < ns; i++) {
       const a = R() * TAU;
-      smokePuff(fx, x + Math.cos(a) * 0.5 * s, y + rr(0.3, 1.4) * s, z + Math.sin(a) * 0.5 * s, {
-        size: 1.3 * s,
+      smokePuff(fx, x + Math.cos(a) * 0.5 * s, y + rr(0.8, 2.4) * s, z + Math.sin(a) * 0.5 * s, {
+        size: 1.8 * s,
         grow: 3,
-        ramp: RAMP.HOT_SMOKE,
-        glow: 1.6,
-        rise: 1.8 * Math.sqrt(s),
-        vx: Math.cos(a) * 1.6 * s,
-        vz: Math.sin(a) * 1.6 * s,
-        life: rr(4, 6.5) * Math.sqrt(s),
-        delay: rr(0, 0.25),
+        ramp: RAMP.SMOKE_BLACK,
+        glow: 0.6,
+        rise: 2.2 * Math.sqrt(s),
+        vx: Math.cos(a) * 1.4 * s,
+        vz: Math.sin(a) * 1.4 * s,
+        life: rr(6, 9) * Math.sqrt(s),
+        delay: rr(0.3, 0.9),
       });
     }
-    for (let i = 0; i < fx.k(8 * Math.sqrt(s)); i++) dustPuff(fx, x, y, z, 0.8 * s, { out: rr(3, 6) * s, drag: 2.5, life: rr(1.2, 2.2) });
+    // opaque ground-hugging dust ring racing outward
+    const nr = fx.k(26 * Math.sqrt(s));
+    for (let i = 0; i < nr; i++) {
+      const a = (i / nr) * TAU + R() * 0.15;
+      dustPuff(fx, x + Math.cos(a) * 0.5 * s, y, z + Math.sin(a) * 0.5 * s, 1.1 * s, { ang: a, out: rr(6, 9) * s, drag: 2.0, life: rr(2.2, 3.4), up: 0.35, ramp: RAMP.DUST_THICK });
+    }
     fx.shockwave(x, z, 5.5 * s, { life: 0.55 });
     fx.decal({ frame: DF.BLAST, x, z, size: 3.4 * s, life: 50, color: 0x161210, alpha: 0.85, fadeIn: 0.002, fadeOut: 0.8 });
     fx.decal({ frame: DF.GLOW, x, z, size: 2.6 * s, life: 3.5, additive: true, color: 0xff8030, intensity: 1.4, cool: 1, fadeIn: 0.01, fadeOut: 0.3 });
-    fx.addLight({ x, y: y + 1.5 * s, z }, 0xffa050, 3 * s, 0.6);
-    fx.shake(x, z, 0.45 * s);
+    fx.addLight({ x, y: y + 1.5 * s, z }, 0xff8a40, 3 * s, 0.9);
+    fx.shake(x, z, 0.7 * s);
     const nd = Math.round(3 * s);
     for (let i = 0; i < nd; i++) {
       const a = R() * TAU,
@@ -476,6 +485,23 @@ export const PRESETS = {
     const n = fx.k(o.count ?? 4);
     for (let i = 0; i < n; i++)
       smokePuff(fx, p.x + rr(-0.4, 0.4) * s, p.y + 0.1, p.z + rr(-0.4, 0.4) * s, { size: 0.75 * s, ramp: RAMP.STEAM, rise: 1.8, drift: 2.6, life: rr(1.8, 3.2), lit: 0.85, color: o.color });
+  },
+
+  // towering billowing steam (lava meeting the sea)
+  steamColumn(fx, p, o) {
+    const s = o.scale ?? 1;
+    for (let i = 0; i < fx.k(o.count ?? 2); i++)
+      smokePuff(fx, p.x + rr(-0.6, 0.6) * s, p.y + rr(0, 0.6), p.z + rr(-0.6, 0.6) * s, {
+        size: rr(1.6, 2.4) * s,
+        grow: 3.4,
+        ramp: RAMP.STEAM,
+        rise: rr(2.6, 3.6),
+        drift: 2.6,
+        drag: 0.45,
+        life: rr(6, 9),
+        lit: 0.9,
+        alpha: 1,
+      });
   },
 
   magic(fx, p, o) {

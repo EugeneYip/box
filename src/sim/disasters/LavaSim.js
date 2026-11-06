@@ -150,7 +150,7 @@ export class LavaSim {
       let h = this.heat[i];
       // ---- flow ----
       if (v > 0.02 && h > COOL_HEAT) {
-        const visc = Math.min(1, (h - COOL_HEAT) * 1.6); // hot = runny
+        const visc = Math.min(1, (h - COOL_HEAT) * 2.6); // hot = runny
         const L = w.height[i];
         let total = 0;
         const drops = this._drops || (this._drops = new Float32Array(8));
@@ -168,7 +168,7 @@ export class LavaSim {
           }
         }
         if (total > 0) {
-          const move = Math.min(v * 0.85, total * 0.42) * visc * Math.min(1, step * 5);
+          const move = Math.min(v * 0.9, total * 0.48) * visc * Math.min(1, step * 12);
           for (let d = 0; d < 8; d++) {
             if (drops[d] <= 0) continue;
             const j = (y + DIRS8[d][1]) * W + x + DIRS8[d][0];
@@ -195,9 +195,9 @@ export class LavaSim {
         }
       }
       // ---- cooling ----
-      let cool = step * (0.012 + 0.03 / (1 + v * 4)) * (1 + rain * 2.5);
+      let cool = step * (0.008 + 0.022 / (1 + v * 4)) * (1 + rain * 2.5);
       // neighbouring water chills fast
-      if (w.isCoastal(x, y)) cool += step * 0.05;
+      if (w.isCoastal(x, y)) cool += step * 0.02;
       h -= cool;
       // ---- ignite surroundings ----
       if (h > 0.45 && fire && rng.next() < step * 0.6 * h) {

@@ -1,5 +1,6 @@
 import { TILE, FLORA, FLORA_INFO, SEA_LEVEL, MIN_HEIGHT } from '../../world/constants.js';
-import { hurt, play, rand } from './util.js';
+import { hurt, play, rand, smooth } from './util.js';
+import { hash2 } from '../../core/Random.js';
 import { DF, RAMP, TRAIL, dustPuff } from '../../render/fx/Effects.js';
 
 // Earthquake: rolling tremor with camera shake. Fault lines rupture outward
@@ -18,7 +19,8 @@ export class Earthquake {
     this.z = z;
     this.r = radius;
     this.t = 0;
-    this.duration = 6.5 + radius * 0.08;
+    this.duration = 9 + radius * 0.1;
+    this.seed = (Math.random() * 1e4) | 0;
     this.faults = [];
     const nf = radius >= 12 ? 2 : 1;
     const baseAng = Math.random() * Math.PI;
@@ -65,8 +67,8 @@ export class Earthquake {
     const w = g.world;
     this.t += vt;
     const env = this.envelope();
-    // sustain shake (CameraRig decays at ~2.2/s)
-    fx.shake(this.x, this.z, env * (0.12 + 2.2 * dt * (0.45 + this.r * 0.02)));
+    // sustain a heavy rolling shake (CameraRig decays at ~2.2/s) plus jolts
+    fx.shake(this.x, this.z, env * dt * 2.2 * (1.4 + this.r * 0.04) + (Math.random() < vt * 1.6 ? 0.7 * env : 0));
     // ---- rupture propagation ----
     for (const f of this.faults) {
       for (const s of f.segs) {
@@ -144,17 +146,19 @@ export class Earthquake {
     const onLand = w.isLand(mtx, mty);
     const k = 0.5 + 0.5 * s.w;
     if (onLand) {
-      fx.decal({ frame: DF.CRACKLINE, x: mx, z: mz, size: L * 2.1, rot: Math.atan2(dz, dx), life: 120, color: 0x0e0a08, alpha: 0.95, fadeIn: 0.0008, fadeOut: 0.85, grain: 0.4 });
-      fx.decal({ frame: DF.SOFTDARK, x: mx, z: mz, size: L * 1.6, life: 90, color: 0x4a3c30, alpha: 0.35, fadeIn: 0.001, fadeOut: 0.8, grain: 0.8 });
-      if (Math.random() < 0.35) fx.decal({ frame: DF.CRACK1, x: mx + nx * rand(-1, 1), z: mz + nz * rand(-1, 1), size: rand(2, 3.4) * k, life: 100, color: 0x120e0c, alpha: 0.8, fadeIn: 0.001, fadeOut: 0.85 });
-      // rubble dust bursting from the crack
-      for (let j = 0; j < fx.k(3); j++) {
+      // black chasm cracks with a dark bruise of disturbed soil
+      fx.decal({ frame: DF.CRACKLINE, x: mx, z: mz, size: L * 2.6, rot: Math.atan2(dz, dx), life: 160, color: 0x040302, alpha: 1, fadeIn: 0.0005, fadeOut: 0.88, grain: 0.2 });
+      fx.decal({ frame: DF.SOFTDARK, x: mx, z: mz, size: L * 2.2, life: 120, color: 0x1e1610, alpha: 0.55, fadeIn: 0.001, fadeOut: 0.85, grain: 0.7 });
+      if (Math.random() < 0.5) fx.decal({ frame: DF.CRACK1, x: mx + nx * rand(-1.5, 1.5), z: mz + nz * rand(-1.5, 1.5), size: rand(2.4, 4) * k, life: 140, color: 0x060403, alpha: 0.95, fadeIn: 0.001, fadeOut: 0.88 });
+      // thick dust walls erupting along both lips of the rupture
+      for (let j = 0; j < fx.k(7); j++) {
         const f = Math.random();
-        const px = s.x0 + dx * f,
-          pz = s.z0 + dz * f;
-        dustPuff(fx, px, w.heightAt(px, pz), pz, rand(0.7, 1.3) * k, { out: rand(0.5, 1.6), up: 1.6, life: rand(2, 3.5), ang: Math.atan2(nz, nx) + (Math.random() < 0.5 ? Math.PI : 0) });
+        const sd = Math.random() < 0.5 ? 1 : -1;
+        const px = s.x0 + dx * f + nx * sd * 1.2,
+          pz = s.z0 + dz * f + nz * sd * 1.2;
+        dustPuff(fx, px, w.heightAt(px, pz), pz, rand(1.4, 2.4) * k, { out: rand(0.4, 1.2), up: 2.6, life: rand(3, 5), drag: 1.2, ang: Math.atan2(nz * sd, nx * sd), ramp: RAMP.DUST_THICK });
       }
-      if (Math.random() < 0.7) {
+      if (Math.random() < 0.9) {
         const f = Math.random();
         const px = s.x0 + dx * f,
           pz = s.z0 + dz * f;
@@ -162,33 +166,44 @@ export class Earthquake {
           fx.debris.spawn({ x: px, y: w.heightAt(px, pz) + 0.2, z: pz, vx: nx * rand(-2, 2), vy: rand(2.5, 5), vz: nz * rand(-2, 2), size: rand(0.15, 0.35), color: 0x6e6258, life: rand(6, 10) });
       }
     }
-    // scarp: tiles on one side of the fault drop; the crack itself sinks
-    const R = 2.6;
-    w.forEachInRadius(mx, mz, R + 1, (tx, ty, dn, i) => {
-      if (w.height[i] < SEA_LEVEL - 0.5) return;
+    // Chasm: the rupture splits open 1.5-2.5 units deep with jagged raised
+    // lips; the ground on one side drops as an offset block (a scarp).
+    // Each tile's total change is tracked so overlapping segments never
+    // carve the same tile twice.
+    const carved = (this._carved ||= new Map());
+    w.forEachInRadius(mx, mz, 4.6, (tx, ty, dn, i) => {
       const px = tx + 0.5 - mx,
         pz = ty + 0.5 - mz;
       const along = (px * dx + pz * dz) / L;
-      if (Math.abs(along) > L * 0.6) return;
+      if (Math.abs(along) > L * 0.75) return;
+      const prev = carved.get(i);
+      const h0 = prev ? prev.h0 : w.height[i];
+      if (h0 < SEA_LEVEL - 0.3) return;
       const side = px * nx + pz * nz;
-      let dh = 0;
-      if (side > 0) dh -= thr * k * Math.exp(-side * 0.35) * 0.5;
       const ad = Math.abs(side);
-      if (ad < 0.8) {
-        dh -= 0.22 * k * (1 - ad / 0.8);
-        const t = w.type[i];
-        if (t === TILE.GRASS || t === TILE.FOREST || t === TILE.SAVANNA || t === TILE.JUNGLE || t === TILE.TUNDRA || t === TILE.FARMLAND) {
-          w.type[i] = TILE.SOIL;
+      const jag = hash2(tx, ty, this.seed);
+      let want = 0; // desired total change from the original height
+      if (side > 0.7 && side < 4.2) want -= thr * k * 1.5 * (1 - smooth((side - 2.8) / 1.4));
+      if (ad < 1.0) {
+        const depth = (1.5 + 1.0 * jag) * k * (1 - (ad / 1.0) ** 2);
+        want -= depth;
+      } else if (ad < 1.8) want += (0.15 + 0.4 * jag) * k * (1 - (ad - 1.0) / 0.8);
+      const cur = prev ? prev.want : 0;
+      const next = Math.abs(want) > Math.abs(cur) ? want : cur;
+      if (next === cur) return;
+      const floor = h0 >= SEA_LEVEL ? SEA_LEVEL + 0.08 : MIN_HEIGHT;
+      w.height[i] = Math.max(floor, Math.max(MIN_HEIGHT, h0 + next));
+      carved.set(i, { h0, want: next });
+      w.markDirty('height', tx, ty);
+      if (ad < 1.0) {
+        if (w.type[i] !== TILE.ROCK) {
+          w.type[i] = TILE.ROCK;
           w.markDirty('type', tx, ty);
         }
         const fl = w.flora[i];
         if (fl && FLORA_INFO[fl].isTree) this._topple(tx, ty, fl);
-        else if (fl && fl !== FLORA.BOULDER) w.setFlora(tx, ty, Math.random() < 0.4 ? FLORA.ROCK_SMALL : FLORA.NONE);
-      }
-      if (dh) {
-        w.height[i] = Math.max(MIN_HEIGHT, w.height[i] + dh);
-        w.markDirty('height', tx, ty);
-      }
+        else if (fl && fl !== FLORA.BOULDER) w.setFlora(tx, ty, FLORA.NONE);
+      } else if (ad < 1.8 && !w.flora[i] && jag > 0.82) w.setFlora(tx, ty, FLORA.ROCK_SMALL, 1);
     });
     hurt(g, mx, mz, 2, 18 * k, 45 * k, 'earthquake');
   }
