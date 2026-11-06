@@ -102,8 +102,7 @@ export class TerritoryOverlay {
         this.data[k] = rgb[0];
         this.data[k + 1] = rgb[1];
         this.data[k + 2] = rgb[2];
-        const war = civ?.warCount?.(o) > 0;
-        this.data[k + 3] = war ? 170 : 150;
+        this.data[k + 3] = 255;
       }
     this.tex.needsUpdate = true;
   }

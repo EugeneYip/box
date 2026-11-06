@@ -170,11 +170,24 @@ function pickWeighted(list, r) {
 
 // A tree species that suits the tile (temperature nudges cold / warm picks).
 export function pickTree(tileType, temperature = 0.5, r = Math.random()) {
-  if (tileType === T.GRASS || tileType === T.FOREST || tileType === T.SOIL) {
-    if (temperature < 0.36) return r < 0.6 ? FLORA.PINE : FLORA.BIRCH;
-    if (temperature > 0.72 && r < 0.25) return FLORA.ACACIA;
+  if (tileType === T.GRASS || tileType === T.FOREST || tileType === T.SOIL || tileType === T.ASH) {
+    if (temperature < 0.3) return r < 0.7 ? FLORA.PINE : FLORA.BIRCH;
+    if (temperature > 0.76 && r < 0.3) return FLORA.ACACIA;
   }
-  return pickWeighted(MIX[tileType], r);
+  let f = pickWeighted(MIX[tileType], r);
+  if (f && climateFactor(f, temperature) < 0.5) {
+    // fall back to whichever candidate of this biome suits the climate best
+    let best = FLORA.NONE,
+      bs = 0.5;
+    for (const [g] of MIX[tileType] || []) {
+      const c = climateFactor(g, temperature);
+      if (c > bs) (best = g), (bs = c);
+    }
+    if (!best && (tileType === T.JUNGLE || tileType === T.SAVANNA))
+      best = temperature < 0.4 ? FLORA.PINE : temperature < 0.74 ? FLORA.OAK : FLORA.NONE;
+    f = best;
+  }
+  return f;
 }
 
 const UNDERGROWTH = [];
@@ -192,6 +205,41 @@ export function pickUndergrowth(tileType, r = Math.random()) {
   return pickWeighted(UNDERGROWTH[tileType], r);
 }
 
+// Climate windows on world.temperature (0 cold .. 1 hot) with a soft margin:
+// palms, jungle trees, acacias and cacti need warmth; snowy pines need cold.
+const CLIMATE = [];
+CLIMATE[FLORA.PALM] = [0.68, 2];
+CLIMATE[FLORA.JUNGLE_TREE] = [0.62, 2];
+CLIMATE[FLORA.ACACIA] = [0.5, 2];
+CLIMATE[FLORA.CACTUS] = [0.5, 2];
+CLIMATE[FLORA.SNOW_PINE] = [-1, 0.42];
+CLIMATE[FLORA.PINE] = [-1, 0.6];
+CLIMATE[FLORA.BIRCH] = [0.1, 0.66];
+CLIMATE[FLORA.OAK] = [0.22, 0.86];
+CLIMATE[FLORA.SWAMP_TREE] = [0.28, 0.9];
+CLIMATE[FLORA.BERRY_BUSH] = [0.12, 0.82];
+export function climateFactor(f, temp) {
+  const c = CLIMATE[f];
+  if (!c) return 1;
+  const m = 0.07;
+  if (temp < c[0]) return Math.max(0, 1 - (c[0] - temp) / m);
+  if (temp > c[1]) return Math.max(0, 1 - (temp - c[1]) / m);
+  return 1;
+}
+
+// Low-frequency "drift" field: wildflowers gather in natural drifts rather
+// than an even sprinkle. Returns 0..1.
+export function flowerDrift(x, y) {
+  const a = Math.sin(x * 0.083 + Math.sin(y * 0.061) * 1.9) * Math.cos(y * 0.071 - Math.sin(x * 0.047) * 2.3);
+  const b = Math.sin((x + y) * 0.137 + 1.7) * 0.35;
+  return Math.min(1, Math.max(0, 0.5 + 0.55 * a + b * 0.5));
+}
+
+// Small plants do not cling to cliffs.
+const SMALL = new Uint8Array(32);
+for (const f of [FLORA.FLOWERS, FLORA.BUSH, FLORA.BERRY_BUSH, FLORA.MUSHROOM, FLORA.REEDS, FLORA.WHEAT]) SMALL[f] = 1;
+export const isSmallPlant = (f) => !!SMALL[f];
+
 export function suitability(f, tileType) {
   const s = SPECIES[f];
   if (!s) return 1;
@@ -201,7 +249,8 @@ export function suitability(f, tileType) {
 // Reeds want water nearby; everything else uses the habitat table.
 export function suitAt(world, f, tx, ty, i) {
   const t = world.type[i];
-  let s = suitability(f, t);
+  let s = suitability(f, t) * climateFactor(f, world.temperature[i]);
+  if (SMALL[f] && f !== FLORA.REEDS && world.slopeAt(tx, ty) > 1.15) s = 0;
   if (f === FLORA.REEDS) {
     if (world.height[i] < SEA_LEVEL) return world.height[i] > SEA_LEVEL - 0.7 ? 1 : 0;
     if (t !== T.SWAMP && world.isCoastal(tx, ty)) s = Math.max(s, t === T.ROCK || t === T.SNOW || t === T.LAVA ? 0 : 0.9);

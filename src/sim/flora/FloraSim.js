@@ -12,6 +12,8 @@ import {
   pickTree,
   pickUndergrowth,
   naturalBiome,
+  climateFactor,
+  flowerDrift,
 } from './species.js';
 
 // Flora simulation (Nature).
@@ -48,7 +50,40 @@ export class FloraSim {
     this._acc = 0;
     this.counts = { trees: 0, plants: 0 };
     this._countAcc = { trees: 0, plants: 0 };
+    this.settle();
     this.recount();
+  }
+
+  // One-off ecological tidy of a freshly generated world: trees outside their
+  // climate become a species that belongs there, and wildflowers gather into
+  // drifts instead of an even sprinkle.
+  settle() {
+    const world = this.game.world;
+    const W = world.w;
+    for (let i = 0; i < world.size; i++) {
+      const f = world.flora[i];
+      const tx = i % W,
+        ty = (i / W) | 0;
+      if (isTreeId(f) && climateFactor(f, world.temperature[i]) < 0.5) {
+        const alt = pickTree(world.type[i], world.temperature[i], this.hash(i * 3 + 1));
+        const ok = alt && climateFactor(alt, world.temperature[i]) >= 0.5 && suitAt(world, alt, tx, ty, i) >= 0.3;
+        world.flora[i] = ok ? alt : FLORA.NONE;
+        if (!ok) world.floraGrowth[i] = 0;
+      } else if (f === FLORA.FLOWERS) {
+        const d = flowerDrift(tx, ty);
+        if (d < 0.5 || world.slopeAt(tx, ty) > 1.15) {
+          world.flora[i] = this.hash(i) < 0.25 && d > 0.3 ? FLORA.BUSH : FLORA.NONE;
+          if (!world.flora[i]) world.floraGrowth[i] = 0;
+        }
+      } else if (!f && world.type[i] === TILE.GRASS && world.height[i] >= SEA_LEVEL && world.building[i] < 0) {
+        const d = flowerDrift(tx, ty);
+        if (d > 0.72 && this.hash(i * 7 + 3) < (d - 0.72) * 1.1 && world.slopeAt(tx, ty) < 0.9) {
+          world.flora[i] = FLORA.FLOWERS;
+          world.floraGrowth[i] = 0.7 + this.hash(i * 5) * 0.3;
+        }
+      }
+    }
+    world.markDirty('flora', 0, 0, world.w - 1, world.h - 1);
   }
 
   recount() {
@@ -69,6 +104,7 @@ export class FloraSim {
     this.boost.fill(0);
     this.rng = mulberry32((this.game.params?.seed ?? 1) * 31 + 7);
     this._countAcc = { trees: 0, plants: 0 };
+    this.settle();
     this.recount();
   }
 
@@ -247,6 +283,7 @@ export class FloraSim {
     if (world.height[i] < SEA_LEVEL && !(f === FLORA.REEDS && world.height[i] > SEA_LEVEL - 0.5)) return false;
     if (world.slopeAt(tx, ty) > 2.6 && !isTreeId(f)) return false;
     if (suitAt(world, f, tx, ty, i) < 0.5) return false;
+    if (f === FLORA.FLOWERS && flowerDrift(tx, ty) < 0.45) return false;
     const group = densityGroup(f);
     if (group === 1) {
       const cap = TREE_CAP[t] || 1;

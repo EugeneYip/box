@@ -28,6 +28,7 @@ export const CHUNK = 32;
 const LOD_FAR = 115;
 const LOD_HYST = 10;
 const SKIP_FAR = 150;
+const FLOWER_SKIP = 52; // petals have faded out (shader) well before this
 const POLL_PER_FRAME = 4096;
 const REBUILD_BUDGET_MS = 4;
 
@@ -310,6 +311,8 @@ export class Vegetation {
         const model = this.models[f];
         if (!model) continue;
         const h0 = world.height[i];
+        // small plants never render on cliff faces
+        if ((f === FLORA.FLOWERS || f === FLORA.MUSHROOM) && world.slopeAt(tx, ty) > 1.15) continue;
         if (h0 < SEA_LEVEL - (f === FLORA.REEDS ? 0.7 : f === FLORA.BOULDER || f === FLORA.ROCK_SMALL ? 1.2 : 0.15)) continue;
         const cfg = model.cfg;
         const v = this.variantOf(tx, ty, f);
@@ -407,6 +410,7 @@ export class Vegetation {
     if (d > LOD_FAR + LOD_HYST) c.lod = 1;
     else if (d < LOD_FAR - LOD_HYST) c.lod = 0;
     c.skip = d > SKIP_FAR;
+    c.flowerSkip = d > FLOWER_SKIP;
   }
 
   // Cull chunks and repack the visible instance lists when anything changed.
@@ -423,7 +427,7 @@ export class Vegetation {
         this.applyLod(c);
         sph.center.copy(c.sphere.center);
         sph.radius = c.sphere.radius + 7; // off-screen trees still cast shadows in
-        if (this._frustum.intersectsSphere(sph)) state = 1 + c.lod * 2 + (c.skip ? 4 : 0);
+        if (this._frustum.intersectsSphere(sph)) state = 1 + c.lod * 2 + (c.skip ? 4 : 0) + (c.flowerSkip ? 8 : 0);
       }
       if (state !== c.state) {
         c.state = state;
@@ -442,6 +446,7 @@ export class Vegetation {
         const model = this.models[list.f];
         const cfg = model.cfg;
         if (c.skip && cfg.far === 'skip') continue;
+        if (c.flowerSkip && list.f === FLORA.FLOWERS) continue;
         const lods = model.variants[list.v];
         const L = c.lod && lods[1] ? 1 : 0;
         const bkey = key * 2 + L;
@@ -475,6 +480,7 @@ export class Vegetation {
     u.uWet.value += (wetGoal - u.uWet.value) * Math.min(1, dt * (wetGoal > u.uWet.value ? 0.3 : 0.06));
 
     if (!this.initialized) {
+      this.syncAll(true);
       for (const c of this.chunks) this.rebuildChunk(c);
       this.initialized = true;
     } else {

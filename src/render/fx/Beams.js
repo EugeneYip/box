@@ -196,8 +196,15 @@ export class Beams {
     if (this._hi < 0) return;
     for (const k in this.attrs) {
       const at = this.attrs[k];
+      // merge with anything not yet uploaded (three clears after upload)
+      let lo = this._lo * 4,
+        hi = (this._hi + 1) * 4;
+      for (const u of at.updateRanges) {
+        lo = Math.min(lo, u.start);
+        hi = Math.max(hi, u.start + u.count);
+      }
       at.clearUpdateRanges();
-      at.addUpdateRange(this._lo * 4, (this._hi - this._lo + 1) * 4);
+      at.addUpdateRange(lo, hi - lo);
       at.needsUpdate = true;
     }
     this._lo = Infinity;

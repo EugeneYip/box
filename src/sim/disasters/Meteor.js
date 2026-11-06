@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { SEA_LEVEL } from '../../world/constants.js';
+import { SEA_LEVEL, FLORA } from '../../world/constants.js';
 import { carveCrater, hurt, play, rand } from './util.js';
 import { PF, DF, RAMP, TRAIL, glowFlash, sparks, smokePuff, dustPuff } from '../../render/fx/Effects.js';
 
@@ -36,17 +36,15 @@ export class Meteor {
     this.x = x;
     this.z = z;
     this.ty = g.world.surfaceAt(x, z);
-    // approach from beyond the camera focus at a shallow angle so the streak
-    // crosses the frame diagonally (camera sits at +(sin yaw, cos yaw))
-    const yaw = g.cameraRig?.cur?.yaw ?? 0;
-    const camAz = Math.atan2(Math.cos(yaw), Math.sin(yaw));
-    const az = opts.azimuth ?? camAz + Math.PI + rand(0.45, 1.05) * (Math.random() < 0.5 ? 1 : -1);
-    const elev = THREE.MathUtils.degToRad(opts.elevation ?? rand(24, 34));
-    const D = 75 + this.size * 7;
-    this.dir = new THREE.Vector3(Math.cos(az) * Math.cos(elev), Math.sin(elev), Math.sin(az) * Math.cos(elev));
-    this.start = new THREE.Vector3(x, this.ty, z).addScaledVector(this.dir, D);
     this.end = new THREE.Vector3(x, this.ty, z);
-    this.T = opts.flight ?? 1.55 + this.size * 0.04;
+    this.start = opts.azimuth != null ? null : this._viewStart();
+    if (!this.start) {
+      const az = opts.azimuth ?? Math.random() * Math.PI * 2;
+      const elev = THREE.MathUtils.degToRad(opts.elevation ?? rand(45, 58));
+      this.dir = new THREE.Vector3(Math.cos(az) * Math.cos(elev), Math.sin(elev), Math.sin(az) * Math.cos(elev));
+      this.start = this.end.clone().addScaledVector(this.dir, 60 + this.size * 6);
+    } else this.dir = this.start.clone().sub(this.end).normalize();
+    this.T = opts.flight ?? 1.5 + this.size * 0.04;
     this.t = -(opts.delay || 0);
     this.mesh = meteorMesh();
     this.radius = 0.45 + this.size * 0.16;
@@ -56,6 +54,46 @@ export class Meteor {
     this.prev = this.start.clone();
     this.pos = this.start.clone();
     this._played = false;
+  }
+
+  // Pick a start point so the streak crosses most of the frame: roughly
+  // perpendicular to the view direction, 45-60 degrees above the horizon,
+  // with the start projected inside the screen near an upper corner.
+  _viewStart() {
+    const cam = this.game.cameraRig?.camera;
+    const rig = this.game.cameraRig;
+    if (!cam || !rig) return null;
+    cam.updateMatrixWorld();
+    const yaw = rig.cur.yaw;
+    const fwd = new THREE.Vector2(-Math.sin(yaw), -Math.cos(yaw)); // horizontal view dir
+    const right = new THREE.Vector2(Math.cos(yaw), -Math.sin(yaw));
+    const d = rig.cur.dist;
+    const side = Math.random() < 0.5 ? 1 : -1;
+    const v = new THREE.Vector3();
+    let best = null,
+      bestLen = 0;
+    for (const e of [45, 50, 55, 60]) {
+      const te = Math.tan(THREE.MathUtils.degToRad(e));
+      for (let xs = 0.25; xs <= 1.2; xs += 0.05)
+        for (const fs of [0, -0.1, -0.2, -0.3]) {
+          const X = xs * d,
+            F = fs * d;
+          const hd = Math.hypot(X, F);
+          // keep the approach within ~35 degrees of perpendicular to the view
+          if (Math.abs(F) / hd > 0.57) continue;
+          const sx = this.x + right.x * X * side + fwd.x * F;
+          const sz = this.z + right.y * X * side + fwd.y * F;
+          const sy = this.ty + hd * te;
+          v.set(sx, sy, sz).project(cam);
+          if (Math.abs(v.x) > 0.92 || v.y > 0.9 || v.y < -0.9 || v.z > 1) continue;
+          const len = Math.hypot(v.x, v.y);
+          if (len > bestLen) {
+            bestLen = len;
+            best = new THREE.Vector3(sx, sy, sz);
+          }
+        }
+    }
+    return best;
   }
 
   update(vt) {
@@ -106,16 +144,41 @@ export class Meteor {
       P.frame = PF.SMOKE0 + ((Math.random() * 4) | 0);
       P.ramp = RAMP.EXPLOSION;
       P.heat = 0.25;
-      P.bright = 3.4;
+      P.bright = 2.2;
       P.add = 1;
       P.soft = 0;
       fx.pGlow();
-      // long smoke trail
-      if (Math.random() < 0.7)
-        smokePuff(fx, px, py, pz, { size: 0.5 + r * 0.8, ramp: RAMP.HOT_SMOKE, glow: 1.4, rise: 0.25, drift: 1.2, life: rand(3.5, 6), vx: dx * 0.6, vy: dy * 0.2, vz: dz * 0.6 });
+      // long dark smoke trail that lingers across the sky
+      if (Math.random() < 0.8)
+        smokePuff(fx, px, py, pz, { size: 0.7 + r * 0.9, ramp: RAMP.SMOKE_BLACK, glow: 1.2, rise: 0.25, drift: 1.0, life: rand(4.5, 7), vx: dx * 0.6, vy: dy * 0.2, vz: dz * 0.6 });
     }
-    // bright head + sparks shed sideways
-    glowFlash(fx, this.pos.x, this.pos.y, this.pos.z, r * 6, { life: 0.09, bright: 4.5, ramp: RAMP.FLASH, color: 0xffd8a0, from: 0.9, soft: 0 });
+    // hot rock core inside a velocity-stretched plasma sheath
+    const vel = seg / Math.max(vt, 1e-3);
+    for (let k = 0; k < 2; k++) {
+      const P = fx.P.reset();
+      P.x = this.pos.x;
+      P.y = this.pos.y;
+      P.z = this.pos.z;
+      P.vx = -dx * vel * 0.35;
+      P.vy = -dy * vel * 0.35;
+      P.vz = -dz * vel * 0.35;
+      P.tx = P.vx;
+      P.ty = P.vy;
+      P.tz = P.vz;
+      P.drag = 0.02;
+      P.life = 0.1;
+      P.s0 = r * (k ? 1.6 : 3.0);
+      P.s1 = P.s0 * 0.9;
+      P.mode = 1;
+      P.aspect = 1;
+      P.stretch = k ? 0.12 : 0.22;
+      P.frame = k ? PF.SPARK : PF.GLOW;
+      P.ramp = k ? RAMP.FLASH : RAMP.EXPLOSION;
+      P.bright = k ? 2.2 : 1.6;
+      P.add = 1;
+      P.soft = 0;
+      fx.pGlow();
+    }
     if (Math.random() < 0.6) sparks(fx, this.pos.x, this.pos.y, this.pos.z, 2, { speed: 4, dir: { x: dx * 0.6, y: dy * 0.6, z: dz * 0.6 }, gravity: 6, size: 1.4 });
     fx.lights.request('meteor' + this.x, this.pos.x, this.pos.y, this.pos.z, this._col || (this._col = new THREE.Color(1, 0.55, 0.22)), 3 + this.size * 0.4, 30);
     if (u >= 1) {
@@ -135,9 +198,10 @@ export class Meteor {
     const water = ground < SEA_LEVEL - 0.2;
     const y = Math.max(ground, SEA_LEVEL);
     const s = size / 4; // effect scale
-    fx.screenFlash(water ? 0xe0f0ff : 0xfff0d0, 0.55 + s * 0.25);
-    fx.addLight({ x, y: y + 3, z }, 0xffc080, 6 + s * 4, 1.4);
-    fx.shake(x, z, 1.1 + s * 0.6);
+    fx.screenFlash(water ? 0xe0f0ff : 0xffd8a0, 0.45 + s * 0.2);
+    fx.addLight({ x, y: y + 3, z }, 0xff9a50, 6 + s * 4, 1.6);
+    fx.hitStop(0.08);
+    fx.shake(x, z, 1.9 + s * 0.4);
     fx.shockwave(x, z, size * 3.2, { life: 0.8, color: water ? 0xd8f0ff : 0xffe0b0 });
     fx.shell(x, y, z, size * 1.7, { life: 0.32, color: 0xfff0d8, intensity: 1.1, power: 4, squash: 0.6 });
     play(g, 'explosion', { x, z }, 1, 0.8);
@@ -176,13 +240,18 @@ export class Meteor {
     fx.emit('explosion', { x, y, z }, { scale: 0.8 + s * 1.1 });
     const R = size;
     carveCrater(g, x, z, R, R * 0.55, { ignite: 0.65, rim: R * 0.22 });
-    fx.decal({ frame: DF.CRATER, x, z, size: R * 2.7, life: 160, color: 0x15100d, alpha: 0.92, fadeIn: 0.0005, fadeOut: 0.85, grain: 0.7 });
-    fx.decal({ frame: DF.SCORCH0, x, z, size: R * 4.4, life: 120, color: 0x1e1712, alpha: 0.6, fadeIn: 0.0005, fadeOut: 0.8, grain: 0.8 });
-    // molten floor that cools from yellow to dull red over ~30 s
-    fx.decal({ frame: DF.CRATER, x, z, size: R * 2.5, life: 32, additive: true, color: 0xffb050, intensity: 2.2, cool: 1.15, fadeIn: 0.002, fadeOut: 0.55, grain: 0.5 });
-    fx.decal({ frame: DF.CRACK0, x, z, size: R * 3.4, life: 18, additive: true, color: 0xff7a20, intensity: 1.6, cool: 1.2, fadeIn: 0.003, fadeOut: 0.4, grain: 0.3 });
-    // rising mushroom of smoke from the crater
-    fx.emit('smoke', { x, y: y + 0.5, z }, { scale: 1.4 + s, count: 1, duration: 3.5, rate: 7 });
+    // lighter soot so the carved bowl keeps its shading, plus an ejecta blanket
+    fx.decal({ frame: DF.CRATER, x, z, size: R * 2.7, life: 160, color: 0x4a3a2e, alpha: 0.6, fadeIn: 0.0005, fadeOut: 0.85, grain: 0.7 });
+    fx.decal({ frame: DF.SCORCH0, x, z, size: R * 4.2, life: 120, color: 0x3a2e24, alpha: 0.42, fadeIn: 0.0005, fadeOut: 0.8, grain: 0.8 });
+    fx.decal({ frame: DF.BLAST, x, z, size: R * 5.8, life: 140, color: 0x5e4c3a, alpha: 0.38, fadeIn: 0.001, fadeOut: 0.85, grain: 0.9 });
+    w.forEachInRadius(x, z, R * 2, (tx, ty, dn, i) => {
+      const d = (dn * R * 2) / R;
+      if (d > 1.05 && d < 1.9 && w.height[i] >= SEA_LEVEL && !w.flora[i] && w.building[i] < 0 && Math.random() < 0.22) w.setFlora(tx, ty, Math.random() < 0.15 ? FLORA.BOULDER : FLORA.ROCK_SMALL, 1);
+    });
+    // HDR molten floor + glowing cracks that cool over ~30 s
+    fx.decal({ frame: DF.CRATER, x, z, size: R * 2.4, life: 34, additive: true, color: 0xff5a14, intensity: 3.6, cool: 1.1, fadeIn: 0.002, fadeOut: 0.5, grain: 0.6 });
+    fx.decal({ frame: DF.CRACK0, x, z, size: R * 3.2, life: 30, additive: true, color: 0xff4a10, intensity: 2.6, cool: 1.15, fadeIn: 0.003, fadeOut: 0.45, grain: 0.3 });
+    this.ds.add(new CraterAftermath(this.ds, x, z, R));
     // glowing ejecta that arc and bounce
     const nd = Math.round(18 + size * 5);
     for (let k = 0; k < nd; k++) {
@@ -222,5 +291,52 @@ export class Meteor {
 
   dispose() {
     this.game.scene.remove(this.mesh);
+  }
+}
+
+// The smouldering crater after a land impact: the molten floor lights its
+// surroundings (fading over ~30 s), a dense dark smoke column pours out and
+// drifts downwind, and embers keep rising.
+class CraterAftermath {
+  constructor(ds, x, z, R) {
+    this.ds = ds;
+    this.game = ds.game;
+    this.x = x;
+    this.z = z;
+    this.R = R;
+    this.t = 0;
+    this.life = 32;
+    this._acc = 0;
+    this._e = 0;
+    this._c = new THREE.Color(1, 0.36, 0.08);
+  }
+  update(vt) {
+    if (vt <= 0) return true;
+    const g = this.game;
+    const fx = g.fx;
+    this.t += vt;
+    const k = Math.max(0, 1 - this.t / this.life);
+    const y = g.world.heightAt(this.x, this.z);
+    fx.lights.request('crater' + this.x, this.x, y + 1.6, this.z, this._c, (1 + 3.2 * k * k) * (0.9 + 0.1 * Math.sin(this.t * 9)), 10 + this.R * 2.2);
+    this._acc += vt * (1.5 + 10 * k * k) * fx.budget;
+    while (this._acc >= 1) {
+      this._acc -= 1;
+      smokePuff(fx, this.x + rand(-1, 1) * this.R * 0.35, y + 0.6, this.z + rand(-1, 1) * this.R * 0.35, {
+        size: rand(1.6, 2.6) * (0.7 + this.R * 0.08),
+        grow: 3,
+        ramp: RAMP.PLUME,
+        glow: 1.1 * k,
+        rise: rand(2, 3.2),
+        drift: 2.4,
+        drag: 0.35,
+        life: rand(8, 12),
+      });
+    }
+    this._e += vt * 7 * k;
+    while (this._e >= 1) {
+      this._e -= 1;
+      fx.emit('embers', { x: this.x + rand(-1, 1) * this.R * 0.4, y: y + 0.2, z: this.z + rand(-1, 1) * this.R * 0.4 }, { count: 1 });
+    }
+    return this.t < this.life;
   }
 }

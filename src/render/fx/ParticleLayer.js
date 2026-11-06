@@ -418,14 +418,25 @@ export class ParticleLayer {
     }
   }
 
-  // Upload the slots written this frame.
+  // Queue the slots written since the last flush for upload. Ranges are
+  // accumulated (three clears them itself once it has uploaded), so several
+  // updates without a render in between never drop particles.
   flush() {
     if (this._dmax < 0) return;
     this._ranges.push(this._dmin, this._dmax);
     for (const k in this.attrs) {
       const at = this.attrs[k];
-      at.clearUpdateRanges();
       for (let r = 0; r < this._ranges.length; r += 2) at.addUpdateRange(this._ranges[r] * 4, (this._ranges[r + 1] - this._ranges[r] + 1) * 4);
+      if (at.updateRanges.length > 24) {
+        let lo = Infinity,
+          hi = 0;
+        for (const u of at.updateRanges) {
+          if (u.start < lo) lo = u.start;
+          if (u.start + u.count > hi) hi = u.start + u.count;
+        }
+        at.clearUpdateRanges();
+        at.addUpdateRange(lo, hi - lo);
+      }
       at.needsUpdate = true;
     }
     this._ranges.length = 0;
