@@ -13,15 +13,15 @@ const C = (hex) => new THREE.Color(hex); // sRGB hex -> linear working colour
 
 // s = sin(sun elevation)
 const KEYS = [
-  { s: -1.0, zen: '#060f29', hor: '#152447', glow: '#000000', belt: '#000000', halo: '#000000', key: '#000000', keyI: 0, hemiS: '#3a5c9e', hemiG: '#1b2030', hemiI: 1.15, exp: 1.85, sky: 1.0 },
-  { s: -0.3, zen: '#071029', hor: '#172649', glow: '#000000', belt: '#000000', halo: '#000000', key: '#000000', keyI: 0, hemiS: '#3a5c9e', hemiG: '#1b2030', hemiI: 1.15, exp: 1.85, sky: 1.0 },
-  { s: -0.17, zen: '#0c1a40', hor: '#253563', glow: '#2c2450', belt: '#000000', halo: '#000000', key: '#000000', keyI: 0, hemiS: '#40609e', hemiG: '#1e2232', hemiI: 1.12, exp: 1.8, sky: 1.0 },
+  { s: -1.0, zen: '#060f29', hor: '#152447', glow: '#000000', belt: '#000000', halo: '#000000', key: '#000000', keyI: 0, hemiS: '#4c5f86', hemiG: '#1d2230', hemiI: 1.15, exp: 1.85, sky: 1.0 },
+  { s: -0.3, zen: '#071029', hor: '#172649', glow: '#000000', belt: '#000000', halo: '#000000', key: '#000000', keyI: 0, hemiS: '#4c5f86', hemiG: '#1d2230', hemiI: 1.15, exp: 1.85, sky: 1.0 },
+  { s: -0.17, zen: '#0c1a40', hor: '#253563', glow: '#2c2450', belt: '#000000', halo: '#000000', key: '#000000', keyI: 0, hemiS: '#50628a', hemiG: '#1e2232', hemiI: 1.12, exp: 1.8, sky: 1.0 },
   { s: -0.09, zen: '#172a5e', hor: '#5a5288', glow: '#a8483a', belt: '#33294e', halo: '#40202a', key: '#c04848', keyI: 0.0, hemiS: '#4e5f9c', hemiG: '#2a2430', hemiI: 1.1, exp: 1.7, sky: 1.0 },
   { s: -0.035, zen: '#233d7c', hor: '#a8708c', glow: '#ff5e26', belt: '#5a3a5c', halo: '#a04020', key: '#ff6a40', keyI: 0.35, hemiS: '#6a6ea6', hemiG: '#3a2c30', hemiI: 1.05, exp: 1.55, sky: 1.0 },
-  { s: 0.0, zen: '#2c4c90', hor: '#d9846c', glow: '#ff7020', belt: '#4a3e5e', halo: '#ff7a30', key: '#ff7a44', keyI: 1.0, hemiS: '#7e86b4', hemiG: '#4a3830', hemiI: 1.0, exp: 1.4, sky: 1.0 },
-  { s: 0.05, zen: '#3a60a4', hor: '#eba377', glow: '#ff9238', belt: '#3c4058', halo: '#ffa050', key: '#ffa25e', keyI: 2.0, hemiS: '#93a6c8', hemiG: '#5a4634', hemiI: 1.0, exp: 1.25, sky: 1.0 },
+  { s: 0.0, zen: '#2c4c90', hor: '#d9846c', glow: '#ff7020', belt: '#3c3346', halo: '#ff7a30', key: '#ff7a44', keyI: 1.0, hemiS: '#7e86b4', hemiG: '#4a3830', hemiI: 1.0, exp: 1.4, sky: 1.0 },
+  { s: 0.05, zen: '#4068a8', hor: '#efb07e', glow: '#ff9238', belt: '#30303e', halo: '#ffa050', key: '#ffa25e', keyI: 2.0, hemiS: '#9eacc4', hemiG: '#5a4634', hemiI: 1.0, exp: 1.25, sky: 1.0 },
   { s: 0.13, zen: '#4370b6', hor: '#efc392', glow: '#ffb45a', belt: '#2a3248', halo: '#ffc070', key: '#ffc282', keyI: 2.6, hemiS: '#9ab4d8', hemiG: '#6a5638', hemiI: 0.9, exp: 1.1, sky: 1.0 },
-  { s: 0.25, zen: '#487ec6', hor: '#e2d4b6', glow: '#ffd296', belt: '#000000', halo: '#ffe0b0', key: '#ffd8a6', keyI: 2.95, hemiS: '#a6c4e6', hemiG: '#706040', hemiI: 0.88, exp: 1.03, sky: 1.0 },
+  { s: 0.25, zen: '#487ec6', hor: '#e2d4b6', glow: '#ffcc8a', belt: '#000000', halo: '#ffdca8', key: '#ffcf92', keyI: 2.95, hemiS: '#a6c4e6', hemiG: '#706040', hemiI: 0.88, exp: 1.03, sky: 1.0 },
   { s: 0.42, zen: '#4685d2', hor: '#c2d9ec', glow: '#fff0d6', belt: '#000000', halo: '#fff2dc', key: '#fff0dc', keyI: 3.1, hemiS: '#acc9ea', hemiG: '#736444', hemiI: 0.9, exp: 1.0, sky: 1.0 },
   { s: 0.82, zen: '#3b7ad0', hor: '#c4ddf1', glow: '#fff8ee', belt: '#000000', halo: '#fff8ee', key: '#fff6ea', keyI: 3.3, hemiS: '#b0cdee', hemiG: '#776848', hemiI: 0.92, exp: 1.0, sky: 1.0 },
   { s: 1.0, zen: '#3b7ad0', hor: '#c4ddf1', glow: '#fff8ee', belt: '#000000', halo: '#fff8ee', key: '#fff6ea', keyI: 3.3, hemiS: '#b0cdee', hemiG: '#776848', hemiI: 0.92, exp: 1.0, sky: 1.0 },
@@ -51,7 +51,7 @@ const OVERCAST = { zen: C('#7b8794'), hor: C('#a6aeb5') };
 const STORM = { zen: C('#353e49'), hor: C('#56616a') };
 const SNOWSKY = { zen: C('#97a6b8'), hor: C('#c4ccd6') };
 const FOGSKY = { zen: C('#a9b6c2'), hor: C('#d2d7d9') };
-const MOON_KEY = C('#8fb0ff');
+const MOON_KEY = C('#aabde6');
 
 export class SkyModel {
   constructor() {
@@ -139,7 +139,7 @@ export class SkyModel {
 
     this.daylight = smooth(-0.1, 0.22, s);
     this.night = 1 - smooth(-0.2, -0.03, s);
-    this.golden = smooth(-0.04, 0.03, s) * (1 - smooth(0.12, 0.3, s));
+    this.golden = smooth(-0.04, 0.03, s) * (1 - smooth(0.2, 0.4, s));
     const oc = Math.min(1, w.overcast);
     const storm = w.storm;
 
@@ -184,7 +184,7 @@ export class SkyModel {
     this.sunLightColor.copy(this._k.key);
     let sunI = n.keyI;
     // overcast / storm / fog block direct sun
-    const block = Math.min(0.92, oc * (0.72 + 0.2 * storm) + w.fog * 0.45);
+    const block = Math.min(0.95, Math.pow(oc, 0.75) * (0.9 + 0.05 * storm) + w.fog * 0.45);
     sunI *= 1 - block;
     // desaturate the key under clouds
     const lumKey = this.sunLightColor.r * 0.3 + this.sunLightColor.g * 0.59 + this.sunLightColor.b * 0.11;
@@ -216,7 +216,7 @@ export class SkyModel {
 
     this.hemiSky.copy(this._k.hemiS);
     this.hemiGround.copy(this._k.hemiG);
-    this.hemiIntensity = n.hemiI * (1 + 0.18 * oc - 0.25 * storm);
+    this.hemiIntensity = n.hemiI * 1.3 * (1 + 0.18 * oc - 0.25 * storm);
     // overcast skylight is greyer
     const hl = this.hemiSky.r * 0.3 + this.hemiSky.g * 0.59 + this.hemiSky.b * 0.11;
     this.hemiSky.lerp(this._tmp.setRGB(hl * 0.96, hl, hl * 1.07), oc * 0.6);
@@ -244,7 +244,7 @@ export class SkyModel {
     this.shadowTint.set(-0.012, -0.002, 0.03).multiplyScalar(1 - 0.4 * oc);
     this.shadowTint.z += nt * 0.012;
     this.highTint.set(0.022 + 0.03 * g, 0.012 + 0.008 * g, -0.012 - 0.03 * g).multiplyScalar((1 - nt * 0.8) * (1 - 0.6 * oc));
-    this.saturation = (1.06 + 0.06 * g) * (1 - 0.14 * nt) * (1 - 0.16 * oc - 0.08 * storm) * (1 - 0.1 * w.fog);
+    this.saturation = (1.06 + 0.06 * g) * (1 - 0.3 * nt) * (1 - 0.16 * oc - 0.08 * storm) * (1 - 0.1 * w.fog);
     this.vibrance = 0.16 * (1 - 0.5 * oc);
     this.contrast = 1.06 + 0.04 * g - 0.03 * w.fog + 0.04 * storm;
   }

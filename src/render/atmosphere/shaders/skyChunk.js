@@ -39,7 +39,7 @@ vec3 skyBase(vec3 dir) {
   float band = exp(-h * mix(9.0, 4.0, az * az));
   col += uGlow * pow(az, uGlowWidth) * band;
   // Anti-solar pink band a little above the horizon.
-  col += uBelt * pow(1.0 - az, 2.2) * exp(-abs(y - 0.07) * 16.0);
+  col += uBelt * pow(1.0 - az, 2.2) * exp(-abs(y - 0.08) * 18.0) * smoothstep(0.0, 0.05, y);
 
   // Mie halo around the sun (soft, broad + tighter core).
   float mu = max(dot(dir, uSunDir), 0.0);

@@ -34,7 +34,8 @@ void main() {
 // once per frame. Every atmosphere effect samples this texture instead of the
 // composer's depth attachment, which (a) avoids framebuffer feedback loops
 // regardless of how passes ping-pong and (b) saves per-tap linearisation.
-// Sky / background pixels store a huge value (65000).
+// Sky / background pixels (window depth >= 0.99999: the dome writes
+// 0.999995) store a huge value (65000).
 export class LinearDepthPass extends Pass {
   constructor(camera, { float = true } = {}) {
     super('LinearDepthPass');
@@ -63,7 +64,7 @@ export class LinearDepthPass extends Pass {
           void main() {
             float d = texture2D(tDepth, vUv).r;
             float z = (uNear * uFar) / ((uFar - uNear) * d - uFar);
-            gl_FragColor = vec4(d >= 0.999999 ? 65000.0 : -z, 0.0, 0.0, 1.0);
+            gl_FragColor = vec4(d >= 0.99999 ? 65000.0 : -z, 0.0, 0.0, 1.0);
           }`,
         depthTest: false,
         depthWrite: false,

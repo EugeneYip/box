@@ -25,7 +25,7 @@ void main() {
   vec3 cell = aSeed.xyz * uBox + uOffset;
   vec3 rel = fract((cell - uCenter) / uBox + 0.5) - 0.5;
   vec3 head = uCenter + rel * uBox;
-  float active = step(aSeed.w, uAmount);
+  float isOn = step(aSeed.w, uAmount);
   vec3 v = normalize(uVel);
   float len = uLen * (0.6 + 0.8 * fract(aSeed.w * 13.7));
   vec3 p = head - v * len * position.y;
@@ -36,7 +36,7 @@ void main() {
   float w = max(uWidth, minW);
   p += side * position.x * w;
   vec3 e = smoothstep(vec3(0.5), vec3(0.36), abs(rel));
-  vA = e.x * e.y * e.z * active * smoothstep(0.8, 4.0, dist) * clamp(uWidth / minW, 0.35, 1.0);
+  vA = e.x * e.y * e.z * isOn * smoothstep(0.8, 4.0, dist) * clamp(uWidth / minW, 0.35, 1.0);
   vQ = position.xy;
   gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
 }
@@ -73,7 +73,7 @@ void main() {
   cell.z += cos(uTime * (0.5 + aSeed.w * 0.7) + ph * 1.3) * uBox.y * 0.012;
   vec3 rel = fract((cell - uCenter) / uBox + 0.5) - 0.5;
   vec3 c = uCenter + rel * uBox;
-  float active = step(aSeed.w, uAmount);
+  float isOn = step(aSeed.w, uAmount);
   vec4 mv = viewMatrix * vec4(c, 1.0);
   float dist = -mv.z;
   float s = uSize * (0.6 + 0.8 * fract(aSeed.w * 7.31));
@@ -81,7 +81,7 @@ void main() {
   float sz = max(s, minS);
   mv.xy += position.xy * sz;
   vec3 e = smoothstep(vec3(0.5), vec3(0.36), abs(rel));
-  vA = e.x * e.y * e.z * active * smoothstep(0.6, 3.0, dist) * clamp(s / minS, 0.3, 1.0);
+  vA = e.x * e.y * e.z * isOn * smoothstep(0.6, 3.0, dist) * clamp(s / minS, 0.3, 1.0);
   vQ = position.xy;
   gl_Position = projectionMatrix * mv;
 }

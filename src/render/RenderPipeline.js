@@ -151,7 +151,7 @@ export class RenderPipeline {
         c.aoRadius = 2.5;
         c.distanceFalloff = 1.0;
         c.intensity = 2.5;
-        c.color = new THREE.Color(0x231a33);
+        c.color = new THREE.Color(0x2a2438);
         composer.addPass(ao);
         p.ao = ao;
       } catch (err) {

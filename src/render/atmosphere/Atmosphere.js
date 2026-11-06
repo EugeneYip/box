@@ -248,10 +248,10 @@ export class Atmosphere {
     key.intensity = M.keyIntensity;
     this.hemi.color.copy(M.hemiSky);
     this.hemi.groundColor.copy(M.hemiGround);
-    this.hemi.intensity = M.hemiIntensity * (1 + flash * 1.5);
-    this.flashLight.intensity = flash * 5.5;
+    this.hemi.intensity = M.hemiIntensity * (1 + flash * 0.6);
+    this.flashLight.intensity = flash * 3.2;
     this.fitShadow(camera, M.keyDir);
-    game.scene.environmentIntensity = 0.42 + 0.1 * mix.overcast;
+    game.scene.environmentIntensity = 0.62 + 0.12 * mix.overcast + 0.1 * W.wetness;
 
     // ---- sky, clouds, precipitation ----------------------------------------
     this.sky.sync(M, mix, dt, time);
@@ -412,7 +412,7 @@ export class Atmosphere {
     P.shadowTint.copy(M.shadowTint);
     P.highTint.copy(M.highTint);
     P.grade.set(M.saturation, M.vibrance, M.contrast, 0.45);
-    P.flash.set(0.5, 0.58, 0.8).multiplyScalar(flash * 0.12);
+    P.flash.set(0.5, 0.58, 0.8).multiplyScalar(flash * 0.04);
     P.vignette.set(0.3 + 0.1 * M.night + 0.1 * W.storm, 0.42, 1.02, 0);
     P.vignetteColor.setRGB(0.28, 0.22, 0.34).lerp(this._c1 || (this._c1 = new THREE.Color(0.1, 0.14, 0.3)), M.night * 0.6);
 
@@ -434,7 +434,7 @@ export class Atmosphere {
 
     P.bloom.threshold = 1.15 / Math.max(0.5, M.exposure);
     P.bloom.smoothing = 0.4;
-    P.bloom.intensity = 0.5 + 0.35 * M.night + 0.3 * flash;
+    P.bloom.intensity = 0.5 + 0.2 * M.night + 0.3 * flash;
 
     // depth of field: focus on the ground at the screen centre
     let focus = dist;
@@ -453,7 +453,7 @@ export class Atmosphere {
 
     // AO scale follows the zoom: fine contact shadows close, valleys far
     P.ao.radius = THREE.MathUtils.clamp(0.9 + dist * 0.022, 1.0, 6.5);
-    P.ao.intensity = 1.9;
+    P.ao.intensity = 1.5;
     P.ao.falloff = 1.0;
   }
 }

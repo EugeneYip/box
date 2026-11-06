@@ -207,8 +207,13 @@ export class SkyDome {
       vertexShader: VERT,
       fragmentShader: FRAG,
       side: THREE.BackSide,
-      depthWrite: false,
-      depthTest: false,
+      // Writes a depth just in front of the far plane (window depth
+      // 0.999995) instead of leaving the cleared 1.0: N8AO's half-res
+      // composite treats depth == 1.0 as fully occluded (black sky).
+      // LinearDepthPass maps this depth back to "sky".
+      depthWrite: true,
+      depthTest: true,
+      depthFunc: THREE.AlwaysDepth,
       fog: false,
     });
     this.mesh = new THREE.Mesh(geo, this.material);
