@@ -23,7 +23,8 @@ import { makeName, makeMonsterName } from './names.js';
 //   game.units.stop(unit), wander(unit, radius), flee(unit, fromX, fromZ, dist?)
 //   game.units.registerBrain(speciesId, fn(unit, dt, game))  overrides AI
 //   game.units.count(speciesId?) -> number,  census() -> {speciesId: n}
-//   game.units.engage(attacker, target, opts?) -> bool   COMBAT (Civilization uses it)
+//   game.units.engage(attacker, target, opts?) -> bool   COMBAT (Civilization uses it;
+//        false when refused: invalid/dead/self target or attacker with no attack damage)
 //        Approaches the target (pathing, flanking), attacks on cooldown with
 //        damage, knockback, fx 'hit'/'blood' and audio 'hit', until one dies,
 //        the target escapes, or disengage() is called. opts: {hunt, maxTime}
@@ -41,8 +42,8 @@ import { makeName, makeMonsterName } from './names.js';
 // swimming, wading, sleeping, lastAttack (time of last swing), lastHurt, mad,
 // blessed (game time until), emote {kind, until}, activity ('talk'|'fish'|...),
 // hunger (0 fed .. 1 starving), energy (0 exhausted .. 1 rested), pregnant.
-// Hooks honoured: unit.data.hostile(other) -> bool (enemies), unit.data.hidden
-// (not rendered, e.g. inside a house), unit.data.ranged (shoots arrows),
+// Hooks honoured: unit.data.hostile(other) -> bool (enemies), unit.data.hidden or
+// unit.data.inside === true (not rendered, e.g. inside a house), unit.data.ranged (shoots arrows),
 // unit.data.autoAggro (engage hostiles in sight; default for job 'soldier'),
 // unit.data.damage (attack damage override).
 // Events emitted (additive): 'unit:hurt' {unit, amount, source},

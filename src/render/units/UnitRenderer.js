@@ -372,13 +372,12 @@ export class UnitRenderer {
       near: (x, z, r) => (camPos.x - x) ** 2 + (camPos.z - z) ** 2 < r * r,
     };
     const kSmooth = (k) => 1 - Math.exp(-dt * k);
-    const sel = g.selected?.kind === 'unit' ? g.selected.ref : null;
     const P = this._Pt;
     const nrm = this._n;
 
     for (let li = 0; li < U.list.length; li++) {
       const u = U.list[li];
-      if (!u.alive || u.data.hidden || u.hidden) continue;
+      if (!u.alive || u.data.hidden || u.data.inside === true || u.hidden) continue;
       const rm = this.modelFor(u);
       const md = rm.def;
       let rs = u._rs;
@@ -498,10 +497,6 @@ export class UnitRenderer {
         const dsz = Math.max(0.28, (4.2 / ppu)) * (def.kind === 'humanoid' ? 1 : 0.85);
         const c = rs.dot || [0.8, 0.8, 0.8];
         ov.ground.add(ix, Math.max(ground, SEA_LEVEL), iz, dsz, 0, 1, 0, DECAL.dot, c[0], c[1], c[2], 1 - lod);
-      }
-      if (u === sel) {
-        const gy = Math.max(ground, SEA_LEVEL);
-        ov.ground.add(ix, gy, iz, (md.radius * 1.4 + 0.35) * scale + 0.25, 0, 1, 0, DECAL.select, 1.0, 0.78, 0.25, 0.95);
       }
       // ---- water ripples
       if ((u.swimming || (u.wading && u.moving) || hab === 'water') && dCam < 90) {
