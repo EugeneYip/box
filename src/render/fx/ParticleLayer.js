@@ -25,6 +25,9 @@ const VERT = /* glsl */ `
 uniform float uTime;
 uniform vec3 uWind;
 uniform float uNear;
+uniform vec4 uPL[6];
+uniform vec3 uPLC[6];
+varying vec3 vPL;
 attribute vec4 iA;
 attribute vec4 iB;
 attribute vec4 iC;
@@ -134,6 +137,18 @@ void main() {
   vRow = (iF.z + 0.5) / 32.0;
   vP = vec4(iG.z, iG.y, iH.x, iG.x);
   vGlow = iH.w * pow(1.0 - t, 3.0);
+  // pooled point lights (fires, explosions) light lit particles from nearby
+  vec3 pl = vec3(0.0);
+  if (iG.y > 0.0) {
+    for (int k = 0; k < 6; k++) {
+      vec3 d = p - uPL[k].xyz;
+      float dd = dot(d, d);
+      float r = uPL[k].w;
+      float win = clamp(1.0 - dd / max(r * r, 1e-3), 0.0, 1.0);
+      pl += uPLC[k] * (win * win / (1.0 + dd * 0.12));
+    }
+  }
+  vPL = pl;
 }
 `;
 
@@ -158,6 +173,7 @@ varying vec4 vP;
 varying float vGlow;
 varying float vSoft;
 varying float vFogDepth;
+varying vec3 vPL;
 void main() {
   vec4 tx = texture2D(uAtlas, vUvA);
   if (vMix > 0.0) tx = mix(tx, texture2D(uAtlas, vUvB), vMix);
@@ -171,7 +187,7 @@ void main() {
     float r2 = dot(vQuad, vQuad);
     vec3 n = normalize(vec3(vQuad * 0.85, sqrt(max(0.0, 1.0 - r2)) + 0.35));
     float ndl = dot(n, uSunView) * 0.5 + 0.5;
-    vec3 light = (uAmbient + uSunCol * ndl * ndl) * mix(0.7, 1.2, tx.r);
+    vec3 light = (uAmbient + uSunCol * ndl * ndl) * mix(0.7, 1.2, tx.r) + vPL * mix(1.2, 0.7, ndl);
     col = mix(col, base * light, vP.y);
   }
   col += base * vGlow;
@@ -262,6 +278,8 @@ export class ParticleLayer {
       uTime: fx.uniforms.uTime,
       uWind: fx.uniforms.uWind,
       uNear: fx.uniforms.uNear,
+      uPL: fx.uniforms.uPL,
+      uPLC: fx.uniforms.uPLC,
       uAtlas: { value: fx.textures.atlas },
       uRamp: { value: fx.textures.ramp },
       uSunView: fx.uniforms.uSunView,

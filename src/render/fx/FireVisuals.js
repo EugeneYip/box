@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 import { HEIGHT_GLSL } from './HeightField.js';
 import { FLORA_INFO } from '../../world/constants.js';
-import { RAMP } from './FxTextures.js';
+import { RAMP, PF } from './FxTextures.js';
+
+const PF_GLOW = PF.GLOW;
 import { flame, ember, _smokePuff as smokePuff, PRESETS } from './presets.js';
 
 // Visuals for the fire and lava simulations owned by game.disasters:
@@ -212,6 +214,8 @@ export class FireVisuals {
     cells.clear();
     const flora = world.flora,
       growth = world.floraGrowth;
+    const wt = g.env.weather?.type;
+    const raining = wt === 'rain' || wt === 'storm';
     const rnd = Math.random;
     for (let k = 0; k < fire.count; k++) {
       const i = fire.list[k];
@@ -238,28 +242,52 @@ export class FireVisuals {
       const gr = tree ? 0.4 + 0.6 * growth[i] : 0;
       const ground = world.heightAt(x, z);
       // flames
-      let e = (tree ? 9 : 5) * f * dt * rateK;
+      let e = (tree ? 8 : 4.5) * f * dt * rateK;
       while (e > 0) {
         if (e < 1 && rnd() > e) break;
         e -= 1;
         const jx = (rnd() - 0.5) * 0.85,
           jz = (rnd() - 0.5) * 0.85;
-        const fy = tree ? ground + gr * (0.25 + rnd() * 1.25) : ground + 0.02;
-        const size = (tree ? 0.75 + rnd() * 0.65 : 0.4 + rnd() * 0.4) * (0.55 + 0.6 * f) * lod;
-        flame(fx, x + jx, fy, z + jz, size);
+        const fy = tree ? ground + gr * (0.2 + rnd() * 1.2) : ground + 0.02;
+        const size = (tree ? 0.7 + rnd() * 0.75 : 0.35 + rnd() * 0.45) * (0.5 + 0.65 * f) * lod;
+        flame(fx, x + jx, fy, z + jz, size, { bright: 1.5 + f * 0.6 });
+      }
+      // soft volumetric halo behind the tongues
+      e = (tree ? 2.2 : 1.2) * f * dt * rateK;
+      if (rnd() < e) {
+        const P = fx.P.reset();
+        P.x = x + (rnd() - 0.5) * 0.5;
+        P.y = ground + (tree ? gr * 0.9 : 0.3);
+        P.z = z + (rnd() - 0.5) * 0.5;
+        P.vy = 0.6;
+        P.ty = 0.8;
+        P.tx = fx.wind.x * 0.6;
+        P.tz = fx.wind.z * 0.6;
+        P.drag = 1.5;
+        P.life = 0.5 + rnd() * 0.4;
+        P.s0 = (tree ? 2.6 : 1.7) * lod * (0.6 + 0.5 * f);
+        P.s1 = P.s0 * 1.25;
+        P.frame = PF_GLOW;
+        P.ramp = RAMP.FIRE;
+        P.bright = 0.9;
+        P.a = 0.45;
+        P.add = 1;
+        P.soft = 0.3;
+        fx.pGlow();
       }
       // embers
       e = (tree ? 1.6 : 0.45) * f * dt * budget / lod;
       if (rnd() < e) ember(fx, x, ground + (tree ? gr * 1.2 : 0.3), z, { size: lod * 0.9 });
-      // smoke
-      e = (tree ? 1.1 : 0.55) * f * dt * rateK * 1.4;
+      // smoke: big overlapping puffs that build a drifting column
+      e = (tree ? 0.75 : 0.4) * f * dt * rateK;
       if (rnd() < e) {
-        smokePuff(fx, x + (rnd() - 0.5) * 0.6, ground + (tree ? gr * 1.5 : 0.5), z + (rnd() - 0.5) * 0.6, {
-          size: (tree ? 1.0 : 0.75) * lod,
-          ramp: RAMP.FIRE_SMOKE,
-          glow: 0.9,
-          rise: 1.3 * Math.sqrt(lod),
-          life: (4.2 + rnd() * 3) * (0.8 + lod * 0.3),
+        smokePuff(fx, x + (rnd() - 0.5) * 0.6, ground + (tree ? gr * 1.7 : 0.6), z + (rnd() - 0.5) * 0.6, {
+          size: (tree ? 1.5 : 1.1) * lod,
+          grow: 3.2,
+          ramp: raining && rnd() < 0.6 ? RAMP.STEAM : RAMP.FIRE_SMOKE,
+          glow: 0.8,
+          rise: 1.25 * Math.sqrt(lod),
+          life: (6 + rnd() * 3.5) * (0.8 + lod * 0.25),
           drift: 2.4,
         });
       }

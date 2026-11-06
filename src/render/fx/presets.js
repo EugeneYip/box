@@ -44,8 +44,8 @@ export function flame(fx, x, y, z, size, o = {}) {
   P.frame = PF.FLAME0;
   P.frames = 4;
   P.ramp = o.ramp ?? RAMP.FIRE;
-  P.heat = 0.32;
-  P.bright = o.bright ?? 2.8;
+  P.heat = 0.42;
+  P.bright = o.bright ?? 2;
   P.add = 1;
   P.soft = 0.12;
   if (o.color != null) tint(P, o.color);
@@ -69,7 +69,7 @@ export function smokePuff(fx, x, y, z, o = {}) {
   P.drag = o.drag ?? 0.55;
   P.life = o.life ?? rr(3.2, 5.5);
   P.s0 = s * rr(0.5, 0.8);
-  P.s1 = s * rr(1.9, 2.8);
+  P.s1 = s * rr(0.8, 1.15) * (o.grow ?? 2.4);
   P.rot = R() * TAU;
   P.spin = rr(-0.25, 0.25);
   P.frame = PF.SMOKE0 + ((R() * 4) | 0);
@@ -329,12 +329,12 @@ export const PRESETS = {
     const y = p.y;
     glowFlash(fx, x, y + 0.6 * s, z, 6 * s, { life: 0.28, bright: 5, ramp: RAMP.FLASH, color: 0xfff0d0 });
     glowFlash(fx, x, y + 0.4 * s, z, 3.5 * s, { life: 0.6, bright: 3, ramp: RAMP.EXPLOSION });
-    const nb = fx.k(12 * Math.sqrt(s));
+    const nb = fx.k(16 * Math.sqrt(s));
     for (let i = 0; i < nb; i++) {
       const P = fx.P.reset();
       const a = R() * TAU,
-        el = rr(0.1, 1.3);
-      const v = rr(2, 5.5) * Math.sqrt(s);
+        el = rr(0.15, 1.4);
+      const v = rr(2, 6) * Math.sqrt(s);
       P.x = x;
       P.y = y + 0.3 * s;
       P.z = z;
@@ -342,12 +342,12 @@ export const PRESETS = {
       P.vy = Math.sin(el) * v;
       P.vz = Math.sin(a) * Math.cos(el) * v;
       P.tx = fx.wind.x;
-      P.ty = 1.2;
+      P.ty = 1.6;
       P.tz = fx.wind.z;
-      P.drag = 2.6;
-      P.life = rr(0.55, 1.0);
-      P.s0 = s * rr(0.6, 1.0);
-      P.s1 = s * rr(1.6, 2.4);
+      P.drag = 2.4;
+      P.life = rr(0.9, 1.6);
+      P.s0 = s * rr(0.8, 1.2);
+      P.s1 = s * rr(2.2, 3.2);
       P.rot = R() * TAU;
       P.spin = rr(-1, 1);
       P.frame = PF.SMOKE0 + ((R() * 4) | 0);
@@ -358,19 +358,20 @@ export const PRESETS = {
       P.soft = 0.3;
       fx.pGlow();
     }
-    sparks(fx, x, y + 0.3 * s, z, fx.k(18 * s), { speed: 9 * Math.sqrt(s), up: true, size: 1.2 });
-    const ns = fx.k(9 * Math.sqrt(s));
+    sparks(fx, x, y + 0.3 * s, z, fx.k(10 * Math.sqrt(s)), { speed: 10 * Math.sqrt(s), up: true, size: 1.5, stretch: 0.09 });
+    const ns = fx.k(12 * Math.sqrt(s));
     for (let i = 0; i < ns; i++) {
       const a = R() * TAU;
-      smokePuff(fx, x + Math.cos(a) * 0.5 * s, y + rr(0.3, 1.2) * s, z + Math.sin(a) * 0.5 * s, {
-        size: 1.1 * s,
+      smokePuff(fx, x + Math.cos(a) * 0.5 * s, y + rr(0.3, 1.4) * s, z + Math.sin(a) * 0.5 * s, {
+        size: 1.3 * s,
+        grow: 3,
         ramp: RAMP.HOT_SMOKE,
-        glow: 1.2,
-        rise: 1.6 * Math.sqrt(s),
-        vx: Math.cos(a) * 1.4 * s,
-        vz: Math.sin(a) * 1.4 * s,
-        life: rr(3, 5) * Math.sqrt(s),
-        delay: rr(0, 0.15),
+        glow: 1.6,
+        rise: 1.8 * Math.sqrt(s),
+        vx: Math.cos(a) * 1.6 * s,
+        vz: Math.sin(a) * 1.6 * s,
+        life: rr(4, 6.5) * Math.sqrt(s),
+        delay: rr(0, 0.25),
       });
     }
     for (let i = 0; i < fx.k(8 * Math.sqrt(s)); i++) dustPuff(fx, x, y, z, 0.8 * s, { out: rr(3, 6) * s, drag: 2.5, life: rr(1.2, 2.2) });

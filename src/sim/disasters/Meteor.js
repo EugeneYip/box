@@ -36,15 +36,17 @@ export class Meteor {
     this.x = x;
     this.z = z;
     this.ty = g.world.surfaceAt(x, z);
-    // approach from a random azimuth, biased to cross the view diagonally
+    // approach from beyond the camera focus at a shallow angle so the streak
+    // crosses the frame diagonally (camera sits at +(sin yaw, cos yaw))
     const yaw = g.cameraRig?.cur?.yaw ?? 0;
-    const az = opts.azimuth ?? yaw + Math.PI * (0.55 + Math.random() * 0.9) * (Math.random() < 0.5 ? 1 : -1);
-    const elev = THREE.MathUtils.degToRad(opts.elevation ?? rand(32, 48));
-    const D = 70 + this.size * 7;
+    const camAz = Math.atan2(Math.cos(yaw), Math.sin(yaw));
+    const az = opts.azimuth ?? camAz + Math.PI + rand(0.45, 1.05) * (Math.random() < 0.5 ? 1 : -1);
+    const elev = THREE.MathUtils.degToRad(opts.elevation ?? rand(24, 34));
+    const D = 75 + this.size * 7;
     this.dir = new THREE.Vector3(Math.cos(az) * Math.cos(elev), Math.sin(elev), Math.sin(az) * Math.cos(elev));
     this.start = new THREE.Vector3(x, this.ty, z).addScaledVector(this.dir, D);
     this.end = new THREE.Vector3(x, this.ty, z);
-    this.T = opts.flight ?? 1.25 + this.size * 0.04;
+    this.T = opts.flight ?? 1.55 + this.size * 0.04;
     this.t = -(opts.delay || 0);
     this.mesh = meteorMesh();
     this.radius = 0.45 + this.size * 0.16;

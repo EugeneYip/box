@@ -89,6 +89,8 @@ export class Effects {
       uSunView: { value: new THREE.Vector3(0, 1, 0) },
       uSunCol: { value: new THREE.Color(1, 1, 1) },
       uAmbient: { value: new THREE.Color(0.5, 0.55, 0.6) },
+      uPL: { value: Array.from({ length: 6 }, () => new THREE.Vector4(0, -1000, 0, 1)) },
+      uPLC: { value: Array.from({ length: 6 }, () => new THREE.Vector3()) },
     };
     this.textures = {
       atlas: createParticleAtlas(),

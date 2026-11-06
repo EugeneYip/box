@@ -197,7 +197,7 @@ export class FireSim {
       if (this.fuel[i] > 0) {
         const target = peak * Math.min(1, fuelFrac * 3.2 + 0.08);
         f += (target - f) * Math.min(1, dtEff * 0.9);
-        this.fuel[i] -= dtEff * (0.06 + 0.12 * f);
+        this.fuel[i] -= dtEff * (0.045 + 0.085 * f);
       } else f -= dtEff * 0.6;
       if (rain > 0) f -= dtEff * 0.32 * rain;
       if (wet > 0.05) f -= dtEff * 0.4 * wet;
@@ -219,7 +219,7 @@ export class FireSim {
       this.cursor++;
       // ---- spread ----
       const hi = w.height[i];
-      const sp = f * dtEff * 1.15 * (1 - Math.min(0.92, rain * 0.85)) * (1 - Math.min(0.9, wet));
+      const sp = f * dtEff * 0.45 * (1 - Math.min(0.92, rain * 0.85)) * (1 - Math.min(0.9, wet));
       for (let d = 0; d < 8; d++) {
         const dx = DIRS8[d][0],
           dy = DIRS8[d][1];
@@ -235,7 +235,7 @@ export class FireSim {
         const windF = Math.exp(align * ws * 2.6);
         const slope = Math.max(-1.2, Math.min(1.2, w.height[j] - hi));
         const slopeF = Math.exp(slope * 0.55);
-        const p = sp * flam * flam * windF * slopeF * diag * 0.9;
+        const p = sp * Math.pow(flam, 1.6) * windF * slopeF * diag;
         if (rng.next() < p) {
           if (this.ignite(nx, ny, f * 0.7)) changed = true;
         }

@@ -8,7 +8,7 @@ import * as THREE from 'three';
 // light keeps its source between frames and does not pop.
 
 const MAX = 6;
-const UNIT = 38; // candela per contract intensity unit
+const UNIT = 5; // candela per contract intensity unit (decay 1.6)
 
 export class LightPool {
   constructor(fx) {
@@ -93,9 +93,11 @@ export class LightPool {
       this.keys[i] = c.key;
       this._apply(i, c);
     }
+    const U = this.fx.uniforms;
     for (const i of free) {
       this.keys[i] = null;
       this.lights[i].intensity = 0;
+      U.uPLC.value[i].set(0, 0, 0);
     }
     this.requests = [];
   }
@@ -106,5 +108,9 @@ export class LightPool {
     l.color.copy(c.color);
     l.intensity = c.intensity * UNIT;
     l.distance = c.range;
+    // mirror into the particle shader so smoke / dust are lit too
+    const U = this.fx.uniforms;
+    U.uPL.value[i].set(c.x, c.y, c.z, c.range);
+    U.uPLC.value[i].set(c.color.r, c.color.g, c.color.b).multiplyScalar(c.intensity * 0.35);
   }
 }

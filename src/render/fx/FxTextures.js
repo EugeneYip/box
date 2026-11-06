@@ -158,24 +158,24 @@ export function createParticleAtlas() {
     n2 = makeValueNoise(23),
     n3 = makeValueNoise(37);
 
-  // Billowy smoke puffs: domain-warped fbm clipped by a soft disc. The R
-  // channel stores self-shadowing detail (bright billows, darker creases).
+  // Billowy smoke puffs: a soft gaussian body whose edge is eaten away by
+  // domain-warped fbm (cauliflower billows). R stores self-shadowing detail
+  // (bright billows, darker creases) used by the particle lighting.
   for (let k = 0; k < 4; k++) {
     const ox = k * 13.7,
       oy = k * 7.3;
     A.paint(PF.SMOKE0 + k, (u, v, o) => {
-      const wx = fbm(n1, u * 1.6 + ox, v * 1.6 + oy, 3) - 0.5;
-      const wy = fbm(n2, u * 1.6 - oy, v * 1.6 + ox, 3) - 0.5;
-      const r = Math.hypot(u + wx * 0.35, v + wy * 0.35);
-      const billow = fbm(n3, (u + wx) * 3.2 + ox, (v + wy) * 3.2 + oy, 4);
-      const lumps = Math.abs(fbm(n1, u * 5 + ox, v * 5 - oy, 3) * 2 - 1);
-      const disc = 1 - smoothstep(0.25, 0.98, r + (billow - 0.5) * 0.55);
-      let a = disc * (0.55 + 0.6 * billow) * (0.85 + 0.15 * (1 - lumps));
-      a = clamp01(a * 1.25);
-      a = a * a * (3 - 2 * a);
-      o[3] = a;
-      // shading: billows catch light, creases darken; slight top light bias
-      o[0] = clamp01(0.42 + (billow - 0.5) * 1.3 + (1 - lumps) * 0.2 + v * 0.12);
+      const wx = fbm(n1, u * 1.4 + ox, v * 1.4 + oy, 3) - 0.5;
+      const wy = fbm(n2, u * 1.4 - oy, v * 1.4 + ox, 3) - 0.5;
+      const uu = u + wx * 0.45,
+        vv = v + wy * 0.45;
+      const r2 = uu * uu + vv * vv;
+      const billow = fbm(n3, uu * 2.6 + ox, vv * 2.6 + oy, 5);
+      const body = Math.exp(-r2 * 2.6);
+      let a = body * (0.35 + 1.1 * billow) - 0.12;
+      a = clamp01(a * 1.35) * smoothstep(1.0, 0.82, Math.sqrt(u * u + v * v));
+      o[3] = a * a * (3 - 2 * a) * 0.92;
+      o[0] = clamp01(0.35 + (billow - 0.45) * 1.5 + vv * 0.18);
       o[1] = billow;
     });
   }
@@ -191,7 +191,7 @@ export function createParticleAtlas() {
       let w = 0.62 * Math.pow(Math.sin(Math.PI * Math.pow(clamp01(t * 1.02), 0.62)), 0.85) * Math.pow(1 - t, 0.18);
       w *= 0.8 + 0.45 * lick;
       const edge = Math.abs(uu) / Math.max(w, 1e-3);
-      let a = 1 - smoothstep(0.55, 1.0, edge);
+      let a = Math.pow(1 - smoothstep(0.1, 1.0, edge), 1.3);
       a *= 1 - smoothstep(0.7, 1.0, t + (lick - 0.5) * 0.35);
       a *= smoothstep(0.0, 0.12, t);
       // break the upper half into separate tongues
@@ -308,11 +308,11 @@ export function createParticleAtlas() {
 export const RAMP = {};
 const RAMP_DEFS = [
   ['WHITE', [[0, 0xffffff, 0], [0.06, 0xffffff, 1], [0.6, 0xffffff, 0.85], [1, 0xffffff, 0]]],
-  ['FIRE', [[0, 0xfff8e0, 0], [0.05, 0xfff2b8, 1], [0.22, 0xffc048, 1], [0.45, 0xff7a18, 0.95], [0.7, 0xd8380c, 0.6], [0.88, 0x7a1a08, 0.25], [1, 0x301008, 0]]],
+  ['FIRE', [[0, 0xffe8b0, 0], [0.06, 0xffd890, 0.85], [0.2, 0xffa63a, 0.85], [0.42, 0xff6a14, 0.75], [0.65, 0xd03a0c, 0.5], [0.85, 0x6a1a08, 0.2], [1, 0x301008, 0]]],
   ['EMBER', [[0, 0xfff4d0, 1], [0.25, 0xffc050, 1], [0.6, 0xff6a14, 0.9], [0.85, 0xb02808, 0.5], [1, 0x400800, 0]]],
-  ['SMOKE_DARK', [[0, 0x3c3632, 0], [0.07, 0x3c3632, 0.6], [0.35, 0x45403c, 0.5], [0.75, 0x55514e, 0.25], [1, 0x605d5a, 0]]],
+  ['SMOKE_DARK', [[0, 0x625a54, 0], [0.08, 0x5e5650, 0.6], [0.4, 0x6e6862, 0.5], [0.75, 0x86817c, 0.28], [1, 0x96928e, 0]]],
   ['SMOKE_LIGHT', [[0, 0xd0ccc4, 0], [0.08, 0xd0ccc4, 0.55], [0.5, 0xdcd8d2, 0.35], [1, 0xe6e3de, 0]]],
-  ['FIRE_SMOKE', [[0, 0xff9040, 0], [0.04, 0xb8602a, 0.5], [0.14, 0x5a4234, 0.6], [0.45, 0x4c4642, 0.42], [0.8, 0x5c5854, 0.16], [1, 0x6a6662, 0]]],
+  ['FIRE_SMOKE', [[0, 0xffa050, 0], [0.04, 0xa8704c, 0.5], [0.12, 0x6c5c52, 0.62], [0.4, 0x7c746c, 0.55], [0.7, 0x948e88, 0.32], [1, 0xa6a29e, 0]]],
   ['DUST', [[0, 0xc8b08a, 0], [0.08, 0xc0a882, 0.65], [0.55, 0xb09a7c, 0.35], [1, 0xa89680, 0]]],
   ['STEAM', [[0, 0xffffff, 0], [0.08, 0xf8fbff, 0.55], [0.5, 0xf0f4f8, 0.3], [1, 0xeef2f6, 0]]],
   ['ELECTRIC', [[0, 0xffffff, 1], [0.25, 0xd0e6ff, 1], [0.6, 0x80b0ff, 0.7], [1, 0x3050ff, 0]]],
@@ -331,10 +331,10 @@ const RAMP_DEFS = [
   ['PLAGUE_GLOW', [[0, 0xe0ff80, 0], [0.1, 0xc8f060, 0.9], [0.6, 0x88c030, 0.5], [1, 0x406010, 0]]],
   ['BUILD', [[0, 0xfff8e0, 0], [0.1, 0xf0e2b8, 0.75], [0.6, 0xe0cca0, 0.4], [1, 0xd8c090, 0]]],
   ['SNOW', [[0, 0xffffff, 0], [0.06, 0xffffff, 1], [0.7, 0xf4f8ff, 0.85], [1, 0xf0f6ff, 0]]],
-  ['SMOKE_BLACK', [[0, 0x1c1816, 0], [0.05, 0x241e1b, 0.78], [0.4, 0x2e2926, 0.6], [0.8, 0x3e3a37, 0.25], [1, 0x45413e, 0]]],
+  ['SMOKE_BLACK', [[0, 0x2a2420, 0], [0.05, 0x302824, 0.8], [0.4, 0x3a3430, 0.66], [0.8, 0x4c4743, 0.3], [1, 0x55504c, 0]]],
   ['DEATH', [[0, 0xffffff, 0], [0.1, 0xe8e4f0, 0.7], [0.5, 0xb0a8c0, 0.4], [1, 0x807890, 0]]],
   ['SPLASH', [[0, 0xffffff, 0], [0.04, 0xffffff, 0.95], [0.4, 0xeaf6ff, 0.75], [1, 0xd8eefa, 0]]],
-  ['HOT_SMOKE', [[0, 0xffd080, 0], [0.05, 0xff9a40, 0.6], [0.16, 0x7a4630, 0.62], [0.4, 0x3a3230, 0.55], [0.8, 0x4a4542, 0.2], [1, 0x55504c, 0]]],
+  ['HOT_SMOKE', [[0, 0xffd080, 0], [0.04, 0xff9a40, 0.6], [0.14, 0x84543c, 0.65], [0.4, 0x4e4642, 0.58], [0.75, 0x625c58, 0.3], [1, 0x6e6a66, 0]]],
 ];
 export const RAMP_ROWS = 32;
 RAMP_DEFS.forEach(([name], i) => (RAMP[name] = i));

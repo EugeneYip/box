@@ -4,6 +4,10 @@ import { LavaSim } from './LavaSim.js';
 import { PlagueSim } from './Plague.js';
 import { Meteor } from './Meteor.js';
 import { lightningStrike, Smite } from './Strikes.js';
+import { Earthquake } from './Earthquake.js';
+import { Tornado } from './Tornado.js';
+import { Volcano } from './Volcano.js';
+import { Tsunami } from './Tsunami.js';
 import { play } from './util.js';
 
 // Disasters & hazards (Effects & Disasters owner).
@@ -134,6 +138,18 @@ export class Disasters {
   }
   smite(x, z, opts) {
     return this.add(new Smite(this, x, z, opts));
+  }
+  earthquake(x, z, radius = 14) {
+    return this.add(new Earthquake(this, x, z, radius));
+  }
+  tornado(x, z, opts) {
+    return this.add(new Tornado(this, x, z, opts));
+  }
+  volcano(x, z, radius = 9) {
+    return this.add(new Volcano(this, x, z, radius));
+  }
+  tsunami(x, z, opts) {
+    return this.add(new Tsunami(this, x, z, opts));
   }
   pourLava(tx, ty, amount = 0.5) {
     this.lava.pour(tx, ty, amount, 1);
