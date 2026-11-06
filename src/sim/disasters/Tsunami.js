@@ -59,7 +59,6 @@ export class Tsunami {
     this.mesh = new WaveMesh(this.game.fx, N);
     this._sound = 0;
     play(this.game, 'splash', { x, z }, 1, 0.5);
-    this.game.notify?.('A great wave approaches!', 'disaster', { x, z });
   }
 
   update(vt, dt) {

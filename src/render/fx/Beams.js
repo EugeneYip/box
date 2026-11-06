@@ -80,7 +80,8 @@ export class Beams {
       geo.setAttribute(k, a);
       this.attrs[k] = a;
     }
-    geo.instanceCount = capacity;
+    geo.instanceCount = 0;
+    this.geo = geo;
     // mark all dead
     for (let i = 0; i < capacity; i++) this.attrs.bB.array[i * 4 + 3] = 0;
     this.material = new THREE.ShaderMaterial({
@@ -100,6 +101,7 @@ export class Beams {
     this.mesh = new THREE.Mesh(geo, this.material);
     this.mesh.frustumCulled = false;
     this.mesh.renderOrder = 14;
+    this.mesh.visible = false;
     this._c = new THREE.Color();
     this._lo = Infinity;
     this._hi = -1;
@@ -133,6 +135,8 @@ export class Beams {
     w('bD', o.seed ?? Math.random(), o.flicker ?? 1, o.intensity ?? 1, o.taper ?? 1);
     if (i < this._lo) this._lo = i;
     if (i > this._hi) this._hi = i;
+    if (i >= this.geo.instanceCount) this.geo.instanceCount = i + 1;
+    this.mesh.visible = true;
   }
 
   // Jagged branching lightning from (x0,y0,z0) down to (x1,y1,z1).
@@ -193,6 +197,18 @@ export class Beams {
   }
 
   update() {
+    // draw only up to the highest live segment; hide when none are live
+    if (this.mesh.visible) {
+      const now = this.fx.time;
+      let hi = 0;
+      for (let i = this.geo.instanceCount - 1; i >= 0; i--)
+        if (this.death[i] > now) {
+          hi = i + 1;
+          break;
+        }
+      this.geo.instanceCount = hi;
+      this.mesh.visible = hi > 0;
+    }
     if (this._hi < 0) return;
     for (const k in this.attrs) {
       const at = this.attrs[k];

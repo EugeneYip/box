@@ -138,6 +138,7 @@ export class FireVisuals {
     this.mesh = new THREE.Mesh(geo, this.material);
     this.mesh.frustumCulled = false;
     this.mesh.renderOrder = 6;
+    this.mesh.visible = false;
     fx.game.scene.add(this.mesh);
     this._ver = -1;
     this._cells = new Map();
@@ -200,6 +201,7 @@ export class FireVisuals {
           n++;
         }
       this.geo.instanceCount = n;
+      this.mesh.visible = n > 0;
       if (n) {
         this.attr.clearUpdateRanges();
         this.attr.addUpdateRange(0, n * 4);
