@@ -11,9 +11,11 @@ permissions:
   pages: write
   id-token: write
 
+# Queue deployments instead of cancelling them: a Pages deploy that is
+# cancelled midway never publishes, and frequent pushes would starve it.
 concurrency:
-  group: pages-${{ github.ref }}
-  cancel-in-progress: true
+  group: pages
+  cancel-in-progress: false
 
 jobs:
   build:
