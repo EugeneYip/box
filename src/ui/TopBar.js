@@ -1,5 +1,8 @@
 import { uiIcon } from './icons.js';
 import { el, fmtNum, safe, titleCase } from './dom.js';
+import { seasonOf } from './Chronicle.js';
+
+const SEASON_TINT = { Spring: '#9fe08a', Summer: '#ffd36a', Autumn: '#f0a050', Winter: '#bfe0ff' };
 
 // The Worldseed emblem: a sprouting seed that is also a tiny globe.
 export function emblemSvg(cls = '', id = 'e') {
@@ -84,6 +87,7 @@ export class TopBar {
         { class: 'ws-nav' },
         this.navBtn('new-world', 'New world', 'G', () => ui.modals.toggle('newworld')),
         (this.kBtn = this.navBtn('kingdoms', 'Kingdoms', 'K', () => ui.kingdoms.toggle())),
+        this.navBtn('chronicle', 'Chronicle', 'J', () => ui.chronicle.toggle()),
         this.navBtn('settings', 'Settings', 'O', () => ui.modals.toggle('settings')),
         this.navBtn('help', 'Controls', 'H', () => ui.modals.toggle('help')),
       ),
@@ -124,7 +128,7 @@ export class TopBar {
     this.clock = el(
       'div',
       { class: 'ws-clock ws-glass' },
-      el('div', { class: 'ws-clock__time', 'data-tip': 'Time of day' }, this.dialEl, el('span', { class: 'ws-clock__txt' }, this.yearEl, this.dayEl)),
+      el('div', { class: 'ws-clock__time', 'data-tip': 'Year, season and time of day' }, this.dialEl, el('span', { class: 'ws-clock__txt' }, this.yearEl, this.dayEl)),
       el('span', { class: 'ws-sep' }),
       el('div', { class: 'ws-speed' }, this.pauseBtn, this.seg),
     );
@@ -231,9 +235,13 @@ export class TopBar {
       const hh = Math.floor(t.hour);
       const mm = Math.floor((t.hour - hh) * 60);
       const year = `Year ${Math.floor(t.year) + 1}`;
-      const day = `Day ${t.day} · ${String(hh).padStart(2, '0')}:${String(Math.floor(mm / 5) * 5).padStart(2, '0')}`;
+      const season = seasonOf(t.year);
+      const day = `${season} · ${String(hh).padStart(2, '0')}:${String(Math.floor(mm / 5) * 5).padStart(2, '0')}`;
       if (this.yearEl.textContent !== year) this.yearEl.textContent = year;
-      if (this.dayEl.textContent !== day) this.dayEl.textContent = day;
+      if (this.dayEl.textContent !== day) {
+        this.dayEl.textContent = day;
+        this.dayEl.style.setProperty('--season', SEASON_TINT[season]);
+      }
     }
     this._statT -= dt;
     if (this._statT <= 0) {

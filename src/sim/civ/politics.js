@@ -313,6 +313,8 @@ export const politics = {
       god: 'at the whim of the gods',
     }[reason] || 'over old grievances';
     if (!silent) this._note(`⚔ The ${A.name} declares war on the ${B.name} ${why}!`, 'war', this._kingdomPos(B));
+    const pb = this._kingdomPos(B);
+    this._sfx('war-horn', pb?.x ?? 0, pb?.z ?? 0, 0, true);
     // allies of the defender may join
     if (reason !== 'alliance') {
       for (const k of this.kingdoms) {
@@ -565,7 +567,7 @@ export const politics = {
     const r = this.rel(K.id, old.id);
     r.grievance = Math.min(80, r.grievance + 25);
     if (raze) {
-      this._note(`🔥 ${v.name} is put to the torch by the ${K.name}!`, 'war', { x: v.cx, z: v.cz });
+      this._note(`🔥 ${v.name} is put to the torch by the ${K.name}!`, 'disaster', { x: v.cx, z: v.cz });
       for (const b of v.buildings) if (b.alive) b.burning = Math.max(b.burning, 0.7 + this.rng.next() * 0.3);
       v.razed = true;
       for (const u of [...v.members]) if (u.job !== 'soldier') this._makeRefugee(u, old);

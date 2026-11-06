@@ -269,10 +269,12 @@ export class Minimap {
     // villages
     const villages = safe(() => g.civ?.villages || [], []);
     for (const v of villages) {
-      if (!v || v.alive === false || v.x == null) continue;
+      const vx = v?.x ?? v?.cx,
+        vz = v?.z ?? v?.cz;
+      if (!v || v.alive === false || vx == null) continue;
       const kc = v.kingdom != null && v.kingdom >= 0 ? this.kingdomRGB(v.kingdom) : [245, 238, 223];
-      const x = v.x * sx,
-        y = v.z * sy,
+      const x = vx * sx,
+        y = vz * sy,
         r = 2.6 * dpr;
       ctx.beginPath();
       ctx.moveTo(x, y - r * 1.25);

@@ -1,4 +1,5 @@
 import '@fontsource/cinzel/700.css';
+import './hud2.css';
 import { CATEGORIES, listPowers, getPower } from '../powers/registry.js';
 import { el, safe } from './dom.js';
 import { TopBar, PRESET_NAMES } from './TopBar.js';
@@ -8,6 +9,8 @@ import { Inspector } from './Inspector.js';
 import { Feed } from './Feed.js';
 import { Modals, KingdomsPanel } from './Panels.js';
 import { TitleScreen } from './TitleScreen.js';
+import { ChroniclePanel } from './Chronicle.js';
+import { Onboarding } from './Onboarding.js';
 
 const PREF_KEY = 'worldseed.ui.v1';
 
@@ -42,15 +45,18 @@ export class UI {
 
     // components
     this.modals = new Modals(this);
+    this.chronicle = new ChroniclePanel(this);
     this.kingdoms = new KingdomsPanel(this);
     this.topbar = new TopBar(this);
     this.toolbar = new Toolbar(this);
     this.minimap = new Minimap(this);
     this.inspector = new Inspector(this);
     this.feed = new Feed(this);
-    this.hud.append(this.topbar.el, this.feed.el, this.kingdoms.el, this.inspector.el, this.minimap.wrap, this.toolbar.el, this.toastEl);
+    this.hud.append(this.topbar.el, this.feed.el, this.kingdoms.el, this.chronicle.el, this.inspector.el, this.minimap.wrap, this.toolbar.el, this.toastEl);
     root.append(this.modals.layer, this.veil);
-    this.parts = [this.topbar, this.toolbar, this.minimap, this.inspector, this.feed, this.kingdoms];
+    this.onboarding = new Onboarding(this);
+    this.parts = [this.topbar, this.toolbar, this.minimap, this.inspector, this.feed, this.kingdoms, this.onboarding];
+    this._paintT = 0;
 
     // initial prefs (audio/time only when not forced by URL params)
     this.applyPrefs(true);
@@ -108,6 +114,9 @@ export class UI {
         if (p.volume != null) safe(() => g.audio?.setVolume?.(p.volume));
         if (p.muted != null) safe(() => g.audio?.setMuted?.(p.muted));
       }
+      if (p.dayNight != null && g.settings && g.params.hour == null) g.settings.dayNight = p.dayNight;
+      if (p.buses) for (const [bus, v] of Object.entries(p.buses)) safe(() => g.audio?.setBusVolume?.(bus, v));
+      if (p.dockMin) this.toolbar.setMin(true);
       if (p.autoWeather != null && g.settings) {
         g.settings.autoWeather = p.autoWeather;
         safe(() => g.atmosphere?.setAutoWeather?.(p.autoWeather));
@@ -139,6 +148,7 @@ export class UI {
     r.classList.add('is-ready', 'is-revealing');
     setTimeout(() => r.classList.remove('is-revealing'), 1800);
     this.title && (this.title.active = false);
+    this.onboarding.start();
   }
   begin() {
     if (this.title?.active) this.title.begin();
@@ -172,6 +182,8 @@ export class UI {
   onRegenerated() {
     this.inspector.close();
     this.feed.clear();
+    this.chronicle.entries.length = 0;
+    if (this.chronicle.open) this.chronicle.renderAll();
     this.topbar.refreshWorld();
     this.minimap.markAll();
     if (this.kingdoms.open) this.kingdoms.render();
@@ -217,8 +229,9 @@ export class UI {
         e.stopPropagation();
       } else if (this.game.activePower) {
         /* let Input deselect the power */
-      } else if (this.kingdoms.open) {
+      } else if (this.kingdoms.open || this.chronicle.open) {
         this.kingdoms.toggle(false);
+        this.chronicle.toggle(false);
         e.stopPropagation();
       } else if (this.inspector.open) {
         this.inspector.close();
@@ -242,13 +255,12 @@ export class UI {
     if (this.title?.active || this.modals.current) return;
     const g = this.game;
     const code = e.code;
-    if (e.key === '?') return this.modals.toggle('help');
     const slot = SLOT_CODES.indexOf(code);
-    if (slot >= 0 && !e.shiftKey) {
-      this.toolbar.pickSlot(slot);
+    if (slot >= 0 && this.toolbar.pickSlot(slot + (e.shiftKey ? 10 : 0))) {
       e.preventDefault();
       return;
     }
+    if (e.key === '?') return this.modals.toggle('help');
     switch (code) {
       case 'Tab':
         e.preventDefault();
@@ -264,6 +276,12 @@ export class UI {
       }
       case 'KeyK':
         this.kingdoms.toggle();
+        break;
+      case 'KeyJ':
+        this.chronicle.toggle();
+        break;
+      case 'Backquote':
+        this.toolbar.setMin(!this.toolbar.el.classList.contains('is-min'));
         break;
       case 'KeyO':
         this.modals.toggle('settings');
@@ -288,6 +306,7 @@ export class UI {
   // ---------------------------------------------------------------- debug / tooling
   open(name) {
     if (name === 'kingdoms') this.kingdoms.toggle(true);
+    else if (name === 'chronicle') this.chronicle.toggle(true);
     else this.modals.open(name);
   }
   setCategory(id) {
@@ -322,6 +341,14 @@ export class UI {
     if (this._debugHover && this.game.input) this.game.input.mouse.inside = true;
     if (this.title?.active) safe(() => this.title.update(dt), null, 'title');
     for (const p of this.parts) safe(() => p.update(dt), null, p.constructor.name);
+    // while a brush stroke is held, side panels fade back so the land is clear
+    const painting = !!(this.game.activePower && this.game.input?._pressed);
+    this._paintT = painting ? this._paintT + dt : 0;
+    const fade = this._paintT > 0.35;
+    if (fade !== this._fade) {
+      this._fade = fade;
+      this.root.classList.toggle('is-painting', fade);
+    }
     this._powerCheckT -= dt;
     if (this._powerCheckT <= 0) {
       this._powerCheckT = 2;

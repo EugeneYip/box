@@ -156,6 +156,14 @@ export class Atmosphere {
   // ---- public API ---------------------------------------------------------
   setWeather(type, intensity = 1, duration = null) {
     if (!WEATHER_TYPES.includes(type)) return;
+    if (type !== this.weather.type) {
+      const cue = { storm: ['thunder', 0.7], rain: ['splash', 0.3], snow: ['magic', 0.45], clear: ['magic', 0.4], fog: ['magic', 0.3] }[type];
+      try {
+        if (cue) this.game.audio?.play?.(cue[0], { volume: cue[1] });
+      } catch (e) {
+        /* audio is optional */
+      }
+    }
     this.weather.set(type, intensity, duration);
     // a player's choice holds back auto weather for a while
     const total = this.game.time.total;
@@ -328,6 +336,50 @@ export class Atmosphere {
     }
     this.clouds.renderShadow(renderer);
     this.sky.updateEnvironment(renderer, this.game.scene, dt);
+    this.shadowBudget(renderer);
+    // Warm every program once (hidden weather / lightning meshes included)
+    // after the first environment capture, so the first storm doesn't hitch.
+    if (!this._warmed && this.game.frame >= 3 && this.game.scene.environment) {
+      this._warmed = true;
+      try {
+        const cam = this.game.cameraRig.camera;
+        const parallel = renderer.extensions.has('KHR_parallel_shader_compile');
+        if (parallel && renderer.compileAsync) renderer.compileAsync(this.game.scene, cam).catch(() => {});
+        else renderer.compile(this.game.scene, cam);
+      } catch (err) {
+        console.warn('[atmosphere] program warm-up skipped', err);
+      }
+    }
+  }
+
+  // Shadow map budget: the map is re-rendered every frame while the camera
+  // or light moves (the fitted frustum changed), otherwise every 2nd frame at
+  // mid zoom and every 3rd frame zoomed out, where a frame of lag on moving
+  // units' shadows is invisible. Halves to thirds the shadow pass cost.
+  shadowBudget(renderer) {
+    const sm = renderer.shadowMap;
+    sm.autoUpdate = false;
+    // compare what fitShadow() set this frame (the shadow camera itself only
+    // moves when the map is re-rendered)
+    const L = this.key;
+    const c = L.shadow.camera;
+    const sig = this._shadowSig || (this._shadowSig = new Float32Array(10));
+    const lp = L.position,
+      tp = L.target.position;
+    const now = [lp.x, lp.y, lp.z, tp.x, tp.y, tp.z, c.right - c.left, c.top - c.bottom, c.near, c.far];
+    let changed = !this._shadowInit;
+    for (let i = 0; i < 10; i++) {
+      if (Math.abs(now[i] - sig[i]) > 1e-4) changed = true;
+      sig[i] = now[i];
+    }
+    this._shadowInit = true;
+    const d = this.game.cameraRig.cur.dist;
+    const interval = d < 70 ? 1 : d < 160 ? 2 : 3;
+    this._shadowAge = (this._shadowAge || 0) + 1;
+    if (changed || this._shadowAge >= interval || this.game.frame < 4) {
+      sm.needsUpdate = true;
+      this._shadowAge = 0;
+    }
   }
 
   // ---- shadows --------------------------------------------------------------
@@ -345,7 +397,7 @@ export class Atmosphere {
       this._maxHDirty = false;
     }
     const yLow = -1.5;
-    const yHigh = Math.max(2, this._maxH) + 5;
+    const yHigh = Math.min(Math.max(2, this._maxH) + 3, 16);
     const rig = this.game.cameraRig;
     const camPos = camera.position;
     const maxT = rig.cur.dist * 3 + 60;
@@ -368,7 +420,9 @@ export class Atmosphere {
     }
     pts[n++].copy(rig.target);
 
-    const lz = this._lz.copy(lightDir).normalize();
+    const sd = this._shadowDir || (this._shadowDir = lightDir.clone().normalize());
+    if (sd.angleTo(lightDir) > 0.004) sd.copy(lightDir).normalize();
+    const lz = this._lz.copy(sd);
     const lx = this._lx;
     if (Math.abs(lz.y) > 0.999) lx.set(1, 0, 0);
     else lx.crossVectors(UP, lz).normalize();
@@ -397,7 +451,7 @@ export class Atmosphere {
       ty = h / size;
     const cx = Math.round((minX + maxX) / 2 / tx) * tx;
     const cy = Math.round((minY + maxY) / 2 / ty) * ty;
-    const cz = sumZ / n;
+    const cz = Math.round(sumZ / n); // quantised: stable map while idle
     const D = 300;
     const L = this.key;
     L.target.position.set(0, 0, 0).addScaledVector(lx, cx).addScaledVector(ly, cy).addScaledVector(lz, cz);
@@ -412,8 +466,8 @@ export class Atmosphere {
       if (dd > far) far = dd;
     }
     const lift = (yHigh - yLow) / Math.max(0.12, lz.y) + 8;
-    near = Math.max(0.5, near - lift);
-    far = far + 10;
+    near = Math.max(0.5, Math.floor(near - lift));
+    far = Math.ceil(far + 10);
     const c = L.shadow.camera;
     c.left = -w / 2;
     c.right = w / 2;

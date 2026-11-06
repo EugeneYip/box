@@ -78,7 +78,9 @@ export class InstanceBatcher {
     mesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
     if (meta.depth) mesh.customDepthMaterial = meta.depth;
     mesh.castShadow = !!meta.castShadow;
-    mesh.receiveShadow = true;
+    mesh.receiveShadow = !meta.layer;
+    // shadow-only proxies live on a layer that only light shadow cameras see
+    if (meta.layer) mesh.layers.set(meta.layer);
     mesh.frustumCulled = false; // culled per chunk before compaction
     mesh.matrixAutoUpdate = false;
     mesh.name = this.name + '-' + meta.label;
