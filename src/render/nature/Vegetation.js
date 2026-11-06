@@ -25,10 +25,14 @@ import { stageName, isTreeId, isMineral } from '../../sim/flora/species.js';
 //   popping, and burning forests char without any CPU geometry work.
 // * Ground cover (grass, ferns, pebbles) lives in GroundCover.js.
 export const CHUNK = 32;
-const LOD_FAR = 115;
-const LOD_HYST = 10;
-const SKIP_FAR = 150;
-const FLOWER_SKIP = 52; // petals have faded out (shader) well before this
+// Distances are from the camera to the nearest point of a chunk.
+const LOD1_DIST = 40; // full detail inside, LOD1 beyond
+const LOD2_DIST = 175; // ultra-cheap shared stand-ins beyond
+const LOD_HYST = 8;
+const SKIP_FAR = 72; // tiny props (mushrooms, stones, reeds, stumps) culled
+export const SHADOW_LAYER = 7; // shadow-only proxy meshes
+const FLOWER_CULL = 41; // petals have fully closed (shader fade 28..40)
+const SHADOW_RADIUS = 72; // trees cast shadows only near the camera target
 const POLL_PER_FRAME = 4096;
 const REBUILD_BUDGET_MS = 4;
 
@@ -109,6 +113,11 @@ export class Vegetation {
     this._leafT = 0;
     this._dirtyQueue = [];
     this.batcher = new InstanceBatcher(this.group, 'flora');
+    // Shadows are cast by cheap proxies (LOD1 near, shared LOD2 beyond) on a
+    // layer only the sun's shadow camera renders; the visible meshes never
+    // enter the shadow pass.
+    this.shadowBatcher = new InstanceBatcher(this.group, 'flora-shadow');
+    this._lightScan = 0;
     this._frustum = new THREE.Frustum();
     this._projScreen = new THREE.Matrix4();
     this._needCompact = true;
@@ -405,12 +414,23 @@ export class Vegetation {
 
   // Picks LOD / small-prop visibility for a chunk from its camera distance.
   applyLod(c) {
-    const cam = this.game.cameraRig.camera.position;
-    const d = c.sphere.center.distanceTo(cam) - c.sphere.radius * 0.6;
-    if (d > LOD_FAR + LOD_HYST) c.lod = 1;
-    else if (d < LOD_FAR - LOD_HYST) c.lod = 0;
+    const rig = this.game.cameraRig;
+    const cam = rig.camera.position;
+    const dx = Math.max(c.x0 - cam.x, 0, cam.x - (c.x1 + 1));
+    const dz = Math.max(c.y0 - cam.z, 0, cam.z - (c.y1 + 1));
+    const top = c.sphere.center.y + c.sphere.radius * 0.15;
+    const dy = cam.y > top ? cam.y - top : 0;
+    const d = Math.sqrt(dx * dx + dz * dz + dy * dy);
+    const h = c.lod === 0 ? LOD_HYST : -LOD_HYST;
+    const h2 = c.lod === 2 ? -LOD_HYST : LOD_HYST;
+    c.lod = d < LOD1_DIST + h ? 0 : d < LOD2_DIST + h2 ? 1 : 2;
+    c.near = d < LOD1_DIST * 0.55 + h ? 1 : 0; // inside the small-plant LOD0 radius
     c.skip = d > SKIP_FAR;
-    c.flowerSkip = d > FLOWER_SKIP;
+    c.flowerSkip = d > FLOWER_CULL;
+    const t = rig.target;
+    const sx = Math.max(c.x0 - t.x, 0, t.x - (c.x1 + 1));
+    const sz = Math.max(c.y0 - t.z, 0, t.z - (c.y1 + 1));
+    c.shadow = sx * sx + sz * sz < SHADOW_RADIUS * SHADOW_RADIUS;
   }
 
   // Cull chunks and repack the visible instance lists when anything changed.
@@ -427,7 +447,7 @@ export class Vegetation {
         this.applyLod(c);
         sph.center.copy(c.sphere.center);
         sph.radius = c.sphere.radius + 7; // off-screen trees still cast shadows in
-        if (this._frustum.intersectsSphere(sph)) state = 1 + c.lod * 2 + (c.skip ? 4 : 0) + (c.flowerSkip ? 8 : 0);
+        if (this._frustum.intersectsSphere(sph)) state = 1 + c.lod + (c.skip ? 3 : 0) + (c.flowerSkip ? 6 : 0) + (c.shadow ? 12 : 0) + (c.near ? 24 : 0);
       }
       if (state !== c.state) {
         c.state = state;
@@ -439,7 +459,9 @@ export class Vegetation {
     this._needCompact = false;
     this._compactT = 0.12;
     const B = this.batcher;
+    const S = this.shadowBatcher;
     B.begin();
+    S.begin();
     for (const c of this.chunks) {
       if (!c.state) continue;
       for (const [key, list] of c.lists) {
@@ -447,13 +469,34 @@ export class Vegetation {
         const cfg = model.cfg;
         if (c.skip && cfg.far === 'skip') continue;
         if (c.flowerSkip && list.f === FLORA.FLOWERS) continue;
-        const lods = model.variants[list.v];
-        const L = c.lod && lods[1] ? 1 : 0;
-        const bkey = key * 2 + L;
-        B.add(bkey, list, { geo: lods[L], material: this.mat.material, depth: this.mat.depth, castShadow: cfg.castShadow, label: FLORA_INFO[list.f].name + '-' + list.v + '-L' + L });
+        let L = Math.min(c.lod, model.variants[list.v].length - 1);
+        if (cfg.smallLod && L === 0 && !c.near) L = 1; // shrubs drop detail sooner
+        if (L === 1 && cfg.far2 && cfg.farEarly) L = 2;
+        // Distant chunks fold variants together: LOD1 keeps two silhouettes
+        // per species, LOD2 is one shared stand-in -> few draw calls.
+        const vv = L === 2 ? 0 : L === 1 ? list.v % 2 : list.v;
+        const lods = model.variants[vv];
+        const base = list.f * 8 + vv;
+        B.add(base * 4 + L, list, { geo: lods[L], material: this.mat.material, depth: null, castShadow: false, label: FLORA_INFO[list.f].name + (L === 2 ? '' : '-' + vv) + '-L' + L });
+        if (cfg.castShadow && c.shadow) {
+          const all = model.variants[list.v];
+          const Ls = c.lod === 0 && all[1] ? 1 : all[2] ? 2 : all[1] ? 1 : 0;
+          const vs = Ls === 2 ? 0 : Ls === 1 ? list.v % 2 : list.v;
+          S.add((list.f * 8 + vs) * 4 + Ls, list, { geo: model.variants[vs][Ls], material: this.mat.material, depth: this.mat.depth, castShadow: true, layer: SHADOW_LAYER, label: FLORA_INFO[list.f].name + '-shadow-L' + Ls });
+        }
       }
     }
     B.end();
+    S.end();
+  }
+
+  // Let shadow-casting lights see the proxy layer (cheap, every ~2 s).
+  enableShadowLayer() {
+    if (--this._lightScan > 0) return;
+    this._lightScan = 120;
+    this.game.scene.traverse((o) => {
+      if (o.isLight && o.castShadow && o.shadow?.camera) o.shadow.camera.layers.enable(SHADOW_LAYER);
+    });
   }
 
   // ---- frame update ------------------------------------------------------
@@ -493,6 +536,7 @@ export class Vegetation {
       this._texDirty = false;
     }
     this.compactIfNeeded(dt);
+    this.enableShadowLayer();
     this.ground.update(dt);
     this.emitLeaves(dt);
   }

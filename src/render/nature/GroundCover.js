@@ -569,7 +569,7 @@ export class GroundCover {
     const cam = camObj.position;
     // dense near the camera, gone by mid-zoom distances (the terrain shader
     // carries the grass texture further out)
-    const far = Math.min(58, 12 + D * 0.85);
+    const far = Math.min(46, 10 + D * 0.7);
     const near = far * 0.62;
     this.veg.uniforms.uFade.value.set(near, far);
     const enabled = D < MAX_DIST * 0.95;

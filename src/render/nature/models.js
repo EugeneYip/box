@@ -163,7 +163,7 @@ const P = {
 // TREES
 
 function buildOak(b, v, lod) {
-  const d = lod ? 0 : 1;
+  const d = lod ? 'd' : 1;
   const pal = P.oak[v];
   const lean = [V(0.04, 0, 0.02), V(-0.06, 0, 0.05), V(0.02, 0, -0.03), V(0.16, 0, 0.08)][v];
   const th = [0.95, 0.85, 1.15, 0.95][v];
@@ -251,6 +251,16 @@ function pineTier(b, y0, h, r, segs, pal, rot, o = {}) {
   const add = (a, c2, d2, cl = col) => b.tri(a, c2, d2, [cl(a, _nUp, a), cl(c2, _nUp, a), cl(d2, _nUp, a)], { leaf: 1, flutter: 0.35, mat: MAT.LEAF, pivot: piv, single: true });
   // We compute per-vertex colours from a provisional normal; fix normals after.
   const start = b.count;
+  if (o.lod) {
+    const innerC = V(0, y0 + h * 0.12, 0);
+    for (let s = 0; s < segs; s++) {
+      const s2 = (s + 1) % segs;
+      add(apex, rim[s2], rim[s]);
+      add(rim[s], rim[s2], innerC);
+    }
+    recolorRange(b, start, col, V(0, y0 + h * 0.2, 0), 0.35);
+    return;
+  }
   for (let s = 0; s < segs; s++) {
     const s2 = (s + 1) % segs;
     // upper surface: apex -> mid -> rim
@@ -303,8 +313,8 @@ function buildPine(b, v, lod, snowy = false) {
     { tiers: 4, R: 0.74, H: 2.35, base: 0.36 },
     { tiers: 4, R: 0.5, H: 2.2, base: 0.55 },
   ][v];
-  const segs = lod ? 6 : v === 1 ? 8 : 9;
-  const tiers = lod ? Math.max(2, cfg.tiers - 2) : cfg.tiers;
+  const segs = lod ? 5 : v === 1 ? 8 : 9;
+  const tiers = lod ? Math.min(3, Math.max(2, cfg.tiers - 2)) : cfg.tiers;
   const pal = v % 2 ? P.pineB : P.pine;
   trunk(b, [V(0, 0, 0), V(0, cfg.H * 0.55, 0)], [0.085, 0.05], lod ? 5 : 6, P.pineBark, { flare: lod ? 0 : 0.35, roots: 2, yTop: cfg.H });
   const span = cfg.H - cfg.base;
@@ -314,7 +324,7 @@ function buildPine(b, v, lod, snowy = false) {
     const r = cfg.R * (1 - f * 0.78) * (v === 3 && t % 2 ? 0.82 : 1);
     const h = Math.max(r * 1.35, (span / tiers) * 1.7);
     const rot = b.r(0, TAU);
-    pineTier(b, y0, t === tiers - 1 ? h * 1.25 : h, r, segs, pal, rot, { shade: 0.86 + 0.14 * f });
+    pineTier(b, y0, t === tiers - 1 ? h * 1.25 : h, r, segs, pal, rot, { shade: 0.86 + 0.14 * f, lod });
     if (snowy) snowCap(b, y0, t === tiers - 1 ? h * 1.25 : h, r, segs, rot, lod);
   }
   return { bendScale: 0.8, height: cfg.H };
@@ -341,6 +351,10 @@ function snowCap(b, y0, h, r, segs, rot, lod) {
   const start = b.count;
   for (let s = 0; s < segs; s++) {
     const s2 = (s + 1) % segs;
+    if (lod) {
+      b.tri(apex, drip[s2], drip[s], [1, 1, 1], { leaf: 1, flutter: 0.3, mat: MAT.SNOW, pivot: piv, single: true });
+      continue;
+    }
     b.tri(apex, ring[s2], ring[s], [1, 1, 1], { leaf: 1, flutter: 0.3, mat: MAT.SNOW, pivot: piv, single: true });
     b.tri(ring[s], ring[s2], drip[s2], [1, 1, 1], { leaf: 1, flutter: 0.3, mat: MAT.SNOW, pivot: piv, single: true });
     b.tri(ring[s], drip[s2], drip[s], [1, 1, 1], { leaf: 1, flutter: 0.3, mat: MAT.SNOW, pivot: piv, single: true });
@@ -392,7 +406,7 @@ function buildBirch(b, v, lod) {
       limb(b, from, V(bl.p.x * 0.8, bl.p.y - 0.1, bl.p.z * 0.8), 0.022, 0.01, 4, { base: C(0xd8d2c4), top: C(0xe8e4da) }, H);
     }
   }
-  foliage(b, blobs.map((bl) => ({ ...bl, d: lod ? 0 : 1, lump: 0.26 })), pal, { lump: 0.26, freq: 2.0 });
+  foliage(b, blobs.map((bl) => ({ ...bl, d: lod ? 'd' : 1, lump: 0.26 })), pal, { lump: 0.26, freq: 2.0 });
   return { bendScale: 1.25, height: H + 0.4 };
 }
 
@@ -400,7 +414,7 @@ function buildPalm(b, v, lod) {
   const H = [2.4, 2.75, 2.1, 2.55][v];
   const leanX = [0.55, 0.35, 0.7, -0.4][v];
   const leanZ = [0.1, -0.25, 0.2, 0.3][v];
-  const segs = lod ? 5 : 11;
+  const segs = lod ? 3 : 9;
   const pts = bezier(V(0, 0, 0), V(leanX * 0.05, H * 0.55, leanZ * 0.05), V(leanX, H, leanZ), segs);
   const radii = pts.map((_, i) => {
     const t = i / segs;
@@ -414,28 +428,53 @@ function buildPalm(b, v, lod) {
     if (!lod && ring) c = mul3(c, 0.78);
     return mul3(c, (0.7 + 0.3 * smooth(0, 0.3, p.y)) * (0.9 + 0.15 * hashV(fc)));
   };
-  trunk(b, pts, radii, lod ? 5 : 7, null, { color: bark, faceColor: true, flare: lod ? 0 : 0.35, roots: 3, yTop: H });
+  trunk(b, pts, radii, lod ? 4 : 6, null, { color: bark, faceColor: true, flare: lod ? 0 : 0.35, roots: 3, yTop: H, capTop: !lod });
   const top = pts[segs].clone();
   const tdir = top.clone().sub(pts[segs - 1]).normalize();
   // crown knob
-  const knob = blobGeo(b, 0.12, 0, { lump: 0.2 });
+  const knob = lod ? new THREE.OctahedronGeometry(0.12, 0) : blobGeo(b, 0.12, 0, { lump: 0.2 });
   b.add(knob, { matrix: M(top.x, top.y + 0.02, top.z), normals: 'blend', blend: 0.6, color: mix3(P.palm.dark, P.palmBark.base, 0.5), mat: MAT.LEAF, leaf: 1, flutter: 0.2 });
   // coconuts
   if (!lod) {
     for (let k = 0; k < 3; k++) {
       const a = (k / 3) * TAU + v;
-      const g = blobGeo(b, 0.065, 0, { lump: 0.1 });
+      const g = new THREE.OctahedronGeometry(0.068, 0);
       b.add(g, { matrix: M(top.x + Math.cos(a) * 0.09, top.y - 0.08, top.z + Math.sin(a) * 0.09), normals: 'blend', blend: 0.8, color: C(0x4a3018), mat: MAT.GLOSS, leaf: 1, flutter: 0.1 });
     }
   }
-  const fronds = lod ? 6 : [8, 7, 9, 8][v];
+  const fronds = lod ? 5 : [8, 7, 8, 8][v];
   for (let f = 0; f < fronds; f++) {
     const a = (f / fronds) * TAU + b.r(-0.2, 0.2) + v;
     const len = b.r(1.05, 1.3) * (f % 2 ? 0.9 : 1);
     const up = f % 3 === 0 ? 0.42 : 0.22;
-    frond(b, top, a, len, up, lod, tdir);
+    if (lod) frondLite(b, top, a, len, up);
+    else frond(b, top, a, len, up, lod, tdir);
   }
   return { bendScale: 1.1, height: H + 0.3 };
+}
+
+// Distant palm frond: one drooping leaf strip.
+function frondLite(b, base, ang, len, up) {
+  const dir = V(Math.cos(ang), 0, Math.sin(ang));
+  const side = V(-dir.z, 0, dir.x);
+  const p0 = base.clone().add(V(0, 0.04, 0));
+  const p1 = base.clone().addScaledVector(dir, len * 0.5).add(V(0, up + 0.14, 0));
+  const p2 = base.clone().addScaledVector(dir, len * 0.95).add(V(0, -len * 0.62 + up * 0.3, 0));
+  const sp = bezier(p0, p1, p2, 3);
+  const pal = P.palm;
+  const o = { leaf: 1, mat: MAT.LEAF, pivot: p0, up: true, bend: NaN, flutter: 1.2 };
+  for (let i = 0; i < 3; i++) {
+    const w0 = 0.26 * Math.sin(Math.PI * Math.min(1, (i / 3) * 1.05 + 0.08)),
+      w1 = 0.26 * Math.sin(Math.PI * Math.min(0.97, ((i + 1) / 3) * 1.05));
+    const l0 = sp[i].clone().addScaledVector(side, w0),
+      r0 = sp[i].clone().addScaledVector(side, -w0);
+    const l1 = sp[i + 1].clone().addScaledVector(side, w1),
+      r1 = sp[i + 1].clone().addScaledVector(side, -w1);
+    const c0 = mix3(pal.dark, pal.mid, i / 3),
+      c1 = mix3(pal.mid, pal.light, (i + 1) / 3);
+    b.tri(l0, r0, r1, [c0, c0, c1], o);
+    b.tri(l0, r1, l1, [c0, c1, c1], o);
+  }
 }
 
 // Feathery drooping palm frond: a thin rachis with separate leaflets that
@@ -445,7 +484,7 @@ function frond(b, base, ang, len, up, lod, tdir) {
   const p0 = base.clone().add(V(0, 0.04, 0));
   const p1 = base.clone().addScaledVector(dir, len * 0.5).add(V(0, up + 0.14, 0));
   const p2 = base.clone().addScaledVector(dir, len * 0.95).add(V(0, -len * 0.62 + up * 0.3, 0));
-  const n = lod ? 4 : 9;
+  const n = lod ? 4 : 7;
   const spine = bezier(p0, p1, p2, n);
   const side = V(-dir.z, 0, dir.x);
   const pal = P.palm;
@@ -482,8 +521,7 @@ function frond(b, base, ang, len, up, lod, tdir) {
         const mid = sp.clone().addScaledVector(side, sgn * L * 0.5).addScaledVector(fwd, L * 0.3 + wB * 0.5).add(V(0, L * 0.06 - L * t * 0.25, 0));
         const b0 = sp.clone(),
           b1 = sp.clone().addScaledVector(fwd, wB);
-        b.tri(b0, sgn > 0 ? mid : b1, sgn > 0 ? b1 : mid, [cB, cT, cB], { ...o, flutter: 0.9 + t * 1.2 });
-        b.tri(sgn > 0 ? mid : tip, sgn > 0 ? tip : mid, b0, [cT, cH, cB], { ...o, flutter: 1.1 + t * 1.3 });
+        b.tri(b0, sgn > 0 ? tip : b1, sgn > 0 ? b1 : tip, [cB, cH, cT], { ...o, flutter: 1.0 + t * 1.3 });
       }
     }
   }
@@ -526,7 +564,7 @@ function buildJungle(b, v, lod) {
       limb(b, top.clone().add(V(0, -0.25, 0)), V(bl.p.x * 0.85 + top.x * 0.15, bl.p.y - 0.1, bl.p.z * 0.85 + top.z * 0.15), 0.05, 0.02, 4, P.jungleBark, H);
     }
   }
-  const res = foliage(b, blobs.map((bl) => ({ ...bl, d: lod ? 0 : 1 })), pal, { lump: 0.24, freq: 1.5 });
+  const res = foliage(b, blobs.map((bl) => ({ ...bl, d: lod ? 'd' : 1 })), pal, { lump: 0.24, freq: 1.5 });
   if (!lod) {
     // hanging vines
     const nv = [6, 5, 8, 6][v];
@@ -599,7 +637,7 @@ function buildAcacia(b, v, lod) {
   if (v === 1) blobs.push({ p: V(crowns[1].x * 0.6, crowns[1].y + 0.42, crowns[1].z * 0.6), r: 0.38, sq: 0.32, fb: 0.6 });
   if (lod) blobs = [{ p: V(lean.x, crowns[0].y + 0.12, lean.z), r: 0.95, sq: 0.22, fb: 0.6 }];
   if (lod) trunk(b, [tTop, V(lean.x, crowns[0].y, lean.z)], [0.06, 0.04], 4, P.acaciaBark, { yTop: 1.6 });
-  foliage(b, blobs.map((bl) => ({ ...bl, d: lod ? 1 : 1 })), pal, { lump: 0.18, freq: 2.2, aoMin: 0.45 });
+  foliage(b, blobs.map((bl) => ({ ...bl, d: lod ? 'd' : 1 })), pal, { lump: 0.18, freq: 2.2, aoMin: 0.45 });
   return { bendScale: 0.7, height: 1.8 };
 }
 
@@ -619,9 +657,9 @@ function buildWillow(b, v, lod) {
   }
   if (lod) blobs = [{ p: V(top.x, th + 0.42, top.z), r: R + 0.05, sq: 0.55 }];
   if (!lod) for (let k = 1; k < blobs.length; k++) limb(b, top, V(blobs[k].p.x * 0.9 + top.x * 0.1, blobs[k].p.y - 0.1, blobs[k].p.z * 0.9 + top.z * 0.1), 0.055, 0.025, 4, P.willowBark, 1.8);
-  foliage(b, blobs.map((bl) => ({ ...bl, d: lod ? 0 : 1 })), pal, { lump: 0.18, aoMin: 0.55 });
+  foliage(b, blobs.map((bl) => ({ ...bl, d: lod ? 'd' : 1 })), pal, { lump: 0.18, aoMin: 0.55 });
   // weeping curtain: an outer ring reaching almost to the ground, an inner ring
-  const rings = lod ? [[10, 0.9, 0.8]] : [[[24, 20, 26][v], 0.95, 0.94], [10, 0.6, 0.72]];
+  const rings = lod ? [[7, 0.9, 0.8]] : [[[22, 18, 24][v], 0.95, 0.94], [8, 0.6, 0.72]];
   const cShade = mix3(pal.dark, pal.mid, 0.35),
     cMid = pal.mid,
     cTip = mix3(pal.light, pal.hi, 0.45);
@@ -634,7 +672,7 @@ function buildWillow(b, v, lod) {
       const L = (th + 0.55) * len * b.r(0.88, 1.1);
       const m = s.clone().addScaledVector(out, rr * 0.5).add(V(0, 0.02, 0));
       const e = s.clone().addScaledVector(out, rr * 0.46 + b.r(0.02, 0.1)).add(V(0, -L, 0));
-      const segs = lod ? 2 : 5;
+      const segs = lod ? 1 : 3;
       const path = bezier(s, m, e, segs);
       const tan = V(-out.z, 0, out.x);
       const nOut = out.clone().multiplyScalar(0.75).add(V(0, 0.65, 0)).normalize();
@@ -709,7 +747,7 @@ function buildBush(b, v, lod) {
     [V(0, 0.24, 0), 0.26, V(0.2, 0.17, 0.12), 0.2, V(-0.2, 0.18, 0.05), 0.2, V(0.0, 0.16, -0.2), 0.19],
   ][v];
   let blobs = [];
-  for (let k = 0; k < cfg.length; k += 2) blobs.push({ p: cfg[k], r: cfg[k + 1], sq: 0.86, d: lod ? 0 : 1, fb: 0.3 });
+  for (let k = 0; k < cfg.length; k += 2) blobs.push({ p: cfg[k], r: cfg[k + 1], sq: 0.86, d: lod ? 'd' : 1, fb: 0.3 });
   if (lod) blobs = blobs.slice(0, 2);
   foliage(b, blobs, pal, { lump: 0.24, freq: 2.2, aoMin: 0.45, flutter: 0.6 });
   // flowering shrub: tiny blossoms
@@ -740,9 +778,9 @@ function buildBerry(b, v, lod) {
     { p: V(0, 0.25, 0), r: 0.29, sq: 0.88, fb: 0.3 },
     { p: V(0.22, 0.18, 0.06), r: 0.2, sq: 0.88, fb: 0.3 },
     { p: V(-0.18, 0.18, 0.12), r: 0.2, sq: 0.88, fb: 0.3 },
-  ].map((bl) => ({ ...bl, d: lod ? 0 : 1 }));
+  ].map((bl) => ({ ...bl, d: lod ? 'd' : 1 }));
   foliage(b, lod ? blobs.slice(0, 2) : blobs, P.berryLeaf, { lump: 0.25, freq: 2.4, aoMin: 0.45, flutter: 0.5 });
-  blossoms(b, blobs, berry, lod ? 6 : 16, lod ? 0.05 : 0.04, MAT.GLOSS);
+  blossoms(b, blobs, berry, lod ? 3 : 14, lod ? 0.06 : 0.04, MAT.GLOSS);
   return { bendScale: 0.3, height: 0.6 };
 }
 
@@ -752,62 +790,48 @@ const FLOWER_PALETTES = [
   { petals: [0x8a6aff, 0x5a86ff, 0xb89cff, 0xd8c8ff], heart: 0xfff0a0 },
   { petals: [0xff3b30, 0xff6a2a, 0xffffff, 0xff2a50], heart: 0x2a1a12 },
 ];
+// Wildflower cluster, ~70 triangles: a few leaves, two-sided stems and
+// single-sided upward petal fans whose centre vertex carries the heart colour.
 function buildFlowers(b, v, lod) {
   const pal = FLOWER_PALETTES[v];
-  const n = [18, 15, 19, 14][v];
+  const n = [9, 8, 10, 7][v];
   const stemC = C(0x3f8a2a),
     stemB = C(0x2a5a1e);
-  // leafy base tuft
-  for (let k = 0; k < 7; k++) {
-    const a = (k / 7) * TAU + b.r(0, 0.5);
-    const r0 = b.r(0.0, 0.18);
+  for (let k = 0; k < 3; k++) {
+    const a = (k / 3) * TAU + b.r(0, 0.6);
+    const r0 = b.r(0.02, 0.14);
     const base = V(Math.cos(a) * r0, 0, Math.sin(a) * r0);
     const dir = V(Math.cos(a + 0.4), 0, Math.sin(a + 0.4));
-    const tip = base.clone().addScaledVector(dir, b.r(0.1, 0.16)).add(V(0, b.r(0.07, 0.12), 0));
-    const side = V(-dir.z, 0, dir.x).multiplyScalar(0.035);
+    const tip = base.clone().addScaledVector(dir, b.r(0.13, 0.19)).add(V(0, b.r(0.07, 0.12), 0));
+    const side = V(-dir.z, 0, dir.x).multiplyScalar(0.045);
     b.tri(base.clone().sub(side), tip, base.clone().add(side), [stemB, C(0x6fae3c), stemB], { leaf: 1, flutter: 0.7, mat: MAT.LEAF, pivot: V(0, 0, 0), up: true });
   }
+  const heart = C(pal.heart);
   for (let k = 0; k < n; k++) {
     const a = b.r(0, TAU);
-    const rr = Math.sqrt(b.rng()) * 0.36;
+    const rr = Math.sqrt(b.rng()) * 0.34;
     const base = V(Math.cos(a) * rr, 0, Math.sin(a) * rr);
-    const h = b.r(0.15, 0.34);
+    const h = b.r(0.15, 0.33);
     const head = base.clone().add(V(b.r(-0.04, 0.04), h, b.r(-0.04, 0.04)));
-    // stem as a thin bent ribbon
-    const sd = V(0.008, 0, 0.008);
+    const sd = V(0.01, 0, 0.01);
     b.tri(base.clone().sub(sd), head, base.clone().add(sd), [stemB, stemC, stemB], { leaf: 1, flutter: 0.8, mat: MAT.LEAF, pivot: base });
-    // petals
     const pc = C(pal.petals[k % pal.petals.length]);
     const np = v === 3 ? 4 : 5;
-    const pr = b.r(0.07, 0.105) * (v === 3 ? 1.15 : 1);
-    const tilt = V(b.r(-0.35, 0.35), 1, b.r(-0.35, 0.35)).normalize();
+    const pr = b.r(0.075, 0.11) * (v === 3 ? 1.12 : 1);
+    const tilt = V(b.r(-0.3, 0.3), 1, b.r(-0.3, 0.3)).normalize();
     const t1 = V(1, 0, 0).cross(tilt).normalize();
     const t2 = tilt.clone().cross(t1).normalize();
     const rot = b.r(0, TAU);
-    const cup = v === 3 ? 0.35 : 0.15;
-    const heartC = C(pal.heart);
-    const centre = head.clone().addScaledVector(tilt, 0.006);
+    const half = (Math.PI / np) * 0.82;
+    const centre = head.clone().addScaledVector(tilt, 0.008);
+    const outer = mix3(pc, [1, 1, 1], 0.1);
     for (let q = 0; q < np; q++) {
       const a0 = rot + (q / np) * TAU;
-      const dirA = t1.clone().multiplyScalar(Math.cos(a0)).addScaledVector(t2, Math.sin(a0));
-      const dirL = t1.clone().multiplyScalar(Math.cos(a0 - 0.5)).addScaledVector(t2, Math.sin(a0 - 0.5));
-      const dirR = t1.clone().multiplyScalar(Math.cos(a0 + 0.5)).addScaledVector(t2, Math.sin(a0 + 0.5));
-      const tip = head.clone().addScaledVector(dirA, pr).addScaledVector(tilt, pr * cup);
-      const l = head.clone().addScaledVector(dirL, pr * 0.62).addScaledVector(tilt, pr * cup * 0.5);
-      const r = head.clone().addScaledVector(dirR, pr * 0.62).addScaledVector(tilt, pr * cup * 0.5);
-      const inner = mul3(pc, 0.78),
-        outer = mix3(pc, [1, 1, 1], 0.12);
-      const o = { leaf: 1, flutter: 1.0, mat: MAT.PETAL, pivot: head, up: true, normals: [tilt, tilt, tilt] };
-      b.tri(head, r, tip, [inner, outer, outer], o);
-      b.tri(head, tip, l, [inner, outer, outer], o);
-    }
-    // heart
-    for (let q = 0; q < 5; q++) {
-      const a0 = (q / 5) * TAU,
-        a1 = ((q + 1) / 5) * TAU;
-      const p0 = centre.clone().addScaledVector(t1, Math.cos(a0) * pr * 0.28).addScaledVector(t2, Math.sin(a0) * pr * 0.28);
-      const p1 = centre.clone().addScaledVector(t1, Math.cos(a1) * pr * 0.28).addScaledVector(t2, Math.sin(a1) * pr * 0.28);
-      b.tri(centre.clone().addScaledVector(tilt, pr * 0.12), p0, p1, heartC, { leaf: 1, flutter: 1.0, mat: MAT.PETAL, pivot: head, up: true, normals: [tilt, tilt, tilt] });
+      const dl = t1.clone().multiplyScalar(Math.cos(a0 - half)).addScaledVector(t2, Math.sin(a0 - half));
+      const dr = t1.clone().multiplyScalar(Math.cos(a0 + half)).addScaledVector(t2, Math.sin(a0 + half));
+      const l = head.clone().addScaledVector(dl, pr).addScaledVector(tilt, pr * 0.22);
+      const r = head.clone().addScaledVector(dr, pr).addScaledVector(tilt, pr * 0.22);
+      b.tri(centre, r, l, [heart, outer, pc], { leaf: 1, flutter: 1.0, mat: MAT.PETAL, pivot: head, up: true, single: true, normals: [tilt, tilt, tilt] });
     }
   }
   return { bendScale: 1.0, height: 0.32 };
@@ -931,7 +955,7 @@ function buildReeds(b, v, lod) {
 function mushroom(b, x, z, h, r, capC, stemC, spots, o = {}) {
   const stem = [V(x, 0, z), V(x + (o.lean ?? 0), h, z)];
   b.add(tubeGeo(stem, [r * 0.34, r * 0.28], 6, { capTop: false }), { normals: 'geo', color: (p, n) => mul3(stemC, 0.75 + 0.25 * smooth(0, h, p.y)), mat: MAT.WOOD, leaf: 1, flutter: 0.05, pivot: V(x, 0, z) });
-  const cap = new THREE.SphereGeometry(r, 9, 4, 0, TAU, 0, Math.PI * 0.55);
+  const cap = new THREE.SphereGeometry(r, 8, 3, 0, TAU, 0, Math.PI * 0.55);
   const top = stem[1];
   b.add(cap, {
     matrix: M(top.x, top.y - r * 0.18, top.z, 0, b.r(0, TAU), 0, 1, o.sq ?? 0.62, 1),
@@ -944,7 +968,7 @@ function mushroom(b, x, z, h, r, capC, stemC, spots, o = {}) {
     pivot: V(x, 0, z),
   });
   // gills / underside
-  const under = new THREE.CircleGeometry(r * 0.98, 9);
+  const under = new THREE.CircleGeometry(r * 0.98, 8);
   b.add(under, { matrix: M(top.x, top.y - r * 0.18 - r * 0.15 * (o.sq ?? 0.62), top.z, Math.PI / 2, 0, 0), normals: 'flat', color: mul3(stemC, 0.7), mat: MAT.WOOD, leaf: 1, flutter: 0.05, pivot: V(x, 0, z) });
   if (spots) {
     for (let k = 0; k < spots; k++) {
@@ -1175,17 +1199,17 @@ export const KINDS = [];
 function kind(id, variants, build, o = {}) {
   KINDS[id] = { id, variants, build, far: 'lod', castShadow: true, jitter: 0.22, scale: [0.88, 1.12], tilt: 0, sink: 0.04, ...o };
 }
-kind(FLORA.OAK, 4, buildOak, { scale: [0.9, 1.15] });
-kind(FLORA.PINE, 4, (b, v, l) => buildPine(b, v, l, false));
-kind(FLORA.SNOW_PINE, 4, (b, v, l) => buildPine(b, v, l, true));
-kind(FLORA.BIRCH, 4, buildBirch);
-kind(FLORA.PALM, 4, buildPalm, { jitter: 0.25 });
-kind(FLORA.JUNGLE_TREE, 4, buildJungle, { scale: [0.92, 1.18] });
-kind(FLORA.ACACIA, 3, buildAcacia, { scale: [0.9, 1.15] });
-kind(FLORA.SWAMP_TREE, 3, buildWillow);
+kind(FLORA.OAK, 4, buildOak, { scale: [0.9, 1.15], far2: true });
+kind(FLORA.PINE, 4, (b, v, l) => buildPine(b, v, l, false), { far2: 'cone' });
+kind(FLORA.SNOW_PINE, 4, (b, v, l) => buildPine(b, v, l, true), { far2: 'cone' });
+kind(FLORA.BIRCH, 4, buildBirch, { far2: true });
+kind(FLORA.PALM, 4, buildPalm, { jitter: 0.25, far2: true });
+kind(FLORA.JUNGLE_TREE, 4, buildJungle, { scale: [0.92, 1.18], far2: true });
+kind(FLORA.ACACIA, 3, buildAcacia, { scale: [0.9, 1.15], far2: true });
+kind(FLORA.SWAMP_TREE, 3, buildWillow, { far2: true });
 kind(FLORA.DEAD_TREE, 4, buildDead);
-kind(FLORA.BUSH, 4, buildBush, { jitter: 0.28, castShadow: true, scale: [0.85, 1.2] });
-kind(FLORA.BERRY_BUSH, 3, buildBerry, { jitter: 0.26, scale: [0.85, 1.15] });
+kind(FLORA.BUSH, 4, buildBush, { jitter: 0.28, castShadow: false, far2: true, farEarly: true, smallLod: true, scale: [0.85, 1.2] });
+kind(FLORA.BERRY_BUSH, 3, buildBerry, { jitter: 0.26, castShadow: false, far2: true, farEarly: true, smallLod: true, scale: [0.85, 1.15] });
 kind(FLORA.FLOWERS, 4, buildFlowers, { far: 'skip', castShadow: false, jitter: 0.25, scale: [1.0, 1.3] });
 kind(FLORA.CACTUS, 4, buildCactus, { jitter: 0.24 });
 kind(FLORA.REEDS, 3, buildReeds, { far: 'skip', castShadow: false, jitter: 0.25 });
@@ -1195,7 +1219,70 @@ kind(FLORA.BOULDER, 4, buildBoulder, { jitter: 0.12, tilt: 0.5, scale: [0.9, 1.1
 kind(FLORA.STUMP, 3, buildStump, { far: 'skip', castShadow: false, jitter: 0.2 });
 kind(FLORA.WHEAT, 3, buildWheat, { castShadow: false, jitter: 0, scale: [1, 1], snapYaw: true, sink: 0.0 });
 
-// Build every model: returns KINDS-indexed { variants: [[lod0, lod1|null], ...], cfg }
+// LOD2: an ultra-cheap stand-in (~10-30 triangles) derived from a species'
+// LOD1 bounds and colours, shared by all its variants, for far zoom.
+function buildFar(src, cfg, seed) {
+  const P2 = src.attributes.position,
+    I2 = src.attributes.aInfo,
+    C2 = src.attributes.color;
+  const lo = V(Infinity, Infinity, Infinity),
+    hi = V(-Infinity, -Infinity, -Infinity);
+  const leafC = [0, 0, 0],
+    woodC = [0, 0, 0];
+  let nl = 0,
+    nw = 0,
+    ns = 0;
+  for (let k = 0; k < P2.count; k++) {
+    const mat = I2.getW(k),
+      leaf = I2.getZ(k) > 0.5;
+    if (leaf) {
+      lo.min(V(P2.getX(k), P2.getY(k), P2.getZ(k)));
+      hi.max(V(P2.getX(k), P2.getY(k), P2.getZ(k)));
+      if (Math.abs(mat - MAT.SNOW) < 0.5) ns++;
+      else if (Math.abs(mat - MAT.LEAF) < 0.5) {
+        leafC[0] += C2.getX(k), leafC[1] += C2.getY(k), leafC[2] += C2.getZ(k);
+        nl++;
+      }
+    } else if (Math.abs(mat - MAT.WOOD) < 0.5) {
+      woodC[0] += C2.getX(k), woodC[1] += C2.getY(k), woodC[2] += C2.getZ(k);
+      nw++;
+    }
+  }
+  if (!nl) return null;
+  const lc = mul3(leafC, 1 / nl),
+    wc = nw ? mul3(woodC, 1 / nw) : lc;
+  const b = new MeshBuilder(seed);
+  const ctr = lo.clone().add(hi).multiplyScalar(0.5);
+  const ext = hi.clone().sub(lo).multiplyScalar(0.5 * 0.92);
+  const snowy = ns > 0;
+  const shade = (p, n) => {
+    const t = clamp01((p.y - lo.y) / (hi.y - lo.y + 1e-6));
+    let c = mul3(lc, 0.7 + 0.55 * t * clamp01(0.5 + n.y * 0.5) + 0.1);
+    if (snowy && t > 0.35) c = mix3(c, P.snow.light, 0.55);
+    return c;
+  };
+  if (cfg.far2 === 'cone') {
+    const apex = V(ctr.x, hi.y, ctr.z);
+    const ring = [];
+    const rr = Math.max(ext.x, ext.z);
+    for (let k = 0; k < 6; k++) {
+      const a = (k / 6) * TAU;
+      ring.push(V(ctr.x + Math.cos(a) * rr, lo.y + 0.05, ctr.z + Math.sin(a) * rr));
+    }
+    const start = b.count;
+    for (let k = 0; k < 6; k++) b.tri(apex, ring[(k + 1) % 6], ring[k], [1, 1, 1], { leaf: 1, flutter: 0.3, mat: MAT.LEAF, pivot: ctr, single: true });
+    recolorRange(b, start, shade, V(ctr.x, lo.y, ctr.z), 0.4);
+  } else {
+    const g = new THREE.IcosahedronGeometry(1, 0);
+    b.add(g, { matrix: M(ctr.x, ctr.y, ctr.z, 0, 0.4, 0, ext.x, ext.y, ext.z), normals: 'blend', blend: 0.55, center: ctr, color: shade, leaf: 1, mat: MAT.LEAF, pivot: ctr });
+  }
+  if (nw && lo.y > 0.2) {
+    b.add(tubeGeo([V(0, 0, 0), V(ctr.x * 0.6, lo.y + ext.y * 0.4, ctr.z * 0.6)], [0.075, 0.05], 3, { capTop: false }), { normals: 'geo', color: (p) => mul3(wc, 0.7 + 0.3 * clamp01(p.y)), mat: MAT.WOOD });
+  }
+  return b.build({ bendScale: 0.8, height: hi.y });
+}
+
+// Build every model: returns KINDS-indexed { variants: [[lod0, lod1|null, lod2?], ...], cfg }
 export function buildAllModels() {
   const out = [];
   let verts = 0;
@@ -1213,6 +1300,14 @@ export function buildAllModels() {
         lods.push(geo);
       }
       variants.push(lods);
+    }
+    if (k.far2 && variants[0][1]) {
+      const far = buildFar(variants[0][1], k, k.id * 31 + 7);
+      if (far) {
+        far.userData.kind = k.id;
+        verts += far.attributes.position.count;
+        for (const lods of variants) lods[2] = far;
+      }
     }
     out[k.id] = { cfg: k, variants };
   }
