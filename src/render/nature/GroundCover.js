@@ -69,9 +69,9 @@ function blade(bb, r, base, ang, h, w, curve, cBase, cMid, cTip) {
 }
 
 // Colour gradients are multiplied by the per-instance biome tint.
-const G_BASE = [0.42, 0.46, 0.4];
-const G_MID = [0.86, 0.9, 0.78];
-const G_TIP = [1.32, 1.34, 1.0];
+const G_BASE = [0.6, 0.63, 0.56];
+const G_MID = [0.95, 0.98, 0.86];
+const G_TIP = [1.3, 1.32, 1.02];
 
 function grassTuft(seed, { blades = 7, hMin = 0.12, hMax = 0.26, spread = 0.09, width = 0.022, curve = 0.35 } = {}) {
   const r = mulberry32(seed);
@@ -126,24 +126,25 @@ function meadowTuft(seed) {
 function fernTuft(seed) {
   const r = mulberry32(seed);
   const bb = new BladeBuilder();
-  const fronds = 5 + Math.floor(r() * 2);
+  const fronds = 6 + Math.floor(r() * 3);
   for (let k = 0; k < fronds; k++) {
     const a = (k / fronds) * TAU + r() * 0.5;
     const d = V(Math.cos(a), 0, Math.sin(a));
     const s = V(-d.z, 0, d.x);
-    const L = 0.22 + r() * 0.1;
-    const segs = 4;
+    const L = 0.17 + r() * 0.09;
+    const rise = 0.07 + r() * 0.05;
+    const segs = 5;
     let prevL = null,
       prevR = null,
       prevC = bb.v(V(0, -0.01, 0), G_BASE, 0, 0);
     for (let i = 1; i <= segs; i++) {
       const t = i / segs;
-      const c = d.clone().multiplyScalar(L * t).add(V(0, Math.sin(t * Math.PI * 0.8) * 0.12 + 0.02 - t * t * 0.06, 0));
-      const w = 0.055 * Math.sin(Math.PI * Math.min(1, t * 1.1)) * (i % 2 ? 1 : 0.7);
-      const col = [G_BASE[0] + (G_TIP[0] - G_BASE[0]) * t * 0.8, G_BASE[1] + (G_TIP[1] - G_BASE[1]) * t * 0.8, G_BASE[2] + (G_TIP[2] - G_BASE[2]) * t * 0.7];
+      const c = d.clone().multiplyScalar(L * t).add(V(0, Math.sin(t * Math.PI * 0.9) * rise + 0.01 - t * t * 0.03, 0));
+      const w = 0.045 * Math.sin(Math.PI * Math.min(1, t * 1.05)) * (i % 2 ? 1 : 0.62) + 0.004;
+      const col = [0.55 + 0.4 * t, 0.6 + 0.4 * t, 0.5 + 0.3 * t];
       const ci = bb.v(c, col, t, t);
-      const li = bb.v(c.clone().addScaledVector(s, w).add(V(0, 0.015, 0)).addScaledVector(d, -0.03), col, t, t);
-      const ri = bb.v(c.clone().addScaledVector(s, -w).add(V(0, 0.015, 0)).addScaledVector(d, -0.03), col, t, t);
+      const li = bb.v(c.clone().addScaledVector(s, w).add(V(0, 0.01, 0)).addScaledVector(d, -0.02), col, t, t);
+      const ri = bb.v(c.clone().addScaledVector(s, -w).add(V(0, 0.01, 0)).addScaledVector(d, -0.02), col, t, t);
       bb.t(prevC, li, ci);
       bb.t(prevC, ci, ri);
       if (prevL != null) {
@@ -409,11 +410,11 @@ export class GroundCover {
           plan = null;
         switch (t) {
           case TILE.GRASS:
-            n = 4;
+            n = 5;
             plan = 'grass';
             break;
           case TILE.FOREST:
-            n = 3;
+            n = 4;
             plan = 'forest';
             break;
           case TILE.JUNGLE:
@@ -455,24 +456,26 @@ export class GroundCover {
             r3 = hash2(tx + k * 17, ty + k * 31, 1307),
             r4 = hash2(tx * 3 + k, ty * 5 + k, 1311);
           // stratified jitter within the tile
-          const sx = (k % 2) * 0.5 + r1 * 0.5,
-            sz = (Math.floor(k / 2) % 2) * 0.5 + r2 * 0.5;
+          const sx = k < 4 ? (k % 2) * 0.5 + r1 * 0.5 : r1,
+            sz = k < 4 ? (Math.floor(k / 2) % 2) * 0.5 + r2 * 0.5 : r2;
           const x = tx + sx,
             z = ty + sz;
           const tint = this.blendTint(x, z);
-          const br = 0.86 + r3 * 0.28;
+          // low-frequency patchiness: lusher clumps and sparser, paler swathes
+          const patch = 0.5 + 0.5 * Math.sin(x * 0.19 + Math.sin(z * 0.13) * 2.1) * Math.cos(z * 0.16 - Math.sin(x * 0.11) * 1.8);
+          if (plan !== 'rock' && plan !== 'sand' && k >= 2 && r1 > 0.35 + patch * 0.75) continue;
+          const br = (0.84 + r3 * 0.24) * (0.9 + patch * 0.16);
           const warm = (r4 - 0.5) * 0.12;
           const tt = [tint[0] * br * (1 + warm), tint[1] * br, tint[2] * br * (1 - warm)];
           let kind = null,
-            scale = 0.85 + r4 * 0.35,
+            scale = (0.78 + r4 * 0.34) * (0.82 + patch * 0.36),
             tilt = 0.5;
           switch (plan) {
             case 'grass':
-              kind = r3 < 0.08 ? 'meadow' : r3 < 0.22 ? 'grassTall' : 'grass';
+              kind = r3 < 0.07 + patch * 0.05 ? 'meadow' : r3 < 0.12 + patch * 0.22 ? 'grassTall' : r3 > 0.82 ? 'grassShort' : 'grass';
               break;
             case 'forest':
-              kind = r3 < 0.32 ? 'fern' : r3 < 0.45 ? 'grassShort' : 'grass';
-              if (kind === 'fern') scale *= 1.15;
+              kind = r3 < 0.14 ? 'fern' : r3 < 0.5 ? 'grassShort' : 'grass';
               break;
             case 'jungle':
               kind = r3 < 0.42 ? 'broad' : r3 < 0.66 ? 'fern' : 'grassTall';

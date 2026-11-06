@@ -29,7 +29,7 @@ function foliageColor(p, n, fc, pal, yMin, yMax, cc, o) {
   const under = n.y < 0 ? 1 + n.y * 0.28 : 1;
   const j = 0.9 + 0.2 * hashV(fc);
   c = mul3(c, ao * under * j);
-  if (pal.hi) c = mix3(c, pal.hi, clamp01((n.y - 0.5) * 2) * smooth(0.5, 1, h) * 0.55);
+  if (pal.hi) c = mix3(c, pal.hi, clamp01((n.y - 0.5) * 2) * smooth(0.55, 1, h) * 0.4);
   return c;
 }
 
@@ -115,20 +115,20 @@ function trunk(b, pts, radii, sides, pal, o = {}) {
 const P = {
   oakBark: { base: C(0x4a3424), top: C(0x7a5a3c) },
   oak: [
-    { dark: C(0x214d1f), mid: C(0x3f8a2f), light: C(0x86c043), hi: C(0xc4df6a) },
-    { dark: C(0x1f4a24), mid: C(0x3a8236), light: C(0x7ab845), hi: C(0xb8d865) },
-    { dark: C(0x26511c), mid: C(0x4b922c), light: C(0x98c843), hi: C(0xd2e070) },
-    { dark: C(0x22461f), mid: C(0x3e7d30), light: C(0x7fb34a), hi: C(0xb0d070) },
+    { dark: C(0x1c461c), mid: C(0x377f2c), light: C(0x6aa83a), hi: C(0xa2c858) },
+    { dark: C(0x1a4322), mid: C(0x327832), light: C(0x62a240), hi: C(0x98c45c) },
+    { dark: C(0x214a1a), mid: C(0x42862a), light: C(0x7cb43c), hi: C(0xb4d062) },
+    { dark: C(0x1d401d), mid: C(0x36722d), light: C(0x689e42), hi: C(0x9cc062) },
   ],
   birchBark: { base: C(0xcfc8bb), top: C(0xf2efe6) },
-  birch: { dark: C(0x3f6f22), mid: C(0x78ae38), light: C(0xb4d655), hi: C(0xe6ef8a) },
+  birch: { dark: C(0x3a6820), mid: C(0x6aa034), light: C(0x9cc84c), hi: C(0xcce070) },
   birchGold: { dark: C(0x7a5a16), mid: C(0xcc9a24), light: C(0xf0c84a), hi: C(0xfff0a0) },
   pineBark: { base: C(0x4a2e1e), top: C(0x6e4630) },
   pine: { dark: C(0x163d2c), mid: C(0x2a6a45), light: C(0x4f9658), hi: C(0x86b86a) },
   pineB: { dark: C(0x173a33), mid: C(0x285f4c), light: C(0x478a63), hi: C(0x7aac78) },
   snow: { dark: C(0xbccbe0), mid: C(0xe4ecf6), light: C(0xfbfdff), hi: C(0xffffff) },
   palmBark: { base: C(0x7a5a36), top: C(0xa8885a) },
-  palm: { dark: C(0x2a6a22), mid: C(0x4e9a2e), light: C(0x92c848), hi: C(0xcfe27a) },
+  palm: { dark: C(0x1d561c), mid: C(0x3a8228), light: C(0x68a838), hi: C(0x9cc450) },
   jungleBark: { base: C(0x4e3a28), top: C(0x77604a) },
   jungle: [
     { dark: C(0x0f4a26), mid: C(0x1f7f38), light: C(0x4fb048), hi: C(0x9ad460) },
@@ -147,7 +147,7 @@ const P = {
     { dark: C(0x22501e), mid: C(0x438a30), light: C(0x86ba4c), hi: C(0xc0d870) },
   ],
   berryLeaf: { dark: C(0x173e1e), mid: C(0x2c6a2e), light: C(0x5e9a44), hi: C(0x92bc62) },
-  cactus: { dark: C(0x2a5a36), mid: C(0x45844a), light: C(0x78b060), hi: C(0xa8cc7a) },
+  cactus: { dark: C(0x31663a), mid: C(0x4f9450), light: C(0x86bd66), hi: C(0xb4d888) },
   reeds: { base: C(0x3f6a2c), top: C(0xb4b860) },
   rock: { base: C(0x6a6660), top: C(0xa8a39a) },
   rockWarm: { base: C(0x7a6450), top: C(0xc0a888) },
@@ -431,45 +431,61 @@ function buildPalm(b, v, lod) {
   const fronds = lod ? 6 : [8, 7, 9, 8][v];
   for (let f = 0; f < fronds; f++) {
     const a = (f / fronds) * TAU + b.r(-0.2, 0.2) + v;
-    const len = b.r(0.95, 1.2) * (f % 2 ? 0.92 : 1);
+    const len = b.r(1.05, 1.3) * (f % 2 ? 0.9 : 1);
     const up = f % 3 === 0 ? 0.42 : 0.22;
     frond(b, top, a, len, up, lod, tdir);
   }
   return { bendScale: 1.1, height: H + 0.3 };
 }
 
-// Feathery drooping palm frond with V fold and serrated leaflets.
+// Feathery drooping palm frond: a thin rachis with separate leaflets that
+// sweep forward and droop, leaving small gaps so the frond reads as a comb.
 function frond(b, base, ang, len, up, lod, tdir) {
   const dir = V(Math.cos(ang), 0, Math.sin(ang));
   const p0 = base.clone().add(V(0, 0.04, 0));
-  const p1 = base.clone().addScaledVector(dir, len * 0.5).add(V(0, up + 0.12, 0));
-  const p2 = base.clone().addScaledVector(dir, len).add(V(0, -len * 0.55 + up * 0.3, 0));
+  const p1 = base.clone().addScaledVector(dir, len * 0.5).add(V(0, up + 0.14, 0));
+  const p2 = base.clone().addScaledVector(dir, len * 0.95).add(V(0, -len * 0.62 + up * 0.3, 0));
   const n = lod ? 4 : 9;
   const spine = bezier(p0, p1, p2, n);
   const side = V(-dir.z, 0, dir.x);
   const pal = P.palm;
+  const o = { leaf: 1, mat: MAT.LEAF, pivot: p0, up: true, bend: NaN };
+  // rachis
   for (let i = 0; i < n; i++) {
-    const t0 = i / n,
-      t1 = (i + 1) / n;
-    const w = (t) => 0.2 * Math.pow(Math.sin(Math.PI * Math.min(1, t * 1.08)), 0.75) + 0.01;
-    const serr = lod ? 1 : i % 2 ? 0.55 : 1.05;
-    const s0 = spine[i],
-      s1 = spine[i + 1];
-    const w0 = w(t0) * (lod ? 1 : i % 2 ? 1.05 : 0.55),
-      w1 = w(t1) * serr;
-    const fold = 0.38;
-    const l0 = s0.clone().addScaledVector(side, w0).add(V(0, w0 * fold, 0)).addScaledVector(dir, -0.02);
-    const l1 = s1.clone().addScaledVector(side, w1).add(V(0, w1 * fold, 0)).addScaledVector(dir, -0.06 * w1);
-    const r0 = s0.clone().addScaledVector(side, -w0).add(V(0, w0 * fold, 0)).addScaledVector(dir, -0.02);
-    const r1 = s1.clone().addScaledVector(side, -w1).add(V(0, w1 * fold, 0)).addScaledVector(dir, -0.06 * w1);
-    const cA = mix3(pal.dark, pal.mid, smooth(0, 0.5, t0));
-    const cB = mix3(pal.mid, pal.light, smooth(0.2, 1, t1));
-    const cEdge = mix3(pal.light, pal.hi, t1 * 0.6);
-    const o = { leaf: 1, flutter: 0.6 + t0 * 0.9, mat: MAT.LEAF, pivot: p0, up: true, bend: NaN };
-    b.tri(s0, l1, l0, [cA, cEdge, cB], o);
-    b.tri(s0, s1, l1, [cA, cB, cEdge], o);
-    b.tri(s0, r0, r1, [cA, cB, cEdge], o);
-    b.tri(s0, r1, s1, [cA, cEdge, cB], o);
+    const w = 0.016 * (1 - i / n) + 0.004;
+    const a0 = spine[i].clone().addScaledVector(side, -w),
+      a1 = spine[i].clone().addScaledVector(side, w);
+    const b0 = spine[i + 1].clone().addScaledVector(side, -w * 0.8),
+      b1 = spine[i + 1].clone().addScaledVector(side, w * 0.8);
+    const c0 = mix3(pal.dark, P.palmBark.top, 0.25);
+    b.tri(a0, a1, b1, c0, { ...o, flutter: 0.4 + i * 0.1 });
+    b.tri(a0, b1, b0, c0, { ...o, flutter: 0.4 + i * 0.1 });
+  }
+  // leaflets
+  const per = lod ? 1 : 2;
+  for (let i = 0; i < n; i++) {
+    for (let q = 0; q < per; q++) {
+      const t = (i + q / per + 0.25) / n;
+      if (t > 0.97) continue;
+      const k = Math.floor(t * n),
+        f = t * n - k;
+      const sp = spine[k].clone().lerp(spine[Math.min(n, k + 1)], f);
+      const spn = spine[Math.min(n, k + 1)];
+      const fwd = spn.clone().sub(spine[k]).normalize();
+      const L = (0.3 * Math.pow(Math.sin(Math.PI * Math.min(1, t * 1.05 + 0.04)), 0.6) + 0.04) * (lod ? 1.2 : 1);
+      const wB = (lod ? 0.09 : 0.05) * (1 - t * 0.5);
+      const cB = mix3(pal.dark, pal.mid, smooth(0, 0.6, t));
+      const cT = mix3(pal.mid, pal.light, 0.4 + t * 0.6);
+      const cH = mix3(pal.light, pal.hi, t * 0.5);
+      for (const sgn of [-1, 1]) {
+        const tip = sp.clone().addScaledVector(side, sgn * L).addScaledVector(fwd, L * 0.55).add(V(0, -L * (0.25 + t * 0.6), 0));
+        const mid = sp.clone().addScaledVector(side, sgn * L * 0.5).addScaledVector(fwd, L * 0.3 + wB * 0.5).add(V(0, L * 0.06 - L * t * 0.25, 0));
+        const b0 = sp.clone(),
+          b1 = sp.clone().addScaledVector(fwd, wB);
+        b.tri(b0, sgn > 0 ? mid : b1, sgn > 0 ? b1 : mid, [cB, cT, cB], { ...o, flutter: 0.9 + t * 1.2 });
+        b.tri(sgn > 0 ? mid : tip, sgn > 0 ? tip : mid, b0, [cT, cH, cB], { ...o, flutter: 1.1 + t * 1.3 });
+      }
+    }
   }
 }
 
@@ -500,6 +516,7 @@ function buildJungle(b, v, lod) {
       blobs.push({ p: V(top.x + Math.cos(a) * rr, y + b.r(-0.05, 0.05), top.z + Math.sin(a) * rr), r: L === layers - 1 ? 0.44 : 0.46, sq: 0.62 });
     }
   }
+  blobs.push({ p: V(top.x + b.r(-0.08, 0.08), H * 0.82 + 0.3 + (layers - 1) * 0.3, top.z + b.r(-0.08, 0.08)), r: 0.5, sq: 0.6 });
   if (lod) blobs = [{ p: V(top.x, H * 0.82 + 0.25, top.z), r: rad + 0.4, sq: 0.5 }, { p: V(top.x, H * 0.82 + 0.6, top.z), r: 0.45, sq: 0.6 }];
   // limbs to the outer blobs
   if (!lod) {
@@ -588,52 +605,58 @@ function buildAcacia(b, v, lod) {
 
 function buildWillow(b, v, lod) {
   const pal = P.willow;
-  const th = [0.85, 0.75, 0.95][v];
-  const lean = [V(0.06, 0, 0.04), V(-0.12, 0, 0.0), V(0.1, 0, -0.12)][v];
-  const pts = bezier(V(0, 0, 0), V(-lean.x * 0.8, th * 0.5, lean.z * 0.3), V(lean.x, th, lean.z), lod ? 1 : 3);
-  trunk(b, pts, pts.map((_, i) => 0.14 - (0.06 * i) / (pts.length - 1)), lod ? 5 : 7, P.willowBark, { flare: lod ? 0 : 0.6, roots: 3, yTop: 1.6, moss: P.moss });
+  const th = [1.05, 0.95, 1.15][v];
+  const lean = [V(0.08, 0, 0.04), V(-0.14, 0, 0.02), V(0.1, 0, -0.14)][v];
+  const pts = bezier(V(0, 0, 0), V(-lean.x * 0.9, th * 0.45, lean.z * 0.3), V(lean.x, th, lean.z), lod ? 1 : 3);
+  trunk(b, pts, pts.map((_, i) => 0.15 - (0.07 * i) / (pts.length - 1)), lod ? 5 : 7, P.willowBark, { flare: lod ? 0 : 0.7, roots: 3, yTop: 1.8, moss: P.moss });
   const top = pts[pts.length - 1];
-  let blobs = [
-    { p: V(top.x, th + 0.42, top.z), r: 0.5, sq: 0.72 },
-    { p: V(top.x + 0.34, th + 0.28, top.z + 0.1), r: 0.38, sq: 0.7 },
-    { p: V(top.x - 0.3, th + 0.3, top.z + 0.16), r: 0.36, sq: 0.7 },
-    { p: V(top.x - 0.04, th + 0.26, top.z - 0.34), r: 0.36, sq: 0.7 },
-  ];
-  if (lod) blobs = [{ p: V(top.x, th + 0.36, top.z), r: 0.66, sq: 0.62 }];
-  if (!lod) for (let k = 1; k < 4; k++) limb(b, top, V(blobs[k].p.x, blobs[k].p.y - 0.12, blobs[k].p.z), 0.05, 0.025, 4, P.willowBark, 1.6);
-  const res = foliage(b, blobs.map((bl) => ({ ...bl, d: lod ? 0 : 1 })), pal, { lump: 0.2 });
-  // drooping curtain of strands
-  const n = lod ? 9 : [18, 14, 20][v];
-  const ca = mix3(pal.mid, pal.dark, 0.3),
-    cb = pal.light,
-    ct = mix3(pal.light, pal.hi, 0.5);
-  for (let k = 0; k < n; k++) {
-    const a = (k / n) * TAU + b.r(-0.15, 0.15);
-    const rr = b.r(0.52, 0.7);
-    const s = V(top.x + Math.cos(a) * rr, res.yMin + 0.32 + b.r(-0.05, 0.1), top.z + Math.sin(a) * rr);
-    const out = V(Math.cos(a), 0, Math.sin(a));
-    const L = b.r(0.55, 0.85) * (v === 1 ? 0.85 : 1);
-    const m = s.clone().addScaledVector(out, 0.12).add(V(0, -L * 0.35, 0));
-    const e = s.clone().addScaledVector(out, 0.1).add(V(0, -L, 0));
-    const segs = lod ? 2 : 4;
-    const path = bezier(s, m, e, segs);
-    const tan = V(-out.z, 0, out.x);
-    for (let i = 0; i < segs; i++) {
-      const w0 = 0.07 * (1 - i / segs) + 0.015,
-        w1 = 0.07 * (1 - (i + 1) / segs) + 0.015;
-      const a0 = path[i].clone().addScaledVector(tan, -w0),
-        b0 = path[i].clone().addScaledVector(tan, w0);
-      const a1 = path[i + 1].clone().addScaledVector(tan, -w1),
-        b1 = path[i + 1].clone().addScaledVector(tan, w1);
-      const c0 = mix3(ca, cb, i / segs),
-        c1 = mix3(ca, cb, (i + 1) / segs);
-      const o = { leaf: 1, flutter: 1.2 + i * 0.4, mat: MAT.LEAF, pivot: s, bend: NaN };
-      const nrm = [out, out, out];
-      b.tri(a0, b0, b1, [c0, c0, i === segs - 1 ? ct : c1], { ...o, normals: nrm });
-      b.tri(a0, b1, a1, [c0, i === segs - 1 ? ct : c1, c1], { ...o, normals: nrm });
+  const R = [0.74, 0.62, 0.8][v];
+  let blobs = [{ p: V(top.x, th + 0.5, top.z), r: 0.52, sq: 0.68 }];
+  const ns = lod ? 0 : 4;
+  for (let k = 0; k < ns; k++) {
+    const a = (k / ns) * TAU + v * 0.7;
+    blobs.push({ p: V(top.x + Math.cos(a) * R * 0.55, th + 0.34 + b.r(-0.04, 0.04), top.z + Math.sin(a) * R * 0.55), r: 0.38, sq: 0.62 });
+  }
+  if (lod) blobs = [{ p: V(top.x, th + 0.42, top.z), r: R + 0.05, sq: 0.55 }];
+  if (!lod) for (let k = 1; k < blobs.length; k++) limb(b, top, V(blobs[k].p.x * 0.9 + top.x * 0.1, blobs[k].p.y - 0.1, blobs[k].p.z * 0.9 + top.z * 0.1), 0.055, 0.025, 4, P.willowBark, 1.8);
+  foliage(b, blobs.map((bl) => ({ ...bl, d: lod ? 0 : 1 })), pal, { lump: 0.18, aoMin: 0.55 });
+  // weeping curtain: an outer ring reaching almost to the ground, an inner ring
+  const rings = lod ? [[10, 0.85, 0.55]] : [[[24, 20, 26][v], 0.92, 0.72], [10, 0.55, 0.5]];
+  const cShade = mix3(pal.dark, pal.mid, 0.35),
+    cMid = pal.mid,
+    cTip = mix3(pal.light, pal.hi, 0.45);
+  for (const [n, rad, len] of rings) {
+    for (let k = 0; k < n; k++) {
+      const a = (k / n) * TAU + b.r(-0.12, 0.12);
+      const out = V(Math.cos(a), 0, Math.sin(a));
+      const rr = R * rad * b.r(0.9, 1.08);
+      const s = V(top.x + out.x * rr * 0.62, th + 0.68 + b.r(-0.05, 0.05), top.z + out.z * rr * 0.62);
+      const L = (th + 0.55) * len * b.r(0.88, 1.1);
+      const m = s.clone().addScaledVector(out, rr * 0.5).add(V(0, 0.02, 0));
+      const e = s.clone().addScaledVector(out, rr * 0.46 + b.r(0.02, 0.1)).add(V(0, -L, 0));
+      const segs = lod ? 2 : 5;
+      const path = bezier(s, m, e, segs);
+      const tan = V(-out.z, 0, out.x);
+      const nOut = out.clone().multiplyScalar(0.75).add(V(0, 0.65, 0)).normalize();
+      for (let i = 0; i < segs; i++) {
+        const t0 = i / segs,
+          t1 = (i + 1) / segs;
+        const wv = (t, j) => (0.075 * (1 - t * 0.75) + 0.01) * (lod ? 1.2 : j % 2 ? 0.75 : 1.15);
+        const w0 = wv(t0, i),
+          w1 = wv(t1, i + 1);
+        const a0 = path[i].clone().addScaledVector(tan, -w0),
+          b0 = path[i].clone().addScaledVector(tan, w0);
+        const a1 = path[i + 1].clone().addScaledVector(tan, -w1),
+          b1 = path[i + 1].clone().addScaledVector(tan, w1);
+        const c0 = t0 < 0.25 ? mix3(cMid, cTip, 0.3) : mix3(cMid, cShade, (t0 - 0.25) / 0.75 * 0.6),
+          c1 = t1 < 0.25 ? mix3(cMid, cTip, 0.3) : mix3(cMid, cShade, (t1 - 0.25) / 0.75 * 0.6);
+        const o = { leaf: 1, flutter: 0.9 + t0 * 1.4, mat: MAT.LEAF, pivot: s, bend: NaN, normals: [nOut, nOut, nOut], up: true };
+        b.tri(a0, b0, b1, [c0, c0, c1], o);
+        b.tri(a0, b1, a1, [c0, c1, c1], o);
+      }
     }
   }
-  return { bendScale: 0.9, height: 1.7 };
+  return { bendScale: 0.9, height: 2.0 };
 }
 
 function buildDead(b, v, lod) {
@@ -731,7 +754,7 @@ const FLOWER_PALETTES = [
 ];
 function buildFlowers(b, v, lod) {
   const pal = FLOWER_PALETTES[v];
-  const n = [10, 9, 11, 8][v];
+  const n = [18, 15, 19, 14][v];
   const stemC = C(0x3f8a2a),
     stemB = C(0x2a5a1e);
   // leafy base tuft
@@ -746,9 +769,9 @@ function buildFlowers(b, v, lod) {
   }
   for (let k = 0; k < n; k++) {
     const a = b.r(0, TAU);
-    const rr = Math.sqrt(b.rng()) * 0.32;
+    const rr = Math.sqrt(b.rng()) * 0.36;
     const base = V(Math.cos(a) * rr, 0, Math.sin(a) * rr);
-    const h = b.r(0.14, 0.3);
+    const h = b.r(0.15, 0.34);
     const head = base.clone().add(V(b.r(-0.04, 0.04), h, b.r(-0.04, 0.04)));
     // stem as a thin bent ribbon
     const sd = V(0.008, 0, 0.008);
@@ -756,7 +779,7 @@ function buildFlowers(b, v, lod) {
     // petals
     const pc = C(pal.petals[k % pal.petals.length]);
     const np = v === 3 ? 4 : 5;
-    const pr = b.r(0.045, 0.07) * (v === 3 ? 1.2 : 1);
+    const pr = b.r(0.07, 0.105) * (v === 3 ? 1.15 : 1);
     const tilt = V(b.r(-0.35, 0.35), 1, b.r(-0.35, 0.35)).normalize();
     const t1 = V(1, 0, 0).cross(tilt).normalize();
     const t2 = tilt.clone().cross(t1).normalize();
@@ -811,7 +834,7 @@ function buildCactus(b, v, lod) {
       path.push(V(0, t * H, 0));
       radii.push(R * (i === 0 ? 1.05 : 1) * (t > 0.86 ? Math.sqrt(Math.max(0.05, (1 - t) / 0.14)) * 0.85 + 0.15 : 1));
     }
-    b.add(tubeGeo(path, radii, ribs, { capTop: true, flare: ribFn }), { normals: 'geoblend', blend: 0.6, color: col(H), mat: MAT.CACTUS });
+    b.add(tubeGeo(path, radii, ribs, { capTop: true, flare: ribFn }), { normals: 'geoblend', blend: 0.3, color: col(H), mat: MAT.CACTUS });
     const arms = v === 0 ? [[0.5, 0, 0.3], [0.68, Math.PI * 0.95, 0.38]] : [[0.62, 0.8, 0.42]];
     for (const [hy, ang, up] of arms) {
       const d = V(Math.cos(ang), 0, Math.sin(ang));
@@ -819,7 +842,7 @@ function buildCactus(b, v, lod) {
       const m = s.clone().addScaledVector(d, 0.26);
       const e = m.clone().add(V(0, up, 0)).addScaledVector(d, 0.03);
       const ap = bezier(s, m.clone().add(V(0, 0.02, 0)), e, lod ? 2 : 5);
-      b.add(tubeGeo(ap, ap.map((_, i) => R * 0.62 * (i === ap.length - 1 ? 0.8 : 1)), lod ? 5 : 10, { capTop: true, flare: lod ? null : (i, s2) => (s2 % 2 === 0 ? 1.1 : 0.9) }), { normals: 'geoblend', blend: 0.6, color: col(H), mat: MAT.CACTUS });
+      b.add(tubeGeo(ap, ap.map((_, i) => R * 0.62 * (i === ap.length - 1 ? 0.8 : 1)), lod ? 5 : 10, { capTop: true, flare: lod ? null : (i, s2) => (s2 % 2 === 0 ? 1.1 : 0.9) }), { normals: 'geoblend', blend: 0.3, color: col(H), mat: MAT.CACTUS });
     }
     if (v === 1 && !lod) {
       for (let k = 0; k < 3; k++) {
@@ -841,7 +864,7 @@ function buildCactus(b, v, lod) {
       path.push(V(x, t * h, z));
       radii.push(r * (0.75 + 0.35 * Math.sin(Math.PI * (0.25 + t * 0.6))) * (t === 1 ? 0.45 : 1));
     }
-    b.add(tubeGeo(path, radii, lod ? 6 : 12, { capTop: true, flare: lod ? null : (i, s) => (s % 2 === 0 ? 1.1 : 0.88) }), { normals: 'geoblend', blend: 0.55, color: col(h * 1.6), mat: MAT.CACTUS });
+    b.add(tubeGeo(path, radii, lod ? 6 : 12, { capTop: true, flare: lod ? null : (i, s) => (s % 2 === 0 ? 1.1 : 0.88) }), { normals: 'geoblend', blend: 0.3, color: col(h * 1.6), mat: MAT.CACTUS });
     if (!lod) {
       const fc = v === 2 ? C(0xffd23a) : C(0xff4a6a);
       for (let k = 0; k < (v === 2 ? 5 : 2); k++) {
@@ -1076,9 +1099,29 @@ function buildStump(b, v, lod) {
 
 function buildWheat(b, v, lod) {
   const grid = lod ? 3 : 5;
-  const ripe = C(0xe6bc4c),
-    ripeD = C(0xa8822c),
-    head = C(0xf2cc5a);
+  const ripe = C(0xdcae40),
+    ripeD = C(0x9a7426),
+    head = C(0xf8d86a);
+  // a softly domed, mottled sheet of ears at canopy height makes the field read
+  // as a dense crop from above; brighter heads poke through it
+  const G = lod ? 2 : 4;
+  const E = 0.47;
+  const hgt = [],
+    shade = [];
+  for (let j = 0; j <= G; j++)
+    for (let i = 0; i <= G; i++) {
+      const edge = i === 0 || j === 0 || i === G || j === G;
+      hgt.push(edge ? 0.17 + b.r(0, 0.04) : 0.27 + b.r(-0.03, 0.04));
+      shade.push(b.r(0.72, 1.0));
+    }
+  const P0 = (i, j) => V(-E + (2 * E * i) / G, hgt[j * (G + 1) + i], -E + (2 * E * j) / G);
+  const cs = (i, j) => mul3(mix3(ripeD, ripe, 0.35 + (hgt[j * (G + 1) + i] - 0.17) * 2.2), shade[j * (G + 1) + i] * 0.82);
+  const so = { leaf: 0.2, flutter: 0.3, mat: MAT.WHEAT, pivot: V(0, 0, 0), up: true, single: true, bend: 0.55 };
+  for (let j = 0; j < G; j++)
+    for (let i = 0; i < G; i++) {
+      b.tri(P0(i, j), P0(i, j + 1), P0(i + 1, j + 1), [cs(i, j), cs(i, j + 1), cs(i + 1, j + 1)], so);
+      b.tri(P0(i, j), P0(i + 1, j + 1), P0(i + 1, j), [cs(i, j), cs(i + 1, j + 1), cs(i + 1, j)], so);
+    }
   for (let gy = 0; gy < grid; gy++) {
     for (let gx = 0; gx < grid; gx++) {
       const x = -0.44 + ((gx + 0.5) / grid) * 0.88 + b.r(-0.06, 0.06) + (gy % 2 ? 0.04 : -0.04);
@@ -1138,10 +1181,10 @@ kind(FLORA.SWAMP_TREE, 3, buildWillow);
 kind(FLORA.DEAD_TREE, 4, buildDead);
 kind(FLORA.BUSH, 4, buildBush, { jitter: 0.28, castShadow: true, scale: [0.85, 1.2] });
 kind(FLORA.BERRY_BUSH, 3, buildBerry, { jitter: 0.26, scale: [0.85, 1.15] });
-kind(FLORA.FLOWERS, 4, buildFlowers, { far: 'skip', castShadow: false, jitter: 0.25, scale: [0.85, 1.2] });
+kind(FLORA.FLOWERS, 4, buildFlowers, { far: 'skip', castShadow: false, jitter: 0.25, scale: [1.0, 1.3] });
 kind(FLORA.CACTUS, 4, buildCactus, { jitter: 0.24 });
 kind(FLORA.REEDS, 3, buildReeds, { far: 'skip', castShadow: false, jitter: 0.25 });
-kind(FLORA.MUSHROOM, 4, buildMushroom, { far: 'skip', castShadow: false, jitter: 0.3, scale: [0.85, 1.25] });
+kind(FLORA.MUSHROOM, 4, buildMushroom, { far: 'skip', castShadow: false, jitter: 0.3, scale: [1.15, 1.55] });
 kind(FLORA.ROCK_SMALL, 4, buildStones, { far: 'skip', castShadow: false, jitter: 0.28, tilt: 0.6, scale: [0.9, 1.3], sink: 0.02 });
 kind(FLORA.BOULDER, 4, buildBoulder, { jitter: 0.12, tilt: 0.5, scale: [0.9, 1.15], sink: 0.08 });
 kind(FLORA.STUMP, 3, buildStump, { far: 'skip', castShadow: false, jitter: 0.2 });
