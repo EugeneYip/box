@@ -208,13 +208,13 @@ export function pickUndergrowth(tileType, r = Math.random()) {
 // Climate windows on world.temperature (0 cold .. 1 hot) with a soft margin:
 // palms, jungle trees, acacias and cacti need warmth; snowy pines need cold.
 const CLIMATE = [];
-CLIMATE[FLORA.PALM] = [0.56, 2];
-CLIMATE[FLORA.JUNGLE_TREE] = [0.58, 2];
+CLIMATE[FLORA.PALM] = [0.68, 2];
+CLIMATE[FLORA.JUNGLE_TREE] = [0.62, 2];
 CLIMATE[FLORA.ACACIA] = [0.5, 2];
 CLIMATE[FLORA.CACTUS] = [0.5, 2];
 CLIMATE[FLORA.SNOW_PINE] = [-1, 0.42];
-CLIMATE[FLORA.PINE] = [-1, 0.74];
-CLIMATE[FLORA.BIRCH] = [0.1, 0.74];
+CLIMATE[FLORA.PINE] = [-1, 0.6];
+CLIMATE[FLORA.BIRCH] = [0.1, 0.66];
 CLIMATE[FLORA.OAK] = [0.22, 0.86];
 CLIMATE[FLORA.SWAMP_TREE] = [0.28, 0.9];
 CLIMATE[FLORA.BERRY_BUSH] = [0.12, 0.82];
