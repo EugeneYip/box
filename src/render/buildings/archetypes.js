@@ -21,7 +21,7 @@ export const PAL = {
     thatch: 0xd4a85a,
     thatch2: 0xb38842,
     tile: 0xb0563c,
-    roofTint: 0.22,
+    roofTint: 0.13,
     thatchTint: 0.06,
     door: 0x6e4526,
     glass: 0x2a3442,
