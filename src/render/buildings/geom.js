@@ -40,6 +40,9 @@ export class GeoBuilder {
     this.C = [];
     this.T = [];
     this.G = [];
+    this.R = [];
+    this.span = null; // {kind, y0, y1} while emitting a roof surface
+    this.roofKind = opts.roofKind || (() => 0);
     this.m = new THREE.Matrix4();
     this.stack = [];
     this.rand = mulberry32(seed * 9973 + 17);
@@ -123,6 +126,8 @@ export class GeoBuilder {
       this.C.push(rgb[0] * k, rgb[1] * k, rgb[2] * k);
       this.T.push(tint);
       this.G.push(glow);
+      if (this.span) this.R.push(this.span.kind, Math.max(0, Math.min(1, (p.y - this.span.y0) / (this.span.y1 - this.span.y0 || 1))));
+      else this.R.push(0, 0);
       if (p.y > this.maxY) this.maxY = p.y;
     }
   }
@@ -198,6 +203,13 @@ export class GeoBuilder {
       oyy = -ny * sgn * th,
       ozz = -nz * sgn * th; // offset to underside
     const rgb = lin(col);
+    const rk = o.roofKind ?? this.roofKind(col);
+    if (rk) {
+      _ctr.set(0, yE, 0).applyMatrix4(this.m);
+      const y0w = _ctr.y;
+      _ctr.set(0, yR, 0).applyMatrix4(this.m);
+      this.span = { kind: rk, y0: y0w, y1: _ctr.y };
+    }
     for (let r = 0; r < rows; r++) {
       const a0 = r / rows,
         a1 = (r + 1) / rows;
@@ -209,6 +221,7 @@ export class GeoBuilder {
       const c = [rgb[0] * tone, rgb[1] * tone, rgb[2] * tone];
       this.quad([x0, y0, z0], [x1, y0, z0], [x1, y1, z1], [x0, y1, z1], c, t, 0, ctr, 0.02);
     }
+    this.span = null;
     // underside
     const u = shade(col, 0.55);
     this.quad([x0, yE + oyy, zE + ozz], [x1, yE + oyy, zE + ozz], [x1, yR + oyy, zR + ozz], [x0, yR + oyy, zR + ozz], u, t * 0.5, 0, ctr);
@@ -275,6 +288,8 @@ export class GeoBuilder {
     this.quad([x0, sy - th, z0], [x1, sy - th, z0], [x1, sy - th, z1], [x0, sy - th, z1], shade(col, 0.5), 0, 0, [cx, y0 + 1, cz]);
     // faces, in courses
     const rows = o.rows ?? 3;
+    const rk = this.roofKind(col);
+    if (rk) this.span = { kind: rk, y0: sy, y1: y0 + h };
     const faces = [
       [[x0, sy, z1], [x1, sy, z1], r1, r0],
       [[x1, sy, z0], [x0, sy, z0], r0, r1],
@@ -297,6 +312,7 @@ export class GeoBuilder {
       this.quad(L([x1, sy, z1], r1, k0), L([x1, sy, z0], r1, k0), L([x1, sy, z0], r1, k1), L([x1, sy, z1], r1, k1), shade(col, tone), t, 0, ctr, 0.02);
       this.quad(L([x0, sy, z0], r0, k0), L([x0, sy, z1], r0, k0), L([x0, sy, z1], r0, k1), L([x0, sy, z0], r0, k1), shade(col, tone), t, 0, ctr, 0.02);
     }
+    this.span = null;
     if (rl > 0.01 && o.ridge !== false) this.box(cx, y0 + h - 0.03, cz, rl * 2 + 0.06, 0.06, 0.08, shade(col, 0.8), { tint: t });
     return this;
   }
@@ -329,7 +345,11 @@ export class GeoBuilder {
   }
 
   cone(cx, y0, cz, r, h, seg, col, o = {}) {
-    return this.cyl(cx, y0, cz, r, h, seg, col, { ...o, r2: 0 });
+    const rk = r > 0.2 ? this.roofKind(col) : 0;
+    if (rk) this.span = { kind: rk, y0, y1: y0 + h };
+    this.cyl(cx, y0, cz, r, h, seg, col, { ...o, r2: 0 });
+    this.span = null;
+    return this;
   }
 
   // Hemisphere dome (sy scales the height).
@@ -378,6 +398,7 @@ export class GeoBuilder {
     g.setAttribute('color', new THREE.Float32BufferAttribute(this.C, 3));
     g.setAttribute('aTint', new THREE.Float32BufferAttribute(this.T, 1));
     g.setAttribute('aGlow', new THREE.Float32BufferAttribute(this.G, 1));
+    g.setAttribute('aRoof', new THREE.Float32BufferAttribute(this.R, 2));
     g.computeBoundingSphere();
     g.computeBoundingBox();
     return g;
