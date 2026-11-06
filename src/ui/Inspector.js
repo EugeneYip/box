@@ -227,8 +227,18 @@ export class Inspector {
     const dead = u && u.alive === false;
     const kTint = this.kingdomTint(r);
     const stats = (r.stats || []).filter((s) => Array.isArray(s) && s.length >= 2 && !HIDE_STATS.test(String(s[0])));
+    // lay out cells two per row; a half cell left alone on its row spans both
+    const wideOf = stats.map(([, v]) => this.meter(cap(v)) != null || String(cap(v)).length > 16);
+    let col = 0;
+    for (let i = 0; i < wideOf.length; i++) {
+      if (wideOf[i]) {
+        if (col === 1) wideOf[i - 1] = true;
+        col = 0;
+      } else col ^= 1;
+    }
+    if (col === 1) wideOf[wideOf.length - 1] = true;
     const cells = stats
-      .map(([key, v]) => {
+      .map(([key, v], ci) => {
         v = cap(v);
         const lower = String(key).toLowerCase();
         const m = this.meter(v);
@@ -237,13 +247,17 @@ export class Inspector {
         const shown = m != null && /\(\s*[\d.]+%\s*\)\s*$/.test(String(v)) ? String(v).replace(/\s*\(\s*[\d.]+%\s*\)\s*$/, '') : v;
         if (m != null)
           return `<div class="ws-cell ws-cell--meter"><span class="ws-cell__k">${esc(key)}</span><span class="ws-cell__v">${esc(shown)}</span><span class="ws-meter ${bad ? 'is-bad' : hp ? 'is-hp' : ''}"><i style="width:${(m * 100).toFixed(1)}%"></i></span></div>`;
-        const long = String(v).length > 16;
-        return `<div class="ws-cell${long ? ' ws-cell--wide' : ''}"><span class="ws-cell__k">${esc(key)}</span><span class="ws-cell__v">${esc(v)}</span></div>`;
+        return `<div class="ws-cell${wideOf[ci] ? ' ws-cell--wide' : ''}"><span class="ws-cell__k">${esc(key)}</span><span class="ws-cell__v">${esc(v)}</span></div>`;
       })
       .join('');
+    const seenTitles = new Set([r.title]);
     const chips = this.results
       .map((o, i) => ({ o, i }))
-      .filter(({ i }) => i !== this.index)
+      .filter(({ o, i }) => {
+        if (i === this.index || seenTitles.has(o.title)) return false;
+        seenTitles.add(o.title);
+        return true;
+      })
       .map(({ o, i }) => {
         const c = this.iconFor(o);
         return `<button class="ws-chip2" type="button" data-i="${i}" style="--tint:${c.tint}" title="${esc(KIND_LABEL[kindOf(o)] || '')}"><span class="ws-chip2__ico">${c.svg}</span><span>${esc(o.title || KIND_LABEL[kindOf(o)])}</span></button>`;

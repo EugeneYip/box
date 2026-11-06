@@ -498,7 +498,7 @@ export class KingdomsPanel {
       const v = el('b', { text: '—' });
       return { box: el('span', { class: 'ws-king__stat' }, el('span', { class: 'ws-king__sl', html: `${uiIcon(icon)}${label}` }), v), v };
     };
-    const S = { pop: stat('Population', 'population'), villages: stat('Villages', 'village'), army: stat('Army', 'job-soldier'), land: stat('Land', 'map') };
+    const S = { pop: stat('People', 'population'), villages: stat('Villages', 'village'), army: stat('Army', 'job-soldier'), land: stat('Land', 'map') };
     const R = {
       el: el('button', { class: 'ws-king', type: 'button', onclick: () => this.focusKingdom(x.id) }),
       crest: el('span', { class: 'ws-king__crest' }, el('span')),
