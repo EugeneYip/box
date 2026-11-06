@@ -141,7 +141,8 @@ export class MeshBuilder {
     const len = _fn.length();
     if (len < 1e-10) return;
     _fn.multiplyScalar(1 / len);
-    if (o.up && _fn.y < 0) _fn.negate();
+    const rawDown = _fn.y < 0;
+    if (o.up && rawDown) _fn.negate();
     const pv = o.pivot || p0;
     const cols = Array.isArray(col[0]) ? col : [col, col, col];
     const ns = o.normals;
@@ -160,6 +161,11 @@ export class MeshBuilder {
       }
     };
     const pts = [p0, p1, p2];
+    // single-sided upward sheets must wind counter-clockwise seen from above
+    if (o.single && o.up && rawDown) {
+      emit(pts, [0, 2, 1], false);
+      return;
+    }
     emit(pts, [0, 1, 2], false);
     // Thin surfaces (leaves, petals, fronds) are emitted with both windings so
     // the material can cull back faces of the closed canopies.
@@ -197,7 +203,8 @@ export class MeshBuilder {
 
 // Lumpy foliage blob: icosphere displaced by 3D noise.
 export function blobGeo(b, radius, detail, { lump = 0.22, freq = 1.6, squash = 1, seed = 0, flatBottom = 0 } = {}) {
-  const geo = new THREE.IcosahedronGeometry(1, detail);
+  // detail 'd': a 36-triangle dodecahedron, rounder than a bare icosahedron
+  const geo = detail === 'd' ? new THREE.DodecahedronGeometry(1, 0) : new THREE.IcosahedronGeometry(1, detail);
   const P = geo.attributes.position;
   const ox = b.r(-50, 50),
     oy = b.r(-50, 50),
