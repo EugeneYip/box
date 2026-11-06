@@ -363,7 +363,6 @@ function valeHouse(g, K, lv) {
     chimney(g, K, -w * 0.3, h + 0.15, bz - 0.12, 0.78, { col: 0x9b5a45 });
     // lean-to shed
     g.box(w / 2 + 0.2, 0, bz + 0.05, 0.36, 0.4, 0.62, K.wall2);
-    g.slab(w / 2, w / 2 + 0.44, bz + 0.05, 0.44, bz + 0.05, 0.44, 0.04, K.thatch2, {});
     g.push();
     g.translate(w / 2 + 0.2, 0, bz + 0.05);
     g.rotateY(Math.PI / 2);

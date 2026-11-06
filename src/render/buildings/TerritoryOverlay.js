@@ -142,7 +142,7 @@ export class TerritoryOverlay {
             if (distance(nd, c) > 0.01) edge = max(edge, 1.0 - smoothstep(0.0, lw, f.y));
             if (distance(nu, c) > 0.01) edge = max(edge, 1.0 - smoothstep(0.0, lw, 1.0 - f.y));
           }
-          float a = c.a * 0.32 + edge * 0.85;
+          float a = c.a * 0.16 + edge * 0.75;
           if (a < 0.003) discard;
           vec3 lc = pow(c.rgb, vec3(2.2));
           vec3 col = mix(lc, mix(lc, vec3(1.0), 0.35), edge);
