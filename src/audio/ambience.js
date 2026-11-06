@@ -594,7 +594,7 @@ const BEDS = {
   },
 };
 // base output gain per bed (level 1)
-const BED_GAIN = { surf: 0.6, wind: 0.6, rain: 0.42, fire: 0.6, crickets: 0.4, murmur: 0.42 };
+const BED_GAIN = { surf: 0.6, wind: 0.6, rain: 0.42, fire: 0.85, crickets: 0.4, murmur: 0.42 };
 
 class Bed {
   constructor(amb, name) {
