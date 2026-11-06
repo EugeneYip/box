@@ -8,19 +8,22 @@ import { SKY_UNIFORMS_GLSL, SKY_FUNCS_GLSL } from '../shaders/skyChunk.js';
 // sky in the direction of each ray (same GLSL as the dome), so far land and
 // ocean dissolve into the horizon with no seam, warm toward the sun at golden
 // hour and cool away from it. Mist is an analytic exponential height fog
-// that pools in valleys and over the sea. Cloud shadows are the published
-// env.cloudShadow texture applied to everything on screen.
+// that pools in valleys and over the sea. During rain a wet sheen (sky
+// reflection + key-light glints) is added to upward-facing surfaces.
+// Cloud shadows are NOT applied here: materials apply env.cloudShadow to
+// their direct light.
 
 const FRAG = /* glsl */ `
 uniform highp sampler2D tLinDepth;
-uniform sampler2D tCloud;
 uniform mat4 uInvProj;
 uniform mat4 uCamWorld;
 uniform vec3 uCamPos;
 uniform vec4 uHaze;   // start, density, height falloff, max
 uniform vec4 uMist;   // density, falloff (1/H), base height, max
 uniform vec3 uMistColor;
-uniform vec4 uCloud;  // offX, offZ, 1/scale, strength
+uniform float uWet;
+uniform vec3 uLightDir;
+uniform vec3 uLightCol;
 ${SKY_UNIFORMS_GLSL}
 ${SKY_FUNCS_GLSL}
 
@@ -36,13 +39,20 @@ void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor)
   vec3 dir = ray / max(dist, 1e-4);
   vec3 col = inputColor.rgb;
 
-  // ---- cloud shadows ---------------------------------------------------
-  if (uCloud.w > 0.001) {
-    vec2 cuv = (wp.xz + uCloud.xy) * uCloud.z;
-    float inside = step(0.0, cuv.x) * step(cuv.x, 1.0) * step(0.0, cuv.y) * step(cuv.y, 1.0);
-    float cs = texture2D(tCloud, cuv).r * inside;
-    float lum = dot(col, vec3(0.2126, 0.7152, 0.0722));
-    col *= 1.0 - uCloud.w * cs * (1.0 - smoothstep(1.4, 4.0, lum));
+  // ---- wet sheen (rain): sky reflection + key-light glint on soaked ground
+  // (cloud shadows are applied per material to direct light, not here)
+  if (uWet > 0.01) {
+    vec3 dx = dFdx(wp), dy = dFdy(wp);
+    vec3 nrm = normalize(cross(dx, dy));
+    if (dot(nrm, dir) > 0.0) nrm = -nrm;
+    float valid = 1.0 - smoothstep(dist * 0.01, dist * 0.03, max(length(dx), length(dy)));
+    float up = smoothstep(0.35, 0.85, nrm.y);
+    float fres = 0.04 + 0.96 * pow(1.0 - max(dot(nrm, -dir), 0.0), 5.0);
+    vec3 r = reflect(dir, nrm);
+    vec3 refl = skyBase(normalize(vec3(r.x, max(r.y, 0.03), r.z)));
+    float glint = pow(max(dot(r, uLightDir), 0.0), 90.0) * 0.5 + pow(max(dot(r, uLightDir), 0.0), 12.0) * 0.04;
+    col = mix(col, col * 0.86, uWet * up * valid * 0.6); // darker when soaked
+    col += uWet * up * valid * (refl * fres * 0.55 + uLightCol * glint);
   }
 
   // ---- ground mist (exponential height fog, integrated along the ray) ---
@@ -77,14 +87,15 @@ export class AtmosphereEffect extends Effect {
       blendFunction: BlendFunction.SRC,
       uniforms: new Map([
         ['tLinDepth', u(linDepthTex)],
-        ['tCloud', u(cloudTex)],
         ['uInvProj', u(new THREE.Matrix4())],
         ['uCamWorld', u(new THREE.Matrix4())],
         ['uCamPos', u(new THREE.Vector3())],
         ['uHaze', u(new THREE.Vector4(300, 0.004, 0.02, 1))],
         ['uMist', u(new THREE.Vector4(0, 0.4, 0, 0.9))],
         ['uMistColor', u(new THREE.Color(0.8, 0.85, 0.9))],
-        ['uCloud', u(new THREE.Vector4(0, 0, 1 / 512, 0))],
+        ['uWet', u(0)],
+        ['uLightDir', u(new THREE.Vector3(0, 1, 0))],
+        ['uLightCol', u(new THREE.Color())],
         ['uSunDir', u(new THREE.Vector3(0, 1, 0))],
         ['uMoonDir', u(new THREE.Vector3(0, 1, 0))],
         ['uZenith', u(new THREE.Color())],
@@ -109,8 +120,9 @@ export class AtmosphereEffect extends Effect {
       U.get('uHaze').value.copy(params.haze);
       U.get('uMist').value.copy(params.mist);
       U.get('uMistColor').value.copy(params.mistColor);
-      U.get('uCloud').value.copy(params.cloud);
-      if (params.cloudTex) U.get('tCloud').value = params.cloudTex;
+      U.get('uWet').value = params.wet || 0;
+      U.get('uLightDir').value.copy(params.lightDir);
+      U.get('uLightCol').value.copy(params.lightColor);
     }
   }
 }

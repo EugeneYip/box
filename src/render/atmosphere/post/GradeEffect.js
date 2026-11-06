@@ -14,6 +14,7 @@ const FRAG = /* glsl */ `
 uniform float uExposure;
 uniform vec3 uShadowTint;
 uniform vec3 uHighTint;
+uniform vec3 uMidTint;
 uniform vec3 uFlash;
 uniform vec4 uGrade;    // saturation, vibrance, contrast, pivot
 uniform vec4 uVignette; // strength, inner radius, outer radius, unused
@@ -59,7 +60,7 @@ void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor)
   // contrast (soft, pivoted)
   p = (p - uGrade.w) * uGrade.z + uGrade.w;
   // split toning
-  p += uShadowTint * (1.0 - smoothstep(0.0, 0.55, l)) + uHighTint * smoothstep(0.35, 1.0, l);
+  p += uShadowTint * (1.0 - smoothstep(0.0, 0.55, l)) + uHighTint * smoothstep(0.35, 1.0, l) + uMidTint * (4.0 * l * (1.0 - l));
   // saturation + vibrance
   l = dot(p, vec3(0.2126, 0.7152, 0.0722));
   float mx = max(p.r, max(p.g, p.b));
@@ -84,6 +85,7 @@ export class GradeEffect extends Effect {
         ['uExposure', new THREE.Uniform(1)],
         ['uShadowTint', new THREE.Uniform(new THREE.Vector3())],
         ['uHighTint', new THREE.Uniform(new THREE.Vector3())],
+        ['uMidTint', new THREE.Uniform(new THREE.Vector3())],
         ['uFlash', new THREE.Uniform(new THREE.Vector3())],
         ['uGrade', new THREE.Uniform(new THREE.Vector4(1.08, 0.15, 1.05, 0.45))],
         ['uVignette', new THREE.Uniform(new THREE.Vector4(0.32, 0.45, 1.05, 0))],
