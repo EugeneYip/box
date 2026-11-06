@@ -150,7 +150,8 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   // roughness widens with the pixel footprint: a soft sheen far away, crisp glints up close
   float rgh = mix(0.07, 0.30, smoothstep(0.06, 0.6, fw));
   float Fs = 0.02 + 0.98 * pow(1.0 - max(dot(V, Hs), 0.0), 5.0);
-  float glint = ggxD(nh, rgh) * Fs * mix(1.1, 0.55, smoothstep(0.1, 0.6, fw)) + pow(nh, 1400.0) * 9.0 * sharpK;
+  float glint = ggxD(nh, rgh) * Fs * mix(1.1, 0.55, smoothstep(0.1, 0.6, fw)) + pow(nh, 1400.0) * 6.5 * sharpK;
+  glint *= mix(1.0, 0.35, narrow); // rivers must not flare to white
   vec3 keyL = uKeyCol * KEYN;
   vec3 spec = keyL * glint * keyUp * lightVis;
 
