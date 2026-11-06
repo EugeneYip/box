@@ -255,6 +255,7 @@ export class Clouds {
     this._s = new THREE.Vector3();
     this._p = new THREE.Vector3();
     this._shadowTimer = 0;
+    this._first = true;
   }
 
   update(dt, model, weather, env) {
@@ -274,7 +275,8 @@ export class Clouds {
     for (const c of this.clouds) {
       const target = THREE.MathUtils.smoothstep(cover, c.rank - 0.06, c.rank + 0.06);
       // smooth birth / dissolve
-      c.presence += (target - c.presence) * Math.min(1, dt * 0.35);
+      if (this._first) c.presence = target;
+      else c.presence += (target - c.presence) * Math.min(1, dt * 0.35);
       let x = c.x + this.drift.x;
       let z = c.z + this.drift.y;
       x = f.x0 + ((((x - f.x0) % f.sx) + f.sx) % f.sx);
@@ -308,6 +310,7 @@ export class Clouds {
         k++;
       }
     }
+    this._first = false;
     this.mesh.instanceMatrix.needsUpdate = true;
     this.splatMesh.instanceMatrix.needsUpdate = true;
     this.attr.needsUpdate = true;

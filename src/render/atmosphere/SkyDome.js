@@ -90,8 +90,11 @@ void main() {
   float y = dir.y;
 
   if (uEnvMode > 0.5) {
-    // IBL capture: the lower hemisphere is the land, not haze.
-    col = mix(col, uEnvGround, smoothstep(0.02, -0.25, y));
+    // IBL capture: the lower hemisphere is the land, not haze. The sun's
+    // tight halo is left out (specular sun glints come from the key light).
+    float muE = max(dot(dir, uSunDir), 0.0);
+    col -= uHalo * (pow(muE, 48.0) * 0.55 + pow(muE, 600.0) * 1.6) * 0.85;
+    col = mix(max(col, 0.0), uEnvGround, smoothstep(0.02, -0.25, y));
     col += vec3(0.55, 0.65, 0.9) * uFlash * 0.6;
     gl_FragColor = vec4(col, 1.0);
     return;
@@ -212,7 +215,11 @@ export class SkyDome {
     this.mesh.name = 'sky';
     this.mesh.frustumCulled = false;
     this.mesh.renderOrder = -1000;
-    this.mesh.onBeforeRender = (r, s, cam) => this.mesh.position.copy(cam.position);
+    this.mesh.onBeforeRender = (r, s, cam) => {
+      // keep the dome centred on whichever camera is drawing it this instant
+      this.mesh.position.setFromMatrixPosition(cam.matrixWorld);
+      this.mesh.updateMatrixWorld();
+    };
     game.scene.add(this.mesh);
 
     // environment capture scene

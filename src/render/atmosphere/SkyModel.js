@@ -13,15 +13,15 @@ const C = (hex) => new THREE.Color(hex); // sRGB hex -> linear working colour
 
 // s = sin(sun elevation)
 const KEYS = [
-  { s: -1.0, zen: '#060f29', hor: '#152447', glow: '#000000', belt: '#000000', halo: '#000000', key: '#000000', keyI: 0, hemiS: '#3a5c9e', hemiG: '#1b2030', hemiI: 0.95, exp: 1.55, sky: 1.0 },
-  { s: -0.3, zen: '#071029', hor: '#172649', glow: '#000000', belt: '#000000', halo: '#000000', key: '#000000', keyI: 0, hemiS: '#3a5c9e', hemiG: '#1b2030', hemiI: 0.95, exp: 1.55, sky: 1.0 },
-  { s: -0.17, zen: '#0c1a40', hor: '#253563', glow: '#2c2450', belt: '#000000', halo: '#000000', key: '#000000', keyI: 0, hemiS: '#40609e', hemiG: '#1e2232', hemiI: 0.95, exp: 1.5, sky: 1.0 },
-  { s: -0.09, zen: '#172a5e', hor: '#5a5288', glow: '#a8483a', belt: '#3a2c56', halo: '#40202a', key: '#c04848', keyI: 0.0, hemiS: '#4e5f9c', hemiG: '#2a2430', hemiI: 0.95, exp: 1.38, sky: 1.0 },
-  { s: -0.035, zen: '#233d7c', hor: '#a8708c', glow: '#ff5e26', belt: '#6e4468', halo: '#a04020', key: '#ff5a3c', keyI: 0.16, hemiS: '#6a6aa4', hemiG: '#3a2c30', hemiI: 0.9, exp: 1.24, sky: 1.0 },
-  { s: 0.0, zen: '#2c4c90', hor: '#d9846c', glow: '#ff7020', belt: '#5c4a72', halo: '#ff7a30', key: '#ff7040', keyI: 0.6, hemiS: '#7a7cb0', hemiG: '#4a3830', hemiI: 0.82, exp: 1.12, sky: 1.0 },
-  { s: 0.05, zen: '#3a60a4', hor: '#eba377', glow: '#ff9238', belt: '#53587a', halo: '#ffa050', key: '#ff9a58', keyI: 1.45, hemiS: '#8ba0c8', hemiG: '#5a4634', hemiI: 0.8, exp: 1.04, sky: 1.0 },
-  { s: 0.13, zen: '#4370b6', hor: '#efc392', glow: '#ffb45a', belt: '#4a5a82', halo: '#ffc070', key: '#ffbe7e', keyI: 2.35, hemiS: '#9ab4d8', hemiG: '#6a5638', hemiI: 0.82, exp: 1.0, sky: 1.0 },
-  { s: 0.25, zen: '#487ec6', hor: '#e2d4b6', glow: '#ffd296', belt: '#000000', halo: '#ffe0b0', key: '#ffd8a6', keyI: 2.85, hemiS: '#a6c4e6', hemiG: '#706040', hemiI: 0.86, exp: 1.0, sky: 1.0 },
+  { s: -1.0, zen: '#060f29', hor: '#152447', glow: '#000000', belt: '#000000', halo: '#000000', key: '#000000', keyI: 0, hemiS: '#3a5c9e', hemiG: '#1b2030', hemiI: 1.15, exp: 1.85, sky: 1.0 },
+  { s: -0.3, zen: '#071029', hor: '#172649', glow: '#000000', belt: '#000000', halo: '#000000', key: '#000000', keyI: 0, hemiS: '#3a5c9e', hemiG: '#1b2030', hemiI: 1.15, exp: 1.85, sky: 1.0 },
+  { s: -0.17, zen: '#0c1a40', hor: '#253563', glow: '#2c2450', belt: '#000000', halo: '#000000', key: '#000000', keyI: 0, hemiS: '#40609e', hemiG: '#1e2232', hemiI: 1.12, exp: 1.8, sky: 1.0 },
+  { s: -0.09, zen: '#172a5e', hor: '#5a5288', glow: '#a8483a', belt: '#33294e', halo: '#40202a', key: '#c04848', keyI: 0.0, hemiS: '#4e5f9c', hemiG: '#2a2430', hemiI: 1.1, exp: 1.7, sky: 1.0 },
+  { s: -0.035, zen: '#233d7c', hor: '#a8708c', glow: '#ff5e26', belt: '#5a3a5c', halo: '#a04020', key: '#ff6a40', keyI: 0.35, hemiS: '#6a6ea6', hemiG: '#3a2c30', hemiI: 1.05, exp: 1.55, sky: 1.0 },
+  { s: 0.0, zen: '#2c4c90', hor: '#d9846c', glow: '#ff7020', belt: '#4a3e5e', halo: '#ff7a30', key: '#ff7a44', keyI: 1.0, hemiS: '#7e86b4', hemiG: '#4a3830', hemiI: 1.0, exp: 1.4, sky: 1.0 },
+  { s: 0.05, zen: '#3a60a4', hor: '#eba377', glow: '#ff9238', belt: '#3c4058', halo: '#ffa050', key: '#ffa25e', keyI: 2.0, hemiS: '#93a6c8', hemiG: '#5a4634', hemiI: 1.0, exp: 1.25, sky: 1.0 },
+  { s: 0.13, zen: '#4370b6', hor: '#efc392', glow: '#ffb45a', belt: '#2a3248', halo: '#ffc070', key: '#ffc282', keyI: 2.6, hemiS: '#9ab4d8', hemiG: '#6a5638', hemiI: 0.9, exp: 1.1, sky: 1.0 },
+  { s: 0.25, zen: '#487ec6', hor: '#e2d4b6', glow: '#ffd296', belt: '#000000', halo: '#ffe0b0', key: '#ffd8a6', keyI: 2.95, hemiS: '#a6c4e6', hemiG: '#706040', hemiI: 0.88, exp: 1.03, sky: 1.0 },
   { s: 0.42, zen: '#4685d2', hor: '#c2d9ec', glow: '#fff0d6', belt: '#000000', halo: '#fff2dc', key: '#fff0dc', keyI: 3.1, hemiS: '#acc9ea', hemiG: '#736444', hemiI: 0.9, exp: 1.0, sky: 1.0 },
   { s: 0.82, zen: '#3b7ad0', hor: '#c4ddf1', glow: '#fff8ee', belt: '#000000', halo: '#fff8ee', key: '#fff6ea', keyI: 3.3, hemiS: '#b0cdee', hemiG: '#776848', hemiI: 0.92, exp: 1.0, sky: 1.0 },
   { s: 1.0, zen: '#3b7ad0', hor: '#c4ddf1', glow: '#fff8ee', belt: '#000000', halo: '#fff8ee', key: '#fff6ea', keyI: 3.3, hemiS: '#b0cdee', hemiG: '#776848', hemiI: 0.92, exp: 1.0, sky: 1.0 },
@@ -191,7 +191,7 @@ export class SkyModel {
     this.sunLightColor.lerp(this._tmp.setRGB(lumKey, lumKey * 1.01, lumKey * 1.06), oc * 0.7);
 
     const moonUp = smooth(-0.02, 0.15, this.moonDir.y);
-    const moonI = 0.62 * smooth(-0.04, -0.17, s) * moonUp * (1 - 0.7 * oc);
+    const moonI = 0.8 * smooth(-0.04, -0.17, s) * moonUp * (1 - 0.7 * oc);
     this.moonVis = moonUp * smooth(-0.02, -0.14, s);
     this.keyIsMoon = moonI > sunI;
     if (this.keyIsMoon) {
@@ -203,10 +203,10 @@ export class SkyModel {
       this.keyIntensity = moonI;
     } else {
       this.keyDir.copy(this.sunDir);
-      // clamp the shadow-casting elevation (~7.5 deg): long but sane shadows
-      if (this.keyDir.y < 0.13) {
+      // clamp the shadow-casting elevation (~10 deg): long but sane shadows
+      if (this.keyDir.y < 0.17) {
         const h = Math.hypot(this.keyDir.x, this.keyDir.z) || 1;
-        const y = 0.13;
+        const y = 0.17;
         const k = Math.sqrt(1 - y * y) / h;
         this.keyDir.set(this.keyDir.x * k, y, this.keyDir.z * k);
       }
@@ -235,7 +235,7 @@ export class SkyModel {
       .copy(this.horizon)
       .multiplyScalar(0.85)
       .lerp(this._tmp.copy(this.sunLightColor).multiplyScalar(0.25 + 0.35 * this.golden), 0.18 * this.daylight * (1 - oc));
-    this.cloudLit.copy(this.keyColor).multiplyScalar(this.keyIntensity * 0.42);
+    this.cloudLit.copy(this.keyColor).multiplyScalar(this.keyIntensity * 0.36);
     this.cloudShade.copy(this.hemiSky).multiplyScalar(this.hemiIntensity * 0.5);
 
     // ---- grade ----------------------------------------------------------

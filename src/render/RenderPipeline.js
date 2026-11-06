@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { EffectComposer, RenderPass, EffectPass, BloomEffect, SMAAEffect, SMAAPreset, EdgeDetectionMode, BlendFunction } from 'postprocessing';
+import { EffectComposer, RenderPass, EffectPass, BloomEffect, SMAAEffect, SMAAPreset, EdgeDetectionMode, BlendFunction, FXAAEffect } from 'postprocessing';
 import { N8AOPostPass } from 'n8ao';
 import { LinearDepthPass } from './atmosphere/post/LinearDepthPass.js';
 import { AtmosphereEffect } from './atmosphere/post/AtmosphereEffect.js';
@@ -26,17 +26,25 @@ import { GradeEffect } from './atmosphere/post/GradeEffect.js';
 //                                   before the scene is drawn (offscreen work)
 //
 // Frame (medium and up):
-//   Render (HDR half-float) -> linear depth -> N8AO -> aerial haze / mist /
-//   cloud shadows -> [extra passes] -> miniature DOF + bloom + tone map +
-//   grade + vignette -> SMAA (dithered output)
+//   Render (HDR half-float) -> linear depth -> N8AO (high+) -> aerial haze /
+//   mist / cloud shadows -> [extra passes] -> miniature DOF + bloom + tone
+//   map + grade + vignette -> SMAA (high+) or FXAA (medium), dithered
 // Low tier, or if anything fails to initialise: direct render with MSAA,
 // ACES tone mapping and THREE.Fog matched to the horizon.
 
+// Pass budget per frame (excluding the scene, shadow map and the tiny cloud
+// coverage splat):
+//   low    : 0 post passes (direct render, MSAA canvas, THREE.Fog)
+//   medium : ~9   linear depth, haze, DOF x3 (half res), bloom x7 (quarter
+//                 res and below), lens, FXAA. No AO.
+//   high   : ~19  + half-res N8AO (1 denoise iteration), SMAA instead of FXAA
+//   ultra  : ~24  full-res N8AO (2 denoise iterations), more bloom levels,
+//                 MSAA x4 + SMAA, 4096 shadow map
 export const QUALITY_TIERS = {
-  low: { pixelRatio: 1, post: false, shadowMap: 1024, ao: null, dof: 0, bloomLevels: 0, smaa: null, msaa: 0 },
-  medium: { pixelRatio: 1, post: true, shadowMap: 2048, ao: { halfRes: true, aoSamples: 8, denoiseSamples: 4, denoiseRadius: 8 }, dof: 16, bloomLevels: 5, smaa: 'MEDIUM', msaa: 0 },
-  high: { pixelRatio: 1.5, post: true, shadowMap: 2048, ao: { halfRes: true, aoSamples: 16, denoiseSamples: 8, denoiseRadius: 8 }, dof: 28, bloomLevels: 7, smaa: 'HIGH', msaa: 0 },
-  ultra: { pixelRatio: 2, post: true, shadowMap: 4096, ao: { halfRes: false, aoSamples: 24, denoiseSamples: 8, denoiseRadius: 6 }, dof: 40, bloomLevels: 8, smaa: 'ULTRA', msaa: 4 },
+  low: { pixelRatio: 1, post: false, shadowMap: 1024, ao: null, dof: 0, bloomLevels: 0, aa: null, msaa: 0 },
+  medium: { pixelRatio: 1, post: true, shadowMap: 2048, ao: null, dof: 12, bloomLevels: 4, aa: 'fxaa', msaa: 0 },
+  high: { pixelRatio: 1.5, post: true, shadowMap: 2048, ao: { halfRes: true, aoSamples: 12, denoiseSamples: 8, denoiseRadius: 8, denoiseIterations: 1 }, dof: 24, bloomLevels: 5, aa: 'HIGH', msaa: 0 },
+  ultra: { pixelRatio: 2, post: true, shadowMap: 4096, ao: { halfRes: false, aoSamples: 24, denoiseSamples: 8, denoiseRadius: 6, denoiseIterations: 2 }, dof: 36, bloomLevels: 7, aa: 'ULTRA', msaa: 4 },
 };
 
 export class RenderPipeline {
@@ -137,6 +145,7 @@ export class RenderPipeline {
         c.aoSamples = t.ao.aoSamples;
         c.denoiseSamples = t.ao.denoiseSamples;
         c.denoiseRadius = t.ao.denoiseRadius;
+        c.denoiseIterations = t.ao.denoiseIterations;
         c.depthAwareUpsampling = true;
         c.screenSpaceRadius = false;
         c.aoRadius = 2.5;
@@ -178,8 +187,12 @@ export class RenderPipeline {
     lens.push(p.grade);
     p.lens = new EffectPass(camera, ...lens);
     composer.addPass(p.lens);
-    if (t.smaa) {
-      p.smaa = new SMAAEffect({ preset: SMAAPreset[t.smaa], edgeDetectionMode: EdgeDetectionMode.COLOR });
+    if (t.aa === 'fxaa') {
+      p.aa = new EffectPass(camera, new FXAAEffect());
+      p.aa.dithering = true;
+      composer.addPass(p.aa);
+    } else if (t.aa) {
+      p.smaa = new SMAAEffect({ preset: SMAAPreset[t.aa], edgeDetectionMode: EdgeDetectionMode.COLOR });
       p.aa = new EffectPass(camera, p.smaa);
       p.aa.dithering = true;
       composer.addPass(p.aa);

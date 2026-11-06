@@ -246,12 +246,10 @@ export class Atmosphere {
     const key = this.key;
     key.color.copy(M.keyColor);
     key.intensity = M.keyIntensity;
-    key.visible = M.keyIntensity > 0.002;
     this.hemi.color.copy(M.hemiSky);
     this.hemi.groundColor.copy(M.hemiGround);
     this.hemi.intensity = M.hemiIntensity * (1 + flash * 1.5);
     this.flashLight.intensity = flash * 5.5;
-    this.flashLight.visible = flash > 0.002;
     this.fitShadow(camera, M.keyDir);
     game.scene.environmentIntensity = 0.42 + 0.1 * mix.overcast;
 
@@ -446,16 +444,16 @@ export class Atmosphere {
     const hit = game.picker?.intersect?.(this._ray, true);
     if (hit) focus = cam.position.distanceTo(this._v.set(hit.x, hit.y, hit.z));
     this._focus = this._focus ? approach(this._focus, focus, 10, dt || 1) : focus;
-    const s = 1 - smoothstep(18, 125, dist);
+    const s = 1 - smoothstep(14, 115, dist);
     P.dof.focus = this._focus;
     P.dof.band = 0.07 + 0.05 * (1 - s);
-    P.dof.ramp = 0.34;
-    P.dof.maxCoc = 11 * Math.pow(s, 1.25);
-    P.dof.nearBoost = 1.5;
+    P.dof.ramp = 0.3;
+    P.dof.maxCoc = 9.5 * Math.pow(s, 1.5);
+    P.dof.nearBoost = 0.85;
 
     // AO scale follows the zoom: fine contact shadows close, valleys far
     P.ao.radius = THREE.MathUtils.clamp(0.9 + dist * 0.022, 1.0, 6.5);
-    P.ao.intensity = 2.6;
+    P.ao.intensity = 1.9;
     P.ao.falloff = 1.0;
   }
 }
