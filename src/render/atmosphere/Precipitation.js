@@ -20,13 +20,23 @@ uniform float uWidth;
 uniform float uPix;
 uniform float uAmount;
 uniform float uNear;
+uniform vec3 uBand;   // xy band offset (moves with the gusts), z band scale
 varying float vA;
 varying vec2 vQ;
+float rHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float rNoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(rHash(i), rHash(i + vec2(1, 0)), u.x), mix(rHash(i + vec2(0, 1)), rHash(i + vec2(1, 1)), u.x), u.y);
+}
 void main() {
   vec3 cell = aSeed.xyz * uBox + uOffset;
   vec3 rel = fract((cell - uCenter) / uBox + 0.5) - 0.5;
   vec3 head = uCenter + rel * uBox;
-  float isOn = step(aSeed.w, uAmount);
+  // sweeping gust bands: denser sheets of rain race across the land
+  vec2 bp = head.xz / uBand.z + uBand.xy;
+  float band = rNoise(bp) * 0.65 + rNoise(bp * 2.7 + 3.1) * 0.35;
+  float isOn = step(aSeed.w, uAmount * mix(0.35, 1.45, smoothstep(0.25, 0.75, band)));
   vec3 v = normalize(uVel);
   float len = uLen * (0.6 + 0.8 * fract(aSeed.w * 13.7));
   vec3 p = head - v * len * position.y;
@@ -34,10 +44,11 @@ void main() {
   float dist = length(toCam);
   vec3 side = normalize(cross(v, toCam / max(dist, 1e-3)));
   float minW = dist * uPix * 0.9;
-  float w = max(uWidth, minW);
+  float w = max(uWidth * (0.6 + 0.9 * fract(aSeed.y * 17.3)), minW);
   p += side * position.x * w;
   vec3 e = smoothstep(vec3(0.5), vec3(0.36), abs(rel));
   vA = e.x * e.y * e.z * isOn * smoothstep(uNear * 0.4, uNear, dist) * clamp(uWidth / minW, 0.35, 1.0);
+  vA *= 0.45 + 0.9 * fract(aSeed.z * 29.7); // varied streak brightness
   vQ = position.xy;
   gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
 }
@@ -164,7 +175,8 @@ export class Precipitation {
       uOpacity: { value: 0.4 },
       uNear: { value: 4 },
     });
-    this.rainU = { ...common(), uVel: { value: new THREE.Vector3(0.2, -1, 0.1) }, uLen: { value: 0.8 }, uWidth: { value: 0.02 } };
+    this.rainU = { ...common(), uVel: { value: new THREE.Vector3(0.2, -1, 0.1) }, uLen: { value: 0.8 }, uWidth: { value: 0.02 }, uBand: { value: new THREE.Vector3(0, 0, 40) } };
+    this.bandOff = new THREE.Vector2();
     this.rain = new THREE.Mesh(
       makeQuadInstances(rainN, 77),
       new THREE.ShaderMaterial({ name: 'Rain', uniforms: this.rainU, vertexShader: RAIN_VERT, fragmentShader: RAIN_FRAG, transparent: true, depthWrite: false, side: THREE.DoubleSide }),
@@ -260,13 +272,19 @@ export class Precipitation {
       u.uNear.value = 2 + D * 0.3;
       u.uPix.value = pix;
       u.uAmount.value = 0.15 + 0.85 * rain;
+      // gust bands drift fast with the wind
+      const bs = 6 + 26 * wind.strength;
+      this.bandOff.x -= (wind.x * bs * dt);
+      this.bandOff.y -= (wind.z * bs * dt);
+      const bscale = 18 + D * 0.6;
+      u.uBand.value.set(this.bandOff.x / bscale, this.bandOff.y / bscale, bscale);
       const c = u.uColor.value;
       c.setRGB(0.6, 0.66, 0.74).multiplyScalar(0.4 + 0.5 * ambient).addScalar(flash * 0.25);
       u.uOpacity.value = 0.1 + 0.12 * rain;
     }
 
     // ---- splashes ------------------------------------------------------
-    const showSplash = rain > 0.15 && D < 75;
+    const showSplash = rain > 0.15 && D < 120;
     this.splash.visible = showSplash;
     this.splashU.uTime.value = time;
     if (showSplash) {
@@ -300,8 +318,8 @@ export class Precipitation {
         arr[i * 4 + 3] = time - this._rnd() * 0.05;
       }
       this.splashAttr.needsUpdate = true;
-      this.splashU.uSize.value = 0.08 + D * 0.004;
-      this.splashU.uOpacity.value = 0.55 * Math.min(1, rain * 1.4) * THREE.MathUtils.smoothstep(D, 75, 40);
+      this.splashU.uSize.value = 0.1 + D * 0.006;
+      this.splashU.uOpacity.value = 0.6 * Math.min(1, rain * 1.4) * (1 - THREE.MathUtils.smoothstep(D, 60, 120));
       this.splashU.uColor.value.copy(this.rainU.uColor.value).multiplyScalar(1.1);
     }
 

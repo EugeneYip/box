@@ -22,16 +22,27 @@ import { noise1, smoothstep, mulberry32, approach } from './util.js';
 //   game.atmosphere.weather   the Weather state object (type, intensity, mix)
 //   game.settings.autoWeather  (default true) lets weather change by itself.
 //
-// game.env (written every frame, read by everyone):
-//   sunDir      direction TO the sun (kept >= ~2deg above the horizon)
-//   daylight    0 night .. 1 day          sunColor   sunlight colour
-//   weather     {type, intensity}         wind       {x, z, strength} (gusty)
-//   lightning   flash 0..1 (others may raise it; it is merged, not clobbered)
-//   cloudShadow {texture, params: Vector4(offX, offZ, 1/scale, strength)}
-//   additive extras: night (0..1), moonDir, lightDir / lightColor (current
-//   key light: sun by day, moon at night; colour premultiplied by intensity),
-//   sunIntensity, skyColor, horizonColor, fogColor, ambientColor, wetness,
-//   snowCover, mist, cloudCover, overcast, golden (golden-hour 0..1).
+// game.env (written every frame, read by everyone). All colours linear.
+//   DIRECT LIGHT (use these for diffuse sun terms, specular glints, ice):
+//     lightDir    direction TO the current key light (sun by day, moon by
+//                 night; elevation clamped >= ~10deg)
+//     lightColor  key light colour x intensity, in three.js punctual-light
+//                 units (~3.3 at clear noon, ~0.5 under storm, ~0.6 moon).
+//                 Already reduced by overcast / storm / fog.
+//     sunColor    sun-only colour x relative strength (1 = clear noon; 0 at
+//                 night; drops with overcast). Legacy: sunColor * daylight.
+//     cloudShadow {texture, params: Vector4(offX, offZ, 1/scale, strength)}
+//                 multiply DIRECT light by 1 - strength * texture.r at
+//                 uv = (worldXZ + off) * (1/scale). Not applied in post.
+//   SKY / AMBIENT (radiance, use for reflections and fill):
+//     skyColor    zenith radiance       horizonColor  horizon radiance
+//     fogColor    haze colour toward the horizon (also scene.background)
+//     ambientColor hemisphere sky irradiance (colour x intensity)
+//   OTHER: sunDir (true sun, kept >= ~2deg up), daylight (0 night .. 1 day,
+//   dimmed by overcast), night, golden (golden-hour 0..1), moonDir,
+//   sunIntensity, weather {type, intensity}, wind {x, z, strength} (gusty),
+//   lightning (flash 0..1; others may raise it, it is merged), wetness,
+//   snowCover, mist, cloudCover, overcast.
 
 const UP = new THREE.Vector3(0, 1, 0);
 
@@ -100,6 +111,10 @@ export class Atmosphere {
       exposure: 1,
       shadowTint: new THREE.Vector3(),
       highTint: new THREE.Vector3(),
+      midTint: new THREE.Vector3(),
+      wet: 0,
+      lightDir: new THREE.Vector3(0, 1, 0),
+      lightColor: new THREE.Color(),
       flash: new THREE.Vector3(),
       grade: new THREE.Vector4(1.08, 0.15, 1.05, 0.45),
       vignette: new THREE.Vector4(0.3, 0.42, 1.0, 0),
@@ -152,9 +167,15 @@ export class Atmosphere {
   strike(x, z, opts = {}) {
     const world = this.game.world;
     const y = world.surfaceAt(x, z);
-    // start under the camera so the whole bolt is in frame from the god view
-    const camY = this.game.cameraRig.camera.position.y;
-    const top = y + Math.min(50, Math.max(12, camY * 0.72 - y));
+    // the channel enters from above the top edge of the frame
+    const cam = this.game.cameraRig.camera;
+    let top = y + 30;
+    for (let h = 12; h <= 220; h += 6) {
+      const p = this._v.set(x, y + h, z).project(cam);
+      if (p.z > 1 || p.z < -1) break; // behind the camera / past far
+      top = y + h;
+      if (p.y > 1.12) break;
+    }
     const bolt = this.lightning.spawn(x, y, z, { intensity: opts.intensity ?? 1, top });
     this._boltFlash(bolt, opts.sound !== false);
     return bolt;
@@ -236,7 +257,9 @@ export class Atmosphere {
         /* audio is optional */
       }
     }
-    const boltFlash = this.lightning.update(dt, camera, rig.cur.dist);
+    const bolts = this.lightning.update(dt, camera, rig.cur.dist);
+    const boltFlash = bolts.flash;
+    if (bolts.strokes > 0) game.pipeline?.flash?.(0xc4ceff, 0.05);
     this._myFlash = Math.max(0, this._myFlash - dt * 3.5);
     // merge flashes raised by other modules (Effects may write env.lightning)
     if (env.lightning > this._lastFlash + 1e-4) this._extFlash = Math.max(this._extFlash, env.lightning);
@@ -270,10 +293,10 @@ export class Atmosphere {
       const k = Math.sqrt(1 - 0.035 * 0.035) / h;
       env.sunDir.set(env.sunDir.x * k, 0.035, env.sunDir.z * k);
     }
-    env.daylight = M.daylight;
+    env.daylight = M.daylight * (1 - 0.38 * mix.overcast - 0.12 * mix.storm);
     env.night = M.night;
     env.golden = M.golden;
-    env.sunColor.copy(M.sunLightColor);
+    env.sunColor.copy(M.sunLightColor).multiplyScalar(M.keyIsMoon ? 0 : Math.min(1.1, M.keyIntensity / 3.3));
     env.sunIntensity = M.keyIsMoon ? 0 : M.keyIntensity;
     env.moonDir.copy(M.moonDir);
     env.lightDir.copy(M.keyDir);
@@ -281,6 +304,8 @@ export class Atmosphere {
     env.skyColor.copy(M.zenith);
     env.horizonColor.copy(M.horizon);
     env.fogColor.copy(M.horizon).lerp(M.groundHaze, 0.3);
+    // safe fallback for anything that samples the background colour
+    if (game.scene.background?.isColor) game.scene.background.copy(env.fogColor);
     env.ambientColor.copy(M.hemiSky).multiplyScalar(M.hemiIntensity);
     env.wetness = W.wetness;
     env.snowCover = W.snowCover;
@@ -415,12 +440,17 @@ export class Atmosphere {
     P.shadowTint.copy(M.shadowTint);
     P.highTint.copy(M.highTint);
     P.grade.set(M.saturation, M.vibrance, M.contrast, 0.45);
+    P.midTint.copy(M.midTint);
+    // wet sheen on rain-soaked surfaces
+    P.wet = Math.min(1, this.weather.wetness * 1.1) * (0.4 + 0.6 * W.rain);
+    P.lightDir.copy(M.keyDir);
+    P.lightColor.copy(M.keyColor).multiplyScalar(M.keyIntensity);
     P.flash.set(0.5, 0.58, 0.8).multiplyScalar(flash * 0.04);
     P.vignette.set(0.3 + 0.1 * M.night + 0.1 * W.storm, 0.42, 1.02, 0);
     P.vignetteColor.setRGB(0.28, 0.22, 0.34).lerp(this._c1 || (this._c1 = new THREE.Color(0.1, 0.14, 0.3)), M.night * 0.6);
 
     // haze starts around the focus distance; thicker in rain / fog
-    const hazeDensity = 0.0026 + 0.004 * W.overcast + 0.012 * W.fog + 0.003 * W.rain + 0.0012 * W.snow;
+    const hazeDensity = 0.0026 + 0.0025 * W.overcast + 0.012 * W.fog + 0.0015 * W.rain + 0.0012 * W.snow;
     P.haze.set(dist * 0.9 + 8, hazeDensity, 0.022, 1);
     // ground mist: dawn wisps, thick in fog weather, a little in snow / rain
     const mistAmt = Math.max(W.fog, this.weather.morningMist);
@@ -430,7 +460,6 @@ export class Atmosphere {
     P.mistColor.copy(M.mistColor);
     const cs = game.env.cloudShadow;
     if (cs) {
-      P.cloud.copy(cs.params);
       P.cloudTex = cs.texture;
     }
     P.fogColor.copy(M.horizon).lerp(M.groundHaze, 0.4);
@@ -448,12 +477,13 @@ export class Atmosphere {
     const hit = game.picker?.intersect?.(this._ray, true);
     if (hit) focus = cam.position.distanceTo(this._v.set(hit.x, hit.y, hit.z));
     this._focus = this._focus ? approach(this._focus, focus, 10, dt || 1) : focus;
-    const s = 1 - smoothstep(14, 115, dist);
+    // strong only close up; a gentle miniature hint at mid zoom; off far out
+    const s = (1 - 0.72 * smoothstep(25, 90, dist)) * (1 - smoothstep(90, 140, dist));
     P.dof.focus = this._focus;
-    P.dof.band = 0.07 + 0.05 * (1 - s);
-    P.dof.ramp = 0.3;
-    P.dof.maxCoc = 9.5 * Math.pow(s, 1.5);
-    P.dof.nearBoost = 0.85;
+    P.dof.band = 0.13 + 0.03 * (1 - s);
+    P.dof.ramp = 0.32;
+    P.dof.maxCoc = 6 * s;
+    P.dof.nearBoost = 0.8;
 
     // AO scale follows the zoom: fine contact shadows close, valleys far
     P.ao.radius = THREE.MathUtils.clamp(0.9 + dist * 0.022, 1.0, 6.5);
