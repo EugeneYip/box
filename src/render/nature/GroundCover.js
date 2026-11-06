@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { TILE, TILE_INFO, FLORA, SEA_LEVEL } from '../../world/constants.js';
 import { hash2, mulberry32 } from '../../core/Random.js';
+import { flowerDrift } from '../../sim/flora/species.js';
 import { MeshBuilder, MAT, C, blobGeo, M } from './MeshBuilder.js';
 import { InstanceBatcher } from './InstanceBatcher.js';
 
@@ -11,7 +12,7 @@ import { InstanceBatcher } from './InstanceBatcher.js';
 // by the same wind as the trees. Grass normals point up so it is lit like the
 // ground it grows from. Ground cover never casts shadows but receives them.
 const CHUNK = 32;
-const MAX_DIST = 92; // camera distance beyond which ground cover is off
+const MAX_DIST = 80; // camera distance beyond which ground cover is off
 const TAU = Math.PI * 2;
 
 // ---------------------------------------------------------------------------
@@ -69,9 +70,9 @@ function blade(bb, r, base, ang, h, w, curve, cBase, cMid, cTip) {
 }
 
 // Colour gradients are multiplied by the per-instance biome tint.
-const G_BASE = [0.6, 0.63, 0.56];
-const G_MID = [0.95, 0.98, 0.86];
-const G_TIP = [1.3, 1.32, 1.02];
+const G_BASE = [0.74, 0.76, 0.7];
+const G_MID = [0.96, 0.98, 0.9];
+const G_TIP = [1.16, 1.18, 1.0];
 
 function grassTuft(seed, { blades = 7, hMin = 0.12, hMax = 0.26, spread = 0.09, width = 0.022, curve = 0.35 } = {}) {
   const r = mulberry32(seed);
@@ -259,6 +260,7 @@ export class GroundCover {
           count: 0,
         });
     this._scratch = new Map();
+    this._nrm = { x: 0, y: 1, z: 0 };
     this._sigCursor = 0;
     this.batcher = new InstanceBatcher(this.group, 'ground');
     this._needCompact = true;
@@ -405,7 +407,10 @@ export class GroundCover {
         if (f === FLORA.BOULDER || f === FLORA.WHEAT) continue;
         const t = world.type[i];
         const slope = world.slopeAt(tx, ty);
-        if (slope > 3.2) continue;
+        const ny = world.normalAt(tx + 0.5, ty + 0.5, this._nrm).y;
+        // the terrain shader turns slopes below ~0.76 into cliff rock
+        if (ny < 0.78 && t !== TILE.ROCK) continue;
+        const drift = flowerDrift(tx, ty);
         let n = 0,
           plan = null;
         switch (t) {
@@ -449,7 +454,7 @@ export class GroundCover {
           default:
             continue;
         }
-        if (slope > 1.8 && plan !== 'rock') n = Math.max(1, n - 1);
+        if ((slope > 1.6 || ny < 0.88) && plan !== 'rock') n = Math.max(1, n - 2);
         for (let k = 0; k < n; k++) {
           const r1 = hash2(tx * 4 + k, ty, 1301),
             r2 = hash2(tx, ty * 4 + k, 1303),
@@ -472,7 +477,8 @@ export class GroundCover {
             tilt = 0.5;
           switch (plan) {
             case 'grass':
-              kind = r3 < 0.07 + patch * 0.05 ? 'meadow' : r3 < 0.12 + patch * 0.22 ? 'grassTall' : r3 > 0.82 ? 'grassShort' : 'grass';
+              // flowers gather in drifts on gentle ground only
+              kind = drift > 0.62 && ny > 0.9 && r3 < (drift - 0.62) * 0.9 ? 'meadow' : r3 < 0.12 + patch * 0.22 ? 'grassTall' : r3 > 0.82 ? 'grassShort' : 'grass';
               break;
             case 'forest':
               kind = r3 < 0.14 ? 'fern' : r3 < 0.5 ? 'grassShort' : 'grass';
@@ -561,8 +567,10 @@ export class GroundCover {
     const D = rig.cur.dist;
     const camObj = rig.camera;
     const cam = camObj.position;
-    const far = Math.min(MAX_DIST, 16 + D * 1.15);
-    const near = far * 0.7;
+    // dense near the camera, gone by mid-zoom distances (the terrain shader
+    // carries the grass texture further out)
+    const far = Math.min(58, 12 + D * 0.85);
+    const near = far * 0.62;
     this.veg.uniforms.uFade.value.set(near, far);
     const enabled = D < MAX_DIST * 0.95;
     this.group.visible = enabled;
