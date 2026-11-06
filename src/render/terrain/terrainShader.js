@@ -205,15 +205,17 @@ Mat matRock(NS s) {
   vec3 warm = vec3(0.340, 0.300, 0.255);
   vec3 cool = vec3(0.280, 0.285, 0.290);
   vec3 c = mix(warm, cool, s.macro.g);
-  // slabs with crack seams
-  float seam = smoothstep(0.0, 0.10, s.cellL.g);
-  c *= 0.75 + 0.35 * s.cellL.b;
-  c *= 0.55 + 0.45 * seam;
-  c *= 0.85 + 0.25 * s.det.r;
+  // weathered stone: irregular (noise-warped) cracks, grain and mottling
+  vec4 cr = cz((s.p.xz + (s.meso.gb - 0.5) * 6.0 + (s.det.rg - 0.5) * 1.5) * (1.0 / 29.0));
+  float seam = smoothstep(0.0, 0.06, cr.g + (s.det.b - 0.5) * 0.08);
+  c *= 0.88 + 0.16 * cr.b;
+  c *= 0.84 + 0.16 * mix(1.0, seam, smoothstep(0.35, 0.65, s.meso.r));
+  c *= 0.80 + 0.30 * s.det.r;
+  c *= 0.92 + 0.14 * s.micro.r;
   // lichen flecks
   float lich = smoothstep(0.72, 0.86, s.det.g) * (1.0 - smoothstep(0.3, 0.6, 1.0 - s.n.y));
   c = mix(c, vec3(0.30, 0.30, 0.16), lich * 0.5);
-  return mk(c, 0.80, 0.62 + 0.3 * s.cellL.b, 0.10 * seam + 0.05);
+  return mk(c, 0.80, 0.62 + 0.25 * s.det.r, 0.05 * seam + 0.05);
 }
 Mat matLava(NS s) {
   float t = uLTime;
@@ -423,14 +425,16 @@ void applyOverlay(vec2 p, inout vec3 albedo, inout vec3 emissive) {
   float uniformRegion = step(0.999, fo);
   // distance (in tiles) from the border contour, approximately
   float dist = (fo - 0.5);
-  float lineW = max(0.07, fwd * 1.1);
-  float line = (1.0 - smoothstep(lineW, lineW + fwd * 1.2, dist)) * (1.0 - uniformRegion);
-  float glow = exp(-max(dist, 0.0) * 7.0) * (1.0 - uniformRegion);
-  vec3 col = own.rgb;
+  float lineW = max(0.11, fwd * 1.7);
+  float line = (1.0 - smoothstep(lineW, lineW + fwd * 1.3, dist)) * (1.0 - uniformRegion);
+  float glow = exp(-max(dist, 0.0) * 4.5) * (1.0 - uniformRegion);
+  vec3 col = pow(own.rgb, vec3(2.2)); // overlay colours are authored in sRGB
   float a = own.a;
   albedo = mix(albedo, albedo * 0.55 + col * 0.45, a * 0.42);
-  albedo = mix(albedo, col * 0.9 + 0.1, line * a);
-  emissive += col * (line * 0.9 + glow * 0.30) * a * (0.35 + 0.65 * (1.0 - uDay * 0.6));
+  vec3 lineCol = col * 1.05 + 0.015;
+  albedo = mix(albedo, albedo * (1.0 - 0.35 * a) + col * 0.35 * a, glow * 0.6);
+  albedo = mix(albedo, lineCol, line * min(1.0, a * 1.3));
+  emissive += (lineCol * line * 0.9 + col * glow * 0.35) * a * (0.5 + 0.5 * (1.0 - uDay));
 }
 
 void terrainSurface() {

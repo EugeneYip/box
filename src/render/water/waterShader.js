@@ -42,8 +42,9 @@ vec2 waveSlope(vec2 p, float t, float fw, float calm) {
   float f1 = 1.0 - smoothstep(0.6, 2.5, fw);
   float f2 = 1.0 - smoothstep(0.12, 0.6, fw);
   float f3 = 1.0 - smoothstep(0.05, 0.25, fw);
-  g += swell(p, vec2(0.83, 0.56), 0.33, 0.20, 0.85, t);
-  g += swell(p, vec2(-0.45, 0.89), 0.47, 0.13, 1.05, t);
+  float f0 = mix(1.0, 0.35, smoothstep(0.2, 0.7, fw)); // long swell reads as a repeating pattern from afar
+  g += swell(p, vec2(0.83, 0.56), 0.33, 0.20, 0.85, t) * f0;
+  g += swell(p, vec2(-0.45, 0.89), 0.47, 0.13, 1.05, t) * f0;
   g += swell(p, vec2(0.97, -0.24), 0.71, 0.08, 1.35, t) * f1;
   g += swell(p, vec2(0.20, 0.98), 1.13, 0.05, 1.80, t) * f1;
   g += swell(p, vec2(-0.86, -0.51), 1.77, 0.030, 2.30, t) * f2;
@@ -130,6 +131,10 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   float veil = 1.0 - exp(-depth / vy * 0.16);
   veil = clamp(veil * 0.85, 0.0, 0.92);
   veil = mix(veil, 1.0, outK);
+  // rivers and narrow channels: shallow beds would read as dark slate, so give
+  // narrow water a clear teal body of its own
+  float narrow = (1.0 - smoothstep(1.2, 3.6, wide)) * (1.0 - outK) * smoothstep(0.0, 0.22, depth);
+  veil = max(veil, 0.62 * narrow);
   // gentle brighter crests in open water
   float crest = smoothstep(0.10, 0.30, length(sl)) * open * 0.25;
 
@@ -186,7 +191,7 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
     float cracks = 1.0 - smoothstep(0.0, 0.06, fc.g);
     vec3 iceAlb = mix(vec3(0.62, 0.78, 0.90), vec3(0.86, 0.93, 0.98), smoothstep(0.3, 0.8, fn.r)) * (1.0 - cracks * 0.25);
     float ndl = max(L.y, 0.0);
-    vec3 iceCol = iceAlb * (uSunCol * ndl * uDay * lightVis * 0.9 + waterIrradiance() * 0.45);
+    vec3 iceCol = iceAlb * (uSunCol * ndl * uDay * lightVis * 0.55 + waterIrradiance() * 0.30) * (1.0 - cracks * 0.3);
     float Fi = 0.04 + 0.96 * pow(1.0 - max(V.y, 0.0), 5.0);
     iceCol += sky * Fi * 0.6 + uSunCol * pow(max(dot(vec3(0.0, 1.0, 0.0), Hs), 0.0), 300.0) * 2.0 * uDay * lightVis;
     col = mix(col, iceCol, ice);

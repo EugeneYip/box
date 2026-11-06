@@ -97,7 +97,7 @@ vec3 waterIrradiance() {
   float sunUp = clamp(uSunDirW.y, 0.0, 1.0);
   vec3 sun = uSunCol * (0.30 + 0.70 * sunUp) * uDay;
   vec3 sky = uSkyCol * (0.25 + 0.35 * uDay);
-  vec3 moon = vec3(0.030, 0.045, 0.085) * (1.0 - uDay);
+  vec3 moon = vec3(0.10, 0.14, 0.24) * (1.0 - uDay);
   return sun + sky + moon;
 }
 

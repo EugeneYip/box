@@ -18,8 +18,13 @@ import { bakeAO } from './bake.js';
 // terrain shader (see terrainShader.js), fed by per-tile data textures.
 //
 // Public API (cross-team contract):
-//   terrain.setOverlay(tex | null)   w x h RGBA DataTexture: rgb tint, a strength.
-//                                    Border lines are drawn where texels differ.
+//   terrain.setOverlay(tex | null)   w x h RGBA DataTexture: rgb tint (sRGB bytes,
+//                                    e.g. a kingdom's hex colour), a strength
+//                                    (0 = none). Texels are read exactly
+//                                    (texelFetch), so filtering does not matter.
+//                                    Crisp glowing border lines are drawn where
+//                                    neighbouring texels differ; set
+//                                    tex.needsUpdate = true after edits.
 //   terrain.heightTexture            float DataTexture (RedFormat, linear filter)
 //                                    of world.height, one texel per tile, kept up
 //                                    to date. Sample with uv = worldXZ / (w, h).
