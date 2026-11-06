@@ -185,7 +185,7 @@ export function generateWorld(world, seed = 1, options = {}) {
           amp *= 0.5;
           freq *= 2.05;
         }
-        e += foot * (2.2 + hn * 1.2) + core * (5.5 + rr * 11.5);
+        e += foot * (2.2 + hn * 1.2) + core * (5.0 + Math.pow(rr, 1.35) * 14.0);
         rangeMask[i] = Math.max(foot, core);
         hgt[i] = e;
       } else {
@@ -203,6 +203,7 @@ export function generateWorld(world, seed = 1, options = {}) {
   }
   // soften: blur land heights (kills single-tile spikes), keep coastline sign
   blurHeights(hgt, land, W, H, 2);
+  terraceMountains(hgt, rangeMask, N);
 
   _t('elev');
   // ---------------------------------------------------------------- 4. lakes
@@ -279,7 +280,8 @@ export function generateWorld(world, seed = 1, options = {}) {
       const dW = Math.sqrt(dWater[i]);
       let t;
       if (h > snowLine || (temp < 0.1 + bn * 0.03 && h > 2)) t = TILE.SNOW;
-      else if (h > rockLine || slope > 2.1 + bn * 0.4) t = TILE.ROCK;
+      else if ((h > rockLine && slope > 0.55 + bn * 0.2) || slope > 2.1 + bn * 0.4) t = TILE.ROCK;
+      else if (h > rockLine) t = temp > 0.32 ? TILE.TUNDRA : TILE.SNOW; // alpine meadow on high benches
       else if (dOc <= 2.2 + bn * 1.2 && h < 1.05 + bn * 0.35 && slope < 0.75) t = TILE.SAND;
       else if (dOc <= 1.5 && slope >= 0.75) t = TILE.ROCK; // sea cliffs
       else if (dW <= 1.1 && h < 0.42 && !ocean[i] && temp > 0.3 && moist < 0.62) t = TILE.SAND; // lake beaches
@@ -507,6 +509,23 @@ function blurHeights(hgt, land, W, H, passes) {
       else v = Math.min(v, -0.18);
       hgt[i] = v;
     }
+  }
+}
+
+// Soft terracing of mountain cores: flat benches separated by steep risers, so
+// ranges read as stepped, stratified massifs instead of smooth cones.
+function terraceMountains(hgt, rangeMask, N) {
+  const step = 2.3;
+  for (let i = 0; i < N; i++) {
+    const m = rangeMask[i];
+    if (m <= 0.15) continue;
+    const h = hgt[i];
+    if (h < 3) continue;
+    const b = Math.floor(h / step) * step;
+    const f = (h - b) / step;
+    const g = smoothstep(0.55, 1.0, f);
+    const k = 0.5 * smoothstep(0.15, 0.7, m) * smoothstep(3, 6, h);
+    hgt[i] = h + (b + g * step - h) * k;
   }
 }
 

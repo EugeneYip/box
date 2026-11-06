@@ -46,6 +46,7 @@ vec3 tEmissive;
 float tAO;
 float tCloud;
 float tSpecK;
+float tCold;
 
 const mat2 ROT1 = mat2(0.80, -0.60, 0.60, 0.80);
 const mat2 ROT2 = mat2(0.28, 0.96, -0.96, 0.28);
@@ -92,7 +93,12 @@ Mat matSand(NS s) {
   // scattered shell / pebble specks
   float speck = smoothstep(0.10, 0.04, s.cellS.r) * step(0.82, s.cellS.b);
   c = mix(c, vec3(0.85, 0.80, 0.70), speck * 0.6 * ripFade);
-  return mk(c, 0.92, 0.18 + 0.10 * s.det.r, 0.035 + 0.02 * rip * ripFade);
+  // polar beaches are grey shingle, not golden sand
+  float cold = 1.0 - smoothstep(0.14, 0.42, s.temp);
+  vec3 shingle = vec3(0.30, 0.295, 0.28) * (0.72 + 0.5 * s.cellS.b) * (0.75 + 0.25 * smoothstep(0.0, 0.12, s.cellS.g));
+  shingle = mix(vec3(0.31, 0.30, 0.285) * (0.9 + 0.2 * s.det.r), shingle, ripFade);
+  c = mix(c, shingle, cold);
+  return mk(c, mix(0.92, 0.75, cold), 0.18 + 0.10 * s.det.r + cold * 0.1, mix(0.035 + 0.02 * rip * ripFade, 0.05 * ripFade, cold));
 }
 Mat matDesert(NS s) {
   // big dune bands + ripples on top
@@ -120,14 +126,17 @@ Mat matGrass(NS s) {
   float near = 1.0 - smoothstep(0.03, 0.16, s.fw);
   float clump = s.det.r * 0.55 + s.micro.r * 0.45;
   float blade = s.micro.a;
-  float tuft = smoothstep(0.6, 0.1, s.cellS.r);
-  c *= 0.80 + 0.36 * clump + (blade - 0.5) * mix(0.10, 0.34, near);
-  c *= mix(1.0, 0.86 + 0.24 * tuft, near);
+  c *= 0.86 + 0.24 * clump + (blade - 0.5) * mix(0.06, 0.16, near);
+  // brush-stroke grain along a slowly turning direction (no cellular dots)
+  vec2 sd = normalize(vec2(0.8, 0.35) + (s.meso.gb - 0.5) * 1.4);
+  vec2 spq = vec2(dot(s.p.xz, sd), dot(s.p.xz, vec2(-sd.y, sd.x)));
+  float stroke = nz(vec2(spq.x * 0.22, spq.y * 1.25)).a;
+  c *= 1.0 + (stroke - 0.5) * 0.08 * mix(0.5, 1.0, near);
   // tiny bright flower / seed specks at close range
   float nearS = 1.0 - smoothstep(0.03, 0.12, s.fw);
   float speck = smoothstep(0.12, 0.05, s.cellS.r) * step(0.90, s.cellS.a) * nearS;
-  c = mix(c, mix(vec3(0.9, 0.85, 0.35), vec3(0.85, 0.55, 0.7), s.cellS.b), speck * 0.7);
-  return mk(c, 0.86, 0.38 + 0.45 * clump, 0.05 + 0.05 * near * tuft);
+  c = mix(c, mix(vec3(0.9, 0.85, 0.35), vec3(0.85, 0.55, 0.7), s.cellS.b), speck * 0.5);
+  return mk(c, 0.86, 0.38 + 0.45 * clump, 0.05 + 0.03 * near * stroke);
 }
 Mat matForest(NS s) {
   vec3 c = vec3(0.060, 0.155, 0.040);
@@ -164,7 +173,7 @@ Mat matSavanna(NS s) {
   float near = 1.0 - smoothstep(0.03, 0.16, s.fw);
   float tuft = smoothstep(0.55, 0.15, s.cellS.r) * (0.6 + 0.4 * s.cellS.b);
   c *= 0.84 + 0.26 * s.det.r;
-  c = mix(c, c * mix(vec3(1.18, 1.10, 0.85), vec3(0.78, 0.74, 0.62), s.cellS.a), tuft * 0.45 * near);
+  c = mix(c, c * mix(vec3(1.08, 1.05, 0.92), vec3(0.92, 0.90, 0.84), s.cellS.a), tuft * 0.5 * near);
   c *= 1.0 + (s.micro.a - 0.5) * 0.30 * near;
   return mk(c, 0.92, 0.36 + 0.35 * s.det.r + tuft * 0.25 * near, 0.05 + 0.05 * tuft * near);
 }
@@ -194,17 +203,24 @@ Mat matTundra(NS s) {
   return mk(c, 0.90, 0.40 + 0.3 * lichen + stones * 0.3, 0.05 + stones * 0.04);
 }
 Mat matSnow(NS s) {
-  vec3 c = vec3(0.80, 0.84, 0.90);
-  // soft blue in hollows and wind drifts
+  // mid-value snow (never paper white): blue-violet hollows, wind ripples
   float drift = s.meso.r * 0.6 + s.det.g * 0.4;
-  c = mix(vec3(0.58, 0.66, 0.80), c, smoothstep(0.25, 0.65, drift));
-  c *= 0.94 + 0.08 * s.micro.r;
-  return mk(c, 0.62, 0.55 + 0.3 * drift, 0.06);
+  vec3 c = mix(vec3(0.40, 0.44, 0.60), vec3(0.64, 0.68, 0.74), smoothstep(0.2, 0.72, drift));
+  c = mix(c, vec3(0.34, 0.37, 0.55), (1.0 - s.ao) * 0.7);
+  vec2 wd = vec2(0.917, 0.401);
+  float rip = sin(dot(s.p.xz + (s.meso.gb - 0.5) * 5.0, wd) * 3.4 + s.det.r * 6.0) * 0.5 + 0.5;
+  float ripFade = 1.0 - smoothstep(0.05, 0.3, s.fw);
+  c *= 0.96 + 0.05 * s.micro.r;
+  c *= 1.0 - 0.05 * rip * ripFade;
+  return mk(c, 0.62, 0.40 + 0.3 * drift, 0.035 + 0.05 * rip * ripFade);
 }
 Mat matRock(NS s) {
-  vec3 warm = vec3(0.340, 0.300, 0.255);
-  vec3 cool = vec3(0.280, 0.285, 0.290);
+  vec3 warm = vec3(0.330, 0.290, 0.245);
+  vec3 cool = vec3(0.255, 0.262, 0.270);
   vec3 c = mix(warm, cool, s.macro.g);
+  // scree: loose stones with dark gaps, so flat rock reads as rocky ground
+  float stone = smoothstep(0.62, 0.25, s.cellS.r);
+  c *= mix(0.62, 1.08 + 0.14 * s.cellS.b, stone);
   // weathered stone: irregular (noise-warped) cracks, grain and mottling
   vec4 cr = cz((s.p.xz + (s.meso.gb - 0.5) * 6.0 + (s.det.rg - 0.5) * 1.5) * (1.0 / 29.0));
   float seam = smoothstep(0.0, 0.06, cr.g + (s.det.b - 0.5) * 0.08);
@@ -215,24 +231,29 @@ Mat matRock(NS s) {
   // lichen flecks
   float lich = smoothstep(0.72, 0.86, s.det.g) * (1.0 - smoothstep(0.3, 0.6, 1.0 - s.n.y));
   c = mix(c, vec3(0.30, 0.30, 0.16), lich * 0.5);
-  return mk(c, 0.80, 0.62 + 0.25 * s.det.r, 0.05 * seam + 0.05);
+  // alpine turf creeps over flat rock in hollows
+  float turf = smoothstep(0.86, 0.97, s.n.y) * smoothstep(0.55, 0.78, s.meso.g * 0.6 + s.det.r * 0.4) * (1.0 - smoothstep(0.1, 0.3, 1.0 - s.temp - 0.6));
+  c = mix(c, vec3(0.115, 0.185, 0.060) * (0.85 + 0.3 * s.micro.r), turf * 0.8);
+  return mk(c, 0.80, 0.50 + 0.25 * s.det.r + 0.25 * stone, 0.05 * seam + 0.05 + 0.04 * stone);
 }
 Mat matLava(NS s) {
   float t = uLTime;
-  // slowly drifting crust plates with glowing seams
-  vec2 flow = vec2(t * 0.045, t * 0.02);
+  // dark basalt crust plates drifting on the flow, glowing only in the cracks
+  vec2 flow = vec2(t * 0.06, t * 0.025);
   vec2 wq = s.p.xz + (nz(s.p.xz * 0.04 + flow * 0.3).rg - 0.5) * 3.0;
-  vec4 crust = cz(ROT1 * (wq + flow) * (1.0 / 22.0));
-  vec4 crust2 = cz(ROT2 * (wq - flow * 0.7) * (1.0 / 9.0));
-  float seam = 1.0 - smoothstep(0.0, 0.16, crust.g);
-  float seam2 = 1.0 - smoothstep(0.0, 0.10, crust2.g);
-  float pulse = 0.75 + 0.25 * sin(t * 1.7 + crust.b * 6.28) * sin(t * 0.9 + s.meso.r * 9.0);
-  float molten = smoothstep(0.55, 0.85, nz(wq * 0.07 + flow * 0.5).r);
-  float glow = clamp(seam * 0.9 + seam2 * 0.45 + molten * 0.85, 0.0, 1.0) * pulse;
-  vec3 crustCol = mix(vec3(0.040, 0.028, 0.022), vec3(0.11, 0.06, 0.04), crust.b);
-  vec3 hot = mix(vec3(1.0, 0.22, 0.02), vec3(1.0, 0.65, 0.18), glow * glow);
-  Mat m = mk(mix(crustCol, hot * 0.6, glow), mix(0.85, 0.4, glow), 0.30 + 0.25 * (1.0 - seam), 0.08 * (1.0 - glow));
-  m.emit = hot * (glow * 7.0 + 0.35) + vec3(0.35, 0.05, 0.0);
+  vec4 crust = cz(ROT1 * (wq + flow) * (1.0 / 14.0));
+  vec4 crust2 = cz(ROT2 * (wq - flow * 0.6) * (1.0 / 6.0));
+  float crack = 1.0 - smoothstep(0.0, 0.075, crust.g);
+  float crack2 = 1.0 - smoothstep(0.0, 0.045, crust2.g);
+  float rim = 1.0 - smoothstep(0.0, 0.24, crust.g);
+  float pulse = 0.8 + 0.2 * sin(t * 1.6 + crust.b * 6.28);
+  float pool = smoothstep(0.80, 0.93, nz(wq * 0.06 + flow * 0.4).r);
+  float glow = clamp(crack + crack2 * 0.45 + pool, 0.0, 1.0) * pulse;
+  vec3 crustCol = mix(vec3(0.026, 0.019, 0.017), vec3(0.070, 0.042, 0.030), crust.b) * (0.8 + 0.4 * s.det.r);
+  crustCol = mix(crustCol, vec3(0.16, 0.04, 0.01), rim * 0.35);
+  vec3 hot = mix(vec3(0.95, 0.20, 0.02), vec3(1.0, 0.48, 0.08), glow);
+  Mat m = mk(mix(crustCol, hot * 0.3, glow), mix(0.85, 0.5, glow), 0.35 + 0.35 * s.meso.b + 0.2 * crust.b, 0.06 * (1.0 - glow));
+  m.emit = hot * glow * 3.0 + vec3(0.8, 0.14, 0.01) * rim * 0.30 * pulse;
   return m;
 }
 Mat matAsh(NS s) {
@@ -287,10 +308,10 @@ Mat matRoad(NS s) {
   return mk(c, 0.95, 0.25 + 0.2 * cob * hasCob, 0.03 + 0.05 * cob * hasCob);
 }
 Mat matIce(NS s) {
-  vec3 c = vec3(0.48, 0.68, 0.82);
+  vec3 c = vec3(0.36, 0.50, 0.62);
   float cracks = 1.0 - smoothstep(0.0, 0.05, s.cellL.g);
-  c = mix(c, vec3(0.80, 0.90, 0.96), cracks * 0.7);
-  c = mix(c, vec3(0.32, 0.55, 0.74), smoothstep(0.5, 0.8, s.meso.r) * 0.4);
+  c = mix(c, vec3(0.56, 0.65, 0.72), cracks * 0.6);
+  c = mix(c, vec3(0.26, 0.40, 0.56), smoothstep(0.5, 0.8, s.meso.r) * 0.4);
   return mk(c, 0.07 + cracks * 0.3, 0.45, 0.02 + cracks * 0.02);
 }
 
@@ -336,11 +357,14 @@ Mat matCliff(NS s, out vec3 facetN) {
   float lr = mix(hash12(vec2(layer, 3.7)), hash12(vec2(layer + 1.0, 3.7)), lt);
   float bandFade = 1.0 - smoothstep(0.25, 0.7, s.fwy * 0.62);
   lr = mix(0.5, lr, bandFade);
-  vec3 cA = vec3(0.370, 0.325, 0.270);
-  vec3 cB = vec3(0.285, 0.270, 0.255);
-  vec3 cC = vec3(0.445, 0.380, 0.300);
+  vec3 cA = vec3(0.390, 0.335, 0.275);
+  vec3 cB = vec3(0.215, 0.205, 0.200);
+  vec3 cC = vec3(0.500, 0.420, 0.320);
   vec3 c = mix(mix(cB, cA, smoothstep(0.15, 0.6, lr)), cC, smoothstep(0.72, 0.95, lr));
-  c *= 0.84 + 0.26 * d.r;
+  c *= 0.80 + 0.32 * d.r;
+  // terraced ledges: each layer lit on top, shadowed underneath
+  float led = smoothstep(0.15, 0.85, fract(sy));
+  c *= mix(1.0, mix(0.74, 1.16, led), bandFade);
   // chunky facets: large cells on the projected plane, each with its own tilt
   vec4 fX = cz(vec2(p.z * 0.055, p.y * 0.085 + p.x * 0.02));
   vec4 fZ = cz(vec2(p.x * 0.055, p.y * 0.085 + p.z * 0.02));
@@ -348,8 +372,8 @@ Mat matCliff(NS s, out vec3 facetN) {
   vec3 tA = normalize(cross(n, vec3(0.0, 1.0, 0.0)) + vec3(1e-4, 0.0, 0.0));
   vec3 tB = normalize(cross(tA, n));
   float near = 1.0 - smoothstep(0.25, 0.9, s.fw);
-  facetN = normalize(n + (tA * (f.b - 0.5) * 0.6 + tB * (f.a - 0.5) * 0.45) * near);
-  c *= 0.90 + 0.2 * f.b;
+  facetN = normalize(n + (tA * (f.b - 0.5) * 0.85 + tB * (f.a - 0.5) * 0.65) * near);
+  c *= 0.80 + 0.40 * f.b;
   return mk(c, 0.82, 0.55 + 0.25 * lr + 0.2 * t.g, 0.05);
 }
 
@@ -357,7 +381,7 @@ Mat matCliff(NS s, out vec3 facetN) {
 vec3 seabedColor(NS s, float depth, out float hgt) {
   vec2 q = s.p.xz + (s.meso.rg - 0.5) * 4.0;
   float rip = sin(dot(q, vec2(1.6, 0.9)) * 2.2 + s.det.r * 4.0) * 0.5 + 0.5;
-  vec3 sand = vec3(0.60, 0.50, 0.32) * (0.88 + 0.16 * s.det.g);
+  vec3 sand = mix(vec3(0.60, 0.50, 0.32), vec3(0.29, 0.285, 0.27), 1.0 - smoothstep(0.14, 0.42, s.temp)) * (0.88 + 0.16 * s.det.g);
   sand *= 1.0 - 0.10 * rip * (1.0 - smoothstep(0.1, 0.4, s.fw));
   vec3 silt = vec3(0.24, 0.24, 0.20) * (0.8 + 0.3 * s.meso.r);
   vec3 rock = vec3(0.12, 0.13, 0.13) * (0.7 + 0.5 * s.cellL.b) * (0.6 + 0.4 * smoothstep(0.0, 0.1, s.cellL.g));
@@ -425,16 +449,21 @@ void applyOverlay(vec2 p, inout vec3 albedo, inout vec3 emissive) {
   float uniformRegion = step(0.999, fo);
   // distance (in tiles) from the border contour, approximately
   float dist = (fo - 0.5);
-  float lineW = max(0.11, fwd * 1.7);
-  float line = (1.0 - smoothstep(lineW, lineW + fwd * 1.3, dist)) * (1.0 - uniformRegion);
+  // crisp 2-3 px borders at every zoom; fill strength fades out up close
+  float lineW = fwd * 2.2;
+  float line = (1.0 - smoothstep(lineW, lineW + fwd * 1.0, dist)) * (1.0 - uniformRegion);
   float glow = exp(-max(dist, 0.0) * 4.5) * (1.0 - uniformRegion);
+  float fillK = smoothstep(22.0, 110.0, uCamDist);
   vec3 col = pow(own.rgb, vec3(2.2)); // overlay colours are authored in sRGB
   float a = own.a;
-  albedo = mix(albedo, albedo * 0.55 + col * 0.45, a * 0.42);
+  // fill saturates on alpha (owners may write partial strength): >= 40% at map zoom
+  float aFill = clamp(a * 1.7, 0.0, 1.0);
+  albedo = mix(albedo, albedo * 0.45 + col * 0.55, aFill * 0.42 * fillK);
   vec3 lineCol = col * 1.05 + 0.015;
-  albedo = mix(albedo, albedo * (1.0 - 0.35 * a) + col * 0.35 * a, glow * 0.6);
+  albedo = mix(albedo, albedo * (1.0 - 0.35 * a) + col * 0.35 * a, glow * mix(0.3, 0.6, fillK));
   albedo = mix(albedo, lineCol, line * min(1.0, a * 1.3));
-  emissive += (lineCol * line * 0.9 + col * glow * 0.35) * a * (0.5 + 0.5 * (1.0 - uDay));
+  // gentle self-glow by day, dim at night (lamps and fires must stay brighter)
+  emissive += (lineCol * line * 0.9 + col * glow * 0.3) * a * mix(0.05, 0.30, uDay);
 }
 
 void terrainSurface() {
@@ -497,13 +526,16 @@ void terrainSurface() {
   // ---- slope driven cliffs
   vec3 nrm = s.n;
   float slopeN = s.n.y + (s.meso.b - 0.5) * 0.10 + (s.det.r - 0.5) * 0.06;
-  float cliff = smoothstep(0.76, 0.60, slopeN) * (1.0 - lavaRaw) * (1.0 - iceB);
+  float cliff = smoothstep(0.745, 0.665, slopeN) * (1.0 - lavaRaw) * (1.0 - iceB);
+  // a darker, lusher lip of turf along the top of every rock face
+  float lip = smoothstep(0.83, 0.75, slopeN) * (1.0 - cliff) * (1.0 - snowB) * (1.0 - dot(vec4(equal(vec4(t0, t1, t2, t3), vec4(0.0))) * live, b));
+  albedo = mix(albedo, albedo * vec3(0.72, 0.84, 0.70), lip * 0.8);
   vec3 facetN = nrm;
   if (cliff > 0.001) {
     Mat cm = matCliff(s, facetN);
     // snow clings to ledges that face up
     float snowLedge = snowB * smoothstep(0.55, 0.75, facetN.y + (s.det.g - 0.5) * 0.3);
-    cm.albedo = mix(cm.albedo, vec3(0.78, 0.82, 0.88), snowLedge);
+    cm.albedo = mix(cm.albedo, vec3(0.60, 0.64, 0.71), snowLedge);
     albedo = mix(albedo, cm.albedo, cliff);
     rough = mix(rough, cm.rough, cliff);
     H = mix(H, cm.h * cm.bump, cliff);
@@ -540,8 +572,10 @@ void terrainSurface() {
     float ember = smoothstep(0.4, 0.9, s.det.g * 0.6 + s.micro.r * 0.4);
     emit += vec3(1.0, 0.30, 0.04) * s.fire * (0.4 + ember * 2.2) * fl;
   }
-  // heat glow around lava
-  emit += vec3(0.9, 0.18, 0.02) * smoothstep(0.0, 1.0, lavaRaw) * (1.0 - dot(isLava, b)) * 0.8;
+  // lava: cooled crust at the pool edge, organic heat glow around it
+  float lavaB = dot(isLava, b);
+  emit *= mix(1.0, smoothstep(0.2, 0.85, lavaB), step(0.001, lavaB));
+  emit += vec3(0.8, 0.15, 0.015) * smoothstep(0.05, 1.0, lavaRaw) * (1.0 - lavaB) * 0.45 * (0.6 + 0.8 * s.meso.r);
 
   // ---- normals: material bump + seabed ripples
   vec3 nb = bumpPerturb(s.p, nrm, H);
@@ -557,7 +591,7 @@ void terrainSurface() {
     float ph = fract(r * 13.7 + dot(vd, vec3(5.1, 3.7, 4.3)));
     float spark = smoothstep(0.965, 1.0, ph) * smoothstep(0.35, 0.05, length(fract(sp) - 0.5));
     spark *= 1.0 - smoothstep(0.04, 0.14, s.fw);
-    emit += uSunCol * (spark * 1.6 * uDay + spark * 0.25) * snowAll;
+    emit += uKeyCol * KEYN * spark * 1.2 * snowAll;
   }
 
   // ---- territory overlay
@@ -570,6 +604,7 @@ void terrainSurface() {
   tAO = mix(0.35, 1.0, s.ao);
   tCloud = cloudShadowAt(p);
   tSpecK = 1.0;
+  tCold = 1.0 - smoothstep(0.14, 0.42, s.temp);
 }
 `;
 
@@ -582,9 +617,10 @@ export const TERRAIN_FRAGMENT_POST = /* glsl */ `
     float viewY = abs(vdir.y);
     // caustics are light: modulate the lit seabed in shallow, sunny water
     float cs = causticsAt(vWPos.xz, uLTime) * (1.0 - smoothstep(0.3, 4.5, depthW)) * smoothstep(0.0, 0.35, depthW);
-    float sunVis = clamp(uDay, 0.0, 1.0) * tCloud;
+    float sunVis = clamp(lum(uKeyCol * KEYN), 0.0, 1.0) * smoothstep(0.0, 0.2, uKeyDir.y) * tCloud;
+    gCold = tCold;
     outgoingLight *= 1.0 + cs * 0.55 * sunVis;
-    outgoingLight = applyWaterColumn(outgoingLight, depthW, viewY);
+    outgoingLight = applyWaterColumn(outgoingLight, depthW, viewY, tCloud);
   }
 }
 `;
@@ -612,5 +648,5 @@ export function patchTerrainMaterial(material, uniforms) {
       )
       .replace('#include <opaque_fragment>', TERRAIN_FRAGMENT_POST + '\n#include <opaque_fragment>');
   };
-  material.customProgramCacheKey = () => 'worldseed-terrain-v1';
+  material.customProgramCacheKey = () => 'worldseed-terrain-v2';
 }

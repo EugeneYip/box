@@ -44,7 +44,13 @@ export class Water {
       uNoise: { value: noise.noise },
       uCells: { value: noise.cells },
       uCamFar: { value: 2000 },
+      uClimTex: { value: terrain?.climTexture || null },
     };
+    if (!this.uniforms.uClimTex.value) {
+      const t = new THREE.DataTexture(new Uint8Array([128, 128, 255, 0]), 1, 1);
+      t.needsUpdate = true;
+      this.uniforms.uClimTex.value = t;
+    }
     if (!this.uniforms.uTypeTex.value) {
       const t = new THREE.DataTexture(new Uint8Array(W * H), W, H, THREE.RedFormat, THREE.UnsignedByteType);
       t.needsUpdate = true;
@@ -104,6 +110,7 @@ export class Water {
     if (g.terrain?.heightTexture && this.uniforms.uHeightTex.value !== g.terrain.heightTexture) {
       this.uniforms.uHeightTex.value = g.terrain.heightTexture;
       this.uniforms.uTypeTex.value = g.terrain.typeTexture;
+      if (g.terrain.climTexture) this.uniforms.uClimTex.value = g.terrain.climTexture;
     }
     if (this._shoreDirty) {
       this._shoreTimer -= dt;
