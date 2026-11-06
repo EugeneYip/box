@@ -45,8 +45,8 @@ export class LightPool {
   }
 
   // Persistent source for this frame only (call every frame while active).
-  request(key, x, y, z, color, intensity, range) {
-    this.requests.push({ key, x, y, z, color, intensity, range });
+  request(key, x, y, z, color, intensity, range, smoke = 1) {
+    this.requests.push({ key, x, y, z, color, intensity, range, smoke });
   }
 
   clear() {
@@ -111,6 +111,6 @@ export class LightPool {
     // mirror into the particle shader so smoke / dust are lit too
     const U = this.fx.uniforms;
     U.uPL.value[i].set(c.x, c.y, c.z, c.range);
-    U.uPLC.value[i].set(c.color.r, c.color.g, c.color.b).multiplyScalar(c.intensity * 0.45);
+    U.uPLC.value[i].set(c.color.r, c.color.g, c.color.b).multiplyScalar(c.intensity * 0.45 * (c.smoke ?? 1));
   }
 }

@@ -1,6 +1,10 @@
 import * as THREE from 'three';
 import { HEIGHT_GLSL } from './HeightField.js';
-import { FLORA_INFO } from '../../world/constants.js';
+import { FLORA_INFO, TILE } from '../../world/constants.js';
+const TILE_ASH = TILE.ASH,
+  TILE_GRASS = TILE.GRASS,
+  TILE_FOREST = TILE.FOREST,
+  TILE_SAVANNA = TILE.SAVANNA;
 import { RAMP, PF } from './FxTextures.js';
 
 const PF_GLOW = PF.GLOW;
@@ -68,10 +72,14 @@ void main() {
   vec3 col;
   float fall;
   if (vKind < 0.5) {
-    fall = exp(-r * r * 3.4) * edge;
-    float fl = 0.72 + 0.28 * sin(uTime * 11.0 + vSeed * 40.0) * sin(uTime * 6.7 + vSeed * 13.0);
-    float n = vnoise(vW * 1.7 + vec2(uTime * 0.6, -uTime * 0.4));
-    col = mix(vec3(1.0, 0.22, 0.02), vec3(1.0, 0.6, 0.16), vI * (0.6 + 0.4 * n)) * vI * fl * (0.75 + 0.5 * n) * 1.25;
+    // burning ground: saturated deep red-orange with a glowing ember-crack
+    // network (ridged noise), never a flat golden wash
+    fall = exp(-r * r * 3.0) * edge;
+    float fl = 0.75 + 0.25 * sin(uTime * 11.0 + vSeed * 40.0) * sin(uTime * 6.7 + vSeed * 13.0);
+    float n1 = vnoise(vW * 2.2 + vec2(uTime * 0.12, 0.0));
+    float n2 = vnoise(vW * 5.3 - uTime * 0.08);
+    float cracks = pow(1.0 - abs(2.0 * n1 - 1.0), 6.0) * 0.85 + pow(1.0 - abs(2.0 * n2 - 1.0), 8.0) * 0.6;
+    col = mix(vec3(0.9, 0.09, 0.005), vec3(1.0, 0.3, 0.03), clamp(cracks, 0.0, 1.0)) * vI * fl * (0.3 + 2.2 * cracks);
   } else if (vKind < 1.5) {
     fall = exp(-r * r * 2.2) * edge;
     float sp = vnoise(vW * 6.0 + vSeed) * vnoise(vW * 2.3 - uTime * 0.05);
@@ -241,16 +249,38 @@ export class FireVisuals {
       const tree = info && info.isTree;
       const gr = tree ? 0.4 + 0.6 * growth[i] : 0;
       const ground = world.heightAt(x, z);
-      // flames
-      let e = (tree ? 5.5 : 3.2) * f * dt * rateK;
+      // fire front: a burning tile next to unburnt fuel
+      let front = false;
+      if (tx > 0 && tx < W - 1 && ty > 0 && ty < world.h - 1) {
+        const nb = [i + 1, i - 1, i + W, i - W];
+        for (const j of nb)
+          if (world.fire[j] <= 0.01 && world.type[j] !== TILE_ASH && (flora[j] || world.type[j] === TILE_GRASS || world.type[j] === TILE_FOREST || world.type[j] === TILE_SAVANNA)) {
+            front = true;
+            break;
+          }
+      }
+      // flames: strongly varied sizes (0.5x .. 2x), redder ramp
+      let e = (tree ? 4.2 : 2.4) * f * dt * rateK;
       while (e > 0) {
         if (e < 1 && rnd() > e) break;
         e -= 1;
         const jx = (rnd() - 0.5) * 0.85,
           jz = (rnd() - 0.5) * 0.85;
         const fy = tree ? ground + gr * (0.2 + rnd() * 1.2) : ground + 0.02;
-        const size = (tree ? 0.85 + rnd() * 0.8 : 0.42 + rnd() * 0.5) * (0.5 + 0.65 * f) * lod;
-        flame(fx, x + jx, fy, z + jz, size, { bright: 1.15 + f * 0.5, aspect: 1.15 + rnd() * 0.4 });
+        const v = rnd();
+        const mul = 0.5 + 1.5 * v * v;
+        const size = (tree ? 0.8 : 0.45) * mul * (0.55 + 0.6 * f) * lod;
+        flame(fx, x + jx, fy, z + jz, size, { bright: 0.9 + f * 0.45, aspect: 1.05 + rnd() * 0.55, ramp: rnd() < 0.4 ? RAMP.FIRE_DEEP : RAMP.FIRE });
+      }
+      // wide flame sheets rolling along the front
+      if (front && rnd() < (tree ? 2.4 : 1.6) * f * dt * rateK) {
+        const along = rnd() - 0.5;
+        flame(fx, x + along * 0.9, ground + (tree ? gr * 0.35 : 0.02), z - along * 0.9, (tree ? 2.0 : 1.4) * (0.8 + 0.5 * rnd()) * lod, {
+          bright: 1.0 + f * 0.4,
+          aspect: 0.72 + rnd() * 0.25,
+          ramp: RAMP.FIRE_DEEP,
+          life: 0.7 + rnd() * 0.4,
+        });
       }
       // soft volumetric halo behind the tongues
       e = (tree ? 2.2 : 1.2) * f * dt * rateK;
@@ -278,17 +308,43 @@ export class FireVisuals {
       // embers
       e = (tree ? 1.6 : 0.45) * f * dt * budget / lod;
       if (rnd() < e) ember(fx, x, ground + (tree ? gr * 1.2 : 0.3), z, { size: lod * 0.9 });
-      // smoke: big overlapping puffs that build a drifting column
-      e = (tree ? 1.15 : 0.6) * f * dt * rateK;
+      // thin per-tile wisps only; the big plumes are emitted per cluster below
+      e = (tree ? 0.25 : 0.12) * f * dt * rateK;
       if (rnd() < e) {
         smokePuff(fx, x + (rnd() - 0.5) * 0.6, ground + (tree ? gr * 1.7 : 0.6), z + (rnd() - 0.5) * 0.6, {
-          size: (tree ? 1.5 : 1.1) * lod,
-          grow: 3.2,
+          size: (tree ? 1.1 : 0.8) * lod,
+          grow: 2.6,
           ramp: raining && rnd() < 0.6 ? RAMP.STEAM : RAMP.FIRE_SMOKE,
           glow: 0.8,
           rise: 1.25 * Math.sqrt(lod),
-          life: (6 + rnd() * 3.5) * (0.8 + lod * 0.25),
+          life: (4 + rnd() * 2.5) * (0.8 + lod * 0.25),
           drift: 2.4,
+        });
+      }
+      if (c) {
+        c.vis = true;
+        if (c.gy == null || ground > c.gy) c.gy = ground;
+      }
+    }
+    // ---- per-cluster smoke plumes: few, large, opaque, bent downwind ----
+    for (const c of cells.values()) {
+      if (!c.vis) continue;
+      const cxm = c.x / c.n,
+        czm = c.z / c.n;
+      const avg = c.f / c.n;
+      const rate = (0.5 + Math.sqrt(c.n) * 0.75) * avg * dt * budget / Math.sqrt(lod);
+
+      if (rnd() < rate) {
+        const spread = 1.2 + Math.sqrt(c.n) * 0.35;
+        smokePuff(fx, cxm + (rnd() - 0.5) * spread, (c.gy ?? 0) + 1.2 + rnd() * 1.2, czm + (rnd() - 0.5) * spread, {
+          size: (1.8 + Math.sqrt(c.n) * 0.32) * Math.pow(lod, 0.75),
+          grow: 3.4,
+          ramp: raining && rnd() < 0.6 ? RAMP.STEAM : RAMP.PLUME,
+          glow: 0.7,
+          rise: 1.9 + rnd() * 0.8,
+          drift: 3.6,
+          drag: 0.4,
+          life: (11 + rnd() * 5) * (0.85 + lod * 0.15),
         });
       }
     }
@@ -344,17 +400,17 @@ export class FireVisuals {
       for (let j = 0; j < Math.min(4, arr.length); j++) {
         const [key, c] = arr[j];
         const fl = 0.8 + 0.12 * Math.sin(t * 13 + key) + 0.08 * Math.sin(t * 29.7 + key * 3.1);
-        const inten = Math.min(4.5, 0.7 + Math.sqrt(c.f) * 0.5) * fl * (0.55 + 0.7 * night);
+        const inten = Math.min(4.5, 0.7 + Math.sqrt(c.f) * 0.5) * fl * (0.6 + 1.1 * night);
         const y = world.surfaceAt(c.x, c.z) + 2.4 + Math.min(3, Math.sqrt(c.n) * 0.3);
         const col = c.lava ? this._lavaCol : this._fireCol;
-        fx.lights.request('fl' + key, c.x, y, c.z, col, inten, 12 + Math.sqrt(c.n) * 2.2);
+        fx.lights.request('fl' + key, c.x, y, c.z, col, inten, 14 + Math.sqrt(c.n) * 2.6, 1.3);
       }
     }
   }
   get _fireCol() {
-    return (this.__fc ||= new THREE.Color(1.0, 0.55, 0.2));
+    return (this.__fc ||= new THREE.Color(1.0, 0.38, 0.09));
   }
   get _lavaCol() {
-    return (this.__lc ||= new THREE.Color(1.0, 0.38, 0.1));
+    return (this.__lc ||= new THREE.Color(1.0, 0.3, 0.06));
   }
 }
