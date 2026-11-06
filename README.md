@@ -6,7 +6,12 @@ An original god-simulation sandbox for the browser, built with Three.js. Shape c
 
 ## Deployment (GitHub Pages)
 
-The workflow in `.github/workflows/pages.yml` builds the game on every push and publishes it to GitHub Pages whenever the repository's default branch is updated. One-time setup in the repository settings: **Settings → Pages → Build and deployment → Source: GitHub Actions**. After that, every push to the default branch redeploys automatically; a run can also be started by hand from the Actions tab ("Run workflow").
+The workflow in `.github/workflows/pages.yml` builds the game on every push and publishes it to GitHub Pages whenever the repository's default branch is updated. One-time setup in the repository settings:
+
+1. **Settings → Pages → Build and deployment → Source: GitHub Actions.**
+2. **Settings → Environments → `github-pages` → Deployment branches and tags:** allow the default branch (currently `claude/zen-sagan-1c54ib`), or choose "No restriction". Without this, the deploy job fails with "Branch … is not allowed to deploy to github-pages due to environment protection rules".
+
+After that, every push to the default branch redeploys automatically; a failed run can be retried from the Actions tab ("Re-run failed jobs"), and a fresh one started with "Run workflow".
 
 The build uses relative asset paths (`base: './'` in `vite.config.js`), so it works under the `/box/` project-page path or any other subpath without changes.
 
