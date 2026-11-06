@@ -27,6 +27,13 @@ import { politics, relKey } from './politics.js';
 //   goldenAge(kingdomId), villageAt(x,z), kingdomAt(tx,ty), atWar(a,b), allied(a,b),
 //   grantPlenty(village), version / stateVersion / fieldVersion / colorVersion counters.
 
+// Growth budget: the world stays lively but bounded (performance target is
+// about 1,000 units and 300-400 buildings on a 256 map).
+const HUMAN_SOFT_CAP = 850;
+const BUILDING_SOFT_CAP = 300;
+const VILLAGE_MAX_POP = 64;
+const MAX_VILLAGES = 26;
+
 export class Civilization {
   constructor(game) {
     this.game = game;
@@ -340,6 +347,7 @@ export class Civilization {
       for (const u of v.members) if (u.age >= ADULT_AGE + 2 && (!ruler || u.age > ruler.age)) ruler = u;
       if (ruler) this.crown(k, ruler);
       if (!opts.silent) this._note(`The ${k.name} is founded at ${v.name}.`, 'good', { x: v.cx, z: v.cz });
+      if (!opts.silent) this._sfx('bell', v.cx, v.cz, 0, true);
     }
     this._assignJobs(v);
     this._territory();
@@ -382,11 +390,12 @@ export class Civilization {
   _tryExpand(v) {
     const now = this.game.time.total;
     if (v.pop < 24 || v.food < 50 || v.starving) return false;
-    if (now - v.lastExpand < YEAR * 5) return false;
+    const crowd = this._crowd();
+    if (now - v.lastExpand < YEAR * (5 + crowd * 10)) return false;
     const k = this.kingdoms[v.kingdom];
-    if (!k || now - (k.lastExpand || -999) < YEAR * 2.5) return false;
+    if (!k || now - (k.lastExpand || -999) < YEAR * (2.5 + crowd * 6)) return false;
     const aliveVillages = this.villages.filter((o) => o.alive).length;
-    if (aliveVillages >= 44 || k.villages.length >= 10) return false;
+    if (aliveVillages >= MAX_VILLAGES || k.villages.length >= 8 || crowd >= 0.98) return false;
     if (this.expeditions.some((e) => e.from === v.id)) return false;
     v.lastExpand = now;
     const site = this._findExpansionSite(v);
@@ -460,6 +469,7 @@ export class Civilization {
     });
     if (!nv) return this._abortExpedition(exp);
     exp.village = nv.id;
+    this._sfx('bell', nv.cx, nv.cz, 2);
     nv.food = 30;
     nv.wood = 26;
     nv.stone = 6;
@@ -629,6 +639,10 @@ export class Civilization {
     // gold: markets trade, road links carry merchants, soldiers draw pay
     const markets = v.buildings.reduce((n, b) => n + (b.alive && b.type === 'market' && !b.constructing ? 1 : 0), 0);
     v.gold += ((markets * (0.8 + pop * 0.02) + (v.tradeLinks || 0) * 0.35) / YEAR) * dt;
+    if (markets && this.rng.chance(0.06 * dt)) {
+      const m = v.buildings.find((b) => b.alive && b.type === 'market' && !b.constructing);
+      if (m) this._sfx('coin', m.x, m.z, 3);
+    }
     v.gold = Math.max(0, v.gold - (((v.jobCount.soldier || 0) * 0.04) / YEAR) * dt);
     v.gold = Math.min(v.gold, 60 + v.tier * 60);
     v.foodCap = Math.max(v.foodCap, 60);
@@ -640,7 +654,7 @@ export class Civilization {
         const last = this._famineNote.get(v.id) || -999;
         if (now - last > 90) {
           this._famineNote.set(v.id, now);
-          this._note(`Famine strikes ${v.name}.`, 'bad', { x: v.cx, z: v.cz }, 'famine' + v.id, 300);
+          this._note(`Famine strikes ${v.name}.`, 'disaster', { x: v.cx, z: v.cz }, 'famine' + v.id, 300);
         }
       }
     } else if (v.food > pop * 0.6 + 3) v.starving = false;
@@ -666,7 +680,9 @@ export class Civilization {
 
     // births
     const humans = g.units.count?.('human') ?? 0;
-    if (pop < v.housing && v.food > pop * 1.2 + 8 && !v.starving && humans < 1300) {
+    const crowd = this._crowd();
+    const popCrowd = this._popCrowd || 0;
+    if (pop < v.housing && pop < VILLAGE_MAX_POP && v.food > pop * 1.2 + 8 && !v.starving && humans < HUMAN_SOFT_CAP && this.rng.chance(1 - popCrowd * 0.85)) {
       let father = false;
       for (const u of v.members) if (u.sex === 'm' && u.age >= 18 && u.age < 60) father = true;
       if (father) {
@@ -688,7 +704,7 @@ export class Civilization {
     }
 
     // newcomers drawn to prosperous settlements
-    if (v.housing - pop >= 3 && v.food > pop * 2 + 20 && pop < 46 && now - v.lastImmigrant > 18 && humans < 1250 && this.rng.chance(0.035 * dt)) {
+    if (v.housing - pop >= 3 && v.food > pop * 2 + 20 && pop < 40 && now - v.lastImmigrant > 18 && humans < HUMAN_SOFT_CAP * 0.8 && this.rng.chance(0.035 * dt * (1 - popCrowd))) {
       v.lastImmigrant = now;
       const a = this.rng.float(0, Math.PI * 2);
       const r = v.radius + 3;
@@ -710,6 +726,19 @@ export class Civilization {
       const k = this.kingdoms[v.kingdom];
       this._note(`${v.name} has grown into a ${v.tier === 1 ? 'town' : 'city'}${k ? ' of the ' + k.name : ''}.`, 'good', { x: v.cx, z: v.cz }, 'tier' + v.id + v.tier, 600);
     }
+  }
+
+  // 0 = empty world .. 1 = at the performance budget (units and buildings)
+  _crowd() {
+    const t = this.game.time.total;
+    if (this._crowdT === t) return this._crowdV;
+    const humans = this.game.units.count?.('human') ?? 0;
+    let blds = 0;
+    for (const b of this.buildings) if (b.alive) blds += BUILDING_TYPES[b.type].wall ? 0.35 : 1;
+    this._crowdT = t;
+    this._popCrowd = clamp((humans - HUMAN_SOFT_CAP * 0.55) / (HUMAN_SOFT_CAP * 0.45), 0, 1);
+    this._crowdV = clamp(Math.max(this._popCrowd, (blds - BUILDING_SOFT_CAP * 0.5) / (BUILDING_SOFT_CAP * 0.5)), 0, 1);
+    return this._crowdV;
   }
 
   _homeFor(v, u) {
@@ -736,7 +765,7 @@ export class Civilization {
         else if (k.capital === v.id) this._chooseCapital(k);
       }
     }
-    if (why !== 'silent' && v.pop0 !== 0) this._note(`${v.name} has been ${why === 'razed' ? 'razed and abandoned' : 'abandoned'}.`, 'bad', { x: v.cx, z: v.cz });
+    if (why !== 'silent' && v.pop0 !== 0) this._note(`${v.name} has been ${why === 'razed' ? 'razed and abandoned' : 'abandoned'}.`, why === 'razed' ? 'disaster' : 'bad', { x: v.cx, z: v.cz });
     this.version++;
     this.colorVersion++;
   }
@@ -930,8 +959,9 @@ export class Civilization {
     v.need = null;
     const pop = v.pop;
     if (room() && pop >= 8 && count('granary') === 0 && v.food > v.foodCap * 0.7) build('granary');
-    // 1 housing
-    if (room() && v.housing - pop < 2 + v.tier) {
+    const crowded = this._crowd();
+    // 1 housing (bounded: big towns upgrade instead of sprawling)
+    if (room() && v.housing - pop < 2 + v.tier && v.housing < VILLAGE_MAX_POP + 6 && (crowded < 0.97 || v.tier >= 1)) {
       const cand = v.tier >= 1 ? v.buildings.find((b) => b.alive && b.type === 'house' && !b.constructing && !b.upgrading && b.level < Math.min(3, v.tier + 1)) : null;
       if (!(cand && this.rng.chance(0.5) && upgrade(cand))) build('house');
     }
@@ -961,13 +991,14 @@ export class Civilization {
       const t = v.buildings.find((b) => b.alive && b.type === 'temple' && b.level < 2 && !b.constructing);
       if (t) upgrade(t);
     }
-    if (v.tier >= 2 && !v.wallsPlanned && v.stone >= 60) this._planWalls(v);
+    // only royal capitals raise curtain walls (each section is a building)
+    if (v.tier >= 2 && !v.wallsPlanned && v.stone >= 60 && this.kingdoms[v.kingdom]?.capital === v.id && crowded < 0.9) this._planWalls(v);
     if (v.wallsPlanned && v.wallPlan?.length) this._advanceWalls(v, 3);
     if (room() && v.tier >= 1) {
       const cand = v.buildings.find((b) => b.alive && b.type === 'house' && !b.constructing && !b.upgrading && b.level < Math.min(3, v.tier + 1));
       if (cand && v.wood > 40) upgrade(cand);
     }
-    if (room() && v.wood > 45 && v.housing < pop + 6) build('house');
+    if (room() && v.wood > 45 && v.housing < pop + 6 && v.housing < VILLAGE_MAX_POP && crowded < 0.6) build('house');
     // keep a few streets in hand for growth
     if (actions === 0 && this.rng.chance(0.25)) this._extendRoads(v);
     this._tryExpand(v);
@@ -1056,6 +1087,7 @@ export class Civilization {
     this.version++;
     const v = this.villages[b.village];
     if (v) this._updateVillageDerived(v);
+    this._sfx('bell', b.x, b.z, 1.5);
     if (b.type === 'hall' && v) this._note(`${v.name} raises a ${buildingLabel(b).toLowerCase()}.`, 'good', { x: b.x, z: b.z });
     this._fx('sparkle', b.x, b.z, 1);
   }
@@ -1109,7 +1141,7 @@ export class Civilization {
     this._fx('debris', b.x, b.z, 1.2, true);
     this._fx('dust', b.x, b.z, 1.6, true);
     this._fx('smoke', b.x, b.z, 1.2, true);
-    if (b.type === 'hall' && v && v.alive && !b.abandoned) this._note(`The ${buildingLabel(b).toLowerCase()} of ${v.name} has been destroyed!`, 'bad', { x: b.x, z: b.z });
+    if (b.type === 'hall' && v && v.alive && !b.abandoned) this._note(`The ${buildingLabel(b).toLowerCase()} of ${v.name} has been destroyed!`, 'disaster', { x: b.x, z: b.z });
     this.version++;
     if (v && v.alive && !v.buildings.some((o) => o.alive && !BUILDING_TYPES[o.type].wall) && (v.razed || v.pop < 3)) this._abandon(v, v.razed ? 'razed' : 'empty');
   }
@@ -1351,6 +1383,26 @@ export class Civilization {
     return true;
   }
 
+  // Positional sound, throttled per sound name and skipped off-screen or
+  // while fast-forwarding.
+  _sfx(name, x, z, minGap = 0.4, force = false) {
+    const g = this.game;
+    if (!g.audio?.play || this._ticksSinceFrame > 45) return;
+    const now = g.time.realTime ?? 0;
+    const last = this._sfxT?.get(name) ?? -99;
+    if (now - last < minGap) return;
+    if (!force) {
+      const rig = g.cameraRig;
+      if (rig && Math.hypot(rig.cur.x - x, rig.cur.z - z) > rig.cur.dist * 0.9 + 10) return;
+    }
+    (this._sfxT || (this._sfxT = new Map())).set(name, now);
+    try {
+      g.audio.play(name, { pos: { x, z } });
+    } catch {
+      /* audio is optional */
+    }
+  }
+
   _fx(type, x, z, scale = 1, force = false) {
     const g = this.game;
     if (!g.fx?.emit) return;
@@ -1503,12 +1555,17 @@ export class Civilization {
       if (v.tier === 1) towns++;
       if (v.tier === 2) cities++;
     }
-    for (const b of this.buildings) if (b.alive) buildings++;
+    let walls = 0;
+    for (const b of this.buildings)
+      if (b.alive) {
+        buildings++;
+        if (BUILDING_TYPES[b.type].wall) walls++;
+      }
     for (const r of this.relations.values()) {
       if (r.war) wars++;
       if (r.ally) alliances++;
     }
-    return { kingdoms, villages, towns, cities, buildings, wars, alliances, armies: this.armies.length };
+    return { kingdoms, villages, towns, cities, buildings, wallSections: walls, wars, alliances, armies: this.armies.length };
   }
 }
 

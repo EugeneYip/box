@@ -28,7 +28,7 @@ function found(g, c, culture) {
   const v = g.civ.foundVillage(c.tx, c.ty, { culture, kingdom: owner ? owner.id : null, starter: true, houses: 1, settlers: 9 });
   if (v) {
     g.fx?.burst?.('spawn', { x: v.cx, z: v.cz }, 10, { scale: 1.5 });
-    g.audio?.play?.('build', { pos: { x: v.cx, z: v.cz } });
+    g.audio?.play?.('bell', { pos: { x: v.cx, z: v.cz } });
     if (owner) g.notify(`${v.name} is founded within the ${owner.name}.`, 'good', { x: v.cx, z: v.cz });
   }
 }
@@ -109,14 +109,13 @@ pairPower('declare-war', 'Declare War', 'Pit two kingdoms against each other: cl
   r.truceUntil = 0;
   civ.declareWar(a, b, 'god');
   g.cameraRig?.addShake?.(0.3);
-  g.audio?.play?.('war', {});
 });
 
 pairPower('make-peace', 'Make Peace', 'Force two warring kingdoms to lay down their arms: click one, then the other.', 'make peace with', (g, a, b) => {
   const civ = g.civ;
   if (!civ.atWar(a, b)) return g.notify(`The ${civ.kingdomName(a)} and the ${civ.kingdomName(b)} are not at war.`, 'info');
   civ.makePeace(a, b);
-  g.audio?.play?.('peace', {});
+  g.audio?.play?.('bell', {});
 });
 
 pairPower('forge-alliance', 'Forge Alliance', 'Bind two kingdoms in friendship: click one, then the other.', 'ally with', (g, a, b) => {
