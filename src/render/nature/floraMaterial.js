@@ -82,7 +82,7 @@ transformed.xz *= mix(fThin, 1.0, fLeaf);
 float fScale = 0.14 + 0.86 * fG;
 transformed *= fScale;
 float fBurn = clamp(max(fState.g * 1.3, fState.b), 0.0, 1.0);
-transformed = mix(transformed, aPivot * fScale, fLeaf * fBurn * 0.3);
+transformed = mix(transformed, aPivot * fScale, fLeaf * fBurn * 0.45);
 vec3 fW = fWind(fOrigin, position, aInfo.x, aInfo.y * (1.0 - fBurn), fScale);
 mat3 fIM = mat3(instanceMatrix);
 transformed += transpose(fIM) * fW / max(dot(fIM[0], fIM[0]), 1e-5);
@@ -189,10 +189,14 @@ roughnessFactor = mix(fR, fR * 0.55, uWet);
 const FRAG_EMISSIVE = /* glsl */ `
 float fFire = vFState.g;
 if (fFire > 0.002) {
-  float n1 = fract(sin(dot(floor(vFWorld * 7.0), vec3(12.9898, 78.233, 37.719))) * 43758.5453);
-  float flick = 0.55 + 0.45 * sin(uTime * (7.0 + n1 * 6.0) + n1 * 6.283);
-  float ember = smoothstep(0.35, 1.0, n1) * flick;
-  totalEmissiveRadiance += vec3(1.0, 0.34, 0.07) * fFire * (0.2 + 2.4 * ember);
+  // sparse, flickering embers glowing through blackened wood and leaves
+  vec3 fq = vFWorld * 9.0 + vec3(0.0, uTime * 0.6, 0.0);
+  float n1 = fract(sin(dot(floor(fq), vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+  float n2 = fract(sin(dot(floor(vFWorld * 3.0), vec3(39.34, 11.13, 83.17))) * 24634.6345);
+  float flick = 0.5 + 0.5 * sin(uTime * (6.0 + n1 * 7.0) + n1 * 6.283);
+  float ember = smoothstep(0.72, 1.0, n1) * flick * (0.6 + 0.8 * n2);
+  float smoulder = 0.04 + 0.08 * n2 * (1.0 - fLeafM * 0.5);
+  totalEmissiveRadiance += mix(vec3(1.0, 0.22, 0.03), vec3(1.0, 0.55, 0.12), ember) * fFire * (smoulder + 3.0 * ember);
 }
 float fBack = clamp(-dot(fWN, uSunDir), 0.0, 1.0);
 float fTrans = fLeafM * (1.0 - fChar) * (1.0 - fSnowAmt) * uDaylight * (1.0 - fIsSnow);

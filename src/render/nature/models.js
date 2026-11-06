@@ -610,7 +610,7 @@ function buildWillow(b, v, lod) {
   const pts = bezier(V(0, 0, 0), V(-lean.x * 0.9, th * 0.45, lean.z * 0.3), V(lean.x, th, lean.z), lod ? 1 : 3);
   trunk(b, pts, pts.map((_, i) => 0.15 - (0.07 * i) / (pts.length - 1)), lod ? 5 : 7, P.willowBark, { flare: lod ? 0 : 0.7, roots: 3, yTop: 1.8, moss: P.moss });
   const top = pts[pts.length - 1];
-  const R = [0.74, 0.62, 0.8][v];
+  const R = [0.8, 0.7, 0.86][v];
   let blobs = [{ p: V(top.x, th + 0.5, top.z), r: 0.52, sq: 0.68 }];
   const ns = lod ? 0 : 4;
   for (let k = 0; k < ns; k++) {
@@ -621,7 +621,7 @@ function buildWillow(b, v, lod) {
   if (!lod) for (let k = 1; k < blobs.length; k++) limb(b, top, V(blobs[k].p.x * 0.9 + top.x * 0.1, blobs[k].p.y - 0.1, blobs[k].p.z * 0.9 + top.z * 0.1), 0.055, 0.025, 4, P.willowBark, 1.8);
   foliage(b, blobs.map((bl) => ({ ...bl, d: lod ? 0 : 1 })), pal, { lump: 0.18, aoMin: 0.55 });
   // weeping curtain: an outer ring reaching almost to the ground, an inner ring
-  const rings = lod ? [[10, 0.85, 0.55]] : [[[24, 20, 26][v], 0.92, 0.72], [10, 0.55, 0.5]];
+  const rings = lod ? [[10, 0.9, 0.8]] : [[[24, 20, 26][v], 0.95, 0.94], [10, 0.6, 0.72]];
   const cShade = mix3(pal.dark, pal.mid, 0.35),
     cMid = pal.mid,
     cTip = mix3(pal.light, pal.hi, 0.45);
@@ -1099,8 +1099,8 @@ function buildStump(b, v, lod) {
 
 function buildWheat(b, v, lod) {
   const grid = lod ? 3 : 5;
-  const ripe = C(0xdcae40),
-    ripeD = C(0x9a7426),
+  const ripe = C(0xeab43e),
+    ripeD = C(0xb07c24),
     head = C(0xf8d86a);
   // a softly domed, mottled sheet of ears at canopy height makes the field read
   // as a dense crop from above; brighter heads poke through it
@@ -1111,11 +1111,16 @@ function buildWheat(b, v, lod) {
   for (let j = 0; j <= G; j++)
     for (let i = 0; i <= G; i++) {
       const edge = i === 0 || j === 0 || i === G || j === G;
-      hgt.push(edge ? 0.17 + b.r(0, 0.04) : 0.27 + b.r(-0.03, 0.04));
+      const corner = (i === 0 || i === G) && (j === 0 || j === G);
+      hgt.push(corner ? 0.1 : edge ? 0.19 + b.r(0, 0.04) : 0.28 + b.r(-0.03, 0.04));
       shade.push(b.r(0.72, 1.0));
     }
-  const P0 = (i, j) => V(-E + (2 * E * i) / G, hgt[j * (G + 1) + i], -E + (2 * E * j) / G);
-  const cs = (i, j) => mul3(mix3(ripeD, ripe, 0.35 + (hgt[j * (G + 1) + i] - 0.17) * 2.2), shade[j * (G + 1) + i] * 0.82);
+  const P0 = (i, j) => {
+    const corner = (i === 0 || i === G) && (j === 0 || j === G);
+    const k = corner ? 0.82 : 1;
+    return V((-E + (2 * E * i) / G) * k, hgt[j * (G + 1) + i], (-E + (2 * E * j) / G) * k);
+  };
+  const cs = (i, j) => mul3(mix3(ripeD, ripe, 0.4 + (hgt[j * (G + 1) + i] - 0.17) * 2.4), shade[j * (G + 1) + i]);
   const so = { leaf: 0.2, flutter: 0.3, mat: MAT.WHEAT, pivot: V(0, 0, 0), up: true, single: true, bend: 0.55 };
   for (let j = 0; j < G; j++)
     for (let i = 0; i < G; i++) {
