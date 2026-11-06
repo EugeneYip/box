@@ -53,12 +53,17 @@ export { SPECIES, registerSpecies };
 const YEAR = 30; // == YEAR_SECONDS (src/core/Game.js); duplicated to avoid an import cycle
 const CELL = 4;
 const THINK_INTERVAL = 0.6;
-const PATH_BUDGET = 40;
+const PATH_BUDGET = 40; // near units; distant ones share PATH_BUDGET_FAR
+const PATH_BUDGET_FAR = 8;
 const FCELL = 8;
 const FORAGE_REGROW = 0.008; // fraction of a cell's capacity regrown per second
 const FORAGE_COST = 7; // forage per unit of hunger per unit of body mass
 // minimum viable populations: below these, migrants wander in from the map edge
-const MVP = { wolf: 6, fox: 5, bear: 3 };
+const MVP = { wolf: 6, fox: 5, bear: 3, sheep: 10, cow: 8 };
+// AI level of detail: creatures far from the camera (or off-screen) think less
+// often and steer more cheaply; the brain always receives the real elapsed time.
+const FAR_THINK = { humanoid: 1.7, animal: 2.3, monster: 1.4 };
+const SFX_GAP = { hit: 0.07, death: 0.18, birth: 0.6, growl: 0.5, bleat: 1.4 };
 
 const KIND_ORDER = { humanoid: 0, animal: 1, monster: 2 };
 
@@ -84,7 +89,26 @@ export class Units {
     this._migrateT = 0;
     this._rescueAt = new Map();
     this._forage = null;
+    this._sfxAt = {};
+    this._pathBudgetFar = 0;
+    this._focus = { x: 0, z: 0, r2: 1e9 };
     this._initGrid();
+  }
+
+  // Positional, throttled, guarded sound effect (only near the camera).
+  sfx(name, x, z, opts = {}) {
+    const g = this.game;
+    if (!g.audio?.play) return;
+    const f = this._focus;
+    if ((x - f.x) ** 2 + (z - f.z) ** 2 > f.r2 * 0.6) return;
+    const t = performance.now() / 1000;
+    if (t - (this._sfxAt[name] ?? -9) < (SFX_GAP[name] ?? 0.1)) return;
+    this._sfxAt[name] = t;
+    try {
+      g.audio.play(name, { pos: { x, z }, ...opts });
+    } catch (err) {
+      /* audio is optional */
+    }
   }
 
   _initGrid() {
@@ -398,6 +422,7 @@ export class Units {
       u.data.carcass = true;
     }
     if (cause === 'old age' || cause === 'starvation') g.fx.emit?.('death', { x: u.x, y: u.y + 0.2, z: u.z }, { scale: u.def.size * 0.6 });
+    this.sfx('death', u.x, u.z, { volume: u.def.kind === 'humanoid' ? 0.5 : 0.35, pitch: 1 / Math.sqrt(Math.max(0.4, u.def.mass)) });
     g.events.emit('unit:death', { unit: u, cause, killer });
   }
 
@@ -625,7 +650,7 @@ export class Units {
       u.path = null;
       return true;
     }
-    if (this._pathBudget <= 0) {
+    if ((u._far ? this._pathBudgetFar : this._pathBudget) <= 0) {
       u.path = null; // straight line until a path can be computed (next tick)
       u._wantPath = true;
       return true;
@@ -634,7 +659,8 @@ export class Units {
   }
   _computePath(u) {
     const w = this.game.world;
-    this._pathBudget--;
+    if (u._far) this._pathBudgetFar--;
+    else this._pathBudget--;
     u._wantPath = false;
     const [sx, sy] = w.tileOf(u.x, u.z);
     const [gx, gy] = w.tileOf(u.target.x, u.target.z);
@@ -704,7 +730,7 @@ export class Units {
       else if (u.target) gi = Math.floor(u.target.z) * W + Math.floor(u.target.x);
       u._allowB = gi >= 0 ? w.building[gi] : -1;
     }
-    if (u._wantPath && u.target && this._pathBudget > 0) this._computePath(u);
+    if (u._wantPath && u.target && (u._far ? this._pathBudgetFar : this._pathBudget) > 0) this._computePath(u);
     let tx, tz;
     let final = true;
     if (u.path && u.pathIdx < u.path.length) {
@@ -740,7 +766,7 @@ export class Units {
     const running = st === 'run' || st === 'flee' || st === 'hunt' || (u.combat && st !== 'attack');
     let sp = def.speed * (running ? def.runMul : 1);
     if (u.age < def.maturity) sp *= 0.75 + 0.25 * Math.min(1, u.age / Math.max(0.01, def.maturity));
-    if (u.energy < 0.25) sp *= 0.75;
+    if (u.energy < 0.25 && !this.brains.has(u.species)) sp *= 0.75;
     if (u.blessed > now) sp *= 1.15;
     if (u.mad > now) sp *= 1.1;
     if (u.data.speedMul) sp *= u.data.speedMul;
@@ -748,7 +774,7 @@ export class Units {
     if (def.habitat === 'land') {
       if (u.swimming) sp *= def.swimMul;
       else if (u.wading) sp *= 0.75;
-      else {
+      else if (!u._far) {
         // slope-aware: slower uphill, slightly faster downhill
         const h0 = w.heightAt(u.x, u.z);
         const h1 = w.heightAt(u.x + (dx / d) * 0.35, u.z + (dz / d) * 0.35);
@@ -1096,7 +1122,8 @@ export class Units {
       this.damage(t, dmg, u, { knock: u.def.knockback, dirX, dirZ });
       g.fx.emit?.('hit', { x: t.x - dirX * t.def.radius, y: hitY, z: t.z - dirZ * t.def.radius }, { scale: 0.5 + u.def.mass * 0.08, dir: { x: dirX, y: 0.3, z: dirZ } });
       if (t.def.blood) g.fx.emit?.('blood', { x: t.x, y: hitY, z: t.z }, { scale: 0.5 + Math.min(1, dmg / 20), dir: { x: dirX, y: 0.5, z: dirZ } });
-      g.audio.play?.('hit', { pos: { x: t.x, z: t.z }, volume: 0.55, pitch: rng.float(0.85, 1.15) / Math.sqrt(Math.max(0.5, u.def.mass)) });
+      this.sfx('hit', t.x, t.z, { volume: 0.55, pitch: rng.float(0.85, 1.15) / Math.sqrt(Math.max(0.5, u.def.mass)) });
+      if (u.def.kind === 'animal' && u.def.diet !== 'herbivore') this.sfx('growl', u.x, u.z, { volume: 0.45, pitch: rng.float(0.9, 1.15) / Math.sqrt(u.def.mass) });
     } else {
       g.fx.emit?.('dust', { x: t.x, y: t.y + 0.05, z: t.z }, { scale: 0.4 });
     }
@@ -1274,7 +1301,7 @@ export class Units {
     }
     this.emote(m, 'heart', 2.5);
     g.fx.emit?.('heal', { x: m.x, y: m.y + def.height, z: m.z }, { scale: 0.5 });
-    g.audio.play?.('birth', { pos: { x: m.x, z: m.z }, volume: 0.35 });
+    this.sfx('birth', m.x, m.z, { volume: 0.35 });
   }
 
   // Logistic breeding: chance falls as the population nears carrying capacity;
@@ -1300,7 +1327,12 @@ export class Units {
       p = def.fertility * (1 - n / K) * (n < (MVP[u.species] || 0) * 2 ? 1.8 : 1);
     } else {
       // grazers: limited by local pasture and crowding (soft carrying capacity)
-      const fr = this.forageAt(u.x, u.z);
+      let fr = this.forageAt(u.x, u.z);
+      if (def.livestock) {
+        const w2 = g.world;
+        const ti = Math.floor(u.z) * w2.w + Math.floor(u.x);
+        if (w2.owner[ti] >= 0) fr = Math.max(fr, 0.85); // tended and fed by villagers
+      }
       let crowd = 0;
       this.forEachNear(u.x, u.z, 5, (o) => {
         if (o.species === u.species) crowd++;
@@ -1464,9 +1496,11 @@ export class Units {
       }
     }
     const brain = this.brains.get(u.species);
+    const elapsed = Math.min(3, Math.max(0.05, now - (u._lastThink ?? now - THINK_INTERVAL)));
+    u._lastThink = now;
     if (brain) {
       try {
-        brain(u, THINK_INTERVAL, g);
+        brain(u, elapsed, g);
       } catch (err) {
         console.error('[brain]', u.species, err);
         this.brains.delete(u.species);
@@ -1489,6 +1523,15 @@ export class Units {
     this.lastTick = now;
     this._tickN++;
     this._pathBudget = PATH_BUDGET;
+    this._pathBudgetFar = PATH_BUDGET_FAR;
+    const cam = g.cameraRig?.cur;
+    const focus = this._focus;
+    if (cam) {
+      focus.x = cam.x;
+      focus.z = cam.z;
+      const r = Math.max(36, cam.dist * 1.15);
+      focus.r2 = r * r;
+    }
     const yearDt = dt / YEAR;
     const list = this.list;
     const tickN = this._tickN;
@@ -1507,8 +1550,13 @@ export class Units {
       const active = u.state === 'run' || u.state === 'flee' || u.state === 'hunt' || u.state === 'attack';
       const lean = MVP[u.species] && (this._counts.get(u.species) || 0) < MVP[u.species] * 2 ? 0.6 : 1;
       u.hunger = Math.min(1, u.hunger + dt * def.hungerRate * lean * (u.sleeping ? 0.5 : active ? 1.6 : 1));
-      if (u.sleeping) u.energy = Math.min(1, u.energy + dt * 0.0075);
-      else u.energy = Math.max(0, u.energy - dt * def.energyRate * (active ? 2.5 : 1) * (u.swimming ? 4 : 1));
+      if (u.sleeping || u.state === 'sleep' || u.data.inside) u.energy = Math.min(1, u.energy + dt * 0.0075);
+      else if (u._ext) {
+        // brain-driven villagers: tire while busy, recover when idle and at night
+        const night = (g.env?.daylight ?? 1) < 0.2;
+        const rest = !u.moving && u.state !== 'work' && !u.combat;
+        u.energy = Math.min(1, Math.max(0, u.energy + dt * (rest || night ? 0.006 : -def.energyRate * (active ? 1.2 : 0.35))));
+      } else u.energy = Math.max(0, u.energy - dt * def.energyRate * (active ? 2.5 : 1) * (u.swimming ? 4 : 1));
       if (u.pregnant > 0) {
         u.pregnant -= yearDt;
         if (u.pregnant <= 0) this._giveBirth(u);
@@ -1571,15 +1619,19 @@ export class Units {
       }
       // ---- combat & thinking
       if (u.combat) this._combatTick(u, dt, now);
+      const fdx = u.x - focus.x,
+        fdz = u.z - focus.z;
+      u._far = fdx * fdx + fdz * fdz > focus.r2 && !u.combat;
       u.thinkT -= dt;
       if (u.thinkT <= 0) {
-        u.thinkT = THINK_INTERVAL * (0.8 + g.rng.next() * 0.4);
+        u.thinkT = THINK_INTERVAL * (0.8 + g.rng.next() * 0.4) * (u._far ? FAR_THINK[def.kind] || 2 : 1);
+        u._ext = this.brains.has(u.species);
         this._think(u, now);
         if (!u.alive) continue;
       }
       const bt = BRAIN_TICKS[def.brain];
       if (bt) bt(u, dt, this, g, now);
-      if ((tickN + u.id) % 4 === 0) this._separate(u);
+      if ((tickN + u.id) % (u._far ? 8 : 4) === 0) this._separate(u);
       // ---- locomotion
       if (def.habitat === 'air') {
         this._flyTick(u, dt);

@@ -8,6 +8,10 @@ import { MONSTER_MODELS, AMBIENT_MODELS } from './models/monsters.js';
 import { poseHumanoid, poseQuad, poseChicken, poseSerpent, poseWyrm } from './poses.js';
 import { Overlays, DECAL, EMOTE } from './Overlays.js';
 import { AmbientFauna } from './AmbientFauna.js';
+import { TINY } from './models/tiny.js';
+const HAT_TINT = [null, 0xe6c870, 0xc4ccd6, 0xf2c14e, 0x5d5a3a, 0x5b3a26, null, 0xf0c030];
+const SHADOW_RANGE = 60; // creatures farther than this from the camera target cast no shadow-map shadow
+const LOD_HI = 70, LOD_LO = 22; // on-screen height (px) thresholds for hi / lo / tiny models
 
 // Creature renderer (Life module). Every species is one instanced, shader-rigged
 // model (see RigMaterial.js): one draw call per species plus its shadow pass.
@@ -85,6 +89,7 @@ export class UnitRenderer {
     for (const d of [humanModel, ...ANIMAL_MODELS, ...MONSTER_MODELS, ...AMBIENT_MODELS]) this.defs.set(d.id, d);
     this.models = new Map();
     this.lo = new Map();
+    this.tiny = new Map();
     // shared per-frame uniforms: kingdom palette (slot 1 + id % 15) and outline strength
     this._kingPal = Array.from({ length: 16 }, () => new THREE.Color(0.5, 0.5, 0.5));
     this._outlineU = { value: 0 };
@@ -126,14 +131,25 @@ export class UnitRenderer {
       m.uniforms.uKing.value = this._kingPal;
       m.uniforms.uOutline = this._outlineU;
       this.models.set(id, m);
-      this.lo.set(id, new RigModel(this.group, def, def.loDetail ?? 0.45, m));
+      this.lo.set(id, new RigModel(this.group, def, def.loDetail ?? (id === 'human' ? 0.34 : 0.45), m));
+      if (TINY[id]) this.tiny.set(id, new RigModel(this.group, def, 1, m, TINY[id]));
     }
     return m;
   }
   // Pick the hi / lo twin by on-screen height in pixels (with hysteresis on rs).
+  // Pick the hi / lo / tiny twin by on-screen height in pixels (hysteresis on rs.lv).
   pick(m, pxH, rs = null) {
-    const hi = rs ? (rs.hi = rs.hi ? pxH > 34 : pxH > 44) : pxH > 40;
-    return hi ? m : this.lo.get(m.def.id) || m;
+    let lv;
+    if (rs) {
+      const cur = rs.lv ?? 1;
+      const hiT = cur === 0 ? LOD_HI * 0.88 : LOD_HI * 1.1;
+      const loT = cur === 2 ? LOD_LO * 1.15 : LOD_LO * 0.85;
+      lv = pxH > hiT ? 0 : pxH > loT ? 1 : 2;
+      rs.lv = lv;
+    } else lv = pxH > LOD_HI ? 0 : pxH > LOD_LO ? 1 : 2;
+    const id = m.def.id;
+    if (lv === 2) return this.tiny.get(id) || this.lo.get(id) || m;
+    return lv === 1 ? this.lo.get(id) || m : m;
   }
   modelFor(u) {
     if (u._rm) return u._rm;
@@ -167,11 +183,13 @@ export class UnitRenderer {
   _appearance(u, rs) {
     const def = u.def;
     const child = u.age < def.maturity;
-    const key = def.kind === 'humanoid'
-      ? `${u.job}|${u.carry?.type || ''}|${u.kingdom}|${child ? 1 : u.age > 55 ? 2 : 0}|${u.state === 'work' ? u.data?.workAnim : ''}|${u.data?.ranged ? 1 : 0}|${u.color ?? ''}`
-      : `${child ? 1 : 0}|${u.sex}|${u.color ?? ''}`;
-    if (rs.apKey === key) return;
-    rs.apKey = key;
+    const ageB = child ? 1 : u.age > 55 ? 2 : 0;
+    const ct = u.carry ? u.carry.type : null;
+    const wa = u.state === 'work' ? u.data?.workAnim : null;
+    const rg = !!u.data?.ranged;
+    const k = rs.apK;
+    if (k && k.job === u.job && k.ct === ct && k.kd === u.kingdom && k.ageB === ageB && k.wa === wa && k.rg === rg && k.col === u.color && k.sex === u.sex) return;
+    rs.apK = { job: u.job, ct, kd: u.kingdom, ageB, wa, rg, col: u.color, sex: u.sex };
     const id = u.id;
     const r = (k) => h1(id, k);
     const seed = r(99);
@@ -296,6 +314,8 @@ export class UnitRenderer {
       var: [hair + hat * 16 + beard * 256, tool + offhand * 16 + back * 256, cape + outfit * 16 + armor * 256, kslot + seed * 0.98],
     };
     rs.dot = bright(kc || [0.85, 0.8, 0.7]);
+    // tiny LOD: the head-top block shows the hat colour (or the hair)
+    rs.apTiny = HAT_TINT[hat] != null ? { ...rs.ap, c: lin(HAT_TINT[hat]) } : rs.ap;
   }
 
   _initRS(u, rm) {
@@ -393,6 +413,9 @@ export class UnitRenderer {
     this._outlineU.value = smoothstep(14, 60, camDist) * 0.6;
     for (const m of this.models.values()) m.begin();
     for (const m of this.lo.values()) m.begin();
+    for (const m of this.tiny.values()) m.begin();
+    const camT = g.cameraRig.target;
+    const frame = g.frame | 0;
     const ov = this.overlays;
     ov.begin();
     const ctx = {
@@ -455,14 +478,24 @@ export class UnitRenderer {
         if (def.brain === 'golem') emerge = 1 - smoothstep(0, 1.5, age);
         else if (age < 0.45) pop = Math.max(0.05, easeOutBack(age / 0.45));
       }
+      const tinyLv = rs.lv === 2 && md.rig !== 'serpent' && md.rig !== 'wyrm';
+      const skipPose = tinyLv && rs.init && (frame + u.id) % 3 !== 0;
       if (lod > 0.001) {
         ctx.speed = u.speedNow || 0;
         ctx.run = ctx.speed > def.speed * 1.28;
         ctx.scale = scale;
         ctx.child = def.kind === 'humanoid' ? child : 0;
         ctx.seed = rs.seed;
-        rs.fwd = 0;
-        POSE[md.rig](u, rs, ctx, P, md);
+        // distant creatures re-pose every third frame with the accumulated time
+        rs.accA = (rs.accA || 0) + animDt;
+        rs.accI = (rs.accI || 0) + idleDt;
+        if (!skipPose) {
+          ctx.animDt = rs.accA;
+          ctx.idleDt = rs.accI;
+          rs.accA = rs.accI = 0;
+          rs.fwd = 0;
+          POSE[md.rig](u, rs, ctx, P, md);
+        } else P.set(rs.P);
         // per-channel smoothing (state changes blend instead of popping)
         const Ps = rs.P;
         if (!rs.init) {
@@ -473,7 +506,7 @@ export class UnitRenderer {
           rs.init = true;
         } else {
           const k = kSmooth(rs.k);
-          for (let i = 0; i < 16; i++) Ps[i] += (P[i] - Ps[i]) * k;
+          if (!skipPose) for (let i = 0; i < 16; i++) Ps[i] += (P[i] - Ps[i]) * k;
           rs.sY += (rs.rootY - rs.sY) * k;
           rs.sPitch += (rs.rootPitch - rs.sPitch) * k;
           rs.sRoll += (rs.rootRoll - rs.sRoll) * k;
@@ -503,7 +536,9 @@ export class UnitRenderer {
         this._m.compose(this._p, this._q, this._s.set(s, s, s));
         const flash = Math.max(0, 1 - (simNow - u.lastHurt) / 0.28) + (u.mad > simNow ? 0.12 + 0.08 * Math.sin(now * 7) : 0);
         const glow = u.blessed > simNow ? Math.min(1, (u.blessed - simNow) / 2) * (0.55 + 0.2 * Math.sin(now * 3 + rs.seed * 9)) : 0;
-        this.pick(rm, pxH, rs).write(this._m, Ps, rs.ap, Math.min(1, flash), lod, glow);
+        const pm = this.pick(rm, pxH, rs);
+        const near = (ix - camT.x) ** 2 + (iz - camT.z) ** 2 < SHADOW_RANGE * SHADOW_RANGE;
+        pm.write(this._m, Ps, pm.tiny && rs.apTiny ? rs.apTiny : rs.ap, Math.min(1, flash), lod, glow, near);
         // skywyrm fire breath
         if (md.rig === 'wyrm' && u.data?.breath > simNow) {
           this._m2.makeRotationX(0.42).setPosition(0, -0.02, 0.97);
@@ -523,7 +558,11 @@ export class UnitRenderer {
       }
       // ---- ground decals
       if (hab === 'land' && !u.swimming) {
-        w.normalAt(ix, iz, nrm);
+        if (rs.lv === 2) {
+          nrm.x = 0;
+          nrm.y = 1;
+          nrm.z = 0;
+        } else w.normalAt(ix, iz, nrm);
         const sz = (md.radius * 0.62 + 0.08) * scale * (u.sleeping ? 1.25 : 1);
         if (lod > 0.001) ov.ground.add(ix, ground, iz, sz * 2, nrm.x, nrm.y, nrm.z, DECAL.shadow, 0.02, 0.02, 0.05, 0.42 * lod);
       } else if (hab === 'air') {
@@ -595,6 +634,7 @@ export class UnitRenderer {
     this.ripples.length = j;
     for (const m of this.models.values()) m.end();
     for (const m of this.lo.values()) m.end();
+    for (const m of this.tiny.values()) m.end();
     ov.end(realNow);
   }
 

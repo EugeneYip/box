@@ -88,13 +88,13 @@ registerSpecies({
   id: 'sheep', name: 'Sheep', diet: 'herbivore', herd: true, flees: true,
   speed: 0.85, runMul: 1.75, hp: 18, damage: 0, lifespan: 12, maturity: 1.3, gestation: 0.3, litter: [1, 2],
   birthInterval: 0.7, fertility: 0.3, maxPopulation: 150, sight: 6, height: 0.36, radius: 0.17, food: 0.8,
-  sound: 'bleat', seed: { tiles: [TILE.GRASS, TILE.SAVANNA], groups: 9, size: [3, 6] },
+  livestock: true, sound: 'bleat', seed: { tiles: [TILE.GRASS, TILE.SAVANNA], groups: 9, size: [3, 6] },
 });
 registerSpecies({
   id: 'cow', name: 'Cow', diet: 'herbivore', herd: true, flees: true,
   speed: 0.7, runMul: 1.7, hp: 42, damage: 3, lifespan: 18, maturity: 2, gestation: 0.45, litter: [1, 1],
   birthInterval: 0.9, fertility: 0.3, maxPopulation: 90, sight: 6, height: 0.5, radius: 0.24, mass: 2.5, food: 1.2,
-  crowd: 8, sound: 'bleat', seed: { tiles: [TILE.GRASS, TILE.SAVANNA], groups: 5, size: [3, 5] },
+  crowd: 8, livestock: true, sound: 'bleat', seed: { tiles: [TILE.GRASS, TILE.SAVANNA], groups: 5, size: [3, 5] },
 });
 registerSpecies({
   id: 'pig', name: 'Pig', diet: 'herbivore', herd: true, flees: true,

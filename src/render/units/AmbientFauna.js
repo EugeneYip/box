@@ -275,7 +275,7 @@ export class AmbientFauna {
           b.vx += (f.x + Math.sin(i * 2.4) * 1.2 - b.x) * dt * 1.5 - b.vx * dt * 1.5;
           b.vz += (f.z + Math.cos(i * 2.4) * 1.2 - b.z) * dt * 1.5 - b.vz * dt * 1.5;
           b.vy += (ty - b.y) * dt * 3 - b.vy * dt * 2;
-          if (b.y - ground < 0.08 && w.height[w.idx(...w.tileOf(b.x, b.z))] >= SEA_LEVEL) {
+          if (b.y - ground < 0.08 && w.heightAt(b.x, b.z) >= SEA_LEVEL) {
             b.landed = true;
             b.vx = b.vy = b.vz = 0;
           }
@@ -418,8 +418,9 @@ export class AmbientFauna {
       }
       let nx = f.x + f.vx * dt,
         nz = f.z + f.vz * dt;
-      const [tx, ty] = w.tileOf(nx, nz);
-      if (!w.inBounds(tx, ty) || w.height[w.idx(tx, ty)] > SEA_LEVEL - 0.3) {
+      const tx = Math.floor(nx),
+        ty = Math.floor(nz);
+      if (!w.inBounds(tx, ty) || w.height[ty * w.w + tx] > SEA_LEVEL - 0.3) {
         f.vx = -f.vx;
         f.vz = -f.vz;
         nx = f.x;

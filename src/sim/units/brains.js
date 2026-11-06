@@ -163,7 +163,7 @@ function herbivore(u, U, g, now) {
   else if (r < 0.55) U.wander(u, def.herd ? 2.5 : 4, center);
   else if (!u.target) {
     u.state = 'idle';
-    if (rng.chance(0.04) && def.sound) g.audio.play?.(def.sound, { pos: { x: u.x, z: u.z }, volume: 0.25, pitch: rng.float(0.9, 1.15) / def.size });
+    if ((u.species === 'sheep' || u.species === 'goat') && !u._far && rng.chance(0.05)) U.sfx('bleat', u.x, u.z, { volume: 0.3, pitch: rng.float(0.9, 1.2) * (u.age < def.maturity ? 1.3 : 1) });
   }
 }
 
@@ -276,7 +276,7 @@ function predator(u, U, g, now) {
     const day = g.env?.daylight ?? 1;
     if (day < 0.2 && rng.chance(0.02)) {
       U.emote(u, 'note', 2);
-      g.audio.play?.('growl', { pos: { x: u.x, z: u.z }, volume: 0.3, pitch: 1.5 });
+      U.sfx('growl', u.x, u.z, { volume: 0.3, pitch: 1.5 });
     }
     return;
   }
@@ -299,7 +299,7 @@ function bear(u, U, g, now) {
       return;
     }
     U.emote(u, 'anger', 1.5);
-    if (rng.chance(0.3)) g.audio.play?.('growl', { pos: { x: u.x, z: u.z }, volume: 0.45 });
+    if (rng.chance(0.3)) U.sfx('growl', u.x, u.z, { volume: 0.45 });
   }
   // territorial: avoid other adult bears
   const rival = U.nearest(u.x, u.z, 5, (o) => o !== u && o.species === 'bear' && o.age >= def.maturity && u.age >= def.maturity);
