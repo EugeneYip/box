@@ -355,6 +355,7 @@ export const brain = {
     t.t -= dt;
     if (t.t > 0) {
       if (this.rng.chance(0.15)) this._fx('leaves', t.cx, t.cz, 0.5);
+      if (this.rng.chance(0.5)) this._sfx('chop', t.cx, t.cz, 0.45);
       return;
     }
     const tx = t.i % w.w,
@@ -673,6 +674,7 @@ export const brain = {
       b.progress = Math.min(1, b.progress + (2 * sp) / bt);
       b.hp = Math.max(b.hp, b.maxHp * (0.3 + 0.7 * b.progress));
       this._fx('build', b.x + this.rng.float(-0.5, 0.5), b.z + this.rng.float(-0.5, 0.5), 0.7);
+      this._sfx('build', b.x, b.z, 0.5);
       if (b.progress >= 1) this._finishBuilding(b);
     } else if (b.upgrading) {
       const bt = def.buildTime[Math.min(def.levels, b.level + 1) - 1] || 25;
@@ -764,6 +766,7 @@ export const brain = {
     t.t -= dt;
     if (t.t > 0) {
       if (this.rng.chance(0.2)) this._fx('dust', t.cx, t.cz, 0.4);
+      if (this.rng.chance(0.5)) this._sfx('mine', t.cx, t.cz, 0.6);
       return;
     }
     const i = t.i,

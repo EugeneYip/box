@@ -141,27 +141,25 @@ export function cultureForSite(world, tx, ty, radius = 6) {
   return best;
 }
 
-// Curated heraldic palette: saturated, bright enough to glow as a border at
-// map zoom, and distinct from each other. No white, no near-black.
+// Heraldic palette: rich, slightly desaturated tinctures that read as borders
+// at map zoom without turning towns neon. No white, no near-black.
 export const HERALDRY = [
-  { name: 'Crimson', color: 0xd8333a },
-  { name: 'Azure', color: 0x2f6fe8 },
-  { name: 'Gold', color: 0xf2b51e },
-  { name: 'Violet', color: 0x9a46e0 },
-  { name: 'Teal', color: 0x12b8a8 },
-  { name: 'Ember', color: 0xf26a1b },
-  { name: 'Rose', color: 0xf0509e },
-  { name: 'Cobalt', color: 0x4a54f0 },
-  { name: 'Raspberry', color: 0xc8204f },
-  { name: 'Sky', color: 0x31c4f2 },
-  { name: 'Magenta', color: 0xd630c8 },
-  { name: 'Copper', color: 0xc8682a },
+  { name: 'Crimson', color: 0xb3262f },
+  { name: 'Royal Blue', color: 0x2b4fa8 },
+  { name: 'Deep Green', color: 0x2e7d3e },
+  { name: 'Ochre', color: 0xc9941f },
+  { name: 'Violet', color: 0x6e3fa3 },
+  { name: 'Teal', color: 0x1f8a86 },
+  { name: 'Burnt Orange', color: 0xc0561e },
+  { name: 'Slate Navy', color: 0x34507e },
+  { name: 'Wine', color: 0x8c2a4c },
+  { name: 'Sapphire', color: 0x2f74b5 },
 ];
 
 // Colours that would vanish against a culture's homeland biome.
 export const HERALDRY_AVOID = {
-  vale: ['Teal'], // meadows and forests are green
-  mire: ['Teal'], // swamp and jungle greens
-  frost: ['Sky', 'Cobalt', 'Azure'], // snow and ice read pale blue-white
-  dune: ['Gold', 'Copper', 'Ember'], // sand and savanna are yellow-orange
+  vale: ['Deep Green', 'Teal'], // meadows and forests are green
+  mire: ['Deep Green', 'Teal'], // swamp and jungle greens
+  frost: ['Sapphire', 'Slate Navy'], // snow, ice and slate read blue-grey
+  dune: ['Ochre', 'Burnt Orange'], // sand and savanna are yellow-orange
 };
