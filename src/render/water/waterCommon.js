@@ -119,7 +119,7 @@ const float KEYN = 0.30;
 float gCold = 0.0;
 
 // absorption per world unit of path (r, g, b); polar water is greyer
-vec3 waterAbsorb() { return mix(vec3(0.60, 0.150, 0.085), vec3(0.34, 0.17, 0.13), gCold); }
+vec3 waterAbsorb() { return mix(vec3(0.60, 0.150, 0.085), vec3(0.36, 0.24, 0.20), gCold); }
 
 // Light available inside the upper water column; vis = shadow * cloud factor.
 vec3 waterIrradianceV(float vis) {
@@ -130,12 +130,12 @@ vec3 waterIrradiance() { return waterIrradianceV(1.0); }
 
 // In-scattered colour of an infinitely deep column (deep sapphire / polar slate), lit.
 vec3 waterDeepColorV(float vis) {
-  return mix(vec3(0.0055, 0.034, 0.105), vec3(0.012, 0.030, 0.048), gCold) * waterIrradianceV(vis);
+  return mix(vec3(0.0055, 0.034, 0.105), vec3(0.010, 0.024, 0.038), gCold) * waterIrradianceV(vis);
 }
 vec3 waterDeepColor() { return waterDeepColorV(1.0); }
 // Lighter scatter colour of the shallow shelf haze (turquoise / cold teal-grey).
 vec3 waterShallowColorV(float vis) {
-  return mix(vec3(0.018, 0.150, 0.165), vec3(0.030, 0.072, 0.078), gCold) * waterIrradianceV(vis);
+  return mix(vec3(0.018, 0.150, 0.165), vec3(0.022, 0.048, 0.056), gCold) * waterIrradianceV(vis);
 }
 vec3 waterShallowColor() { return waterShallowColorV(1.0); }
 

@@ -515,16 +515,16 @@ function blurHeights(hgt, land, W, H, passes) {
 // Soft terracing of mountain cores: flat benches separated by steep risers, so
 // ranges read as stepped, stratified massifs instead of smooth cones.
 function terraceMountains(hgt, rangeMask, N) {
-  const step = 2.3;
+  const step = 1.9;
   for (let i = 0; i < N; i++) {
     const m = rangeMask[i];
-    if (m <= 0.15) continue;
+    if (m <= 0.08) continue;
     const h = hgt[i];
-    if (h < 3) continue;
+    if (h < 2.5) continue;
     const b = Math.floor(h / step) * step;
     const f = (h - b) / step;
-    const g = smoothstep(0.55, 1.0, f);
-    const k = 0.5 * smoothstep(0.15, 0.7, m) * smoothstep(3, 6, h);
+    const g = smoothstep(0.5, 1.0, f);
+    const k = 0.88 * smoothstep(0.08, 0.5, m) * smoothstep(2.5, 5, h);
     hgt[i] = h + (b + g * step - h) * k;
   }
 }
