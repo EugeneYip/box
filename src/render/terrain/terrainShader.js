@@ -74,6 +74,7 @@ struct NS {
   float moist; float temp; float ao; float fire;
   float fw;   // world-space pixel footprint
   float fwy;  // screen-space rate of change of world y (for strata AA)
+  vec3 fn;    // flat (per-triangle) geometric normal, world space
 };
 
 struct Mat { vec3 albedo; float rough; float h; float bump; vec3 emit; };
@@ -88,17 +89,21 @@ Mat matSand(NS s) {
   float ripFade = 1.0 - smoothstep(0.05, 0.25, s.fw);
   vec3 c = vec3(0.70, 0.56, 0.33);
   c = mix(c, vec3(0.80, 0.67, 0.43), s.macro.r * 0.6);
-  c *= 0.90 + 0.14 * s.det.g + 0.08 * (s.micro.a - 0.5);
+  c *= 0.92 + 0.10 * s.det.g;
+  // fine grain (value noise, no cells): reads as sand at every distance
+  float grain = nz(s.p.xz * 1.9).a * 0.5 + nz(ROT2 * s.p.xz * 4.3).a * 0.5;
+  c *= 1.0 + (grain - 0.5) * 0.16 * ripFade;
   c *= 1.0 - 0.06 * rip * ripFade;
-  // scattered shell / pebble specks
-  float speck = smoothstep(0.10, 0.04, s.cellS.r) * step(0.82, s.cellS.b);
-  c = mix(c, vec3(0.85, 0.80, 0.70), speck * 0.6 * ripFade);
-  // polar beaches are grey shingle, not golden sand
-  float cold = 1.0 - smoothstep(0.14, 0.42, s.temp);
-  vec3 shingle = vec3(0.30, 0.295, 0.28) * (0.72 + 0.5 * s.cellS.b) * (0.75 + 0.25 * smoothstep(0.0, 0.12, s.cellS.g));
-  shingle = mix(vec3(0.31, 0.30, 0.285) * (0.9 + 0.2 * s.det.r), shingle, ripFade);
+  // polar beaches: grey shingle of small rounded pebbles (~0.2 units) with dark gaps
+  float cold = 1.0 - smoothstep(0.22, 0.50, s.temp);
+  vec4 pb = cz(ROT3 * s.p.xz * (1.0 / 3.2));
+  float pebble = smoothstep(0.80, 0.42, pb.r);
+  vec3 stoneC = mix(vec3(0.36, 0.35, 0.33), vec3(0.23, 0.225, 0.22), pb.b) * (0.9 + 0.2 * pb.a);
+  vec3 shingle = mix(vec3(0.10, 0.098, 0.095), stoneC, pebble);
+  float pebFade = 1.0 - smoothstep(0.02, 0.09, s.fw);
+  shingle = mix(vec3(0.27, 0.265, 0.255) * (0.9 + 0.2 * s.det.r), shingle, pebFade);
   c = mix(c, shingle, cold);
-  return mk(c, mix(0.92, 0.75, cold), 0.18 + 0.10 * s.det.r + cold * 0.1, mix(0.035 + 0.02 * rip * ripFade, 0.05 * ripFade, cold));
+  return mk(c, mix(0.92, 0.72, cold), 0.18 + 0.10 * s.det.r + cold * pebble * pebFade * 0.3, mix(0.035 + 0.02 * rip * ripFade, 0.035 * pebFade * pebble, cold));
 }
 Mat matDesert(NS s) {
   // big dune bands + ripples on top
@@ -122,6 +127,11 @@ Mat matGrass(NS s) {
   c *= 0.80 + 0.40 * patchv;
   c = mix(c, c * vec3(1.22, 1.12, 0.70), smoothstep(0.60, 0.88, s.meso.r) * 0.40);
   c = mix(c, c * vec3(0.70, 0.95, 0.95), smoothstep(0.62, 0.9, s.macro.g) * 0.4);
+  // broad +-10% hue / value drift over 20-60 units, darker hollows (not a putting green)
+  vec4 lg = nz(s.p.xz * (1.0 / 150.0) + 17.3);
+  float hd = lg.r - 0.5, vd = lg.g - 0.5;
+  c *= vec3(1.0 + hd * 0.24, 1.0 + hd * 0.05, 1.0 - hd * 0.24) * (1.0 + vd * 0.24);
+  c *= mix(0.68, 1.0, smoothstep(0.35, 0.95, s.ao));
   // clumps & blades (fine detail fades in up close)
   float near = 1.0 - smoothstep(0.03, 0.16, s.fw);
   float clump = s.det.r * 0.55 + s.micro.r * 0.45;
@@ -231,10 +241,12 @@ Mat matRock(NS s) {
   // lichen flecks
   float lich = smoothstep(0.72, 0.86, s.det.g) * (1.0 - smoothstep(0.3, 0.6, 1.0 - s.n.y));
   c = mix(c, vec3(0.30, 0.30, 0.16), lich * 0.5);
-  // alpine turf creeps over flat rock in hollows
-  float turf = smoothstep(0.86, 0.97, s.n.y) * smoothstep(0.55, 0.78, s.meso.g * 0.6 + s.det.r * 0.4) * (1.0 - smoothstep(0.1, 0.3, 1.0 - s.temp - 0.6));
-  c = mix(c, vec3(0.115, 0.185, 0.060) * (0.85 + 0.3 * s.micro.r), turf * 0.8);
-  return mk(c, 0.80, 0.50 + 0.25 * s.det.r + 0.25 * stone, 0.05 * seam + 0.05 + 0.04 * stone);
+  // flat rock is mostly overgrown: turf with exposed outcrops (never a grey stain)
+  float flatK = smoothstep(0.80, 0.94, s.n.y);
+  float turf = flatK * smoothstep(0.36, 0.60, s.meso.g * 0.55 + s.det.r * 0.30 + s.micro.r * 0.15) * (1.0 - smoothstep(0.1, 0.3, 0.4 - s.temp));
+  vec3 turfC = mix(vec3(0.10, 0.20, 0.055), vec3(0.20, 0.22, 0.10), s.det.g) * (0.85 + 0.3 * s.micro.r);
+  c = mix(c, turfC, turf * 0.92);
+  return mk(c, 0.80, 0.32 + 0.22 * s.det.r + 0.2 * stone * (1.0 - turf), 0.05 * seam + 0.05 + 0.04 * stone);
 }
 Mat matLava(NS s) {
   float t = uLTime;
@@ -350,30 +362,32 @@ Mat matCliff(NS s, out vec3 facetN) {
   vec4 dX = nz(uvX * 0.37);
   vec4 dZ = nz(uvZ * 0.37);
   vec4 d = mix(dZ, dX, wx);
-  // strata: soft-edged bands in y (no thin creases: they alias on steep faces)
-  float sy = p.y * 0.62 + (t.r - 0.5) * 1.8 + (s.macro.r - 0.5) * 1.4;
+  // strata: level, crisp (anti-aliased) layers with a shadowed lip under each ledge
+  float sy = p.y * 0.75 + (t.r - 0.5) * 0.55 + (s.macro.r - 0.5) * 0.45;
   float layer = floor(sy);
-  float lt = smoothstep(0.30, 0.70, fract(sy));
+  float aa = clamp(s.fwy * 0.75 * 1.5, 0.02, 0.5);
+  float lt = smoothstep(1.0 - aa, 1.0, fract(sy));
   float lr = mix(hash12(vec2(layer, 3.7)), hash12(vec2(layer + 1.0, 3.7)), lt);
-  float bandFade = 1.0 - smoothstep(0.25, 0.7, s.fwy * 0.62);
+  float bandFade = 1.0 - smoothstep(0.25, 0.7, s.fwy * 0.75);
   lr = mix(0.5, lr, bandFade);
   vec3 cA = vec3(0.390, 0.335, 0.275);
   vec3 cB = vec3(0.215, 0.205, 0.200);
   vec3 cC = vec3(0.500, 0.420, 0.320);
   vec3 c = mix(mix(cB, cA, smoothstep(0.15, 0.6, lr)), cC, smoothstep(0.72, 0.95, lr));
   c *= 0.80 + 0.32 * d.r;
-  // terraced ledges: each layer lit on top, shadowed underneath
-  float led = smoothstep(0.15, 0.85, fract(sy));
-  c *= mix(1.0, mix(0.74, 1.16, led), bandFade);
-  // chunky facets: large cells on the projected plane, each with its own tilt
-  vec4 fX = cz(vec2(p.z * 0.055, p.y * 0.085 + p.x * 0.02));
-  vec4 fZ = cz(vec2(p.x * 0.055, p.y * 0.085 + p.z * 0.02));
-  vec4 f = mix(fZ, fX, wx);
+  // ledges: dark lip just above each layer boundary, lit top surface
+  float led = smoothstep(0.0, max(0.22, aa * 2.0), fract(sy));
+  c *= mix(1.0, mix(0.66, 1.10, led), bandFade);
+  // flat-shaded low-poly facets: geometric (per-triangle) normal plus crisp,
+  // nearest-sampled facet cells on the projected plane
+  vec2 fuv = mix(vec2(p.x * 0.055, p.y * 0.085 + p.z * 0.02), vec2(p.z * 0.055, p.y * 0.085 + p.x * 0.02), step(0.5, wx));
+  vec4 f = texelFetch(uCells, ivec2(floor(fract(fuv) * 256.0)), 0);
   vec3 tA = normalize(cross(n, vec3(0.0, 1.0, 0.0)) + vec3(1e-4, 0.0, 0.0));
   vec3 tB = normalize(cross(tA, n));
   float near = 1.0 - smoothstep(0.25, 0.9, s.fw);
-  facetN = normalize(n + (tA * (f.b - 0.5) * 0.85 + tB * (f.a - 0.5) * 0.65) * near);
-  c *= 0.80 + 0.40 * f.b;
+  vec3 base = normalize(mix(n, s.fn, 0.7 * near));
+  facetN = normalize(base + (tA * (f.b - 0.5) * 0.95 + tB * (f.a - 0.5) * 0.75) * near);
+  c *= mix(1.0, 0.78 + 0.44 * f.b, near);
   return mk(c, 0.82, 0.55 + 0.25 * lr + 0.2 * t.g, 0.05);
 }
 
@@ -381,7 +395,7 @@ Mat matCliff(NS s, out vec3 facetN) {
 vec3 seabedColor(NS s, float depth, out float hgt) {
   vec2 q = s.p.xz + (s.meso.rg - 0.5) * 4.0;
   float rip = sin(dot(q, vec2(1.6, 0.9)) * 2.2 + s.det.r * 4.0) * 0.5 + 0.5;
-  vec3 sand = mix(vec3(0.60, 0.50, 0.32), vec3(0.29, 0.285, 0.27), 1.0 - smoothstep(0.14, 0.42, s.temp)) * (0.88 + 0.16 * s.det.g);
+  vec3 sand = mix(vec3(0.60, 0.50, 0.32), vec3(0.25, 0.245, 0.235), 1.0 - smoothstep(0.22, 0.50, s.temp)) * (0.88 + 0.16 * s.det.g);
   sand *= 1.0 - 0.10 * rip * (1.0 - smoothstep(0.1, 0.4, s.fw));
   vec3 silt = vec3(0.24, 0.24, 0.20) * (0.8 + 0.3 * s.meso.r);
   vec3 rock = vec3(0.12, 0.13, 0.13) * (0.7 + 0.5 * s.cellL.b) * (0.6 + 0.4 * smoothstep(0.0, 0.1, s.cellL.g));
@@ -397,14 +411,14 @@ vec3 seabedColor(NS s, float depth, out float hgt) {
 }
 
 float causticsAt(vec2 p, float t) {
-  vec2 w = (nz(p * 0.035 + vec2(t * 0.006, -t * 0.004)).rg - 0.5) * 2.4;
-  vec2 q1 = (p + w) * (1.0 / 21.0) + vec2(t * 0.0045, t * 0.0026);
-  vec2 q2 = ROT1 * (p - w * 0.7) * (1.0 / 16.0) - vec2(t * 0.0032, -t * 0.0040);
-  float e1 = cz(q1).g;
-  float e2 = cz(q2).g;
-  float c1 = 1.0 - smoothstep(0.0, 0.22, e1);
-  float c2 = 1.0 - smoothstep(0.0, 0.22, e2);
-  return c1 * 0.65 + c2 * 0.65 + c1 * c2 * 1.2;
+  // fine, broken caustic net: two small drifting cell layers multiplied, gated by noise
+  vec2 w = (nz(p * 0.06 + vec2(t * 0.008, -t * 0.006)).rg - 0.5) * 1.6;
+  vec2 q1 = (p + w) * (1.0 / 8.5) + vec2(t * 0.011, t * 0.007);
+  vec2 q2 = ROT1 * (p - w * 0.7) * (1.0 / 6.3) - vec2(t * 0.008, -t * 0.010);
+  float c1 = 1.0 - smoothstep(0.0, 0.16, cz(q1).g);
+  float c2 = 1.0 - smoothstep(0.0, 0.16, cz(q2).g);
+  float br = smoothstep(0.35, 0.70, nz(p * 0.11 + t * 0.004).g);
+  return (c1 * c2 * 1.5 + (c1 + c2) * 0.22) * (0.30 + 0.70 * br);
 }
 
 vec3 bumpPerturb(vec3 pos, vec3 n, float H) {
@@ -450,18 +464,25 @@ void applyOverlay(vec2 p, inout vec3 albedo, inout vec3 emissive) {
   // distance (in tiles) from the border contour, approximately
   float dist = (fo - 0.5);
   // crisp 2-3 px borders at every zoom; fill strength fades out up close
-  float lineW = fwd * 2.2;
-  float line = (1.0 - smoothstep(lineW, lineW + fwd * 1.0, dist)) * (1.0 - uniformRegion);
+  // border in screen pixels: a ~1.3 px darker outer edge on the contour, then a
+  // ~2.4 px coloured band inside it, so borders read on every biome and zoom
+  float px = dist / fwd;
+  float edge = (1.0 - smoothstep(1.0, 1.8, px)) * (1.0 - uniformRegion);
+  float line = smoothstep(1.0, 1.8, px) * (1.0 - smoothstep(3.4, 4.2, px)) * (1.0 - uniformRegion);
   float glow = exp(-max(dist, 0.0) * 4.5) * (1.0 - uniformRegion);
+  // fill: none closer than ~22, ~18% at mid zoom (30-80), >= 40% at map zoom
+  float fillAmt = 0.18 * smoothstep(22.0, 32.0, uCamDist) + 0.24 * smoothstep(80.0, 180.0, uCamDist);
   float fillK = smoothstep(22.0, 110.0, uCamDist);
   vec3 col = pow(own.rgb, vec3(2.2)); // overlay colours are authored in sRGB
   float a = own.a;
   // fill saturates on alpha (owners may write partial strength): >= 40% at map zoom
   float aFill = clamp(a * 1.7, 0.0, 1.0);
-  albedo = mix(albedo, albedo * 0.45 + col * 0.55, aFill * 0.42 * fillK);
+  albedo = mix(albedo, albedo * 0.45 + col * 0.55, aFill * fillAmt);
   vec3 lineCol = col * 1.05 + 0.015;
   albedo = mix(albedo, albedo * (1.0 - 0.35 * a) + col * 0.35 * a, glow * mix(0.3, 0.6, fillK));
-  albedo = mix(albedo, lineCol, line * min(1.0, a * 1.3));
+  float aLine = min(1.0, a * 1.3);
+  albedo = mix(albedo, lineCol, line * aLine);
+  albedo = mix(albedo, albedo * 0.3 + col * 0.06, edge * aLine * 0.85);
   // gentle self-glow by day, dim at night (lamps and fires must stay brighter)
   emissive += (lineCol * line * 0.9 + col * glow * 0.3) * a * mix(0.05, 0.30, uDay);
 }
@@ -473,6 +494,8 @@ void terrainSurface() {
   vec2 p = s.p.xz;
   s.fw = length(fwidth(s.p));
   s.fwy = fwidth(s.p.y);
+  s.fn = normalize(cross(dFdx(s.p), dFdy(s.p)));
+  s.fn *= s.fn.y < 0.0 ? -1.0 : 1.0;
   s.macro = nz(p * (1.0 / 97.0));
   s.meso = nz(ROT1 * p * (1.0 / 23.0));
   s.det = nz(ROT2 * p * (1.0 / 5.3));
@@ -522,6 +545,26 @@ void terrainSurface() {
   float lavaRaw = dot(isLava, w);
   float snowB = dot(isSnow, b);
   float iceB = dot(isIce, b);
+
+  // ---- soft snow cover: snow edges dissolve into the ground over ~1.5 tiles
+  vec2 gs = p + (s.macro.gb - 0.5) * 3.0 + (s.det.rg - 0.5) * 1.2 - 0.5;
+  ivec2 cs2 = ivec2(floor(gs));
+  vec2 fs2 = smoothstep(0.0, 1.0, fract(gs));
+  float s00 = tileTypeAt(cs2) == 7.0 ? 1.0 : 0.0;
+  float s10 = tileTypeAt(cs2 + ivec2(1, 0)) == 7.0 ? 1.0 : 0.0;
+  float s01 = tileTypeAt(cs2 + ivec2(0, 1)) == 7.0 ? 1.0 : 0.0;
+  float s11 = tileTypeAt(cs2 + ivec2(1, 1)) == 7.0 ? 1.0 : 0.0;
+  float snowF = mix(mix(s00, s10, fs2.x), mix(s01, s11, fs2.x), fs2.y);
+  float anySnow = dot(isSnow, live);
+  if (snowF > 0.0 || anySnow > 0.0) {
+    float cover = smoothstep(0.22, 0.78, snowF + (s.micro.r - 0.5) * 0.35 + (s.det.b - 0.5) * 0.25);
+    vec4 bn = b * (1.0 - isSnow);
+    float bsum = bn.x + bn.y + bn.z + bn.w;
+    vec3 ground = bsum > 1e-4 ? (m0.albedo * bn.x + m1.albedo * bn.y + m2.albedo * bn.z + m3.albedo * bn.w) / bsum : matTundra(s).albedo;
+    albedo = mix(ground, matSnow(s).albedo, cover);
+    rough = mix(rough, 0.62, cover * (1.0 - snowB));
+    snowB = cover;
+  }
 
   // ---- slope driven cliffs
   vec3 nrm = s.n;
@@ -604,7 +647,7 @@ void terrainSurface() {
   tAO = mix(0.35, 1.0, s.ao);
   tCloud = cloudShadowAt(p);
   tSpecK = 1.0;
-  tCold = 1.0 - smoothstep(0.14, 0.42, s.temp);
+  tCold = 1.0 - smoothstep(0.22, 0.50, s.temp);
 }
 `;
 
@@ -612,14 +655,15 @@ export const TERRAIN_FRAGMENT_POST = /* glsl */ `
 {
   // water column over the seabed
   float depthW = -vWPos.y;
+  float cfw = length(fwidth(vWPos.xz));
   if (depthW > 0.0) {
     vec3 vdir = normalize(vWPos - cameraPosition);
     float viewY = abs(vdir.y);
     // caustics are light: modulate the lit seabed in shallow, sunny water
-    float cs = causticsAt(vWPos.xz, uLTime) * (1.0 - smoothstep(0.3, 4.5, depthW)) * smoothstep(0.0, 0.35, depthW);
+    float cs = causticsAt(vWPos.xz, uLTime) * (1.0 - smoothstep(0.3, 4.5, depthW)) * smoothstep(0.0, 0.35, depthW) * (1.0 - smoothstep(0.06, 0.25, cfw)) * (1.0 - tCold * 0.6);
     float sunVis = clamp(lum(uKeyCol * KEYN), 0.0, 1.0) * smoothstep(0.0, 0.2, uKeyDir.y) * tCloud;
     gCold = tCold;
-    outgoingLight *= 1.0 + cs * 0.55 * sunVis;
+    outgoingLight *= 1.0 + cs * 0.45 * sunVis;
     outgoingLight = applyWaterColumn(outgoingLight, depthW, viewY, tCloud);
   }
 }
@@ -648,5 +692,5 @@ export function patchTerrainMaterial(material, uniforms) {
       )
       .replace('#include <opaque_fragment>', TERRAIN_FRAGMENT_POST + '\n#include <opaque_fragment>');
   };
-  material.customProgramCacheKey = () => 'worldseed-terrain-v2';
+  material.customProgramCacheKey = () => 'worldseed-terrain-v3';
 }

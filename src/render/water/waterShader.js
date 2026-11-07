@@ -95,7 +95,7 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
 
   // ---- climate: polar water is slate-teal, not tropical turquoise
   float temp = texture2D(uClimTex, p / uWorldSize).g;
-  gCold = (1.0 - smoothstep(0.14, 0.42, temp)) * (1.0 - outK * 0.5);
+  gCold = (1.0 - smoothstep(0.22, 0.50, temp)) * (1.0 - outK * 0.5);
 
   // ---- waves
   float calm = mix(0.55, 1.0, smoothstep(0.0, 2.5, depth)) * mix(1.0, 0.75, outK) * mix(1.0, 0.5, narrow);
@@ -119,7 +119,7 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   float streak = smoothstep(0.56, 0.86, st1.r) * 0.7 + smoothstep(0.6, 0.9, st2.g) * 0.5 * (1.0 - smoothstep(0.08, 0.35, fw));
   float riffle = smoothstep(0.62, 0.92, st2.r) * (1.0 - smoothstep(0.25, 0.7, depth)) * (1.0 - smoothstep(0.1, 0.4, fw));
   // bends: how fast the flow direction turns per world unit
-  float bend = smoothstep(0.18, 0.55, length(fwidth(flow)) / max(fw, 1e-3));
+  float bend = smoothstep(0.35, 0.95, length(fwidth(flow)) / max(fw, 1e-3));
   // flow ripples tilt the surface along the current
   sl += flow * (st1.g - 0.5) * 0.25 * narrow * (1.0 - smoothstep(0.1, 0.5, fw));
 
@@ -129,8 +129,8 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   // ---- reflection of the actual sky gradient (Atmosphere's zenith / horizon)
   vec3 R = reflect(-V, N);
   vec3 sky = mix(uSkyCol, uZenCol, pow(clamp(R.y, 0.0, 1.0), 0.55));
-  float F = 0.05 + 0.95 * pow(1.0 - NdV, 5.0);
-  F = clamp(F * 1.25, 0.0, 1.0);
+  // ~3.5% straight down, rising towards grazing angles (Schlick)
+  float F = clamp(0.035 + 0.965 * pow(1.0 - NdV, 5.0), 0.0, 1.0);
 
   // ---- key-light shadow on the surface (+ clouds)
   float sunSh = 1.0;
@@ -180,7 +180,7 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   float contactW = 0.30 + 0.25 * breath + 0.15 * fn.b;
   float contact = 1.0 - smoothstep(contactW * 0.25, contactW * 1.15, shoreD);
   contact *= (0.45 + 0.55 * breakup) * mix(0.08, 1.0, open);
-  float wash = (1.0 - smoothstep(0.0, 1.6 + 0.6 * breath, shoreD)) * 0.35 * open;
+  float wash = (1.0 - smoothstep(0.0, 1.6 + 0.6 * breath, shoreD)) * 0.30 * open * smoothstep(0.08, 0.40, uKeyDir.y) * (1.0 - gCold * 0.7);
   float ph = shoreD * 0.95 - t * 0.32 + (fn.r - 0.5) * 1.3;
   float bandWave = fract(ph);
   float band = smoothstep(0.0, 0.10, bandWave) * (1.0 - smoothstep(0.10, 0.34, bandWave));
@@ -189,7 +189,8 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   float lace = smoothstep(0.82, 0.96, 1.0 - fc2.g) * smoothstep(0.62, 0.8, fn.g) * open * 0.10 * (1.0 - smoothstep(0.4, 1.6, fw));
   // river foam: flecks at bends and riffles, carried downstream
   float rivFoam = narrow * clamp(bend * 0.8 * smoothstep(0.55, 0.85, st1.b) + riffle * 0.55 + (1.0 - smoothstep(0.05, 0.45, shoreD)) * 0.25 * st1.a, 0.0, 1.0);
-  float foam = clamp(max(contact * 0.9, bands * 0.75) + lace + rivFoam * 0.7, 0.0, 1.0);
+  float foam = clamp(max(contact * 0.9, bands * 0.75) + lace + min(rivFoam, 0.5) * 0.6, 0.0, 1.0);
+  foam = min(foam, mix(1.0, 0.35, narrow)); // steep narrow channels must never turn into a white slab
   foam *= 1.0 - outK;
   foam *= smoothstep(0.0, 0.02, depth + 0.02);
   foam *= 1.0 - gCold * 0.35;
@@ -205,7 +206,7 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   float i01 = isIceAt(ic + ivec2(0, 1), isz);
   float i11 = isIceAt(ic + ivec2(1, 1), isz);
   float iceF = mix(mix(i00, i10, ifr.x), mix(i01, i11, ifr.x), ifr.y);
-  float ice = smoothstep(0.30, 0.70, iceF + (fc.b - 0.5) * 0.25) * (1.0 - outK) * step(0.001, depth);
+  float ice = smoothstep(0.18, 0.82, iceF + (fc.b - 0.5) * 0.3 + (fn.g - 0.5) * 0.25) * (1.0 - outK) * step(0.001, depth);
 
   // ---- compose (premultiplied)
   vec3 refl = sky * F;
@@ -215,15 +216,21 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   a = clamp(a + wash * 0.25, 0.0, 1.0);
   // river streaks: lighter, sky-tinted bands moving downstream
   col += narrow * streak * (waterShallowColorV(lightVis) * 0.9 + sky * 0.05);
+  // from afar, rivers read as bright teal ribbons with a sky sheen, not dark roads
+  float farR = smoothstep(60.0, 220.0, uCamDist);
+  col += narrow * farR * (rivTeal * 1.3 + sky * 0.14);
   col = mix(col, foamCol, foam);
   a = mix(a, 1.0, foam);
   col += spec * (1.0 - foam);
   a = clamp(a + lum(spec) * 0.5, 0.0, 1.0);
   if (ice > 0.0) {
     float cracks = 1.0 - smoothstep(0.0, 0.06, fc.g);
-    vec3 iceAlb = mix(vec3(0.38, 0.50, 0.60), vec3(0.54, 0.63, 0.71), smoothstep(0.3, 0.8, fn.r));
-    iceAlb = mix(iceAlb, vec3(0.30, 0.36, 0.48), smoothstep(0.55, 0.85, fn.b) * 0.5); // blue-violet hollows
-    iceAlb *= 1.0 - cracks * 0.22;
+    vec3 iceAlb = mix(vec3(0.34, 0.43, 0.52), vec3(0.47, 0.55, 0.62), smoothstep(0.3, 0.8, fn.r));
+    iceAlb = mix(iceAlb, vec3(0.28, 0.33, 0.45), smoothstep(0.55, 0.85, fn.b) * 0.5); // blue-violet hollows
+    float cracks2 = 1.0 - smoothstep(0.0, 0.05, fc2.g);
+    iceAlb *= (1.0 - cracks * 0.38) * (1.0 - cracks2 * 0.18);
+    // thin, darker slush towards the floe edge
+    iceAlb = mix(scat * 4.0 + vec3(0.06, 0.08, 0.10), iceAlb, smoothstep(0.0, 0.6, ice));
     float ndl = max(L.y, 0.0);
     vec3 iceCol = iceAlb * (keyL * ndl * lightVis * 0.85 + uAmbCol * 0.65);
     float Fi = 0.04 + 0.96 * pow(1.0 - max(V.y, 0.0), 5.0);

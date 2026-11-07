@@ -188,7 +188,7 @@ export class SkyModel {
     let sunI = n.keyI;
     // overcast / storm / fog block direct sun
     // storms leave ~20% sun so racing cloud shadows can sweep the land
-    const block = Math.min(0.92, Math.pow(oc, 0.75) * (0.9 - 0.1 * storm) + w.fog * 0.45);
+    const block = Math.min(0.92, Math.pow(oc, 0.75) * (0.9 - 0.2 * storm) + w.fog * 0.45);
     sunI *= 1 - block;
     // desaturate the key under clouds
     const lumKey = this.sunLightColor.r * 0.3 + this.sunLightColor.g * 0.59 + this.sunLightColor.b * 0.11;

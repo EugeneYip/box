@@ -176,7 +176,7 @@ void main() {
   vec2 p = vW.xz / uScale + uOff;
   float n = cFbm(p);
   float n2 = cFbm(p * 2.3 + uOff * 0.6 + 7.0);
-  float d = smoothstep(0.42, 0.8, n * 0.75 + n2 * 0.35);
+  float d = smoothstep(0.34, 0.76, n * 0.75 + n2 * 0.35);
   float radial = 1.0 - smoothstep(uRadius * 0.55, uRadius, distance(vW.xz, uCenter.xz));
   float a = d * uAmt * radial;
   if (a < 0.003) discard;
@@ -393,11 +393,12 @@ export class Clouds {
       const scale = (0.55 + 0.45 * Math.sqrt(c.presence)) * grow;
       const cs = Math.cos(c.rot),
         sn = Math.sin(c.rot);
-      const base = c.y - c.size * 0.05;
+      const cy = c.y - 22 * weather.storm; // storm decks hang lower
+      const base = cy - c.size * 0.05;
       for (const p of c.puffs) {
         const o = k * 8;
         raw[o] = x + (p.ox * cs - p.oz * sn) * scale;
-        raw[o + 1] = c.y + p.oy * scale;
+        raw[o + 1] = cy + p.oy * scale;
         raw[o + 2] = z + (p.ox * sn + p.oz * cs) * scale;
         raw[o + 3] = p.r * scale;
         raw[o + 4] = pres;
@@ -446,9 +447,10 @@ export class Clouds {
     const flash = env.lightning || 0;
     u.uFlash.value.setRGB(0.85, 0.9, 1.25).multiplyScalar(flash * 1.2);
     // visibility: gone when close, soft and prominent when zoomed out
-    const vis = THREE.MathUtils.smoothstep(camDist, 80, 165);
-    u.uOpacity.value = vis * (0.82 + 0.18 * weather.overcast);
-    u.uNearFade.value = 40 + camDist * 0.28;
+    const st = weather.storm;
+    const vis = THREE.MathUtils.smoothstep(camDist, 80 - 45 * st, 165 - 85 * st);
+    u.uOpacity.value = Math.min(1.25, vis * (0.82 + 0.18 * weather.overcast + 0.3 * st));
+    u.uNearFade.value = THREE.MathUtils.lerp(40 + camDist * 0.28, 22 + camDist * 0.18, weather.storm);
     this.group.visible = vis > 0.01;
 
     // ---- storm scud layer ------------------------------------------------
@@ -467,7 +469,7 @@ export class Clouds {
       const S = this.scudU;
       S.uScale.value = 14 + camDist * 0.55;
       S.uOff.value.copy(this.scudOff).multiplyScalar(30 / S.uScale.value);
-      S.uAmt.value = storm * 0.32;
+      S.uAmt.value = storm * 0.5;
       S.uCenter.value.set(t.x, y, t.z);
       S.uRadius.value = size * 0.5;
       S.uCol.value.copy(model.cloudShade).multiplyScalar(0.55).lerp(model.cloudLit, 0.12);
@@ -483,8 +485,9 @@ export class Clouds {
     const sd = model.sunDir;
     const sy = Math.max(0.35, sd.y);
     const P = this.shadow.params;
-    P.x = -f.x0 + (sd.x / sy) * this.altitude;
-    P.y = -f.z0 + (sd.z / sy) * this.altitude;
+    const alt = this.altitude - 22 * weather.storm;
+    P.x = -f.x0 + (sd.x / sy) * alt;
+    P.y = -f.z0 + (sd.z / sy) * alt;
     P.z = 1 / f.sx;
     P.w = (0.45 + 0.4 * weather.storm) * THREE.MathUtils.smoothstep(sd.y, 0.04, 0.3) * (model.keyIsMoon ? 0 : 1);
   }

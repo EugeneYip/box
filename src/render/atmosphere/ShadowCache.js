@@ -1,0 +1,169 @@
+import * as THREE from 'three';
+import { Pass } from 'postprocessing';
+
+// Static / dynamic split of the key light's shadow map.
+//
+// The expensive static casters (terrain, trees, buildings) are rendered into
+// the shadow map only when it must change: the fitted light frustum moved, the
+// world changed (rate limited), or a slow heartbeat for growth. That result is
+// cached. Every other frame the cache is restored into the light's shadow map
+// (colour + depth, via gl_FragDepth) and only the dynamic casters (units) are
+// drawn on top with depth testing. This removes the periodic full shadow
+// redraw spikes while keeping unit shadows exact every frame.
+//
+// Hook point: the sky dome's onBeforeRender, which three calls inside the
+// main render after its shadow pass and before anything else is drawn (the
+// same nested-render pattern three's Reflector uses).
+
+const COPY_VERT = /* glsl */ `
+varying vec2 vUv;
+void main() { vUv = position.xy * 0.5 + 0.5; gl_Position = vec4(position.xy, 0.0, 1.0); }
+`;
+const RESTORE_FRAG = /* glsl */ `
+#include <packing>
+uniform sampler2D tSrc;
+varying vec2 vUv;
+void main() {
+  vec4 p = texture2D(tSrc, vUv);
+  gl_FragColor = p;
+  gl_FragDepth = unpackRGBAToDepth(p);
+}
+`;
+const COPY_FRAG = /* glsl */ `
+uniform sampler2D tSrc;
+varying vec2 vUv;
+void main() { gl_FragColor = texture2D(tSrc, vUv); }
+`;
+
+export class ShadowCache {
+  constructor(atmosphere) {
+    this.atm = atmosphere;
+    this.game = atmosphere.game;
+    this.light = atmosphere.key;
+    this.light.shadow.autoUpdate = false;
+    this.rt = null;
+    this.valid = false;
+    this.phase = null; // 'capture' | 'cached' while a frame is in flight
+    this.sinceRefresh = 1e9;
+    this.worldDirty = 1; // frames to wait before a world-change refresh (0 = clean)
+    this.dyn = [];
+    const mk = (frag, depth) =>
+      new THREE.Mesh(
+        Pass.fullscreenGeometry,
+        new THREE.ShaderMaterial({
+          uniforms: { tSrc: { value: null } },
+          vertexShader: COPY_VERT,
+          fragmentShader: frag,
+          depthTest: depth,
+          depthWrite: depth,
+          depthFunc: THREE.AlwaysDepth,
+          blending: THREE.NoBlending,
+        }),
+      );
+    this.restoreScene = new THREE.Scene();
+    this.restoreQuad = mk(RESTORE_FRAG, true);
+    this.restoreQuad.frustumCulled = false;
+    this.restoreScene.add(this.restoreQuad);
+    this.copyScene = new THREE.Scene();
+    this.copyQuad = mk(COPY_FRAG, false);
+    this.copyQuad.frustumCulled = false;
+    this.copyScene.add(this.copyQuad);
+    this.quadCam = new THREE.Camera();
+    this.dynScene = new THREE.Scene();
+    // same packing and culling side three uses for directional shadow maps
+    this.dynScene.overrideMaterial = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, side: THREE.BackSide });
+    this.dynScene.matrixWorldAutoUpdate = false;
+    // terrain edits refresh quickly; flora growth / felling only lazily
+    const shape = () => (this.worldDirty = Math.min(this.worldDirty || 1e9, 8));
+    const flora = () => (this.worldDirty = Math.min(this.worldDirty || 1e9, 90));
+    for (const e of ['world:height', 'world:type', 'world:regenerated']) this.game.events.on(e, shape);
+    this.game.events.on('world:flora', flora);
+  }
+
+  dynamicRoot() {
+    return this.game.unitRenderer?.group || this.game.scene.getObjectByName('units');
+  }
+
+  // Called before the frame is drawn. `changed` = the fitted frustum moved.
+  begin(renderer, changed) {
+    const sm = renderer.shadowMap;
+    sm.autoUpdate = false;
+    const sh = this.light.shadow;
+    this.sinceRefresh++;
+    const sizeOk = this.rt && sh.map && this.rt.width === sh.map.width && this.rt.height === sh.map.height;
+    const worldDue = this.worldDirty && this.sinceRefresh >= this.worldDirty;
+    const heartbeat = this.sinceRefresh >= 240;
+    const refresh = changed || !this.valid || !sizeOk || worldDue || heartbeat || this.game.frame < 4;
+    for (const o of this.dyn) o.castShadow = true; // safety: never leave flags off
+    this.dyn.length = 0;
+    if (refresh) {
+      sh.needsUpdate = true;
+      sm.needsUpdate = true;
+      this.phase = 'capture';
+      this.worldDirty = 0;
+      this.sinceRefresh = 0;
+      // keep dynamic casters out of the cached map
+      this.dyn.length = 0;
+      this.dynamicRoot()?.traverse((o) => {
+        if (o.castShadow) {
+          o.castShadow = false;
+          this.dyn.push(o);
+        }
+      });
+    } else {
+      sh.needsUpdate = false;
+      this.phase = sizeOk ? 'cached' : null;
+    }
+  }
+
+  // Inside the main render, after three's shadow pass.
+  composite(renderer) {
+    const phase = this.phase;
+    if (!phase) return;
+    this.phase = null;
+    const sh = this.light.shadow;
+    const map = sh.map;
+    if (!map) return;
+    const prevTarget = renderer.getRenderTarget();
+    const prevAuto = renderer.autoClear;
+    renderer.autoClear = false;
+    try {
+      if (phase === 'capture') {
+        for (const o of this.dyn) o.castShadow = true;
+        this.dyn.length = 0;
+        if (!this.rt || this.rt.width !== map.width || this.rt.height !== map.height) {
+          this.rt?.dispose();
+          this.rt = new THREE.WebGLRenderTarget(map.width, map.height, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: false });
+          this.rt.texture.name = 'StaticShadowCache';
+        }
+        this.copyQuad.material.uniforms.tSrc.value = map.texture;
+        renderer.setRenderTarget(this.rt);
+        renderer.render(this.copyScene, this.quadCam);
+        this.valid = true;
+      } else {
+        this.restoreQuad.material.uniforms.tSrc.value = this.rt.texture;
+        renderer.setRenderTarget(map);
+        renderer.render(this.restoreScene, this.quadCam);
+      }
+      // dynamic casters on top, depth tested against the static map
+      const root = this.dynamicRoot();
+      if (root && root.visible) {
+        const list = this.dynScene.children;
+        list.length = 0;
+        root.traverseVisible((o) => {
+          if (o.castShadow && o.isMesh) list.push(o); // borrowed: parent untouched
+        });
+        if (list.length) {
+          renderer.setRenderTarget(map);
+          renderer.render(this.dynScene, sh.camera);
+        }
+        list.length = 0;
+      }
+    } catch (err) {
+      console.warn('[atmosphere] shadow cache disabled', err);
+      this.disabled = true;
+    }
+    renderer.autoClear = prevAuto;
+    renderer.setRenderTarget(prevTarget);
+  }
+}
