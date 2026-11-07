@@ -338,21 +338,21 @@ function snowCap(b, y0, h, r, segs, rot, lod) {
   const col = (p, n) => mul3(mix3(pal.dark, pal.light, clamp01(n.y * 0.85 + 0.2)), 0.95 + 0.08 * hashV(p));
   const piv = V(0, y0 + h * 0.5, 0);
   const slope = Math.atan2(h, r);
-  const clumps = lod ? 2 : 3 + Math.floor(b.rng() * 3);
+  const clumps = lod ? 3 : 5 + Math.floor(b.rng() * 3);
   for (let k = 0; k < clumps; k++) {
     const a = rot + (k / clumps) * TAU + b.r(-0.5, 0.5);
-    const rho = r * b.r(0.3, 0.78);
-    const ySurf = y0 + h * (1 - rho / r) * 0.92 + 0.012;
-    const size = r * b.r(0.2, 0.34) * (1 - rho / r * 0.35);
-    const g = blobGeo(b, size, lod ? 0 : 'd', { lump: 0.35, squash: 0.38, freq: 2.4 });
+    const rho = r * b.r(0.25, 0.75);
+    const ySurf = y0 + h * (1 - rho / r) * 0.92 + 0.03;
+    const size = r * b.r(0.3, 0.46) * (1 - rho / r * 0.3);
+    const g = blobGeo(b, size, lod ? 0 : 'd', { lump: 0.35, squash: 0.45, freq: 2.4 });
     // tilt the drift so it lies along the cone surface
     const tilt = new THREE.Matrix4().makeRotationZ(-slope * 0.75);
     const place = new THREE.Matrix4().makeTranslation(Math.cos(a) * rho, ySurf, Math.sin(a) * rho);
     const mat4 = place.multiply(new THREE.Matrix4().makeRotationY(-a)).multiply(tilt).multiply(new THREE.Matrix4().makeScale(1, 1, b.r(0.8, 1.35)));
     b.add(g, { matrix: mat4, normals: 'blend', blend: 0.55, color: col, mat: MAT.SNOW, leaf: 1, flutter: 0.25, pivot: piv });
   }
-  if (y0 + h > 0 && b.rng() < 0.7) {
-    const cap = blobGeo(b, r * 0.3, lod ? 0 : 'd', { lump: 0.3, squash: 0.55, freq: 2.0 });
+  if (y0 + h > 0) {
+    const cap = blobGeo(b, r * 0.42, lod ? 0 : 'd', { lump: 0.3, squash: 0.6, freq: 2.0 });
     b.add(cap, { matrix: M(0, y0 + h * 0.86, 0, 0, b.r(0, TAU), 0), normals: 'blend', blend: 0.6, color: col, mat: MAT.SNOW, leaf: 1, flutter: 0.25, pivot: piv });
   }
 }
