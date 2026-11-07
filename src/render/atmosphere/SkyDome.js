@@ -224,6 +224,8 @@ export class SkyDome {
       // keep the dome centred on whichever camera is drawing it this instant
       this.mesh.position.setFromMatrixPosition(cam.matrixWorld);
       this.mesh.updateMatrixWorld();
+      // first draw of the main pass: three's shadow pass has just run
+      if (cam === game.cameraRig?.camera) this.atm.shadowCache?.composite(r);
     };
     game.scene.add(this.mesh);
 

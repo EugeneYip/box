@@ -304,11 +304,21 @@ export class Precipitation {
       while (n-- > 0) {
         const i = this._splashI;
         this._splashI = (this._splashI + 1) % this.splashN;
-        const r1 = this._rnd() - 0.5,
-          r2 = this._rnd() - 0.35;
-        const x = tx + (r1 * fz + r2 * fx) * span * 1.4;
-        const z = tz + (-r1 * fx + r2 * fz) * span * 1.4;
-        if (x < 0 || z < 0 || x > world.w || z > world.h) {
+        let x = 0,
+          z = 0,
+          ok = false;
+        for (let tries = 0; tries < 4 && !ok; tries++) {
+          const r1 = this._rnd() - 0.5,
+            r2 = this._rnd() - 0.35;
+          x = tx + (r1 * fz + r2 * fx) * span * 1.4;
+          z = tz + (-r1 * fx + r2 * fz) * span * 1.4;
+          if (x < 0 || z < 0 || x >= world.w || z >= world.h) continue;
+          const ti = world.idx(Math.floor(x), Math.floor(z));
+          const t = world.type[ti];
+          // splashes only where water stands: sea / rivers, roads, fields, mud
+          ok = world.height[ti] < 0 || t === 13 || t === 12 || t === 11;
+        }
+        if (!ok) {
           arr[i * 4 + 3] = -100;
           continue;
         }

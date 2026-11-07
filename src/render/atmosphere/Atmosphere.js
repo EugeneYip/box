@@ -5,6 +5,7 @@ import { Clouds } from './Clouds.js';
 import { Precipitation } from './Precipitation.js';
 import { Lightning } from './Lightning.js';
 import { Weather, WEATHER_TYPES } from './Weather.js';
+import { ShadowCache } from './ShadowCache.js';
 import { noise1, smoothstep, mulberry32, approach } from './util.js';
 
 // Atmosphere: sun / moon / sky lighting, camera-fitted stable shadows, the
@@ -84,6 +85,7 @@ export class Atmosphere {
     this.clouds = new Clouds(this);
     this.precip = new Precipitation(this);
     this.lightning = new Lightning(this);
+    this.shadowCache = new ShadowCache(this);
 
     // ---- env extras ----------------------------------------------------
     const env = game.env;
@@ -131,7 +133,7 @@ export class Atmosphere {
     };
 
     this._windAngle = this.rng() * Math.PI * 2;
-    this._boltT = 2;
+    this._boltT = 0.6;
     this._extFlash = 0;
     this._lastFlash = 0;
     this._myFlash = 0;
@@ -247,12 +249,12 @@ export class Atmosphere {
     if (!paused && mix.storm > 0.3) {
       this._boltT -= dt;
       if (this._boltT <= 0) {
-        this._boltT = (1.2 + this.rng() * 5.5) / Math.max(0.4, mix.storm);
+        this._boltT = (0.5 + this.rng() * 1.9) / Math.max(0.4, mix.storm);
         const span = 20 + rig.cur.dist * 0.75;
         const x = THREE.MathUtils.clamp(rig.target.x + (this.rng() - 0.5) * span * 1.6, 2, game.world.w - 2);
         const z = THREE.MathUtils.clamp(rig.target.z + (this.rng() - 0.65) * span * 1.4, 2, game.world.h - 2);
         // some bolts stay inside the clouds (sheet lightning)
-        if (this.rng() < 0.3) this._myFlash = Math.max(this._myFlash, 0.45 + this.rng() * 0.3);
+        if (this.rng() < 0.2) this._myFlash = Math.max(this._myFlash, 0.45 + this.rng() * 0.3);
         else this.strike(x, z, { intensity: 0.8 + this.rng() * 0.4 });
       }
     }
@@ -352,13 +354,11 @@ export class Atmosphere {
     }
   }
 
-  // Shadow map budget: the map is re-rendered every frame while the camera
-  // or light moves (the fitted frustum changed), otherwise every 2nd frame at
-  // mid zoom and every 3rd frame zoomed out, where a frame of lag on moving
-  // units' shadows is invisible. Halves to thirds the shadow pass cost.
+  // Shadow map budget: static casters are re-rendered only when the fitted
+  // light frustum moves, the world changes (rate limited) or on a slow
+  // heartbeat; units are composited into the cached map every frame
+  // (see ShadowCache).
   shadowBudget(renderer) {
-    const sm = renderer.shadowMap;
-    sm.autoUpdate = false;
     // compare what fitShadow() set this frame (the shadow camera itself only
     // moves when the map is re-rendered)
     const L = this.key;
@@ -373,12 +373,10 @@ export class Atmosphere {
       sig[i] = now[i];
     }
     this._shadowInit = true;
-    const d = this.game.cameraRig.cur.dist;
-    const interval = d < 70 ? 1 : d < 160 ? 2 : 3;
-    this._shadowAge = (this._shadowAge || 0) + 1;
-    if (changed || this._shadowAge >= interval || this.game.frame < 4) {
-      sm.needsUpdate = true;
-      this._shadowAge = 0;
+    if (this.shadowCache && !this.shadowCache.disabled) this.shadowCache.begin(renderer, changed);
+    else {
+      renderer.shadowMap.autoUpdate = true;
+      this.key.shadow.autoUpdate = true;
     }
   }
 
@@ -421,7 +419,7 @@ export class Atmosphere {
     pts[n++].copy(rig.target);
 
     const sd = this._shadowDir || (this._shadowDir = lightDir.clone().normalize());
-    if (sd.angleTo(lightDir) > 0.004) sd.copy(lightDir).normalize();
+    if (sd.angleTo(lightDir) > 0.014) sd.copy(lightDir).normalize(); // ~0.8 deg steps
     const lz = this._lz.copy(sd);
     const lx = this._lx;
     if (Math.abs(lz.y) > 0.999) lx.set(1, 0, 0);
@@ -519,7 +517,7 @@ export class Atmosphere {
     P.fogColor.copy(M.horizon).lerp(M.groundHaze, 0.4);
 
     // high threshold by day (only true highlights glow), lower at night for lamps
-    P.bloom.threshold = (1.7 - 0.7 * M.night) / Math.max(0.5, M.exposure);
+    P.bloom.threshold = (2.1 - 0.9 * M.night) / Math.max(0.5, M.exposure);
     P.bloom.smoothing = 0.4;
     P.bloom.intensity = 0.42 + 0.25 * M.night + 0.3 * flash;
 
@@ -534,9 +532,9 @@ export class Atmosphere {
     // strong only close up; a gentle miniature hint at mid zoom; off far out
     const s = (1 - 0.72 * smoothstep(25, 90, dist)) * (1 - smoothstep(90, 140, dist));
     P.dof.focus = this._focus;
-    P.dof.band = 0.13 + 0.03 * (1 - s);
-    P.dof.ramp = 0.32;
-    P.dof.maxCoc = 6 * s;
+    P.dof.band = 0.2 + 0.03 * (1 - s);
+    P.dof.ramp = 0.42;
+    P.dof.maxCoc = 4.5 * s;
     P.dof.nearBoost = 0.8;
 
     // AO scale follows the zoom: fine contact shadows close, valleys far
