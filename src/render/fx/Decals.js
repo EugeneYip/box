@@ -263,30 +263,35 @@ export class Decals {
     this.add = new DecalBatch(fx, 256, false, 5);
     // additive glows drawn over trees and props (impact crowns, flashes)
     this.over = new DecalBatch(fx, 48, false, 30, false);
+    // darkening drawn without depth test (crisp chasm voids)
+    this.mulOver = new DecalBatch(fx, 96, true, 7, false);
     this._c = new THREE.Color();
   }
   addTo(scene) {
-    scene.add(this.mul.mesh, this.add.mesh, this.over.mesh);
+    scene.add(this.mul.mesh, this.add.mesh, this.over.mesh, this.mulOver.mesh);
   }
   // d: {x, z, size, frame, life, color(hex|Color), alpha, additive, rot,
   //     fadeIn, fadeOut, grow, surface, intensity, cool, grain, delay, spin}
   spawn(d) {
     const c = d.color instanceof THREE.Color ? d.color : this._c.setHex(d.color ?? (d.additive ? 0xffa040 : 0x1a1410));
     const rec = { ...d, color: c };
-    (d.overlay ? this.over : d.additive ? this.add : this.mul).add(rec, this.fx.time);
+    (d.overlay ? (d.additive ? this.over : this.mulOver) : d.additive ? this.add : this.mul).add(rec, this.fx.time);
   }
   update() {
     const now = this.fx.time;
     this.mul.trim(now);
     this.add.trim(now);
     this.over.trim(now);
+    this.mulOver.trim(now);
     this.mul.flushRanges();
     this.add.flushRanges();
     this.over.flushRanges();
+    this.mulOver.flushRanges();
   }
   clear() {
     this.mul.clear();
     this.add.clear();
     this.over.clear();
+    this.mulOver.clear();
   }
 }

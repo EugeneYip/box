@@ -171,7 +171,7 @@ export class Earthquake {
       // hard-edged near-black void hugging the carved trench (lifted so it
       // sits above the chasm floor and walls rather than being buried)
       const rot = Math.atan2(dz, dx);
-      fx.decal({ frame: DF.CRACKLINE, x: mx, z: mz, size: L * 5.2, rot, life: 170, color: 0x000000, alpha: 1, lift: 0.4, fadeIn: 0.0005, fadeOut: 0.9, grain: 0 });
+      fx.decal({ frame: DF.CRACKLINE, x: mx, z: mz, size: L * 4.4, rot, life: 170, color: 0x000000, alpha: 1, overlay: true, lift: 0.1, fadeIn: 0.0005, fadeOut: 0.9, grain: 0 });
       fx.decal({ frame: DF.CRACKLINE, x: mx, z: mz, size: L * 3.4, rot, life: 160, color: 0x020101, alpha: 1, lift: 0.2, fadeIn: 0.0005, fadeOut: 0.88, grain: 0 });
       // sunlit lips: a faint warm highlight just outside both edges
       for (const sd of [1, -1])

@@ -173,7 +173,8 @@ export class Meteor {
       P.tz = P.vz;
       P.drag = 0.02;
       P.life = 0.1;
-      P.s0 = r * (k ? 0.8 : 1.5);
+      P.s0 = r * (k ? 0.4 : 0.85);
+      P.a = k ? 1 : 0.6;
       P.s1 = P.s0 * 0.9;
       P.mode = 1;
       P.aspect = 1;
