@@ -372,6 +372,7 @@ export const PRESETS = {
         ramp: RAMP.SMOKE_BLACK,
         glow: 0.6,
         rise: 2.2 * Math.sqrt(s),
+        drift: 3.8,
         vx: Math.cos(a) * 1.4 * s,
         vz: Math.sin(a) * 1.4 * s,
         life: rr(6, 9) * Math.sqrt(s),

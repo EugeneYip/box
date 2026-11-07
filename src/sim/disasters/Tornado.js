@@ -101,7 +101,7 @@ export class Tornado {
         color: water ? 0x7a8a90 : Math.random() < 0.5 ? 0x5a4a38 : 0x6a6058,
         wood: !water && Math.random() < 0.4,
         spin: 10,
-        trail: water ? 0 : TRAIL.DUST,
+        trail: 0,
         life: rand(4, 7),
       });
     }
@@ -126,12 +126,13 @@ export class Tornado {
       P.rot = Math.random() * 6.28;
       P.spin = rand(-1, 1);
       P.frame = PF.SMOKE0 + ((Math.random() * 4) | 0);
-      P.ramp = water ? RAMP.SPLASH : RAMP.DUST_THICK;
-      if (!water) {
+      const overSea = this._water > 0.6; // spray only when truly over water
+      P.ramp = overSea ? RAMP.SPLASH : RAMP.DUST_THICK;
+      if (!overSea) {
         // darker, earthier skirt churned up at the base
-        P.r = 0.5;
-        P.g = 0.44;
-        P.b = 0.38;
+        P.r = 0.85; // ochre dust
+        P.g = 0.62;
+        P.b = 0.3;
       }
       P.lit = 1;
       P.soft = 0.5;

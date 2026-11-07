@@ -32,7 +32,7 @@ varying float vFogDepth;
 ${HEIGHT_GLSL}
 void main() {
   float kind = gA.w;
-  float size = kind < 0.5 ? 2.9 : (kind < 1.5 ? 1.7 : 3.6);
+  float size = kind < 0.5 ? 2.9 : (kind < 1.5 ? 1.7 : 2.7);
   vec2 xz = gA.xy + position.xy * size;
   float h = fxGroundAt(xz);
   vec4 mv = viewMatrix * vec4(xz.x, max(h, 0.0) + 0.05, xz.y, 1.0);
@@ -87,7 +87,9 @@ void main() {
     col = vec3(1.0, 0.16, 0.01) * vI * smoothstep(0.18, 0.5, sp) * 1.8 * pulse;
   } else {
     fall = exp(-r * r * 2.6) * edge;
-    col = mix(vec3(0.9, 0.12, 0.0), vec3(1.0, 0.42, 0.06), vI) * vI * 0.55;
+    // molten rock: saturated orange core, deep red edge, HDR so it blooms
+    float hot = exp(-r * r * 6.0);
+    col = mix(vec3(1.0, 0.16, 0.0), vec3(1.0, 0.5, 0.08), hot * vI) * vI * (0.6 + 1.1 * hot);
   }
   float fog = 0.0;
 #ifdef USE_FOG

@@ -24,7 +24,7 @@ function meteorMesh() {
     // textured hot rock: per-vertex heat drives glowing veins over a dark,
     // faceted crust (shared heat shader with the debris)
     const heat = new Float32Array(p.count);
-    for (let i = 0; i < p.count; i++) heat[i] = 0.62 + 0.38 * Math.abs(Math.sin(p.getX(i) * 7.3 + p.getZ(i) * 4.1 - p.getY(i) * 5.7));
+    for (let i = 0; i < p.count; i++) heat[i] = 0.36 + 0.26 * Math.abs(Math.sin(p.getX(i) * 7.3 + p.getZ(i) * 4.1 - p.getY(i) * 5.7));
     sharedGeo.setAttribute('aHeat', new THREE.BufferAttribute(heat, 1));
     sharedMat = heatMaterial(0x3a302a, 0.85);
   }
@@ -150,7 +150,7 @@ export class Meteor {
       P.frame = PF.SMOKE0 + ((Math.random() * 4) | 0);
       P.ramp = RAMP.EXPLOSION;
       P.heat = 0.25;
-      P.bright = 2.2;
+      P.bright = 1.15;
       P.add = 1;
       P.soft = 0;
       fx.pGlow();
@@ -180,7 +180,7 @@ export class Meteor {
       P.stretch = k ? 0.12 : 0.4;
       P.frame = k ? PF.SPARK : PF.GLOW;
       P.ramp = k ? RAMP.FLASH : RAMP.FIRE;
-      P.bright = k ? 2.0 : 1.3;
+      P.bright = k ? 0.75 : 0.7;
       P.add = 1;
       P.soft = 0;
       fx.pGlow();
@@ -324,16 +324,23 @@ class CraterAftermath {
     const k = Math.max(0, 1 - this.t / this.life);
     const y = g.world.heightAt(this.x, this.z);
     fx.lights.request('crater' + this.x, this.x, y + 1.6, this.z, this._c, (1 + 3.2 * k * k) * (0.9 + 0.1 * Math.sin(this.t * 9)), 10 + this.R * 2.2);
-    this._acc += vt * (1.5 + 10 * k * k) * fx.budget;
+    // smoke rises from the downwind rim and streams away, keeping the
+    // molten crater floor visible from above
+    this._acc += vt * (1.5 + 8 * k * k) * fx.budget;
+    const wa = Math.atan2(fx.wind.z, fx.wind.x || 1e-3);
     while (this._acc >= 1) {
       this._acc -= 1;
-      smokePuff(fx, this.x + rand(-1, 1) * this.R * 0.35, y + 2.2, this.z + rand(-1, 1) * this.R * 0.35, {
-        size: rand(1.6, 2.6) * (0.7 + this.R * 0.08),
+      const a = wa + rand(-1.1, 1.1),
+        rr = this.R * rand(0.9, 1.25);
+      const px = this.x + Math.cos(a) * rr,
+        pz = this.z + Math.sin(a) * rr;
+      smokePuff(fx, px, g.world.heightAt(px, pz) + 1.2, pz, {
+        size: rand(1.3, 2.1) * (0.7 + this.R * 0.08),
         grow: 3,
         ramp: RAMP.PLUME,
         glow: 1.1 * k,
         rise: rand(4, 5.5),
-        drift: 2.4,
+        drift: 3.4,
         drag: 0.22,
         life: rand(8, 12),
       });

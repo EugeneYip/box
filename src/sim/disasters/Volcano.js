@@ -35,6 +35,12 @@ export class Volcano {
     this.base = base;
     this.peak = Math.min(MAX_HEIGHT - 1, Math.max(top + 2.5, base + 6 + radius * 0.75));
     this.crater = 0.17;
+    // 2-3 flank gullies the lava rivers will run down
+    const ng = Math.random() < 0.5 ? 2 : 3;
+    const a0 = Math.random() * Math.PI * 2;
+    this.gullies = [];
+    for (let k = 0; k < ng; k++) this.gullies.push(a0 + (k / ng) * Math.PI * 2 + rand(-0.35, 0.35));
+    const angDist = (a, b) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
     w.forEachInRadius(this.x, this.z, radius, (tx, ty, d, i) => {
       const ang = Math.atan2(ty + 0.5 - this.z, tx + 0.5 - this.x);
       const gully = Math.sin(ang * 7 + hash2(tx, ty, this.seed) * 0.8) * 0.5 + (hash2(tx, ty, this.seed + 1) - 0.5) * 0.5;
@@ -42,6 +48,12 @@ export class Volcano {
       if (d < this.crater) c = Math.pow(1 - this.crater, 1.3) - 0.12 * (1 - (d / this.crater) ** 2);
       else c = Math.pow(1 - d, 1.3);
       let target = base + (this.peak - base) * c + gully * d * (1 - d) * 1.6;
+      // carve the lava gullies: a channel ~2 tiles wide down the flank
+      if (d > this.crater * 0.8) {
+        let best = Infinity;
+        for (const ga of this.gullies) best = Math.min(best, angDist(ang, ga) * d * radius);
+        if (best < 1.6) target -= (1 - best / 1.6) * 1.1 * (1 - d * 0.6);
+      }
       // blend smoothly into the surrounding land
       target = Math.max(target, w.height[i]);
       this.tiles.push({ tx, ty, i, d, h0: w.height[i], h1: target });
@@ -109,9 +121,14 @@ export class Volcano {
     // lava from the vent (visual clock => same volume at any game speed)
     if (erupting) {
       const rate = 1.5 * k;
-      this.ds.lava.pour(this.cx, this.cz, rate * vt * 0.6, 1);
-      const d = [[1, 0], [-1, 0], [0, 1], [0, -1]][(Math.random() * 4) | 0];
-      this.ds.lava.pour(this.cx + d[0], this.cz + d[1], rate * vt * 0.4, 1);
+      this.ds.lava.pour(this.cx, this.cz, rate * vt * 0.3, 1);
+      // overflow down each flank gully: glowing rivers running into the land
+      const rr = (this.crater + 0.07) * this.R;
+      for (const ga of this.gullies) {
+        const gx = Math.floor(x + Math.cos(ga) * rr),
+          gz = Math.floor(z + Math.sin(ga) * rr);
+        this.ds.lava.pour(gx, gz, rate * vt * 0.55, 1);
+      }
     }
     // fountain
     this._acc.fount += vt * 20 * k * fx.budget;
@@ -149,7 +166,7 @@ export class Volcano {
           fx.decal({ frame: DF.LAVASPLAT, x: lx, z: lz, size: 1.2 + sz * 2, life: 20, additive: true, color: 0xff8a30, intensity: 1.6, cool: 1.2, fadeIn: 0.005, fadeOut: 0.5 });
           fx.decal({ frame: DF.SCORCH1, x: lx, z: lz, size: 1.6 + sz * 2, life: 80, color: 0x14100d, alpha: 0.75, fadeIn: 0.002, fadeOut: 0.8 });
           if (sz > 0.5) this.ds.lava.pour(tx, ty, 0.08, 0.9);
-          this.ds.ignite(tx, ty, 1);
+          if (Math.random() < 0.35) this.ds.ignite(tx, ty, 1);
           hurt(g, lx, lz, 1.2, 40, 30, 'volcano');
         },
       });
@@ -160,15 +177,15 @@ export class Volcano {
     this._acc.plume += vt * (erupting ? 6 : 2.5) * Math.max(k, erupting ? 1 : 0.15) * fx.budget;
     while (this._acc.plume >= 1) {
       this._acc.plume -= 1;
-      const up = rand(7, 10) * (erupting ? 1 : 0.6);
+      const up = rand(9.5, 12.5) * (erupting ? 1 : 0.6);
       smokePuff(fx, x + rand(-0.35, 0.35), top + rand(1.5, 3), z + rand(-0.35, 0.35), {
         size: rand(1.0, 1.5) * (erupting ? 1 : 0.8),
-        grow: 3.4,
+        grow: 2.5,
         ramp: RAMP.SMOKE_BLACK,
         glow: 0.6,
         rise: up,
-        drift: 1.6,
-        drag: 0.16,
+        drift: 0.9,
+        drag: 0.11,
         life: rand(7, 9),
       });
     }

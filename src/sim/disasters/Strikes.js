@@ -3,33 +3,37 @@ import { SEA_LEVEL } from '../../world/constants.js';
 import { hurt, play, rand } from './util.js';
 import { DF, RAMP, PF, TRAIL, glowFlash, sparks, dustPuff } from '../../render/fx/Effects.js';
 
-// Lightning strike: the bolt itself is drawn by the atmosphere module when
-// it provides strike(); otherwise we draw our own branching bolt and flash.
-// Either way we add the ground consequences: a white-hot impact, electric
-// sparks, a scorch mark, ignition of whatever can burn, and damage.
+// Lightning strike (god power): our own branching bolt entering from the top
+// of the frame, a sky flash, and the ground consequences: a white-hot
+// impact, a thin additive blue-white ring, electric sparks, a scorch mark,
+// ignition of whatever can burn, and damage. (Storm bolts remain the
+// atmosphere module's.)
 export function lightningStrike(ds, x, z, opts = {}) {
   const g = ds.game;
   const fx = g.fx;
   const w = g.world;
   const y = w.surfaceAt(x, z);
-  let drawn = false;
-  try {
-    if (typeof g.atmosphere?.strike === 'function') {
-      // we play our own thunder and draw our own (thin) impact ring
-      g.atmosphere.strike(x, z, { sound: false, ring: false });
-      drawn = true;
-    }
-  } catch (err) {
-    console.error('[lightning] atmosphere.strike', err);
-  }
-  if (!drawn) {
-    const top = y + 55 + Math.random() * 20;
-    fx.beams.bolt(x + rand(-8, 8), top, z + rand(-8, 8), x, y, z, { width: 0.34, life: 0.5, color: 0xc8dcff, branches: 5 });
-    fx.screenFlash(0xd8e4ff, 0.5);
-    ds.flashSky(1);
-  }
-  // thin additive impact ring: blooms within ~0.25 s and is gone by 0.6 s
-  fx.decal({ frame: DF.RING, x, z, size: 1.4, grow: 4.2, life: 0.6, additive: true, surface: 2, color: 0xbcd4ff, intensity: 2.2, fadeIn: 0.05, fadeOut: 0.4, grain: 0 });
+  const camY = g.cameraRig?.camera?.position?.y ?? y + 60;
+  const top = y + Math.min(55, Math.max(14, camY * 0.72 - y));
+  fx.beams.bolt(x + rand(-5, 5), top, z + rand(-5, 5), x, y, z, { width: 0.3, life: 0.5, color: 0xc8dcff, branches: 5, intensity: 1.8 });
+  fx.screenFlash(0xd8e4ff, 0.5);
+  ds.flashSky(1);
+  // thin additive blue-white ring: expands and fades in under ~0.3 s
+  const P = fx.P.reset();
+  P.x = x;
+  P.y = y + 0.08;
+  P.z = z;
+  P.life = 0.32;
+  P.s0 = 0.8;
+  P.s1 = 5.5;
+  P.mode = 3;
+  P.rot = Math.random() * 6.28;
+  P.frame = PF.RING;
+  P.ramp = RAMP.ELECTRIC;
+  P.bright = 1.4;
+  P.add = 1;
+  P.soft = 0;
+  fx.pGlow();
   glowFlash(fx, x, y + 0.5, z, 6, { life: 0.3, bright: 5, color: 0xe0ecff });
   glowFlash(fx, x, y + 0.3, z, 2.2, { life: 0.9, bright: 3, ramp: RAMP.ELECTRIC });
   sparks(fx, x, y + 0.2, z, fx.k(22), { speed: 7, ramp: RAMP.ELECTRIC, bright: 4.5, up: true, size: 1.2 });

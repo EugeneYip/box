@@ -74,10 +74,14 @@ export class Earthquake {
         if (s.done || s.t > this.t) continue;
         s.done = true;
         this._rupture(s, f.throw);
+        s.openedAt = this.t;
         (this._open ||= []).push(s);
       }
     }
     // ---- dust curtains boiling out of the open chasm for the whole event ----
+    // (only over freshly opened cracks: the dust clears within ~1 s so the
+    // fissures read crisply afterwards)
+    if (this._open) this._open = this._open.filter((s) => this.t - s.openedAt < 1.1);
     if (this._open && this._open.length) {
       this._curtain = (this._curtain || 0) + vt * (8 + this._open.length * 1.2) * Math.max(0.35, env) * fx.budget;
       while (this._curtain >= 1) {
@@ -92,7 +96,7 @@ export class Earthquake {
           pz = s.z0 + dz * f + (dx / L) * sd * rand(0.6, 1.4);
         const [ctx, cty] = w.tileOf(px, pz);
         if (!w.isLand(ctx, cty)) continue;
-        dustPuff(fx, px, w.heightAt(px, pz), pz, rand(1.3, 2.2), { out: rand(0.2, 0.8), up: 3, life: rand(3, 4.5), drag: 1.0, ang: Math.atan2(dx / L * sd, -dz / L * sd), ramp: RAMP.DUST_THICK });
+        dustPuff(fx, px, w.heightAt(px, pz), pz, rand(1.1, 1.8), { out: rand(0.2, 0.8), up: 3, life: rand(1.2, 1.9), drag: 1.0, ang: Math.atan2(dx / L * sd, -dz / L * sd), ramp: RAMP.DUST_THICK });
       }
     }
     // ---- ambient shaking dust and slides ----
@@ -164,39 +168,26 @@ export class Earthquake {
     const onLand = w.isLand(mtx, mty);
     const k = 0.5 + 0.5 * s.w;
     if (onLand) {
-      // black void: a flat plane just below the lips; the terrain hides it
-      // everywhere except inside the carved trench, which then reads as a
-      // bottomless black gash
-      const carvedPrev = this._carved;
-      const h0 = (px, pz) => {
-        const [qx, qy] = w.tileOf(px, pz);
-        const p = carvedPrev?.get(w.idx(qx, qy));
-        return p ? p.h0 : w.heightAt(px, pz);
-      };
-      let hv = Infinity;
-      for (const [px, pz] of [
-        [s.x0, s.z0],
-        [s.x1, s.z1],
-        [mx + nx * 1.9, mz + nz * 1.9],
-        [mx - nx * 1.9, mz - nz * 1.9],
-      ])
-        hv = Math.min(hv, h0(px, pz));
-      hv = Math.max(SEA_LEVEL + 0.02, hv - 0.5);
-      fx.decal({ frame: DF.CRACKLINE, x: mx, z: mz, size: L * 5.5, rot: Math.atan2(dz, dx), life: 170, color: 0x000000, alpha: 1, surface: 3, lift: hv, fadeIn: 0.0005, fadeOut: 0.9, grain: 0 });
-      // black chasm cracks with a dark bruise of disturbed soil
-      fx.decal({ frame: DF.CRACKLINE, x: mx, z: mz, size: L * 3.2, rot: Math.atan2(dz, dx), life: 160, color: 0x040302, alpha: 1, fadeIn: 0.0005, fadeOut: 0.88, grain: 0.2 });
+      // hard-edged near-black void hugging the carved trench (lifted so it
+      // sits above the chasm floor and walls rather than being buried)
+      const rot = Math.atan2(dz, dx);
+      fx.decal({ frame: DF.CRACKLINE, x: mx, z: mz, size: L * 5.2, rot, life: 170, color: 0x000000, alpha: 1, lift: 0.4, fadeIn: 0.0005, fadeOut: 0.9, grain: 0 });
+      fx.decal({ frame: DF.CRACKLINE, x: mx, z: mz, size: L * 3.4, rot, life: 160, color: 0x020101, alpha: 1, lift: 0.2, fadeIn: 0.0005, fadeOut: 0.88, grain: 0 });
+      // sunlit lips: a faint warm highlight just outside both edges
+      for (const sd of [1, -1])
+        fx.decal({ frame: DF.CRACKLINE, x: mx + nx * sd * 1.55, z: mz + nz * sd * 1.55, size: L * 1.3, rot, life: 150, additive: true, color: 0xe8d6b0, intensity: 0.3, lift: 0.25, fadeIn: 0.002, fadeOut: 0.85, grain: 0.3 });
       fx.decal({ frame: DF.SOFTDARK, x: mx, z: mz, size: L * 2.2, life: 120, color: 0x1e1610, alpha: 0.55, fadeIn: 0.001, fadeOut: 0.85, grain: 0.7 });
       // soil spilled along both lips
       for (const sd of [1, -1])
         fx.decal({ frame: DF.STAIN, x: mx + nx * sd * 2.0, z: mz + nz * sd * 2.0, size: rand(2.4, 3.2), life: 150, color: 0x4e3620, alpha: 0.7, fadeIn: 0.001, fadeOut: 0.88, grain: 0.8 });
       if (Math.random() < 0.5) fx.decal({ frame: DF.CRACK1, x: mx + nx * rand(-1.5, 1.5), z: mz + nz * rand(-1.5, 1.5), size: rand(2.4, 4) * k, life: 140, color: 0x060403, alpha: 0.95, fadeIn: 0.001, fadeOut: 0.88 });
       // thick dust walls erupting along both lips of the rupture
-      for (let j = 0; j < fx.k(7); j++) {
+      for (let j = 0; j < fx.k(3); j++) {
         const f = Math.random();
         const sd = Math.random() < 0.5 ? 1 : -1;
         const px = s.x0 + dx * f + nx * sd * 1.2,
           pz = s.z0 + dz * f + nz * sd * 1.2;
-        dustPuff(fx, px, w.heightAt(px, pz), pz, rand(1.4, 2.4) * k, { out: rand(0.4, 1.2), up: 2.6, life: rand(3, 5), drag: 1.2, ang: Math.atan2(nz * sd, nx * sd), ramp: RAMP.DUST_THICK });
+        dustPuff(fx, px, w.heightAt(px, pz), pz, rand(1.0, 1.8) * k, { out: rand(0.4, 1.2), up: 2.6, life: rand(1.2, 2.0), drag: 1.2, ang: Math.atan2(nz * sd, nx * sd), ramp: RAMP.DUST_THICK });
       }
       if (Math.random() < 0.9) {
         const f = Math.random();

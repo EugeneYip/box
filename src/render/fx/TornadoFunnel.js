@@ -128,11 +128,14 @@ void main() {
   float r = length(vP);
   if (r > 1.0) discard;
   float a = atan(vP.y, vP.x);
-  // logarithmic spiral arms rotating with time (faster near the eye)
-  float sw = a * 3.0 + log(r + 0.05) * 5.0 + uTime * (1.2 + 1.5 * (1.0 - r));
-  float arms = 0.5 + 0.5 * sin(sw);
+  // noise-warped logarithmic spiral arms rotating with time (faster near
+  // the eye); the warp breaks up any concentric "record groove" banding
   vec2 q = vec2(cos(a + uTime * 0.6 * (1.2 - r)), sin(a + uTime * 0.6 * (1.2 - r))) * r * 4.0;
   float n = vnoise(q + 3.0) * 0.6 + vnoise(q * 2.3) * 0.4;
+  float warp = vnoise(q * 0.9 + 11.0) * 3.0 + vnoise(q * 2.7 - 5.0) * 1.2;
+  float sw = a * 4.0 + log(r + 0.05) * 2.2 + uTime * (1.2 + 1.5 * (1.0 - r)) + warp;
+  float arms = 0.5 + 0.5 * sin(sw);
+  arms = mix(arms, n, 0.35);
   float dens = mix(0.55, 1.0, arms) * (0.7 + 0.6 * n);
   dens *= 1.0 - smoothstep(0.55, 1.0, r + (n - 0.5) * 0.3);
   dens = max(dens, (1.0 - smoothstep(0.0, 0.45, r)) * 0.9);

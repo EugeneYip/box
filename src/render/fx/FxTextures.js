@@ -489,8 +489,10 @@ export function createDecalAtlas() {
       const s = sharp[i] / 255,
         b = blurred[i] / 255;
       const fade = lineMode ? 1 - smoothstep(0.9, 1, Math.abs(u)) : 1 - smoothstep(0.7, 1, Math.hypot(u, v));
-      o[3] = clamp01((s + b * 0.6) * fade);
-      o[0] = clamp01(s * 0.95 + b * 0.35);
+      // the fault band is hard-edged (almost no halo); radial cracks keep a
+      // soft dark bruise
+      o[3] = clamp01((s + b * (lineMode ? 0.1 : 0.6)) * fade);
+      o[0] = clamp01(lineMode ? s + b * 0.08 : s * 0.95 + b * 0.35);
       o[1] = clamp01(s);
     });
   };
