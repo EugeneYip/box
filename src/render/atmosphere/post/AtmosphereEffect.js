@@ -77,8 +77,13 @@ void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor)
   // ---- aerial haze ---------------------------------------------------------
   float hz = 1.0 - exp(-max(dist - uHaze.x, 0.0) * uHaze.y);
   hz *= mix(1.0, exp(-max(wp.y, 0.0) * uHaze.z), 0.7);
-  hz = min(hz, uHaze.w);
-  col = mix(col, hazeColor(dir), hz);
+  // Looking down at the map the haze stays a light veil (land and sea stay
+  // readable) and takes the sky's colour; only near-horizontal rays may fog
+  // out completely into the horizon glow.
+  float down = smoothstep(0.06, 0.4, -dir.y);
+  hz = min(hz, mix(uHaze.w, 0.35, down));
+  vec3 hc = mix(hazeColor(dir), mix(uHorizon, uZenith, 0.55), smoothstep(0.08, 0.5, -dir.y));
+  col = mix(col, hc, hz);
 
   outputColor = vec4(col, inputColor.a);
 }
