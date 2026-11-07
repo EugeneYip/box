@@ -12,7 +12,7 @@ const ARRIVED = 1,
   FAIL = 3,
   WAIT = 4;
 
-const CARRY_MAX = { wood: 8, stone: 6, food: 16, gold: 2 };
+const CARRY_MAX = { wood: 24, stone: 18, food: 40, gold: 3 };
 const CHILD_AGE_RATE = 1.7; // extra years per year while a child (childhood ~6 game years)
 
 export const brain = {
@@ -53,7 +53,7 @@ export const brain = {
 
     // hunger is managed by the village store
     if (v.starving) {
-      if (u.hunger >= 0.97) g.units.damage(u, dt * 0.35);
+      if (u.hunger >= 0.97 && !d.royal && v.pop > 8) g.units.damage(u, dt * 0.25);
     } else if (u.hunger > 0.3) u.hunger = 0.12 + this.rng.next() * 0.1;
     if (!u.alive) return;
 
@@ -343,7 +343,7 @@ export const brain = {
       }
       if (r !== ARRIVED) return;
       t.phase = 'work';
-      t.t = 4 / this._speed(v);
+      t.t = 9 / this._speed(v);
     }
     const f = w.flora[t.i];
     if (!FLORA_INFO[f]?.isTree) {
@@ -476,7 +476,7 @@ export const brain = {
       if (r !== ARRIVED) return;
       t.phase = 'work';
       const sp = this._speed(v);
-      t.t = (t.act === 'harvest' ? 2.2 : t.act === 'till' ? 2.6 : t.act === 'chop' ? 4 : t.act === 'tend' ? 2.4 : 1.6) / sp;
+      t.t = (t.act === 'harvest' ? 6 : t.act === 'till' ? 6 : t.act === 'chop' ? 8 : t.act === 'tend' ? 8 : 5) / sp;
     }
     const anim = t.act === 'harvest' || t.act === 'tend' ? 'harvest' : t.act === 'chop' ? 'chop' : 'dig';
     this._work(u, anim, t.x + Math.sin(u.id) * 0.3, t.z + Math.cos(u.id) * 0.3);
@@ -760,7 +760,7 @@ export const brain = {
       }
       if (r !== ARRIVED) return;
       t.phase = 'work';
-      t.t = 5.5 / this._speed(v);
+      t.t = 14 / this._speed(v);
     }
     this._work(u, 'dig', t.cx, t.cz);
     t.t -= dt;
@@ -902,7 +902,7 @@ export const brain = {
 
   _jobFish(u, v, d, dt) {
     const w = this.world;
-    if (u.carry && (u.carry.type !== 'food' || u.carry.amount >= 8)) return this._deposit(u, v, d);
+    if (u.carry && (u.carry.type !== 'food' || u.carry.amount >= 20)) return this._deposit(u, v, d);
     let t = d.task;
     if (!t || t.kind !== 'fish') {
       const docks = v.buildings.filter((b) => b.alive && b.type === 'docks' && !b.constructing);
@@ -928,7 +928,7 @@ export const brain = {
       }
       if (r !== ARRIVED) return;
       t.phase = 'work';
-      t.t = (t.dock ? 6.5 : 8) / this._speed(v);
+      t.t = (t.dock ? 14 : 16) / this._speed(v);
     }
     this._work(u, 'harvest', t.fx, t.fz);
     t.t -= dt;
@@ -982,6 +982,29 @@ export const brain = {
       d.engaged = null;
     }
     if (army) return this._armyOrders(u, v, d, dt, army);
+    // an enemy army bears down on us: form a shield line before the hall
+    const threat = this._threatTo(v);
+    if (threat) {
+      const c = this._armyCentre(threat);
+      const hx = v.hall ? v.hall.x : v.cx,
+        hz = v.hall ? v.hall.z : v.cz;
+      const dx = c.x - hx,
+        dz = c.z - hz;
+      const L = Math.hypot(dx, dz) || 1;
+      const ux = dx / L,
+        uz = dz / L;
+      const rank = d.lineRank ?? (d.lineRank = (u.id * 7) % 11);
+      const off = (rank % 2 ? 1 : -1) * Math.ceil(rank / 2) * 0.7;
+      const row = rank > 8 ? 1 : 0;
+      const sx = hx + ux * (4.5 - row * 0.8) - uz * off,
+        sz = hz + uz * (4.5 - row * 0.8) + ux * off;
+      const r = this._go(u, sx, sz, 0.5);
+      if (r === ARRIVED) {
+        this._idle(u);
+        u.heading = Math.atan2(ux, uz);
+      }
+      return;
+    }
     // patrol
     let t = d.task;
     if (!t || t.kind !== 'patrol') {
@@ -991,6 +1014,9 @@ export const brain = {
         const b = towers[(this.rng.next() * towers.length) | 0];
         x = b.doorX + this.rng.float(-0.6, 0.6);
         z = b.doorZ + this.rng.float(-0.6, 0.6);
+      } else if (this.rng.chance(0.75) && v.hall) {
+        x = v.hall.doorX + this.rng.float(-2.5, 2.5);
+        z = v.hall.doorZ + this.rng.float(-2.5, 2.5);
       } else {
         const a = this.rng.float(0, Math.PI * 2),
           r = v.radius * this.rng.float(0.35, 0.75);
@@ -1004,11 +1030,22 @@ export const brain = {
       if (r === FAIL) d.task = null;
       if (r !== ARRIVED) return;
       t.phase = 'wait';
-      t.t = 3 + this.rng.next() * 5;
+      t.t = 20 + this.rng.next() * 25;
+      t.drill = this.rng.chance(0.85);
     }
-    this._idle(u);
+    if (t.drill) this._work(u, 'chop', u.x + Math.sin(u.id), u.z + Math.cos(u.id));
+    else this._idle(u);
     t.t -= dt;
     if (t.t <= 0) d.task = null;
+  },
+
+  _threatTo(v) {
+    for (const a of this.armies) {
+      if (a.dead || a.target !== v.id || a.state === 'gather') continue;
+      const c = this._armyCentre(a);
+      if (Math.hypot(c.x - v.cx, c.z - v.cz) < v.radius + 18) return a;
+    }
+    return null;
   },
 
   _inOwnTerritory(o) {
@@ -1106,14 +1143,22 @@ export const brain = {
         if (this.rng.chance(0.35)) this._fx('dust', u.x, u.z, 0.9);
         return;
       }
-      // everyone else falls in behind in ranks of three
+      // everyone else falls in behind in ranks of three, deploying into a
+      // wide battle line once the enemy is close
       const rank = d.rank ?? (d.rank = [...army.units].indexOf(u));
-      const row = 1 + Math.floor(rank / 3),
-        col = (rank % 3) - 1;
+      const near = Math.hypot(bearer.x - tv.cx, bearer.z - tv.cz) < tv.radius + 10;
+      const per = near ? 6 : 3;
+      const row = (near ? 0 : 1) + Math.floor(rank / per),
+        col = (rank % per) - (per - 1) / 2;
       let hx = Math.sin(bearer.heading),
         hz = Math.cos(bearer.heading);
-      const sx = bearer.x - hx * row * 0.75 + hz * col * 0.6,
-        sz = bearer.z - hz * row * 0.75 - hx * col * 0.6;
+      if (near) {
+        const L = Math.hypot(tv.cx - bearer.x, tv.cz - bearer.z) || 1;
+        hx = (tv.cx - bearer.x) / L;
+        hz = (tv.cz - bearer.z) / L;
+      }
+      const sx = bearer.x - hx * row * 0.8 + hz * col * 0.7,
+        sz = bearer.z - hz * row * 0.8 - hx * col * 0.7;
       const far = Math.hypot(sx - u.x, sz - u.z);
       if (far > 7) this._go(u, sx, sz, 1.0, true);
       else if (far > 0.25) {
@@ -1136,7 +1181,7 @@ export const brain = {
       for (const o of tv.buildings) {
         if (!o.alive || o.kingdom === u.kingdom) continue;
         let s = Math.hypot(o.x - u.x, o.z - u.z);
-        if (o.type === 'hall') s -= 6;
+        if (o.type === 'hall') s -= 60;
         if (s < bd) {
           bd = s;
           b = o;
@@ -1201,11 +1246,15 @@ export const brain = {
     const h = v.hall;
     const x = h ? h.doorX : v.cx,
       z = h ? h.doorZ : v.cz;
-    if (Math.hypot(u.x - x, u.z - z) > 5) {
-      this._go(u, x, z, 1.0);
+    // in war or famine the ruler keeps to the hall
+    const danger = this.warCount(v.kingdom) > 0 || v.starving;
+    if (u.hp < u.maxHp) u.hp = Math.min(u.maxHp, u.hp + dt * 2);
+    if (Math.hypot(u.x - x, u.z - z) > (danger ? 1.2 : 5)) {
+      this._go(u, x, z, danger ? 0.5 : 1.0);
       return;
     }
-    this._wanderNear(u, x, z, 2.5, 0.2);
+    if (danger) return this._idle(u);
+    this._wanderNear(u, x, z, 2.5, 0.08);
   },
 
   _jobIdle(u, v, d, dt) {
@@ -1225,18 +1274,46 @@ export const brain = {
       this._go(u, x, z, 2.5);
       return;
     }
-    this._wanderNear(u, x, z, 4, 0.25);
+    this._wanderNear(u, x, z, 3, 0.08);
   },
 
   _child(u, v, d, dt) {
     const home = this._bById.get(d.home);
     const x = home && home.alive ? home.doorX : v.cx,
       z = home && home.alive ? home.doorZ : v.cz;
-    if (Math.hypot(u.x - x, u.z - z) > 7) {
-      this._go(u, x, z, 1.5);
+    if (Math.hypot(u.x - x, u.z - z) > 16) {
+      this._go(u, x, z, 2.5);
       return;
     }
-    if (!u.target && this.rng.chance(0.3)) {
+    if (u.age >= 7) {
+      let t = d.task;
+      if (!t || t.kind !== 'chore') {
+        const w = this.world;
+        let cx = u.x + this.rng.float(-1.5, 1.5),
+          cz = u.z + this.rng.float(-1.5, 1.5);
+        if (v.plots.length && this.rng.chance(0.5)) {
+          const pl = v.plots[(this.rng.next() * v.plots.length) | 0];
+          const i = pl.tiles[(this.rng.next() * pl.tiles.length) | 0];
+          if (i != null && Math.hypot((i % w.w) - u.x, ((i / w.w) | 0) - u.z) < 8) {
+            cx = (i % w.w) + 0.5;
+            cz = ((i / w.w) | 0) + 0.5;
+          }
+        }
+        t = d.task = { kind: 'chore', x: cx, z: cz, phase: 'go', t: 0, anim: this.rng.chance(0.5) ? 'harvest' : 'dig' };
+      }
+      if (t.phase === 'go') {
+        const r = this._go(u, t.x, t.z, 0.4);
+        if (r === FAIL) d.task = null;
+        if (r !== ARRIVED) return;
+        t.phase = 'work';
+        t.t = 14 + this.rng.next() * 12;
+      }
+      this._work(u, t.anim, t.x + 0.3, t.z + 0.3);
+      t.t -= dt;
+      if (t.t <= 0) d.task = null;
+      return;
+    }
+    if (!u.target && this.rng.chance(0.12)) {
       this._wanderNear(u, x, z, 3, 1);
       if (u.target && this.rng.chance(0.5)) u.state = 'run';
     } else if (!u.target) u.state = 'idle';

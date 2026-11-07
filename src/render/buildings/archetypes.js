@@ -1685,6 +1685,8 @@ export function buildArchetype(type, style, level) {
   let info = {};
   if (fn) info = fn(g, K, style, level) || {};
   else g.box(0, 0, 0, 0.8, 0.8, 0.8, K.wall);
+  // every home flies a small pennant in its kingdom's colours
+  if (type === 'house' && !(style === 'mire' && level >= 3)) bannerPole(g, K, 0.88, 0, 0.88, style === 'mire' ? 1.35 : 1.0, { s: 0.55 });
   return { geo: g.build(), anchors: g.anchors, maxY: g.maxY, base: info.base ?? null, stilts: !!info.stilts, pier: !!info.pier };
 }
 

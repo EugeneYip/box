@@ -346,7 +346,7 @@ export class Civilization {
       let ruler = null;
       for (const u of v.members) if (u.age >= ADULT_AGE + 2 && (!ruler || u.age > ruler.age)) ruler = u;
       if (ruler) this.crown(k, ruler);
-      if (!opts.silent) this._note(`The ${k.name} is founded at ${v.name}.`, 'good', { x: v.cx, z: v.cz });
+      if (!opts.silent) this._note(`The ${k.name} rises at ${v.name}`, 'good', { x: v.cx, z: v.cz });
       if (!opts.silent) this._sfx('bell', v.cx, v.cz, 0, true);
     }
     this._assignJobs(v);
@@ -487,9 +487,9 @@ export class Civilization {
     const kk = this.kingdoms[nv.kingdom];
     if (independent && kk) {
       kk.parent = exp.kingdom;
-      this._note(`Settlers from ${from?.name || 'afar'} strike out on their own and found the ${kk.name}.`, 'good', { x: nv.cx, z: nv.cz });
+      this._note(`Settlers from ${from?.name || 'afar'} found the ${kk.name}`, 'good', { x: nv.cx, z: nv.cz });
       this._noteT.set('settle' + exp.kingdom, this.game.time.total);
-    } else this._note(`Settlers from ${from?.name || 'afar'} found the village of ${nv.name}${kk ? ' for the ' + kk.name : ''}.`, 'good', { x: nv.cx, z: nv.cz }, 'settle' + nv.kingdom, 150);
+    } else this._note(`Settlers found ${nv.name}`, 'good', { x: nv.cx, z: nv.cz }, 'settle' + nv.kingdom, 150);
   }
 
   _abortExpedition(exp) {
@@ -552,6 +552,10 @@ export class Civilization {
     if ((T.war += step) >= 1) {
       T.war = 0;
       this._wars();
+    }
+    if ((T.cart = (T.cart || 0) + step) >= 8) {
+      T.cart = 0;
+      this._cartFood();
     }
     if ((T.regrow += step) >= 5) {
       T.regrow = 0;
@@ -632,8 +636,10 @@ export class Civilization {
     const nb = v.buildings.length;
     v.wood = Math.max(0, v.wood - ((pop * 0.35 + nb * 0.12) / YEAR) * dt);
     // storage: what does not fit in the stores rots or is carted off
-    v.woodCap = 160 + (v.hasWorkshop ? 160 : 0) + (v.hall ? v.hall.level * 80 : 0) + v.tier * 80;
-    v.stoneCap = 120 + (v.hasWorkshop ? 140 : 0) + (v.hall ? v.hall.level * 60 : 0) + v.tier * 80;
+    v.woodCap = 90 + (v.hasWorkshop ? 90 : 0) + (v.hall ? v.hall.level * 40 : 0) + v.tier * 40;
+    v.stoneCap = 70 + (v.hasWorkshop ? 80 : 0) + (v.hall ? v.hall.level * 35 : 0) + v.tier * 40;
+    // food spoils: a little always, a lot when the granaries are full to bursting
+    v.food -= v.food * ((0.03 + (v.food > v.foodCap * 0.8 ? 0.12 : 0)) / YEAR) * dt;
     if (v.wood > v.woodCap) v.wood = v.woodCap;
     if (v.stone > v.stoneCap) v.stone = v.stoneCap;
     // gold: markets trade, road links carry merchants, soldiers draw pay
@@ -644,20 +650,22 @@ export class Civilization {
       if (m) this._sfx('coin', m.x, m.z, 3);
     }
     v.gold = Math.max(0, v.gold - (((v.jobCount.soldier || 0) * 0.04) / YEAR) * dt);
-    v.gold = Math.min(v.gold, 60 + v.tier * 60);
+    v.gold = Math.min(v.gold, 30 + v.tier * 30);
     v.foodCap = Math.max(v.foodCap, 60);
     if (v.food > v.foodCap) v.food = v.foodCap;
     if (v.food <= 0) {
       v.food = 0;
-      if (!v.starving) {
+      v.emptyT = (v.emptyT || 0) + dt;
+      // only a true famine: stores empty for a while and no kin can send grain
+      if (!v.starving && v.emptyT > 12) {
         v.starving = true;
-        const last = this._famineNote.get(v.id) || -999;
-        if (now - last > 90) {
-          this._famineNote.set(v.id, now);
-          this._note(`Famine strikes ${v.name}.`, 'disaster', { x: v.cx, z: v.cz }, 'famine' + v.id, 300);
-        }
+        v.famineT = now;
+        this._note(`Famine in ${v.name}`, 'disaster', { x: v.cx, z: v.cz }, 'famine' + v.id, 400);
       }
-    } else if (v.food > pop * 0.6 + 3) v.starving = false;
+    } else {
+      v.emptyT = 0;
+      if (v.food > pop * 0.6 + 3) v.starving = false;
+    }
     // famine strikes hard but never wipes out a settlement: relief caravans and
     // foraging keep the last families alive
     if (v.starving && pop <= 8) v.food += (pop * 2.2 / YEAR) * dt;
@@ -724,7 +732,7 @@ export class Civilization {
     else if (v.tier > 0 && pop < 8 + v.tier * 8) v.tier--;
     if (v.tier > prevTier) {
       const k = this.kingdoms[v.kingdom];
-      this._note(`${v.name} has grown into a ${v.tier === 1 ? 'town' : 'city'}${k ? ' of the ' + k.name : ''}.`, 'good', { x: v.cx, z: v.cz }, 'tier' + v.id + v.tier, 600);
+      this._note(`${v.name} grows into a ${v.tier === 1 ? 'town' : 'city'}`, 'good', { x: v.cx, z: v.cz }, 'tier' + v.id + v.tier, 600);
     }
   }
 
@@ -739,6 +747,26 @@ export class Civilization {
     this._popCrowd = clamp((humans - HUMAN_SOFT_CAP * 0.55) / (HUMAN_SOFT_CAP * 0.45), 0, 1);
     this._crowdV = clamp(Math.max(this._popCrowd, (blds - BUILDING_SOFT_CAP * 0.5) / (BUILDING_SOFT_CAP * 0.5)), 0, 1);
     return this._crowdV;
+  }
+
+  // Grain carts: surplus villages feed hungry kin of the same kingdom.
+  _cartFood() {
+    for (const k of this.kingdoms) {
+      if (!k.alive || k.villages.length < 2) continue;
+      const vs = k.villages.map((id) => this.villages[id]).filter((v) => v && v.alive);
+      const needy = vs.filter((v) => v.food < v.pop * 2.5 + 6).sort((a, b) => a.food - b.food);
+      if (!needy.length) continue;
+      const rich = vs.filter((v) => v.food > v.pop * 5 + 30).sort((a, b) => b.food - a.food);
+      for (const to of needy) {
+        const from = rich.find((r) => r.landId === to.landId && Math.hypot(r.cx - to.cx, r.cz - to.cz) < 90);
+        if (!from) continue;
+        const amt = Math.min(from.food - (from.pop * 5 + 20), to.pop * 4 + 20);
+        if (amt <= 4) continue;
+        from.food -= amt;
+        to.food += amt * 0.9; // a tenth is eaten on the road
+        to.emptyT = 0;
+      }
+    }
   }
 
   _homeFor(v, u) {
@@ -819,6 +847,8 @@ export class Civilization {
       else if (!stoneFull && (v.hasRock !== false || v.quarry >= 0) && want.miner < 2 + n / 8) give('miner', 1);
       else if (!woodFull && want.woodcutter < 2 + n / 6) give('woodcutter', 1);
       else if (v.docks && want.fisher < v.docks * 3 && !foodFull) give('fisher', 1);
+      else if (v.fieldCount > want.farmer * 4) give('farmer', 1);
+      else if (want.builder < 2 + n / 10) give('builder', 1);
       else break;
     }
     // current
@@ -1113,6 +1143,7 @@ export class Civilization {
     if (!b || !b.alive) return;
     b.hp -= amount;
     this.stateVersion++;
+    if ((cause === 'siege' || cause === 'killed') && b.hp < b.maxHp * 0.45 && !BUILDING_TYPES[b.type].wall) b.burning = Math.max(b.burning, 0.35 + (1 - b.hp / b.maxHp) * 0.5);
     if (b.hp <= 0) this.destroyBuilding(b, cause);
   }
 
@@ -1300,44 +1331,121 @@ export class Civilization {
     for (const v of this.villages) if (v.alive) v.landId = id[Math.floor(v.cz) * W + Math.floor(v.cx)];
   }
 
+  // Territory spreads from every village across the land by travel cost:
+  // slopes, ridges, forest and especially water are expensive, so rivers and
+  // mountain chains become natural borders. Multi-source Dijkstra; each tile
+  // goes to the source that reaches it cheapest relative to its strength.
   _territory() {
     const w = this.world;
     const W = w.w;
-    const best = this._terrBest;
+    const best = this._terrBest; // normalised cost (cost / strength)
     const own = this._terrOwner;
-    best.fill(0);
+    best.fill(1e9);
     own.fill(-1);
-    const claim = (cx, cz, R, kid, strength) => {
-      const x0 = Math.max(0, Math.floor(cx - R)),
-        x1 = Math.min(W - 1, Math.floor(cx + R));
-      const y0 = Math.max(0, Math.floor(cz - R)),
-        y1 = Math.min(w.h - 1, Math.floor(cz + R));
-      const R2 = R * R;
-      for (let y = y0; y <= y1; y++) {
-        const dz = y + 0.5 - cz;
-        for (let x = x0; x <= x1; x++) {
-          const dx = x + 0.5 - cx;
-          const d2 = dx * dx + dz * dz;
-          if (d2 > R2) continue;
-          const i = y * W + x;
-          if (w.height[i] < SEA_LEVEL) continue;
-          let s = (1 - Math.sqrt(d2) / R) * strength + 0.001;
-          if (w.owner[i] === kid) s += 0.1;
-          if (s > best[i]) {
-            best[i] = s;
-            own[i] = kid;
-          }
-        }
+    if (!this._tq || this._tq.length < w.size * 2) {
+      this._tq = new Int32Array(w.size * 2);
+      this._tqf = new Float32Array(w.size * 2);
+      this._tlim = new Float32Array(w.size);
+    }
+    const qi = this._tq,
+      qf = this._tqf,
+      lim = this._tlim;
+    let n = 0;
+    const push = (i, f) => {
+      if (n >= qi.length) return;
+      let c = n++;
+      while (c > 0) {
+        const pp = (c - 1) >> 1;
+        if (qf[pp] <= f) break;
+        qi[c] = qi[pp];
+        qf[c] = qf[pp];
+        c = pp;
       }
+      qi[c] = i;
+      qf[c] = f;
+    };
+    const pop = () => {
+      const top = qi[0];
+      const li = qi[--n],
+        lf = qf[n];
+      let c = 0;
+      for (;;) {
+        const l = c * 2 + 1;
+        if (l >= n) break;
+        let m = l;
+        if (l + 1 < n && qf[l + 1] < qf[l]) m = l + 1;
+        if (qf[m] >= lf) break;
+        qi[c] = qi[m];
+        qf[c] = qf[m];
+        c = m;
+      }
+      qi[c] = li;
+      qf[c] = lf;
+      return top;
+    };
+    const kOf = new Int16Array(0);
+    void kOf;
+    // per-source strength lives in a parallel array keyed by queue entry via `str`
+    const str = this._tstr || (this._tstr = new Float32Array(w.size));
+    const seed = (cx, cz, R, kid, strength) => {
+      const tx = Math.floor(cx),
+        ty = Math.floor(cz);
+      if (!w.inBounds(tx, ty)) return;
+      const i = ty * W + tx;
+      if (best[i] <= 0) return;
+      best[i] = 0;
+      own[i] = kid;
+      str[i] = strength;
+      lim[i] = R;
+      push(i, 0);
     };
     for (const v of this.villages) {
       if (!v.alive) continue;
       const k = this.kingdoms[v.kingdom];
       if (!k || !k.alive) continue;
       const strength = 1 + v.tier * 0.25 + (k.capital === v.id ? 0.15 : 0);
-      claim(v.cx, v.cz, v.radius, v.kingdom, strength);
-      for (const b of v.buildings) if (b.alive && !b.constructing && (b.type === 'watchtower' || b.type === 'tower')) claim(b.x, b.z, b.type === 'watchtower' ? 7 : 4, v.kingdom, 0.8);
+      seed(v.cx, v.cz, v.radius * 1.05, v.kingdom, strength);
+      for (const b of v.buildings) if (b.alive && !b.constructing && (b.type === 'watchtower' || b.type === 'tower')) seed(b.x, b.z, b.type === 'watchtower' ? 7 : 4, v.kingdom, 0.9);
     }
+    const H = w.height;
+    while (n) {
+      const i = pop();
+      const ci = best[i];
+      const kid = own[i];
+      const sr = str[i],
+        R = lim[i];
+      const x = i % W,
+        y = (i / W) | 0;
+      const h0 = H[i];
+      for (let d = 0; d < 8; d++) {
+        const dx = d === 0 ? 1 : d === 1 ? -1 : d === 2 ? 0 : d === 3 ? 0 : d === 4 ? 1 : d === 5 ? 1 : d === 6 ? -1 : -1;
+        const dy = d === 0 ? 0 : d === 1 ? 0 : d === 2 ? 1 : d === 3 ? -1 : d === 4 ? 1 : d === 5 ? -1 : d === 6 ? 1 : -1;
+        const nx = x + dx,
+          ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= W || ny >= w.h) continue;
+        const j = ny * W + nx;
+        const hj = H[j];
+        let c = dx && dy ? 1.414 : 1;
+        if (hj < SEA_LEVEL) c += 7; // water: rivers and straits are borders
+        else {
+          const climb = hj - h0;
+          c += Math.abs(climb) * 1.1 + Math.max(0, climb) * 0.8;
+          const t = w.type[j];
+          if (t === TILE.ROCK || t === TILE.SNOW) c += 1.2;
+          else if (t === TILE.FOREST || t === TILE.JUNGLE || t === TILE.SWAMP) c += 0.25;
+        }
+        if (w.owner[j] === kid) c *= 0.9; // incumbency
+        const nc = ci + c / sr;
+        if (nc > R || nc >= best[j]) continue;
+        best[j] = nc;
+        own[j] = kid;
+        str[j] = sr;
+        lim[j] = R;
+        push(j, nc);
+      }
+    }
+    // land only
+    for (let i = 0; i < w.size; i++) if (own[i] >= 0 && H[i] < SEA_LEVEL) own[i] = -1;
     let x0 = W,
       y0 = w.h,
       x1 = -1,

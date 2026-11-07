@@ -214,11 +214,13 @@ export class Labels {
     const w = g.world;
     const kA = smooth(34, 70, D);
     const vA = smooth(18, 30, D) * (1 - smooth(120, 190, D));
+    const cand = [];
     for (const [id, s] of this.kLabels) {
       const k = civ.kingdoms[id];
       const v = civ.villages[k?.capital];
       if (!v || !v.alive || kA < 0.01) {
         s.visible = false;
+        s.userData.fade = 0;
         continue;
       }
       const y = w.surfaceAt(v.cx, v.cz) + 2.5 + D * 0.03;
@@ -226,8 +228,7 @@ export class Labels {
       const dist = cam.distanceTo(s.position);
       const h = Math.max(1.4, dist * 0.032);
       s.scale.set(h * s.userData.aspect, h, 1);
-      s.material.opacity = kA;
-      s.visible = true;
+      cand.push({ s, a: kA, prio: 3 + (k.villages.length || 0) * 0.01 });
     }
     for (const [id, s] of this.vLabels) {
       const v = civ.villages[id];
@@ -236,6 +237,7 @@ export class Labels {
       const a = isCap ? vA * (1 - kA) : vA;
       if (!v || a < 0.01) {
         s.visible = false;
+        s.userData.fade = 0;
         continue;
       }
       const y = w.surfaceAt(v.cx, v.cz) + 1.6 + D * 0.02;
@@ -243,8 +245,7 @@ export class Labels {
       const dist = cam.distanceTo(s.position);
       const h = Math.max(0.6, dist * 0.02);
       s.scale.set(h * s.userData.aspect, h, 1);
-      s.material.opacity = a;
-      s.visible = true;
+      cand.push({ s, a, prio: (isCap ? 2 : 1) + (v.pop || 0) * 0.001 });
     }
     // battle markers
     const battles = civ.battles || [];
@@ -260,14 +261,65 @@ export class Labels {
       const b = battles[i];
       if (!b || sA < 0.01) {
         sp.visible = false;
+        sp.userData.fade = 0;
         continue;
       }
       sp.position.set(b.x, w.surfaceAt(b.x, b.z) + 2 + D * 0.025, b.z);
       const dist = cam.distanceTo(sp.position);
       const h = Math.max(1.1, dist * 0.04) * (1 + Math.sin(this._t * 5 + i) * 0.06);
       sp.scale.set(h, h, 1);
-      sp.material.opacity = sA;
-      sp.visible = true;
+      cand.push({ s: sp, a: sA, prio: 2.5 });
+    }
+    this._declutter(cand, dt);
+  }
+
+  // Hide labels that collide with a higher-priority label or with the HUD.
+  _declutter(cand, dt) {
+    const rig = this.game.cameraRig;
+    const cam = rig.camera;
+    const W = innerWidth,
+      H = innerHeight;
+    this._hudT = (this._hudT || 0) - dt;
+    if (this._hudT <= 0) {
+      this._hudT = 1;
+      this._hud = [];
+      try {
+        for (const el of document.querySelectorAll('#ui-root .hud-panel, #ui-root [class*="panel"], #ui-root [class*="toolbar"], #ui-root [class*="feed"], #ui-root [class*="minimap"]')) {
+          const r = el.getBoundingClientRect();
+          if (r.width > 4 && r.height > 4 && getComputedStyle(el).visibility !== 'hidden' && r.width < W * 0.95) this._hud.push(r);
+        }
+      } catch {
+        /* no DOM */
+      }
+    }
+    const uiOn = this.game.params?.ui !== false;
+    const fovK = H / (2 * Math.tan((cam.fov * Math.PI) / 360));
+    const v = this._v || (this._v = new (cam.position.constructor)());
+    cand.sort((a, b) => b.prio - a.prio);
+    const taken = [];
+    for (const c of cand) {
+      const sp = c.s;
+      v.copy(sp.position).project(cam);
+      let target = c.a;
+      if (v.z > 1 || v.z < -1) target = 0;
+      const sx = (v.x * 0.5 + 0.5) * W,
+        sy = (-v.y * 0.5 + 0.5) * H;
+      const dist = cam.position.distanceTo(sp.position);
+      const ph = (sp.scale.y / Math.max(0.01, dist)) * fovK;
+      const pw = (sp.scale.x / Math.max(0.01, dist)) * fovK;
+      const rect = { l: sx - pw / 2, r: sx + pw / 2, t: sy - ph / 2, b: sy + ph / 2 };
+      if (target > 0) {
+        // keep clear of the screen edges where the HUD lives
+        if (uiOn && (rect.t < 90 || rect.b > H - 90 || rect.r > W - 300 || rect.l < 8)) target = 0;
+        if (uiOn) for (const h of this._hud) if (rect.l < h.right && rect.r > h.left && rect.t < h.bottom && rect.b > h.top) target = 0;
+        for (const o of taken) if (rect.l < o.r && rect.r > o.l && rect.t < o.b && rect.b > o.t) target = 0;
+      }
+      if (target > 0.02) taken.push(rect);
+      const f = sp.userData.fade ?? target;
+      const nf = f + (target - f) * Math.min(1, dt * 6);
+      sp.userData.fade = nf;
+      sp.material.opacity = nf;
+      sp.visible = nf > 0.01;
     }
   }
 }

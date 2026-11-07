@@ -777,9 +777,21 @@ export class BuildingRenderer {
       this._burnT = 0.18;
       let n = 0;
       for (const b of g.civ.buildings) {
-        if (b.gone || !(b.burning > 0.05)) continue;
+        if (b.gone) continue;
+        const damaged = b.alive && !b.constructing && b.hp < b.maxHp * 0.7;
+        if (!(b.burning > 0.05) && !damaged) continue;
         if ((b.x - cx) ** 2 + (b.z - cz) ** 2 > R2) continue;
-        if (n++ > 14) break;
+        if (n++ > 18) break;
+        if (!(b.burning > 0.05)) {
+          // battered but not burning: a steady plume of smoke from the wreckage
+          if (Math.random() < 0.35) {
+            const sx = b.x + (Math.random() - 0.5) * b.w * 0.5,
+              sz = b.z + (Math.random() - 0.5) * b.h * 0.5;
+            if (real) fx.emit?.('smoke', { x: sx, y: b.y + 0.8, z: sz }, { scale: 0.5 + (1 - b.hp / b.maxHp) });
+            else this.puffs.emit(sx, b.y + 0.8, sz, 'soot', 0.7);
+          }
+          continue;
+        }
         const x = b.x + (Math.random() - 0.5) * b.w * 0.7,
           z = b.z + (Math.random() - 0.5) * b.h * 0.7;
         const y = b.y + (b.alive ? 0.4 + Math.random() * 0.8 : 0.15);
