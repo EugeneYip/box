@@ -64,7 +64,7 @@ export class FloraSim {
       const f = world.flora[i];
       const tx = i % W,
         ty = (i / W) | 0;
-      if (isTreeId(f) && climateFactor(f, world.temperature[i]) < 0.5) {
+      if (isTreeId(f) && (climateFactor(f, world.temperature[i]) < 0.5 || (f === FLORA.PALM && suitAt(world, f, tx, ty, i) <= 0))) {
         const alt = pickTree(world.type[i], world.temperature[i], this.hash(i * 3 + 1));
         const ok = alt && climateFactor(alt, world.temperature[i]) >= 0.5 && suitAt(world, alt, tx, ty, i) >= 0.3;
         world.flora[i] = ok ? alt : FLORA.NONE;
@@ -75,6 +75,12 @@ export class FloraSim {
           world.flora[i] = this.hash(i) < 0.25 && d > 0.3 ? FLORA.BUSH : FLORA.NONE;
           if (!world.flora[i]) world.floraGrowth[i] = 0;
         }
+      } else if (!f && world.type[i] === TILE.ROCK && world.height[i] >= SEA_LEVEL + 0.3 && world.building[i] < 0 && world.slopeAt(tx, ty) < 1.1) {
+        // flat bare rock: scattered scree and the odd boulder
+        const r = this.hash(i * 11 + 5);
+        if (r < 0.06) world.flora[i] = FLORA.BOULDER;
+        else if (r < 0.3) world.flora[i] = FLORA.ROCK_SMALL;
+        if (world.flora[i]) world.floraGrowth[i] = 1;
       } else if (!f && world.type[i] === TILE.GRASS && world.height[i] >= SEA_LEVEL && world.building[i] < 0) {
         const d = flowerDrift(tx, ty);
         if (d > 0.72 && this.hash(i * 7 + 3) < (d - 0.72) * 1.1 && world.slopeAt(tx, ty) < 0.9) {

@@ -208,7 +208,7 @@ export function pickUndergrowth(tileType, r = Math.random()) {
 // Climate windows on world.temperature (0 cold .. 1 hot) with a soft margin:
 // palms, jungle trees, acacias and cacti need warmth; snowy pines need cold.
 const CLIMATE = [];
-CLIMATE[FLORA.PALM] = [0.68, 2];
+CLIMATE[FLORA.PALM] = [0.72, 2];
 CLIMATE[FLORA.JUNGLE_TREE] = [0.62, 2];
 CLIMATE[FLORA.ACACIA] = [0.5, 2];
 CLIMATE[FLORA.CACTUS] = [0.5, 2];
@@ -247,9 +247,25 @@ export function suitability(f, tileType) {
 }
 
 // Reeds want water nearby; everything else uses the habitat table.
+// Palms never share a grove with temperate trees, even on a warm river bank.
+export function palmNeighbourhoodOK(world, tx, ty) {
+  let oaks = 0;
+  for (let dy = -6; dy <= 6; dy++)
+    for (let dx = -6; dx <= 6; dx++) {
+      const x = tx + dx,
+        y = ty + dy;
+      if (x < 0 || y < 0 || x >= world.w || y >= world.h) continue;
+      const g = world.flora[y * world.w + x];
+      if (g === FLORA.PINE || g === FLORA.BIRCH || g === FLORA.SNOW_PINE) return false;
+      if (g === FLORA.OAK && Math.abs(dx) <= 5 && Math.abs(dy) <= 5 && ++oaks >= 4) return false;
+    }
+  return true;
+}
+
 export function suitAt(world, f, tx, ty, i) {
   const t = world.type[i];
   let s = suitability(f, t) * climateFactor(f, world.temperature[i]);
+  if (f === FLORA.PALM && s > 0 && !palmNeighbourhoodOK(world, tx, ty)) return 0;
   if (SMALL[f] && f !== FLORA.REEDS && world.slopeAt(tx, ty) > 1.15) s = 0;
   if (f === FLORA.REEDS) {
     if (world.height[i] < SEA_LEVEL) return world.height[i] > SEA_LEVEL - 0.7 ? 1 : 0;
