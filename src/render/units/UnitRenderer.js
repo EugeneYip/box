@@ -8,7 +8,7 @@ import { MONSTER_MODELS, AMBIENT_MODELS } from './models/monsters.js';
 import { poseHumanoid, poseQuad, poseChicken, poseSerpent, poseWyrm } from './poses.js';
 import { Overlays, DECAL, EMOTE } from './Overlays.js';
 import { AmbientFauna } from './AmbientFauna.js';
-import { TINY } from './models/tiny.js';
+import { TINY, MID } from './models/tiny.js';
 const HAT_TINT = [null, 0xe6c870, 0xc4ccd6, 0xf2c14e, 0x5d5a3a, 0x5b3a26, null, 0xf0c030];
 const SHADOW_RANGE = 60; // creatures farther than this from the camera target cast no shadow-map shadow
 const LOD_HI = 70, LOD_LO = 22; // on-screen height (px) thresholds for hi / lo / tiny models
@@ -90,6 +90,7 @@ export class UnitRenderer {
     this.models = new Map();
     this.lo = new Map();
     this.tiny = new Map();
+    this.mid = new Map();
     // shared per-frame uniforms: kingdom palette (slot 1 + id % 15) and outline strength
     this._kingPal = Array.from({ length: 16 }, () => new THREE.Color(0.5, 0.5, 0.5));
     this._outlineU = { value: 0 };
@@ -133,6 +134,12 @@ export class UnitRenderer {
       this.models.set(id, m);
       this.lo.set(id, new RigModel(this.group, def, def.loDetail ?? (id === 'human' ? 0.34 : 0.45), m));
       if (TINY[id]) this.tiny.set(id, new RigModel(this.group, def, 1, m, TINY[id]));
+      if (MID[id]) {
+        const mm = new RigModel(this.group, def, 1, m, MID[id]);
+        mm.tiny = true; // uses the hat-tinted head-top appearance
+        mm.mesh.name = 'units:' + id + ':mid';
+        this.mid.set(id, mm);
+      }
     }
     return m;
   }
@@ -149,7 +156,7 @@ export class UnitRenderer {
     } else lv = pxH > LOD_HI ? 0 : pxH > LOD_LO ? 1 : 2;
     const id = m.def.id;
     if (lv === 2) return this.tiny.get(id) || this.lo.get(id) || m;
-    return lv === 1 ? this.lo.get(id) || m : m;
+    return lv === 1 ? this.mid.get(id) || this.lo.get(id) || m : m;
   }
   modelFor(u) {
     if (u._rm) return u._rm;
@@ -356,7 +363,7 @@ export class UnitRenderer {
 
   _onDeath(u) {
     const rs = u._rs;
-    if (!rs || this.corpses.length > 300) return;
+    if (!rs || this.corpses.length > 300 || u.deathCause === 'slaughter') return;
     const g = this.game;
     let fallDir = rs.side;
     const atk = g.units.byId.get(u.data?.attacker);
@@ -414,6 +421,11 @@ export class UnitRenderer {
     for (const m of this.models.values()) m.begin();
     for (const m of this.lo.values()) m.begin();
     for (const m of this.tiny.values()) m.begin();
+    for (const m of this.mid.values()) m.begin();
+    // animation throttling: distant and high-speed views re-pose less often
+    const spd = g.paused ? 1 : g.speed || 1;
+    const midEvery = spd >= 8 ? 3 : spd >= 4 ? 2 : 1;
+    const tinyEvery = spd >= 8 ? 5 : spd >= 4 ? 4 : 3;
     const camT = g.cameraRig.target;
     const frame = g.frame | 0;
     const ov = this.overlays;
@@ -478,8 +490,8 @@ export class UnitRenderer {
         if (def.brain === 'golem') emerge = 1 - smoothstep(0, 1.5, age);
         else if (age < 0.45) pop = Math.max(0.05, easeOutBack(age / 0.45));
       }
-      const tinyLv = rs.lv === 2 && md.rig !== 'serpent' && md.rig !== 'wyrm';
-      const skipPose = tinyLv && rs.init && (frame + u.id) % 3 !== 0;
+      const every = md.rig === 'serpent' || md.rig === 'wyrm' ? 1 : rs.lv === 2 ? tinyEvery : rs.lv === 1 ? midEvery : 1;
+      const skipPose = every > 1 && rs.init && (frame + u.id) % every !== 0;
       if (lod > 0.001) {
         ctx.speed = u.speedNow || 0;
         ctx.run = ctx.speed > def.speed * 1.28;
@@ -635,6 +647,7 @@ export class UnitRenderer {
     for (const m of this.models.values()) m.end();
     for (const m of this.lo.values()) m.end();
     for (const m of this.tiny.values()) m.end();
+    for (const m of this.mid.values()) m.end();
     ov.end(realNow);
   }
 
