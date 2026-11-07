@@ -294,6 +294,45 @@ class GroundDisc {
   }
 }
 
+// Glowing figure drawn only where the selection is hidden (GreaterDepth),
+// so a followed creature stays visible under canopy or behind buildings.
+function xrayTexture(kind) {
+  const c = document.createElement('canvas');
+  const W = kind === 'beast' ? 128 : 64,
+    H = kind === 'beast' ? 80 : 128;
+  c.width = W;
+  c.height = H;
+  const x = c.getContext('2d');
+  const shape = () => {
+    x.beginPath();
+    if (kind === 'beast') {
+      x.ellipse(60, 46, 38, 18, 0, 0, Math.PI * 2);
+      x.moveTo(104, 34);
+      x.ellipse(98, 30, 14, 11, -0.3, 0, Math.PI * 2);
+      for (const lx of [36, 52, 70, 86]) x.rect(lx - 4, 54, 8, 20);
+    } else {
+      x.arc(32, 24, 14, 0, Math.PI * 2);
+      x.moveTo(12, 120);
+      x.quadraticCurveTo(10, 46, 32, 44);
+      x.quadraticCurveTo(54, 46, 52, 120);
+      x.closePath();
+    }
+  };
+  x.shadowColor = 'rgba(255,214,120,0.95)';
+  x.shadowBlur = 10;
+  x.fillStyle = 'rgba(251,229,173,0.55)';
+  shape();
+  x.fill();
+  x.shadowBlur = 0;
+  x.lineWidth = 3;
+  x.strokeStyle = 'rgba(255,246,220,0.95)';
+  shape();
+  x.stroke();
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
 export class BrushCursor {
   constructor(game) {
     this.game = game;
@@ -306,6 +345,16 @@ export class BrushCursor {
     this.white = new THREE.Color(1, 1, 1);
     this.gold = new THREE.Color('#fbe3a6');
     this._tintFor = null;
+    this.xray = {};
+    for (const k of ['figure', 'beast']) {
+      const m = new THREE.SpriteMaterial({ map: xrayTexture(k), transparent: true, depthWrite: false, depthTest: true, depthFunc: THREE.GreaterDepth, fog: false, toneMapped: false });
+      const s = new THREE.Sprite(m);
+      s.renderOrder = 996;
+      s.visible = false;
+      s.frustumCulled = false;
+      game.scene.add(s);
+      this.xray[k] = s;
+    }
     this.t = 0;
     this.press = 0;
     this.appear = 0;
@@ -415,8 +464,24 @@ export class BrushCursor {
       r *= 1 + Math.sin(this.t * 3.2) * 0.04;
       this.sel.circle(ref.x, ref.z, r);
       this.sel.build(Math.max(0.06, lineW * 0.85), lift, g.world.surfaceAt(ref.x, ref.z), s.kind === 'building' ? 0.8 : 0.25);
-      this.sel.style(this.gold, 1, this.t, 3, 0.18, 0.72, 0.45);
+      // the hidden part of the ring stays bright so it reads through foliage
+      this.sel.style(this.gold, 1, this.t, 3, 0.18, 0.72, 0.75 + Math.sin(this.t * 4) * 0.2);
       this.sel.visible = true;
     } else this.sel.visible = false;
+    // x-ray figure (only rendered where something occludes the creature)
+    const showX = uiOn && s?.kind === 'unit' && ref && ref.alive !== false && ref.x != null;
+    const humanoid = ref?.def?.kind === 'humanoid';
+    for (const [k, spr] of Object.entries(this.xray)) {
+      const on = showX && (k === 'figure') === humanoid;
+      spr.visible = on;
+      if (!on) continue;
+      const sz = (ref.scale || 1) * (ref.def?.size || 1);
+      const h = humanoid ? 0.95 * sz + 0.15 : 0.62 * sz + 0.12;
+      const w = humanoid ? h * 0.5 : h * 1.6;
+      const y = (ref.y ?? g.world.surfaceAt(ref.x, ref.z)) + h * 0.5;
+      spr.position.set(ref.x, y, ref.z);
+      spr.scale.set(w, h, 1);
+      spr.material.opacity = 0.7 + Math.sin(this.t * 4) * 0.2;
+    }
   }
 }

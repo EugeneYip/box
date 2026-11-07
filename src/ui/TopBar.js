@@ -125,12 +125,24 @@ export class TopBar {
       this.seg.append(b);
       return b;
     });
+    this.effEl = el('span', { class: 'ws-speed__eff', 'data-tip': 'The simulation cannot keep up: actual speed' });
+    this.cycleBtn = el('button', {
+      class: 'ws-speed__cycle',
+      type: 'button',
+      'aria-label': 'Change speed',
+      onclick: () => {
+        const i = SPEEDS.indexOf(g.speed);
+        g.setSpeed(SPEEDS[(i + 1) % SPEEDS.length]);
+        g.audio?.play?.('ui-click', { volume: 0.45 });
+      },
+    });
+    this._eff = { t: performance.now(), sim: g.time.total, ema: null };
     this.clock = el(
       'div',
       { class: 'ws-clock ws-glass' },
       el('div', { class: 'ws-clock__time', 'data-tip': 'Year, season and time of day' }, this.dialEl, el('span', { class: 'ws-clock__txt' }, this.yearEl, this.dayEl)),
       el('span', { class: 'ws-sep' }),
-      el('div', { class: 'ws-speed' }, this.pauseBtn, this.seg),
+      el('div', { class: 'ws-speed' }, this.pauseBtn, this.seg, this.cycleBtn, this.effEl),
     );
     this.pausedEl = el('div', { class: 'ws-paused' }, el('span', { class: 'ws-paused__dot' }), 'Time is paused', el('kbd', { class: 'ws-key', text: 'Space' }));
     this.centre = el('div', { class: 'ws-top__centre' }, this.clock, this.pausedEl);
@@ -203,6 +215,9 @@ export class TopBar {
     this.seg.classList.toggle('is-paused', !!g.paused);
     this.seg.style.setProperty('--idx', Math.max(0, idx));
     this.seg.classList.toggle('no-thumb', idx < 0);
+    this.cycleBtn.innerHTML = `${g.speed}<small>×</small>`;
+    this._eff = { t: performance.now(), sim: g.time.total, ema: null };
+    this.effEl.classList.remove('is-shown');
     this.ui.root.classList.toggle('is-paused', !!g.paused);
   }
 
@@ -241,6 +256,25 @@ export class TopBar {
       if (this.dayEl.textContent !== day) {
         this.dayEl.textContent = day;
         this.dayEl.style.setProperty('--season', SEASON_TINT[season]);
+      }
+    }
+    // effective speed: game seconds advanced per real second
+    const E = this._eff;
+    const now = performance.now();
+    if (g.paused || this.ui.root.classList.contains('is-intro')) {
+      E.t = now;
+      E.sim = t.total;
+    } else if (now - E.t > 1000) {
+      const eff = (t.total - E.sim) / ((now - E.t) / 1000);
+      E.ema = E.ema == null ? eff : E.ema * 0.5 + eff * 0.5;
+      E.t = now;
+      E.sim = t.total;
+      const slow = E.ema < g.speed * 0.8;
+      this.effEl.classList.toggle('is-shown', slow);
+      if (slow) {
+        const v = E.ema < 9.95 ? E.ema.toFixed(1).replace(/\.0$/, '') : Math.round(E.ema);
+        this.effEl.textContent = `≈${v}×`;
+        this.effEl.dataset.tip = `Running at about ${v}× — the machine can't keep up with ${g.speed}×`;
       }
     }
     this._statT -= dt;

@@ -401,23 +401,39 @@ export class Toolbar {
     this.positionTip(anchor);
   }
 
+  // The card sits beside the dock (left of it, bottom-aligned) so it never
+  // covers the land the player is about to target; if there is no room it
+  // goes above the dock at its left edge.
   positionTip(anchor) {
     const tip = this.tip;
     const vw = innerWidth;
     const tw = tip.offsetWidth || 280;
     const th = tip.offsetHeight || 120;
-    let cx = vw / 2,
-      top = innerHeight - 260;
-    if (anchor) {
-      const r = anchor.getBoundingClientRect();
-      cx = r.left + r.width / 2;
-      const stackTop = Math.min(this.panel.getBoundingClientRect().top, this.brush.el.classList.contains('is-shown') ? this.brush.el.getBoundingClientRect().top : 1e9);
-      top = stackTop - th - 12;
-      if (top < 64) top = r.bottom + 10;
+    const pr = this.panel.getBoundingClientRect();
+    const stackTop = Math.min(pr.top, this.brush.el.classList.contains('is-shown') ? this.brush.el.getBoundingClientRect().top : 1e9);
+    let left, top, side;
+    if (this.isDrawer()) {
+      left = Math.max(10, (vw - tw) / 2);
+      top = stackTop - th - 10;
+      side = 'none';
+    } else if (pr.left - tw - 14 >= 10) {
+      left = pr.left - tw - 14;
+      top = pr.bottom - th;
+      side = 'right';
+    } else {
+      left = Math.max(10, pr.left);
+      top = stackTop - th - 10;
+      side = 'down';
     }
-    const left = Math.max(10, Math.min(vw - tw - 10, cx - tw / 2));
-    tip.style.transform = `translate(${Math.round(left)}px, ${Math.round(top)}px)`;
-    tip.style.setProperty('--arrow-x', Math.round(cx - left) + 'px');
+    tip.classList.toggle('is-side', side === 'right');
+    tip.classList.toggle('no-arrow', side === 'none');
+    tip.style.transform = `translate(${Math.round(left)}px, ${Math.round(Math.max(64, top))}px)`;
+    if (anchor && side === 'down') {
+      const r = anchor.getBoundingClientRect();
+      const ax = r.left + r.width / 2 - left;
+      tip.classList.toggle('no-arrow', ax < 16 || ax > tw - 16);
+      tip.style.setProperty('--arrow-x', Math.round(ax) + 'px');
+    }
   }
 
   hideTip(instant = false) {
