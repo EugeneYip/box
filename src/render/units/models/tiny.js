@@ -56,6 +56,31 @@ function chicken(B) {
   for (const s of [1, -1]) box(B, 0.012, 0.085, 0.012, [0.022 * s, 0.042, 0], s > 0 ? 'legL' : 'legR', 'leg');
 }
 
+// Mid-distance human (~400 triangles): smooth silhouette without the hidden
+// variant geometry of the full model. Hats show as a coloured cap (head-top
+// colour from the renderer), carried loads stay readable.
+function humanMid(B) {
+  for (const s of [1, -1]) {
+    const leg = s > 0 ? 'legL' : 'legR';
+    B.add(P.capsule(0.03, 0.13, 1, 5), { pos: [0.044 * s, 0.105, 0.004], bone: leg, mat: 'pants' });
+    B.add(P.sphere(1, 5, 3), { pos: [0.045 * s, 0.026, 0.014], scl: [0.03, 0.026, 0.042], bone: leg, mat: 'boot' });
+    const arm = s > 0 ? 'armL' : 'armR';
+    B.add(P.capsule(0.026, 0.12, 1, 5), { pos: [0.106 * s, 0.295, 0.002], bone: arm, mat: 'cloth' });
+    B.add(P.sphere(0.024, 5, 3), { pos: [0.111 * s, 0.205, 0.004], bone: arm, mat: 'skin' });
+  }
+  B.add(P.lathe([[0.0, 0.15], [0.086, 0.15], [0.07, 0.24], [0.079, 0.34], [0.055, 0.392], [0.0, 0.41]], 7), { scl: [1, 1, 0.82], bone: 'torso', mat: 'cloth' });
+  B.add(P.torus(0.071, 0.013, 3, 8), { pos: [0, 0.245, 0], rot: [Math.PI / 2, 0, 0], scl: [1, 0.82, 1], bone: 'torso', mat: 'sash' });
+  B.add(P.sphere(0.1, 8, 6), { pos: [0, 0.5, 0], scl: [1, 0.95, 0.94], bone: 'head', mat: 'skin' });
+  B.add(P.dome(0.108, 8, 3, 0.52), { pos: [0, 0.5, 0], rot: [-0.45, 0, 0], scl: [1.02, 1, 1.01], bone: 'head', mat: 'hair' });
+  for (const s of [1, -1]) B.add(P.box(0.018, 0.026, 0.01), { pos: [0.036 * s, 0.508, 0.09], bone: 'head', mat: 'eye' });
+  box(B, 0.2, 0.08, 0.06, [0, 0.33, -0.1], 'torso', 'darkwood', { slot: 'back', opt: 1 });
+  box(B, 0.11, 0.12, 0.09, [0, 0.33, -0.11], 'torso', 'stone', { slot: 'back', opt: 2 });
+  box(B, 0.11, 0.09, 0.1, [0, 0.32, -0.11], 'torso', 'straw', { slot: 'back', opt: 3 });
+  box(B, 0.08, 0.09, 0.07, [0, 0.31, -0.1], 'torso', 'gold', { slot: 'back', opt: 4 });
+}
+
+export const MID = { human: humanMid };
+
 export const TINY = {
   human,
   sheep: quad({ body: [0, 0.25, 0, 0.13, 0.11, 0.18], bodyMat: 'wool', head: [0, 0.3, 0.21, 0.045, 0.05, 0.06], headMat: 'face', leg: 0.034, legMat: 'face' }),

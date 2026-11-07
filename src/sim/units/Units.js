@@ -3,6 +3,7 @@ import { findPath } from './pathfinding.js';
 import { SPECIES, registerSpecies } from './species.js';
 import { BRAINS, BRAIN_TICKS } from './brains.js';
 import { makeName, makeMonsterName } from './names.js';
+import { VillageHerds } from './herds.js';
 
 // Core creature simulation (owned by the Life module; the Civilization module
 // programs humanoid behaviour through registerBrain / unit.job).
@@ -64,6 +65,8 @@ const MVP = { wolf: 6, fox: 5, bear: 3, sheep: 10, cow: 8 };
 // often and steer more cheaply; the brain always receives the real elapsed time.
 const FAR_THINK = { humanoid: 1.7, animal: 2.3, monster: 1.4 };
 const SFX_GAP = { hit: 0.07, death: 0.18, birth: 0.6, growl: 0.5, bleat: 1.4 };
+const THINK_BUDGET_MS = 5; // per rendered frame (high game speeds defer the rest)
+const FAUNA_TOTAL = 1000; // humans + animals target on a 256 x 256 map
 
 const KIND_ORDER = { humanoid: 0, animal: 1, monster: 2 };
 
@@ -92,7 +95,17 @@ export class Units {
     this._sfxAt = {};
     this._pathBudgetFar = 0;
     this._focus = { x: 0, z: 0, r2: 1e9 };
+    this.herds = new VillageHerds(this);
+    this._lastFrame = -1;
+    this._frameThinkMs = 0;
+    this._ticksThisFrame = 0;
     this._initGrid();
+  }
+
+  // Wild animals allowed besides humans and village herds (soft global cap).
+  faunaBudget() {
+    const humans = this._counts.get('human') || 0;
+    return Math.max(220, Math.round(FAUNA_TOTAL * this.areaScale) - humans - this.herds.totalTended);
   }
 
   // Positional, throttled, guarded sound effect (only near the camera).
@@ -100,7 +113,7 @@ export class Units {
     const g = this.game;
     if (!g.audio?.play) return;
     const f = this._focus;
-    if ((x - f.x) ** 2 + (z - f.z) ** 2 > f.r2 * 0.6) return;
+    if ((x - f.x) ** 2 + (z - f.z) ** 2 > f.r2) return;
     const t = performance.now() / 1000;
     if (t - (this._sfxAt[name] ?? -9) < (SFX_GAP[name] ?? 0.1)) return;
     this._sfxAt[name] = t;
@@ -131,6 +144,7 @@ export class Units {
     this._dead.length = 0;
     this._rescueAt.clear();
     this._forage = null;
+    this.herds?.reset();
     this._initGrid();
   }
 
@@ -210,6 +224,7 @@ export class Units {
   }
   // Graze: convert forage into reduced hunger. Returns hunger gained back.
   _graze(u, dt) {
+    if (u.data.tended != null) return Math.min(dt * 0.09, u.hunger);
     if (!this._forage) this._initForage();
     const c = this._fcell(u.x, u.z);
     const want = Math.min(dt * 0.09, u.hunger);
@@ -422,7 +437,7 @@ export class Units {
       u.data.carcass = true;
     }
     if (cause === 'old age' || cause === 'starvation') g.fx.emit?.('death', { x: u.x, y: u.y + 0.2, z: u.z }, { scale: u.def.size * 0.6 });
-    this.sfx('death', u.x, u.z, { volume: u.def.kind === 'humanoid' ? 0.5 : 0.35, pitch: 1 / Math.sqrt(Math.max(0.4, u.def.mass)) });
+    if (cause !== 'slaughter') this.sfx('death', u.x, u.z, { volume: u.def.kind === 'humanoid' ? 0.75 : 0.55, pitch: 1 / Math.sqrt(Math.max(0.4, u.def.mass)) });
     g.events.emit('unit:death', { unit: u, cause, killer });
   }
 
@@ -1285,7 +1300,7 @@ export class Units {
     m.pregnant = 0;
     m.lastBirth = g.time.total;
     for (let i = 0; i < n; i++) {
-      if (this.count(m.species) >= this.capacity(m.species) * 2.5) break;
+      if (!m.data.tended && this.count(m.species) >= this.capacity(m.species) * 1.6) break;
       const baby = this.spawn(m.species, m.x + g.rng.float(-0.3, 0.3), m.z + g.rng.float(-0.3, 0.3), {
         age: 0,
         herd: m.herd,
@@ -1295,6 +1310,7 @@ export class Units {
         village: m.village,
       });
       if (baby) {
+        if (m.data.tended != null) baby.data.tended = m.data.tended;
         baby.heading = m.heading + g.rng.float(-1, 1);
         g.events.emit('unit:birth', { unit: baby, parent: m });
       }
@@ -1314,9 +1330,21 @@ export class Units {
     if (u.hunger > 0.4 || u.energy < 0.3 || u.sleeping) return false;
     if ((now - u.lastBirth) / YEAR < def.birthInterval) return false;
     const n = this.count(u.species);
-    const hardK = this.capacity(u.species) * 2.5;
-    if (n >= hardK) return false;
     let p;
+    if (u.data.tended != null) {
+      // village herds breed up to their target, fed by the villagers
+      if (!this.herds.canBreed(u)) return false;
+      p = def.fertility;
+      const mate = this.nearest(u.x, u.z, 6, (o) => o.species === u.species && o.sex === 'm' && o.age >= def.maturity && !o.sleeping);
+      if (!mate || !g.rng.chance(p)) return false;
+      u.pregnant = def.gestation;
+      this.emote(u, 'heart', 2);
+      return true;
+    }
+    const hardK = this.capacity(u.species) * 1.6;
+    if (n >= hardK) return false;
+    const humans = this._counts.get('human') || 0;
+    if (this.list.length - humans - this.herds.totalTended >= this.faunaBudget()) return false;
     let K = hardK;
     if (def.diet === 'carnivore' || def.brain === 'bear') {
       // predators: limited by the prey they can find
@@ -1524,6 +1552,14 @@ export class Units {
     this._tickN++;
     this._pathBudget = PATH_BUDGET;
     this._pathBudgetFar = PATH_BUDGET_FAR;
+    if ((g.frame | 0) !== this._lastFrame) {
+      this._lastFrame = g.frame | 0;
+      this._frameThinkMs = 0;
+      this._ticksThisFrame = 0;
+    }
+    // fast-forward runs many ticks per frame: no budget there (correctness first)
+    const budgetOn = ++this._ticksThisFrame <= 64;
+    if (this._tickN % 75 === 0) this.herds.tick(now);
     const cam = g.cameraRig?.cur;
     const focus = this._focus;
     if (cam) {
@@ -1624,10 +1660,16 @@ export class Units {
       u._far = fdx * fdx + fdz * fdz > focus.r2 && !u.combat;
       u.thinkT -= dt;
       if (u.thinkT <= 0) {
-        u.thinkT = THINK_INTERVAL * (0.8 + g.rng.next() * 0.4) * (u._far ? FAR_THINK[def.kind] || 2 : 1);
-        u._ext = this.brains.has(u.species);
-        this._think(u, now);
-        if (!u.alive) continue;
+        if (budgetOn && this._frameThinkMs > THINK_BUDGET_MS && !u.combat) {
+          u.thinkT = 0.05 + g.rng.next() * 0.15; // over budget: think a little later
+        } else {
+          u.thinkT = THINK_INTERVAL * (0.8 + g.rng.next() * 0.4) * (u._far ? FAR_THINK[def.kind] || 2 : 1);
+          u._ext = this.brains.has(u.species);
+          const t0 = budgetOn ? performance.now() : 0;
+          this._think(u, now);
+          if (budgetOn) this._frameThinkMs += performance.now() - t0;
+          if (!u.alive) continue;
+        }
       }
       const bt = BRAIN_TICKS[def.brain];
       if (bt) bt(u, dt, this, g, now);

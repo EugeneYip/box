@@ -61,6 +61,22 @@ function herbivore(u, U, g, now) {
   if (u.fleeUntil > now && u.target) return;
   if (U.sleepLogic(u)) return;
   if (u.busyUntil > now) return;
+  // village livestock: stay on the pasture beside the farms, graze, breed
+  if (u.data.tended != null) {
+    const H = u.home;
+    if ((u.x - H.x) ** 2 + (u.z - H.z) ** 2 > 3.4 * 3.4) {
+      U.moveTo(u, H.x + rng.float(-1.4, 1.4), H.z + rng.float(-1.4, 1.4));
+      u.state = 'walk';
+      return;
+    }
+    if (U.tryBreed(u)) return;
+    const r = rng.next();
+    if (u.hunger > 0.35 || r < 0.3) U.startActivity(u, 'eat', rng.float(2, 4.5));
+    else if (r < 0.6) U.wander(u, 1.8, H);
+    else if (!u.target) u.state = 'idle';
+    if ((u.species === 'sheep' || u.species === 'goat') && !u._far && rng.chance(0.04)) U.sfx('bleat', u.x, u.z, { volume: 0.3, pitch: rng.float(0.9, 1.2) });
+    return;
+  }
   // the herd leader keeps the herd moving onto good pasture (rotational grazing)
   if (now > (u._pastureT || 0)) {
     const fr0 = U.forageAt(u.x, u.z);
