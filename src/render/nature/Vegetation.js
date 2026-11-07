@@ -72,6 +72,20 @@ export class Vegetation {
     this.stateTex.generateMipmaps = false;
     this.stateTex.needsUpdate = true;
     this.uniforms = createSharedUniforms(this.stateTex, world.w, world.h);
+    // Canopy-over-units occupancy (one texel per tile, eased 0..1)
+    this.occData = new Uint8Array(n);
+    this.occTex = new THREE.DataTexture(this.occData, world.w, world.h, THREE.RedFormat, THREE.UnsignedByteType);
+    this.occTex.minFilter = this.occTex.magFilter = THREE.NearestFilter;
+    this.occTex.generateMipmaps = false;
+    this.occTex.needsUpdate = true;
+    this.uniforms.uOcc.value = this.occTex;
+    this.occTarget = new Float32Array(n);
+    this.occCur = new Float32Array(n);
+    this.occFlag = new Uint8Array(n);
+    this.occActive = [];
+    this.occMarked = [];
+    this._occSig = 0;
+    this.occMs = 0;
     const mats = createMaterials(this.uniforms);
     this.mat = mats.flora;
     this.groundMat = mats.ground;
@@ -490,6 +504,107 @@ export class Vegetation {
     S.end();
   }
 
+  // Canopy fade over units. Humanoids (soldiers, kings, the selected and the
+  // followed unit strongest; big animals faintly) mark their tile, its
+  // neighbours and the tiles toward the camera whose crowns would hide them.
+  // Targets are rebuilt only when a unit changes tile; per-tile values ease
+  // so holes open and close softly. Off entirely at far zoom.
+  updateOcclusion(dt) {
+    const g = this.game;
+    const rig = g.cameraRig;
+    const u = this.uniforms.uOccStrength;
+    const goal = 1 - THREE.MathUtils.smoothstep(rig.cur.dist, 70, 95);
+    u.value += (goal - u.value) * Math.min(1, dt * 4);
+    if (u.value < 0.002 && goal === 0) {
+      u.value = 0;
+      return;
+    }
+    const world = this.world;
+    const W = world.w,
+      H = world.h;
+    const list = g.units?.list || [];
+    const sel = g.selected?.kind === 'unit' ? g.selected.ref : null;
+    const fol = rig.follow;
+    // camera direction in tile steps (crowns between unit and camera)
+    const cdx = rig.camera.position.x - rig.target.x,
+      cdz = rig.camera.position.z - rig.target.z;
+    const cl = Math.hypot(cdx, cdz) || 1;
+    const sx = Math.round(cdx / cl),
+      sz = Math.round(cdz / cl);
+    let sig = (sx + 2) * 5 + (sz + 2);
+    const n = Math.min(list.length, 1000);
+    for (let k = 0; k < n; k++) {
+      const un = list[k];
+      if (!un.alive || un.data?.hidden || un.data?.inside) continue;
+      const kind = un.def?.kind;
+      if (kind !== 'humanoid' && kind !== 'monster' && !((un.def?.mass ?? 0) >= 3)) continue;
+      const tx = un.x | 0,
+        tz = un.z | 0;
+      const strong = un === sel || un === fol || un.job === 'soldier' || un.job === 'king' || kind === 'monster' ? 2 : kind === 'humanoid' ? 1 : 3;
+      sig = (Math.imul(sig, 31) + tz * W + tx) | 0;
+      sig = (Math.imul(sig, 7) + strong) | 0;
+    }
+    this._occT = (this._occT || 0) - dt;
+    if (sig !== this._occSig && this._occT <= 0) {
+      this._occSig = sig;
+      this._occT = 0.08; // at most ~12 rebuilds/s; easing hides the step
+      const T = this.occTarget;
+      for (const i of this.occMarked) {
+        T[i] = 0;
+        this.occEnqueue(i);
+      }
+      this.occMarked.length = 0;
+      const mark = (x, z, v) => {
+        if (x < 0 || z < 0 || x >= W || z >= H) return;
+        const i = z * W + x;
+        if (!this.world.flora[i]) return;
+        if (T[i] === 0) this.occMarked.push(i);
+        if (v > T[i]) T[i] = v;
+        this.occEnqueue(i);
+      };
+      for (let k = 0; k < n; k++) {
+        const un = list[k];
+        if (!un.alive || un.data?.hidden || un.data?.inside) continue;
+        const kind = un.def?.kind;
+        const big = !(kind === 'humanoid' || kind === 'monster') && (un.def?.mass ?? 0) >= 3;
+        if (kind !== 'humanoid' && kind !== 'monster' && !big) continue;
+        const v = un === sel || un === fol ? 1 : un.job === 'soldier' || un.job === 'king' || kind === 'monster' ? 0.92 : big ? 0.45 : 0.7;
+        const tx = un.x | 0,
+          tz = un.z | 0;
+        mark(tx, tz, v);
+        for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) if (dx || dz) mark(tx + dx, tz + dz, v * 0.62);
+        mark(tx + sx, tz + sz, v);
+        mark(tx + 2 * sx, tz + 2 * sz, v * 0.78);
+        mark(tx + 2 * sx + sz, tz + 2 * sz - sx, v * 0.5);
+        mark(tx + 2 * sx - sz, tz + 2 * sz + sx, v * 0.5);
+      }
+    }
+    // ease toward targets: open quickly, close gently
+    const A = this.occActive;
+    if (!A.length) return;
+    const kO = 1 - Math.exp(-dt * 6),
+      kC = 1 - Math.exp(-dt * 1.8);
+    let w = 0;
+    for (let r = 0; r < A.length; r++) {
+      const i = A[r];
+      const t = this.occTarget[i];
+      let c = this.occCur[i];
+      c += (t - c) * (t > c ? kO : kC);
+      if (Math.abs(t - c) < 0.01) c = t;
+      this.occCur[i] = c;
+      this.occData[i] = Math.round(c * 255);
+      if (c !== t) A[w++] = i;
+      else this.occFlag[i] = 0;
+    }
+    A.length = w;
+    this.occTex.needsUpdate = true;
+  }
+  occEnqueue(i) {
+    if (this.occFlag[i]) return;
+    this.occFlag[i] = 1;
+    this.occActive.push(i);
+  }
+
   // Let shadow-casting lights see the proxy layer (cheap, every ~2 s).
   enableShadowLayer() {
     if (--this._lightScan > 0) return;
@@ -537,6 +652,9 @@ export class Vegetation {
     }
     this.compactIfNeeded(dt);
     this.enableShadowLayer();
+    const tOcc = performance.now();
+    this.updateOcclusion(Math.min(dt, 0.1));
+    this.occMs = this.occMs * 0.95 + (performance.now() - tOcc) * 0.05;
     this.ground.update(dt);
     this.emitLeaves(dt);
   }
@@ -609,7 +727,7 @@ export class Vegetation {
   stats() {
     let inst = 0;
     for (const c of this.chunks) inst += c.count;
-    return { floraInstances: inst, floraDrawn: this.batcher.drawn };
+    return { floraInstances: inst, floraDrawn: this.batcher.drawn, canopyFadeMs: +this.occMs.toFixed(3) };
   }
 }
 
