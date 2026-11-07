@@ -69,13 +69,13 @@ export class VillageHerds {
           // prefer grass next to fields, not too far out
           let farm = 0,
             blocked = 0;
-          for (let ey = -2; ey <= 2; ey++)
-            for (let ex = -2; ex <= 2; ex++) {
+          for (let ey = -3; ey <= 3; ey++)
+            for (let ex = -3; ex <= 3; ex++) {
               const x = tx + ex,
                 y = ty + ey;
               if (!w.inBounds(x, y)) continue;
               const j = y * w.w + x;
-              if (w.type[j] === TILE.FARMLAND) farm++;
+              if (w.type[j] === TILE.FARMLAND) farm += Math.max(Math.abs(ex), Math.abs(ey)) <= 1 ? -4 : 1;
               if (w.building[j] >= 0) blocked++;
             }
           const sc = farm * 1.5 - blocked * 2 - r * 0.6 + TILE_INFO[t].fertile * 3 + Math.random() * 0.5;
