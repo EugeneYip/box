@@ -12,7 +12,7 @@ const ARRIVED = 1,
   FAIL = 3,
   WAIT = 4;
 
-const CARRY_MAX = { wood: 24, stone: 18, food: 40, gold: 3 };
+const CARRY_MAX = { wood: 32, stone: 18, food: 40, gold: 3 };
 const CHILD_AGE_RATE = 1.7; // extra years per year while a child (childhood ~6 game years)
 
 export const brain = {
@@ -419,8 +419,10 @@ export const brain = {
   _findTree(u, v) {
     const w = this.world;
     const W = w.w;
-    const cx = Math.floor(v.cx),
-      cy = Math.floor(v.cz);
+    // search outward from the woodcutter while working inside the village lands
+    const nearHome = Math.hypot(u.x - v.cx, u.z - v.cz) < v.radius + 10;
+    const cx = Math.floor(nearHome ? u.x : v.cx),
+      cy = Math.floor(nearHome ? u.z : v.cz);
     const n = spiralCount(30);
     const coreR = 3.5;
     let best = -1,
@@ -633,8 +635,34 @@ export const brain = {
     if (!b || !b.alive || !this._needsWork(b)) {
       b = this._pickSite(u, v);
       if (!b) {
-        d.task = null;
-        return this._jobIdle(u, v, d, dt);
+        // no site: mend roofs and walls of the nearest standing building
+        let t2 = d.task;
+        if (!t2 || t2.kind !== 'upkeep') {
+          let near = null,
+            nd = Infinity;
+          for (const o of v.buildings) {
+            if (!o.alive || o.constructing) continue;
+            const dd = Math.hypot(o.x - u.x, o.z - u.z) + this.rng.next() * 4;
+            if (dd < nd) {
+              nd = dd;
+              near = o;
+            }
+          }
+          if (!near) return this._jobIdle(u, v, d, dt);
+          const spot = this._workSpot(near, u);
+          t2 = d.task = { kind: 'upkeep', b: near.id, x: spot[0], z: spot[1], phase: 'go', t: 0, bx: near.x, bz: near.z };
+        }
+        if (t2.phase === 'go') {
+          const r = this._go(u, t2.x, t2.z, 0.45);
+          if (r === FAIL) d.task = null;
+          if (r !== ARRIVED) return;
+          t2.phase = 'work';
+          t2.t = 12 + this.rng.next() * 10;
+        }
+        this._work(u, 'hammer', t2.bx, t2.bz);
+        t2.t -= dt;
+        if (t2.t <= 0) d.task = null;
+        return;
       }
       const spot = this._workSpot(b, u);
       t = d.task = { kind: 'build', b: b.id, x: spot[0], z: spot[1], phase: 'go', t: 0 };
@@ -1313,8 +1341,8 @@ export const brain = {
       if (t.t <= 0) d.task = null;
       return;
     }
-    if (!u.target && this.rng.chance(0.12)) {
-      this._wanderNear(u, x, z, 3, 1);
+    if (!u.target && this.rng.chance(0.05)) {
+      this._wanderNear(u, x, z, 2.5, 1);
       if (u.target && this.rng.chance(0.5)) u.state = 'run';
     } else if (!u.target) u.state = 'idle';
   },
