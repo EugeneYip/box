@@ -30,6 +30,8 @@ export function createSharedUniforms(stateTexture, w, h) {
     uWet: { value: 0 },
     uFade: { value: new THREE.Vector2(40, 60) },
     uFlowerFade: { value: new THREE.Vector2(28, 40) },
+    uOcc: { value: white },
+    uOccStrength: { value: 0 },
   };
 }
 
@@ -42,11 +44,14 @@ uniform sampler2D uState;
 uniform vec2 uWorldSize;
 uniform vec2 uFade;
 uniform vec2 uFlowerFade;
+uniform sampler2D uOcc;
+uniform float uOccStrength;
 #ifndef FLORA_DEPTH
 varying vec4 vFState;
 varying vec3 vFInfo;
 varying vec3 vFWorld;
 varying vec3 vFWNormal;
+varying float vFOcc;
 #endif
 float fHash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
 vec3 fWind(vec3 origin, vec3 lp, float bend, float flutter, float scale) {
@@ -83,6 +88,12 @@ float fPetal = 1.0 - step(0.5, abs(aInfo.w - 5.0));
 float fPetalK = 1.0 - smoothstep(uFlowerFade.x, uFlowerFade.y, distance(fOrigin, cameraPosition));
 fLeafK *= mix(1.0, fPetalK, fPetal);
 transformed = mix(aPivot, transformed, mix(1.0, fLeafK, max(fLeaf, fPetal)));
+#ifndef FLORA_DEPTH
+// canopy over units: leaf clusters pull in and thin out (trunks stay)
+float fOcc = texelFetch(uOcc, fTile, 0).r * uOccStrength * fLeaf;
+transformed = mix(aPivot, transformed, 1.0 - 0.42 * fOcc);
+vFOcc = fOcc;
+#endif
 float fThin = mix(0.42, 1.0, smoothstep(0.0, 0.85, fG));
 transformed.xz *= mix(fThin, 1.0, fLeaf);
 float fScale = 0.14 + 0.86 * fG;
@@ -119,6 +130,7 @@ mat3 fIM = mat3(instanceMatrix);
 transformed += transpose(fIM) * fW / max(dot(fIM[0], fIM[0]), 1e-5);
 #ifndef FLORA_DEPTH
 vFState = vec4(1.0, fState.g, fState.b, fState.a * 0.6);
+vFOcc = 0.0;
 vFInfo = vec3(aInfo.z, aInfo.w, fK);
 vFWorld = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;
 vFWNormal = normalize(mat3(modelMatrix) * (fIM * objectNormal));
@@ -151,9 +163,15 @@ varying vec4 vFState;
 varying vec3 vFInfo;
 varying vec3 vFWorld;
 varying vec3 vFWNormal;
+varying float vFOcc;
+const float fBayer[16] = float[16](0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
 `;
 
 const FRAG_COLOR = /* glsl */ `
+if (vFOcc > 0.01) {
+  ivec2 fbp = ivec2(mod(floor(gl_FragCoord.xy), 4.0));
+  if ((fBayer[fbp.x + fbp.y * 4] + 0.5) / 16.0 < vFOcc * 0.82) discard;
+}
 float fLeafM = vFInfo.x;
 float fMat = vFInfo.y;
 float fIsSnow = 1.0 - step(0.5, abs(fMat - 3.0));
