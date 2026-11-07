@@ -228,7 +228,7 @@ export class GroundCover {
     // geometry kinds
     this.kinds = [
       { id: 'grass', geos: [0, 1, 2].map((s) => grassTuft(101 + s)) },
-      { id: 'grassTall', geos: [0, 1].map((s) => grassTuft(201 + s, { blades: 8, hMin: 0.22, hMax: 0.42, spread: 0.1, width: 0.02, curve: 0.45 })) },
+      { id: 'grassTall', geos: [0, 1].map((s) => grassTuft(201 + s, { blades: 8, hMin: 0.18, hMax: 0.32, spread: 0.1, width: 0.02, curve: 0.45 })) },
       { id: 'grassShort', geos: [0, 1].map((s) => grassTuft(301 + s, { blades: 6, hMin: 0.07, hMax: 0.15, spread: 0.08, width: 0.024, curve: 0.3 })) },
       { id: 'meadow', geos: [0, 1].map((s) => meadowTuft(401 + s)) },
       { id: 'fern', geos: [0, 1].map((s) => fernTuft(501 + s)) },
@@ -473,7 +473,7 @@ export class GroundCover {
           const warm = (r4 - 0.5) * 0.12;
           const tt = [tint[0] * br * (1 + warm), tint[1] * br, tint[2] * br * (1 - warm)];
           let kind = null,
-            scale = (0.78 + r4 * 0.34) * (0.82 + patch * 0.36),
+            scale = (0.64 + r4 * 0.26) * (0.85 + patch * 0.3),
             tilt = 0.5;
           switch (plan) {
             case 'grass':
