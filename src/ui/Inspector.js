@@ -46,6 +46,12 @@ const BUILDING_ICON = [
   [/store|warehouse|treasur/, 'gold', '#ffd36a'],
 ];
 const HIDE_STATS = /^(mood)$/i;
+// key stats first: health, then what the subject is doing / its status
+const STAT_RANK = [/^(health|hp)$/i, /^(doing|activity|status|state)$/i, /^job$/i, /^(hunger|food)$/i, /^energy$/i, /^(population|age)$/i];
+const rankOf = (k) => {
+  const i = STAT_RANK.findIndex((re) => re.test(String(k)));
+  return i < 0 ? 99 : i;
+};
 
 function kindOf(r) {
   if (!r) return 'info';
@@ -136,8 +142,12 @@ export class Inspector {
     this.render();
     this.el.classList.add('is-open');
     this.ui.root.classList.add('has-insp');
+    this._scrollTop = 0;
     this.applySelection();
-    if (isPhone()) this.setExpanded(false);
+    if (isPhone()) {
+      this.setExpanded(false);
+      this.frameAboveSheet();
+    }
     this.game.audio?.play?.('ui-open', { volume: 0.35 });
   }
 
@@ -226,7 +236,11 @@ export class Inspector {
     const u = r.unit;
     const dead = u && u.alive === false;
     const kTint = this.kingdomTint(r);
-    const stats = (r.stats || []).filter((s) => Array.isArray(s) && s.length >= 2 && !HIDE_STATS.test(String(s[0])));
+    const stats = (r.stats || [])
+      .filter((s) => Array.isArray(s) && s.length >= 2 && !HIDE_STATS.test(String(s[0])))
+      .map((s, i) => [s, i])
+      .sort((a, b) => rankOf(a[0][0]) - rankOf(b[0][0]) || a[1] - b[1])
+      .map(([s]) => s);
     // lay out cells two per row; a half cell left alone on its row spans both
     const wideOf = stats.map(([, v]) => this.meter(cap(v)) != null || String(cap(v)).length > 16);
     let col = 0;
@@ -282,8 +296,19 @@ export class Inspector {
         <button class="ws-iconbtn ws-iconbtn--sm ws-insp__x" type="button" aria-label="Close (Esc)" data-act="close">${uiIcon('close')}</button>
       </header>
       ${chips ? `<div class="ws-insp__also" aria-label="Also here">${chips}</div>` : ''}
-      ${cells ? `<div class="ws-insp__grid">${cells}</div>` : ''}
+      ${cells ? `<div class="ws-insp__scroll"><div class="ws-insp__grid">${cells}</div></div>` : ''}
       <div class="ws-insp__actions">${actions.join('')}</div>`;
+    const sc = this.el.querySelector('.ws-insp__scroll');
+    if (sc) {
+      sc.scrollTop = this._scrollTop || 0;
+      const hint = () => {
+        this._scrollTop = sc.scrollTop;
+        sc.classList.toggle('can-scroll', sc.scrollHeight - sc.clientHeight - sc.scrollTop > 4);
+        sc.classList.toggle('is-scrolled', sc.scrollTop > 4);
+      };
+      sc.addEventListener('scroll', hint, { passive: true });
+      requestAnimationFrame(hint);
+    }
     this.el.onclick = (e) => {
       const b = e.target.closest('button');
       if (!b) return;
@@ -337,7 +362,7 @@ export class Inspector {
       if (!start) return;
       const dy = e.clientY - start.y;
       if (Math.abs(dy) > 4) start.moved = true;
-      const h = Math.max(90, Math.min(innerHeight * 0.62, start.h - dy));
+      const h = Math.max(110, Math.min(innerHeight * 0.74, start.h - dy));
       this.el.style.height = h + 'px';
     });
     const end = (e) => {
@@ -345,9 +370,12 @@ export class Inspector {
       const dy = e.clientY - start.y;
       this.el.classList.remove('is-dragging');
       this.el.style.height = '';
-      if (!start.moved) this.setExpanded(!this.expanded);
-      else if (dy > 110 && !this.expanded) this.close();
-      else this.setExpanded(dy < -30 ? true : dy > 30 ? false : this.expanded);
+      // three snap points: peek, half (default) and full
+      const order = ['peek', false, true];
+      const cur = order.indexOf(this.expanded);
+      if (!start.moved) this.setExpanded(this.expanded === true ? false : true);
+      else if (dy > 90 && this.expanded === 'peek') this.close();
+      else this.setExpanded(order[Math.max(0, Math.min(2, cur + (dy < -30 ? 1 : dy > 30 ? -1 : 0)))]);
       start = null;
     };
     this.el.addEventListener('pointerup', end);
@@ -355,7 +383,17 @@ export class Inspector {
   }
   setExpanded(x) {
     this.expanded = x;
-    this.el.classList.toggle('is-expanded', x);
+    this.el.classList.toggle('is-expanded', x === true);
+    this.el.classList.toggle('is-peek', x === 'peek');
+  }
+  // Phones: slide the view so the inspected subject sits above the sheet.
+  frameAboveSheet() {
+    const r = this.track;
+    const o = r?.unit || r?.building;
+    const rig = this.game.cameraRig;
+    if (!o || o.x == null || rig.follow) return;
+    const d = rig.goal.dist * 0.24;
+    this.game.focus(o.x + Math.sin(rig.goal.yaw) * d, o.z + Math.cos(rig.goal.yaw) * d);
   }
 
   // Re-query the tracked entity so stats stay live.

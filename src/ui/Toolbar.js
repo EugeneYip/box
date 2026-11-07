@@ -87,11 +87,16 @@ export class Toolbar {
     });
     this.panel.append(this.handle, el('div', { class: 'ws-dock__body' }, el('div', { class: 'ws-tabrow' }, this.tabsEl, this.minBtn), this.gridEl));
     const row = this.tabsEl.parentElement;
-    const hint = () => {
+    const hint = (this.tabHint = () => {
       const t = this.tabsEl;
       row.classList.toggle('is-scrolled', t.scrollLeft > 4);
-      row.classList.toggle('at-end', t.scrollLeft + t.clientWidth >= t.scrollWidth - 4);
-    };
+      row.classList.toggle('at-end', t.scrollWidth > 0 && t.scrollLeft + t.clientWidth >= t.scrollWidth - 4);
+    });
+    row.addEventListener('click', (e) => {
+      // the chevron at the right edge scrolls the tabs on phones
+      const r = row.getBoundingClientRect();
+      if (this.isDrawer() && e.clientX > r.right - 30 && e.target === row) this.tabsEl.scrollBy({ left: 160, behavior: 'smooth' });
+    });
     this.tabsEl.addEventListener('scroll', hint, { passive: true });
     requestAnimationFrame(hint);
     let rt = 0;
@@ -184,7 +189,11 @@ export class Toolbar {
     const extra = (groups.length - 1) * 17;
     if (drawer) return groups.map(() => Math.max(1, Math.floor((avail + 6) / cell)));
     const rows = Math.max(1, Math.ceil((n * cell + extra) / Math.max(cell, avail)));
-    return groups.map((gr) => Math.max(1, Math.ceil(gr.list.length / rows)));
+    // small groups (<= 4) stay on one row when the tray has room for it
+    const cols = groups.map((gr) => Math.max(1, Math.ceil(gr.list.length / rows)));
+    const single = groups.map((gr, i) => (gr.list.length <= 4 ? gr.list.length : cols[i]));
+    const width = (cs2) => cs2.reduce((s, c) => s + c * cell, 0) + extra;
+    return width(single) <= avail ? single : cols;
   }
 
   buildGrid(animate = false) {
@@ -425,6 +434,10 @@ export class Toolbar {
   }
   toggleDrawer(open = !this.el.classList.contains('is-open')) {
     this.el.classList.toggle('is-open', open);
+    if (open) requestAnimationFrame(() => {
+      this.tabEls?.get(this.cat)?.scrollIntoView?.({ block: 'nearest', inline: 'center' });
+      this.tabHint?.();
+    });
     this.handle.setAttribute('aria-expanded', open ? 'true' : 'false');
     this.game.audio?.play?.(open ? 'ui-open' : 'ui-click', { volume: 0.4 });
   }

@@ -107,6 +107,9 @@ const BOLT = 'M17.5 15 12 23h4.5L14 30l7.5-9.5H17l2.5-5.5z';
 const GROUND = 'M3 23.5c4-2 8.5-3 13-3s9 1 13 3V27a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z';
 const GROUND_TOP = 'M3 23.5c4-2 8.5-3 13-3s9 1 13 3';
 const ground = () => `<path class="f" d="${GROUND}"/><path d="${GROUND_TOP}"/>`;
+// Biome swatch: a tinted map-tile hexagon behind the motif, so biomes read by
+// colour first and silhouette second.
+const SWATCH = `<path class="sw" d="${hexagon(16, 16, 14.6)}"/><path class="swl" d="${hexagon(16, 16, 14.6)}"/>`;
 const CONIFER = (x, y, s = 1) =>
   g(
     `translate(${x} ${y}) scale(${s})`,
@@ -217,40 +220,40 @@ const P = {
     '<path class="f" d="M3 9h7l2 5 1.5 1 1 13H3zM29 9h-7l-2.5 4.5-1.5 2-.5 12.5H29z"/><path d="M3 9h7l2 5 1.5 1 1 13M29 9h-7l-2.5 4.5-1.5 2-.5 12.5"/><path class="th" d="M15 23.5h2.5"/>',
 
   // --- biomes (ground swatch + motif) ---------------------------------------
-  'paint-grass': ground() + '<path d="M9 21.5c0-4.2-1.6-7.6-4.4-10.2M12.6 20.8c0-5.2.6-9.4 2.8-13.4M17.6 20.6c.4-4.4 2.3-8.2 5.6-10.8M22.4 21.6c.6-3 2.2-5.3 4.8-6.8"/>',
-  'paint-forest': ground() + CONIFER(11.5, 13) + CONIFER(21, 15.6, 0.72),
+  'paint-grass': SWATCH + '<path d="M9 21.5c0-4.2-1.6-7.6-4.4-10.2M12.6 20.8c0-5.2.6-9.4 2.8-13.4M17.6 20.6c.4-4.4 2.3-8.2 5.6-10.8M22.4 21.6c.6-3 2.2-5.3 4.8-6.8"/>',
+  'paint-forest': SWATCH + CONIFER(11.5, 13) + CONIFER(21, 15.6, 0.72),
   'paint-jungle':
-    ground() +
+    SWATCH +
     '<path class="f" d="M8 20.5C5.5 12.5 9.5 5 20 3.5c3.2 8.6-.6 16.8-12 17z"/><path d="M8 20.5C5.5 12.5 9.5 5 20 3.5c3.2 8.6-.6 16.8-12 17z"/><path class="th" d="M8 20.5c3.4-5.5 6.7-10 12-17M10.6 15.6l-2.3-4.2M13.4 11.7l-1.6-5M12 17.4l5.4.3M15.2 13.6l5.6-.8"/>' +
     '<path class="f" d="M18.5 21c1.2-4.4 4.5-7.4 9.3-7.4-1 4.3-4.4 7.4-9.3 7.4z"/><path class="th" d="M18.5 21c1.2-4.4 4.5-7.4 9.3-7.4-1 4.3-4.4 7.4-9.3 7.4z"/>',
   'paint-savanna':
-    ground() +
+    SWATCH +
     '<path class="f" d="M5.5 10.8c1.8-2.9 5.6-4.2 10.5-4.2s8.7 1.3 10.5 4.2c-2.2 1.8-6 2.5-10.5 2.5s-8.3-.7-10.5-2.5z"/><path d="M5.5 10.8c1.8-2.9 5.6-4.2 10.5-4.2s8.7 1.3 10.5 4.2c-2.2 1.8-6 2.5-10.5 2.5s-8.3-.7-10.5-2.5z"/><path d="M16 13.3v8M16 17l-3.6-3.6M16 16.2l3.8-2.9"/>',
   'paint-desert':
     `<circle class="f" cx="21.5" cy="8.5" r="4"/><circle cx="21.5" cy="8.5" r="4"/>` +
     '<path class="f" d="M3 22.5c4-5.6 8.6-7.6 13.5-6.3 4.2 1.1 7.4 3.8 12.5 4V27a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M3 22.5c4-5.6 8.6-7.6 13.5-6.3 4.2 1.1 7.4 3.8 12.5 4"/><path class="th" d="M9.5 25.5c4.4-2.8 9.4-3.4 15-1.6"/>',
-  'paint-sand': ground() + `<path class="f" d="${star(16, 12.3, 8.6, 3.7)}"/><path d="${star(16, 12.3, 8.6, 3.7)}"/><circle class="s" cx="16" cy="12.6" r="1.1"/>`,
+  'paint-sand': SWATCH + `<path class="f" d="${star(16, 12.3, 8.6, 3.7)}"/><path d="${star(16, 12.3, 8.6, 3.7)}"/><circle class="s" cx="16" cy="12.6" r="1.1"/>`,
   'paint-swamp':
-    ground() +
+    SWATCH +
     '<path d="M11 21V10.5M16.2 20.6V7M21.4 21v-8"/><rect class="s" x="9.4" y="9" width="3.2" height="6.6" rx="1.6"/><rect class="s" x="14.6" y="5.6" width="3.2" height="6.8" rx="1.6"/><rect class="s" x="19.8" y="11.6" width="3.2" height="5.8" rx="1.6"/><path class="th" d="M16.2 20.6c-2.4-2.6-5.8-4-9.2-4M5.5 26h5M21 26h5.5"/>',
   'paint-tundra':
-    ground() +
+    SWATCH +
     '<path d="M4.5 7.5h13a3 3 0 1 0-3-3M7.5 12.5h16a3 3 0 1 1-3 3"/><path class="f" d="M8.5 21c.8-2.6 2.8-4 5-4s4.2 1.4 5 4z"/><path d="M8.5 21c.8-2.6 2.8-4 5-4s4.2 1.4 5 4"/><path class="th" d="M22 21v-3.2M24.2 21.2l1-3M19.8 21.2l-.8-2.6"/>',
-  'paint-snow': ground() + SNOWFLAKE(16, 11.2, 8.4),
+  'paint-snow': SWATCH + SNOWFLAKE(16, 11.2, 8.4),
   'paint-soil':
-    ground() +
+    SWATCH +
     '<path d="M13.2 3.6h5.6M16 3.6v9.8"/><path class="f" d="M12.4 13.4h7.2v4.2a3.6 3.6 0 0 1-7.2 0z"/><path d="M12.4 13.4h7.2v4.2a3.6 3.6 0 0 1-7.2 0z"/><circle class="s" cx="7.6" cy="25.4" r="1.2"/><circle class="s" cx="24.6" cy="25.6" r="1.2"/><circle class="s" cx="11.6" cy="26.4" r=".9"/><circle class="s" cx="20.4" cy="26.4" r=".9"/>',
   'paint-rock':
-    ground() +
+    SWATCH +
     '<path class="f" d="M5.5 21.5 8 13.6l5.6-3.6 6.2 1.8 3 5.2.8 4.5z"/><path d="M5.5 21.5 8 13.6l5.6-3.6 6.2 1.8 3 5.2.8 4.5"/><path class="th" d="M8 13.6l4.4 3.2 1.8 4.7M13.6 10l-1.2 6.8 6.5-2.7 3.9 2.9"/><path class="f" d="M22 21.6l1.7-3.8 3-.8 2 2v2.6z"/><path class="th" d="M22 21.6l1.7-3.8 3-.8 2 2"/>',
   'paint-ice':
-    ground() +
+    SWATCH +
     '<path class="f" d="M9 21l2.5-12 3 6 2.5-10 3.5 9 2.5-4 2 11z"/><path d="M9 21l2.5-12 3 6 2.5-10 3.5 9 2.5-4 2 11"/><path class="th" d="M14.5 15l-1 6M20.5 14l.5 7"/>',
   'paint-lava':
-    ground() +
+    SWATCH +
     '<path class="ts" d="M16 4c3.2 4.6 5.4 8.1 5.4 10.8a5.4 5.4 0 0 1-10.8 0C10.6 12.1 12.8 8.6 16 4z" opacity=".55"/><path d="M16 4c3.2 4.6 5.4 8.1 5.4 10.8a5.4 5.4 0 0 1-10.8 0C10.6 12.1 12.8 8.6 16 4z"/><circle class="s" cx="24.5" cy="9" r="1.4"/><circle class="s" cx="7.5" cy="11" r="1.1"/>',
   'paint-ash':
-    ground() +
+    SWATCH +
     '<path d="M11.5 18c-2.2-2.2-.4-4.3 1.4-5.6 1.8-1.3 2.3-3.5.5-5.5M18 18c-2-2-.4-4 1.3-5.2 1.7-1.2 2-3.2.4-5.1"/><path class="th" d="M23.5 18.5c-1.3-1.3-.3-2.6.8-3.4"/>',
   'paint-farmland':
     '<path class="f" d="M2.5 27.5 7 14h18l4.5 13.5z"/><path d="M2.5 27.5 7 14h18l4.5 13.5z"/><path class="th" d="M11 14 9.5 27.5M16 14v13.5M21 14l1.5 13.5"/>' + WHEAT(16, 7, 0.45),
@@ -491,6 +494,13 @@ const P = {
   'job-child': '<circle class="f" cx="16" cy="13" r="4.2"/><circle cx="16" cy="13" r="4.2"/><path class="f" d="M9 27.5v-1c0-4 3.2-6.6 7-6.6s7 2.6 7 6.6v1z"/><path d="M9 27.5v-1c0-4 3.2-6.6 7-6.6s7 2.6 7 6.6v1"/>',
 };
 
+
+// Biome motifs were drawn above a ground band; centre them on the swatch.
+for (const k of Object.keys(P)) {
+  if (!k.startsWith('paint-')) continue;
+  const body = P[k].startsWith(SWATCH) ? P[k].slice(SWATCH.length) : P[k];
+  P[k] = SWATCH + g(P[k].startsWith(SWATCH) ? 'translate(0 3.2)' : 'translate(0 .6)', body);
+}
 
 // Aliases / synonyms for ids other teams are likely to use.
 const ALIAS = {
