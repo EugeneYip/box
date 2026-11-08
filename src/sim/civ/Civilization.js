@@ -271,7 +271,7 @@ export class Civilization {
     let k = opts.kingdom != null ? this.kingdoms[opts.kingdom] : null;
     const newKingdom = !k || !k.alive;
     const vname = placeName(culture, this.rng, this.usedNames);
-    if (newKingdom) k = this.createKingdom(culture, { baseName: vname });
+    if (newKingdom) k = this.createKingdom(culture, { baseName: vname, x: hx + 1.5, z: hy + 1.5 });
     const v = this._newVillage(k, culture, hx, hy, vname);
 
     // hall faces the most open direction
@@ -389,7 +389,7 @@ export class Civilization {
   // ------------------------------------------------------------------ expansion
   _tryExpand(v) {
     const now = this.game.time.total;
-    if (v.pop < 24 || v.food < 50 || v.starving) return false;
+    if (v.pop < (this._crowd() < 0.3 ? 18 : 24) || v.food < 50 || v.starving) return false;
     const crowd = this._crowd();
     if (now - v.lastExpand < YEAR * (5 + crowd * 10)) return false;
     const k = this.kingdoms[v.kingdom];
@@ -408,6 +408,21 @@ export class Civilization {
     const w = this.world;
     let best = null,
       bs = -Infinity;
+    // first choice: resettle an abandoned village nearby (its fields and roads remain)
+    for (const o of this.villages) {
+      if (o.alive || o.resettled) continue;
+      const d = Math.hypot(o.cx - v.cx, o.cz - v.cz);
+      if (d < 14 || d > 60 || o.landId !== v.landId) continue;
+      const i = Math.floor(o.cz) * w.w + Math.floor(o.cx);
+      if (w.owner[i] >= 0 && w.owner[i] !== v.kingdom) continue;
+      if (this.villages.some((x) => x.alive && Math.hypot(x.cx - o.cx, x.cz - o.cz) < 14)) continue;
+      const sc = 400 - d;
+      if (sc > bs) {
+        bs = sc;
+        best = { tx: Math.floor(o.cx), ty: Math.floor(o.cz), resettle: o.id };
+      }
+    }
+    if (best) return best;
     for (let k = 0; k < 70; k++) {
       const a = rng.float(0, Math.PI * 2),
         r = rng.float(20, 44);
@@ -459,6 +474,13 @@ export class Civilization {
     const cap = k ? this.villages[k.capital] : null;
     const far = cap ? Math.hypot(cap.cx - u.x, cap.cz - u.z) : 0;
     const independent = !k || !k.alive || (far > 55 && this.rng.chance(0.45)) || this.rng.chance(0.12);
+    if (exp.site.resettle != null) {
+      const old = this.villages[exp.site.resettle];
+      if (old) {
+        old.resettled = true;
+        this._clearRuins(old.cx, old.cz, 9);
+      }
+    }
     const nv = this.foundVillage(Math.floor(u.x), Math.floor(u.z), {
       kingdom: independent ? null : k.id,
       culture: from?.culture,
@@ -490,6 +512,22 @@ export class Civilization {
       this._note(`Settlers from ${from?.name || 'afar'} found the ${kk.name}`, 'good', { x: nv.cx, z: nv.cz });
       this._noteT.set('settle' + exp.kingdom, this.game.time.total);
     } else this._note(`Settlers found ${nv.name}`, 'good', { x: nv.cx, z: nv.cz }, 'settle' + nv.kingdom, 150);
+  }
+
+  _clearRuins(x, z, r) {
+    const w = this.world;
+    for (const b of this.buildings) {
+      if (b.alive || b.gone || Math.hypot(b.x - x, b.z - z) > r) continue;
+      b.gone = true;
+      for (let y = b.ty; y < b.ty + b.h; y++)
+        for (let xx = b.tx; xx < b.tx + b.w; xx++) {
+          const i = y * w.w + xx;
+          if (this.use[i] === USE.RUIN) this.use[i] = USE.FREE;
+        }
+      this._bById.delete(b.id);
+    }
+    this.buildings = this.buildings.filter((b) => !b.gone);
+    this.version++;
   }
 
   _abortExpedition(exp) {
@@ -724,6 +762,21 @@ export class Civilization {
       }
     }
 
+    // shrinking towns let empty houses crumble rather than stand as ghost towns
+    if (v.housing > pop * 1.6 + 8 && now - (v.lastDecay || 0) > 12) {
+      v.lastDecay = now;
+      let far = null,
+        fd = -1;
+      for (const b of v.buildings) {
+        if (!b.alive || b.type !== 'house' || b.constructing || b.abandoned) continue;
+        const d = Math.hypot(b.x - v.cx, b.z - v.cz);
+        if (d > fd) {
+          fd = d;
+          far = b;
+        }
+      }
+      if (far) far.abandoned = true;
+    }
     // tiers
     const houses = v.houses || 0;
     const prevTier = v.tier;
@@ -789,7 +842,7 @@ export class Civilization {
     if (k) {
       k.villages = k.villages.filter((id) => id !== v.id);
       if (k.alive) {
-        if (!k.villages.length) this._killKingdom(k, 'fallen');
+        if (!k.villages.length) this._killKingdom(k, why === 'razed' ? 'razed' : 'abandoned');
         else if (k.capital === v.id) this._chooseCapital(k);
       }
     }
@@ -1187,7 +1240,7 @@ export class Civilization {
     for (const b of this.buildings) {
       if (!b.alive) {
         if (b.burning > 0) b.burning = Math.max(0, b.burning - dt * 0.03);
-        if (now - b.ruinT > YEAR * 4) {
+        if (now - b.ruinT > YEAR * 2) {
           b.gone = true;
           removed = true;
         }
@@ -1479,6 +1532,11 @@ export class Civilization {
   // ------------------------------------------------------------------ helpers
   // Notifications, de-duplicated: the same key (or text) within `cooldown`
   // seconds is dropped, and the feed is limited to meaningful events.
+  _noteCollapse(cause) {
+    this.collapses = this.collapses || {};
+    this.collapses[cause] = (this.collapses[cause] || 0) + 1;
+  }
+
   _note(text, kind = 'info', pos = null, key = null, cooldown = 45) {
     const now = this.game.time.total;
     const k = key || text;

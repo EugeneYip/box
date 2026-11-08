@@ -1661,6 +1661,24 @@ export function lampPost() {
   return { geo: g.build(), anchors: g.anchors };
 }
 
+// Far-zoom proxy: a unit-sized house block in the style's materials, scaled per
+// instance to each building's footprint and height.
+export function proxyGeometry(style) {
+  const K = PAL[style] || PAL.vale;
+  const g = new GeoBuilder(5, { roofKind });
+  if (style === 'dune') {
+    g.box(0, -0.4, 0, 1, 1.25, 1, K.wall, { top: shade(K.wall, 0.92) });
+    parapet(g, K, 0, 0.85, 0, 1, 1, 0.08, 0.06, K.wall2);
+    g.dome(0.15, 0.85, -0.1, 0.24, 8, 2, K.tile, { tint: 0.25 });
+  } else {
+    const wall = style === 'frost' ? K.wall : style === 'mire' ? K.wall : K.wall;
+    g.box(0, -0.4, 0, 1, 0.95, 1, wall);
+    const roof = style === 'vale' ? K.tile : style === 'frost' ? K.tile : K.thatch;
+    g.gable(0, 0.55, 0, 1, 1, 0.45, roof, { over: 0.06, th: 0.05, tint: K.roofTint, gable: K.wall2, rows: 2 });
+  }
+  return g.build();
+}
+
 // ---------------------------------------------------------------- entry point
 const BUILDERS = {
   house: (g, K, s, lv) => (s === 'vale' ? valeHouse : s === 'dune' ? duneHouse : s === 'frost' ? frostHouse : mireHouse)(g, K, lv),
