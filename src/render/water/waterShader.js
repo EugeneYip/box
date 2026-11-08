@@ -168,17 +168,19 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   // low sun: a glittering sun path on the water toward the sun (resolvable at map zoom)
   float lowSun = smoothstep(0.02, 0.10, L.y) * (1.0 - smoothstep(0.25, 0.55, L.y));
   bool glit = lowSun > 0.0; // uniform: depends on the key light only
-  vec4 gz1 = glit ? texture2D(uNoise, p * (1.0 / 16.0) + vec2(t * 0.012, -t * 0.009)) : vec4(0.5);
-  vec4 gz2 = glit ? texture2D(uNoise, WROT1 * p * (1.0 / 9.0) - vec2(t * 0.010, t * 0.013)) : vec4(0.5);
-  vec2 gs = ((gz1.rg - 0.5) + (gz2.gr - 0.5)) * 1.4;
+  // low sun: a broad, smooth, clamped sheen (no high-frequency glitter noise)
+  vec4 gz1 = glit ? texture2D(uNoise, p * (1.0 / 24.0) + vec2(t * 0.010, -t * 0.007)) : vec4(0.5);
+  vec2 gs = (gz1.rg - 0.5) * 0.7;
   vec3 Ng = normalize(vec3(-gs.x, 1.0, -gs.y));
-  float pathK = ggxD(max(dot(Ng, Hs), 0.0), 0.45) * Fs * 5.0;
-  float flick = smoothstep(0.55, 0.85, gz1.b);
+  float pathK = min(ggxD(max(dot(Ng, Hs), 0.0), 0.40) * Fs * 3.0, 0.9);
+  // at golden hour the crisp glints and sparkle give way to the sheen
+  spec *= mix(1.0, 0.4, lowSun);
   // confine it to a strip running from below the camera toward the sun's azimuth
   vec2 vdir = wp.xz - cameraPosition.xz;
   float al2 = dot(vdir / max(length(vdir), 1e-3), L.xz / max(length(L.xz), 1e-3));
   float pathMask = smoothstep(0.86, 0.99, al2);
-  spec += keyL * pathK * (0.5 + 1.5 * flick) * lowSun * lightVis * (1.0 - narrow * 0.7) * (0.05 + 0.95 * pathMask);
+  spec += keyL * pathK * 0.8 * lowSun * lightVis * (1.0 - narrow * 0.7) * (0.1 + 0.9 * pathMask);
+  spec = min(spec, vec3(1.1));
 
   // ---- water body veil (the seabed below is already tinted by the terrain)
   vec3 scat = mix(waterShallowColorV(lightVis), waterDeepColorV(lightVis), smoothstep(0.6, 6.0, depth));
@@ -259,7 +261,7 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   col = mix(col, foamCol, foam);
   a = mix(a, 1.0, foam);
   col += spec * (1.0 - foam);
-  a = clamp(a + lum(spec) * 0.5, 0.0, 1.0);
+  a = clamp(a + lum(spec) * 0.25, 0.0, 1.0); // glare adds light, it must not hide the water's blue
   if (ice > 0.0) {
     float cracks = 1.0 - smoothstep(0.0, 0.06, fc.g);
     vec3 iceAlb = mix(vec3(0.24, 0.30, 0.37), vec3(0.33, 0.39, 0.45), smoothstep(0.3, 0.8, fn.r));
