@@ -188,6 +188,13 @@ export class Atmosphere {
     }
     const bolt = this.lightning.spawn(x, y, z, { intensity: opts.intensity ?? 1, top });
     this._boltFlash(bolt, opts.sound !== false);
+    if (opts.dust !== false) {
+      try {
+        this.game.fx?.emit?.('dust', { x, y, z }, { scale: 1.4 });
+      } catch (e) {
+        /* effects are optional */
+      }
+    }
     return bolt;
   }
 
@@ -329,7 +336,12 @@ export class Atmosphere {
 
   // Offscreen work right before the frame is drawn.
   preRender(renderer, dt) {
-    const want = this.game.pipeline?.tier?.shadowMap || 2048;
+    // shadow resolution by tier, power saver and zoom (with hysteresis)
+    let want = this.game.pipeline?.tier?.shadowMap || 2048;
+    const z = this.game.view?.zoom01 ?? 0.5;
+    this._shadowFar = z > (this._shadowFar ? 0.56 : 0.64);
+    if (this.game.settings?.powerSaver) want = Math.min(want, 1024);
+    else if (this._shadowFar) want = Math.max(1024, want / 2);
     const sh = this.key.shadow;
     if (sh.mapSize.x !== want) {
       sh.mapSize.set(want, want);
@@ -369,10 +381,21 @@ export class Atmosphere {
     const now = [lp.x, lp.y, lp.z, tp.x, tp.y, tp.z, c.right - c.left, c.top - c.bottom, c.near, c.far];
     let changed = !this._shadowInit;
     for (let i = 0; i < 10; i++) {
-      if (Math.abs(now[i] - sig[i]) > 1e-4) changed = true;
+      if (Math.abs(now[i] - sig[i]) > 1e-3) changed = true;
       sig[i] = now[i];
     }
     this._shadowInit = true;
+    // zoomed far out the shadow window may trail the camera by two frames:
+    // re-render at most every third frame while moving
+    if (changed) this._shadowPending = true;
+    if (this._shadowPending && (this.game.view?.zoom01 ?? 0) > 0.62) {
+      this._shadowSkip = (this._shadowSkip || 0) + 1;
+      changed = this._shadowSkip >= 3;
+    } else changed = !!this._shadowPending;
+    if (changed) {
+      this._shadowPending = false;
+      this._shadowSkip = 0;
+    }
     if (this.shadowCache && !this.shadowCache.disabled) this.shadowCache.begin(renderer, changed);
     else {
       renderer.shadowMap.autoUpdate = true;
@@ -419,7 +442,7 @@ export class Atmosphere {
     pts[n++].copy(rig.target);
 
     const sd = this._shadowDir || (this._shadowDir = lightDir.clone().normalize());
-    if (sd.angleTo(lightDir) > 0.014) sd.copy(lightDir).normalize(); // ~0.8 deg steps
+    if (sd.angleTo(lightDir) > 0.021) sd.copy(lightDir).normalize(); // ~1.2 deg steps
     const lz = this._lz.copy(sd);
     const lx = this._lx;
     if (Math.abs(lz.y) > 0.999) lx.set(1, 0, 0);
@@ -502,11 +525,11 @@ export class Atmosphere {
     P.vignetteColor.setRGB(0.28, 0.22, 0.34).lerp(this._c1 || (this._c1 = new THREE.Color(0.1, 0.14, 0.3)), M.night * 0.6);
 
     // haze starts around the focus distance; thicker in rain / fog
-    const hazeDensity = 0.0026 + 0.0025 * W.overcast + 0.012 * W.fog + 0.0015 * W.rain + 0.0012 * W.snow;
-    P.haze.set(dist * 0.9 + 8, hazeDensity, 0.022, 1);
+    const hazeDensity = 0.0026 + 0.001 * W.overcast + 0.012 * W.fog + 0.0008 * W.rain + 0.0012 * W.snow;
+    P.haze.set(dist * 0.9 + 8, hazeDensity / Math.max(1, game.view?.worldScale || 1), 0.022, 1);
     // ground mist: dawn wisps, thick in fog weather, a little in snow / rain
     const mistAmt = Math.max(W.fog, this.weather.morningMist);
-    const mistDensity = 0.004 + 0.05 * mistAmt * mistAmt + 0.006 * W.rain + 0.006 * W.snow;
+    const mistDensity = 0.004 + 0.05 * mistAmt * mistAmt + 0.002 * W.rain + 0.006 * W.snow;
     const mistH = 1.5 + 4.5 * W.fog;
     P.mist.set(mistDensity, 1 / mistH, 0.2, 0.55 + 0.4 * W.fog);
     P.mistColor.copy(M.mistColor);
@@ -514,6 +537,9 @@ export class Atmosphere {
     if (cs) {
       P.cloudTex = cs.texture;
     }
+    P.heightTex = game.terrain?.heightTexture || null;
+    P.worldW = game.world.w;
+    P.worldH = game.world.h;
     P.fogColor.copy(M.horizon).lerp(M.groundHaze, 0.4);
 
     // high threshold by day (only true highlights glow), lower at night for lamps

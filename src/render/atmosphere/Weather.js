@@ -93,7 +93,7 @@ export class Weather {
         this.nextAuto = g.time.total + 90 + this.rng() * 150;
       }
     }
-    const auto = g.settings.autoWeather !== false;
+    const auto = (g.laws?.skyWeather ?? g.settings.autoWeather) !== false;
     if (auto && this.remaining == null && g.time.total > this.nextAuto && g.time.total > this.autoHeld) this.autoPick();
 
     // surface wetness / snow cover (global + per tile)
