@@ -1,6 +1,6 @@
 import { TILE, TILE_INFO, FLORA, FLORA_INFO, SEA_LEVEL } from '../../world/constants.js';
 import { BUILDING_TYPES, costOf, canAfford, pay } from './catalog.js';
-import { CULTURES } from './cultures.js';
+import { CULTURES, baseCulture } from './cultures.js';
 import { USE, ROT, ROT_DIR, SPIRAL, spiralCount, clamp, lerp } from './util.js';
 import { civPath } from './pathing.js';
 
@@ -310,7 +310,8 @@ export const planner = {
       burning: 0,
       alive: true,
       ruin: false,
-      style: CULTURES[v.culture]?.style || 'vale',
+      style: CULTURES[baseCulture(v.culture)]?.style || 'vale',
+      era: this.kingdoms[v.kingdom]?.era ?? 0,
       culture: v.culture,
       seed: this.rng.next(),
       builtAt: this.game.time.total,
@@ -433,7 +434,8 @@ export const planner = {
       if (v && FLORA_INFO[w.flora[i]]?.isTree) v.wood += 1;
       w.setFlora(x, y, FLORA.NONE);
     }
-    w.setType(x, y, TILE.ROAD);
+    // with the roads law off, streets stay as worn paths rather than paving
+    if (this.law ? this.law('civRoads') : true) w.setType(x, y, TILE.ROAD);
     return true;
   },
 

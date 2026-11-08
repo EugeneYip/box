@@ -306,6 +306,7 @@ export const brain = {
         else if (c.type === 'wood') v.wood += c.amount;
         else if (c.type === 'stone') v.stone += c.amount;
         else if (c.type === 'gold') v.gold += c.amount;
+        else if (c.type === 'ore') v.ore = Math.min(80, (v.ore || 0) + c.amount);
         v.produced[c.type] = (v.produced[c.type] || 0) + c.amount;
       }
       u.carry = null;
@@ -500,7 +501,7 @@ export const brain = {
         if (f === FLORA.WHEAT && w.floraGrowth[i] >= 0.98) {
           // reap and resow in one pass so fields never stand bare for long
           w.setFlora(tx, ty, FLORA.WHEAT, 0.05);
-          let y = 5;
+          let y = 5 * (this.game.age?.mods?.fertility ?? 1) * this.techMod(v.kingdom, 'harvest');
           if (v.hasWindmill) y += 2;
           if (this.game.time.total < (this.kingdoms[v.kingdom]?.goldenUntil || 0)) y += 1;
           u.carry = { type: 'food', amount: (u.carry?.amount || 0) + y };
@@ -558,6 +559,8 @@ export const brain = {
             pri = 0;
           } else continue;
         } else if (f === FLORA.NONE || !FLORA_INFO[f].isTree) {
+          const se = this.game.time.season ?? 1.5;
+          if (se > 3.1 && se < 3.9) continue; // no sowing in deep winter
           act = 'plant';
           pri = 1;
         } else {
@@ -769,7 +772,7 @@ export const brain = {
 
   _jobMine(u, v, d, dt) {
     const w = this.world;
-    if (u.carry && (u.carry.type === 'wood' || u.carry.type === 'food')) return this._deposit(u, v, d);
+    if (u.carry && (u.carry.type === 'wood' || u.carry.type === 'food' || (u.carry.type === 'ore' && u.carry.amount >= 3))) return this._deposit(u, v, d);
     if (u.carry && u.carry.amount >= CARRY_MAX.stone) return this._deposit(u, v, d);
     let t = d.task;
     if (!t || t.kind !== 'mine') {
@@ -830,6 +833,10 @@ export const brain = {
     }
     this._release(i, u);
     d.task = null;
+    if (!gold && stone && this.rng.chance(f === FLORA.BOULDER || w.type[i] === TILE.ROCK ? 0.22 : 0.08)) {
+      u.carry = { type: 'ore', amount: 1 + (u.carry?.type === 'ore' ? u.carry.amount : 0) };
+      return;
+    }
     if (gold) u.carry = { type: 'gold', amount: gold };
     else if (stone) u.carry = { type: 'stone', amount: Math.min(CARRY_MAX.stone, (u.carry?.type === 'stone' ? u.carry.amount : 0) + stone) };
   },
@@ -968,7 +975,7 @@ export const brain = {
       if (this.rng.chance(0.06)) this._fx('splash', t.fx, t.fz, 0.3);
       return;
     }
-    u.carry = { type: 'food', amount: (u.carry?.amount || 0) + (t.dock ? 5 : 3) };
+    u.carry = { type: 'food', amount: (u.carry?.amount || 0) + Math.round((t.dock ? 5 : 3) * this.techMod(v.kingdom, 'fish')) };
     d.task = null;
   },
 
