@@ -262,9 +262,10 @@ export function palmNeighbourhoodOK(world, tx, ty) {
   return true;
 }
 
-export function suitAt(world, f, tx, ty, i) {
+// tOff: climate offset of the current World Age (-0.5 cold .. +0.5 hot).
+export function suitAt(world, f, tx, ty, i, tOff = 0) {
   const t = world.type[i];
-  let s = suitability(f, t) * climateFactor(f, world.temperature[i]);
+  let s = suitability(f, t) * climateFactor(f, world.temperature[i] + tOff);
   if (f === FLORA.PALM && s > 0 && !palmNeighbourhoodOK(world, tx, ty)) return 0;
   if (SMALL[f] && f !== FLORA.REEDS && world.slopeAt(tx, ty) > 1.15) s = 0;
   if (f === FLORA.REEDS) {
@@ -276,9 +277,9 @@ export function suitAt(world, f, tx, ty, i) {
 
 // What a tile would naturally be, from its climate (mirrors worldgen so that
 // burnt land heals back into the right biome).
-export function naturalBiome(world, i) {
+export function naturalBiome(world, i, tOff = 0) {
   const hgt = world.height[i];
-  const temp = world.temperature[i];
+  const temp = world.temperature[i] + tOff;
   const moist = world.moisture[i];
   if (hgt < SEA_LEVEL) return T.SAND;
   if (hgt < SEA_LEVEL + 0.7 && temp > 0.25) return T.SAND;
