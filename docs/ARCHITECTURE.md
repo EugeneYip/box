@@ -153,6 +153,40 @@ Every module is a class constructed with `game`, kept as `game.<name>`. Optional
 - **Selection** (UI): when the player inspects a unit or building, UI sets `game.selected =
   {kind:'unit'|'building', ref}` and emits `'select'`. Renderers may draw a highlight.
 
+## World Laws, map sizes, power saving and mobile (round 5 contracts)
+
+- **World Laws** (`src/core/laws.js`): `game.laws[key]` holds the current value and
+  `game.setLaw(key, value)` changes it (persisted; emits `'laws'` `{key, value}`).
+  `game.resetLaws()` restores defaults. The registry (`LAWS`, `LAW_CATEGORIES`) drives the UI
+  panel. Every module must read the law at the point of use so a toggle takes effect on the
+  next tick:
+  - Civilization: `civExpansion`, `civWars`, `civRebellions`, `civDiplomacy`, `civGrowth`
+    (birth/growth multiplier).
+  - Life: `lifeWildlife` (breeding and migration of wild animals), `lifePredators`, `lifeHunger`,
+    `lifeAging`.
+  - Nature: `natureGrowth`, `natureRegrowth`; Effects: `natureFireSpread`, `natureLavaFlow`.
+  - Sky & Time: `skyDayNight` and `skyDaySpeed` (core), `skyWeather` (Atmosphere, mirrored in
+    `game.settings.autoWeather`).
+  - Calamities (Effects & Disasters): `calamityNatural` (random disasters, default off),
+    `calamityFrequency`, `calamityPlague`, `calamityLightning`.
+- **Map sizes** (`WORLD_SIZES` in `src/core/params.js`): Tiny 128, Small 192, Medium 256,
+  Large 384 and Huge 512 tiles square, chosen with `?size=` (clamped to multiples of 32 between
+  96 and 512). Touch devices default to 192. Every system must scale with `world.w/h` rather
+  than assume 256: chunk counts, population and fauna budgets, starting villages, shadow and
+  fog ranges, camera limits, and simulation sweep budgets. `game.view.worldScale` is
+  `size / 256`.
+- **View level of detail**: `game.view = {dist, zoom01, far, worldScale}` is updated each frame
+  before visual systems run. Renderers must shed detail as `zoom01` rises: skip small props, use
+  cheaper LODs, simplify shaders, reduce post-processing and shadow resolution. Looking at a
+  whole Huge map must cost no more than looking at a Medium map up close.
+- **Power saver**: when `game.settings.powerSaver` is on (default on for touch devices, `?power=1`),
+  the core loop caps rendering at 30 fps, and renderers should prefer cheaper paths: lower
+  pixel ratio, no AO or DOF, a smaller shadow map. `game.setPowerSaver(on)` emits `'powersaver'`.
+  `game.settings.fpsCap` overrides the cap.
+- **Phones and tablets**: every feature must be usable by touch alone: one-finger paint or pan,
+  two-finger pinch zoom and twist rotate, tap to inspect. Targets must be at least 44 px, and
+  layouts must fit both portrait and landscape at 360–1366 px widths.
+
 ## Quality bar
 
 "AAA" here means a frame captured at any moment would hold up as a store-page screenshot:
