@@ -983,14 +983,33 @@ function buildMushroom(b, v, lod) {
     mushroom(b, 0, 0, 0.13, 0.12, brown, C(0xe8dcc4), 0, { sq: 0.72 });
     mushroom(b, 0.14, 0.06, 0.09, 0.08, mix3(brown, tan, 0.3), C(0xe8dcc4), 0, { sq: 0.72 });
     mushroom(b, -0.08, 0.14, 0.06, 0.06, brown, C(0xe8dcc4), 0, { sq: 0.72 });
-  } else {
+  } else if (v === 3) {
     for (let k = 0; k < 5; k++) {
       const a = (k / 5) * TAU + 0.3;
       const rr = k ? 0.12 : 0;
       mushroom(b, Math.cos(a) * rr, Math.sin(a) * rr, b.r(0.05, 0.1), b.r(0.04, 0.06), mix3(tan, C(0xf4e6c8), b.rng()), C(0xf4ecdc), 0, { sq: 0.55 });
     }
+  } else {
+    // glowcap grove: slender stems under luminous bell caps (built ~2x so it
+    // still reads after the species' small scale); they glow at night
+    const n = lod ? 4 : 8;
+    for (let k = 0; k < n; k++) {
+      const a = (k / n) * TAU + b.r(0, 0.7);
+      const rr = k ? b.r(0.14, 0.42) : 0;
+      glowcap(b, Math.cos(a) * rr, Math.sin(a) * rr, b.r(0.26, 0.58) * (k ? 1 : 1.2), b.r(0.09, 0.15) * (k ? 1 : 1.25));
+    }
   }
   return { bendScale: 0.1, height: 0.3 };
+}
+
+function glowcap(b, x, z, h, r) {
+  const lean = V(b.r(-0.05, 0.05), 0, b.r(-0.05, 0.05));
+  const top = V(x + lean.x, h, z + lean.z);
+  b.add(tubeGeo([V(x, 0, z), V(x + lean.x * 0.5, h * 0.55, z + lean.z * 0.5), top], [r * 0.24, r * 0.2, r * 0.17], 5, { capTop: false }), { normals: 'geo', color: (p) => mul3(C(0xe8f0ea), 0.7 + 0.3 * smooth(0, h, p.y)), mat: MAT.WOOD, leaf: 1, flutter: 0.05, pivot: V(x, 0, z) });
+  const cap = new THREE.SphereGeometry(r, 8, 3, 0, TAU, 0, Math.PI * 0.5);
+  b.add(cap, { matrix: M(top.x, top.y - r * 0.15, top.z, 0, b.r(0, TAU), 0, 1, 0.95, 1), normals: 'geoblend', blend: 0.7, color: (p, n) => mul3(C(0xf2f8f4), 0.75 + 0.25 * clamp01(n.y)), mat: MAT.GLOW, leaf: 1, flutter: 0.05, pivot: V(x, 0, z) });
+  const under = new THREE.CircleGeometry(r * 0.98, 8);
+  b.add(under, { matrix: M(top.x, top.y - r * 0.15, top.z, Math.PI / 2, 0, 0), normals: 'flat', color: C(0xcfe0d6), mat: MAT.GLOW, leaf: 1, flutter: 0.05, pivot: V(x, 0, z) });
 }
 
 // ---------------------------------------------------------------------------
@@ -1199,7 +1218,7 @@ kind(FLORA.BERRY_BUSH, 3, buildBerry, { jitter: 0.26, castShadow: false, far2: t
 kind(FLORA.FLOWERS, 4, buildFlowers, { far: 'skip', castShadow: false, jitter: 0.25, scale: [0.7, 0.9] });
 kind(FLORA.CACTUS, 4, buildCactus, { jitter: 0.24 });
 kind(FLORA.REEDS, 3, buildReeds, { far: 'skip', castShadow: false, jitter: 0.25, scale: [0.7, 0.85] });
-kind(FLORA.MUSHROOM, 4, buildMushroom, { far: 'skip', castShadow: false, jitter: 0.3, scale: [0.46, 0.62] });
+kind(FLORA.MUSHROOM, 5, buildMushroom, { far: 'skip', castShadow: false, jitter: 0.3, scale: [0.46, 0.62] });
 kind(FLORA.ROCK_SMALL, 4, buildStones, { far: 'skip', castShadow: false, jitter: 0.28, tilt: 0.6, scale: [0.9, 1.3], sink: 0.02 });
 kind(FLORA.BOULDER, 4, buildBoulder, { jitter: 0.12, tilt: 0.5, scale: [0.9, 1.15], sink: 0.08 });
 kind(FLORA.STUMP, 3, buildStump, { far: 'skip', castShadow: false, jitter: 0.2, scale: [0.8, 0.95] });

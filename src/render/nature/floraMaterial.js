@@ -217,6 +217,10 @@ const float fBayer[16] = float[16](0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.
 const FRAG_COLOR = /* glsl */ `
 float fLeafM = vFInfo.x;
 float fMat = vFInfo.y;
+if (abs(fMat - 11.0) < 0.5) {
+  vec3 gcd = vFIH < 0.34 ? vec3(0.4, 0.95, 0.8) : vFIH < 0.67 ? vec3(0.8, 0.62, 1.0) : vec3(1.0, 0.8, 0.45);
+  diffuseColor.rgb *= gcd;
+}
 float fCell = fract(sin(dot(floor(vFWorld * 6.0), vec3(12.9898, 78.233, 45.164))) * 43758.5453);
 if (abs(fMat - 9.0) < 0.5) {
   vec4 sw = vFSeason;
@@ -282,7 +286,8 @@ else if (fMat < 6.5) fR = 0.7;
 else if (fMat < 7.5) fR = 0.58;
 else if (fMat < 8.5) fR = 0.85;
 else if (fMat < 9.5) fR = 0.74;
-else fR = 0.36;
+else if (fMat < 10.5) fR = 0.36;
+else fR = 0.42;
 roughnessFactor = mix(fR, fR * 0.55, uWet);
 `;
 
@@ -298,12 +303,12 @@ if (fFire > 0.002) {
   float smoulder = 0.04 + 0.08 * n2 * (1.0 - fLeafM * 0.5);
   totalEmissiveRadiance += mix(vec3(1.0, 0.22, 0.03), vec3(1.0, 0.55, 0.12), ember) * fFire * (smoulder + 3.0 * ember);
 }
-// bioluminescent fungi: some mushroom caps glow softly at night
-if (abs(fMat - 10.0) < 0.5 && uFungiGlow > 0.001 && vFIH < 0.5) {
+// bioluminescent glowcaps: teal, violet or amber, brightening as night falls
+if (abs(fMat - 11.0) < 0.5) {
   float night = clamp(1.0 - uDaylight, 0.0, 1.0);
-  float pulse = 0.75 + 0.25 * sin(uTime * 1.3 + vFIH * 40.0);
-  vec3 gc = mix(vec3(0.1, 0.95, 0.7), vec3(0.4, 0.65, 1.0), fract(vFIH * 5.3));
-  totalEmissiveRadiance += gc * (0.4 + diffuseColor.rgb) * night * pulse * uFungiGlow * 2.2;
+  float pulse = 0.8 + 0.2 * sin(uTime * 1.3 + vFIH * 40.0);
+  vec3 gc = vFIH < 0.34 ? vec3(0.05, 0.85, 0.6) : vFIH < 0.67 ? vec3(0.55, 0.22, 1.0) : vec3(1.0, 0.55, 0.08);
+  totalEmissiveRadiance += gc * (0.06 + 1.5 * night) * pulse * uFungiGlow;
 }
 float fBack = clamp(-dot(fWN, uSunDir), 0.0, 1.0);
 float fTrans = fLeafM * (1.0 - fChar) * (1.0 - fSnowAmt) * uDaylight * (1.0 - fIsSnow);
@@ -334,6 +339,69 @@ function patch(shader, shared, kind, depth) {
     .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n' + FRAG_ROUGH)
     .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n' + FRAG_EMISSIVE)
     .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\n' + FRAG_LIGHT);
+}
+
+// Ground decals: soft additive glow pools under glowcap groves (night only)
+// and a multiplicative contact-shadow blob under trees.
+export function createDecalMaterials(shared) {
+  const vert = /* glsl */ `
+    varying vec2 vUv;
+    varying vec3 vCol;
+    varying float vPh;
+    float fHash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+    void main() {
+      vUv = uv;
+      vec3 o = instanceMatrix[3].xyz;
+      float h = fHash(o.xz + 17.31);
+      vCol = h < 0.34 ? vec3(0.05, 0.85, 0.6) : h < 0.67 ? vec3(0.55, 0.22, 1.0) : vec3(1.0, 0.55, 0.08);
+      vPh = h * 40.0;
+      gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0);
+    }`;
+  const glow = new THREE.ShaderMaterial({
+    uniforms: { uTime: shared.uTime, uDaylight: shared.uDaylight, uFungiGlow: shared.uFungiGlow },
+    vertexShader: vert,
+    fragmentShader: /* glsl */ `
+      varying vec2 vUv;
+      varying vec3 vCol;
+      varying float vPh;
+      uniform float uTime;
+      uniform float uDaylight;
+      uniform float uFungiGlow;
+      void main() {
+        float d = length(vUv - 0.5) * 2.0;
+        float a = pow(max(0.0, 1.0 - d), 2.0);
+        float night = clamp(1.0 - uDaylight * 1.2, 0.0, 1.0);
+        float pulse = 0.8 + 0.2 * sin(uTime * 1.3 + vPh);
+        gl_FragColor = vec4(vCol * a * night * uFungiGlow * pulse * 0.6, 1.0);
+      }`,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  glow.name = 'nature-fungi-glow';
+  const ao = new THREE.ShaderMaterial({
+    uniforms: {},
+    vertexShader: vert,
+    fragmentShader: /* glsl */ `
+      varying vec2 vUv;
+      void main() {
+        float d = length(vUv - 0.5) * 2.0;
+        float a = smoothstep(1.0, 0.15, d);
+        gl_FragColor = vec4(vec3(1.0 - 0.36 * a), 1.0);
+      }`,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.CustomBlending,
+    blendEquation: THREE.AddEquation,
+    blendSrc: THREE.DstColorFactor,
+    blendDst: THREE.ZeroFactor,
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+    polygonOffsetUnits: -2,
+  });
+  ao.name = 'nature-contact-ao';
+  const geo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+  return { glow, ao, geo };
 }
 
 export function createMaterials(shared) {
