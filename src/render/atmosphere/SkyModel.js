@@ -285,40 +285,40 @@ export class SkyModel {
     if (age) this.applyAge(age);
   }
 
-  // Ages lean the sky and grade toward their character (subtle but clear).
+  // Ages give the sky, fog, key light and grade a strong identity
+  // (AgeLooks.js). Sky colours are scaled to the current daylight so a
+  // daytime look never lights up the night.
   applyAge(age) {
-    const k = age.tintK || 0;
-    if (k > 0.001) {
-      const t = age.tint;
-      this.zenith.lerp(t, 0.2 * k);
-      this.horizon.lerp(t, 0.24 * k);
-      this.groundHaze.lerp(t, 0.2 * k);
-      this.hemiSky.lerp(t, 0.14 * k);
-      this.mistColor.lerp(t, 0.2 * k);
-      const l = t.r * 0.2126 + t.g * 0.7152 + t.b * 0.0722;
-      this.midTint.x += (t.r - l) * 0.07 * k;
-      this.midTint.y += (t.g - l) * 0.07 * k;
-      this.midTint.z += (t.b - l) * 0.07 * k;
-      this.highTint.x += (t.r - l) * 0.04 * k;
-      this.highTint.y += (t.g - l) * 0.04 * k;
-      this.highTint.z += (t.b - l) * 0.04 * k;
-    }
-    const hot = Math.max(0, age.temp || 0) * 2; // 0..1
-    if (hot > 0.001) {
-      // heat haze: a dry, bleached, warm air
-      this.horizon.lerp(HEAT_HAZE, 0.22 * hot);
-      this.groundHaze.lerp(HEAT_HAZE, 0.25 * hot);
-      this.midTint.x += 0.028 * hot;
-      this.midTint.y += 0.01 * hot;
-      this.midTint.z -= 0.022 * hot;
-      this.saturation *= 1 - 0.1 * hot;
-      this.contrast -= 0.03 * hot;
-    }
-    const cold = Math.max(0, -(age.temp || 0)) * 2;
-    if (cold > 0.001) {
-      this.shadowTint.z += 0.02 * cold;
-      this.midTint.z += 0.012 * cold;
-      this.saturation *= 1 - 0.08 * cold;
+    const L = age.look;
+    this.ageHazeD = 0;
+    this.ageVig = 0;
+    if (L) {
+      const dayK = 0.18 + 0.82 * this.daylight;
+      const t = this._tmp;
+      if (L.zen.k > 0.001) this.zenith.lerp(t.copy(L.zen.c).multiplyScalar(dayK), L.zen.k);
+      if (L.hor.k > 0.001) {
+        this.horizon.lerp(t.copy(L.hor.c).multiplyScalar(dayK), L.hor.k);
+        this.glow.multiplyScalar(1 - 0.35 * L.hor.k);
+      }
+      if (L.haze.k > 0.001) {
+        this.groundHaze.lerp(t.copy(L.haze.c).multiplyScalar(dayK), L.haze.k);
+        this.mistColor.lerp(t.copy(L.haze.c).multiplyScalar(dayK), L.haze.k);
+      }
+      if (L.hemi.k > 0.001) this.hemiSky.lerp(L.hemi.c, L.hemi.k);
+      this.sunLightColor.multiply(L.key);
+      this.keyColor.multiply(L.key);
+      this.keyIntensity *= L.keyI;
+      this.hemiIntensity *= L.hemiI;
+      this.exposure *= L.exp;
+      this.saturation *= L.sat;
+      this.contrast += L.con;
+      this.midTint.add(L.mid);
+      this.shadowTint.add(L.shd);
+      this.ageHazeD = L.hazeD;
+      this.ageVig = L.vig;
+      this.ageVigC = L.vigC;
+      this.cloudLit.copy(this.keyColor).multiplyScalar(this.keyIntensity * 0.36);
+      this.cloudShade.copy(this.hemiSky).multiplyScalar(this.hemiIntensity * 0.5);
     }
     const nt = (age.night || 0) * this.night;
     if (nt > 0.001) this.saturation *= 1 - 0.1 * nt;
