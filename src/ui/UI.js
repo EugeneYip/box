@@ -1,5 +1,6 @@
 import '@fontsource/cinzel/700.css';
 import './hud2.css';
+import './hud3.css';
 import { CATEGORIES, listPowers, getPower } from '../powers/registry.js';
 import { el, safe } from './dom.js';
 import { TopBar, PRESET_NAMES } from './TopBar.js';
@@ -11,6 +12,7 @@ import { Modals, KingdomsPanel } from './Panels.js';
 import { TitleScreen } from './TitleScreen.js';
 import { ChroniclePanel } from './Chronicle.js';
 import { Onboarding } from './Onboarding.js';
+import { CameraPad } from './CameraPad.js';
 
 const PREF_KEY = 'worldseed.ui.v1';
 
@@ -55,6 +57,10 @@ export class UI {
     this.hud.append(this.topbar.el, this.feed.el, this.kingdoms.el, this.chronicle.el, this.inspector.el, this.minimap.wrap, this.toolbar.el, this.toastEl);
     root.append(this.modals.layer, this.veil);
     this.onboarding = new Onboarding(this);
+    if (root.classList.contains('is-touch')) {
+      this.campad = new CameraPad(this);
+      this.hud.append(this.campad.el);
+    }
     this.parts = [this.topbar, this.toolbar, this.minimap, this.inspector, this.feed, this.kingdoms, this.onboarding];
     this._paintT = 0;
 
@@ -108,19 +114,17 @@ export class UI {
     this.minimap.setVisible(p.minimap !== false);
     this.feed.el.classList.toggle('is-off', p.feed === false);
     if (initial) {
-      const narrow = innerWidth <= 720;
+      const narrow = innerWidth <= 1000 || innerHeight <= 500;
       this.minimap.setCollapsed(p.mapCollapsed ?? narrow, true);
       if (g.params.audio !== false) {
         if (p.volume != null) safe(() => g.audio?.setVolume?.(p.volume));
         if (p.muted != null) safe(() => g.audio?.setMuted?.(p.muted));
       }
-      if (p.dayNight != null && g.settings && g.params.hour == null) g.settings.dayNight = p.dayNight;
+      if (p.powerSaver != null && g.params.power == null) safe(() => g.setPowerSaver?.(p.powerSaver));
+      if (p.fpsCap != null && g.settings) g.settings.fpsCap = p.fpsCap;
       if (p.buses) for (const [bus, v] of Object.entries(p.buses)) safe(() => g.audio?.setBusVolume?.(bus, v));
       if (p.dockMin) this.toolbar.setMin(true);
-      if (p.autoWeather != null && g.settings) {
-        g.settings.autoWeather = p.autoWeather;
-        safe(() => g.atmosphere?.setAutoWeather?.(p.autoWeather));
-      }
+
       if (p.quality && !g.params.quality && g.pipeline?.quality !== p.quality) safe(() => g.pipeline?.setQuality?.(p.quality));
     }
   }
@@ -241,7 +245,7 @@ export class UI {
     }
     if (this.modals.current && !this.isTyping(e)) {
       // only the panel's own toggle key passes through while a dialog is up
-      const own = { help: 'KeyH', settings: 'KeyO', newworld: 'KeyG' }[this.modals.current];
+      const own = { help: 'KeyH', settings: 'KeyO', newworld: 'KeyG', laws: 'KeyL' }[this.modals.current];
       if (e.code === own) {
         this.modals.close();
         e.preventDefault();
@@ -279,6 +283,9 @@ export class UI {
         break;
       case 'KeyJ':
         this.chronicle.toggle();
+        break;
+      case 'KeyL':
+        this.modals.toggle('laws');
         break;
       case 'Backquote':
         this.toolbar.setMin(!this.toolbar.el.classList.contains('is-min'));

@@ -14,11 +14,33 @@ export class Minimap {
     const W = this.game.world;
     this.w = W.w;
     this.h = W.h;
-    this.base = el('canvas', { class: 'ws-map__base', width: this.w, height: this.h });
+    // small worlds get 2x2 pixels per tile so the painted map stays crisp
+    this.k = Math.max(W.w, W.h) < 256 ? 2 : 1;
+    this.base = el('canvas', { class: 'ws-map__base', width: this.w * this.k, height: this.h * this.k });
     this.over = el('canvas', { class: 'ws-map__over' });
     this.bctx = this.base.getContext('2d');
     this.octx = this.over.getContext('2d');
-    this.img = this.bctx.createImageData(this.w, this.h);
+    this.img = this.bctx.createImageData(this.w * this.k, this.h * this.k);
+    this.compass = el(
+      'button',
+      {
+        class: 'ws-map__compass',
+        type: 'button',
+        'aria-label': 'Face north',
+        'data-tip': 'Face north',
+        html: '<svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14" class="ring"/><path class="n" d="M16 4.5l4.2 11.5h-8.4z"/><path class="s" d="M16 27.5l-4.2-11.5h8.4z"/><circle cx="16" cy="16" r="1.8" class="hub"/></svg>',
+        onclick: (e) => {
+          e.stopPropagation();
+          const rig = this.game.cameraRig;
+          rig.goal.yaw = Math.round(rig.goal.yaw / (Math.PI * 2)) * Math.PI * 2;
+          this.game.audio?.play?.('ui-click', { volume: 0.4 });
+        },
+      },
+    );
+    this.needle = this.compass.querySelector('svg');
+    this._fp = null;
+    this._fpKey = '';
+    this._fpT = 0;
     this.collapseBtn = el('button', {
       class: 'ws-iconbtn ws-iconbtn--sm ws-map__btn',
       type: 'button',
@@ -46,7 +68,7 @@ export class Minimap {
       el('span', { class: 'ws-map__north', text: 'N' }),
       el('span', { class: 'ws-map__vignette' }),
     );
-    this.el = el('div', { class: 'ws-map ws-glass ws-orn' }, this.frame, this.collapseBtn);
+    this.el = el('div', { class: 'ws-map ws-glass ws-orn' }, this.frame, this.collapseBtn, this.compass);
     this.wrap = el('div', { class: 'ws-mapwrap' }, this.el, this.openBtn);
 
     this.dirty = { x0: 0, y0: 0, x1: this.w - 1, y1: this.h - 1 };
@@ -121,7 +143,8 @@ export class Minimap {
     const W = this.game.world;
     const { height, type, flora, owner, fire, floraGrowth } = W;
     const w = this.w,
-      h = this.h;
+      h = this.h,
+      k = this.k;
     const data = this.img.data;
     // expand by one tile so hillshade / borders at the rect edge stay correct
     const x0 = Math.max(0, r.x0 - 1),
@@ -202,14 +225,28 @@ export class Minimap {
           G += (120 - G) * a;
           B += (30 - B) * a;
         }
-        const p = i * 4;
-        data[p] = R > 255 ? 255 : R;
-        data[p + 1] = G > 255 ? 255 : G;
-        data[p + 2] = B > 255 ? 255 : B;
-        data[p + 3] = 255;
+        const r8 = R > 255 ? 255 : R,
+          g8 = G > 255 ? 255 : G,
+          b8 = B > 255 ? 255 : B;
+        if (k === 1) {
+          const p = i * 4;
+          data[p] = r8;
+          data[p + 1] = g8;
+          data[p + 2] = b8;
+          data[p + 3] = 255;
+        } else {
+          for (let oy = 0; oy < k; oy++)
+            for (let ox = 0; ox < k; ox++) {
+              const p = ((ty * k + oy) * w * k + tx * k + ox) * 4;
+              data[p] = r8;
+              data[p + 1] = g8;
+              data[p + 2] = b8;
+              data[p + 3] = 255;
+            }
+        }
       }
     }
-    this.bctx.putImageData(this.img, 0, 0, x0, y0, x1 - x0 + 1, y1 - y0 + 1);
+    this.bctx.putImageData(this.img, 0, 0, x0 * k, y0 * k, (x1 - x0 + 1) * k, (y1 - y0 + 1) * k);
   }
 
   // Map a pointer event to world XZ and move the camera there.
@@ -224,28 +261,48 @@ export class Minimap {
     rig.clampGoal?.();
   }
 
-  // Ground footprint of the camera frustum (intersected with the sea plane).
+  // Ground footprint of the view: points along the screen border ray-cast
+  // onto the real terrain (not the sea plane, which overshot by the terrain's
+  // height and shifted the box toward the camera). Sky rays at the top edge
+  // walk down the screen to the horizon. Cached until the camera moves.
   footprint() {
-    const cam = this.game.cameraRig.camera;
+    const g = this.game;
+    const cam = g.cameraRig.camera;
+    const e = cam.matrixWorld.elements;
+    const key = `${e[12].toFixed(2)},${e[13].toFixed(2)},${e[14].toFixed(2)},${e[8].toFixed(3)},${e[10].toFixed(3)},${innerWidth},${innerHeight}`;
+    const now = performance.now();
+    if (this._fp && (key === this._fpKey || now - this._fpT < 90)) return this._fp;
+    this._fpKey = key;
+    this._fpT = now;
+    const rect = g.pipeline.renderer.domElement.getBoundingClientRect();
+    const W = rect.width,
+      H = rect.height;
+    const N = 4; // segments per edge
+    const border = [];
+    for (let i = 0; i < N; i++) border.push([i / N, 0]); // top, left -> right
+    for (let i = 0; i < N; i++) border.push([1, i / N]); // right, top -> bottom
+    for (let i = 0; i < N; i++) border.push([1 - i / N, 1]); // bottom, right -> left
+    for (let i = 0; i < N; i++) border.push([0, 1 - i / N]); // left, bottom -> top
+    const pick = (u, v) => g.picker.pick(rect.left + u * W, rect.top + v * H, true);
     const pts = [];
-    const corners = [
-      [-1, -1],
-      [1, -1],
-      [1, 1],
-      [-1, 1],
-    ];
-    for (const [x, y] of corners) {
-      this._v.set(x, y);
-      this._ray.setFromCamera(this._v, cam);
-      const o = this._ray.ray.origin,
-        d = this._ray.ray.direction.clone();
-      if (d.y > -0.04) d.y = -0.04;
-      d.normalize();
-      let t = (o.y - SEA_LEVEL) / -d.y;
-      t = Math.min(t, this.w * 3);
-      pts.push([o.x + d.x * t, o.z + d.z * t]);
+    for (const [u, v] of border) {
+      let hit = pick(u, v);
+      if (!hit) {
+        // above the horizon: find the highest screen point on this column that hits ground
+        let lo = v,
+          hi = 1;
+        if (!pick(u, hi)) continue;
+        for (let it = 0; it < 7; it++) {
+          const m = (lo + hi) / 2;
+          if (pick(u, m)) hi = m;
+          else lo = m;
+        }
+        hit = pick(u, hi);
+      }
+      if (hit) pts.push([hit.x, hit.z]);
     }
-    return pts;
+    this._fp = pts.length >= 3 ? pts : this._fp || [];
+    return this._fp;
   }
 
   drawOverlay() {
@@ -330,6 +387,12 @@ export class Minimap {
 
   update(dt) {
     if (this.collapsed || this.wrap.classList.contains('is-off')) return;
+    // the needle points to north as seen in the main view
+    const yaw = ((this.game.cameraRig.cur.yaw * 180) / Math.PI).toFixed(1);
+    if (yaw !== this._yaw) {
+      this._yaw = yaw;
+      this.needle.style.transform = `rotate(${yaw}deg)`;
+    }
     this._t -= dt;
     if (this.dirty && this._t <= 0) {
       this._t = 0.2;

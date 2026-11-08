@@ -88,6 +88,7 @@ export class TopBar {
         this.navBtn('new-world', 'New world', 'G', () => ui.modals.toggle('newworld')),
         (this.kBtn = this.navBtn('kingdoms', 'Kingdoms', 'K', () => ui.kingdoms.toggle())),
         this.navBtn('chronicle', 'Chronicle', 'J', () => ui.chronicle.toggle()),
+        this.navBtn('trade', 'World laws', 'L', () => ui.modals.toggle('laws')),
         this.navBtn('settings', 'Settings', 'O', () => ui.modals.toggle('settings')),
         this.navBtn('help', 'Controls', 'H', () => ui.modals.toggle('help')),
       ),
@@ -142,7 +143,7 @@ export class TopBar {
       { class: 'ws-clock ws-glass' },
       el('div', { class: 'ws-clock__time', 'data-tip': 'Year, season and time of day' }, this.dialEl, el('span', { class: 'ws-clock__txt' }, this.yearEl, this.dayEl)),
       el('span', { class: 'ws-sep' }),
-      el('div', { class: 'ws-speed' }, this.pauseBtn, this.seg, this.cycleBtn, this.effEl),
+      el('div', { class: 'ws-speed' }, this.pauseBtn, this.seg, this.cycleBtn, this.effEl, (this.leafEl = el('span', { class: 'ws-leaf', 'data-tip': 'Power saver on · 30 fps', html: uiIcon('leaf') }))),
     );
     this.pausedEl = el('div', { class: 'ws-paused' }, el('span', { class: 'ws-paused__dot' }), 'Time is paused', el('kbd', { class: 'ws-key', text: 'Space' }));
     this.centre = el('div', { class: 'ws-top__centre' }, this.clock, this.pausedEl);
@@ -177,6 +178,9 @@ export class TopBar {
     this.refreshWorld();
     this.syncSpeed();
     g.events.on('speed', () => this.syncSpeed());
+    const leaf = () => this.leafEl.classList.toggle('is-shown', !!g.settings?.powerSaver);
+    g.events.on('powersaver', leaf);
+    leaf();
     g.events.on('world:regenerated', () => this.refreshWorld());
     addEventListener('resize', () => this.syncSpeed());
   }

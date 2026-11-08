@@ -184,7 +184,7 @@ export class Toolbar {
     const edge = parseFloat(cs.getPropertyValue('--ws-edge')) || 14;
     const cell = tile + 6;
     const drawer = this.isDrawer();
-    const avail = drawer ? innerWidth - 2 * edge - 16 : Math.min(innerWidth - 2 * edge - 2 * (map + 16), 1500) - 22;
+    const avail = drawer ? Math.min(innerWidth, innerWidth > 720 ? 600 : innerWidth) - 2 * edge - 16 : Math.min(innerWidth - 2 * edge - 2 * (map + 16), 1500) - 22;
     const n = groups.reduce((s, gr) => s + gr.list.length, 0);
     const extra = (groups.length - 1) * 17;
     if (drawer) return groups.map(() => Math.max(1, Math.floor((avail + 6) / cell)));
@@ -446,7 +446,7 @@ export class Toolbar {
 
   // ------------------------------------------------------------------ drawer (phones)
   isDrawer() {
-    return matchMedia('(max-width: 720px)').matches;
+    return matchMedia('(max-width: 720px), (max-height: 500px)').matches;
   }
   toggleDrawer(open = !this.el.classList.contains('is-open')) {
     this.el.classList.toggle('is-open', open);
