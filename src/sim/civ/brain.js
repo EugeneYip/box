@@ -263,6 +263,20 @@ export const brain = {
     return s;
   },
 
+  // How fast this worker works: village (golden age, forge, famine), the
+  // worker's traits and statuses (Green-thumbed, Inventive, Inspired,
+  // Exhausted, Sick...), the tool in hand and the kingdom's metallurgy.
+  _workMul(u, v) {
+    const U = this.game.units;
+    let m = this._speed(v) * (U.traitMod?.(u, 'work') ?? 1) * this.techMod(v.kingdom, 'work');
+    const tool = u.equipment?.tool || u.data.civ?.gear?.tool;
+    if (tool) m *= 1 + Math.min(0.4, (tool.power || 3) * 0.035);
+    return Math.max(0.25, m);
+  },
+  _xp(u, n) {
+    this.game.units.addXP?.(u, n);
+  },
+
   _reserve(i, u, secs = 30) {
     this.reservedBy[i] = u.id;
     this.reservedT[i] = this.game.time.total + secs;
@@ -348,7 +362,7 @@ export const brain = {
       }
       if (r !== ARRIVED) return;
       t.phase = 'work';
-      t.t = 9 / this._speed(v);
+      t.t = 9 / this._workMul(u, v);
     }
     const f = w.flora[t.i];
     if (!FLORA_INFO[f]?.isTree) {
@@ -371,7 +385,8 @@ export const brain = {
     if (this.rng.chance(0.45)) this.regrow.push({ i: t.i, at: this.game.time.total + YEAR * (2 + this.rng.next() * 3), flora: f });
     else this.regrow.push({ i: t.i, at: this.game.time.total + YEAR * 3, flora: FLORA.NONE });
     this._release(t.i, u);
-    u.carry = { type: 'wood', amount: Math.min(CARRY_MAX.wood, (u.carry?.amount || 0) + wood) };
+    u.carry = { type: 'wood', amount: Math.min(CARRY_MAX.wood, (u.carry?.amount || 0) + Math.round(wood * (this.game.units.traitMod?.(u, 'work') ?? 1))) };
+    this._xp(u, 1.5);
     d.task = null;
   },
 
@@ -482,7 +497,7 @@ export const brain = {
       }
       if (r !== ARRIVED) return;
       t.phase = 'work';
-      const sp = this._speed(v);
+      const sp = this._workMul(u, v);
       t.t = (t.act === 'harvest' ? 6 : t.act === 'till' ? 6 : t.act === 'chop' ? 8 : t.act === 'tend' ? 8 : 5) / sp;
     }
     const anim = t.act === 'harvest' || t.act === 'tend' ? 'harvest' : t.act === 'chop' ? 'chop' : 'dig';
@@ -504,7 +519,9 @@ export const brain = {
           let y = 5 * (this.game.age?.mods?.fertility ?? 1) * this.techMod(v.kingdom, 'harvest');
           if (v.hasWindmill) y += 2;
           if (this.game.time.total < (this.kingdoms[v.kingdom]?.goldenUntil || 0)) y += 1;
-          u.carry = { type: 'food', amount: (u.carry?.amount || 0) + y };
+          y *= this.game.units.traitMod?.(u, 'work') ?? 1;
+          u.carry = { type: 'food', amount: (u.carry?.amount || 0) + Math.round(y) };
+          this._xp(u, 1.2);
         }
         break;
       case 'chop':
@@ -699,8 +716,9 @@ export const brain = {
     t.t -= dt;
     if (t.t > 0) return;
     t.t = 2;
-    const sp = this._speed(v);
+    const sp = this._workMul(u, v) * this.techMod(v.kingdom, 'build') * (this.hasCultureTrait(v.culture, 'Masons') ? 1.2 : 1);
     const def = BUILDING_TYPES[b.type];
+    this._xp(u, 0.45);
     if (fire) {
       b.burning = Math.max(0, b.burning - (v.hasWell ? 0.22 : 0.14));
       this._fx('steam', b.x, b.z, 0.6);
@@ -795,7 +813,7 @@ export const brain = {
       }
       if (r !== ARRIVED) return;
       t.phase = 'work';
-      t.t = 14 / this._speed(v);
+      t.t = 14 / this._workMul(u, v);
     }
     this._work(u, 'dig', t.cx, t.cz);
     t.t -= dt;
@@ -833,7 +851,9 @@ export const brain = {
     }
     this._release(i, u);
     d.task = null;
-    const ore = !gold && stone && this.rng.chance(f === FLORA.BOULDER || w.type[i] === TILE.ROCK ? 0.22 : 0.08);
+    stone = Math.round(stone * this.techMod(v.kingdom, 'stone') * (this.game.units.traitMod?.(u, 'work') ?? 1));
+    this._xp(u, 1.5);
+    const ore = !gold && stone && this.rng.chance(f === FLORA.BOULDER || w.type[i] === TILE.ROCK ? 0.38 : v.quarry === i || this.use[i] === USE.QUARRY ? 0.25 : 0.14);
     if (u.carry?.type === 'ore') {
       // already hauling ore: stone goes straight on the pile, more ore into the sack
       v.stone += stone;
@@ -975,7 +995,7 @@ export const brain = {
       }
       if (r !== ARRIVED) return;
       t.phase = 'work';
-      t.t = (t.dock ? 14 : 16) / this._speed(v);
+      t.t = (t.dock ? 14 : 16) / this._workMul(u, v);
     }
     this._work(u, 'harvest', t.fx, t.fz);
     t.t -= dt;
@@ -983,7 +1003,8 @@ export const brain = {
       if (this.rng.chance(0.06)) this._fx('splash', t.fx, t.fz, 0.3);
       return;
     }
-    u.carry = { type: 'food', amount: (u.carry?.amount || 0) + Math.round((t.dock ? 5 : 3) * this.techMod(v.kingdom, 'fish')) };
+    u.carry = { type: 'food', amount: (u.carry?.amount || 0) + Math.round((t.dock ? 5 : 3) * this.techMod(v.kingdom, 'fish') * (this.game.units.traitMod?.(u, 'work') ?? 1)) };
+    this._xp(u, 1.5);
     d.task = null;
   },
 

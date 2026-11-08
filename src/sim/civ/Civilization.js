@@ -669,7 +669,7 @@ export class Civilization {
     }
     v.housing = housing;
     v.houses = houses;
-    v.foodCap = foodCap;
+    v.foodCap = Math.round(foodCap * this.techMod(v.kingdom, 'foodCap'));
     v.buildRadius = 7 + v.tier * 2.5 + Math.sqrt(v.buildings.length) * 0.9;
     v.radius = clamp(7 + 2.1 * Math.sqrt(v.pop) + v.tier * 2, 8, 24);
     v.population = v.pop;
@@ -726,7 +726,7 @@ export class Civilization {
     if (v.stone > v.stoneCap) v.stone = v.stoneCap;
     // gold: markets trade, road links carry merchants, soldiers draw pay
     const markets = v.buildings.reduce((n, b) => n + (b.alive && b.type === 'market' && !b.constructing ? 1 : 0), 0);
-    v.gold += ((markets * (0.8 + pop * 0.02) + (v.tradeLinks || 0) * 0.35) / YEAR) * dt;
+    v.gold += ((markets * (0.8 + pop * 0.02) * this.techMod(v.kingdom, 'gold') * (this.hasCultureTrait(v.culture, 'Mercantile') ? 1.4 : 1) + (v.tradeLinks || 0) * 0.35) / YEAR) * dt;
     if (markets && this.rng.chance(0.06 * dt)) {
       const m = v.buildings.find((b) => b.alive && b.type === 'market' && !b.constructing);
       if (m) this._sfx('coin', m.x, m.z, 3);
@@ -789,8 +789,8 @@ export class Civilization {
             if (mate) {
               d.spouse = mate.id;
               mate.data.civ.spouse = u.id;
-              g.units.log?.(u, `Married ${mate.name} in ${v.name}`);
-              g.units.log?.(mate, `Married ${u.name} in ${v.name}`);
+              this._bio(u, `Married ${mate.name} in ${v.name}`);
+              this._bio(mate, `Married ${u.name} in ${v.name}`);
             }
           }
           const home = this._homeFor(v, u);
@@ -845,7 +845,7 @@ export class Civilization {
         this._moveMember(mover, best);
         mover.data.civ.task = { kind: 'arrive' };
         this._mixAdd(best, mover.data.culture || v.culture, 0.04);
-        g.units.log?.(mover, `Left ${v.name} for ${best.name}`);
+        this._bio(mover, `Left ${v.name} for ${best.name}`);
       }
     }
     // shrinking towns let empty houses crumble rather than stand as ghost towns
@@ -888,73 +888,190 @@ export class Civilization {
     return this._crowdV;
   }
 
-  // Kingdom inventory: stockpiles summed from the villages, plus arms forged
-  // by the smiths. Smiths at forges turn ore and wood into tools, weapons and
-  // armour of the best material the kingdom knows, and soldiers are equipped.
+  // Kingdom inventory: stockpiles summed from the villages, plus the armoury
+  // of real items. Smiths at forges turn ore (or stone, early on) and wood into
+  // weapons, armour, tools and trinkets of the best material the kingdom
+  // knows; soldiers are armed and armoured first, workers get tools, and gear
+  // recovered from the fallen is reissued (legendary pieces keep their story).
   _inventoryTick(dt) {
     const g = this.game;
+    const U = g.units;
+    const real = typeof U.makeItem === 'function' && typeof U.equip === 'function';
+    const gearOK = g.laws?.lifeEquipment !== false;
     for (const k of this.kingdoms) {
       if (!k.alive) continue;
-      const inv = k.inventory || (k.inventory = { food: 0, wood: 0, stone: 0, ore: 0, gold: 0, tools: 0, weapons: 0, armor: 0 });
+      const inv = k.inventory || (k.inventory = { food: 0, wood: 0, stone: 0, ore: 0, gold: 0, tools: 0, weapons: 0, armor: 0, trinkets: 0 });
+      const armory = k.armory || (k.armory = []);
       let food = 0,
         wood = 0,
         stone = 0,
         ore = 0,
         gold = 0,
         forges = 0;
+      const vs = [];
       for (const vid of k.villages) {
         const v = this.villages[vid];
         if (!v?.alive) continue;
+        vs.push(v);
         food += v.food;
         wood += v.wood;
         stone += v.stone;
         ore += v.ore || 0;
         gold += v.gold;
-        if (v.hasForge) forges++;
-        else if (v.hasWorkshop) forges += 0.4;
+        if (v.hasForge) forges += 1;
+        else if (v.hasWorkshop) forges += 0.5;
       }
-      Object.assign(inv, { food: Math.floor(food), wood: Math.floor(wood), stone: Math.floor(stone), ore: Math.floor(ore), gold: Math.floor(gold) });
+      // what the realm's people still lack
+      let needW = 0,
+        needA = 0,
+        needT = 0,
+        soldiers = 0;
+      for (const v of vs)
+        for (const u of v.members) {
+          if (!u.alive || u.age < ADULT_AGE) continue;
+          const e = this._gearOf(u);
+          if (u.job === 'soldier') {
+            soldiers++;
+            if (!e.weapon) needW++;
+            if (!e.armor) needA++;
+          } else if (u.job && u.job !== 'king' && u.job !== 'child' && !e.tool) needT++;
+        }
+      const stockOf = (slot) => armory.reduce((n, it) => n + (it.slot === slot ? 1 : 0), 0);
       // the smiths at work
       k.forgeT = (k.forgeT || 0) + dt * forges;
-      if (k.forgeT >= 14 && g.laws?.lifeEquipment !== false) {
-        k.forgeT = 0;
-        const v = k.villages.map((id) => this.villages[id]).find((o) => o?.alive && (o.hasForge || o.hasWorkshop) && (o.ore || 0) >= 2 && o.wood >= 3);
-        if (v) {
-          v.ore -= 2;
-          v.wood -= 3;
-          const mat = this.bestMaterial(k.id);
-          const need = inv.weapons <= inv.armor ? 'weapons' : inv.tools < inv.weapons / 2 ? 'tools' : 'armor';
-          inv[need]++;
-          (k.armory || (k.armory = [])).push({ slot: need === 'weapons' ? 'weapon' : need === 'armor' ? 'armor' : 'tool', material: mat });
-          if (k.armory.length > 60) k.armory.shift();
-        }
+      while (gearOK && k.forgeT >= 7 && armory.length < 90) {
+        k.forgeT -= 7;
+        const smithy = vs.find((o) => (o.hasForge || o.hasWorkshop) && o.wood >= 2);
+        if (!smithy) break;
+        let slot;
+        const w = needW - stockOf('weapon'),
+          a = needA - stockOf('armor'),
+          t = Math.min(needT, 12) - stockOf('tool');
+        if (w > 0 && w >= a) slot = 'weapon';
+        else if (a > 0) slot = 'armor';
+        else if (t > 0) slot = 'tool';
+        else if (smithy.gold >= 3 && (k.era >= 2 || this.hasTech(k.id, 'banking'))) slot = 'trinket';
+        else if (stockOf('weapon') < 3) slot = 'weapon';
+        else if (stockOf('armor') < 3) slot = 'armor';
+        else break;
+        // ore for metal, stone for the humble early kit
+        let mat = slot === 'trinket' ? (k.era >= 3 ? 'steel' : 'bronze') : this.bestMaterial(k.id);
+        const metal = mat === 'bronze' || mat === 'iron' || mat === 'steel';
+        if (metal && slot !== 'trinket') {
+          if ((smithy.ore || 0) >= 2) smithy.ore -= 2;
+          else if (smithy.stone >= 4) {
+            smithy.stone -= 4;
+            mat = 'stone';
+          } else break;
+        } else if (slot === 'trinket') smithy.gold -= 3;
+        else if (smithy.stone >= 3) smithy.stone -= 3;
+        else mat = 'wood';
+        smithy.wood -= 2;
+        const quality = this.rng.chance(0.06 + (k.era || 0) * 0.04) ? 'fine' : this.rng.chance(0.02 * (k.era || 0)) ? 'masterwork' : 'common';
+        const kindOf = { weapon: k.culture === 'frost' ? 'axe' : k.culture === 'mire' ? 'spear' : 'sword', armor: (k.era || 0) >= 2 ? 'plate' : 'mail', tool: 'hammer', trinket: this.rng.chance(0.5) ? 'amulet' : 'ring' };
+        const item = real ? U.makeItem({ slot, kind: kindOf[slot], material: mat, quality, origin: smithy.name }) : { id: 'ci' + this._nextBid++, slot, kind: kindOf[slot], material: mat, quality, power: { weapon: 6, armor: 5, tool: 4, trinket: 2 }[slot] * ({ wood: 0.6, stone: 0.8, bronze: 1, iron: 1.3, steel: 1.6 }[mat] || 1), name: `${mat} ${kindOf[slot]}` };
+        armory.push(item);
+        // the smith learns the craft
+        const smith = [...smithy.members].find((u) => u.alive && (u.job === 'builder' || u.job === 'miner') && u.age >= ADULT_AGE);
+        if (smith) U.addXP?.(smith, 1.5);
       }
-      // equip soldiers from the armoury
-      if (k.armory?.length) {
-        for (const vid of k.villages) {
-          const v = this.villages[vid];
-          if (!v?.alive) continue;
+      // issue gear: soldiers first (weapon, armour), then workers' tools, the ruler a trinket
+      if (armory.length && gearOK) {
+        for (const v of vs) {
           for (const u of v.members) {
-            if (u.job !== 'soldier' || !k.armory.length) continue;
-            const gear = u.data.civ.gear || (u.data.civ.gear = {});
-            const idx = k.armory.findIndex((it) => it.slot !== 'tool' && !gear[it.slot]);
-            if (idx < 0) continue;
-            const it = k.armory.splice(idx, 1)[0];
-            inv[it.slot === 'weapon' ? 'weapons' : 'armor'] = Math.max(0, inv[it.slot === 'weapon' ? 'weapons' : 'armor'] - 1);
-            gear[it.slot] = it.material;
-            const item = g.units.makeItem?.({ slot: it.slot, kind: it.slot === 'weapon' ? (k.culture === 'frost' ? 'axe' : 'sword') : 'mail', material: it.material, quality: 'common', origin: v.name });
-            if (item) g.units.equip?.(u, item);
-            // fallback when the item system is absent: our own combat bonus
-            const tier = { wood: 0, stone: 0.1, bronze: 0.25, iron: 0.5, steel: 0.8 }[it.material] || 0;
-            if (it.slot === 'weapon') u.data.civ.power = 6.5 * (1 + tier);
-            else {
-              u.maxHp = Math.round(64 * (1 + tier * 0.6));
-              u.hp = Math.min(u.maxHp, u.hp + 10);
+            if (!u.alive || u.age < ADULT_AGE || !armory.length) continue;
+            const e = this._gearOf(u);
+            const wants = u.job === 'soldier' ? ['weapon', 'armor'] : u.job === 'king' ? ['trinket', 'weapon'] : u.job && u.job !== 'child' ? ['tool'] : [];
+            for (const slot of wants) {
+              if (e[slot]) continue;
+              let bi = -1,
+                bp = -1;
+              for (let i = 0; i < armory.length; i++) if (armory[i].slot === slot && (armory[i].power || 0) > bp) (bp = armory[i].power || 0), (bi = i);
+              if (bi < 0) continue;
+              const it = armory.splice(bi, 1)[0];
+              if (slot === 'tool') it.kind = { farmer: 'sickle', woodcutter: 'axe', miner: 'pick', builder: 'hammer', fisher: 'hammer' }[u.job] || it.kind;
+              this._giveItem(u, it);
             }
           }
         }
       }
+      Object.assign(inv, {
+        food: Math.floor(food),
+        wood: Math.floor(wood),
+        stone: Math.floor(stone),
+        ore: Math.floor(ore),
+        gold: Math.floor(gold),
+        weapons: stockOf('weapon'),
+        armor: stockOf('armor'),
+        tools: stockOf('tool'),
+        trinkets: stockOf('trinket'),
+        armedSoldiers: soldiers - needW,
+        soldiers,
+      });
     }
+  }
+
+  _gearOf(u) {
+    if (u.equipment) return u.equipment;
+    return u.data.civ?.gear || (u.data.civ.gear = {});
+  }
+
+  // Put an item on a unit. With Life's item system the item itself carries the
+  // power (combat reads equipment); otherwise apply our own simple bonus.
+  _giveItem(u, it) {
+    const U = this.game.units;
+    if (typeof U.equip === 'function') {
+      const old = U.equip(u, it);
+      if (old) this.depositItem(u.village, old, u);
+      // clear any fallback bonus so gear is never counted twice
+      if (u.data.civ?.power) u.data.civ.power = null;
+      if (u.legendary || it.legendary) this._bio(u, `Was given ${it.name}`);
+      return;
+    }
+    const gear = u.data.civ.gear || (u.data.civ.gear = {});
+    gear[it.slot] = it;
+    const tier = { wood: 0, stone: 0.1, bronze: 0.25, iron: 0.5, steel: 0.8 }[it.material] || 0;
+    if (it.slot === 'weapon') u.data.civ.power = 6.5 * (1 + tier);
+    else if (it.slot === 'armor') {
+      u.maxHp = Math.round(64 * (1 + tier * 0.6));
+      u.hp = Math.min(u.maxHp, u.hp + 10);
+    }
+  }
+
+  // Life calls this when a unit dies with gear: it goes to the village's
+  // kingdom armoury as a real item and is issued again later.
+  depositItem(villageId, item, unit = null) {
+    if (!item) return false;
+    const v = this.villages[villageId];
+    const k = v && v.alive ? this.kingdoms[v.kingdom] : unit ? this.kingdoms[unit.kingdom] : null;
+    if (!k || !k.alive) return false;
+    const armory = k.armory || (k.armory = []);
+    if (item.legendary && !item.history) item.history = `recovered at ${v ? v.name : 'the field'}`;
+    armory.push(item);
+    if (armory.length > 90) {
+      // the realm keeps its best and its legends
+      armory.sort((a, b) => (b.legendary ? 99 : b.power || 0) - (a.legendary ? 99 : a.power || 0));
+      armory.length = 90;
+    }
+    if (item.legendary) this._history(`${item.name} is laid in the armoury of ${this._kn(k)}`, 'info', v ? { x: v.cx, z: v.cz } : null);
+    return true;
+  }
+
+  // Biography lines without repeats: an identical recent line gains a count.
+  _bio(u, text) {
+    if (!u || !text) return;
+    const bio = u.bio;
+    if (bio && bio.length) {
+      for (let i = bio.length - 1; i >= Math.max(0, bio.length - 8); i--) {
+        const m = bio[i].text.match(/^(.*?)(?: \(×(\d+)\))?$/);
+        if (m && m[1] === text) {
+          bio[i].text = `${text} (×${(+m[2] || 1) + 1})`;
+          bio[i].t = this.game.time.total;
+          return;
+        }
+      }
+    }
+    this.game.units.log?.(u, text);
   }
 
   // Wanderers: small bands arrive on empty fertile land and found a village.
@@ -1239,6 +1356,13 @@ export class Civilization {
     if (room() && pop >= (ct('Scholarly') ? 12 : 20) && this.hasTech(kid, 'writing') && count('library') === 0) build('library');
     if (room() && pop >= 30 && this.hasTech(kid, 'astronomy') && count('observatory') === 0) build('observatory', () => this._placeOutskirts(v, 'observatory', 4, v.buildRadius, null, null));
     if (room() && pop >= 34 && this.hasTech(kid, 'architecture') && count('aqueduct') === 0) build('aqueduct', () => this._placeOutskirts(v, 'aqueduct', 5, v.buildRadius + 3, null, null));
+    const K = this.kingdoms[kid];
+    if (room() && K && K.capital === v.id && (K.era || 0) >= 3 && (this.hasTech(kid, 'engineering') || (K.mastery || 0) >= 2) && count('wonder') === 0 && !K.wonder && v.stone >= 120 && v.wood >= 60 && v.gold >= 20) {
+      if (build('wonder', () => this._placeOutskirts(v, 'wonder', 4, v.buildRadius, null, null))) {
+        K.wonder = true;
+        this._note(`🏛 ${this._kn(K)} begins a great wonder at ${v.name}`, 'good', { x: v.cx, z: v.cz }, 'wonder' + kid, 1);
+      }
+    }
     if (room() && this.hasTech(kid, 'sailing')) {
       const dk = v.buildings.find((b) => b.alive && b.type === 'docks' && b.level < 2 && !b.constructing);
       if (dk) upgrade(dk);
@@ -1341,6 +1465,7 @@ export class Civilization {
     this.version++;
     const v = this.villages[b.village];
     if (v) this._updateVillageDerived(v);
+    if (b.type === 'wonder' && v) this._note(`🏛 The ${buildingLabel(b)} of ${v.name} stands complete, glory of the ${this.kingdoms[b.kingdom]?.name}`, 'good', { x: b.x, z: b.z }, 'wonderdone' + b.id, 1);
     if (b.type === 'temple' && v) this._note(`${v.name} completes its ${buildingLabel(b).toLowerCase()}.`, 'info', { x: b.x, z: b.z }, 'temple' + v.id, 600);
     this._fx('sparkle', b.x, b.z, 0.8);
   }
@@ -1907,7 +2032,8 @@ export class Civilization {
         ['Allies', allies.length ? allies.join(', ') : 'none'],
         ['Founded', `year ${Math.floor(k.founded / YEAR)}`],
         ['Era', `${ERAS[k.era ?? 0]?.name} · ${k.techs?.size || 0} of ${TECHS.length} techs`],
-        ['Researching', k.researching ? `${techById[k.researching]?.name} (${Math.floor(Math.min(1, (k.knowledge || 0) / (techById[k.researching]?.cost || 1)) * 100)}%)` : '—'],
+        ['Researching', (() => { const r = this.researchLabel(k); return r ? `${r.name} (${Math.floor(Math.min(1, (k.knowledge || 0) / r.cost) * 100)}%)` : '—'; })()],
+        ['Mastery', k.mastery || 0],
         ['Culture', `${this.cultureName(k.culture)} (${(this.cultureDef(k.culture)?.traits || []).join(', ')})`],
         ['Arms', k.inventory ? `${k.inventory.weapons} weapons · ${k.inventory.armor} armour · ${k.inventory.tools} tools` : '—'],
         ['Ruler traits', (this.game.units.byId.get(k.ruler)?.traits || []).join(', ') || '—'],

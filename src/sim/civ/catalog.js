@@ -33,6 +33,7 @@ export const BUILDING_TYPES = {
   well: { names: ['Well'], w: 1, h: 1, levels: 1, hp: [60], buildTime: [8], cost: [{ stone: 6 }] },
   windmill: { names: ['Windmill'], w: 2, h: 2, levels: 1, hp: [140], buildTime: [26], cost: [{ wood: 22, stone: 10 }] },
   docks: { names: ['Docks', 'Harbour'], w: 2, h: 2, levels: 2, hp: [110, 200], buildTime: [20, 30], cost: [{ wood: 18 }, { wood: 30, stone: 16 }], coastal: true, tech: [null, 'sailing'] },
+  wonder: { names: ['Wonder'], w: 3, h: 3, levels: 1, hp: [900], buildTime: [120], cost: [{ wood: 60, stone: 120, gold: 20 }], banner: true },
   library: { names: ['Library'], w: 2, h: 2, levels: 1, hp: [160], buildTime: [30], cost: [{ wood: 18, stone: 24 }], tech: ['writing'] },
   observatory: { names: ['Observatory'], w: 2, h: 2, levels: 1, hp: [200], buildTime: [40], cost: [{ wood: 10, stone: 40, gold: 2 }], tech: ['astronomy'] },
   aqueduct: { names: ['Aqueduct'], w: 3, h: 1, levels: 1, hp: [260], buildTime: [36], cost: [{ stone: 44 }], tech: ['architecture'] },
@@ -46,10 +47,10 @@ export const BUILDING_TYPES = {
 };
 
 export const BUILDING_LABEL = {
-  vale: { hall: ['Longhall', 'Town Hall', 'Castle Keep'], house: ['Thatched Cottage', 'Timber House', 'Manor House'], temple: ['Wayside Chapel', 'Stone Chapel'] },
-  dune: { hall: ['Clay Palace', 'Domed Palace', 'Sun Citadel'], house: ['Mudbrick Hut', 'Terrace House', 'Courtyard Villa'], temple: ['Sun Shrine', 'Great Dome'], granary: ['Grain Domes'] },
-  frost: { hall: ['Mead Hall', 'Jarl Hall', 'Stone Hold'], house: ['Turf Hut', 'Stave House', 'Longhouse'], temple: ['Rune Shrine', 'Stave Temple'] },
-  mire: { hall: ['Council Lodge', 'Great Lodge', 'Canopy Palace'], house: ['Stilt Hut', 'Stilt House', 'Elder Lodge'], temple: ['Spirit Shrine', 'Step Temple'], granary: ['Rice Barn'] },
+  vale: { wonder: ['Great Spire'], hall: ['Longhall', 'Town Hall', 'Castle Keep'], house: ['Thatched Cottage', 'Timber House', 'Manor House'], temple: ['Wayside Chapel', 'Stone Chapel'] },
+  dune: { wonder: ['Sun Pillar'], hall: ['Clay Palace', 'Domed Palace', 'Sun Citadel'], house: ['Mudbrick Hut', 'Terrace House', 'Courtyard Villa'], temple: ['Sun Shrine', 'Great Dome'], granary: ['Grain Domes'] },
+  frost: { wonder: ['Rune Tower'], hall: ['Mead Hall', 'Jarl Hall', 'Stone Hold'], house: ['Turf Hut', 'Stave House', 'Longhouse'], temple: ['Rune Shrine', 'Stave Temple'] },
+  mire: { wonder: ['Sky Totem'], hall: ['Council Lodge', 'Great Lodge', 'Canopy Palace'], house: ['Stilt Hut', 'Stilt House', 'Elder Lodge'], temple: ['Spirit Shrine', 'Step Temple'], granary: ['Rice Barn'] },
 };
 
 export function buildingLabel(b) {
