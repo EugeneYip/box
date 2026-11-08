@@ -500,3 +500,14 @@ div.ws-law {
     padding: 8px;
   }
 }
+
+/* brand plate: the emblem opens New World, so the duplicate nav button goes;
+   narrower nav buttons keep the plate clear of the centred clock at 1280 */
+.ws-nav .ws-iconbtn:first-child {
+  display: none;
+}
+@media (max-width: 1440px) and (min-width: 721px) {
+  .ws-nav .ws-iconbtn {
+    width: 31px;
+  }
+}
