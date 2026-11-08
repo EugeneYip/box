@@ -75,9 +75,18 @@ export class Disasters {
     // steam where lava meets water
     const st = this.lava.steam;
     if (st.length) {
-      for (const s of st) {
-        g.fx.emit('steam', { x: s.x, y: SEA_LEVEL + 0.1, z: s.z }, { scale: s.s * 1.4, count: 2 });
-        if (Math.random() < 0.6) g.fx.emit('steamColumn', { x: s.x, y: SEA_LEVEL + 0.2, z: s.z }, { scale: 0.8 + s.s * 0.5 });
+      // a wide lava front can quench dozens of tiles per tick: sample a few
+      // events per frame and rate-limit the big columns so steam marks the
+      // contact without burying the scene
+      this._steamT = (this._steamT || 0) - dt;
+      const n = Math.min(3, st.length);
+      for (let k = 0; k < n; k++) {
+        const s = st[(Math.random() * st.length) | 0];
+        g.fx.emit('steam', { x: s.x, y: SEA_LEVEL + 0.1, z: s.z }, { scale: Math.min(1.6, s.s), count: 1 });
+        if (this._steamT <= 0) {
+          this._steamT = 0.35;
+          g.fx.emit('steamColumn', { x: s.x, y: SEA_LEVEL + 0.2, z: s.z }, { scale: 0.7 + Math.min(1, s.s) * 0.4, count: 1 });
+        }
       }
       if (Math.random() < 0.3) play(g, 'splash', st[0], 0.3, 0.6);
       st.length = 0;

@@ -84,6 +84,7 @@ export class Inspector {
     this._t = 0;
     this._v = new THREE.Vector3();
     this.expanded = false;
+    this.portraits = new WeakMap();
     this.game.events.on('inspect', (hit) => (hit ? this.show(hit) : this.close()));
     this.bindSheet();
   }
@@ -144,6 +145,7 @@ export class Inspector {
     this.ui.root.classList.add('has-insp');
     this._scrollTop = 0;
     this.applySelection();
+    this.queuePortrait();
     if (isPhone()) {
       this.setExpanded(false);
       this.frameAboveSheet();
@@ -156,6 +158,79 @@ export class Inspector {
     this.track = this.results[i];
     this.render();
     this.applySelection();
+    this.queuePortrait();
+  }
+
+  // One small render of the selection, cached per entity (never continuous).
+  queuePortrait() {
+    const r = this.track;
+    const ref = r?.unit || r?.building;
+    if (!ref || this.portraits.has(ref)) return;
+    clearTimeout(this._portraitT);
+    const same = () => (this.track?.unit || this.track?.building) === ref;
+    this._portraitT = setTimeout(async () => {
+      if (!same() || this.portraits.has(ref)) return;
+      this.portraits.set(ref, ''); // in flight: never render the same subject twice
+      let url = null;
+      try {
+        url = await this.renderPortrait(ref, r.unit ? 'unit' : 'building');
+      } catch (err) {
+        safe(() => {
+          throw err;
+        }, null, 'portrait');
+      }
+      if (url) this.portraits.set(ref, url);
+      if (url && same()) this.render();
+    }, 90);
+  }
+  async renderPortrait(ref, kind) {
+    const g = this.game;
+    const renderer = g.pipeline?.renderer;
+    if (!renderer?.readRenderTargetPixels || ref.x == null) return null;
+    const S = 112;
+    if (!this._rt) {
+      this._rt = new THREE.WebGLRenderTarget(S, S, { depthBuffer: true });
+      this._rt.texture.colorSpace = THREE.SRGBColorSpace;
+      this._pcam = new THREE.PerspectiveCamera(30, 1, 0.05, 600);
+      this._pbuf = new Uint8Array(S * S * 4);
+      this._pcv = document.createElement('canvas');
+      this._pcv.width = this._pcv.height = S;
+    }
+    const W = g.world;
+    const sz = (ref.scale || 1) * (ref.def?.size || 1);
+    const h = kind === 'unit' ? 0.9 * sz + 0.2 : 2.6;
+    const y0 = ref.y ?? W.surfaceAt(ref.x, ref.z);
+    const c = new THREE.Vector3(ref.x, y0 + h * 0.5, ref.z);
+    const main = g.cameraRig.camera.position;
+    const d = new THREE.Vector3(main.x - c.x, 0, main.z - c.z);
+    if (d.lengthSq() < 1e-4) d.set(0, 0, 1);
+    d.normalize();
+    const dist = kind === 'unit' ? h * 2.4 + 0.9 : 7 + Math.max(ref.w || 2, ref.h || 2) * 1.6;
+    const cam = this._pcam;
+    cam.position.set(c.x + d.x * dist, c.y + dist * 0.42, c.z + d.z * dist);
+    cam.lookAt(c);
+    cam.updateProjectionMatrix();
+    const prevRT = renderer.getRenderTarget();
+    const prevAuto = renderer.shadowMap.autoUpdate;
+    renderer.shadowMap.autoUpdate = false; // reuse this frame's shadow maps
+    let pending = null;
+    try {
+      renderer.setRenderTarget(this._rt);
+      renderer.clear();
+      renderer.render(g.scene, cam);
+      // async readback (PBO + fence) avoids a GPU pipeline stall
+      if (renderer.readRenderTargetPixelsAsync) pending = renderer.readRenderTargetPixelsAsync(this._rt, 0, 0, S, S, this._pbuf);
+      else renderer.readRenderTargetPixels(this._rt, 0, 0, S, S, this._pbuf);
+    } finally {
+      renderer.setRenderTarget(prevRT);
+      renderer.shadowMap.autoUpdate = prevAuto;
+    }
+    if (pending) await pending;
+    const ctx = this._pcv.getContext('2d');
+    const img = ctx.createImageData(S, S);
+    for (let yy = 0; yy < S; yy++) img.data.set(this._pbuf.subarray((S - 1 - yy) * S * 4, (S - yy) * S * 4), yy * S * 4);
+    ctx.putImageData(img, 0, 0);
+    return this._pcv.toDataURL('image/png');
   }
 
   close() {
@@ -282,12 +357,14 @@ export class Inspector {
     if (u && !dead) actions.push(`<button class="ws-btn ws-btn--sm ${following ? 'is-on' : ''}" type="button" data-act="follow">${uiIcon('follow')}<span>${following ? 'Following' : 'Follow'}</span><kbd class="ws-key">F</kbd></button>`);
     actions.push(`<button class="ws-btn ws-btn--sm ws-btn--ghost" type="button" data-act="focus">${uiIcon('focus')}<span>Focus</span></button>`);
     const kindLabel = k === 'tile' && r.tile?.water ? 'Waters' : u && ic.label ? ic.label : KIND_LABEL[k] || 'Detail';
+    const pref = u || r.building;
+    const portrait = pref ? this.portraits.get(pref) : null;
 
     this.el.style.setProperty('--tint', ic.tint);
     this.el.innerHTML = `
       <div class="ws-insp__grab" data-act="sheet" aria-hidden="true"><i></i></div>
       <header class="ws-insp__head">
-        <span class="ws-insp__badge">${ic.svg}${kTint ? `<i class="ws-insp__kdot" style="--k:${kTint}"></i>` : ''}</span>
+        <span class="ws-insp__badge${portrait ? ' has-portrait' : ''}">${portrait ? `<img class="ws-insp__portrait" src="${portrait}" alt=""><span class="ws-insp__glyph">${ic.svg}</span>` : ic.svg}${kTint ? `<i class="ws-insp__kdot" style="--k:${kTint}"></i>` : ''}</span>
         <div class="ws-insp__titles">
           <div class="ws-insp__kind">${esc(kindLabel)}${dead ? ' <em class="ws-insp__dead">Fallen</em>' : ''}</div>
           <h3 class="ws-insp__title">${esc(r.title || 'Unknown')}</h3>

@@ -185,7 +185,11 @@ export function generateWorld(world, seed = 1, options = {}) {
           amp *= 0.5;
           freq *= 2.05;
         }
-        e += foot * (2.2 + hn * 1.2) + core * (5.0 + Math.pow(rr, 1.35) * 14.0);
+        // several sharp summits per massif: a finer ridge field and scattered peaks
+        let pk = 1 - Math.abs(nRidge(uu * 15.5 + oy * 1.7, vv * 15.5 - ox * 1.3));
+        pk = pk * pk * pk;
+        const bumps = Math.max(0, nHills(uu * 11 - oy, vv * 11 + ox));
+        e += foot * (2.2 + hn * 1.2) + core * (4.0 + Math.pow(rr, 1.35) * 10.5 + pk * 4.5 + bumps * bumps * 5.0);
         rangeMask[i] = Math.max(foot, core);
         hgt[i] = e;
       } else {
@@ -515,7 +519,7 @@ function blurHeights(hgt, land, W, H, passes) {
 // Soft terracing of mountain cores: flat benches separated by steep risers, so
 // ranges read as stepped, stratified massifs instead of smooth cones.
 function terraceMountains(hgt, rangeMask, N) {
-  const step = 1.9;
+  const step = 3.0;
   for (let i = 0; i < N; i++) {
     const m = rangeMask[i];
     if (m <= 0.08) continue;
@@ -523,8 +527,8 @@ function terraceMountains(hgt, rangeMask, N) {
     if (h < 2.5) continue;
     const b = Math.floor(h / step) * step;
     const f = (h - b) / step;
-    const g = smoothstep(0.5, 1.0, f);
-    const k = 0.88 * smoothstep(0.08, 0.5, m) * smoothstep(2.5, 5, h);
+    const g = smoothstep(0.6, 1.0, f);
+    const k = smoothstep(0.08, 0.45, m) * smoothstep(2.5, 5, h);
     hgt[i] = h + (b + g * step - h) * k;
   }
 }
