@@ -8,7 +8,8 @@ import { Earthquake } from './Earthquake.js';
 import { Tornado } from './Tornado.js';
 import { Volcano } from './Volcano.js';
 import { Tsunami } from './Tsunami.js';
-import { play } from './util.js';
+import { play, law } from './util.js';
+import { Calamities } from './Calamities.js';
 
 // Disasters & hazards (Effects & Disasters owner).
 //
@@ -32,6 +33,7 @@ export class Disasters {
     this.fire = new FireSim(game);
     this.lava = new LavaSim(game);
     this.plagueSim = new PlagueSim(game);
+    this.calamities = new Calamities(this);
     this.active = [];
     this._sky = 0;
     this._skyWritten = 0;
@@ -44,12 +46,14 @@ export class Disasters {
     this.fire.reset();
     this.lava.reset();
     this.plagueSim.reset();
+    this.calamities.reset();
   }
 
   tick(step) {
     this.fire.tick(step);
     this.lava.tick(step);
     this.plagueSim.tick(step);
+    this.calamities.tick(step);
     for (const e of this.active) e.tick?.(step);
   }
 
@@ -125,6 +129,15 @@ export class Disasters {
   }
 
   // ---- contract -------------------------------------------------------------
+  // Hook for storm bolts drawn by other modules (e.g. the atmosphere):
+  // applies the ground effects of a natural strike; ignition follows the
+  // calamityLightning law.
+  onStrike(x, z) {
+    const w = this.game.world;
+    if (!law(this.game, "calamityLightning", true)) return;
+    const [tx, ty] = w.tileOf(x, z);
+    if (w.isLand(tx, ty) && Math.random() < 0.6) this.ignite(tx, ty, 0.9);
+  }
   ignite(tx, ty, intensity = 1) {
     return this.fire.ignite(tx, ty, intensity);
   }

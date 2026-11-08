@@ -77,6 +77,8 @@ export class Effects {
     this.game = game;
     this.time = 0;
     this.budget = 1;
+    this.saver = false;
+    this.tinyOK = true;
     this.P = new ParticleSpec();
     this.wind = { x: 0, z: 0 };
     this._tmpC = new THREE.Color();
@@ -91,6 +93,7 @@ export class Effects {
       uAmbient: { value: new THREE.Color(0.5, 0.55, 0.6) },
       uPL: { value: Array.from({ length: 6 }, () => new THREE.Vector4(0, -1000, 0, 1)) },
       uPLC: { value: Array.from({ length: 6 }, () => new THREE.Vector3()) },
+      uPLOn: { value: 1 },
     };
     this.textures = {
       atlas: createParticleAtlas(),
@@ -335,6 +338,12 @@ export class Effects {
     U.uWind.value.set(this.wind.x * 0.12, 0, this.wind.z * 0.12);
     const cam = g.cameraRig.camera;
     U.uNear.value = cam.near;
+    // level of detail: power saver + far zoom shed the cheapest-to-lose work
+    this.saver = !!g.settings?.powerSaver;
+    const z01 = g.view?.zoom01 ?? 0.5;
+    this.tinyOK = z01 < 0.55; // tiny sparks / embers / glints are invisible beyond this
+    U.uPLOn.value = this.saver ? 0 : 1;
+    this.lights.setMax(this.saver ? 3 : 6);
     this._updateLighting(cam);
     this.heightField.update(dt);
 
@@ -342,8 +351,9 @@ export class Effects {
     if ((g.frame & 7) === 0) {
       const ls = this.smoke.countLive(this.time) / this.smoke.capacity;
       const lg = this.glow.countLive(this.time) / this.glow.capacity;
-      const fill = Math.max(ls, lg);
-      this.budget = THREE.MathUtils.clamp((0.95 - fill) / 0.35, 0.12, 1);
+      // power saver halves the particle budget (effective capacity and rate)
+      const fill = Math.max(ls, lg) * (this.saver ? 2 : 1);
+      this.budget = THREE.MathUtils.clamp((0.95 - fill) / 0.35, 0.08, 1) * (this.saver ? 0.5 : 1);
     }
 
     // continuous emitters

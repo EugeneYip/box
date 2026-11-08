@@ -313,6 +313,7 @@ class CraterAftermath {
     this.R = R;
     this.t = 0;
     this.life = 32;
+    this.isAftermath = true; // not a set piece (calamity scheduler may proceed)
     this._acc = 0;
     this._e = 0;
     this._c = new THREE.Color(1, 0.36, 0.08);
