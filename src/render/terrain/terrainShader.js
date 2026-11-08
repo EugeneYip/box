@@ -147,10 +147,15 @@ Mat matDesert(NS s) {
   return mk(c, 0.95, 0.22 + 0.15 * dune, 0.05 + 0.03 * rip * ripFade);
 }
 Mat matGrass(NS s) {
-  vec3 lush = vec3(0.085, 0.340, 0.040);
-  vec3 dry = vec3(0.230, 0.330, 0.060);
+  // three grassland regimes read at overview scale: khaki steppe, bright meadow,
+  // deep lush lowland (moisture plus a broad variety field)
+  vec3 steppe = vec3(0.285, 0.300, 0.100);
+  vec3 meadow = vec3(0.130, 0.380, 0.055);
+  vec3 lush = vec3(0.060, 0.290, 0.050);
   vec3 cold = vec3(0.090, 0.250, 0.100);
-  vec3 c = mix(dry, lush, smoothstep(0.22, 0.72, s.moist));
+  float mv = s.moist + (nz(s.p.xz * (1.0 / 210.0) + 3.7).b - 0.5) * 0.35;
+  vec3 c = mix(steppe, meadow, smoothstep(0.26, 0.46, mv));
+  c = mix(c, lush, smoothstep(0.58, 0.80, mv));
   c = mix(cold, c, smoothstep(0.18, 0.48, s.temp));
   // soft meadow patches (sunny yellow-green / deeper green)
   float patchv = s.macro.r * 0.65 + s.meso.g * 0.35;
@@ -205,8 +210,8 @@ Mat matJungle(NS s) {
   return mk(c, 0.75, 0.5 + 0.35 * v, 0.06);
 }
 Mat matSavanna(NS s) {
-  vec3 gold = vec3(0.560, 0.430, 0.115);
-  vec3 olive = vec3(0.330, 0.320, 0.085);
+  vec3 gold = vec3(0.500, 0.410, 0.130);
+  vec3 olive = vec3(0.320, 0.320, 0.095);
   float v = s.macro.r * 0.5 + s.meso.g * 0.5;
   vec3 c = mix(gold, olive, smoothstep(0.45, 0.85, v + (s.moist - 0.4) * 0.5));
   // bare red soil patches
@@ -656,6 +661,15 @@ void terrainSurface() {
       rough = mix(rough, 0.62, sn);
       snowB = max(snowB, sn);
     }
+  }
+
+  // ---- overview relief: at far zoom a map-style hillshade, slope darkening and a
+  // cool lift on high ground let ranges read through the green (close-ups unchanged)
+  float farR = 1.0 - uDetail;
+  if (farR > 0.0 && s.p.y > 0.0) {
+    float hs = dot(nrm, normalize(vec3(-0.5, 0.8, -0.35)));
+    albedo *= mix(1.0, (0.78 + 0.40 * hs) * mix(0.72, 1.0, smoothstep(0.55, 0.98, nrm.y)), farR * 0.6);
+    albedo = mix(albedo, albedo * vec3(0.96, 1.0, 1.08) * 1.12, smoothstep(6.0, 16.0, s.p.y) * 0.4 * farR);
   }
 
   // ---- seabed & shore
