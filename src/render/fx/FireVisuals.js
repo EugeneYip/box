@@ -175,7 +175,11 @@ export class FireVisuals {
         const o = n * 4;
         A[o] = (i % W) + 0.5;
         A[o + 1] = ((i / W) | 0) + 0.5;
-        A[o + 2] = Math.min(1, f);
+        // the glow is strongest along the burning front, dimmer over the
+        // interior, so a big fire reads as a glowing edge, not a flat carpet
+        const tx0 = i % W;
+        const edge = tx0 > 0 && tx0 < W - 1 && (world.fire[i + 1] <= 0.01 || world.fire[i - 1] <= 0.01 || world.fire[i + W] <= 0.01 || world.fire[i - W] <= 0.01);
+        A[o + 2] = Math.min(1, f) * (edge ? 1 : 0.45);
         A[o + 3] = 0;
         n++;
       }
@@ -284,7 +288,7 @@ export class FireVisuals {
           if (es < 1 && rnd() > es) break;
           es -= 1;
           const along = rnd() - 0.5;
-          flame(fx, x + along * 1.1, ground + (tree ? gr * 0.3 : 0.02), z - along * 1.1, (tree ? 2.6 : 2.0) * (0.8 + 0.45 * rnd()) * lod, {
+          flame(fx, x + along * 1.1, ground + (tree ? gr * 0.3 : 0.02), z - along * 1.1, (tree ? 2.6 : 2.0) * (0.55 + 0.95 * rnd()) * lod, {
             bright: 0.85 + f * 0.35,
             aspect: 0.62 + rnd() * 0.26,
             ramp: rnd() < 0.6 ? RAMP.FIRE_DEEP : RAMP.FIRE,
@@ -342,7 +346,7 @@ export class FireVisuals {
       const cxm = c.x / c.n,
         czm = c.z / c.n;
       const avg = c.f / c.n;
-      const rate = (0.3 + Math.sqrt(c.n) * 0.4) * avg * dt * budget / Math.sqrt(lod);
+      const rate = (0.6 + Math.sqrt(c.n) * 0.6) * avg * dt * budget / Math.sqrt(lod);
 
       if (rnd() < rate) {
         const spread = 1.2 + Math.sqrt(c.n) * 0.35;
@@ -351,8 +355,8 @@ export class FireVisuals {
           grow: 3.4,
           ramp: raining && rnd() < 0.6 ? RAMP.STEAM : RAMP.PLUME,
           glow: 0.7,
-          rise: 2.8 + rnd() * 0.8,
-          drift: 2.6,
+          rise: 1.8 + rnd() * 0.8,
+          drift: 4.2, // columns lean hard downwind and read as streaks from above
           drag: 0.3,
           life: (13 + rnd() * 5) * (0.85 + lod * 0.15),
         });
