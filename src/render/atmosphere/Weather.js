@@ -90,7 +90,7 @@ export class Weather {
       if (this.remaining <= 0) {
         this.remaining = null;
         this.set('clear', 0);
-        this.nextAuto = g.time.total + 90 + this.rng() * 150;
+        this.nextAuto = g.time.total + this.breakLength(90, 150);
       }
     }
     const auto = (g.laws?.skyWeather ?? g.settings.autoWeather) !== false;
@@ -131,12 +131,25 @@ export class Weather {
     }
   }
 
+  // Combined storminess: the age's storm modifier times the weatherStorms law.
+  stormFactor() {
+    const g = this.game;
+    const age = this.atm?.ageState;
+    return Math.max(0, (age?.storms ?? g.age?.mods?.storms ?? 1) * (g.laws?.weatherStorms ?? 1));
+  }
+
+  // Fair-weather break after a spell: stormy ages / laws shorten it a lot.
+  breakLength(base, spread) {
+    const k = Math.max(1, this.stormFactor());
+    return (base + this.rng() * spread) / Math.pow(k, 0.9);
+  }
+
   autoPick() {
     const g = this.game;
     if (this.type !== 'clear') {
       // every spell is followed by a fair-weather break
       this.set('clear', 0);
-      this.nextAuto = g.time.total + 110 + this.rng() * 180;
+      this.nextAuto = g.time.total + this.breakLength(110, 180);
       return;
     }
     const world = g.world;
@@ -151,7 +164,8 @@ export class Weather {
     }
     cold = n ? cold / n : 0;
     const hour = g.time.hour;
-    const early = g.time.total < 420; // no storms in the first minutes
+    const sk = this.stormFactor();
+    const early = g.time.total < 420 / Math.max(1, sk * sk); // no storms in the first minutes (sooner in stormy ages)
     // seasonal odds: spring showers, summer storms, autumn fog and rain,
     // winter snow; ages and the weatherStorms law bend them
     const season = Math.floor(g.time.season ?? 1.5) % 4;
@@ -163,14 +177,14 @@ export class Weather {
     ][season];
     const age = this.atm?.ageState;
     const temp = age?.temp ?? g.age?.mods?.temperature ?? 0;
-    const stormK = (age?.storms ?? g.age?.mods?.storms ?? 1) * (g.laws?.weatherStorms ?? 1);
+    const stormK = sk;
     const hot = Math.max(0, temp) * 2,
       chill = Math.max(0, -temp) * 2;
     const wet = 1 - 0.7 * hot; // hot ages are clear and dry
     const w = {
       clear: 0.3 + 0.5 * hot,
       rain: W.rain * wet * (1 - 0.5 * chill),
-      storm: early ? 0 : W.storm * stormK * (1 - 0.4 * hot),
+      storm: early ? 0 : (W.storm + 0.06 * Math.max(0, stormK - 1)) * stormK * stormK * (1 - 0.4 * hot),
       snow: (W.snow + 0.25 * chill) * (0.4 + 1.2 * cold + 1.5 * chill) * (1 - hot),
       fog: W.fog * wet * (hour < 10 || hour > 19 ? 1.4 : 0.7),
     };
@@ -185,11 +199,11 @@ export class Weather {
       }
     }
     if (type === 'clear') {
-      this.nextAuto = g.time.total + 60 + this.rng() * 120;
+      this.nextAuto = g.time.total + this.breakLength(60, 120);
       return;
     }
     const intensity = 0.55 + this.rng() * 0.45;
-    const dur = type === 'storm' ? 45 + this.rng() * 50 : season === 0 && type === 'rain' ? 35 + this.rng() * 45 : 60 + this.rng() * 100;
+    const dur = type === 'storm' ? (45 + this.rng() * 50) * Math.min(1.8, 0.8 + 0.25 * stormK) : season === 0 && type === 'rain' ? 35 + this.rng() * 45 : 60 + this.rng() * 100;
     this.set(type, intensity, null);
     this.nextAuto = g.time.total + dur;
   }
