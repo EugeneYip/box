@@ -424,8 +424,13 @@ export class UnitRenderer {
     for (const m of this.mid.values()) m.begin();
     // animation throttling: distant and high-speed views re-pose less often
     const spd = g.paused ? 1 : g.speed || 1;
-    const midEvery = spd >= 8 ? 3 : spd >= 4 ? 2 : 1;
-    const tinyEvery = spd >= 8 ? 5 : spd >= 4 ? 4 : 3;
+    const saver = !!g.settings?.powerSaver;
+    const midEvery = (spd >= 8 ? 3 : spd >= 4 ? 2 : 1) * (saver ? 2 : 1);
+    const tinyEvery = (spd >= 8 ? 5 : spd >= 4 ? 4 : 3) * (saver ? 2 : 1);
+    const hiEvery = saver ? 2 : 1;
+    // far zoom (game.view): creatures are drawn as dots only - no posing, no shadows
+    const dotsOnly = !!(g.view?.far || (g.view?.zoom01 ?? 0) > 0.82);
+    this.dotsOnly = dotsOnly;
     const camT = g.cameraRig.target;
     const frame = g.frame | 0;
     const ov = this.overlays;
@@ -479,7 +484,13 @@ export class UnitRenderer {
       const dCam = camPos.distanceTo(this._sph.center);
       const ppu = this._ppu / Math.max(0.1, dCam);
       const pxH = md.height * scale * ppu;
-      const lod = def.kind === 'monster' ? 1 : smoothstep(2.4, 4.6, pxH);
+      const lod = dotsOnly ? (def.kind === 'monster' ? 1 : 0) : def.kind === 'monster' ? 1 : smoothstep(2.4, 4.6, pxH);
+      if (dotsOnly && lod === 0) {
+        const c = rs.dot || (this._appearance(u, rs), rs.dot) || [0.8, 0.8, 0.8];
+        const dsz = Math.max(0.3, 6 / ppu) * (def.kind === 'humanoid' ? 1 : 0.8);
+        ov.ground.add(ix, Math.max(ground, SEA_LEVEL), iz, dsz, 0, 1, 0, DECAL.dot, c[0], c[1], c[2], 1);
+        continue;
+      }
       this._appearance(u, rs);
       const heading = lerpAngle(u.ph ?? u.heading, u.heading, alpha);
       // spawn pop / emergence
@@ -490,7 +501,7 @@ export class UnitRenderer {
         if (def.brain === 'golem') emerge = 1 - smoothstep(0, 1.5, age);
         else if (age < 0.45) pop = Math.max(0.05, easeOutBack(age / 0.45));
       }
-      const every = md.rig === 'serpent' || md.rig === 'wyrm' ? 1 : rs.lv === 2 ? tinyEvery : rs.lv === 1 ? midEvery : 1;
+      const every = md.rig === 'serpent' || md.rig === 'wyrm' ? hiEvery : rs.lv === 2 ? tinyEvery : rs.lv === 1 ? midEvery : hiEvery;
       const skipPose = every > 1 && rs.init && (frame + u.id) % every !== 0;
       if (lod > 0.001) {
         ctx.speed = u.speedNow || 0;
@@ -623,7 +634,7 @@ export class UnitRenderer {
     }
 
     // ---- corpses: topple, rest, then sink and fade
-    this._corpses(now, simNow, dt);
+    if (!dotsOnly) this._corpses(now, simNow, dt);
     // ---- projectiles
     for (const p of U.projectiles) {
       const t = Math.min(1, (p.t + alpha * U.tickDt) / p.dur);
@@ -634,7 +645,7 @@ export class UnitRenderer {
       ov.addArrow(x, y, z, p.x1 - p.x0, dy, p.z1 - p.z0);
     }
     // ---- ambient birds & fish
-    this.ambient.update(dt, ctx);
+    if (!dotsOnly) this.ambient.update(dt, ctx);
     // ---- ripples
     let j = 0;
     for (const r of this.ripples) {

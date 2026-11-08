@@ -142,7 +142,7 @@ export class Units {
   // Wild animals allowed besides humans and village herds (soft global cap).
   faunaBudget() {
     const humans = this._counts.get('human') || 0;
-    return Math.max(220, Math.round(FAUNA_TOTAL * this.areaScale) - humans - this.herds.totalTended);
+    return Math.max(Math.round(220 * this.popScale), Math.round(FAUNA_TOTAL * this.popScale) - humans - this.herds.totalTended);
   }
 
   // Positional, throttled, guarded sound effect (only near the camera).
@@ -281,9 +281,19 @@ export class Units {
     const w = this.game.world;
     return (w.w * w.h) / (256 * 256);
   }
+  // Population scale: grows with map area but sub-linearly, so a Huge (512)
+  // map holds ~1.6x the creatures of a Medium (256) one, not 4x.
+  get popScale() {
+    return Math.pow(this.areaScale, 0.34);
+  }
   capacity(speciesId) {
     const def = SPECIES[speciesId];
-    return def ? Math.max(4, Math.round(def.maxPopulation * this.areaScale)) : 0;
+    return def ? Math.max(4, Math.round(def.maxPopulation * this.popScale)) : 0;
+  }
+  // World Laws (game.laws), read at the point of use; missing laws default to on.
+  law(key) {
+    const L = this.game.laws;
+    return !L || L[key] !== false;
   }
 
   // ---- initial fauna -------------------------------------------------------
@@ -291,7 +301,7 @@ export class Units {
     const g = this.game;
     const w = g.world;
     const rng = g.rng.fork('fauna');
-    const scale = this.areaScale;
+    const scale = Math.pow(this.areaScale, 0.6);
     for (const def of Object.values(SPECIES)) {
       if (!def.seed) continue;
       const groups = Math.max(1, Math.round(def.seed.groups * scale));
@@ -1099,7 +1109,7 @@ export class Units {
   _combatTick(u, dt, now) {
     const c = u.combat;
     const t = this.byId.get(c.target);
-    if (!t || !t.alive || now - c.since > c.maxTime) {
+    if (!t || !t.alive || now - c.since > c.maxTime || (c.hunt && u.def.kind === 'animal' && !this.law('lifePredators'))) {
       if (c.hunt && u.pack) {
         const p = this.packs.get(u.pack);
         if (p && p.target === c.target) p.target = 0;
@@ -1392,6 +1402,7 @@ export class Units {
       this.emote(u, 'heart', 2);
       return true;
     }
+    if (!this.law('lifeWildlife')) return false;
     const hardK = this.capacity(u.species) * 1.6;
     if (n >= hardK) return false;
     const humans = this._counts.get('human') || 0;
@@ -1468,6 +1479,7 @@ export class Units {
 
   findPrey(u, range = null) {
     const def = u.def;
+    if (def.kind === 'animal' && !this.law('lifePredators')) return null;
     const r = range ?? def.sight;
     let best = null,
       bs = Infinity;
@@ -1639,7 +1651,8 @@ export class Units {
       // ---- needs
       const active = u.state === 'run' || u.state === 'flee' || u.state === 'hunt' || u.state === 'attack';
       const lean = MVP[u.species] && (this._counts.get(u.species) || 0) < MVP[u.species] * 2 ? 0.6 : 1;
-      u.hunger = Math.min(1, u.hunger + dt * def.hungerRate * lean * (u.sleeping ? 0.5 : active ? 1.6 : 1));
+      if (this.law('lifeHunger')) u.hunger = Math.min(1, u.hunger + dt * def.hungerRate * lean * (u.sleeping ? 0.5 : active ? 1.6 : 1));
+      else if (u.hunger > 0) u.hunger = Math.max(0, u.hunger - dt * 0.02);
       if (u.sleeping || u.state === 'sleep' || u.data.inside) u.energy = Math.min(1, u.energy + dt * 0.0075);
       else if (u._ext) {
         // brain-driven villagers: tire while busy, recover when idle and at night
@@ -1658,7 +1671,7 @@ export class Units {
           continue;
         }
       }
-      if (u.age > u.lifespan) {
+      if (u.age > u.lifespan && this.law('lifeAging')) {
         this.kill(u, 'old age');
         continue;
       }
@@ -1864,7 +1877,7 @@ export class Units {
   // Wild species that died out wander back in from the map edge after a while.
   _migrationCheck(now) {
     this._disperseGroups();
-    if (!this.migration) return;
+    if (!this.migration || !this.law('lifeWildlife')) return;
     for (const def of Object.values(SPECIES)) {
       if (!def.seed) continue;
       const n = this.count(def.id);
