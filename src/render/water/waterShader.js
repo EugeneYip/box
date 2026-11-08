@@ -192,7 +192,9 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   veil = clamp(veil * 0.85, 0.0, 0.92);
   veil = mix(veil, 1.0, outK);
   // rivers and narrow channels: a clear teal body of their own
-  vec3 rivTeal = mix(vec3(0.020, 0.130, 0.130), vec3(0.030, 0.075, 0.080), gCold) * waterIrradianceV(lightVis);
+  // rivers keep their teal under overcast skies: a soft light floor (scaled at night)
+  vec3 irrR = max(waterIrradianceV(lightVis), vec3(0.42, 0.48, 0.52) * (0.25 + 0.75 * uDay));
+  vec3 rivTeal = mix(vec3(0.020, 0.130, 0.130), vec3(0.030, 0.075, 0.080), gCold) * irrR;
   scat = mix(scat, rivTeal, narrow);
   veil = max(veil, 0.64 * narrow);
   float crest = smoothstep(0.10, 0.30, length(sl)) * open * 0.25;
@@ -251,12 +253,14 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   col += waterShallowColorV(lightVis) * 1.6 * wash * (1.0 - outK);
   a = clamp(a + wash * 0.25, 0.0, 1.0);
   // river streaks: lighter, sky-tinted bands moving downstream
-  col += narrow * streak * (waterShallowColorV(lightVis) * 0.9 + sky * 0.05);
+  // flow streaks: rivers, plus steep enclosed water (gorge lakes, rapids)
+  float flowK = max(narrow, (1.0 - outK) * smoothstep(1.5, 4.0, dl) * (1.0 - smoothstep(4.0, 9.0, wide)) * 0.75);
+  col += flowK * streak * (waterShallowColorV(lightVis) * 0.9 + sky * 0.05);
   // from afar, rivers read as bright teal ribbons with a sky sheen, not dark roads
   float farR = smoothstep(60.0, 220.0, uCamDist);
   col += narrow * farR * (rivTeal * 1.3 + sky * 0.14);
   // steep channels: stylised cascades = brighter streaks running downhill, never solid white
-  float cascade = narrow * smoothstep(1.2, 3.5, dl);
+  float cascade = flowK * smoothstep(1.2, 3.5, dl);
   col += cascade * streak * foamCol * 0.30;
   col = mix(col, foamCol, foam);
   a = mix(a, 1.0, foam);
