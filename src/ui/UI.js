@@ -65,7 +65,6 @@ export class UI {
     this.ageChip = new AgeChip(this);
     this.topbar.centre.insertBefore(this.ageChip.el, this.topbar.pausedEl);
     this.ageBanner = new AgeBanner(this);
-    this.parts.push(this.ageChip);
     // Overview replaces the always-on minimap (M)
     this.overviewBtn = el(
       'button',
@@ -79,7 +78,7 @@ export class UI {
       this.campad = new CameraPad(this);
       this.hud.append(this.campad.el);
     }
-    this.parts = [this.topbar, this.toolbar, this.minimap, this.inspector, this.feed, this.kingdoms, this.onboarding];
+    this.parts = [this.topbar, this.toolbar, this.minimap, this.inspector, this.feed, this.kingdoms, this.onboarding, this.ageChip];
     this._paintT = 0;
 
     // initial prefs (audio/time only when not forced by URL params)
