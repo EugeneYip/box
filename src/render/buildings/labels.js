@@ -310,11 +310,44 @@ export class Labels {
       const ph = (sp.scale.y / Math.max(0.01, dist)) * fovK;
       const pw = (sp.scale.x / Math.max(0.01, dist)) * fovK;
       const rect = { l: sx - pw / 2, r: sx + pw / 2, t: sy - ph / 2, b: sy + ph / 2 };
-      if (target > 0) {
+      const hits = (r) => {
+        for (const o of taken) if (r.l < o.r && r.r > o.l && r.t < o.b && r.b > o.t) return true;
+        if (uiOn) for (const h of this._hud) if (r.l < h.right && r.r > h.left && r.t < h.bottom && r.b > h.top) return true;
+        return false;
+      };
+      if (target > 0 && c.prio >= 3 && v.z <= 1 && v.z >= -1) {
+        // a realm's name is never dropped: clamp it into the safe area and
+        // nudge it up or down until it no longer collides
+        const top = uiOn ? 90 : 8,
+          bot = H - (uiOn ? 90 : 8),
+          right = W - (uiOn ? 300 : 8);
+        let cx = Math.min(right - pw / 2, Math.max(8 + pw / 2, sx)),
+          cy = Math.min(bot - ph / 2, Math.max(top + ph / 2, sy));
+        let placed = false;
+        for (const dy of [0, -1.1, 1.1, -2.2, 2.2, -3.3, 3.3]) {
+          const yy = cy + dy * ph;
+          if (yy - ph / 2 < top || yy + ph / 2 > bot) continue;
+          const r = { l: cx - pw / 2, r: cx + pw / 2, t: yy - ph / 2, b: yy + ph / 2 };
+          if (!hits(r)) {
+            rect.l = r.l;
+            rect.r = r.r;
+            rect.t = r.t;
+            rect.b = r.b;
+            cy = yy;
+            placed = true;
+            break;
+          }
+        }
+        if (placed && (cx !== sx || Math.abs(cy - sy) > 0.5)) {
+          // move the sprite to the adjusted screen point at the same depth
+          v.set((cx / W) * 2 - 1, -((cy / H) * 2 - 1), v.z).unproject(cam);
+          sp.position.copy(v);
+        }
+        if (!placed) target = 0;
+      } else if (target > 0) {
         // keep clear of the screen edges where the HUD lives
         if (uiOn && (rect.t < 90 || rect.b > H - 90 || rect.r > W - 300 || rect.l < 8)) target = 0;
-        if (uiOn) for (const h of this._hud) if (rect.l < h.right && rect.r > h.left && rect.t < h.bottom && rect.b > h.top) target = 0;
-        for (const o of taken) if (rect.l < o.r && rect.r > o.l && rect.t < o.b && rect.b > o.t) target = 0;
+        if (hits(rect)) target = 0;
       }
       if (target > 0.02) taken.push(rect);
       const f = sp.userData.fade ?? target;

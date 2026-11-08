@@ -69,6 +69,11 @@ export class TerritoryOverlay {
       this._hook();
     }
     const civ = this.game.civ;
+    const winter = (this.game.time?.season ?? 1.5) >= 3;
+    if (winter !== this._winter) {
+      this._winter = winter;
+      this.markAll();
+    }
     if (civ && civ.colorVersion !== this._colorVer) {
       this._colorVer = civ.colorVersion;
       this.markAll();
@@ -102,7 +107,11 @@ export class TerritoryOverlay {
         this.data[k] = rgb[0];
         this.data[k + 1] = rgb[1];
         this.data[k + 2] = rgb[2];
-        this.data[k + 3] = 255;
+        // full strength, but gentle over snow and ice and through the winter
+        const ty2 = w.type[i];
+        let a = ty2 === 7 || ty2 === 15 ? 140 : ty2 === 6 ? 200 : 255;
+        if (this._winter) a = Math.round(a * 0.62);
+        this.data[k + 3] = a;
       }
     this.tex.needsUpdate = true;
   }
