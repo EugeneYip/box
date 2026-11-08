@@ -35,8 +35,10 @@ import {
 // Growth-only changes are written straight to world.floraGrowth (the
 // renderer eases them); kind changes go through world.setFlora. A coarse
 // 'world:flora' dirty mark is raised when a plant crosses a growth stage.
-const SWEEP = 4; // seconds per full sweep of the map
-const TICK_GUESS = 1 / 15;
+const SWEEP = 4; // seconds per full sweep of a 256x256 map
+// Larger maps keep the same tiles-per-tick budget (same ms per tick) and
+// simply sweep more slowly; rates are per game second so behaviour matches.
+const TICK_BUDGET_MS = 0.8; // never spend more than this per simulation tick
 
 export class FloraSim {
   constructor(game) {
@@ -117,12 +119,23 @@ export class FloraSim {
   tick(step) {
     const world = this.game.world;
     const n = world.size;
-    // tiles per tick so a full sweep takes SWEEP seconds
-    this._acc += (n * step) / SWEEP;
+    const sweep = SWEEP * Math.max(1, n / 65536);
+    this._acc += (n * step) / sweep;
     let count = Math.floor(this._acc);
     this._acc -= count;
-    const dt = SWEEP;
+    const dt = sweep;
+    // World Laws, read each tick so a toggle applies on the next one
+    const laws = this.game.laws || {};
+    this._grow = laws.natureGrowth !== false;
+    this._regrow = laws.natureRegrowth !== false;
+    // hard time budget per tick: leftover visits carry over (bounded)
+    const t0 = performance.now();
+    let k = 0;
     while (count-- > 0) {
+      if ((++k & 255) === 0 && performance.now() - t0 > TICK_BUDGET_MS) {
+        this._acc = Math.min(this._acc + count + 1, (n * step * 4) / sweep);
+        break;
+      }
       const i = this._cursor;
       if (++this._cursor >= n) {
         this._cursor = 0;
@@ -142,7 +155,7 @@ export class FloraSim {
       ty = (i / W) | 0;
 
     // ---- burnt land heals ------------------------------------------------
-    if (t === TILE.ASH) {
+    if (t === TILE.ASH && this._regrow !== false) {
       if (world.fire[i] > 0) {
         this.age[i] = 0;
       } else {
@@ -162,7 +175,7 @@ export class FloraSim {
       // spontaneous undergrowth on fertile empty ground (rare)
       if (world.height[i] >= SEA_LEVEL && !BARREN[t] && world.building[i] < 0 && world.fire[i] <= 0) {
         const p = t === TILE.FOREST ? 0.0016 : t === TILE.JUNGLE ? 0.002 : t === TILE.GRASS ? 0.0009 : t === TILE.SWAMP ? 0.0012 : 0;
-        if (p && this.rng() < p * (1 + this.boost[i] * 10)) {
+        if (p && this._grow !== false && this.rng() < p * (1 + this.boost[i] * 10)) {
           const u = pickUndergrowth(t, this.rng());
           if (u && this.canSeed(u, tx, ty)) world.setFlora(tx, ty, u, 0.04);
         }
@@ -198,7 +211,7 @@ export class FloraSim {
         else {
           // stumps rot away; sometimes a sapling takes their place
           const tree = pickTree(t, world.temperature[i], this.rng());
-          if (tree && this.rng() < 0.35 && suitAt(world, tree, tx, ty, i) >= 0.5) world.setFlora(tx, ty, tree, 0.03);
+          if (tree && this._grow !== false && this.rng() < 0.35 && suitAt(world, tree, tx, ty, i) >= 0.5) world.setFlora(tx, ty, tree, 0.03);
           else world.setFlora(tx, ty, FLORA.NONE);
         }
       }
@@ -220,6 +233,7 @@ export class FloraSim {
     if (this.stress[i] > 0.5) return; // struggling plants neither grow nor spread
 
     // ---- growth -------------------------------------------------------------
+    if (this._grow === false) return; // law: plants neither grow nor spread
     let g = world.floraGrowth[i];
     if (g < 1) {
       const fert = 0.35 + 0.65 * Math.max(suit, f === FLORA.WHEAT ? 0 : 0.3);

@@ -33,6 +33,7 @@ const SKIP_FAR = 72; // tiny props (mushrooms, stones, reeds, stumps) culled
 export const SHADOW_LAYER = 7; // shadow-only proxy meshes
 const FLOWER_CULL = 41; // petals have fully closed (shader fade 28..40)
 const SHADOW_RADIUS = 72; // trees cast shadows only near the camera target
+const LOD3_DIST = 290; // 4-triangle canopy dots beyond (whole-map views of big worlds)
 const POLL_PER_FRAME = 4096;
 const REBUILD_BUDGET_MS = 4;
 
@@ -438,6 +439,9 @@ export class Vegetation {
     const h = c.lod === 0 ? LOD_HYST : -LOD_HYST;
     const h2 = c.lod === 2 ? -LOD_HYST : LOD_HYST;
     c.lod = d < LOD1_DIST + h ? 0 : d < LOD2_DIST + h2 ? 1 : 2;
+    const zoom01 = this.game.view?.zoom01 ?? 0;
+    if (c.lod === 2 && (d > LOD3_DIST + (c.lod3 ? -LOD_HYST : LOD_HYST) || zoom01 > 0.82)) c.lod = 3;
+    c.lod3 = c.lod === 3;
     c.near = d < LOD1_DIST * 0.55 + h ? 1 : 0; // inside the small-plant LOD0 radius
     c.skip = d > SKIP_FAR;
     c.flowerSkip = d > FLOWER_CULL;
@@ -461,7 +465,7 @@ export class Vegetation {
         this.applyLod(c);
         sph.center.copy(c.sphere.center);
         sph.radius = c.sphere.radius + 7; // off-screen trees still cast shadows in
-        if (this._frustum.intersectsSphere(sph)) state = 1 + c.lod + (c.skip ? 3 : 0) + (c.flowerSkip ? 6 : 0) + (c.shadow ? 12 : 0) + (c.near ? 24 : 0);
+        if (this._frustum.intersectsSphere(sph)) state = 1 + c.lod + (c.skip ? 4 : 0) + (c.flowerSkip ? 8 : 0) + (c.shadow ? 16 : 0) + (c.near ? 32 : 0);
       }
       if (state !== c.state) {
         c.state = state;
@@ -471,7 +475,8 @@ export class Vegetation {
     this._compactT -= dt;
     if (!changed && !(this._needCompact && this._compactT <= 0)) return;
     this._needCompact = false;
-    this._compactT = 0.12;
+    // data-driven repacks are rarer when the whole (possibly huge) map is in view
+    this._compactT = this.game.view?.far ? 1.0 : 0.12;
     const B = this.batcher;
     const S = this.shadowBatcher;
     B.begin();
@@ -483,6 +488,14 @@ export class Vegetation {
         const cfg = model.cfg;
         if (c.skip && cfg.far === 'skip') continue;
         if (c.flowerSkip && list.f === FLORA.FLOWERS) continue;
+        if (c.lod === 3) {
+          // whole-map view: one 4-triangle dot batch per species, no shrubs
+          if (cfg.smallLod || !model.dot) continue;
+          B.add(list.f * 8 * 4 + 3, list, { geo: model.dot, material: this.mat.material, depth: null, castShadow: false, label: FLORA_INFO[list.f].name + '-dot' });
+          if (cfg.castShadow && c.shadow)
+            S.add((list.f * 8) * 4 + 3, list, { geo: model.dot, material: this.mat.material, depth: this.mat.depth, castShadow: true, layer: SHADOW_LAYER, label: FLORA_INFO[list.f].name + '-shadow-dot' });
+          continue;
+        }
         let L = Math.min(c.lod, model.variants[list.v].length - 1);
         if (cfg.smallLod && L === 0 && !c.near) L = 1; // shrubs drop detail sooner
         if (L === 1 && cfg.far2 && cfg.farEarly) L = 2;
@@ -513,7 +526,8 @@ export class Vegetation {
     const g = this.game;
     const rig = g.cameraRig;
     const u = this.uniforms.uOccStrength;
-    const goal = 1 - THREE.MathUtils.smoothstep(rig.cur.dist, 70, 95);
+    const ps = !!g.settings?.powerSaver;
+    const goal = 1 - THREE.MathUtils.smoothstep(rig.cur.dist, ps ? 45 : 70, ps ? 60 : 95);
     u.value += (goal - u.value) * Math.min(1, dt * 4);
     if (u.value < 0.002 && goal === 0) {
       u.value = 0;
@@ -621,7 +635,11 @@ export class Vegetation {
     u.uTime.value = g.time.realTime;
     const wind = g.env.wind || { x: 1, z: 0, strength: 0.3 };
     const wl = Math.hypot(wind.x, wind.z) || 1;
-    u.uWind.value.set(wind.x / wl, wind.z / wl, THREE.MathUtils.clamp(wind.strength ?? 0.3, 0, 1.5), 0);
+    // no sway when the whole map is in view; power saver keeps a simple sway
+    const zoom01 = g.view?.zoom01 ?? 0;
+    const windK = 1 - THREE.MathUtils.smoothstep(zoom01, 0.55, 0.75);
+    u.uWind.value.set(wind.x / wl, wind.z / wl, THREE.MathUtils.clamp(wind.strength ?? 0.3, 0, 1.5) * windK, 0);
+    u.uFlutter.value = g.settings?.powerSaver ? 0 : 1;
     if (g.env.sunDir) u.uSunDir.value.copy(g.env.sunDir);
     if (g.env.sunColor) u.uSunColor.value.copy(g.env.sunColor);
     u.uDaylight.value = g.env.daylight ?? 1;

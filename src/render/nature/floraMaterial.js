@@ -32,6 +32,7 @@ export function createSharedUniforms(stateTexture, w, h) {
     uFlowerFade: { value: new THREE.Vector2(28, 40) },
     uOcc: { value: white },
     uOccStrength: { value: 0 },
+    uFlutter: { value: 1 },
   };
 }
 
@@ -46,6 +47,7 @@ uniform vec2 uFade;
 uniform vec2 uFlowerFade;
 uniform sampler2D uOcc;
 uniform float uOccStrength;
+uniform float uFlutter;
 #ifndef FLORA_DEPTH
 varying vec4 vFState;
 varying vec3 vFInfo;
@@ -69,7 +71,7 @@ vec3 fWind(vec3 origin, vec3 lp, float bend, float flutter, float scale) {
   off.y -= abs(push) * bend * 0.05 * scale;
   float fp = dot(lp, vec3(4.1, 3.3, 3.7)) + ph;
   vec3 fl = vec3(sin(t * 6.1 + fp), sin(t * 7.3 + fp * 1.3) * 0.7, cos(t * 5.7 + fp * 0.8));
-  off += fl * flutter * (0.006 + 0.028 * str * gust) * scale;
+  off += fl * flutter * uFlutter * (0.006 + 0.028 * str * gust) * scale;
   return off;
 }
 `;
