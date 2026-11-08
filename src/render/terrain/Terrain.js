@@ -321,8 +321,8 @@ export class Terrain {
     const k = (vh * 0.5) / Math.tan((cam.fov * Math.PI) / 360);
     const bias = g.settings?.powerSaver ? 1.7 : 1.0;
     const cp = cam.position;
-    const T0 = 6.0 * bias,
-      T1 = 2.2 * bias;
+    const T0 = 9.0 * bias,
+      T1 = 3.0 * bias;
     for (const c of this.chunks) {
       const b = c.box;
       const dx = Math.max(b.min.x - cp.x, 0, cp.x - b.max.x);
