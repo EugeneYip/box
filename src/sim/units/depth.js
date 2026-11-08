@@ -224,10 +224,10 @@ export function installDepth(Units) {
             const t = TRAIT_BY_ID[id];
             if (t && t.category !== 'scar') seen.set(id, (seen.get(id) || 0) + 1);
           }
-        for (const [id, n] of seen) if (rng.chance(n >= 2 || parents.length === 1 ? 0.65 : 0.4)) this.addTrait(u, id, { silent: true });
+        for (const [id, n] of seen) if (rng.chance(n >= 2 || parents.length === 1 ? 0.65 : 0.32)) this.addTrait(u, id, { silent: true });
         const pool = def.kind === 'humanoid' ? BORN_TRAITS : BORN_TRAITS.filter((t) => ANIMAL_TRAITS.includes(t.id));
         // mutation, and most children are born with something of their own
-        if (rng.chance(0.18) || (!u.traits.length && rng.chance(def.kind === 'humanoid' ? 0.5 : 0.2))) {
+        if (rng.chance(0.17) || (!u.traits.length && rng.chance(def.kind === 'humanoid' ? 0.3 : 0.15))) {
           const id = pickTrait(rng, pool, u);
           if (id) this.addTrait(u, id, { silent: true });
         }

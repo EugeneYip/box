@@ -1961,18 +1961,21 @@ export class Units {
     const rate = (this.law('beastsMonsters') ? ageM : ageM - 1) * (typeof g.laws?.spawnRate === 'number' ? Math.max(0.1, g.laws.spawnRate) : 1);
     let monsters = 0;
     for (const sp of ['golem', 'serpent', 'skywyrm']) monsters += this.count(sp);
-    if (monsters >= Math.round(3 * this.popScale * Math.max(1, ageM * 0.8)) || !g.rng.chance(0.03 * rate)) return;
+    if (monsters >= Math.round(3 * this.popScale * Math.max(1, ageM * 0.8)) || !g.rng.chance(0.045 * rate)) return;
     const w = g.world;
     const roll = g.rng.next();
     const species = roll < 0.5 ? 'golem' : roll < 0.8 ? 'serpent' : 'skywyrm';
-    for (let t = 0; t < 200; t++) {
+    const villages = (g.civ?.villages || []).filter((v) => v.alive);
+    for (let t = 0; t < 300; t++) {
       const tx = g.rng.int(4, w.w - 5),
         ty = g.rng.int(4, w.h - 5);
       const i = w.idx(tx, ty);
-      if (w.owner[i] >= 0) continue;
-      if (species === 'serpent' ? w.height[i] > -1.2 : !w.isWalkable(tx, ty)) continue;
-      // deep wilds: far from any village
-      if ((g.civ?.villages || []).some((v) => v.alive && (v.cx - tx) ** 2 + (v.cz - ty) ** 2 < 30 * 30)) continue;
+      // deep wilds first; on a crowded map, anywhere a little way from towns
+      const strict = t < 150;
+      if (strict && w.owner[i] >= 0 && species !== 'serpent') continue;
+      if (species === 'serpent' ? w.height[i] > -1.2 : !w.isWalkable(tx, ty) || w.building[i] >= 0) continue;
+      const minD = strict ? 26 : 12;
+      if (villages.some((v) => (v.cx - tx) ** 2 + (v.cz - ty) ** 2 < minD * minD)) continue;
       const u = this.spawn(species, tx + 0.5, ty + 0.5, { age: 1, alt: species === 'skywyrm' ? 8 : undefined });
       if (u) g.notify?.(`${u.name} has emerged from the wilds.`, 'disaster', { x: u.x, z: u.z });
       return;
