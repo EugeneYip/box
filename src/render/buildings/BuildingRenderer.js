@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { buildArchetype, foundation, scaffold, ruin, wallPost, wallArm, lampPost, frameFor, materialPile, PAL, WALL_H } from './archetypes.js';
+import { buildArchetype, foundation, scaffold, ruin, wallPost, wallArm, lampPost, frameFor, materialPile, proxyGeometry, PAL, WALL_H } from './archetypes.js';
 import { Labels } from './labels.js';
 import { createBuildingMaterial, createPropMaterial } from './material.js';
 import { bannerGeometry, bannerMaterial, bladesGeometry, boatGeometry, FENCE, scarecrowGeometry, glowTexture, PuffSystem } from './props.js';
@@ -91,6 +91,10 @@ export class BuildingRenderer {
     this.t = 0;
     this._m = new THREE.Matrix4();
     this._m2 = new THREE.Matrix4();
+    this._m3 = new THREE.Matrix4();
+    this.lodDist = 150; // beyond this camera distance whole towns draw as one proxy batch per style
+    this.propDist = 120; // fences, lanterns, scarecrows, boats culled beyond this
+    this._far = false;
     this._q = new THREE.Quaternion();
     this._p = new THREE.Vector3();
     this._s = new THREE.Vector3();
@@ -130,7 +134,7 @@ export class BuildingRenderer {
     this.bladeMeshes = new Map();
     this.boatMeshes = new Map();
     for (const st of ['vale', 'dune', 'frost', 'mire']) {
-      this.bannerMeshes.set(st, this._inst(bannerGeometry(st), this.bannerMat, 32, true));
+      this.bannerMeshes.set(st, this._inst(bannerGeometry(st), this.bannerMat, 32, false));
       this.bladeMeshes.set(st, this._inst(bladesGeometry(st), this.propMat, 8, false));
       this.boatMeshes.set(st, this._inst(boatGeometry(st), this.propMat, 16, false));
     }
@@ -163,7 +167,7 @@ export class BuildingRenderer {
     this.staffMesh = this._inst(this.staffGeo, new THREE.MeshStandardMaterial({ color: 0x5a3c24, roughness: 0.8 }), 16, true);
     this.staffMap = new Map([['s', this.staffMesh]]);
     this.scarecrows = new Map();
-    for (const st of ['vale', 'frost', 'mire']) this.scarecrows.set(st, this._inst(scarecrowGeometry(st), this.propMat, 16, true));
+    for (const st of ['vale', 'frost', 'mire']) this.scarecrows.set(st, this._inst(scarecrowGeometry(st), this.propMat, 16, false));
     // selection ring
     const ring = new THREE.RingGeometry(0.92, 1.0, 64).rotateX(-Math.PI / 2);
     this.ring = new THREE.Mesh(ring, new THREE.MeshBasicMaterial({ color: 0xffe2a0, transparent: true, opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending }));
@@ -218,9 +222,14 @@ export class BuildingRenderer {
     else if (kind === 'warm') a = { geo: wallArm(p1, 0.5), anchors: null, maxY: WALL_H + 0.1 };
     else if (kind === 'wdiag') a = { geo: wallArm(p1, Math.SQRT1_2), anchors: null, maxY: WALL_H + 0.1 };
     else if (kind === 'frame') {
-      const fin = this._arch(`${p1}|${p2}|${p3}`);
-      a = { geo: frameFor(fin), anchors: null, maxY: fin.maxY };
-    } else if (kind === 'pile') a = { geo: materialPile(p1), anchors: null, maxY: 0.3 };
+      // generic timber frame for a footprint and finished height
+      const w = +p1,
+        h = +p2,
+        my = +p3;
+      const pseudo = { geo: { boundingBox: { min: { x: -w * 0.42, z: -h * 0.42 }, max: { x: w * 0.42, z: h * 0.42 } } }, base: null, maxY: my };
+      a = { geo: frameFor(pseudo), anchors: null, maxY: my };
+    } else if (kind === 'pile') a = { geo: materialPile('vale'), anchors: null, maxY: 0.3 };
+    else if (kind === 'proxy') a = { geo: proxyGeometry(p1), anchors: null, maxY: 1 };
     else if (kind === 'lamppost') {
       const l = lampPost();
       a = { geo: l.geo, anchors: l.anchors, maxY: 0.8 };
@@ -234,7 +243,8 @@ export class BuildingRenderer {
     let b = this.batches.get(bk);
     if (!b) {
       const a = this._arch(key);
-      b = new Batch(this.group, a.geo, clip ? this.matClip : this.mat, { shadow: !clip });
+      const small = /^(well|pile|found|ruin|lamppost)/.test(key);
+      b = new Batch(this.group, a.geo, clip ? this.matClip : this.mat, { shadow: !clip && !small });
       this.batches.set(bk, b);
     }
     return b;
@@ -282,7 +292,7 @@ export class BuildingRenderer {
       const M = this._m.makeRotationY(b.rotation || 0).setPosition(b.x, b.y, b.z);
       if (stage === 'ruin') {
         if (def.wall) continue;
-        push(`ruin|${b.style}|${def.w}|${def.h}|${b.id % 3}`, false, M, col, b);
+        push(`ruin|${b.style}|${def.w}|${def.h}|1`, false, M, col, b);
         continue;
       }
       if (def.wall) {
@@ -300,7 +310,8 @@ export class BuildingRenderer {
           if (dx && dy && (wallAt.has(b.ty * world.w + b.tx + dx) || wallAt.has((b.ty + dy) * world.w + b.tx))) continue;
           const yaw = Math.atan2(-dy, dx);
           const am = this._m2.makeRotationY(yaw).setPosition(b.x, b.y, b.z);
-          push(dx && dy ? `wdiag|${b.style}` : `warm|${b.style}`, clip, am, col, b, { wall: true });
+          if (dx && dy) am.multiply(this._m3.makeScale(Math.SQRT2, 1, 1));
+          push(`warm|${b.style}`, clip, am, col, b, { wall: true });
         }
         continue;
       }
@@ -311,10 +322,10 @@ export class BuildingRenderer {
         // footings, then a timber frame, then walls rising, then the roof;
         // timber and stone stacked by the site until it is done
         if (stage === 'found') push(`found|${def.w}|${def.h}`, false, M, col, b);
-        else push(`frame|${akey}`, false, M, col, b);
+        else push(`frame|${def.w}|${def.h}|${Math.min(3, Math.max(1, Math.round(a.maxY * 2) / 2))}`, false, M, col, b);
         if (stage === 'build') push(akey, true, M, col, b, { maxY: a.maxY });
         const pm = this._m2.copy(M).multiply(new THREE.Matrix4().makeTranslation(def.w / 2 - 0.35, 0, def.h / 2 - 0.3));
-        push(`pile|${b.style}`, false, pm, col, b);
+        push(`pile`, false, pm, col, b);
       } else {
         push(akey, false, M, col, b);
         if (stage === 'upg') push(`scaf|${def.w}|${def.h}|${Math.min(3, Math.round(a.maxY * 2) / 2)}`, false, M, col, b);
@@ -389,12 +400,51 @@ export class BuildingRenderer {
       batch.items = L.bs;
       batch.extra = L.extra;
       mesh.count = n;
+      mesh.visible = n > 0;
       this._writeStates(batch);
       mesh.instanceMatrix.needsUpdate = true;
       batch.iColor.needsUpdate = true;
       mesh.computeBoundingSphere();
     }
     for (const [bk, batch] of this.batches) if (!used.has(bk) && batch.mesh) batch.mesh.count = 0;
+    // far-zoom proxies
+    const proxies = new Map();
+    for (const b of civ.buildings) {
+      if (b.gone || !b.alive) continue;
+      const def = BUILDING_TYPES[b.type];
+      if (!def) continue;
+      const key = 'proxy|' + b.style;
+      let L = proxies.get(key);
+      if (!L) proxies.set(key, (L = { m: [], col: [], bs: [] }));
+      const a = this._arch(def.wall ? `wpost|${b.style}` : `${b.type}|${b.style}|${Math.min(b.level || 1, def.levels)}`);
+      const hgt = def.wall ? 1.1 : Math.max(0.5, Math.min(3, a.maxY)) * (b.constructing ? Math.max(0.2, b.progress) : 1);
+      const pm = this._m2.makeRotationY(b.rotation || 0).setPosition(b.x, b.y, b.z).multiply(this._m3.makeScale(def.w * 0.82, hgt, def.h * 0.82));
+      for (let i = 0; i < 16; i++) L.m.push(pm.elements[i]);
+      col.setHex(civ.kingdomColor(b.kingdom));
+      L.col.push(col.r, col.g, col.b);
+      L.bs.push(b);
+    }
+    this.proxyBatches = this.proxyBatches || new Map();
+    for (const [key, L] of proxies) {
+      let batch = this.proxyBatches.get(key);
+      if (!batch) {
+        batch = new Batch(this.group, this._arch(key).geo, this.mat, { shadow: true });
+        this.proxyBatches.set(key, batch);
+      }
+      batch.ensure(L.bs.length);
+      batch.mesh.instanceMatrix.array.set(L.m);
+      batch.iColor.array.set(L.col);
+      batch.items = L.bs;
+      batch.extra = [];
+      batch.mesh.count = L.bs.length;
+      this._writeStates(batch);
+      for (let i = 0; i < L.bs.length; i++) batch.iState.array[i * 4 + 3] = 99;
+      batch.mesh.instanceMatrix.needsUpdate = true;
+      batch.iColor.needsUpdate = true;
+      batch.mesh.computeBoundingSphere();
+    }
+    for (const [key, batch] of this.proxyBatches) if (!proxies.has(key) && batch.mesh) batch.mesh.count = 0;
+    this._applyLod(true);
     // footings
     if (footings.length > this.footing.instanceMatrix.count) {
       const nm = new THREE.InstancedMesh(this.footing.geometry, this.footing.material, Math.ceil(footings.length * 1.5));
@@ -732,6 +782,49 @@ export class BuildingRenderer {
     void force;
   }
 
+  // Far zoom: one proxy batch per style instead of dozens of detailed batches.
+  // Mid zoom: small props are culled beyond propDist.
+  _applyLod(force = false) {
+    const D = this.game.cameraRig?.cur?.dist ?? 60;
+    const far = this._far ? D > this.lodDist - 12 : D > this.lodDist;
+    const props = D <= this.propDist;
+    if (!force && far === this._far && props === this._props) return;
+    this._far = far;
+    this._props = props;
+    for (const b of this.batches.values()) if (b.mesh) b.mesh.visible = !far && b.mesh.count > 0;
+    for (const b of (this.proxyBatches || new Map()).values()) if (b.mesh) b.mesh.visible = far && b.mesh.count > 0;
+    if (this.footing) this.footing.visible = !far;
+    const lp = this.batches.get('lamppost');
+    if (lp?.mesh) lp.mesh.visible = props && lp.mesh.count > 0;
+    for (const fm of this.fenceMeshes.values()) {
+      fm.posts.visible = props && fm.posts.count > 0;
+      fm.rails.visible = props && fm.rails.count > 0;
+    }
+    for (const m of this.scarecrows.values()) m.visible = props && m.count > 0;
+    for (const m of this.boatMeshes.values()) m.visible = D < this.lodDist && m.count > 0;
+    for (const m of this.bladeMeshes.values()) m.visible = !far && m.count > 0;
+    for (const m of this.bannerMeshes.values()) m.visible = !far && m.count > 0;
+    if (this.decals) this.decals.visible = props && this.decalMat.opacity > 0.01;
+  }
+
+  // civ-related draw calls (meshes that will render, plus shadow casters)
+  drawStats() {
+    let draws = 0,
+      shadows = 0;
+    this.group.traverse((o) => {
+      if (!o.isMesh || !o.visible) return;
+      let v = o;
+      while (v) {
+        if (!v.visible) return;
+        v = v.parent;
+      }
+      if (o.isInstancedMesh && o.count === 0) return;
+      draws++;
+      if (o.castShadow) shadows++;
+    });
+    return { draws, shadows };
+  }
+
   _fxIsReal() {
     if (this._fxReal != null) return this._fxReal;
     const fx = this.game.fx;
@@ -847,7 +940,7 @@ export class BuildingRenderer {
     this._first = true;
     this.uniforms.uWind.value = env.wind?.strength ?? 0.35;
     this.decalMat.opacity = this.uniforms.uNight.value * 0.42;
-    this.decals.visible = this.decalMat.opacity > 0.01;
+    this.decals.visible = this._props !== false && this.decalMat.opacity > 0.01;
     const now = g.time.realTime;
     if ((civ.version !== this._ver || civ.colorVersion !== this._cver) && now - this._lastRebuild > 0.2) {
       this._ver = civ.version;
@@ -865,6 +958,7 @@ export class BuildingRenderer {
       this._lastFence = now;
       this._rebuildFences();
     }
+    this._applyLod();
     this._updateBanners();
     this._updateBoatsAndBlades(dt);
     this._smoke(dt);

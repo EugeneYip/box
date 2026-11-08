@@ -141,25 +141,40 @@ export function cultureForSite(world, tx, ty, radius = 6) {
   return best;
 }
 
-// Heraldic palette: rich, slightly desaturated tinctures that read as borders
-// at map zoom without turning towns neon. No white, no near-black.
+// Heraldic palette: nine tinctures spread around the colour wheel so
+// neighbouring realms never share a hue family. Rich, slightly muted, never neon,
+// no white and no near-black.
 export const HERALDRY = [
-  { name: 'Crimson', color: 0xb3262f },
-  { name: 'Royal Blue', color: 0x2b4fa8 },
-  { name: 'Deep Green', color: 0x2e7d3e },
-  { name: 'Ochre', color: 0xc9941f },
-  { name: 'Violet', color: 0x6e3fa3 },
-  { name: 'Teal', color: 0x1f8a86 },
-  { name: 'Burnt Orange', color: 0xc0561e },
-  { name: 'Slate Navy', color: 0x34507e },
-  { name: 'Wine', color: 0x8c2a4c },
-  { name: 'Sapphire', color: 0x2f74b5 },
+  { name: 'Crimson', color: 0xb8262e }, // 357deg
+  { name: 'Burnt Orange', color: 0xc8601c }, // 25deg
+  { name: 'Ochre', color: 0xc99a1e }, // 43deg
+  { name: 'Olive', color: 0x7f9126 }, // 72deg
+  { name: 'Deep Green', color: 0x2c8040 }, // 135deg
+  { name: 'Teal', color: 0x1c8f8a }, // 177deg
+  { name: 'Royal Blue', color: 0x2d52b0 }, // 223deg
+  { name: 'Violet', color: 0x7040aa }, // 268deg
+  { name: 'Plum', color: 0xa8357c }, // 323deg
 ];
+
+export function hueOf(hex) {
+  const r = ((hex >> 16) & 255) / 255,
+    g = ((hex >> 8) & 255) / 255,
+    b = (hex & 255) / 255;
+  const mx = Math.max(r, g, b),
+    mn = Math.min(r, g, b);
+  if (mx === mn) return 0;
+  const d = mx - mn;
+  let h;
+  if (mx === r) h = ((g - b) / d) % 6;
+  else if (mx === g) h = (b - r) / d + 2;
+  else h = (r - g) / d + 4;
+  return (h * 60 + 360) % 360;
+}
 
 // Colours that would vanish against a culture's homeland biome.
 export const HERALDRY_AVOID = {
-  vale: ['Deep Green', 'Teal'], // meadows and forests are green
-  mire: ['Deep Green', 'Teal'], // swamp and jungle greens
-  frost: ['Sapphire', 'Slate Navy'], // snow, ice and slate read blue-grey
+  vale: ['Deep Green', 'Olive'], // meadows and forests are green
+  mire: ['Deep Green', 'Olive', 'Teal'], // swamp and jungle greens
+  frost: [], // every tincture reads against snow
   dune: ['Ochre', 'Burnt Orange'], // sand and savanna are yellow-orange
 };

@@ -1,4 +1,4 @@
-import { CULTURES, HERALDRY, HERALDRY_AVOID, placeName, kingdomName as makeKingdomName, rulerTitle } from './cultures.js';
+import { CULTURES, HERALDRY, HERALDRY_AVOID, hueOf, placeName, kingdomName as makeKingdomName, rulerTitle } from './cultures.js';
 import { BUILDING_TYPES } from './catalog.js';
 import { YEAR, ADULT_AGE, clamp } from './util.js';
 
@@ -13,10 +13,35 @@ export const politics = {
     const rng = this.rng;
     const id = this.kingdoms.length;
     const used = new Set(this.kingdoms.filter((k) => k.alive).map((k) => k.color));
+    // the tincture farthest in hue from every living realm (neighbours count double)
     const avoid = new Set(HERALDRY_AVOID[culture] || []);
-    let free = HERALDRY.filter((h) => !used.has(h.color) && !avoid.has(h.name));
-    if (!free.length) free = HERALDRY.filter((h) => !avoid.has(h.name));
-    const her = opts.color != null ? HERALDRY.find((h) => h.color === opts.color) || free[0] : free[(rng.next() * free.length) | 0];
+    const others = this.kingdoms.filter((k) => k.alive && k.villages.length);
+    const near = (k) => {
+      if (opts.x == null) return 1;
+      const v = this.villages[k.capital];
+      return v && Math.hypot(v.cx - opts.x, v.cz - opts.z) < 90 ? 2.2 : 1;
+    };
+    let her = null,
+      bs = -Infinity;
+    for (const h of HERALDRY) {
+      if (avoid.has(h.name)) continue;
+      const hh = hueOf(h.color);
+      let score = 360;
+      for (const k of others) {
+        let dh = Math.abs(hueOf(k.color) - hh);
+        if (dh > 180) dh = 360 - dh;
+        if (k.color === h.color) dh = 0;
+        // neighbours must differ most; distant realms may repeat a tincture
+        score = Math.min(score, near(k) > 1 ? dh : dh + 75);
+      }
+      score += rng.next() * 6;
+      if (score > bs) {
+        bs = score;
+        her = h;
+      }
+    }
+    if (opts.color != null) her = HERALDRY.find((h) => h.color === opts.color) || her;
+    if (!her) her = HERALDRY[id % HERALDRY.length];
     const base = opts.baseName || placeName(culture, rng, this.usedNames);
     const k = {
       id,
@@ -97,6 +122,12 @@ export const politics = {
     u.data.civ.royal = true;
     k.ruler = u.id;
     k.rulerName = u.name;
+    k.council = false;
+    // name an heir straight away so the realm never drifts without one
+    let heir = null;
+    const v = this.villages[u.village];
+    if (v) for (const m of v.members) if (m !== u && m.alive && m.age >= ADULT_AGE && (!heir || Math.abs(m.age - 24) < Math.abs(heir.age - 24))) heir = m;
+    k.heir = heir ? heir.id : -1;
   },
 
   _succession(k, deadName) {
@@ -114,6 +145,9 @@ export const politics = {
       }
       if (heir) break;
     }
+    // the designated heir, if alive
+    const named = this.game.units.byId.get(k.heir);
+    if (named && named.alive && named.kingdom === k.id && named !== this.game.units.byId.get(k.ruler)) heir = named;
     if (!heir) {
       // no adult left: the eldest child rules under a regency
       for (const v of pools) {
@@ -141,7 +175,8 @@ export const politics = {
     } else {
       k.ruler = -1;
       k.interregnumUntil = this.game.time.total + YEAR * 5;
-      this._note(`${deadName} dies heirless; ${this._kn(k)} in turmoil`, 'bad', cap ? { x: cap.cx, z: cap.cz } : null);
+      this._note(`${deadName} dies heirless; a council of elders rules ${this._kn(k)}`, 'bad', cap ? { x: cap.cx, z: cap.cz } : null);
+      k.council = true;
     }
   },
 
@@ -159,6 +194,7 @@ export const politics = {
   _killKingdom(k, cause = 'fallen') {
     if (!k.alive) return;
     k.alive = false;
+    this._noteCollapse?.((k.council ? 'heirless/' : '') + cause);
     for (const r of this.relations.values()) {
       if (r.a === k.id || r.b === k.id) {
         r.war = false;
@@ -305,6 +341,7 @@ export const politics = {
     r.attacker = a;
     r.losses = [0, 0];
     r.startPop = [A.population || 1, B.population || 1];
+    r.lossBase = { [A.id]: A.warLosses, [B.id]: B.warLosses };
     r.opinion = Math.min(r.opinion, -40);
     A.lastWar = B.lastWar = this.game.time.total;
     const why = { border: 'border dispute', culture: 'old enmity', ambition: 'conquest', rebellion: 'rebellion', alliance: 'alliance', god: 'divine will' }[reason] || 'grievance';
@@ -351,11 +388,18 @@ export const politics = {
 
   _considerPeace(A, B, r, now) {
     const dur = now - r.warSince;
-    if (dur < YEAR * 4) return;
+    // war weariness: the dead weigh on both crowns
+    const killedA = A.warLosses - (r.lossBase?.[A.id] ?? A.warLosses);
+    const killedB = B.warLosses - (r.lossBase?.[B.id] ?? B.warLosses);
+    const wearyA = killedA / Math.max(8, r.startPop[r.a === A.id ? 0 : 1]);
+    const wearyB = killedB / Math.max(8, r.startPop[r.a === A.id ? 1 : 0]);
+    const weary = Math.max(wearyA, wearyB);
+    if (weary > 0.22 && dur > YEAR * 2) return this.makePeace(A.id, B.id);
+    if (dur < YEAR * 3) return;
     const lossA = r.startPop[r.a === A.id ? 0 : 1] - A.population;
     const lossB = r.startPop[r.a === A.id ? 1 : 0] - B.population;
-    const weary = Math.max(lossA / Math.max(1, r.startPop[0]), lossB / Math.max(1, r.startPop[1]));
-    let p = 0.012 + Math.max(0, weary) * 0.15 + Math.max(0, dur - YEAR * 10) / (YEAR * 200);
+    const popWeary = Math.max(lossA / Math.max(1, r.startPop[0]), lossB / Math.max(1, r.startPop[1]));
+    let p = 0.02 + Math.max(0, popWeary) * 0.25 + weary * 0.5 + Math.max(0, dur - YEAR * 8) / (YEAR * 100);
     if (!this._reachable(A, B)) p += 0.08;
     if (this.rng.chance(p)) this.makePeace(A.id, B.id);
   },
@@ -626,11 +670,17 @@ export const politics = {
       }
     }
     if (cause === 'conquest') this._note(`⚑ ${this._kn(K)} conquers ${v.name}`, 'war', { x: v.cx, z: v.cz });
+    // the hall changes hands visibly: new colours run up with a flourish
+    const hb = v.hall;
+    if (hb) {
+      this.game.fx?.burst?.('magic', { x: hb.x, z: hb.z }, 14, { scale: 1.6, color: K.color });
+      this._sfx?.(cause === 'conquest' ? 'war-horn' : 'bell', hb.x, hb.z, 1);
+    }
     this.version++;
     this.colorVersion++;
     if (old && old.alive) {
       if (!old.villages.length) {
-        this._killKingdom(old, 'fallen');
+        this._killKingdom(old, cause);
       } else if (old.capital === v.id) {
         const nc = this._chooseCapital(old);
         if (nc) this._note(`${this._kn(old)} moves its capital to ${nc.name}`, 'info', { x: nc.cx, z: nc.cz });
@@ -729,7 +779,7 @@ export const politics = {
   rebel(v, silent = false) {
     const old = this.kingdoms[v.kingdom];
     if (!old || old.capital === v.id) return null;
-    const K = this.createKingdom(v.culture, { baseName: v.name, parent: old.id });
+    const K = this.createKingdom(v.culture, { baseName: v.name, parent: old.id, x: v.cx, z: v.cz });
     const oldName = old.base || old.name;
     this.transferVillage(v, K.id, 'rebellion');
     K.capital = v.id;

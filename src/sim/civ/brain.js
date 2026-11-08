@@ -29,7 +29,11 @@ export const brain = {
 
   hostileTo(u, o) {
     if (!o || !o.alive || o === u) return false;
-    if (o.species === 'human') return u.kingdom >= 0 && o.kingdom >= 0 && this.atWar(u.kingdom, o.kingdom);
+    if (o.species === 'human') {
+      if (!(u.kingdom >= 0 && o.kingdom >= 0 && this.atWar(u.kingdom, o.kingdom))) return false;
+      // war is fought between soldiers; villagers are spared
+      return o.job === 'soldier' || (u.job === 'soldier' && o.job === 'king' && o.hp < o.maxHp * 0.999);
+    }
     return !!(o.def?.aggressive && o.def.kind !== 'humanoid');
   },
 
@@ -1024,8 +1028,10 @@ export const brain = {
       const rank = d.lineRank ?? (d.lineRank = (u.id * 7) % 11);
       const off = (rank % 2 ? 1 : -1) * Math.ceil(rank / 2) * 0.7;
       const row = rank > 8 ? 1 : 0;
-      const sx = hx + ux * (4.5 - row * 0.8) - uz * off,
-        sz = hz + uz * (4.5 - row * 0.8) + ux * off;
+      const dx0 = v.hall ? v.hall.doorX : hx,
+        dz0 = v.hall ? v.hall.doorZ : hz;
+      const sx = dx0 + ux * (1.4 - row * 0.7) - uz * off,
+        sz = dz0 + uz * (1.4 - row * 0.7) + ux * off;
       const r = this._go(u, sx, sz, 0.5);
       if (r === ARRIVED) {
         this._idle(u);
@@ -1234,7 +1240,11 @@ export const brain = {
     t.t -= dt;
     if (t.t <= 0) {
       t.t = 1.3;
-      this.damageBuilding(b, 5 + this.rng.next() * 4, 'siege');
+      let ring = 0;
+      if (b.type === 'hall') for (const o of army.units) if (Math.hypot(o.x - b.x, o.z - b.z) < Math.max(b.w, b.h) * 0.5 + 1.6) ring++;
+      const mult = b.type === 'hall' ? 1 + Math.min(4, ring) * 0.6 : 1;
+      this.damageBuilding(b, (6 + this.rng.next() * 4) * mult, 'siege');
+      b.besieged = this.game.time.total;
       if (this.rng.chance(0.14)) b.burning = Math.max(b.burning, 0.45);
       this._fx('debris', b.x + this.rng.float(-0.5, 0.5), b.z + this.rng.float(-0.5, 0.5), 0.4);
       if (this.rng.chance(0.4)) this._fx('sparks', (u.x + b.x) / 2, (u.z + b.z) / 2, 0.6);
