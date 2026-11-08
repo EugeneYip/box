@@ -124,14 +124,14 @@ transformed = mix(aPivot, transformed, mix(1.0, fLeafK, max(fLeaf, fPetal)));
 #ifndef FLORA_DEPTH
 // canopy over units: leaf clusters pull in and thin out (trunks stay)
 float fOcc = texelFetch(uOcc, fTile, 0).r * uOccStrength * fLeaf;
-transformed = mix(aPivot, transformed, 1.0 - 0.42 * fOcc);
+transformed = mix(aPivot, transformed, 1.0 - 0.78 * fOcc);
 vFOcc = fOcc;
 vFSeason = fSW;
 vFIH = fHash(fOrigin.xz + 17.31);
 vFWSnow = fSW.w * smoothstep(0.5, 0.3, fTemp);
 #endif
 // winter: deciduous leaf clusters pull in to sparse tufts on bare boughs
-transformed = mix(aPivot, transformed, 1.0 - 0.62 * fSW.w * fDec);
+transformed = mix(aPivot, transformed, 1.0 - 0.74 * fSW.w * fDec);
 float fThin = mix(0.42, 1.0, smoothstep(0.0, 0.85, fG));
 transformed.xz *= mix(fThin, 1.0, fLeaf);
 float fScale = 0.14 + 0.86 * fG;
@@ -215,10 +215,6 @@ const float fBayer[16] = float[16](0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.
 `;
 
 const FRAG_COLOR = /* glsl */ `
-if (vFOcc > 0.01) {
-  ivec2 fbp = ivec2(mod(floor(gl_FragCoord.xy), 4.0));
-  if ((fBayer[fbp.x + fbp.y * 4] + 0.5) / 16.0 < vFOcc * 0.82) discard;
-}
 float fLeafM = vFInfo.x;
 float fMat = vFInfo.y;
 float fCell = fract(sin(dot(floor(vFWorld * 6.0), vec3(12.9898, 78.233, 45.164))) * 43758.5453);
@@ -233,17 +229,14 @@ if (abs(fMat - 9.0) < 0.5) {
   vec3 winter = mix(vec3(0.26, 0.17, 0.09), vec3(0.40, 0.27, 0.13), fCell) * (0.7 + lum);
   diffuseColor.rgb = spring * sw.x + summer * sw.y + autumn * sw.z + winter * sw.w;
   // spring blossom (pink or white) on some trees
-  // fine, soft speckles, mostly pink, on about a third of the trees
-  float bCell = fract(sin(dot(floor(vFWorld * 13.0), vec3(12.9898, 78.233, 45.164))) * 43758.5453);
-  float bloom = step(fract(vFIH * 7.13), 0.32) * smoothstep(0.3, 0.8, sw.x) * smoothstep(0.45, 0.8, bCell);
-  vec3 bc = fract(vFIH * 13.7) < 0.75 ? vec3(0.93, 0.5, 0.64) : vec3(0.96, 0.86, 0.87);
-  diffuseColor.rgb = mix(diffuseColor.rgb, bc * (0.82 + 0.22 * bCell), bloom * 0.85);
+  // blossom gathers on whole canopy facets (soft clusters, not pixel squares),
+  // mostly on upward faces, on about a third of the trees
+  vec3 fFN = normalize(cross(dFdx(vFWorld), dFdy(vFWorld)));
+  float bF = fract(sin(dot(floor(fFN * 3.5 + vFIH * 11.0), vec3(12.9898, 78.233, 45.164))) * 43758.5453);
+  float bloom = step(fract(vFIH * 7.13), 0.32) * smoothstep(0.3, 0.8, sw.x) * step(0.42, bF) * smoothstep(-0.3, 0.4, fFN.y);
+  vec3 bc = fract(vFIH * 13.7) < 0.75 ? vec3(0.92, 0.52, 0.66) : vec3(0.95, 0.87, 0.88);
+  diffuseColor.rgb = mix(diffuseColor.rgb, bc * (0.86 + 0.18 * bF), bloom * 0.8);
   // winter thinning
-  float wt = clamp((sw.w - 0.3) / 0.7, 0.0, 1.0);
-  if (wt > 0.0) {
-    ivec2 fbw = ivec2(mod(floor(gl_FragCoord.xy) + 1.0, 4.0));
-    if ((fBayer[fbw.x + fbw.y * 4] + 0.5) / 16.0 < wt * 0.45) discard;
-  }
 }
 if (abs(fMat - 8.0) < 0.5) {
   vec4 sw = vFSeason;
@@ -265,6 +258,8 @@ if (abs(fMat - 6.0) < 0.5) {
 float fDry = vFState.a * fLeafM * (1.0 - fIsSnow);
 vec3 fDryC = mix(vec3(0.46, 0.34, 0.09), vec3(0.28, 0.16, 0.06), smoothstep(0.5, 1.0, fDry)) * (0.55 + fLum * 1.4);
 diffuseColor.rgb = mix(diffuseColor.rgb, fDryC, smoothstep(0.0, 0.85, fDry));
+// foliage settles into the night instead of keeping its daytime brilliance
+diffuseColor.rgb *= mix(1.0, mix(0.62, 1.0, clamp(uDaylight, 0.0, 1.0)), fLeafM * (1.0 - fIsSnow));
 // fire: char
 float fChar = clamp(max(vFState.g * 1.25, vFState.b), 0.0, 1.0);
 diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.03, 0.026, 0.022), fChar * 0.92);
@@ -314,7 +309,7 @@ float fBack = clamp(-dot(fWN, uSunDir), 0.0, 1.0);
 float fTrans = fLeafM * (1.0 - fChar) * (1.0 - fSnowAmt) * uDaylight * (1.0 - fIsSnow);
 totalEmissiveRadiance += diffuseColor.rgb * uSunColor * fTrans * (0.05 + 0.2 * fBack * fBack);
 // canopy ambient lift: dense foliage never sinks to black in shadow
-totalEmissiveRadiance += diffuseColor.rgb * fLeafM * (1.0 - fChar) * (0.035 + 0.06 * uDaylight);
+totalEmissiveRadiance += diffuseColor.rgb * fLeafM * (1.0 - fChar) * 0.09 * uDaylight * uDaylight;
 `;
 
 const FRAG_LIGHT = /* glsl */ `
