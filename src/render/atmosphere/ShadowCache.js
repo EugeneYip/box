@@ -130,6 +130,9 @@ export class ShadowCache {
           }
         });
       off(this.dynamicRoot());
+      // power saver: the terrain (hundreds of chunks on big maps) receives
+      // but does not cast; trees and buildings still give the land depth
+      if (ps) off(this.game.terrain?.group || this.game.scene.getObjectByName('terrain'));
       if (this.farMode) {
         const g = this.game;
         off(g.vegetation?.group || g.scene.getObjectByName('vegetation'));
@@ -177,7 +180,7 @@ export class ShadowCache {
       // Zoomed far out units are a few pixels tall: their shadows are
       // skipped (and the clean static map is kept as is).
       const root = this.dynamicRoot();
-      const near = this.game.cameraRig.cur.dist < 150;
+      const near = this.game.cameraRig.cur.dist < 150 && !this.game.settings?.powerSaver;
       if (root && root.visible && near) {
         const list = this.dynScene.children;
         list.length = 0;
