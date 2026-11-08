@@ -1,0 +1,317 @@
+/* ==========================================================================
+   Worldseed UI, round 7: touch targets, landscape-phone bar, popover,
+   overview, inspector polish, law cards, title sizes, season progress.
+   Loaded last.
+   ========================================================================== */
+
+/* ---- 44 px touch targets everywhere on touch devices */
+.is-touch .ws-nav .ws-iconbtn,
+.is-touch .ws-speed__pause,
+.is-touch .ws-iconbtn--sm,
+.is-touch .ws-dock__min,
+.is-touch .ws-king__tech,
+.is-touch .ws-map__compass,
+.is-touch .ws-map__btn {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+}
+.is-touch .ws-tab {
+  height: 44px;
+  min-width: 44px;
+  justify-content: center;
+}
+.is-touch .ws-btn,
+.is-touch .ws-btn--sm {
+  min-height: 44px;
+}
+.is-touch .ws-lawrail__btn,
+.is-touch .ws-cpill,
+.is-touch .ws-pill,
+.is-touch .ws-chip,
+.is-touch .ws-chip2,
+.is-touch .ws-lawtab,
+.is-touch .ws-stat,
+.is-touch .ws-agechip {
+  min-height: 44px;
+}
+.is-touch .ws-tchip {
+  min-height: 34px;
+}
+.is-touch .ws-brand,
+.is-touch .ws-clock,
+.is-touch .ws-stats {
+  height: 54px;
+}
+/* one speed button on touch: tap to cycle */
+.is-touch .ws-seg {
+  display: none;
+}
+.is-touch .ws-speed__cycle {
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: center;
+  white-space: nowrap;
+  line-height: 44px;
+  min-width: 56px;
+  height: 44px;
+  padding: 0 10px;
+  border-radius: 12px;
+  font-weight: 700;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ws-gold-hi);
+  background: rgba(0, 0, 0, 0.3);
+  box-shadow: inset 0 0 0 1px rgba(251, 229, 173, 0.45);
+}
+.is-touch .ws-speed__cycle small {
+  font-size: 10px;
+  margin-left: 1px;
+}
+.is-touch .ws-brush .ws-iconbtn--sm {
+  width: 44px;
+  height: 44px;
+}
+.is-touch .ws-brush {
+  height: 56px;
+  border-radius: 28px;
+}
+
+/* ---- short landscape phones: emblem menu, single speed button, 3 stats */
+@media (max-height: 500px) and (min-width: 721px) {
+  .ws-brand {
+    padding: 0 4px;
+  }
+  .ws-brand > .ws-sep,
+  .ws-brand .ws-nav,
+  .ws-brand__txt {
+    display: none !important;
+  }
+  .ws-brand__id {
+    width: 46px;
+    height: 46px;
+    padding: 0;
+    justify-content: center;
+  }
+  .ws-brand__id::after {
+    content: '';
+    position: absolute;
+    right: 3px;
+    bottom: 5px;
+    width: 6px;
+    height: 6px;
+    border-right: 2px solid var(--ws-gold-hi);
+    border-bottom: 2px solid var(--ws-gold-hi);
+    transform: rotate(45deg);
+  }
+  .ws-seg {
+    display: none;
+  }
+  .ws-speed__cycle {
+    display: inline-flex;
+    align-items: baseline;
+    justify-content: center;
+    line-height: 44px;
+    min-width: 56px;
+    height: 44px;
+    padding: 0 10px;
+    border-radius: 12px;
+    font-weight: 700;
+    font-size: 14px;
+    color: var(--ws-gold-hi);
+    background: rgba(0, 0, 0, 0.3);
+    box-shadow: inset 0 0 0 1px rgba(251, 229, 173, 0.45);
+  }
+  .ws-stats .ws-stat:nth-child(n + 4) {
+    display: none;
+  }
+  .ws-clock > .ws-sep {
+    display: none;
+  }
+}
+.ws-menu {
+  position: absolute;
+  left: 8px;
+  top: 60px;
+  display: flex;
+  flex-direction: column;
+  min-width: 210px;
+  max-height: calc(100vh - 70px);
+  overflow-y: auto;
+  padding: 6px;
+  border-radius: 14px;
+  opacity: 0;
+  transform: translateY(-6px);
+  pointer-events: none !important;
+  transition:
+    opacity 0.18s,
+    transform 0.22s var(--ws-ease);
+}
+.ws-menu.is-open {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto !important;
+}
+.ws-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 0 12px 0 8px;
+  border-radius: 10px;
+  font-weight: 600;
+  font-size: 13.5px;
+  text-align: left;
+}
+.ws-menu__item:active,
+.ws-menu__item:hover {
+  background: var(--ws-well-2);
+}
+.ws-menu__ico {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  font-size: 20px;
+  --tint: #ebc977;
+  color: var(--ws-gold-hi);
+}
+
+.ws-brand__id {
+  position: relative;
+}
+
+/* ---- shared popover */
+.ws-pop {
+  position: absolute;
+  left: 0;
+  top: 0;
+  max-width: 280px;
+  padding: 8px 11px;
+  border-radius: 10px;
+  font: 500 12px/1.45 var(--ws-font);
+  color: var(--ws-ink);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  background: rgba(10, 12, 19, 0.96);
+  box-shadow:
+    0 0 0 1px rgba(235, 201, 119, 0.3),
+    0 10px 26px rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+  z-index: 60;
+}
+.ws-pop.is-shown {
+  opacity: 1;
+}
+/* inside scrolling panels the floating popover replaces the CSS tooltip */
+.ws-insp [data-tip]::after,
+.ws-tech [data-tip]::after,
+.ws-side [data-tip]::after,
+.ws-modal [data-tip]::after,
+.ws-chron__list [data-tip]::after {
+  display: none !important;
+}
+.is-touch .ws-tchip,
+.is-touch .ws-slot,
+.is-touch .ws-inv,
+.is-touch .ws-techcard {
+  cursor: pointer;
+}
+
+/* ---- inspector polish */
+.ws-gearnone {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--ws-ink-3);
+  font-style: italic;
+}
+.ws-tchip.is-tech {
+  --tint: #ebc977;
+}
+.ws-root:not(.has-minimap) .ws-insp {
+  max-height: calc(100vh - 64px - var(--ws-edge) * 3 - 72px);
+}
+@media (max-height: 500px) and (min-width: 721px) {
+  /* phone landscape: a full-height side sheet on the right */
+  .ws-insp,
+  .ws-root:not(.has-minimap) .ws-insp {
+    top: 6px;
+    bottom: 6px;
+    right: 6px;
+    width: 330px;
+    max-height: none;
+    z-index: 4;
+    padding: 10px 12px;
+  }
+  .ws-insp__badge {
+    width: 42px;
+    height: 42px;
+    font-size: 28px;
+  }
+  .ws-insp__title {
+    font-size: 15px;
+  }
+  .ws-insp__scroll {
+    flex: 1 1 auto;
+  }
+}
+
+/* ---- kingdom names wrap instead of truncating */
+.ws-king__line .ws-king__name {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  line-height: 1.2;
+}
+.ws-king__line {
+  align-items: flex-start;
+}
+
+/* ---- overview: fold panels away, button above the minimap when it is on */
+.is-overview .ws-feed,
+.is-overview .ws-side,
+.is-overview .ws-insp,
+.is-overview .ws-coach {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+.is-overview .ws-side *,
+.is-overview .ws-insp * {
+  pointer-events: none !important;
+}
+.has-minimap .ws-overview {
+  right: var(--ws-edge);
+  bottom: calc(var(--ws-edge) * 2 + var(--ws-map) + 22px);
+}
+
+/* ---- clock: season on the time line, with a thin progress bar */
+.ws-clock__day {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.ws-clock__day::before {
+  display: none;
+}
+.ws-clock__sep {
+  color: var(--ws-ink-3);
+}
+.ws-clock__day .ws-season__name {
+  display: inline !important;
+  font-size: 11.5px;
+}
+.ws-seasonbar {
+  display: block;
+  height: 2px;
+  margin-top: 2px;
+  border-radius: 2px;
+  background: rgba(255, 247, 230, 0.12);
+  overflow: hidden;
+}
+.ws-seasonbar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  transition: width 0.4s linear;
+}
