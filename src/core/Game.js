@@ -168,7 +168,10 @@ export class Game {
     const def = lawDef(key);
     if (!def) return;
     if (def.type === 'bool') value = !!value;
-    else value = Math.min(def.max, Math.max(def.min, +value || def.default));
+    else {
+      const n = Number(value);
+      value = Math.min(def.max, Math.max(def.min, Number.isFinite(n) ? n : def.default));
+    }
     this.laws[key] = value;
     if (key === 'skyDayNight') this.settings.dayNight = value && this.params.hour == null;
     if (key === 'skyWeather') this.settings.autoWeather = value;
@@ -250,17 +253,20 @@ export class Game {
         this.time.day++;
       }
     }
-    this.time.season = this.laws.weatherSeasons ? (0.5 + this.time.total / SEASON) % 4 : 1.5;
+    // Seasons are long by default (a dozen years each); the law sets how many.
+    const seasonYears = this.laws.weatherSeasonLength || SEASON / YEAR_SECONDS;
+    this.time.seasonYears = seasonYears;
+    this.time.season = this.laws.weatherSeasons ? (0.5 + this.time.total / (seasonYears * YEAR_SECONDS)) % 4 : 1.5;
     this.time.seasonName = SEASONS[Math.floor(this.time.season) % 4];
     this.ages.tick();
     for (const s of this.simSystems) s.tick?.(step);
   }
 
   // Simulate quickly without rendering (for screenshots / tests).
-  fastForward(seconds) {
-    const n = Math.ceil(seconds / TICK);
+  fastForward(seconds, step = TICK) {
+    const n = Math.ceil(seconds / step);
     for (let i = 0; i < n; i++) {
-      this.tick(TICK);
+      this.tick(step);
       if (i % 30 === 0) this.world.flushDirty();
     }
     this.world.flushDirty();
@@ -274,12 +280,17 @@ export class Game {
       // speeds on slow machines degrade gracefully (the sim runs slower than
       // requested) instead of spiralling into ever-longer frames.
       const budgetMs = this.simBudgetMs ?? 9;
+      // At 8x and above, take coarser steps so the same wall-clock budget
+      // covers more game time: every system integrates by step, and AI that
+      // runs on accumulators simply thinks less often per game second.
+      const step = TICK * Math.min(4, Math.max(1, Math.ceil(this.speed / 4)));
+      this.simStep = step;
       const t0 = performance.now();
-      while (this._acc >= TICK) {
-        this.tick(TICK);
-        this._acc -= TICK;
+      while (this._acc >= step) {
+        this.tick(step);
+        this._acc -= step;
         if (performance.now() - t0 > budgetMs) {
-          this._acc = Math.min(this._acc, TICK); // drop the backlog
+          this._acc = Math.min(this._acc, step); // drop the backlog
           break;
         }
       }

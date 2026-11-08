@@ -86,7 +86,8 @@ export const LAWS = [
   // ---- Weather & Time -------------------------------------------------------------
   B('skyDayNight', 'weather', 'Day and night', 'The sun rises and sets.', true, 'core'),
   N('skyDaySpeed', 'weather', 'Day length', 'Higher is a faster day-night cycle.', 1, 0.25, 4, 0.25, 'core'),
-  B('weatherSeasons', 'weather', 'Seasons', 'Spring, summer, autumn and winter turn with the days.', true, 'core'),
+  B('weatherSeasons', 'weather', 'Seasons', 'Spring, summer, autumn and winter turn across the years.', true, 'core'),
+  N('weatherSeasonLength', 'weather', 'Season length', 'Years each season lasts. Seasons here are long: lower it for a quicker turn of the year, raise it for epic winters.', 12, 3, 24, 1, 'core'),
   B('skyWeather', 'weather', 'Changing weather', 'Rain, storms and snow come and go by themselves.', true, 'atmosphere'),
   N('weatherStorms', 'weather', 'Storminess', 'How often storms gather.', 1, 0, 3, 0.25, 'atmosphere'),
   // ---- Calamities -------------------------------------------------------------
