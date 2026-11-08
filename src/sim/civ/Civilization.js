@@ -1,10 +1,12 @@
 import { TILE, TILE_INFO, FLORA, FLORA_INFO, SEA_LEVEL } from '../../world/constants.js';
-import { CULTURES, personName, placeName } from './cultures.js';
+import { CULTURES, personName, placeName, baseCulture } from './cultures.js';
 import { BUILDING_TYPES, buildingLabel, costOf, canAfford, pay } from './catalog.js';
 import { USE, YEAR, ADULT_AGE, ROT, ROT_DIR, SPIRAL, spiralCount, clamp } from './util.js';
 import { planner } from './planner.js';
 import { brain } from './brain.js';
 import { politics, relKey } from './politics.js';
+import { tech, ERAS, TECHS, techById } from './tech.js';
+import { culture, TRAIT_INFO } from './culture.js';
 
 // Civilization simulation: villages that grow from hamlets into walled
 // cities, kingdoms with rulers, borders, diplomacy and war.
@@ -98,6 +100,9 @@ export class Civilization {
     this._ticksSinceFrame = 0;
     this._famineNote = new Map();
     this._noteT = new Map();
+    this.history = []; // full civ chronicle: {t, text, kind, x, z}
+    this._techFirst = new Set();
+    this._initCultures();
     this.battles = [];
     this._computeLand();
   }
@@ -262,6 +267,8 @@ export class Civilization {
       jobCount: {},
       produced: {},
       landId: this.landId[hy * this.world.w + hx],
+      cultureMix: { [culture]: 1 },
+      ore: 0,
       _acc: this.rng.next(),
       _planAcc: this.rng.next() * 3,
       _jobAcc: this.rng.next() * 2.5,
@@ -493,7 +500,7 @@ export class Civilization {
     // far-flung colonies sometimes strike out on their own as a new realm
     const cap = k ? this.villages[k.capital] : null;
     const far = cap ? Math.hypot(cap.cx - u.x, cap.cz - u.z) : 0;
-    const independent = !k || !k.alive || (far > 55 && this.rng.chance(0.45)) || this.rng.chance(0.12);
+    const independent = !k || !k.alive || (this.law('civNewKingdoms') && ((far > 55 && this.rng.chance(0.45)) || this.rng.chance(0.12)));
     if (exp.site.resettle != null) {
       const old = this.villages[exp.site.resettle];
       if (old) {
@@ -619,6 +626,19 @@ export class Civilization {
       T.regrow = 0;
       this._regrowTick();
     }
+    if ((T.tech = (T.tech || 0) + step) >= 2) {
+      this._researchTick(T.tech);
+      this._inventoryTick(T.tech);
+      T.tech = 0;
+    }
+    if ((T.cult = (T.cult || 0) + step) >= 5) {
+      T.cult = 0;
+      this._cultureTick();
+    }
+    if ((T.wander = (T.wander || 0) + step) >= 20) {
+      T.wander = 0;
+      this._wanderers();
+    }
     if ((T.land += step) >= 30) {
       T.land = 0;
       this._computeLand();
@@ -688,7 +708,11 @@ export class Civilization {
 
     // food
     const golden = now < (this.kingdoms[v.kingdom]?.goldenUntil || 0);
-    const eat = ((adults * 2 + kids * 1.3) / YEAR) * dt;
+    const season = g.time.season ?? 1.5;
+    const winter = season >= 3;
+    const mods = g.age?.mods || {};
+    // winter: hearths burn and nothing grows, the granaries carry the village
+    const eat = ((adults * 2 + kids * 1.3) / YEAR) * dt * (winter ? 1.2 : 1);
     v.food -= eat;
     // upkeep: firewood for every hearth and timber to keep roofs mended
     const nb = v.buildings.length;
@@ -730,7 +754,8 @@ export class Civilization {
 
     // crops ripen (farmers plant and harvest; growth is helped along here)
     const rain = g.env.weather?.type === 'rain' || g.env.weather?.type === 'storm';
-    const growRate = (dt / 42) * (golden ? 1.3 : 1) * (rain ? 1.25 : 1);
+    const seasonGrow = winter ? 0.3 : season < 1 ? 1.15 : season >= 2.5 ? 0.8 : 1;
+    const growRate = (dt / 42) * (golden ? 1.3 : 1) * (rain ? 1.25 : 1) * seasonGrow * (mods.fertility ?? 1) * this.techMod(v.kingdom, 'harvest');
     for (const p of v.plots) {
       let dirty = false;
       for (const i of p.tiles) {
@@ -756,8 +781,18 @@ export class Civilization {
           if (u.sex !== 'f' || u.age < 18 || u.age > 45) continue;
           const d = u.data.civ;
           if (now - (d.lastBirth ?? -999) < YEAR * 2.5) continue;
-          if (!this.rng.chance(0.022 * dt * (golden ? 1.8 : 1) * this.law('civGrowth', 1))) continue;
+          if (!this.rng.chance(0.022 * dt * (golden ? 1.8 : 1) * this.law('civGrowth', 1) * (mods.birth ?? 1) * this.techMod(v.kingdom, 'birth'))) continue;
           d.lastBirth = now;
+          if (!d.spouse) {
+            let mate = null;
+            for (const m of v.members) if (m.sex === 'm' && m.age >= 18 && !m.data.civ?.spouse && (!mate || Math.abs(m.age - u.age) < Math.abs(mate.age - u.age))) mate = m;
+            if (mate) {
+              d.spouse = mate.id;
+              mate.data.civ.spouse = u.id;
+              g.units.log?.(u, `Married ${mate.name} in ${v.name}`);
+              g.units.log?.(mate, `Married ${u.name} in ${v.name}`);
+            }
+          }
           const home = this._homeFor(v, u);
           const child = this.spawnHuman(v, u.x + this.rng.float(-0.3, 0.3), u.z + this.rng.float(-0.3, 0.3), { age: 0, home: home ? home.id : -1, culture: u.data.culture });
           if (child) {
@@ -782,6 +817,37 @@ export class Civilization {
       }
     }
 
+    // a kingdom's new era spreads through its towns building by building
+    const era = this.kingdoms[v.kingdom]?.era ?? 0;
+    if (this.rng.chance(0.06 * dt)) {
+      const old = v.buildings.find((b) => b.alive && !b.constructing && (b.era ?? 0) < era);
+      if (old) {
+        old.era = Math.min(era, (old.era ?? 0) + 1);
+        this.version++;
+        this._fx('sparkle', old.x, old.z, 0.8);
+      }
+    }
+    // hungry or unhappy villagers leave in search of better lands
+    if (this.law('harmonyMigration') && (v.starving || v.loyalty < 30) && pop > 6 && this.rng.chance(0.02 * dt)) {
+      let best = null,
+        bd = Infinity;
+      for (const o of this.villages) {
+        if (!o.alive || o === v || o.starving || o.landId !== v.landId || o.pop >= o.housing) continue;
+        if (this.atWar(o.kingdom, v.kingdom)) continue;
+        const dd = Math.hypot(o.cx - v.cx, o.cz - v.cz);
+        if (dd < bd && dd < 80) {
+          bd = dd;
+          best = o;
+        }
+      }
+      const mover = best && [...v.members].find((u) => u.alive && u.age >= ADULT_AGE && u.job !== 'king' && u.job !== 'soldier');
+      if (mover) {
+        this._moveMember(mover, best);
+        mover.data.civ.task = { kind: 'arrive' };
+        this._mixAdd(best, mover.data.culture || v.culture, 0.04);
+        g.units.log?.(mover, `Left ${v.name} for ${best.name}`);
+      }
+    }
     // shrinking towns let empty houses crumble rather than stand as ghost towns
     if (v.housing > pop * 1.6 + 8 && now - (v.lastDecay || 0) > 12) {
       v.lastDecay = now;
@@ -820,6 +886,93 @@ export class Civilization {
     this._popCrowd = clamp((humans - this.budget.humans * 0.55) / (this.budget.humans * 0.45), 0, 1);
     this._crowdV = clamp(Math.max(this._popCrowd, (blds - this.budget.buildings * 0.5) / (this.budget.buildings * 0.5)), 0, 1);
     return this._crowdV;
+  }
+
+  // Kingdom inventory: stockpiles summed from the villages, plus arms forged
+  // by the smiths. Smiths at forges turn ore and wood into tools, weapons and
+  // armour of the best material the kingdom knows, and soldiers are equipped.
+  _inventoryTick(dt) {
+    const g = this.game;
+    for (const k of this.kingdoms) {
+      if (!k.alive) continue;
+      const inv = k.inventory || (k.inventory = { food: 0, wood: 0, stone: 0, ore: 0, gold: 0, tools: 0, weapons: 0, armor: 0 });
+      let food = 0,
+        wood = 0,
+        stone = 0,
+        ore = 0,
+        gold = 0,
+        forges = 0;
+      for (const vid of k.villages) {
+        const v = this.villages[vid];
+        if (!v?.alive) continue;
+        food += v.food;
+        wood += v.wood;
+        stone += v.stone;
+        ore += v.ore || 0;
+        gold += v.gold;
+        if (v.hasForge) forges++;
+        else if (v.hasWorkshop) forges += 0.4;
+      }
+      Object.assign(inv, { food: Math.floor(food), wood: Math.floor(wood), stone: Math.floor(stone), ore: Math.floor(ore), gold: Math.floor(gold) });
+      // the smiths at work
+      k.forgeT = (k.forgeT || 0) + dt * forges;
+      if (k.forgeT >= 14 && g.laws?.lifeEquipment !== false) {
+        k.forgeT = 0;
+        const v = k.villages.map((id) => this.villages[id]).find((o) => o?.alive && (o.hasForge || o.hasWorkshop) && (o.ore || 0) >= 2 && o.wood >= 3);
+        if (v) {
+          v.ore -= 2;
+          v.wood -= 3;
+          const mat = this.bestMaterial(k.id);
+          const need = inv.weapons <= inv.armor ? 'weapons' : inv.tools < inv.weapons / 2 ? 'tools' : 'armor';
+          inv[need]++;
+          (k.armory || (k.armory = [])).push({ slot: need === 'weapons' ? 'weapon' : need === 'armor' ? 'armor' : 'tool', material: mat });
+          if (k.armory.length > 60) k.armory.shift();
+        }
+      }
+      // equip soldiers from the armoury
+      if (k.armory?.length) {
+        for (const vid of k.villages) {
+          const v = this.villages[vid];
+          if (!v?.alive) continue;
+          for (const u of v.members) {
+            if (u.job !== 'soldier' || !k.armory.length) continue;
+            const gear = u.data.civ.gear || (u.data.civ.gear = {});
+            const idx = k.armory.findIndex((it) => it.slot !== 'tool' && !gear[it.slot]);
+            if (idx < 0) continue;
+            const it = k.armory.splice(idx, 1)[0];
+            inv[it.slot === 'weapon' ? 'weapons' : 'armor'] = Math.max(0, inv[it.slot === 'weapon' ? 'weapons' : 'armor'] - 1);
+            gear[it.slot] = it.material;
+            const item = g.units.makeItem?.({ slot: it.slot, kind: it.slot === 'weapon' ? (k.culture === 'frost' ? 'axe' : 'sword') : 'mail', material: it.material, quality: 'common', origin: v.name });
+            if (item) g.units.equip?.(u, item);
+            // fallback when the item system is absent: our own combat bonus
+            const tier = { wood: 0, stone: 0.1, bronze: 0.25, iron: 0.5, steel: 0.8 }[it.material] || 0;
+            if (it.slot === 'weapon') u.data.civ.power = 6.5 * (1 + tier);
+            else {
+              u.maxHp = Math.round(64 * (1 + tier * 0.6));
+              u.hp = Math.min(u.maxHp, u.hp + 10);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Wanderers: small bands arrive on empty fertile land and found a village.
+  _wanderers() {
+    if (!this.law('spawnWanderers', false)) return;
+    if (this._crowd() > 0.8 || !this.rng.chance(0.25)) return;
+    const w = this.world;
+    for (let k = 0; k < 40; k++) {
+      const tx = this.rng.int(16, w.w - 17),
+        ty = this.rng.int(16, w.h - 17);
+      if (w.owner[ty * w.w + tx] >= 0) continue;
+      if (this.villages.some((v) => v.alive && Math.hypot(v.cx - tx, v.cz - ty) < 30)) continue;
+      if (this._scoreSite(tx, ty, { minSpace: 110 }) < 0) continue;
+      const cultureId = this._cultureAt(tx, ty);
+      const v = this.foundVillage(tx, ty, { culture: cultureId, settlers: this.rng.int(6, 9), silent: true, kingdom: null, wanderers: true });
+      if (v) this._note(`🧭 Wanderers settle the empty land at ${v.name}`, 'good', { x: v.cx, z: v.cz });
+      return;
+    }
   }
 
   // Grain carts: surplus villages feed hungry kin of the same kingdom.
@@ -904,13 +1057,14 @@ export class Civilization {
     const foodFull = v.food > v.foodCap * 0.85;
     const woodFull = v.wood > 120 + v.tier * 140;
     const stoneFull = v.stone > 60 + v.tier * 120;
-    give('farmer', v.fieldCount ? Math.max(1, Math.min(Math.ceil(v.fieldCount / (foodFull ? 14 : 9)), n * 0.45)) : 0);
+    const ctr = (t) => this.hasCultureTrait(v.culture, t);
+    give('farmer', v.fieldCount ? Math.max(1, Math.min(Math.ceil(v.fieldCount / (foodFull ? 14 : ctr('Pastoral') ? 7 : 9)), n * 0.5)) : 0);
     give('fisher', v.docks ? Math.min(v.docks * 2, 1 + n * 0.15) : foodLow && n >= 5 && v.coastal ? 1 : 0);
     const drafting = this.game.time.total - (v.draft ?? -99) < 45;
     if (atWar) give('soldier', Math.max(3, n * (drafting ? 0.45 : 0.3)) + (v.hasBarracks ? 3 : 0));
     give('builder', sites ? Math.min(Math.max(1, Math.ceil(sites * 1.1)), 1 + Math.floor(n / 6)) : repairs ? 1 : 0);
     give('woodcutter', woodFull ? (n >= 6 ? 1 : 0) : v.wood < 40 + v.tier * 30 ? 1 + Math.floor(n / 8) : n >= 4 ? 1 + Math.floor(n / 16) : 0);
-    if (!atWar && n >= 6) give('soldier', Math.max(1, n * 0.09) + (v.hasBarracks ? 2 : 0));
+    if (!atWar && n >= 6) give('soldier', Math.max(1, n * (ctr('Martial') ? 0.14 : 0.09)) + (v.hasBarracks ? 2 : 0));
     if (v.hasRock !== false || v.quarry >= 0) give('miner', stoneFull ? 0 : v.stone < 30 + v.tier * 50 ? 1 + Math.floor(n / 9) : 1);
     // the rest go where they are most useful; anyone left over keeps the town lively
     let guard = 0;
@@ -1074,15 +1228,24 @@ export class Civilization {
     // 3 civic buildings by size
     if (room() && pop >= 10 && count('granary') === 0) build('granary');
     if (room() && pop >= 12 && count('well') < 1 + Math.floor(pop / 35)) build('well', () => this.placeAlongRoad(v, 'well', this._bias(v, 'well')));
-    if (room() && pop >= 8 && v.coastal && count('docks') < (pop >= 30 ? 2 : 1)) build('docks', () => this._placeDocks(v));
+    if (room() && pop >= (this.hasCultureTrait(v.culture, 'Seafaring') ? 6 : 8) && v.coastal && count('docks') < (pop >= 30 ? 2 : 1)) build('docks', () => this._placeDocks(v));
     if (room() && pop >= 14 && count('workshop') === 0) build('workshop');
     if (room() && pop >= 14 && v.fieldCount >= 20 && count('windmill') === 0) build('windmill');
     if (room() && v.hall.level < v.tier + 1) upgrade(v.hall);
     if (room() && v.tier >= 1 && count('market') === 0) build('market');
-    if (room() && pop >= 26 && count('temple') === 0) build('temple');
+    const kid = v.kingdom;
+    const ct = (t) => this.hasCultureTrait(v.culture, t);
+    if (room() && pop >= (ct('Mystic') ? 14 : 26) && count('temple') === 0) build('temple');
+    if (room() && pop >= (ct('Scholarly') ? 12 : 20) && this.hasTech(kid, 'writing') && count('library') === 0) build('library');
+    if (room() && pop >= 30 && this.hasTech(kid, 'astronomy') && count('observatory') === 0) build('observatory', () => this._placeOutskirts(v, 'observatory', 4, v.buildRadius, null, null));
+    if (room() && pop >= 34 && this.hasTech(kid, 'architecture') && count('aqueduct') === 0) build('aqueduct', () => this._placeOutskirts(v, 'aqueduct', 5, v.buildRadius + 3, null, null));
+    if (room() && this.hasTech(kid, 'sailing')) {
+      const dk = v.buildings.find((b) => b.alive && b.type === 'docks' && b.level < 2 && !b.constructing);
+      if (dk) upgrade(dk);
+    }
     const atWar = this.warCount(v.kingdom) > 0;
     if (room() && count('barracks') === 0 && (v.tier >= 1 || (atWar && pop >= 16))) build('barracks');
-    if (room() && v.tier >= 1 && count('watchtower') < v.tier + (atWar ? 1 : 0)) {
+    if (room() && this.law('civWalls') && v.tier >= 1 && count('watchtower') < v.tier + (atWar ? 1 : 0)) {
       const foe = this._nearestForeignVillage(v);
       build('watchtower', () => this._placeOutskirts(v, 'watchtower', v.radius * 0.55, v.radius * 0.85, foe?.cx, foe?.cz));
     }
@@ -1095,8 +1258,9 @@ export class Civilization {
       if (t) upgrade(t);
     }
     // only royal capitals raise curtain walls (each section is a building)
-    if (v.tier >= 2 && !v.wallsPlanned && v.stone >= 60 && this.kingdoms[v.kingdom]?.capital === v.id && crowded < 0.9) this._planWalls(v);
-    if (v.wallsPlanned && v.wallPlan?.length) this._advanceWalls(v, 3);
+    const canWall = this.law('civWalls') && (this.hasTech(v.kingdom, 'fortification') || (this.kingdoms[v.kingdom]?.era ?? 0) >= 2 || this.law('civTechnology') === false);
+    if (canWall && v.tier >= 2 && !v.wallsPlanned && v.stone >= 60 && (this.kingdoms[v.kingdom]?.capital === v.id || this.hasCultureTrait(v.culture, 'Masons')) && crowded < 0.9) this._planWalls(v);
+    if (v.wallsPlanned && v.wallPlan?.length && this.law('civWalls')) this._advanceWalls(v, 3);
     if (room() && v.tier >= 1) {
       const cand = v.buildings.find((b) => b.alive && b.type === 'house' && !b.constructing && !b.upgrading && b.level < Math.min(3, v.tier + 1));
       if (cand && v.wood > 40) upgrade(cand);
@@ -1170,6 +1334,7 @@ export class Civilization {
   }
 
   _finishBuilding(b) {
+    b.era = Math.max(b.era ?? 0, this.kingdoms[b.kingdom]?.era ?? 0);
     b.constructing = false;
     b.progress = 1;
     b.hp = b.maxHp;
@@ -1185,6 +1350,7 @@ export class Civilization {
     b.upgrading = false;
     b.upgradeProgress = 0;
     b.level = Math.min(def.levels, b.level + 1);
+    b.era = Math.max(b.era ?? 0, this.kingdoms[b.kingdom]?.era ?? 0);
     b.maxHp = def.hp[b.level - 1] ?? b.maxHp;
     b.hp = b.maxHp;
     this.version++;
@@ -1226,6 +1392,7 @@ export class Civilization {
     b.alive = false;
     b.ruin = true;
     b.ruinT = this.game.time.total;
+    if (!this.law('miscRuins')) b.ruinT -= YEAR * 10; // no lasting ruins: cleared on the next sweep
     b.hp = 0;
     b.constructing = false;
     b.upgrading = false;
@@ -1562,6 +1729,14 @@ export class Civilization {
     this.collapses[cause] = (this.collapses[cause] || 0) + 1;
   }
 
+  // Everything notable goes to the civ chronicle; _note also posts to the feed.
+  _history(text, kind = 'info', pos = null) {
+    const e = { t: this.game.time.total, year: Math.floor(this.game.time.total / YEAR), text, kind, x: pos?.x, z: pos?.z };
+    this.history.push(e);
+    if (this.history.length > 800) this.history.splice(0, this.history.length - 800);
+    this.game.events.emit('civ:history', e);
+  }
+
   _note(text, kind = 'info', pos = null, key = null, cooldown = 45) {
     const now = this.game.time.total;
     const k = key || text;
@@ -1570,6 +1745,7 @@ export class Civilization {
     this._noteT.set(k, now);
     if (this._noteT.size > 400) for (const [kk, t] of this._noteT) if (now - t > 600) this._noteT.delete(kk);
     this.noteCount = (this.noteCount || 0) + 1;
+    this._history(text, kind, pos);
     this.game.notify(text, kind, pos);
     return true;
   }
@@ -1659,10 +1835,11 @@ export class Civilization {
       const stats = [
         ['Status', status],
         ['Health', `${Math.max(0, Math.ceil(b.hp))} / ${b.maxHp}`],
-        ['Style', CULTURES[b.culture]?.name || b.style],
+        ['Style', this.cultureName(b.culture) || b.style],
       ];
       if (def.housing && b.alive) stats.push(['Houses', `${def.housing[b.level - 1]} people`]);
       if (def.levels > 1) stats.push(['Level', `${b.level} / ${def.levels}`]);
+      stats.push(['Era', ERAS[b.era ?? 0]?.name || 'Hearth']);
       if (b.type === 'hall' && v) {
         stats.push(['Population', v.pop], ['Food', `${Math.floor(v.food)} / ${v.foodCap}`], ['Wood · Stone · Gold', `${Math.floor(v.wood)} · ${Math.floor(v.stone)} · ${Math.floor(v.gold)}`]);
       }
@@ -1693,7 +1870,7 @@ export class Civilization {
       village: v,
       kingdom: k,
       title: v.name,
-      subtitle: `${tier} of the ${k ? k.name : 'unclaimed lands'} · ${CULTURES[v.culture]?.name}`,
+      subtitle: `${tier} of the ${k ? k.name : 'unclaimed lands'} · ${this.cultureName(v.culture)}`,
       stats: [
         ['Population', `${v.pop} (${v.children} children)`],
         ['Housing', v.housing],
@@ -1702,6 +1879,8 @@ export class Civilization {
         ['Buildings', v.buildings.filter((b) => b.alive).length],
         ['Fields', `${v.fieldCount} plots`],
         ['Loyalty', `${Math.round(v.loyalty)}%`],
+        ['Culture', Object.entries(v.cultureMix || { [v.culture]: 1 }).sort((a, b) => b[1] - a[1]).map(([id, f]) => `${this.cultureName(id)} ${Math.round(f * 100)}%`).join(', ')],
+        ['Ore', Math.floor(v.ore || 0)],
       ],
     };
   }
@@ -1716,7 +1895,7 @@ export class Civilization {
       kind: 'kingdom',
       kingdom: k,
       title: k.name,
-      subtitle: `${CULTURES[k.culture]?.name} realm · banner of ${k.colorName}`,
+      subtitle: `${this.cultureName(k.culture)} realm · banner of ${k.colorName}`,
       color: k.color,
       stats: [
         ['Ruler', this.rulerLabel(k)],
@@ -1727,6 +1906,11 @@ export class Civilization {
         ['At war with', wars.length ? wars.join(', ') : 'nobody'],
         ['Allies', allies.length ? allies.join(', ') : 'none'],
         ['Founded', `year ${Math.floor(k.founded / YEAR)}`],
+        ['Era', `${ERAS[k.era ?? 0]?.name} · ${k.techs?.size || 0} of ${TECHS.length} techs`],
+        ['Researching', k.researching ? `${techById[k.researching]?.name} (${Math.floor(Math.min(1, (k.knowledge || 0) / (techById[k.researching]?.cost || 1)) * 100)}%)` : '—'],
+        ['Culture', `${this.cultureName(k.culture)} (${(this.cultureDef(k.culture)?.traits || []).join(', ')})`],
+        ['Arms', k.inventory ? `${k.inventory.weapons} weapons · ${k.inventory.armor} armour · ${k.inventory.tools} tools` : '—'],
+        ['Ruler traits', (this.game.units.byId.get(k.ruler)?.traits || []).join(', ') || '—'],
       ],
     };
   }
@@ -1756,8 +1940,11 @@ export class Civilization {
       if (r.war) wars++;
       if (r.ally) alliances++;
     }
-    return { kingdoms, villages, towns, cities, buildings, wallSections: walls, wars, alliances, armies: this.armies.length };
+    let topEra = 0;
+    for (const k of this.kingdoms) if (k.alive) topEra = Math.max(topEra, k.era || 0);
+    return { kingdoms, villages, towns, cities, buildings, wallSections: walls, wars, alliances, armies: this.armies.length, era: ERAS[topEra].name, cultures: this.livingCultures().length };
   }
 }
 
-Object.assign(Civilization.prototype, planner, brain, politics);
+Object.assign(Civilization.prototype, planner, brain, politics, tech, culture);
+export { ERAS, TECHS, techById, TRAIT_INFO };

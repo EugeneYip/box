@@ -89,14 +89,21 @@ export const CULTURES = {
 
 export const CULTURE_IDS = Object.keys(CULTURES);
 
+// Drifted peoples ('vale~3') keep their ancestors' language and style.
+export function baseCulture(id) {
+  if (CULTURES[id]) return id;
+  const b = String(id || '').split('~')[0];
+  return CULTURES[b] ? b : 'vale';
+}
+
 export function personName(culture, sex, rng) {
-  const c = CULTURES[culture] || CULTURES.vale;
+  const c = CULTURES[baseCulture(culture)];
   const s = c.syl[sex === 'f' ? 'f' : 'm'];
   return joinName(pick(rng, s[0]), pick(rng, s[1]));
 }
 
 export function placeName(culture, rng, used = null) {
-  const c = CULTURES[culture] || CULTURES.vale;
+  const c = CULTURES[baseCulture(culture)];
   for (let k = 0; k < 30; k++) {
     const n = joinName(pick(rng, c.syl.place[0]), pick(rng, c.syl.place[1]));
     if (!used || !used.has(n)) {
@@ -108,12 +115,12 @@ export function placeName(culture, rng, used = null) {
 }
 
 export function kingdomName(culture, base, rng) {
-  const c = CULTURES[culture] || CULTURES.vale;
+  const c = CULTURES[baseCulture(culture)];
   return pick(rng, c.forms).replace('{n}', base);
 }
 
 export function rulerTitle(culture, sex) {
-  const c = CULTURES[culture] || CULTURES.vale;
+  const c = CULTURES[baseCulture(culture)];
   return c.titles[sex === 'f' ? 'f' : 'm'];
 }
 
