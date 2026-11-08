@@ -19,6 +19,7 @@ import { CameraPad } from './CameraPad.js';
 import { Popover } from './Popover.js';
 import { AgeChip, AgeBanner } from './Ages.js';
 import { loadRegistries } from './depth.js';
+import { lawDef } from '../core/laws.js';
 import { uiIcon } from './icons.js';
 
 const PREF_KEY = 'worldseed.ui.v1';
@@ -109,6 +110,27 @@ export class UI {
       if (e.target !== root && game.input) game.input.mouse.inside = false;
     });
     game.events.on('world:regenerated', () => this.onRegenerated());
+    this._lawT = new Map();
+    game.events.on('laws', ({ key, value } = {}) => {
+      if (key == null) {
+        this.toast('World laws restored to their defaults');
+        return safe(() => game.notify('The World Laws are restored to their ancient defaults.', 'info'));
+      }
+      clearTimeout(this._lawT.get(key));
+      this._lawT.set(
+        key,
+        setTimeout(() => {
+          const def = lawDef(key);
+          if (!def) return;
+          const v = game.laws?.[key] ?? value;
+          let text;
+          if (def.type === 'bool') text = v ? `${def.label} allowed again: ${def.description.replace(/\.$/, '').replace(/^./, (c) => c.toLowerCase())}.` : `${def.label} forbidden by World Law.`;
+          else text = +v === 0 ? `${def.label} stilled by World Law.` : `${def.label} set to ×${+(+v).toFixed(2)}.`;
+          this.toast(text);
+          safe(() => game.notify(text, 'info'));
+        }, 650),
+      );
+    });
     this._powerCheckT = 2;
   }
 

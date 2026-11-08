@@ -315,3 +315,149 @@
   border-radius: inherit;
   transition: width 0.4s linear;
 }
+
+/* ---- World Laws as a card grid */
+.ws-lawgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(232px, 1fr));
+  gap: 8px;
+}
+.ws-lawcard {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 72px;
+  padding: 10px 12px 10px 10px;
+  border-radius: 14px;
+  --st: #8fe3a0;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--st) 9%, transparent), rgba(0, 0, 0, 0.22));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--st) 28%, transparent);
+  transition:
+    box-shadow 0.2s,
+    background 0.2s;
+}
+.ws-lawcard.is-off {
+  --st: #8a8478;
+  background: rgba(0, 0, 0, 0.26);
+}
+.ws-lawcard.is-number {
+  --st: #ebc977;
+  grid-template-columns: auto minmax(0, 1fr);
+}
+.ws-lawcard.is-number .ws-row__ctl {
+  grid-column: 1 / -1;
+}
+.ws-lawcard.is-number.is-off {
+  --st: #8a8478;
+}
+.ws-lawcard.is-changed {
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--st) 45%, transparent),
+    inset 3px 0 0 #ffb36a;
+}
+.ws-lawcard__ico {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  font-size: 22px;
+  --tint: var(--st);
+  color: color-mix(in srgb, var(--st) 70%, #fff 30%);
+  background: radial-gradient(circle at 50% 30%, color-mix(in srgb, var(--st) 28%, transparent), rgba(0, 0, 0, 0.25));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--st) 45%, transparent);
+  transition:
+    color 0.2s,
+    background 0.2s;
+}
+.ws-lawcard.is-off .ws-lawcard__ico {
+  opacity: 0.6;
+}
+.ws-lawcard .ws-row__desc {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.ws-lawcard .ws-row__ctl .ws-range {
+  flex: 1;
+  width: auto;
+}
+.ws-lawcard__val {
+  color: color-mix(in srgb, var(--st) 75%, #fff 25%);
+}
+.ws-lawsec {
+  padding-bottom: 16px;
+}
+/* the rail shows that it scrolls */
+.ws-lawrail {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(235, 201, 119, 0.45) rgba(255, 247, 230, 0.05);
+  -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 26px), transparent);
+  mask-image: linear-gradient(180deg, #000 calc(100% - 26px), transparent);
+  padding-bottom: 18px;
+}
+.ws-lawrail::-webkit-scrollbar {
+  width: 5px;
+}
+.ws-lawrail::-webkit-scrollbar-thumb {
+  background: rgba(235, 201, 119, 0.45);
+  border-radius: 3px;
+}
+@media (max-width: 720px), (max-height: 500px) {
+  .ws-lawsx__main {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .ws-lawrail {
+    flex-direction: row;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0 0 6px;
+    gap: 6px;
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 30px), transparent);
+    mask-image: linear-gradient(90deg, #000 calc(100% - 30px), transparent);
+  }
+  .ws-lawrail::-webkit-scrollbar {
+    height: 4px;
+  }
+  .ws-lawrail__btn {
+    border-radius: 22px;
+    background: rgba(0, 0, 0, 0.25);
+    box-shadow: inset 0 0 0 1px var(--ws-line);
+  }
+  .ws-lawgrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-height: 500px) and (min-width: 721px) {
+  .ws-modal.is-xl {
+    width: calc(100vw - 16px);
+    max-width: none;
+  }
+  .ws-lawsx__main {
+    height: calc(100vh - 196px);
+  }
+  .ws-lawgrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .ws-lawsec__blurb {
+    display: none;
+  }
+  .ws-modal__head {
+    padding: 10px 14px 8px;
+  }
+  .ws-modal__foot {
+    padding: 8px 14px 10px;
+  }
+}
+
+/* ---- title: world size chips */
+.ws-title__label--sub {
+  margin-top: 2px;
+}
+.ws-chips--sizes .ws-chip {
+  padding: 0 12px;
+}
