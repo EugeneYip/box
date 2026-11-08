@@ -4,6 +4,7 @@ import { SPECIES, registerSpecies } from './species.js';
 import { BRAINS, BRAIN_TICKS } from './brains.js';
 import { makeName, makeMonsterName } from './names.js';
 import { VillageHerds } from './herds.js';
+import { installDepth } from './depth.js';
 
 // Core creature simulation (owned by the Life module; the Civilization module
 // programs humanoid behaviour through registerBrain / unit.job).
@@ -253,7 +254,7 @@ export class Units {
     if (!this._forage) this._initForage();
     const f = this._forage,
       cap = this._forageCap;
-    const k = FORAGE_REGROW * dt;
+    const k = FORAGE_REGROW * dt * (this.game.age?.mods?.fertility ?? 1);
     for (let c = 0; c < f.length; c++) {
       const cp = cap[c];
       if (f[c] < cp) f[c] = Math.min(cp, f[c] + cp * k + 0.02 * dt);
@@ -459,6 +460,7 @@ export class Units {
     u.py = u.y;
     u.ph = u.heading;
     if (def.pack && u.pack) this._packJoin(u);
+    this._depthSpawn(u, opts);
     this.list.push(u);
     this.byId.set(u.id, u);
     this._counts.set(speciesId, (this._counts.get(speciesId) || 0) + 1);
@@ -484,6 +486,7 @@ export class Units {
       u.data.carcass = true;
     }
     if (cause === 'old age' || cause === 'starvation') g.fx.emit?.('death', { x: u.x, y: u.y + 0.2, z: u.z }, { scale: u.def.size * 0.6 });
+    this._depthDeath(u, cause, killer);
     if (cause !== 'slaughter') this.sfx('death', u.x, u.z, { volume: u.def.kind === 'humanoid' ? 0.75 : 0.55, pitch: 1 / Math.sqrt(Math.max(0.4, u.def.mass)) });
     g.events.emit('unit:death', { unit: u, cause, killer });
   }
@@ -493,6 +496,12 @@ export class Units {
     const g = this.game;
     const now = g.time.total;
     if (u.blessed > now) amount *= 0.6;
+    if (u.traits && u.traits.length) {
+      if (source && u.traits.includes('lucky') && g.rng.chance(0.12)) return;
+      if (opts.cause === 'fire' && u.traits.includes('fireheart')) amount *= 0.3;
+    }
+    const arm = u.equipment?.armor;
+    if (arm && source) amount *= 1 - arm.power / (arm.power + 20);
     u.hp -= amount;
     u.lastHurt = now;
     if (source && source.alive) u.data.attacker = source.id;
@@ -503,10 +512,7 @@ export class Units {
     }
     g.events.emit('unit:hurt', { unit: u, amount, source });
     if (u.hp <= 0) {
-      if (source) {
-        source.kills = (source.kills || 0) + 1;
-        this._gainXp(source, u.maxHp * 0.25);
-      }
+      if (source) source.kills = (source.kills || 0) + 1;
       this.kill(u, source ? 'killed' : opts.cause || 'damage', source);
       return;
     }
@@ -847,6 +853,7 @@ export class Units {
     if (u.mad > now) sp *= 1.1;
     if (u.data.speedMul) sp *= u.data.speedMul;
     if (u._pounce) sp *= 1.4;
+    if (u._mSpd) sp *= u._mSpd;
     if (def.habitat === 'land') {
       if (u.swimming) sp *= def.swimMul;
       else if (u.wading) sp *= 0.75;
@@ -1103,6 +1110,13 @@ export class Units {
     if (u.age < def.maturity) d *= 0.4;
     if (u.blessed > now) d *= 1.5;
     if (u.mad > now) d *= 1.25;
+    d *= u._mDmg || 1;
+    const wpn = u.equipment?.weapon;
+    if (wpn) d *= 1 + wpn.power * 0.06;
+    if (def.kind === 'monster' || (def.kind === 'animal' && def.diet !== 'herbivore')) {
+      const f = this.game.laws?.beastsFerocity;
+      if (typeof f === 'number') d *= f;
+    }
     return d;
   }
 
@@ -1287,9 +1301,10 @@ export class Units {
     const now = this.game.time.total;
     u.blessCount = u.blessCount || 0;
     if (u.blessCount < 3) {
-      u.maxHp *= 1.2;
+      u._blessHp = (u._blessHp || 1) * 1.2;
       u.blessCount++;
-      u.level += 1;
+      this._refreshMods(u);
+      this.addXP(u, 15);
     }
     u.hp = u.maxHp;
     u.hunger = 0;
@@ -1311,7 +1326,9 @@ export class Units {
     if (u.combat && u.combat.target === src.id) return;
     const def = u.def;
     const canFight = this.attackDamage(u) > 0;
-    const outmatched = def.flees && !(u.mad > now) && (src.def.mass > def.mass * 0.6 || !canFight);
+    let outmatched = def.flees && !(u.mad > now) && (src.def.mass > def.mass * 0.6 || !canFight);
+    if (canFight && (u._mFear || 1) > 1.4 && u.hp < u.maxHp * 0.7) outmatched = true;
+    else if (canFight && (u._mFear || 1) < 0.6) outmatched = false;
     if (outmatched || !canFight) {
       this.flee(u, src.x, src.z, 6);
       this.emote(u, 'alert', 1.2);
@@ -1363,6 +1380,7 @@ export class Units {
     for (let i = 0; i < n; i++) {
       if (!m.data.tended && this.count(m.species) >= this.capacity(m.species) * 1.6) break;
       const baby = this.spawn(m.species, m.x + g.rng.float(-0.3, 0.3), m.z + g.rng.float(-0.3, 0.3), {
+        parents: [m, m._mate && m._mate.alive ? m._mate : null].filter(Boolean),
         age: 0,
         herd: m.herd,
         pack: m.pack,
@@ -1403,6 +1421,10 @@ export class Units {
       return true;
     }
     if (!this.law('lifeWildlife')) return false;
+    // animals breed mainly in spring; the world age speeds or slows births
+    const season = g.time.season;
+    const sf = season == null ? 1 : [1.9, 0.9, 0.45, 0.15][Math.floor(season) % 4];
+    if (!g.rng.chance(Math.min(1, sf * (u._mFert || 1) * (g.age?.mods?.birth ?? 1) * 0.8))) return false;
     const hardK = this.capacity(u.species) * 1.6;
     if (n >= hardK) return false;
     const humans = this._counts.get('human') || 0;
@@ -1449,6 +1471,7 @@ export class Units {
       return false;
     }
     u.pregnant = def.gestation;
+    u._mate = mate;
     this.emote(u, 'heart', 2);
     this.emote(mate, 'heart', 2);
     return true;
@@ -1485,6 +1508,7 @@ export class Units {
       bs = Infinity;
     this.forEachNear(u.x, u.z, r, (o, d2) => {
       if (!def.prey.includes(o.species) || o === u) return;
+      if (o.species === 'human' && !this.law('beastsHuntPeople')) return;
       // refuge: rare species are hard to find (keeps the ecosystem from collapsing)
       if (this.count(o.species) < 6 && def.kind !== 'monster') return;
       // adult cows and bears are too big for a lone hunter
@@ -1636,6 +1660,7 @@ export class Units {
     }
     const yearDt = dt / YEAR;
     const list = this.list;
+    const lifeLaw = typeof g.laws?.lifeLifespan === 'number' ? g.laws.lifeLifespan : 1;
     const tickN = this._tickN;
     for (let k = 0; k < list.length; k++) {
       const u = list[k];
@@ -1671,7 +1696,7 @@ export class Units {
           continue;
         }
       }
-      if (u.age > u.lifespan && this.law('lifeAging')) {
+      if (u.age > u.lifespan * lifeLaw && this.law('lifeAging')) {
         this.kill(u, 'old age');
         continue;
       }
@@ -1743,6 +1768,10 @@ export class Units {
       }
       const bt = BRAIN_TICKS[def.brain];
       if (bt) bt(u, dt, this, g, now);
+      if ((tickN + u.id) % 15 === 0) {
+        this._depthStatusTick(u, dt * 15, now);
+        if (!u.alive) continue;
+      }
       const sepEvery = (u._far ? 8 : 4) * (u.moving || u.target ? 1 : 2);
       if ((tickN + u.id) % sepEvery === 0) this._separate(u);
       // ---- locomotion
@@ -1877,14 +1906,16 @@ export class Units {
   // Wild species that died out wander back in from the map edge after a while.
   _migrationCheck(now) {
     this._disperseGroups();
+    this._wanderingMonsters();
     if (!this.migration || !this.law('lifeWildlife')) return;
     for (const def of Object.values(SPECIES)) {
       if (!def.seed) continue;
       const n = this.count(def.id);
       const mvp = MVP[def.id] || 5;
       if (n >= mvp) continue;
-      // rare migrants arrive from the map edge (at most one party per 100 s)
-      if (now - (this._rescueAt.get(def.id) ?? -1e9) < (n === 0 ? 30 : 75)) continue;
+      // rare migrants arrive from the map edge (spawnRate law scales how often)
+      const rate = typeof this.game.laws?.spawnRate === 'number' ? Math.max(0.1, this.game.laws.spawnRate) : 1;
+      if (now - (this._rescueAt.get(def.id) ?? -1e9) < (n === 0 ? 30 : 75) / rate) continue;
       const spot = this._edgeSpot(def);
       if (!spot) continue;
       const grp = this.spawnGroup(def.id, spot.x, spot.z, this.game.rng, def.pack ? 3 : def.solitary ? 2 : null);
@@ -1895,6 +1926,31 @@ export class Units {
       }
     }
   }
+  // Wandering monsters (beastsMonsters law, World Age 'monsters' modifier).
+  _wanderingMonsters() {
+    const g = this.game;
+    if (!this.law('beastsMonsters')) return;
+    const rate = (g.age?.mods?.monsters ?? 1) * (typeof g.laws?.spawnRate === 'number' ? g.laws.spawnRate : 1);
+    let monsters = 0;
+    for (const sp of ['golem', 'serpent', 'skywyrm']) monsters += this.count(sp);
+    if (monsters >= Math.round(3 * this.popScale) || !g.rng.chance(0.03 * rate)) return;
+    const w = g.world;
+    const roll = g.rng.next();
+    const species = roll < 0.5 ? 'golem' : roll < 0.8 ? 'serpent' : 'skywyrm';
+    for (let t = 0; t < 200; t++) {
+      const tx = g.rng.int(4, w.w - 5),
+        ty = g.rng.int(4, w.h - 5);
+      const i = w.idx(tx, ty);
+      if (w.owner[i] >= 0) continue;
+      if (species === 'serpent' ? w.height[i] > -1.2 : !w.isWalkable(tx, ty)) continue;
+      // deep wilds: far from any village
+      if ((g.civ?.villages || []).some((v) => v.alive && (v.cx - tx) ** 2 + (v.cz - ty) ** 2 < 30 * 30)) continue;
+      const u = this.spawn(species, tx + 0.5, ty + 0.5, { age: 1, alt: species === 'skywyrm' ? 8 : undefined });
+      if (u) g.notify?.(`${u.name} has emerged from the wilds.`, 'disaster', { x: u.x, z: u.z });
+      return;
+    }
+  }
+
   _edgeSpot(def) {
     const w = this.game.world;
     const rng = this.game.rng;
@@ -2003,12 +2059,13 @@ export class Units {
     }
     stats.push(['Kills', u.kills]);
     if (u.level > 1) stats.push(['Level', u.level]);
+    if (u.traits && u.traits.length) stats.push(['Traits', u.traits.map((id) => this.TRAITS.find((t) => t.id === id)?.name || id).join(', ')]);
     const kname = u.kingdom >= 0 ? g.civ?.kingdomName?.(u.kingdom) || 'Kingdom ' + u.kingdom : null;
     return {
       priority: 10,
       kind: 'unit',
       unit: u,
-      title: u.name || def.name,
+      title: (u.name || def.name) + (this.levelTitle(u) ? ' ' + this.levelTitle(u) : ''),
       subtitle: (u.name ? def.name : stage + ' ' + (u.sex === 'f' ? 'female' : 'male')) + (kname ? ' · ' + kname : ''),
       stats,
     };
@@ -2026,5 +2083,7 @@ export class Units {
     return out;
   }
 }
+
+installDepth(Units);
 
 export { FLORA, FLORA_INFO };
