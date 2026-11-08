@@ -496,3 +496,13 @@
     padding: 0 4px;
   }
 }
+
+/* sliders: a 44 px touch hit area, bigger thumb, same slim track */
+.is-touch .ws-range {
+  height: 44px;
+}
+.is-touch .ws-range::-webkit-slider-thumb {
+  width: 24px;
+  height: 24px;
+  margin-top: -10px;
+}
