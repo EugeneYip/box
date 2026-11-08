@@ -1,5 +1,5 @@
 import { TILE, TILE_INFO, FLORA, FLORA_INFO, SEA_LEVEL, DIRS8 } from '../../world/constants.js';
-import { law } from './util.js';
+import { law, fireFactor, regionName, yearLabel } from './util.js';
 
 // Wildfire simulation on world.fire (0 = not burning, (0..1] intensity).
 //
@@ -56,6 +56,7 @@ export class FireSim {
     this.bTimer.fill(0);
     this._external = null;
     this._scan = null;
+    this._burned?.clear();
     this.version++;
   }
 
@@ -177,7 +178,10 @@ export class FireSim {
       r.y = yEnd + 1;
       if (r.y > r.y1) this._scan = null;
     }
-    if (this.count === 0 && this.smCount === 0) return;
+    if (this.count === 0 && this.smCount === 0) {
+      this._unitStatuses(step);
+      return;
+    }
     const env = g.env;
     const wt = env.weather?.type;
     const wi = env.weather?.intensity ?? 0;
@@ -191,6 +195,8 @@ export class FireSim {
     const W = w.w;
 
     const spreadOn = law(g, "natureFireSpread", true);
+    // World Age: fireRisk scales spread; a cold age slows fire, a hot one quickens it
+    const ageF = fireFactor(g);
     const n = this.count;
     const todo = Math.min(n, BUDGET);
     const dtEff = step * (n / Math.max(1, todo));
@@ -249,13 +255,13 @@ export class FireSim {
         const windF = Math.exp(align * ws * 2.6);
         const slope = Math.max(-1.2, Math.min(1.2, w.height[j] - hi));
         const slopeF = Math.exp(slope * 0.55);
-        const p = sp * Math.pow(flam, 1.6) * windF * slopeF * diag;
+        const p = sp * Math.pow(flam, 1.6) * windF * slopeF * diag * ageF;
         if (rng.next() < p) {
           if (this.ignite(nx, ny, f * 0.7)) changed = true;
         }
       }
       // spotting: burning trees throw embers downwind in strong wind
-      if (spreadOn && fl && FLORA_INFO[fl].isTree && ws > 0.3 && f > 0.6 && rain < 0.2 && rng.next() < dtEff * 0.04 * ws) {
+      if (spreadOn && fl && FLORA_INFO[fl].isTree && ws > 0.3 && f > 0.6 && rain < 0.2 && rng.next() < dtEff * 0.04 * ws * ageF) {
         const dist = 2 + rng.next() * 4 * ws * 2;
         const sx = Math.round(x + wdx * dist + (rng.next() - 0.5) * 2),
           sy = Math.round(y + wdz * dist + (rng.next() - 0.5) * 2);
@@ -291,6 +297,7 @@ export class FireSim {
       changed = true;
     }
     if (changed || this.count) this.version++;
+    this._unitStatuses(step);
     if (this._dirty) {
       const d = this._dirty;
       this._dirty = null;
@@ -317,6 +324,49 @@ export class FireSim {
     if (tf >= ASH_THRESHOLD || (burned > 0.6 && tf > 0.05)) w.setType(x, y, TILE.ASH);
     if (burned > 0.25) this._addSm(i, Math.min(1, 0.35 + burned * 0.3));
     this._mark(i);
+  }
+
+  // Units standing in flames get the Burning status (Life's API, guarded);
+  // those still alive once the fire has passed get a biography line and XP.
+  _unitStatuses(step) {
+    const g = this.game;
+    this._stT = (this._stT || 0) - step;
+    if (this._stT > 0) return;
+    this._stT = 0.5;
+    const w = g.world;
+    const now = g.time.total;
+    const burned = (this._burned ||= new Map());
+    if (this.count && g.units?.list) {
+      for (const u of g.units.list) {
+        if (!u.alive) continue;
+        const [tx, ty] = w.tileOf(u.x, u.z);
+        if (w.fire[w.idx(tx, ty)] <= 0.2) continue;
+        try {
+          g.units.addStatus?.(u, 'burning', 4);
+        } catch (e) {
+          /* Life API optional */
+        }
+        if (!burned.has(u) && burned.size < 600) burned.set(u, { t: now, great: this.count >= 40, x: u.x, z: u.z });
+        else if (burned.has(u)) burned.get(u).t = now;
+      }
+    }
+    for (const [u, rec] of burned) {
+      if (!u.alive) {
+        burned.delete(u);
+        continue;
+      }
+      if (now - rec.t < 15) continue;
+      burned.delete(u);
+      if (u.def?.kind !== 'humanoid') continue;
+      const text = rec.great ? `Survived the great fire of ${regionName(g, rec.x, rec.z)}, ${yearLabel(g)}` : `Escaped a fire, ${yearLabel(g)}`;
+      try {
+        g.units.log?.(u, text);
+        g.units.addXP?.(u, rec.great ? 15 : 5);
+        if (rec.great && Math.random() < 0.25) g.units.addTrait?.(u, 'survivor');
+      } catch (e) {
+        /* Life API optional */
+      }
+    }
   }
 
   burningCount() {

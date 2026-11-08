@@ -1,5 +1,5 @@
 import { registerPower } from './registry.js';
-import { regionName } from '../sim/disasters/util.js';
+import { regionName, withAge } from '../sim/disasters/util.js';
 
 export { regionName };
 
@@ -26,7 +26,7 @@ function herald(g, id, c, line, minGap = 3) {
   if (last && now - last.t < minGap && Math.hypot(c.x - last.x, c.z - last.z) < 40) return;
   lastNotice.set(id, { t: now, x: c.x, z: c.z });
   try {
-    g.notify?.(line.replace('%', regionName(g, c.x, c.z)), 'disaster', { x: c.x, z: c.z });
+    g.notify?.(withAge(g, id, line.replace('%', regionName(g, c.x, c.z))), 'disaster', { x: c.x, z: c.z });
   } catch (e) {
     /* the feed is optional */
   }

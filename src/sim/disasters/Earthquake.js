@@ -1,5 +1,5 @@
 import { TILE, FLORA, FLORA_INFO, SEA_LEVEL, MIN_HEIGHT } from '../../world/constants.js';
-import { hurt, play, rand, smooth } from './util.js';
+import { hurt, play, rand, smooth, honourSurvivors, yearLabel } from './util.js';
 import { hash2 } from '../../core/Random.js';
 import { DF, RAMP, TRAIL, dustPuff } from '../../render/fx/Effects.js';
 
@@ -138,7 +138,11 @@ export class Earthquake {
     }
     // ---- damage ----
     hurt(g, this.x, this.z, this.r, 2.2 * vt * env, 16 * vt * env, 'earthquake');
-    return this.t < this.duration;
+    if (this.t >= this.duration) {
+      honourSurvivors(g, this.x, this.z, this.r, `Survived the great earthquake, ${yearLabel(g)}`, 12);
+      return false;
+    }
+    return true;
   }
 
   _topple(tx, ty, fl) {
