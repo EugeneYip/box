@@ -3,10 +3,11 @@ import { powerIcon, categoryIcon, uiIcon, CATEGORY_TINT } from './icons.js';
 import { el, esc } from './dom.js';
 
 // Power slots in the active category are bound to the bottom letter row.
-export const SLOT_CODES = ['KeyZ', 'KeyX', 'KeyC', 'KeyV', 'KeyB', 'KeyN', 'KeyM', 'Comma', 'Period', 'Slash'];
-export const SLOT_LABELS = ['Z', 'X', 'C', 'V', 'B', 'N', 'M', ',', '.', '/'];
-// slot i (0-based in display order): 0-9 plain, 10-19 with Shift
-export const slotLabel = (i) => (i < 10 ? SLOT_LABELS[i] : i < 20 ? '⇧' + SLOT_LABELS[i - 10] : null);
+export const SLOT_CODES = ['KeyZ', 'KeyX', 'KeyC', 'KeyV', 'KeyB', 'KeyN', 'Comma', 'Period', 'Slash'];
+export const SLOT_LABELS = ['Z', 'X', 'C', 'V', 'B', 'N', ',', '.', '/'];
+const NS = SLOT_LABELS.length;
+// slot i (0-based in display order): first row plain, second row with Shift
+export const slotLabel = (i) => (i < NS ? SLOT_LABELS[i] : i < NS * 2 ? '⇧' + SLOT_LABELS[i - NS] : null);
 
 const MONSTER = /golem|serpent|wyrm|dragon|troll|giant|kraken|monster|demon|skeleton|zombie|undead|behemoth/;
 // Optional sub-groups inside a category (a power may also set p.group).
@@ -245,7 +246,7 @@ export class Toolbar {
         onblur: () => this.hideTip(),
       },
       el('span', { class: 'ws-pw__ico', html: svg }),
-      key ? el('span', { class: 'ws-pw__key' + (i >= 10 ? ' is-shift' : ''), text: key }) : null,
+      key ? el('span', { class: 'ws-pw__key' + (i >= NS ? ' is-shift' : ''), text: key }) : null,
     );
     parent.append(b);
     this.tiles.set(p.id, b);

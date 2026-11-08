@@ -18,7 +18,7 @@ export class CameraPad {
         e.preventDefault();
         fn();
         stop();
-        iv = setInterval(fn, 110);
+        if (!/Overview|Face north/.test(label)) iv = setInterval(fn, 110);
         this.game.audio?.play?.('ui-click', { volume: 0.3 });
       });
       for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) b.addEventListener(ev, stop);
@@ -33,6 +33,7 @@ export class CameraPad {
       el('span', { class: 'ws-campad__sep' }),
       mk('rot-left', 'Rotate left', () => rig().rotate(-Math.PI / 24)),
       mk('rot-right', 'Rotate right', () => rig().rotate(Math.PI / 24)),
+      mk('expand', 'Overview', () => this.ui.overview?.()),
       mk('compass', 'Face north', () => {
         const r = rig();
         r.goal.yaw = Math.round(r.goal.yaw / (Math.PI * 2)) * Math.PI * 2;

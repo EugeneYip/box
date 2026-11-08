@@ -2,7 +2,38 @@ import * as THREE from 'three';
 import { TILE_INFO, FLORA_INFO, SEA_LEVEL, SHALLOW_DEPTH, TILE } from '../world/constants.js';
 import { powerIcon, uiIcon, tileTint, hasIcon } from './icons.js';
 import { getPower } from '../powers/registry.js';
-import { el, esc, safe, hexCss } from './dom.js';
+import { el, esc, safe, hexCss, fmtNum } from './dom.js';
+import { traitDef, statusDef, modLines, prettyId, eraNames } from './depth.js';
+import { kingdomOf, eraOf, researchOf } from './TechPanel.js';
+import { CULTURES } from '../sim/civ/cultures.js';
+import { YEAR } from '../core/time.js';
+
+const TRAIT_ICON = { body: 'heart', mind: 'sparkle', spirit: 'fire', gift: 'good', scar: 'shield', trait: 'sparkle' };
+const STATUS_ICON = {
+  burning: 'fire',
+  sick: 'plague',
+  blessed: 'bless',
+  inspired: 'sparkle',
+  enraged: 'war',
+  chilled: 'weather-snow',
+  starving: 'bad',
+  exhausted: 'night',
+  wounded: 'heal',
+  mourning: 'kill',
+  frightened: 'bad',
+  sleeping: 'night',
+};
+const SLOT_ICON = { weapon: 'sword', armor: 'shield', tool: 'build', trinket: 'sparkle' };
+const INV = {
+  food: ['plant-wheat', 'Food'],
+  wood: ['job-woodcutter', 'Wood'],
+  stone: ['plant-rocks', 'Stone'],
+  ore: ['job-miner', 'Ore'],
+  gold: ['gold', 'Gold'],
+  tools: ['build', 'Tools'],
+  weapons: ['sword', 'Weapons'],
+  armor: ['shield', 'Armour'],
+};
 
 const TILE_POWER = {
   [TILE.GRASS]: 'paint-grass',
@@ -359,21 +390,28 @@ export class Inspector {
     const kindLabel = k === 'tile' && r.tile?.water ? 'Waters' : u && ic.label ? ic.label : KIND_LABEL[k] || 'Detail';
     const pref = u || r.building;
     const portrait = pref ? this.portraits.get(pref) : null;
+    const depth = safe(() => (u ? this.unitDepth(u) : k === 'village' || k === 'kingdom' || k === 'building' ? this.realmDepth(r) : ''), '', 'inspector depth') || '';
+    const level = u && Number.isFinite(u.level) ? u.level : null;
+    const epithet = u ? u.title || u.data?.title || null : null;
+    const fav = !!u?.data?.favorite;
+    const realmK = !u && (k === 'village' || k === 'kingdom' || k === 'building') ? (typeof r.kingdom === 'object' && r.kingdom) || kingdomOf(this.game, (r.village || this.game.civ?.villages?.[r.building?.village])?.kingdom) : null;
+    if (realmK) actions.unshift(`<button class="ws-btn ws-btn--sm" type="button" data-act="tech" data-k="${realmK.id}">${uiIcon('chronicle')}<span>Technology</span></button>`);
 
     this.el.style.setProperty('--tint', ic.tint);
     this.el.innerHTML = `
       <div class="ws-insp__grab" data-act="sheet" aria-hidden="true"><i></i></div>
       <header class="ws-insp__head">
-        <span class="ws-insp__badge${portrait ? ' has-portrait' : ''}">${portrait ? `<img class="ws-insp__portrait" src="${portrait}" alt=""><span class="ws-insp__glyph">${ic.svg}</span>` : ic.svg}${kTint ? `<i class="ws-insp__kdot" style="--k:${kTint}"></i>` : ''}</span>
+        <span class="ws-insp__badge${portrait ? ' has-portrait' : ''}">${level != null ? `<i class="ws-lvl" title="Level ${level}">${level}</i>` : ''}${portrait ? `<img class="ws-insp__portrait" src="${portrait}" alt=""><span class="ws-insp__glyph">${ic.svg}</span>` : ic.svg}${kTint ? `<i class="ws-insp__kdot" style="--k:${kTint}"></i>` : ''}</span>
         <div class="ws-insp__titles">
           <div class="ws-insp__kind">${esc(kindLabel)}${dead ? ' <em class="ws-insp__dead">Fallen</em>' : ''}</div>
-          <h3 class="ws-insp__title">${esc(r.title || 'Unknown')}</h3>
+          <h3 class="ws-insp__title">${esc(r.title || 'Unknown')}${epithet ? ` <span class="ws-insp__epithet">${esc(epithet)}</span>` : ''}</h3>
           ${r.subtitle ? `<div class="ws-insp__sub">${kTint ? `<i class="ws-crest" style="--k:${kTint}"></i>` : ''}<span>${esc(r.subtitle)}</span></div>` : ''}
         </div>
+        ${u ? `<button class="ws-iconbtn ws-iconbtn--sm ws-insp__fav${fav ? ' is-on' : ''}" type="button" aria-label="${fav ? 'Unstar' : 'Star this creature'}" data-tip="${fav ? 'Favourite' : 'Mark as favourite'}" data-act="fav">${uiIcon(fav ? 'star-on' : 'star')}</button>` : ''}
         <button class="ws-iconbtn ws-iconbtn--sm ws-insp__x" type="button" aria-label="Close (Esc)" data-act="close">${uiIcon('close')}</button>
       </header>
       ${chips ? `<div class="ws-insp__also" aria-label="Also here">${chips}</div>` : ''}
-      ${cells ? `<div class="ws-insp__scroll"><div class="ws-insp__grid">${cells}</div></div>` : ''}
+      ${cells || depth ? `<div class="ws-insp__scroll">${cells ? `<div class="ws-insp__grid">${cells}</div>` : ''}${depth}</div>` : ''}
       <div class="ws-insp__actions">${actions.join('')}</div>`;
     const sc = this.el.querySelector('.ws-insp__scroll');
     if (sc) {
@@ -392,6 +430,11 @@ export class Inspector {
       if (b.dataset.i != null) return this.focusIndex(+b.dataset.i);
       const act = b.dataset.act;
       if (act === 'close') this.close();
+      else if (act === 'fav' && u) {
+        u.data = u.data || {};
+        u.data.favorite = !u.data.favorite;
+        this.render();
+      } else if (act === 'tech') this.ui.modals.open('tech', { kingdom: +b.dataset.k });
       else if (act === 'follow') this.toggleFollow();
       else if (act === 'focus') this.focusCamera();
       this.game.audio?.play?.('ui-click', { volume: 0.45 });
@@ -401,9 +444,105 @@ export class Inspector {
     this.pin.style.setProperty('--tint', ic.tint);
   }
 
+  // ---- depth sections (all fields guarded: Life / Civ add them over time)
+  chip(text, tip, cls = '', icon = null) {
+    return `<span class="ws-tchip ${cls}" ${tip ? `data-tip="${esc(tip)}"` : ''}>${icon ? uiIcon(icon) : ''}<span>${esc(text)}</span></span>`;
+  }
+  traitChips(ids) {
+    const g = this.game;
+    return (ids || [])
+      .map((id) => {
+        const def = traitDef(g, id) || {};
+        const cat = def.category || 'trait';
+        const tip = [def.description, modLines(def.mods).map((l) => l.text).join(', ')].filter(Boolean).join(' — ');
+        return this.chip(def.name || prettyId(id), tip, `is-${cat}${def.rarity && def.rarity !== 'common' ? ' is-rare' : ''}`, TRAIT_ICON[cat] || 'sparkle');
+      })
+      .join('');
+  }
+  unitDepth(u) {
+    const g = this.game;
+    let html = '';
+    const traits = Array.isArray(u.traits) ? u.traits : [];
+    if (traits.length) html += `<section class="ws-dsec"><h5>Traits</h5><div class="ws-chips">${this.traitChips(traits)}</div></section>`;
+    const st = u.statuses instanceof Map ? [...u.statuses.entries()] : u.statuses && typeof u.statuses === 'object' ? Object.entries(u.statuses) : [];
+    if (st.length) {
+      html += `<section class="ws-dsec"><h5>Conditions</h5><div class="ws-chips">${st
+        .map(([id, secs]) => {
+          const def = statusDef(g, id) || {};
+          const left = Number.isFinite(secs) ? (secs >= YEAR ? `${Math.ceil(secs / YEAR)}y` : `${Math.ceil(secs)}s`) : '';
+          return `<span class="ws-tchip is-status" data-tip="${esc(def.description || '')}">${uiIcon(STATUS_ICON[id] || 'info')}<span>${esc(def.name || prettyId(id))}</span>${left ? `<small>${left}</small>` : ''}</span>`;
+        })
+        .join('')}</div></section>`;
+    }
+    const eq = u.equipment && typeof u.equipment === 'object' ? u.equipment : null;
+    if (eq) {
+      html += `<section class="ws-dsec"><h5>Equipment</h5><div class="ws-slots">${['weapon', 'armor', 'tool', 'trinket']
+        .map((slot) => {
+          const it = eq[slot];
+          if (!it) return `<div class="ws-slot is-empty"><span class="ws-slot__ico">${uiIcon(SLOT_ICON[slot])}</span><span class="ws-slot__txt"><b>${prettyId(slot)}</b><small>Empty</small></span></div>`;
+          const q = String(it.quality || 'common').toLowerCase();
+          const mat = it.material ? prettyId(it.material) : '';
+          const hist = it.history ? `<em class="ws-slot__hist">${esc(it.history)}</em>` : '';
+          return `<div class="ws-slot is-${q}" data-tip="${esc([it.name, mat, prettyId(q), it.power != null ? `power ${it.power}` : ''].filter(Boolean).join(' · '))}"><span class="ws-slot__ico">${uiIcon(SLOT_ICON[it.slot || slot] || 'sparkle')}</span><span class="ws-slot__txt"><b>${esc(it.name || prettyId(it.kind || slot))}</b><small><i class="ws-q"></i>${esc([mat, prettyId(q)].filter(Boolean).join(' · '))}</small>${hist}</span></div>`;
+        })
+        .join('')}</div></section>`;
+    }
+    const bio = Array.isArray(u.bio) ? u.bio.slice(-10).reverse() : [];
+    if (bio.length) {
+      html += `<section class="ws-dsec"><h5>Life story</h5><ol class="ws-bio">${bio
+        .map((b) => `<li><span class="ws-bio__y">Y${Math.floor((b.t ?? 0) / YEAR) + 1}</span><span class="ws-bio__t">${esc(b.text || '')}</span></li>`)
+        .join('')}</ol></section>`;
+    }
+    return html;
+  }
+  cultureOf(id) {
+    if (!id) return null;
+    if (typeof id === 'object') return id;
+    const C = this.game.civ?.cultures;
+    const found = C instanceof Map ? C.get(id) : Array.isArray(C) ? C.find((c) => c && (c.id === id || c.name === id)) : C?.[id];
+    return found || (CULTURES[id] ? { id, name: CULTURES[id].name, traits: CULTURES[id].traits || [] } : { id, name: prettyId(id), traits: [] });
+  }
+  realmDepth(r) {
+    const g = this.game;
+    const v = r.village || (r.building ? g.civ?.villages?.[r.building.village] : null);
+    const k = (typeof r.kingdom === 'object' && r.kingdom) || (v ? kingdomOf(g, v.kingdom) : null);
+    if (!k && !v) return '';
+    let html = '';
+    if (k) {
+      const era = eraOf(g, k);
+      const res = researchOf(g, k);
+      html += `<section class="ws-dsec"><h5>Learning</h5><div class="ws-realm__era"><span class="ws-era is-era${era}">${uiIcon(['house', 'build', 'job-soldier', 'chronicle'][era])}<span>${esc(eraNames()[era] || '')} Era</span></span>${
+        res ? `<span class="ws-realm__res"><small>Studying ${esc(res.name)}</small>${res.pct != null ? `<span class="ws-meter"><i style="width:${(res.pct * 100).toFixed(1)}%"></i></span>` : ''}</span>` : '<span class="ws-realm__res"><small>No research under way</small></span>'
+      }</div></section>`;
+    }
+    const cult = this.cultureOf(v?.culture ?? k?.culture);
+    if (cult) {
+      const traits = (cult.traits || []).map((t) => this.chip(typeof t === 'string' ? prettyId(t) : t.name || prettyId(t.id), typeof t === 'object' ? t.description : '', 'is-culture', 'banner')).join('');
+      html += `<section class="ws-dsec"><h5>Culture</h5><div class="ws-chips">${this.chip(cult.name || prettyId(cult.id), cult.language ? `Tongue: ${cult.language}` : '', 'is-culture-name', 'chronicle')}${traits}</div></section>`;
+    }
+    const inv = k?.inventory || null;
+    const src = inv || (v ? { food: v.food, wood: v.wood, stone: v.stone, gold: v.gold } : null);
+    if (src) {
+      const cells = Object.entries(INV)
+        .filter(([key]) => src[key] != null)
+        .map(([key, [icon, label]]) => `<span class="ws-inv" data-tip="${label}">${uiIcon(icon)}<b>${fmtNum(src[key])}</b><small>${label}</small></span>`)
+        .join('');
+      if (cells) html += `<section class="ws-dsec"><h5>${inv ? 'Treasury' : 'Stores'}</h5><div class="ws-invgrid">${cells}</div></section>`;
+    }
+    const ruler = k ? g.units?.byId?.get?.(k.ruler) : null;
+    if (ruler && Array.isArray(ruler.traits) && ruler.traits.length) {
+      html += `<section class="ws-dsec"><h5>Ruler · ${esc(ruler.name || k.rulerName || '')}</h5><div class="ws-chips">${this.traitChips(ruler.traits)}</div></section>`;
+    }
+    return html;
+  }
+
   signature() {
     const r = this.track;
-    return r ? JSON.stringify([r.title, r.subtitle, r.stats, r.unit?.alive, this.game.cameraRig.follow === r.unit, this.results.length, r.unit?.job]) : '';
+    const u = r?.unit;
+    const st = u?.statuses instanceof Map ? [...u.statuses.keys()] : u?.statuses ? Object.keys(u.statuses) : null;
+    const eq = u?.equipment ? Object.values(u.equipment).map((i) => i?.name || i?.id || 0) : null;
+    const k = typeof r?.kingdom === 'object' ? r.kingdom : null;
+    return r ? JSON.stringify([r.title, r.subtitle, r.stats, u?.alive, this.game.cameraRig.follow === u, this.results.length, u?.job, u?.traits, st, eq, u?.level, u?.bio?.length, u?.data?.favorite, k?.era, k?.researching, k?.techs?.size]) : '';
   }
 
   toggleFollow() {
