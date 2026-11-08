@@ -151,7 +151,7 @@ export const tech = {
           else if (b.type === 'observatory') observatories++;
         }
       }
-      let rate = 0.35 + pop * 0.022 + temples * 0.5 + libraries * 1.6 + observatories * 2.6;
+      let rate = 0.2 + pop * 0.011 + temples * 0.3 + libraries * 0.9 + observatories * 1.4;
       rate *= this.techMod(k.id, 'research');
       const traits = this.cultureDef(k.culture)?.traits || [];
       if (traits.includes('Scholarly')) rate *= 1.35;

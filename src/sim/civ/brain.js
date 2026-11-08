@@ -833,8 +833,16 @@ export const brain = {
     }
     this._release(i, u);
     d.task = null;
-    if (!gold && stone && this.rng.chance(f === FLORA.BOULDER || w.type[i] === TILE.ROCK ? 0.22 : 0.08)) {
-      u.carry = { type: 'ore', amount: 1 + (u.carry?.type === 'ore' ? u.carry.amount : 0) };
+    const ore = !gold && stone && this.rng.chance(f === FLORA.BOULDER || w.type[i] === TILE.ROCK ? 0.22 : 0.08);
+    if (u.carry?.type === 'ore') {
+      // already hauling ore: stone goes straight on the pile, more ore into the sack
+      v.stone += stone;
+      if (ore) u.carry.amount++;
+      return;
+    }
+    if (ore) {
+      if (u.carry?.type === 'stone') v.stone += u.carry.amount;
+      u.carry = { type: 'ore', amount: 1 };
       return;
     }
     if (gold) u.carry = { type: 'gold', amount: gold };

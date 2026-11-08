@@ -1679,6 +1679,127 @@ export function proxyGeometry(style) {
   return g.build();
 }
 
+// ---------------------------------------------------------------- eras
+// Each era re-dresses a culture's architecture in new materials:
+//   Hearth thatch and timber · Bronze tile and stone footings ·
+//   Iron slate and grey stone · Enlightened dressed stone, glass, metal roofs.
+const ERA_DRESS = {
+  vale: [
+    { tile: 0xcf9f52, wall: 0xe9dcc0, stone: 0x8e7656, stone2: 0x6e5a42, glass: 0x2a2f36 },
+    { thatch: 0xb0563c, thatch2: 0x8f4530 },
+    { tile: 0x515b67, thatch: 0x515b67, thatch2: 0x3f4852, stone: 0x8f8b85, stone2: 0x6f6b66, wall2: 0xc9c2b6 },
+    { tile: 0x5b6e86, thatch: 0x5b6e86, thatch2: 0x4a5a6e, wall: 0xece6da, wall2: 0xd9d2c4, stone: 0xbab3a6, stone2: 0x9a9387, glass: 0x3f6e95, timber: 0x4a3a2c },
+  ],
+  dune: [
+    { wall: 0xc99c6a, wall2: 0xd8b282, tile: 0xcfa676, stone: 0xb98a5a },
+    {},
+    { wall: 0xdcc39c, wall2: 0xeadbbd, tile: 0x2f9a96, stone: 0xc9ab7c },
+    { wall: 0xf3eee3, wall2: 0xfaf6ee, tile: 0xd9a830, stone: 0xe4dccb, glass: 0x3f6e95, accent: 0x2f7fb8 },
+  ],
+  frost: [
+    { tile: 0x6c7e40, stone: 0x857f74 },
+    { tile: 0x7a5a3c, thatch: 0x7a5a3c, thatch2: 0x5e4428, stone: 0x928d84 },
+    { thatch: 0x4b5562, thatch2: 0x3c4450 },
+    { tile: 0x5c9a86, thatch: 0x5c9a86, thatch2: 0x4a7e6c, wall: 0x7a5236, stone: 0xb4afa6, stone2: 0x948f86, glass: 0x3f6e95 },
+  ],
+  mire: [
+    {},
+    { thatch: 0xb59a52, tile: 0xb59a52 },
+    { thatch: 0x7a5a38, thatch2: 0x5e4428, tile: 0x7a5a38 },
+    { thatch: 0x9e3c2c, thatch2: 0x7e2c20, tile: 0x9e3c2c, wall: 0xdcc494, glass: 0x3f6e95 },
+  ],
+};
+const ROOF_OF = { 0x8f4530: 2, 0x3f4852: 3, 0x4a5a6e: 3, 0x3c4450: 3, 0x4a7e6c: 3, 0xcf9f52: 1, 0x515b67: 3, 0x5b6e86: 3, 0xcfa676: 0, 0x2f9a96: 0, 0xd9a830: 0, 0x6c7e40: 4, 0x7a5a3c: 2, 0x5c9a86: 3, 0xb59a52: 1, 0x7a5a38: 2, 0x9e3c2c: 2, 0x7e2c20: 2, 0x5e4428: 2 };
+for (const [c, k] of Object.entries(ROOF_OF)) if (k) ROOF_KIND.set(+c, k);
+const _eraPal = new Map();
+export function eraPalette(style, era) {
+  const key = style + era;
+  let K = _eraPal.get(key);
+  if (!K) {
+    K = { ...(PAL[style] || PAL.vale), ...((ERA_DRESS[style] || [])[era] || {}) };
+    _eraPal.set(key, K);
+  }
+  return K;
+}
+
+// ---------------------------------------------------------------- technology buildings
+function library(g, K, style) {
+  const w = 1.5,
+    d = 1.15,
+    h = 0.8,
+    bz = -0.2;
+  g.box(0, -0.06, bz, w + 0.08, 0.18, d + 0.08, K.stone);
+  g.box(0, 0.12, bz, w, h - 0.12, d, style === 'dune' ? K.wall : K.stone, { jit: 0.06 });
+  for (let i = 0; i < 4; i++) g.cyl(-0.54 + i * 0.36, 0.12, bz + d / 2 + 0.16, 0.05, h - 0.14, 8, K.wall2, {});
+  g.box(0, h - 0.04, bz + d / 2 + 0.12, w, 0.08, 0.3, K.wall2);
+  if (style === 'dune') {
+    parapet(g, K, 0, h, bz, w, d, 0.08, 0.06, K.wall2);
+    g.cyl(0, h, bz, 0.3, 0.12, 10, K.wall2, {});
+    g.dome(0, h + 0.12, bz, 0.3, 10, 4, K.tile, { tint: K.roofTint, sy: 1.1, ribs: true });
+  } else {
+    g.gable(0, h + 0.04, bz + 0.06, w + 0.04, d + 0.34, 0.5, K.tile, { over: 0.06, th: 0.06, tint: K.roofTint, gable: K.wall2, rows: 4 });
+    g.box(0, h + 0.42, bz + 0.06, 0.26, 0.28, 0.26, K.wall2);
+    g.cone(0, h + 0.7, bz + 0.06, 0.2, 0.3, 8, K.tile, { tint: K.roofTint });
+  }
+  for (const u of [-0.32, 0, 0.32]) windowOn(g, K, 0, bz, w, d, 'F', u, 0.42, { w: 0.13, h: 0.3, cross: true });
+  for (const f of ['L', 'R', 'B']) windowOn(g, K, 0, bz, w, d, f, 0, 0.42, { w: 0.14, h: 0.3 });
+  doorOn(g, K, 0, bz, w, d, 'F', 0, 0.12, { w: 0.22, h: 0.4, arch: true, step: false });
+  bannerPole(g, K, 0.8, 0, 0.8, 1.2, { s: 0.8 });
+  return { base: { x: 0, z: bz, w: w + 0.08, d: d + 0.08 } };
+}
+
+function observatory(g, K, style) {
+  const r = 0.62;
+  g.box(0, -0.06, 0, 1.6, 0.16, 1.6, K.stone);
+  g.cyl(0, 0.1, 0, r, 1.15, 12, style === 'dune' ? K.wall : K.stone, { jit: 0.06 });
+  g.cyl(0, 1.25, 0, r + 0.05, 0.06, 12, K.stone2, {});
+  g.dome(0, 1.31, 0, r, 12, 5, style === 'dune' ? K.tile : 0xc9cfd6, { tint: 0.1, sy: 0.95 });
+  // observation slit and telescope
+  g.box(0, 1.33, r * 0.45, 0.16, r * 0.9, 0.5, 0x1d2028);
+  g.beam(0, 1.55, 0.1, 0, 2.05, 0.75, 0.09, 0x6a6f7a);
+  g.beam(0, 1.95, 0.6, 0, 2.08, 0.82, 0.13, 0x8a6a3a);
+  for (const a of [0.4, 1.9, 3.6, 5.0]) windowOn(g, K, Math.cos(a) * 0.01, Math.sin(a) * 0.01, r * 2, r * 2, a < 1 ? 'F' : a < 2.5 ? 'L' : a < 4.5 ? 'B' : 'R', 0, 0.6, { w: 0.08, h: 0.16, cross: false });
+  doorOn(g, K, 0, 0, r * 2, r * 2, 'F', 0, 0.1, { w: 0.2, h: 0.36, arch: true, step: true });
+  return { base: null };
+}
+
+function aqueduct(g, K, style) {
+  // three arched spans along local X carrying a channel of water
+  const len = 3,
+    h = 1.25;
+  const c = style === 'dune' ? K.wall : K.stone;
+  for (let i = 0; i <= 3; i++) g.box(-len / 2 + i * (len / 3), -0.4, 0, 0.22, h + 0.4, 0.5, c, { jit: 0.08 });
+  for (let i = 0; i < 3; i++) {
+    const x = -len / 2 + (i + 0.5) * (len / 3);
+    // arch: stepped voussoirs
+    for (let k = 0; k < 5; k++) {
+      const a = (k / 4) * Math.PI;
+      const ax = x + Math.cos(a) * 0.36,
+        ay = h - 0.42 + Math.sin(a) * 0.3;
+      g.box(ax, ay, 0, 0.16, 0.12, 0.5, shade(c, 0.95), { jit: 0.08 });
+    }
+  }
+  g.box(0, h - 0.12, 0, len + 0.1, 0.22, 0.56, c, { jit: 0.06 });
+  g.box(0, h + 0.1, 0.21, len + 0.1, 0.12, 0.08, c);
+  g.box(0, h + 0.1, -0.21, len + 0.1, 0.12, 0.08, c);
+  g.box(0, h + 0.1, 0, len + 0.08, 0.06, 0.34, 0x3d8fb0, { jit: 0.02 });
+  return { base: null };
+}
+
+function harbour(g, K, style) {
+  const info = docks(g, K, style);
+  // a stone quay, a crane and a sea-going ship at the long pier
+  g.box(0.25, -0.6, 3.6, 1.0, 0.8, 0.5, K.stone, { jit: 0.08 });
+  g.box(0.25, 0.08, 4.35, 0.5, 0.06, 1.0, K.plank);
+  for (const s of [-1, 1]) g.box(0.25 + s * 0.24, -1.4, 4.6, 0.06, 1.62, 0.06, K.timber);
+  g.beam(-0.4, 0.05, 0.6, -0.4, 1.35, 0.6, 0.07, K.timber);
+  g.beam(-0.4, 1.3, 0.6, 0.2, 1.1, 1.3, 0.05, K.timber);
+  g.box(0.2, 0.45, 1.3, 0.01, 0.65, 0.01, 0x3a3028);
+  crate(g, K, 0.2, 0.08, 1.3, 0.12);
+  g.anchor('boats', 1.25, 0, 4.0, { ry: 0.04, ship: true });
+  return info;
+}
+
 // ---------------------------------------------------------------- entry point
 const BUILDERS = {
   house: (g, K, s, lv) => (s === 'vale' ? valeHouse : s === 'dune' ? duneHouse : s === 'frost' ? frostHouse : mireHouse)(g, K, lv),
@@ -1687,7 +1808,10 @@ const BUILDERS = {
   workshop: (g, K, s, lv) => workshop(g, K, s, lv),
   well: (g, K, s) => well(g, K, s),
   windmill: (g, K, s) => windmill(g, K, s),
-  docks: (g, K, s) => docks(g, K, s),
+  docks: (g, K, s, lv) => (lv >= 2 ? harbour : docks)(g, K, s),
+  library: (g, K, s) => library(g, K, s),
+  observatory: (g, K, s) => observatory(g, K, s),
+  aqueduct: (g, K, s) => aqueduct(g, K, s),
   market: (g, K, s) => market(g, K, s),
   temple: (g, K, s, lv) => temple(g, K, s, lv),
   barracks: (g, K, s) => barracks(g, K, s),
@@ -1696,8 +1820,8 @@ const BUILDERS = {
   gate: (g, K, s) => gatehouse(g, K, s),
 };
 
-export function buildArchetype(type, style, level) {
-  const K = PAL[style] || PAL.vale;
+export function buildArchetype(type, style, level, era = 1) {
+  const K = eraPalette(style, era);
   const g = new GeoBuilder(type.length * 131 + level * 17 + style.length * 7, { roofKind });
   const fn = BUILDERS[type];
   let info = {};
@@ -1705,6 +1829,7 @@ export function buildArchetype(type, style, level) {
   else g.box(0, 0, 0, 0.8, 0.8, 0.8, K.wall);
   // every home flies a small pennant in its kingdom's colours
   if (type === 'house' && !(style === 'mire' && level >= 3)) bannerPole(g, K, 0.88, 0, 0.88, style === 'mire' ? 1.35 : 1.0, { s: 0.55 });
+  if (era >= 3 && (type === 'house' || type === 'hall') && level >= 2) bannerPole(g, K, -0.9, 0, 0.86, 1.25, { s: 0.65 });
   return { geo: g.build(), anchors: g.anchors, maxY: g.maxY, base: info.base ?? null, stilts: !!info.stilts, pier: !!info.pier };
 }
 
