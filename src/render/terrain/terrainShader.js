@@ -81,6 +81,21 @@ struct Mat { vec3 albedo; float rough; float h; float bump; vec3 emit; };
 
 Mat mk(vec3 a, float r, float h, float b) { Mat m; m.albedo = a; m.rough = r; m.h = h; m.bump = b; m.emit = vec3(0.0); return m; }
 
+// Seasonal hue of living ground cover: fresh spring green, deep summer green,
+// autumn gold-brown, frost-dulled winter; warm ages bake it dry. k = how much the
+// material follows the year (evergreen tropics barely do).
+vec3 seasonal(vec3 c, float k, float temp) {
+  k *= 1.0 - smoothstep(0.66, 0.88, temp);
+  const vec3 LW = vec3(0.2126, 0.7152, 0.0722);
+  float lc = dot(c, LW);
+  // hue shift toward the season's colour at this surface's own luminance
+  vec3 tgt = uSeasonTint.rgb * (lc / max(dot(uSeasonTint.rgb, LW), 1e-3));
+  vec3 t = mix(c, tgt, uSeasonTint.w);
+  vec3 dryC = vec3(0.45, 0.34, 0.10) * (lc / 0.33) * 1.05;
+  t = mix(t, dryC, uDry * 0.6);
+  return mix(c, t, k);
+}
+
 // ---------------------------------------------------------------- materials
 Mat matSand(NS s) {
   // fine wind ripples, slightly warped
@@ -161,6 +176,7 @@ Mat matGrass(NS s) {
   float nearS = 1.0 - smoothstep(0.03, 0.12, s.fw);
   float speck = smoothstep(0.12, 0.05, s.cellS.r) * step(0.90, s.cellS.a) * nearS;
   c = mix(c, mix(vec3(0.9, 0.85, 0.35), vec3(0.85, 0.55, 0.7), s.cellS.b), speck * 0.5);
+  c = seasonal(c, 1.0, s.temp);
   return mk(c, 0.86, 0.38 + 0.45 * clump, 0.05 + 0.03 * near * stroke);
 }
 Mat matForest(NS s) {
@@ -173,6 +189,7 @@ Mat matForest(NS s) {
   c = mix(c, c * vec3(0.8, 1.05, 1.1), smoothstep(0.2, 0.7, s.temp) * 0.0 + (1.0 - smoothstep(0.2, 0.45, s.temp)) * 0.4);
   c *= 0.82 + 0.30 * s.macro.r;
   c *= 0.88 + 0.22 * s.micro.a;
+  c = seasonal(c, 0.6, s.temp);
   return mk(c, 0.90, 0.48 + 0.4 * moss, 0.06);
 }
 Mat matJungle(NS s) {
@@ -184,6 +201,7 @@ Mat matJungle(NS s) {
   // wet dark humus spots
   float humus = smoothstep(0.62, 0.80, s.det.r);
   c = mix(c, vec3(0.06, 0.05, 0.025), humus * 0.45);
+  c = seasonal(c, 0.2, s.temp);
   return mk(c, 0.75, 0.5 + 0.35 * v, 0.06);
 }
 Mat matSavanna(NS s) {
@@ -226,6 +244,7 @@ Mat matTundra(NS s) {
   float peb = smoothstep(0.6, 0.3, s.cellS.r);
   c = mix(c, vec3(0.30, 0.30, 0.29) * (0.80 + 0.35 * s.cellS.b) * mix(0.78, 1.0, peb), stn * 0.85);
   c *= 0.90 + 0.2 * s.macro.g;
+  c = seasonal(c, 0.45, s.temp);
   return mk(c, 0.90, 0.40 + 0.25 * lich + 0.3 * stn, 0.05 + 0.04 * stn);
 }
 Mat matSnow(NS s) {
@@ -592,6 +611,8 @@ void terrainSurface() {
   float anySnow = dot(isSnow, live);
   if (snowF > 0.0 || anySnow > 0.0) {
     float cover = smoothstep(0.22, 0.78, snowF + (s.micro.r - 0.5) * 0.35 + (s.det.b - 0.5) * 0.25);
+    // warm ages / low frost: snow fields retreat up to the peaks
+    if (uMeltH > 0.01) cover *= smoothstep(uMeltH - 2.0, uMeltH + 2.0, s.p.y + (s.det.r - 0.5) * 2.0);
     vec4 bn = b * (1.0 - isSnow);
     float bsum = bn.x + bn.y + bn.z + bn.w;
     vec3 ground = bsum > 1e-4 ? (m0.albedo * bn.x + m1.albedo * bn.y + m2.albedo * bn.z + m3.albedo * bn.w) / bsum : matTundra(s).albedo;
@@ -617,6 +638,19 @@ void terrainSurface() {
     rough = mix(rough, cm.rough, cliff);
     H = mix(H, cm.h * cm.bump, cliff);
     nrm = normalize(mix(nrm, facetN, cliff));
+  }
+
+  // ---- seasonal / climate snow: winter, Age of Rime, frost law. Colder ground
+  // (higher latitude, higher altitude) whitens first; noisy edges blend in.
+  if (uSnowT > -0.15) {
+    float sv = uSnowT - s.temp + (s.det.b - 0.5) * 0.12 + (s.meso.r - 0.5) * 0.10 + (s.micro.g - 0.5) * 0.04;
+    float sn = smoothstep(-0.05, 0.05, sv) * smoothstep(-0.1, 0.35, s.p.y) * (1.0 - lavaRaw);
+    sn *= mix(1.0, smoothstep(0.55, 0.78, nrm.y), cliff);
+    if (sn > 0.001) {
+      albedo = mix(albedo, matSnow(s).albedo, sn);
+      rough = mix(rough, 0.62, sn);
+      snowB = max(snowB, sn);
+    }
   }
 
   // ---- seabed & shore
@@ -726,5 +760,5 @@ export function patchTerrainMaterial(material, uniforms) {
       )
       .replace('#include <opaque_fragment>', TERRAIN_FRAGMENT_POST + '\n#include <opaque_fragment>');
   };
-  material.customProgramCacheKey = () => 'worldseed-terrain-v5';
+  material.customProgramCacheKey = () => 'worldseed-terrain-v6';
 }
