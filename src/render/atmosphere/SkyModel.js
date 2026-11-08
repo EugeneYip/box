@@ -54,6 +54,9 @@ const STORM = { zen: C('#353e49'), hor: C('#56616a') };
 const SNOWSKY = { zen: C('#97a6b8'), hor: C('#c4ccd6') };
 const FOGSKY = { zen: C('#a9b6c2'), hor: C('#d2d7d9') };
 const MOON_KEY = C('#aabde6');
+const MOON_TWILIGHT = C('#8c7ee0');
+const HEAT_HAZE = C('#e9d2a6');
+const SEASON_LIGHT = [C('#fffbf4'), C('#fff6e6'), C('#ffe9d2'), C('#eef3ff')]; // spring..winter
 
 export class SkyModel {
   constructor() {
@@ -100,16 +103,18 @@ export class SkyModel {
   // Sun path: rises in the east (+X), culminates toward -Z (the far side of
   // the default view, so noon shadows fall gently toward the viewer), sets in
   // the west (-X). Day is 13 h long (05:45 – 18:45).
-  static sunDirection(hour, out) {
-    const rise = 5.75,
-      set = 18.75;
+  // opts: { night: 0..1 (longer nights), lat: extra latitude tilt in deg }
+  static sunDirection(hour, out, opts = null) {
+    const ln = opts?.night || 0;
+    const rise = 5.75 + 1.4 * ln,
+      set = 18.75 - 1.4 * ln;
     let theta;
     if (hour >= rise && hour <= set) theta = (Math.PI * (hour - rise)) / (set - rise);
     else {
       let h = hour < rise ? hour + 24 : hour;
       theta = Math.PI + (Math.PI * (h - set)) / (24 - (set - rise));
     }
-    const lat = THREE.MathUtils.degToRad(35);
+    const lat = THREE.MathUtils.degToRad(35 + (opts?.lat || 0));
     out.set(Math.cos(theta), Math.sin(theta) * Math.cos(lat), -Math.sin(theta) * Math.sin(lat));
     // a small azimuth twist keeps sunrise/sunset light raking across the view
     const tw = 0.32;
@@ -120,12 +125,20 @@ export class SkyModel {
     return out.normalize();
   }
 
-  update(hour, w) {
-    // w: weather mix {overcast, storm, snow, fog, rain}
-    SkyModel.sunDirection(hour, this.sunDir);
+  // w: weather mix {overcast, storm, snow, fog, rain}
+  // age: eased age state {night, temp, tint (Color), tintK} (optional)
+  // season: game.time.season in [0, 4) (optional)
+  update(hour, w, age = null, season = 1.5) {
+    const night = age?.night || 0;
+    // seasonal sun height: higher in summer, lower in winter
+    const sw = (k) => Math.max(0, 1 - Math.min(Math.abs(season - k), 4 - Math.abs(season - k)));
+    const summer = sw(1.5),
+      winter = sw(3.5);
+    const sunOpts = { night, lat: -7 * summer + 9 * winter };
+    SkyModel.sunDirection(hour, this.sunDir, sunOpts);
     // Moon: roughly opposite the sun, offset so it rides high at midnight and
     // shows a gibbous phase rather than a flat full disc.
-    SkyModel.sunDirection((hour + 12.6) % 24, this.moonDir);
+    SkyModel.sunDirection((hour + 12.6) % 24, this.moonDir, sunOpts);
     this.moonDir.y = Math.abs(this.moonDir.y) * 0.85 + 0.12;
     this.moonDir.normalize();
 
@@ -185,6 +198,16 @@ export class SkyModel {
 
     // ---- lights ----------------------------------------------------------
     this.sunLightColor.copy(this._k.key);
+    {
+      // a slight seasonal cast: fresh spring, warm summer, amber autumn, pale winter
+      const si = Math.floor(season) % 4;
+      const f = season - Math.floor(season);
+      const a = SEASON_LIGHT[si],
+        b = SEASON_LIGHT[(si + 1) % 4];
+      const t = smooth(0.5, 1.0, f); // hold mid-season, blend into the next
+      this._tmp.copy(a).lerp(b, t);
+      this.sunLightColor.multiply(this._tmp);
+    }
     let sunI = n.keyI;
     // overcast / storm / fog block direct sun
     // storms leave ~20% sun so racing cloud shadows can sweep the land
@@ -195,7 +218,7 @@ export class SkyModel {
     this.sunLightColor.lerp(this._tmp.setRGB(lumKey, lumKey * 1.01, lumKey * 1.06), oc * 0.7);
 
     const moonUp = smooth(-0.02, 0.15, this.moonDir.y);
-    const moonI = 0.8 * smooth(-0.04, -0.17, s) * moonUp * (1 - 0.7 * oc);
+    const moonI = 0.8 * smooth(-0.04, -0.17, s) * moonUp * (1 - 0.7 * oc) * (1 - 0.38 * night);
     this.moonVis = moonUp * smooth(-0.02, -0.14, s);
     this.keyIsMoon = moonI > sunI;
     if (this.keyIsMoon) {
@@ -204,6 +227,7 @@ export class SkyModel {
       this.keyDir.y = Math.max(this.keyDir.y, 0.55);
       this.keyDir.normalize();
       this.keyColor.copy(MOON_KEY);
+      if (night > 0) this.keyColor.lerp(age?.tintK ? age.tint : MOON_TWILIGHT, 0.45 * night);
       this.keyIntensity = moonI;
     } else {
       this.keyDir.copy(this.sunDir);
@@ -230,7 +254,7 @@ export class SkyModel {
     this.hemiSky.lerp(this._tmp.setRGB(hl * 0.96, hl, hl * 1.07), oc * 0.6);
     if (w.snow > 0) this.hemiGround.lerp(this._tmp.setRGB(0.55, 0.6, 0.68), w.snow * 0.5);
 
-    this.exposure = n.exp * (1 - 0.18 * storm);
+    this.exposure = n.exp * (1 - 0.18 * storm) * (1 - 0.14 * night * this.night);
 
     // ---- visible discs -----------------------------------------------
     this.sunVis = smooth(-0.03, 0.02, s) * (1 - smooth(0.25, 0.75, oc + w.fog * 0.6));
@@ -258,5 +282,45 @@ export class SkyModel {
     this.saturation = (1.06 + 0.06 * g) * (1 - 0.3 * nt) * (1 - 0.16 * oc - 0.08 * storm) * (1 - 0.1 * w.fog);
     this.vibrance = 0.16 * (1 - 0.5 * oc);
     this.contrast = 1.06 + 0.04 * g - 0.03 * w.fog + 0.04 * storm;
+    if (age) this.applyAge(age);
+  }
+
+  // Ages lean the sky and grade toward their character (subtle but clear).
+  applyAge(age) {
+    const k = age.tintK || 0;
+    if (k > 0.001) {
+      const t = age.tint;
+      this.zenith.lerp(t, 0.2 * k);
+      this.horizon.lerp(t, 0.24 * k);
+      this.groundHaze.lerp(t, 0.2 * k);
+      this.hemiSky.lerp(t, 0.14 * k);
+      this.mistColor.lerp(t, 0.2 * k);
+      const l = t.r * 0.2126 + t.g * 0.7152 + t.b * 0.0722;
+      this.midTint.x += (t.r - l) * 0.07 * k;
+      this.midTint.y += (t.g - l) * 0.07 * k;
+      this.midTint.z += (t.b - l) * 0.07 * k;
+      this.highTint.x += (t.r - l) * 0.04 * k;
+      this.highTint.y += (t.g - l) * 0.04 * k;
+      this.highTint.z += (t.b - l) * 0.04 * k;
+    }
+    const hot = Math.max(0, age.temp || 0) * 2; // 0..1
+    if (hot > 0.001) {
+      // heat haze: a dry, bleached, warm air
+      this.horizon.lerp(HEAT_HAZE, 0.22 * hot);
+      this.groundHaze.lerp(HEAT_HAZE, 0.25 * hot);
+      this.midTint.x += 0.028 * hot;
+      this.midTint.y += 0.01 * hot;
+      this.midTint.z -= 0.022 * hot;
+      this.saturation *= 1 - 0.1 * hot;
+      this.contrast -= 0.03 * hot;
+    }
+    const cold = Math.max(0, -(age.temp || 0)) * 2;
+    if (cold > 0.001) {
+      this.shadowTint.z += 0.02 * cold;
+      this.midTint.z += 0.012 * cold;
+      this.saturation *= 1 - 0.08 * cold;
+    }
+    const nt = (age.night || 0) * this.night;
+    if (nt > 0.001) this.saturation *= 1 - 0.1 * nt;
   }
 }

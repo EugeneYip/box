@@ -132,6 +132,10 @@ export class Atmosphere {
       ao: { radius: 2.5, intensity: 2.5, falloff: 1 },
     };
 
+    this.ageState = { storms: 1, lightning: 1, temp: 0, night: 0, tintK: 0, tint: new THREE.Color(1, 1, 1) };
+    this._ageTint = new THREE.Color(1, 1, 1);
+    this._ageSnap = true; // the first frame starts in the current age
+    this.weather.atm = this;
     this._windAngle = this.rng() * Math.PI * 2;
     this._boltT = 0.6;
     this._extFlash = 0;
@@ -213,6 +217,30 @@ export class Atmosphere {
     }
   }
 
+  // ---- ages ---------------------------------------------------------------
+  // Eased copy of game.age.mods: every change glides in over a few seconds.
+  updateAge(dt) {
+    const S = this.ageState;
+    const mods = this.game.age?.mods;
+    const tgt = {
+      storms: mods?.storms ?? 1,
+      lightning: mods?.lightning ?? 1,
+      temp: mods?.temperature ?? 0,
+      night: mods?.night ?? 0,
+      tintK: mods?.skyTint != null ? 1 : 0,
+    };
+    if (mods?.skyTint != null) this._ageTint.set(mods.skyTint);
+    const k = this._ageSnap ? 1 : 1 - Math.exp(-(dt || 0) * 0.7);
+    this._ageSnap = false;
+    for (const key of ['storms', 'lightning', 'temp', 'night', 'tintK']) S[key] += (tgt[key] - S[key]) * k;
+    if (tgt.tintK) S.tint.lerp(this._ageTint, S.tintK > 0.02 ? k : 1);
+  }
+
+  // Tooling helper: jump straight to the current age (no easing).
+  snapAge() {
+    this._ageSnap = true;
+  }
+
   // ---- loop -----------------------------------------------------------------
   tick(step) {
     this.weather.tick(step);
@@ -250,13 +278,14 @@ export class Atmosphere {
 
     // ---- sky model -----------------------------------------------------------
     const M = this.model;
-    M.update(hour, mix);
+    this.updateAge(dt);
+    M.update(hour, mix, this.ageState, game.time.season ?? 1.5);
 
     // ---- storms & lightning ---------------------------------------------------
     if (!paused && mix.storm > 0.3) {
       this._boltT -= dt;
       if (this._boltT <= 0) {
-        this._boltT = (0.5 + this.rng() * 1.9) / Math.max(0.4, mix.storm);
+        this._boltT = (0.5 + this.rng() * 1.9) / Math.max(0.4, mix.storm) / Math.max(0.3, this.ageState.lightning);
         const span = 20 + rig.cur.dist * 0.75;
         const x = THREE.MathUtils.clamp(rig.target.x + (this.rng() - 0.5) * span * 1.6, 2, game.world.w - 2);
         const z = THREE.MathUtils.clamp(rig.target.z + (this.rng() - 0.65) * span * 1.4, 2, game.world.h - 2);
@@ -306,7 +335,12 @@ export class Atmosphere {
     this.sky.uniforms.uFlash.value = flash;
     this.sky.uniforms.uCloudOffset.value.set(this.clouds.drift.x / 900, this.clouds.drift.y / 900);
     this.clouds.update(dt, M, mix, env);
-    this.precip.update(dt, time, mix, env, M);
+    // precipitation falls as snow over cold ground (latitude, season, age)
+    const tw = game.world;
+    const ti = tw.idx(tw.clampTx(Math.floor(rig.target.x)), tw.clampTy(Math.floor(rig.target.z)));
+    const seasonT = [0, 0.1, -0.06, -0.3][Math.floor(game.time.season ?? 1.5) % 4];
+    this.localTemp = (tw.temperature[ti] ?? 0.5) + this.ageState.temp + seasonT;
+    this.precip.update(dt, time, mix, env, M, this.localTemp);
 
     // ---- env -------------------------------------------------------------------
     env.sunDir.copy(M.sunDir);
@@ -393,7 +427,7 @@ export class Atmosphere {
     // zoomed far out the shadow window may trail the camera by two frames:
     // re-render at most every third frame while moving
     if (changed) this._shadowPending = true;
-    if (this._shadowPending && (this.game.view?.zoom01 ?? 0) > 0.62) {
+    if (this._shadowPending && ((this.game.view?.zoom01 ?? 0) > 0.62 || this.game.settings?.powerSaver)) {
       this._shadowSkip = (this._shadowSkip || 0) + 1;
       changed = this._shadowSkip >= 3;
     } else changed = !!this._shadowPending;
@@ -530,7 +564,7 @@ export class Atmosphere {
     P.vignetteColor.setRGB(0.28, 0.22, 0.34).lerp(this._c1 || (this._c1 = new THREE.Color(0.1, 0.14, 0.3)), M.night * 0.6);
 
     // haze starts around the focus distance; thicker in rain / fog
-    const hazeDensity = 0.0026 + 0.001 * W.overcast + 0.012 * W.fog + 0.0008 * W.rain + 0.0012 * W.snow;
+    const hazeDensity = 0.0026 + 0.001 * W.overcast + 0.012 * W.fog + 0.0008 * W.rain + 0.0012 * W.snow + 0.0022 * Math.max(0, this.ageState.temp) * 2;
     P.haze.set(dist * 0.9 + 8, hazeDensity / Math.max(1, game.view?.worldScale || 1), 0.022, 1);
     // ground mist: dawn wisps, thick in fog weather, a little in snow / rain
     const mistAmt = Math.max(W.fog, this.weather.morningMist);
