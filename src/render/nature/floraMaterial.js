@@ -233,13 +233,16 @@ if (abs(fMat - 9.0) < 0.5) {
   vec3 winter = mix(vec3(0.26, 0.17, 0.09), vec3(0.40, 0.27, 0.13), fCell) * (0.7 + lum);
   diffuseColor.rgb = spring * sw.x + summer * sw.y + autumn * sw.z + winter * sw.w;
   // spring blossom (pink or white) on some trees
-  float bloom = step(fract(vFIH * 7.13), 0.42) * smoothstep(0.3, 0.8, sw.x) * step(0.5, fCell);
-  vec3 bc = fract(vFIH * 13.7) < 0.55 ? vec3(0.93, 0.48, 0.62) : vec3(0.95, 0.9, 0.86);
-  diffuseColor.rgb = mix(diffuseColor.rgb, bc, bloom * 0.92);
+  // fine, soft speckles, mostly pink, on about a third of the trees
+  float bCell = fract(sin(dot(floor(vFWorld * 13.0), vec3(12.9898, 78.233, 45.164))) * 43758.5453);
+  float bloom = step(fract(vFIH * 7.13), 0.32) * smoothstep(0.3, 0.8, sw.x) * smoothstep(0.45, 0.8, bCell);
+  vec3 bc = fract(vFIH * 13.7) < 0.75 ? vec3(0.93, 0.5, 0.64) : vec3(0.96, 0.86, 0.87);
+  diffuseColor.rgb = mix(diffuseColor.rgb, bc * (0.82 + 0.22 * bCell), bloom * 0.85);
   // winter thinning
-  if (sw.w > 0.05) {
+  float wt = clamp((sw.w - 0.3) / 0.7, 0.0, 1.0);
+  if (wt > 0.0) {
     ivec2 fbw = ivec2(mod(floor(gl_FragCoord.xy) + 1.0, 4.0));
-    if ((fBayer[fbw.x + fbw.y * 4] + 0.5) / 16.0 < sw.w * 0.42) discard;
+    if ((fBayer[fbw.x + fbw.y * 4] + 0.5) / 16.0 < wt * 0.45) discard;
   }
 }
 if (abs(fMat - 8.0) < 0.5) {

@@ -392,7 +392,7 @@ function buildBirch(b, v, lod) {
       limb(b, from, V(bl.p.x * 0.8, bl.p.y - 0.1, bl.p.z * 0.8), 0.022, 0.01, 4, { base: C(0xd8d2c4), top: C(0xe8e4da) }, H);
     }
   }
-  foliage(b, blobs.map((bl) => ({ ...bl, d: lod ? 'd' : 1, lump: 0.26 })), pal, { lump: 0.26, freq: 2.0, mat: v === 3 ? MAT.LEAF : MAT.DLEAF });
+  foliage(b, blobs.map((bl) => ({ ...bl, d: lod ? 'd' : 1, lump: 0.26 })), pal, { lump: 0.26, freq: 2.0, mat: MAT.DLEAF });
   return { bendScale: 1.25, height: H + 0.4 };
 }
 
