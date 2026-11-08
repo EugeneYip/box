@@ -24,6 +24,8 @@ import { BrushCursor } from '../ui/BrushCursor.js';
 import { getPower } from '../powers/registry.js';
 import '../powers/index.js';
 import { loadLaws, saveLaws, defaultLaws, lawDef } from './laws.js';
+import { Ages } from './ages.js';
+import { SEASON, SEASONS } from './time.js';
 import { IS_TOUCH } from './params.js';
 
 export const TICK = 1 / 15; // fixed simulation step (game seconds)
@@ -49,6 +51,11 @@ export class Game {
       day: 1,
       year: 0,
       realTime: 0, // wall-clock seconds since start (for visual animation)
+      // Season as a continuous value in [0, 4): integer part indexes
+      // SEASONS (Spring, Summer, Autumn, Winter), fraction is progress.
+      // Fixed at mid-summer when the 'weatherSeasons' law is off.
+      season: 0.5,
+      seasonName: 'Spring',
     };
     this.speed = params.speed > 0 ? params.speed : 1;
     this.paused = params.speed === 0;
@@ -70,6 +77,8 @@ export class Game {
     // size relative to the 256 baseline). Renderers use it to drop detail
     // when the player is looking at a large area.
     this.view = { dist: 100, zoom01: 0.5, far: false, worldScale: params.size / 256 };
+    // World Ages (src/core/ages.js): game.age is always defined.
+    this.ages = new Ages(this);
     // Shared environment state. Written by the atmosphere module, read by all.
     this.env = {
       sunDir: new THREE.Vector3(0.5, 0.8, 0.3).normalize(), // direction TO the sun
@@ -173,6 +182,9 @@ export class Game {
     saveLaws(this.laws);
     this.events.emit('laws', { key: null, value: null });
   }
+  setAge(id) {
+    this.ages.begin(id);
+  }
   setPowerSaver(on) {
     this.settings.powerSaver = !!on;
     this.events.emit('powersaver', { on: this.settings.powerSaver });
@@ -219,6 +231,7 @@ export class Game {
     this.params.preset = preset;
     this.rng = new Random(seed);
     generateWorld(this.world, seed, { preset });
+    this.ages.reset();
     for (const s of this.allSystems) s.reset?.();
     this.world.flushDirty();
     this.events.emit('world:regenerated', {});
@@ -237,6 +250,9 @@ export class Game {
         this.time.day++;
       }
     }
+    this.time.season = this.laws.weatherSeasons ? (0.5 + this.time.total / SEASON) % 4 : 1.5;
+    this.time.seasonName = SEASONS[Math.floor(this.time.season) % 4];
+    this.ages.tick();
     for (const s of this.simSystems) s.tick?.(step);
   }
 

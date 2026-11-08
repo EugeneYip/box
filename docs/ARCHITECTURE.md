@@ -187,6 +187,13 @@ Every module is a class constructed with `game`, kept as `game.<name>`. Optional
   two-finger pinch zoom and twist rotate, tap to inspect. Targets must be at least 44 px, and
   layouts must fit both portrait and landscape at 360–1366 px widths.
 
+## Depth systems (round 6)
+
+See `docs/DESIGN-DEPTH.md` for the contracts for World Ages (`game.age`, `game.setAge`),
+seasons (`game.time.season`), the expanded World Laws (with an owner on each law), creature
+traits, statuses, equipment, experience and biography (Life), and eras, technology, culture
+and kingdom inventory (Civilization).
+
 ## Quality bar
 
 "AAA" here means a frame captured at any moment would hold up as a store-page screenshot:
