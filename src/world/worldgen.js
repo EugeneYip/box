@@ -348,6 +348,10 @@ export function generateWorld(world, seed = 1, options = {}) {
   }
   // tidy isolated single-tile specks (keeps biome blobs clean)
   despeckleTypes(type, hgt, W, H);
+  // tiny snow islands (a tile or two of snow inside a forest) read as glitches
+  dissolveSmallPatches(type, hgt, W, H, TILE.SNOW, Math.round(12 * Math.max(1, sc)), (i) =>
+    world.temperature[i] < 0.3 ? TILE.TUNDRA : biomeFor(world.temperature[i], world.moisture[i], hgt[i], 8),
+  );
 
   _t('biomes');
   // ----------------------------------------------------------------- flora
@@ -918,6 +922,36 @@ function carveRivers(world, land, moist, P, sc, rand) {
     }
   }
   return keep;
+}
+
+// Replace connected land patches of `t` smaller than minSize tiles (4-connected).
+function dissolveSmallPatches(type, hgt, W, H, t, minSize, replacement) {
+  const N = W * H;
+  const seen = new Uint8Array(N);
+  const stack = new Int32Array(N);
+  const comp = new Int32Array(N);
+  for (let s0 = 0; s0 < N; s0++) {
+    if (seen[s0] || type[s0] !== t || hgt[s0] < SEA_LEVEL) continue;
+    let sp = 0,
+      cn = 0;
+    stack[sp++] = s0;
+    seen[s0] = 1;
+    while (sp) {
+      const i = stack[--sp];
+      comp[cn++] = i;
+      const x = i % W,
+        y = (i / W) | 0;
+      const nb = [x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, y > 0 ? i - W : -1, y < H - 1 ? i + W : -1];
+      for (let q = 0; q < 4; q++) {
+        const j = nb[q];
+        if (j >= 0 && !seen[j] && type[j] === t && hgt[j] >= SEA_LEVEL) {
+          seen[j] = 1;
+          stack[sp++] = j;
+        }
+      }
+    }
+    if (cn < minSize) for (let k = 0; k < cn; k++) type[comp[k]] = replacement(comp[k]);
+  }
 }
 
 function despeckleTypes(type, hgt, W, H) {
