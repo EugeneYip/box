@@ -96,7 +96,11 @@ export class ShadowCache {
     const sizeOk = this.rt && sh.map && this.rt.width === sh.map.width && this.rt.height === sh.map.height;
     const worldDue = this.worldDirty && this.sinceRefresh >= this.worldDirty;
     const heartbeat = this.sinceRefresh >= 240;
-    const refresh = changed || !this.valid || !sizeOk || worldDue || heartbeat || this.game.frame < 4;
+    const ps = this.game.settings?.powerSaver;
+    const far = (this.game.view?.zoom01 ?? 0) > (this.farMode ? 0.76 : 0.82) - (ps ? 0.3 : 0);
+    const modeFlip = far !== !!this.farMode;
+    this.farMode = far;
+    const refresh = changed || modeFlip || !this.valid || !sizeOk || worldDue || heartbeat || this.game.frame < 4;
     // refresh-trigger counters (inspect game.atmosphere.shadowCache.stats)
     const st = this.stats || (this.stats = { frames: 0, refresh: 0, changed: 0, world: 0, heartbeat: 0, invalid: 0 });
     st.frames++;
@@ -115,14 +119,22 @@ export class ShadowCache {
       this.phase = 'capture';
       this.worldDirty = 0;
       this.sinceRefresh = 0;
-      // keep dynamic casters out of the cached map
+      // keep dynamic casters out of the cached map; when the whole map is in
+      // view, trees and buildings (1-2 px shadows) are left out as well
       this.dyn.length = 0;
-      this.dynamicRoot()?.traverse((o) => {
-        if (o.castShadow) {
-          o.castShadow = false;
-          this.dyn.push(o);
-        }
-      });
+      const off = (root) =>
+        root?.traverse((o) => {
+          if (o.castShadow) {
+            o.castShadow = false;
+            this.dyn.push(o);
+          }
+        });
+      off(this.dynamicRoot());
+      if (this.farMode) {
+        const g = this.game;
+        off(g.vegetation?.group || g.scene.getObjectByName('vegetation'));
+        off(g.buildings?.group || g.scene.getObjectByName('civ-buildings'));
+      }
     } else {
       sh.needsUpdate = false;
       this.phase = sizeOk ? 'cached' : null;

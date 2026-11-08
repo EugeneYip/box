@@ -214,7 +214,8 @@ export class Clouds {
     this.altitude = 62;
     this.deckAltitude = 40; // storm deck
     const q = game.pipeline?.quality || 'high';
-    const count = q === 'low' ? 18 : q === 'medium' ? 26 : 34;
+    const area = Math.min(4, (W * H) / (256 * 256)); // field grows with the map
+    const count = Math.round((q === 'low' ? 18 : q === 'medium' ? 26 : 34) * Math.max(0.6, area));
     const rnd = mulberry32(9137);
     this.clouds = [];
     let puffTotal = 0;

@@ -51,6 +51,7 @@ uniform vec3 uCloudLit;
 uniform vec3 uCloudShade;
 uniform float uEnvMode;
 uniform vec3 uEnvGround;
+uniform float uDetail;
 varying vec3 vDir;
 ${SKY_FUNCS_GLSL}
 ${NOISE_GLSL}
@@ -101,7 +102,7 @@ void main() {
   }
 
   // ---- night sky -------------------------------------------------------
-  if (uStarVis > 0.001 && y > -0.05) {
+  if (uDetail > 0.5 && uStarVis > 0.001 && y > -0.05) {
     vec3 sd = uStarRot * dir;
     float horizonFade = smoothstep(-0.02, 0.18, y);
     vec3 st = starField(sd);
@@ -115,7 +116,7 @@ void main() {
   }
 
   // ---- moon ---------------------------------------------------------------
-  if (uMoonVis > 0.001) {
+  if (uDetail > 0.5 && uMoonVis > 0.001) {
     float mu = dot(dir, uMoonDir);
     float R = 0.032; // angular radius (stylised: larger than life)
     vec3 t1 = normalize(cross(uMoonDir, vec3(0.0, 1.0, 0.0)));
@@ -137,7 +138,7 @@ void main() {
   }
 
   // ---- distant cloud deck (seen only from low camera angles) -----------
-  if (y > -0.02) {
+  if (uDetail > 0.5 && y > -0.02) {
     float h = max(y, 0.0);
     vec2 p = dir.xz / (h + 0.09) * 1.1 + uCloudOffset;
     float n = fbm(p * 0.9);
@@ -199,6 +200,7 @@ export class SkyDome {
       uCloudShade: { value: new THREE.Color() },
       uEnvMode: { value: 0 },
       uEnvGround: { value: new THREE.Color() },
+      uDetail: { value: 1 },
     };
     const geo = new THREE.SphereGeometry(1, 48, 24);
     this.material = new THREE.ShaderMaterial({
@@ -274,6 +276,8 @@ export class SkyDome {
     u.uCloudLit.value.copy(model.cloudLit);
     u.uCloudShade.value.copy(model.cloudShade);
     u.uEnvGround.value.copy(model.envGround);
+    // stars, moon and the distant cloud deck only matter when the horizon can show
+    u.uDetail.value = this.game.settings?.powerSaver || (this.game.view?.zoom01 ?? 0) > 0.6 ? 0 : 1;
     // the celestial sphere turns with the hour
     const hour = this.game.time.hour + (this.game.time.day || 0) * 24;
     this._m4.makeRotationAxis(this._starAxis, (hour / 24) * Math.PI * 2);

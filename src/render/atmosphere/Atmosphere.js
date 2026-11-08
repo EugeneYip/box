@@ -336,7 +336,12 @@ export class Atmosphere {
 
   // Offscreen work right before the frame is drawn.
   preRender(renderer, dt) {
-    const want = this.game.pipeline?.tier?.shadowMap || 2048;
+    // shadow resolution by tier, power saver and zoom (with hysteresis)
+    let want = this.game.pipeline?.tier?.shadowMap || 2048;
+    const z = this.game.view?.zoom01 ?? 0.5;
+    this._shadowFar = z > (this._shadowFar ? 0.56 : 0.64);
+    if (this.game.settings?.powerSaver) want = Math.min(want, 1024);
+    else if (this._shadowFar) want = Math.max(1024, want / 2);
     const sh = this.key.shadow;
     if (sh.mapSize.x !== want) {
       sh.mapSize.set(want, want);
@@ -380,6 +385,17 @@ export class Atmosphere {
       sig[i] = now[i];
     }
     this._shadowInit = true;
+    // zoomed far out the shadow window may trail the camera by two frames:
+    // re-render at most every third frame while moving
+    if (changed) this._shadowPending = true;
+    if (this._shadowPending && (this.game.view?.zoom01 ?? 0) > 0.62) {
+      this._shadowSkip = (this._shadowSkip || 0) + 1;
+      changed = this._shadowSkip >= 3;
+    } else changed = !!this._shadowPending;
+    if (changed) {
+      this._shadowPending = false;
+      this._shadowSkip = 0;
+    }
     if (this.shadowCache && !this.shadowCache.disabled) this.shadowCache.begin(renderer, changed);
     else {
       renderer.shadowMap.autoUpdate = true;
@@ -510,7 +526,7 @@ export class Atmosphere {
 
     // haze starts around the focus distance; thicker in rain / fog
     const hazeDensity = 0.0026 + 0.001 * W.overcast + 0.012 * W.fog + 0.0008 * W.rain + 0.0012 * W.snow;
-    P.haze.set(dist * 0.9 + 8, hazeDensity, 0.022, 1);
+    P.haze.set(dist * 0.9 + 8, hazeDensity / Math.max(1, game.view?.worldScale || 1), 0.022, 1);
     // ground mist: dawn wisps, thick in fog weather, a little in snow / rain
     const mistAmt = Math.max(W.fog, this.weather.morningMist);
     const mistDensity = 0.004 + 0.05 * mistAmt * mistAmt + 0.002 * W.rain + 0.006 * W.snow;
