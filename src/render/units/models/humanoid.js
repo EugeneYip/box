@@ -37,7 +37,7 @@ export const humanModel = {
     boot: { color: 0x3f2a1e, rough: 0.55 },
     wood: { color: 0x9a6a3c, noise: 'fur', rough: 0.8 },
     darkwood: { color: 0x6a4428, noise: 'fur', rough: 0.8 },
-    metal: { color: 0xc4ccd6, rough: 0.3, metal: 0.85 },
+    metal: { src: 'M', color: 0xc4ccd6, rough: 0.3, metal: 0.85 },
     gold: { color: 0xf2c14e, rough: 0.28, metal: 1 },
     eye: { color: 0x1a120e, rough: 0.2 },
     straw: { color: 0xe6c870, noise: 'cloth', rough: 0.9 },

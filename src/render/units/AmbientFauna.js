@@ -65,7 +65,8 @@ export class AmbientFauna {
     this.inited = true;
     const w = this.game.world;
     // more wildlife on bigger maps, but sub-linearly (a Huge map ~2x a Medium one)
-    const scale = Math.sqrt((w.w * w.h) / 65536);
+    const rate = typeof this.game.laws?.spawnRate === 'number' ? this.game.laws.spawnRate : 1;
+    const scale = Math.sqrt((w.w * w.h) / 65536) * Math.max(0.25, Math.min(2, rate));
     const coast = [],
       forest = [],
       shallows = [];
@@ -208,6 +209,7 @@ export class AmbientFauna {
   }
 
   update(dt, ctx) {
+    if (this.game.laws && this.game.laws.spawnAmbient === false) return; // law: no fish or birds
     if (!this.inited) this._init();
     const g = this.game;
     const sdt = Math.min(0.1, dt * (g.paused ? 0 : Math.min(4, g.speed)));

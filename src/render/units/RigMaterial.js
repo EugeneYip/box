@@ -15,7 +15,7 @@ import * as THREE from 'three';
 // along a travelling wave (serpents, fish, wyrms). Children inherit parents.
 
 export const NOISE = { none: 0, cloth: 1, wool: 2, fur: 3, spots: 4, stone: 5, scales: 6, counter: 7, socks: 8, feather: 9 };
-const SRC = { A: 1, B: 2, C: 3, D: 4, K: 5 };
+const SRC = { A: 1, B: 2, C: 3, D: 4, K: 5, M: 6 };
 export const MAX_MATS = 40;
 
 const f = (v) => (Number.isInteger(v) ? v.toFixed(1) : String(v));
@@ -137,6 +137,7 @@ export function makeRigMaterial(model, opts = {}) {
     uRimCol: { value: new THREE.Color(1, 0.95, 0.85) },
     uBump: { value: model.bump ?? 1 },
     uKing: { value: Array.from({ length: 16 }, () => new THREE.Color(0.5, 0.5, 0.5)) },
+    uMetal: { value: [0xc4ccd6, 0x9a6a3c, 0x9a968f, 0xc8894a, 0x8a8f98, 0xd6dde6, 0x9fd8ff, 0xf2c14e].map((h) => new THREE.Color(h).convertSRGBToLinear()) },
     uOutline: { value: 0 },
   };
   const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8, metalness: 0 });
@@ -155,6 +156,7 @@ uniform vec4 uMatB[${MAX_MATS}];
 uniform vec4 uMatC[${MAX_MATS}];
 uniform vec3 uSec[8];
 uniform vec3 uKing[16];
+uniform vec3 uMetal[8];
 varying vec3 vRigCol;
 varying vec3 vRigCol2;
 varying vec4 vRigMat;
@@ -168,8 +170,12 @@ vec3 rigSrc(float src, vec3 c) {
   if (src < 2.5) return iCol1.rgb;
   if (src < 3.5) return iCol2.rgb;
   if (src < 4.5) return uSec[int(mod(floor(iCol2.a + 0.001), 8.0))];
-  float ks = floor(iVar.w + 0.0001);
-  return ks > 0.5 ? uKing[int(ks)] : c;
+  if (src < 5.5) {
+    float ks = floor(iVar.w + 0.0001);
+    return ks > 0.5 ? uKing[int(ks)] : c;
+  }
+  // equipment material colour (packed above the variant slots of iVar.z)
+  return uMetal[int(mod(floor(iVar.z / 4096.0 + 0.0001), 8.0))];
 }`,
       )
       .replace(
@@ -186,6 +192,7 @@ vec4 rmc = uMatC[rmi];
 vRigCol = rigSrc(rma.w, rma.rgb);
 vRigCol2 = rigSrc(rmc.w, rmc.rgb);
 vRigMat = uMatB[rmi];
+if (rma.w > 5.5 && floor(iVar.z / 4096.0 + 0.0001) > 5.5) vRigMat.z += 1.1; // starsteel glows
 float rks = floor(iVar.w + 0.0001);
 vKing = rks > 0.5 ? vec4(uKing[int(rks)], 1.0) : vec4(0.0);
 vFx = vec4(iCol0.a, iCol1.a, fract(iVar.w), fract(iCol2.a) / 0.9);`,
