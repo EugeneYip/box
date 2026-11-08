@@ -511,3 +511,43 @@ div.ws-law {
     width: 31px;
   }
 }
+
+/* modals never exceed the viewport (wide tab rows must scroll, not stretch) */
+.ws-modals {
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: center;
+}
+.ws-modal {
+  min-width: 0;
+  max-width: calc(100vw - 20px);
+}
+.ws-modal__body,
+.ws-lawsbox,
+.ws-lawtabs,
+.ws-laws {
+  min-width: 0;
+}
+
+/* ~1100-1240 px: a slimmer speed control keeps the clock clear of the stats */
+@media (max-width: 1240px) and (min-width: 721px) {
+  .ws-seg {
+    grid-template-columns: repeat(5, 33px);
+  }
+  .ws-seg__thumb {
+    width: 27px;
+    transform: translateX(calc(var(--idx) * 33px));
+  }
+  .ws-clock__txt {
+    min-width: 84px;
+  }
+}
+
+/* phones: an expanded minimap pushes the camera pad and the feed aside */
+@media (max-width: 720px) {
+  .ws-mapwrap:not(.is-collapsed) ~ .ws-campad {
+    top: calc(116px + 176px);
+  }
+  .map-open .ws-feed {
+    right: calc(var(--ws-edge) + 172px);
+  }
+}

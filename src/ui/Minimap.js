@@ -104,6 +104,7 @@ export class Minimap {
   setCollapsed(c, quiet = false) {
     this.collapsed = c;
     this.wrap.classList.toggle('is-collapsed', c);
+    this.ui.root?.classList.toggle('map-open', !c);
     if (!quiet) this.game.audio?.play?.('ui-click', { volume: 0.4 });
     this.ui.savePrefs?.({ mapCollapsed: c });
   }
