@@ -495,6 +495,17 @@ const P = {
 };
 
 
+// Category swatch silhouettes: the shape says the category, the colour says the power.
+const swPair = (d) => `<path class="sw" d="${d}"/><path class="swl" d="${d}"/>`;
+const CAT_SWATCH = {
+  terrain: swPair('M8.5 2.6h15a5.9 5.9 0 0 1 5.9 5.9v15a5.9 5.9 0 0 1-5.9 5.9h-15a5.9 5.9 0 0 1-5.9-5.9v-15a5.9 5.9 0 0 1 5.9-5.9z'),
+  nature: swPair('M16 2.4C24 2.4 29.6 8 29.6 16S24 29.6 16 29.6c-4.2 0-8-1.6-10.6-4.4L2.4 29.6l.6-5.4C1.6 21.6 2.4 18.8 2.4 16 2.4 8 8 2.4 16 2.4z'),
+  life: swPair('M16 2.4c9.2 0 13.6 4.4 13.6 13.6S25.2 29.6 16 29.6 2.4 25.2 2.4 16 6.8 2.4 16 2.4z'),
+  civ: swPair('M16 2.2 28.6 6.4v9.4c0 7.2-5.2 12-12.6 14.6C8.6 27.8 3.4 23 3.4 15.8V6.4z'),
+  disaster: swPair('M10.6 2.6h10.8l7.9 7.9v10.8l-7.9 7.9H10.6l-7.9-7.9V10.6z'),
+  world: swPair('M16 2.4a13.6 13.6 0 1 1 0 27.2 13.6 13.6 0 0 1 0-27.2z') + '<circle class="swl" cx="16" cy="16" r="11.2" style="stroke-opacity:.35"/>',
+};
+
 // Biome motifs were drawn above a ground band; centre them on the swatch.
 for (const k of Object.keys(P)) {
   if (!k.startsWith('paint-')) continue;
@@ -790,6 +801,40 @@ const ID_TINT = {
   wither: '#d0a060',
   bloom: '#ffb0d8',
   'plant-grass': '#9ad66a',
+  // terrain
+  raise: '#e8b062',
+  flatten: '#d8c28a',
+  smooth: '#c9a77a',
+  mountain: '#b4b0c0',
+  // nature
+  'plant-forest': '#5fd08a',
+  'plant-flowers': '#ff9fd0',
+  'clear-flora': '#c08a5a',
+  // life
+  'spawn-human': '#f2c9a0',
+  'spawn-sheep': '#efe6d2',
+  'spawn-cow': '#c7956a',
+  'spawn-pig': '#ff9fb4',
+  'spawn-chicken': '#ff8a5a',
+  'spawn-deer': '#d9a466',
+  'spawn-rabbit': '#c8c0d8',
+  'spawn-wolf': '#8fa4c8',
+  'spawn-bear': '#a07850',
+  'spawn-fox': '#ff9a40',
+  'spawn-birds': '#8fd0ff',
+  'spawn-bird': '#8fd0ff',
+  'spawn-skywyrm': '#ff7a40',
+  fertility: '#ff8ac0',
+  bless: '#ffe08a',
+  // civ
+  'found-village': '#9fbcff',
+  // wrath
+  fire: '#ff8a3a',
+  inferno: '#ff4a2a',
+  smite: '#fff0b0',
+  earthquake: '#c99060',
+  // world
+  'weather-clear': '#ffd36a',
 };
 function hexStr(n) {
   return '#' + (n >>> 0).toString(16).padStart(6, '0').slice(-6);
@@ -885,9 +930,11 @@ export function powerIcon(p, cls = '') {
     if (norm) return { svg: norm, tint, custom: true };
   }
   let inner = own || resolveInner(id);
-  if (!inner && id.startsWith('paint-')) inner = ground() + `<path class="f" d="M16 4c3.6 4.4 6 8 6 10.6a6 6 0 0 1-12 0C10 12 12.4 8.4 16 4z"/><path d="M16 4c3.6 4.4 6 8 6 10.6a6 6 0 0 1-12 0C10 12 12.4 8.4 16 4z"/>`;
+  if (!inner && id.startsWith('paint-')) inner = SWATCH + `<path class="f" d="M16 6c3.6 4.4 6 8 6 10.6a6 6 0 0 1-12 0C12 14 12.4 10.4 16 6z"/><path d="M16 6c3.6 4.4 6 8 6 10.6a6 6 0 0 1-12 0C12 14 12.4 10.4 16 6z"/>`;
   if (!inner) inner = fallbackInner(p);
-  return { svg: svg(inner, cls), tint };
+  // every power sits on a category-shaped swatch in its own accent colour
+  if (!inner.startsWith(SWATCH)) inner = (CAT_SWATCH[p.category] || CAT_SWATCH.world) + inner;
+  return { svg: svg(inner, 'ico--sw ' + cls), tint };
 }
 
 // Make a module-supplied SVG behave like ours: sized by font-size, styled by

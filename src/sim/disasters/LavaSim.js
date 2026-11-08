@@ -76,7 +76,7 @@ export class LavaSim {
     const W = w.w;
     const x = i % W,
       y = (i / W) | 0;
-    if (w.type[i] !== TILE.LAVA && this.vol[i] > 0.05) {
+    if (w.type[i] !== TILE.LAVA && this.vol[i] > 0.012) {
       w.type[i] = TILE.LAVA;
       this._markT(i);
     }
@@ -187,7 +187,7 @@ export class LavaSim {
               if (!this.inList[j]) {
                 this._melt(j);
                 this._add(j);
-              } else if (w.type[j] !== TILE.LAVA && this.vol[j] > 0.05) this._melt(j);
+              } else if (w.type[j] !== TILE.LAVA && this.vol[j] > 0.012) this._melt(j);
               this._markH(j);
             }
           }
@@ -209,7 +209,7 @@ export class LavaSim {
       this.vol[i] = Math.max(0, v);
       this.heat[i] = h;
       // ---- solidify ----
-      if (h <= COOL_HEAT || v <= 0.012) {
+      if (h <= COOL_HEAT || v <= 0.002) {
         const thick = this.vol[i];
         this.vol[i] = 0;
         this.heat[i] = 0;
