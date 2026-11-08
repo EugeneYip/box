@@ -392,49 +392,54 @@ Mat evalMat(float t, NS s) {
   return mk(c * (0.85 + 0.3 * s.det.r), 0.9, 0.4, 0.04);
 }
 
-// Cliff rock: faceted strata projected on the dominant vertical plane.
+// Cliff rock: true triplanar blending (weights from the normal), level strata,
+// gentle chiselled facets. Colour stays coherent: no per-facet patchwork.
 Mat matCliff(NS s, out vec3 facetN) {
   vec3 p = s.p;
   vec3 n = s.n;
-  float wx = smoothstep(0.35, 0.65, abs(n.x) / (abs(n.x) + abs(n.z) + 1e-4));
+  vec3 bw = pow(abs(n), vec3(4.0));
+  bw /= (bw.x + bw.y + bw.z + 1e-4);
   vec2 uvX = vec2(p.z, p.y);
   vec2 uvZ = vec2(p.x, p.y);
+  vec2 uvY = p.xz;
   vec4 t, d;
   if (uPower > 0.5) {
-    // power saver: dominant projection only (half the taps, no triplanar blend)
-    vec2 uvD = mix(uvZ, uvX, step(0.5, wx));
+    // power saver: dominant vertical projection only (no triplanar blend)
+    vec2 uvD = bw.x > bw.z ? uvX : uvZ;
     t = nz(uvD * 0.085);
     d = nz(uvD * 0.37);
   } else {
-    t = mix(nz(uvZ * 0.085), nz(uvX * 0.085), wx);
-    d = mix(nz(uvZ * 0.37), nz(uvX * 0.37), wx);
+    t = nz(uvX * 0.085) * bw.x + nz(uvZ * 0.085) * bw.z + nz(uvY * 0.085) * bw.y;
+    d = nz(uvX * 0.37) * bw.x + nz(uvZ * 0.37) * bw.z + nz(uvY * 0.37) * bw.y;
   }
   // strata: level, crisp (anti-aliased) layers with a shadowed lip under each ledge
-  float sy = p.y * 0.75 + (t.r - 0.5) * 0.55 + (s.macro.r - 0.5) * 0.45;
+  float sy = p.y * 0.75 + (t.r - 0.5) * 0.32 + (s.macro.r - 0.5) * 0.30;
   float layer = floor(sy);
   float aa = clamp(s.fwy * 0.75 * 1.5, 0.02, 0.5);
   float lt = smoothstep(1.0 - aa, 1.0, fract(sy));
   float lr = mix(hash12(vec2(layer, 3.7)), hash12(vec2(layer + 1.0, 3.7)), lt);
   float bandFade = 1.0 - smoothstep(0.25, 0.7, s.fwy * 0.75);
   lr = mix(0.5, lr, bandFade);
-  vec3 cA = vec3(0.390, 0.335, 0.275);
-  vec3 cB = vec3(0.215, 0.205, 0.200);
-  vec3 cC = vec3(0.500, 0.420, 0.320);
-  vec3 c = mix(mix(cB, cA, smoothstep(0.15, 0.6, lr)), cC, smoothstep(0.72, 0.95, lr));
-  c *= 0.80 + 0.32 * d.r;
+  vec3 cA = vec3(0.370, 0.345, 0.310);
+  vec3 cB = vec3(0.275, 0.265, 0.252);
+  vec3 cC = vec3(0.450, 0.410, 0.350);
+  vec3 c = mix(mix(cB, cA, smoothstep(0.15, 0.6, lr)), cC, smoothstep(0.75, 0.97, lr));
+  c *= 0.86 + 0.24 * d.r;
   // ledges: dark lip just above each layer boundary, lit top surface
   float led = smoothstep(0.0, max(0.22, aa * 2.0), fract(sy));
-  c *= mix(1.0, mix(0.66, 1.10, led), bandFade);
-  // flat-shaded low-poly facets: geometric (per-triangle) normal plus crisp,
-  // nearest-sampled facet cells on the projected plane
-  vec2 fuv = mix(vec2(p.x * 0.055, p.y * 0.085 + p.z * 0.02), vec2(p.z * 0.055, p.y * 0.085 + p.x * 0.02), step(0.5, wx));
-  vec4 f = texelFetch(uCells, ivec2(floor(fract(fuv) * 256.0)), 0);
+  c *= mix(1.0, mix(0.72, 1.08, led), bandFade);
+  // facets: geometric (per-triangle) normal plus nearest-sampled facet cells on
+  // both vertical planes, blended by the triplanar weights (no hard plane switch)
+  vec4 fX = texelFetch(uCells, ivec2(floor(fract(vec2(p.z * 0.055, p.y * 0.085 + p.x * 0.02)) * 256.0)), 0);
+  vec4 fZ = texelFetch(uCells, ivec2(floor(fract(vec2(p.x * 0.055, p.y * 0.085 + p.z * 0.02)) * 256.0)), 0);
+  float wxz = bw.x / max(bw.x + bw.z, 1e-4);
+  vec2 ft = mix(fZ.ba, fX.ba, wxz);
   vec3 tA = normalize(cross(n, vec3(0.0, 1.0, 0.0)) + vec3(1e-4, 0.0, 0.0));
   vec3 tB = normalize(cross(tA, n));
   float near = 1.0 - smoothstep(0.25, 0.9, s.fw);
-  vec3 base = normalize(mix(n, s.fn, 0.7 * near));
-  facetN = normalize(base + (tA * (f.b - 0.5) * 0.95 + tB * (f.a - 0.5) * 0.75) * near);
-  c *= mix(1.0, 0.78 + 0.44 * f.b, near);
+  vec3 base = normalize(mix(n, s.fn, 0.45 * near));
+  facetN = normalize(base + (tA * (ft.x - 0.5) * 0.55 + tB * (ft.y - 0.5) * 0.40) * near);
+  c *= mix(1.0, 0.93 + 0.14 * ft.x, near);
   return mk(c, 0.82, 0.55 + 0.25 * lr + 0.2 * t.g, 0.05);
 }
 
