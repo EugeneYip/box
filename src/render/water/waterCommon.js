@@ -124,7 +124,9 @@ vec3 waterAbsorb() { return mix(vec3(0.60, 0.150, 0.085), vec3(0.36, 0.24, 0.20)
 // Light available inside the upper water column; vis = shadow * cloud factor.
 vec3 waterIrradianceV(float vis) {
   float up = clamp(uKeyDir.y, 0.0, 1.0);
-  return uKeyCol * KEYN * (0.30 + 0.70 * up) * vis + uAmbCol * 0.55;
+  // when the sun is low the blue zenith keeps the water column blue-teal
+  float lowK = 1.0 - smoothstep(0.15, 0.5, uKeyDir.y);
+  return uKeyCol * KEYN * (0.30 + 0.70 * up) * vis + uAmbCol * 0.55 + uZenCol * 0.32 * lowK;
 }
 vec3 waterIrradiance() { return waterIrradianceV(1.0); }
 
