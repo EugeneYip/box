@@ -1,4 +1,5 @@
 import { TILE, FLORA, FLORA_INFO, SEA_LEVEL, DIRS8 } from '../../world/constants.js';
+import { law } from './util.js';
 
 // Lava flow as a height-field fluid. world.height holds the lava SURFACE
 // (ground + molten thickness `vol`), so the rendered terrain shows real 3D
@@ -142,6 +143,7 @@ export class LavaSim {
     const rain = wt === 'rain' || wt === 'storm' ? 1 : 0;
     const rng = this.rng;
     const fire = g.disasters?.fire;
+    const flowOn = law(g, "natureLavaFlow", true);
     for (let k = this.count - 1; k >= 0; k--) {
       const i = this.list[k];
       const x = i % W,
@@ -149,7 +151,8 @@ export class LavaSim {
       let v = this.vol[i];
       let h = this.heat[i];
       // ---- flow ----
-      if (v > 0.02 && h > COOL_HEAT) {
+      // World Law natureLavaFlow: when off, lava stays put and simply cools
+      if (flowOn && v > 0.02 && h > COOL_HEAT) {
         const visc = Math.min(1, (h - COOL_HEAT) * 2.6); // hot = runny
         const L = w.height[i];
         let total = 0;

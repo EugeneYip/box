@@ -1,4 +1,5 @@
 import { TILE, TILE_INFO, FLORA, FLORA_INFO, SEA_LEVEL, DIRS8 } from '../../world/constants.js';
+import { law } from './util.js';
 
 // Wildfire simulation on world.fire (0 = not burning, (0..1] intensity).
 //
@@ -54,6 +55,7 @@ export class FireSim {
     this.smCount = 0;
     this.bTimer.fill(0);
     this._external = null;
+    this._scan = null;
     this.version++;
   }
 
@@ -152,11 +154,19 @@ export class FireSim {
   tick(step) {
     const g = this.game;
     const w = g.world;
-    // adopt fires started by other modules through world.setFire()
-    if (this._external) {
-      const r = this._external;
+    // adopt fires started by other modules through world.setFire(); the
+    // dirty rect (which also covers our own changes) is swept in row slices
+    // so a huge fire on a big map stays within the tick budget
+    if (this._external && !this._scan) {
+      this._scan = { ...this._external, y: this._external.y0 };
       this._external = null;
-      for (let y = r.y0; y <= r.y1; y++)
+    }
+    if (this._scan) {
+      const r = this._scan;
+      const rowW = r.x1 - r.x0 + 1;
+      const rows = Math.max(1, Math.floor(16384 / rowW));
+      const yEnd = Math.min(r.y1, r.y + rows - 1);
+      for (let y = r.y; y <= yEnd; y++)
         for (let x = r.x0; x <= r.x1; x++) {
           const i = y * w.w + x;
           if (w.fire[i] > 0 && !this.inList[i]) {
@@ -164,6 +174,8 @@ export class FireSim {
             if (!this.ignite(x, y, f, { flash: true })) w.fire[i] = 0;
           }
         }
+      r.y = yEnd + 1;
+      if (r.y > r.y1) this._scan = null;
     }
     if (this.count === 0 && this.smCount === 0) return;
     const env = g.env;
@@ -178,6 +190,7 @@ export class FireSim {
     const rng = this.rng;
     const W = w.w;
 
+    const spreadOn = law(g, "natureFireSpread", true);
     const n = this.count;
     const todo = Math.min(n, BUDGET);
     const dtEff = step * (n / Math.max(1, todo));
@@ -220,7 +233,8 @@ export class FireSim {
       // ---- spread ----
       const hi = w.height[i];
       const sp = f * dtEff * 0.45 * (1 - Math.min(0.92, rain * 0.85)) * (1 - Math.min(0.9, wet));
-      for (let d = 0; d < 8; d++) {
+      // World Law natureFireSpread: when off, fires burn in place only
+      for (let d = 0; spreadOn && d < 8; d++) {
         const dx = DIRS8[d][0],
           dy = DIRS8[d][1];
         const nx = x + dx,
@@ -241,7 +255,7 @@ export class FireSim {
         }
       }
       // spotting: burning trees throw embers downwind in strong wind
-      if (fl && FLORA_INFO[fl].isTree && ws > 0.3 && f > 0.6 && rain < 0.2 && rng.next() < dtEff * 0.04 * ws) {
+      if (spreadOn && fl && FLORA_INFO[fl].isTree && ws > 0.3 && f > 0.6 && rain < 0.2 && rng.next() < dtEff * 0.04 * ws) {
         const dist = 2 + rng.next() * 4 * ws * 2;
         const sx = Math.round(x + wdx * dist + (rng.next() - 0.5) * 2),
           sy = Math.round(y + wdz * dist + (rng.next() - 0.5) * 2);

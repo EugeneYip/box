@@ -1,3 +1,5 @@
+import { law } from './util.js';
+
 // Plague: a contagious sickness among humanoids. Infection state lives in
 // unit.data.plague = {t, severity, prevColor}. Infected units lose health
 // over time, may recover, and pass the disease to humanoids nearby. While
@@ -97,8 +99,9 @@ export class PlagueSim {
         this.cure(u);
         continue;
       }
-      // contagion
-      if (rng.next() < step * 1.4) {
+      // contagion (World Law calamityPlague: the sick still suffer when off,
+      // but the disease no longer passes between people)
+      if (law(g, 'calamityPlague', true) && rng.next() < step * 1.4) {
         const near = g.units.query(u.x, u.z, SPREAD_RADIUS);
         for (const o of near) {
           if (o !== u && this.canCatch(o) && rng.next() < 0.35) this.infect(o, Math.max(0.6, p.severity * (0.85 + rng.next() * 0.3)));

@@ -25,6 +25,7 @@ export class LightPool {
     this.transients = [];
     this.requests = [];
     this._nextKey = 1;
+    this.max = MAX;
   }
 
   // One-shot light that fades out (quadratic) over `duration` seconds.
@@ -54,6 +55,23 @@ export class LightPool {
     this.requests.length = 0;
   }
 
+  // Power saver uses fewer lights. Hidden lights leave the shader light
+  // count, so materials recompile once per toggle (programs are cached).
+  setMax(n) {
+    n = Math.max(1, Math.min(MAX, n | 0));
+    if (n === this.max) return;
+    this.max = n;
+    for (let i = 0; i < MAX; i++) {
+      const on = i < n;
+      this.lights[i].visible = on;
+      if (!on) {
+        this.lights[i].intensity = 0;
+        this.keys[i] = null;
+        this.fx.uniforms.uPLC.value[i].set(0, 0, 0);
+      }
+    }
+  }
+
   update(dt) {
     const rig = this.fx.game.cameraRig;
     const cx = rig.cur.x,
@@ -76,11 +94,11 @@ export class LightPool {
       if (d > span * 2.2) c.score *= 0.05;
     }
     cands.sort((a, b) => b.score - a.score);
-    const chosen = cands.slice(0, MAX);
+    const chosen = cands.slice(0, this.max);
     const free = [];
     const byKey = new Map(chosen.map((c) => [c.key, c]));
     // keep sticky assignments
-    for (let i = 0; i < MAX; i++) {
+    for (let i = 0; i < this.max; i++) {
       const c = this.keys[i] && byKey.get(this.keys[i]);
       if (c) {
         this._apply(i, c);
