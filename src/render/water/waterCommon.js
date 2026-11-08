@@ -37,6 +37,8 @@ export function landscapeUniforms(game) {
       uCloudOn: { value: 0 },
       uWet: { value: 0 },
       uCamDist: { value: 100 },
+      uDetail: { value: 1 }, // 1 = full close-up detail .. 0 = far / power-saver path
+      uPower: { value: 0 }, // 1 = power saver: fewer texture taps, no triplanar
     };
     shared.set(game, u);
   }
@@ -112,6 +114,8 @@ uniform vec4 uCloudParams;
 uniform float uCloudOn;
 uniform float uWet;
 uniform float uCamDist;
+uniform float uDetail;
+uniform float uPower;
 
 // key light normalised so the noon sun is ~1
 const float KEYN = 0.30;
