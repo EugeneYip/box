@@ -75,16 +75,10 @@ varying vec2 vVal;
 void main() {
   float r = length(vUv);
   vec3 c;
-  if (uFlat > 0.5) {
-    float ring = smoothstep(0.7, 0.9, r) * (1.0 - smoothstep(0.9, 1.0, r));
-    float scorch = (1.0 - smoothstep(0.0, 0.5, r)) * 0.5;
-    c = mix(uHalo, vec3(1.0), 0.45) * (ring * 2.2 + scorch) * (1.0 - vVal.y);
-  } else {
-    float a = atan(vUv.y, vUv.x);
-    float rays = pow(abs(cos(a * 3.0)), 60.0) + pow(abs(cos(a * 3.0 + 0.52)), 90.0) * 0.6 + pow(abs(cos(a * 7.0 + 1.1)), 120.0) * 0.4;
-    float core = exp(-r * r * 30.0) * 3.0 + exp(-r * 5.0) * 0.6;
-    c = (vec3(1.0, 1.0, 1.05) * core + mix(uHalo, vec3(1.0), 0.5) * rays * exp(-r * 3.2) * 2.2) * (1.0 - smoothstep(0.85, 1.0, r));
-  }
+  // soft additive glow: a hot core and a wide blue-violet bloom
+  float core = exp(-r * r * 26.0) * 2.4;
+  float glow = exp(-r * r * 4.5) * 0.55;
+  c = (vec3(1.0, 0.98, 1.02) * core + mix(uHalo, vec3(1.0), 0.35) * glow) * (1.0 - smoothstep(0.75, 1.0, r));
   c *= vVal.x;
   if (max(c.r, max(c.g, c.b)) < 0.002) discard;
   gl_FragColor = vec4(c, 1.0);
@@ -161,7 +155,6 @@ export class Lightning {
       scene.add(m);
       return m;
     };
-    this.ring = mk(1, 29);
     this.star = mk(0, 31);
     this._v = new THREE.Vector3();
     this._s = new THREE.Vector3();
@@ -321,7 +314,7 @@ export class Lightning {
         this.impArr[ii * 4] = b.x;
         this.impArr[ii * 4 + 1] = b.y + 0.15;
         this.impArr[ii * 4 + 2] = b.z;
-        this.impArr[ii * 4 + 3] = 1.6 + camDist * 0.05;
+        this.impArr[ii * 4 + 3] = 2.2 + camDist * 0.07;
         this.valArr[ii * 2] = Math.max(br, 0.5 * (1 - life));
         this.valArr[ii * 2 + 1] = life;
         ii++;
@@ -333,7 +326,7 @@ export class Lightning {
     this.geo.setDrawRange(0, (vi / 4) * 6);
     for (const k of ['position', 'aEdge', 'aGlow', 'aBright']) this.geo.attributes[k].needsUpdate = true;
     this.mesh.visible = vi > 0;
-    this.ring.visible = this.star.visible = this.bolts.length > 0;
+    this.star.visible = this.bolts.length > 0;
     return { flash, strokes };
   }
 }

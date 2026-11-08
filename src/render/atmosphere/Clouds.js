@@ -163,25 +163,43 @@ void main() {
 }
 `;
 const SCUD_FRAG = /* glsl */ `
-uniform vec2 uOff;
+uniform vec2 uOff;     // shared with the storm cloud-shadow field
 uniform float uAmt;
-uniform float uScale;
 uniform vec3 uCenter;
 uniform float uRadius;
-uniform vec3 uCol;
+uniform vec3 uTop;
+uniform vec3 uUnder;
+uniform vec3 uSunDir;
 uniform vec3 uFlash;
+uniform float uTime;
 varying vec3 vW;
 ${NOISE}
+// cloud-top height field: the large shapes match the storm shadow field
+float deckBase(vec2 xz) { return cFbm(xz / 46.0 + uOff); }
 void main() {
-  vec2 p = vW.xz / uScale + uOff;
-  float n = cFbm(p);
-  float n2 = cFbm(p * 2.3 + uOff * 0.6 + 7.0);
-  float d = smoothstep(0.34, 0.76, n * 0.75 + n2 * 0.35);
-  float radial = 1.0 - smoothstep(uRadius * 0.55, uRadius, distance(vW.xz, uCenter.xz));
-  float a = d * uAmt * radial;
-  if (a < 0.003) discard;
-  vec3 c = uCol * (0.75 + 0.5 * n2) + uFlash;
-  gl_FragColor = vec4(c, a);
+  vec2 xz = vW.xz;
+  vec2 p = xz / 46.0 + uOff;
+  float base = cFbm(p);
+  float radial = 1.0 - smoothstep(uRadius * 0.55, uRadius, distance(xz, uCenter.xz));
+  if (base < 0.3 || radial <= 0.0) discard;
+  // billowing detail (domain warped, slowly boiling)
+  vec2 w = vec2(cFbm(p * 2.1 + uTime * 0.03), cFbm(p * 2.1 + 5.2 - uTime * 0.025));
+  float det = cFbm(p * 3.3 + w * 0.7);
+  float h = base + (det - 0.5) * 0.24;
+  float cov = smoothstep(0.47, 0.64, h);          // broken deck with real gaps
+  if (cov < 0.004) discard;
+  // lit from above: normal from the height field gradient
+  float e = 2.0;
+  float hx = deckBase(xz + vec2(e, 0.0)) - base;
+  float hz = deckBase(xz + vec2(0.0, e)) - base;
+  vec3 N = normalize(vec3(-hx * 24.0 - (det - 0.5) * 0.9, 1.0, -hz * 24.0 - (w.x - 0.5) * 0.9));
+  float lam = clamp(dot(N, uSunDir) * 0.55 + 0.45, 0.0, 1.0);
+  float thick = smoothstep(0.42, 0.78, h);
+  vec3 col = mix(uUnder, uTop * (0.7 + 0.5 * lam), thick);
+  col *= mix(0.62, 1.0, smoothstep(0.0, 0.55, cov));  // darker underside at the thin edges
+  col += uFlash * (0.3 + 0.7 * thick);
+  float a = cov * uAmt * mix(0.42, 0.82, thick) * radial;
+  gl_FragColor = vec4(col, a);
 }
 `;
 
@@ -194,6 +212,7 @@ export class Clouds {
       H = game.world.h;
     this.field = { x0: -W * 0.5, z0: -H * 0.5, sx: W * 2, sz: H * 2 };
     this.altitude = 62;
+    this.deckAltitude = 40; // storm deck
     const q = game.pipeline?.quality || 'high';
     const count = q === 'low' ? 18 : q === 'medium' ? 26 : 34;
     const rnd = mulberry32(9137);
@@ -284,13 +303,15 @@ export class Clouds {
 
     // ---- storm scud layer --------------------------------------------------
     this.scudU = {
-      uOff: { value: new THREE.Vector2() },
+      uOff: null, // shared with the storm shadow field (set below)
       uAmt: { value: 0 },
-      uScale: { value: 30 },
       uCenter: { value: new THREE.Vector3() },
       uRadius: { value: 100 },
-      uCol: { value: new THREE.Color(0.2, 0.22, 0.25) },
+      uTop: { value: new THREE.Color(0.5, 0.52, 0.56) },
+      uUnder: { value: new THREE.Color(0.1, 0.11, 0.13) },
+      uSunDir: { value: new THREE.Vector3(0, 1, 0) },
       uFlash: { value: new THREE.Color(0, 0, 0) },
+      uTime: { value: 0 },
     };
     this.scud = new THREE.Mesh(
       new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2),
@@ -336,6 +357,7 @@ export class Clouds {
     this.splatScene.add(this.splatMesh);
     const f = this.field;
     this.stormShadowU = { uOff: { value: new THREE.Vector2() }, uAmt: { value: 0 } };
+    this.scudU.uOff = this.stormShadowU.uOff; // deck and its shadows move as one
     this.stormShadow = new THREE.Mesh(
       new THREE.PlaneGeometry(f.sx, f.sz).rotateX(-Math.PI / 2).translate(f.x0 + f.sx / 2, 50, f.z0 + f.sz / 2),
       new THREE.ShaderMaterial({ uniforms: this.stormShadowU, vertexShader: STORM_SHADOW_VERT, fragmentShader: STORM_SHADOW_FRAG, ...maxBlend }),
@@ -361,6 +383,7 @@ export class Clouds {
     this.drift = new THREE.Vector2(0, 0);
     this._first = true;
     this._v = new THREE.Vector3();
+    this._c = new THREE.Color();
   }
 
   update(dt, model, weather, env) {
@@ -393,7 +416,7 @@ export class Clouds {
       const scale = (0.55 + 0.45 * Math.sqrt(c.presence)) * grow;
       const cs = Math.cos(c.rot),
         sn = Math.sin(c.rot);
-      const cy = c.y - 22 * weather.storm; // storm decks hang lower
+      const cy = c.y;
       const base = cy - c.size * 0.05;
       for (const p of c.puffs) {
         const o = k * 8;
@@ -459,21 +482,21 @@ export class Clouds {
     if (this.scud.visible) {
       const t = rig.target;
       const camY = cam.position.y;
-      const y = t.y + (camY - t.y) * 0.58;
+      // a fixed-altitude deck, kept below the lens when zoomed in
+      const y = Math.min(this.deckAltitude, t.y + (camY - t.y) * 0.6);
       const size = 80 + camDist * 6;
       this.scud.position.set(t.x, y, t.z);
       this.scud.scale.set(size, 1, size);
-      const ss = 1.6 + 4.5 * wind.strength;
-      this.scudOff.x += (wind.x * ss * dt) / 30;
-      this.scudOff.y += (wind.z * ss * dt) / 30;
       const S = this.scudU;
-      S.uScale.value = 14 + camDist * 0.55;
-      S.uOff.value.copy(this.scudOff).multiplyScalar(30 / S.uScale.value);
-      S.uAmt.value = storm * 0.5;
+      S.uAmt.value = storm;
       S.uCenter.value.set(t.x, y, t.z);
       S.uRadius.value = size * 0.5;
-      S.uCol.value.copy(model.cloudShade).multiplyScalar(0.55).lerp(model.cloudLit, 0.12);
-      S.uFlash.value.setRGB(0.7, 0.78, 1.0).multiplyScalar(flash * 0.35);
+      S.uTime.value = game.time.realTime;
+      S.uSunDir.value.copy(u.uSunDir.value);
+      // tops lit by the dim storm sun + skylight, slate undersides
+      S.uTop.value.copy(model.cloudShade).multiplyScalar(0.85).add(this._c.copy(model.cloudLit).multiplyScalar(0.55));
+      S.uUnder.value.copy(model.cloudShade).multiplyScalar(0.2);
+      S.uFlash.value.setRGB(0.75, 0.8, 1.05).multiplyScalar(flash * 0.4);
     }
     this.stormShadow.visible = weather.storm > 0.02 || weather.overcast > 0.6;
     const SS = this.stormShadowU;
@@ -485,7 +508,7 @@ export class Clouds {
     const sd = model.sunDir;
     const sy = Math.max(0.35, sd.y);
     const P = this.shadow.params;
-    const alt = this.altitude - 22 * weather.storm;
+    const alt = this.altitude - (this.altitude - this.deckAltitude) * weather.storm;
     P.x = -f.x0 + (sd.x / sy) * alt;
     P.y = -f.z0 + (sd.z / sy) * alt;
     P.z = 1 / f.sx;

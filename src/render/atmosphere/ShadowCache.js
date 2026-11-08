@@ -73,11 +73,14 @@ export class ShadowCache {
     // same packing and culling side three uses for directional shadow maps
     this.dynScene.overrideMaterial = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, side: THREE.BackSide });
     this.dynScene.matrixWorldAutoUpdate = false;
-    // terrain edits refresh quickly; flora growth / felling only lazily
+    // Terrain reshaping refreshes quickly. Field / road tile changes and
+    // flora growth or felling churn constantly in a grown world and barely
+    // change the shadows: they only mark the map stale for a slow (2 s)
+    // refresh, as does building construction via the heartbeat.
     const shape = () => (this.worldDirty = Math.min(this.worldDirty || 1e9, 8));
-    const flora = () => (this.worldDirty = Math.min(this.worldDirty || 1e9, 90));
-    for (const e of ['world:height', 'world:type', 'world:regenerated']) this.game.events.on(e, shape);
-    this.game.events.on('world:flora', flora);
+    const churn = () => (this.worldDirty = Math.min(this.worldDirty || 1e9, 120));
+    for (const e of ['world:height', 'world:regenerated']) this.game.events.on(e, shape);
+    for (const e of ['world:type', 'world:flora']) this.game.events.on(e, churn);
   }
 
   dynamicRoot() {
@@ -94,6 +97,16 @@ export class ShadowCache {
     const worldDue = this.worldDirty && this.sinceRefresh >= this.worldDirty;
     const heartbeat = this.sinceRefresh >= 240;
     const refresh = changed || !this.valid || !sizeOk || worldDue || heartbeat || this.game.frame < 4;
+    // refresh-trigger counters (inspect game.atmosphere.shadowCache.stats)
+    const st = this.stats || (this.stats = { frames: 0, refresh: 0, changed: 0, world: 0, heartbeat: 0, invalid: 0 });
+    st.frames++;
+    if (refresh) {
+      st.refresh++;
+      if (changed) st.changed++;
+      else if (!this.valid || !sizeOk) st.invalid++;
+      else if (worldDue) st.world++;
+      else if (heartbeat) st.heartbeat++;
+    }
     for (const o of this.dyn) o.castShadow = true; // safety: never leave flags off
     this.dyn.length = 0;
     if (refresh) {
@@ -140,14 +153,20 @@ export class ShadowCache {
         renderer.setRenderTarget(this.rt);
         renderer.render(this.copyScene, this.quadCam);
         this.valid = true;
-      } else {
+        this.mapHasDyn = false;
+      } else if (this.mapHasDyn) {
+        // last frame's units are baked into the map: restore the static copy
         this.restoreQuad.material.uniforms.tSrc.value = this.rt.texture;
         renderer.setRenderTarget(map);
         renderer.render(this.restoreScene, this.quadCam);
+        this.mapHasDyn = false;
       }
-      // dynamic casters on top, depth tested against the static map
+      // dynamic casters on top, depth tested against the static map.
+      // Zoomed far out units are a few pixels tall: their shadows are
+      // skipped (and the clean static map is kept as is).
       const root = this.dynamicRoot();
-      if (root && root.visible) {
+      const near = this.game.cameraRig.cur.dist < 150;
+      if (root && root.visible && near) {
         const list = this.dynScene.children;
         list.length = 0;
         root.traverseVisible((o) => {
@@ -156,6 +175,7 @@ export class ShadowCache {
         if (list.length) {
           renderer.setRenderTarget(map);
           renderer.render(this.dynScene, sh.camera);
+          this.mapHasDyn = true;
         }
         list.length = 0;
       }
