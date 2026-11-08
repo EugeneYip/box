@@ -160,7 +160,7 @@ export const politics = {
       this.crown(k, heir);
       this._note(`${deadName} dies; ${heir.name} rules ${this._kn(k)}`, 'info', { x: heir.x, z: heir.z }, 'succ' + k.id, 20);
       // a contested succession can split a large realm
-      if (k.villages.length >= 3 && this.rng.chance(0.3)) {
+      if (k.villages.length >= 3 && this.law('civRebellions') && this.rng.chance(0.3)) {
         let claimant = null;
         for (const vid of k.villages) {
           const v = this.villages[vid];
@@ -273,7 +273,7 @@ export const politics = {
           this._note(`${this._kn(A)}–${this._kn(B)} alliance ends`, 'info', this._kingdomPos(A));
         }
         // alliance
-        if (!r.ally && r.opinion > 25 && (A.culture === B.culture || ea.some((e) => eb.includes(e)) || r.opinion > 32) && rng.chance(0.08)) {
+        if (this.law('civDiplomacy') && !r.ally && r.opinion > 25 && (A.culture === B.culture || ea.some((e) => eb.includes(e)) || r.opinion > 32) && rng.chance(0.08)) {
           r.ally = true;
           this._note(`🤝 ${this._kn(A)} and ${this._kn(B)} ally`, 'good', this._kingdomPos(A));
           continue;
@@ -329,6 +329,7 @@ export const politics = {
 
   declareWar(a, b, reason = 'border', silent = false) {
     if (a === b) return false;
+    if (reason !== 'god' && !this.law('civWars')) return false;
     const A = this.kingdoms[a],
       B = this.kingdoms[b];
     if (!A?.alive || !B?.alive) return false;
@@ -396,6 +397,8 @@ export const politics = {
     const weary = Math.max(wearyA, wearyB);
     if (weary > 0.22 && dur > YEAR * 2) return this.makePeace(A.id, B.id);
     if (dur < YEAR * 3) return;
+    // without diplomacy, wars end only in exhaustion
+    if (!this.law('civDiplomacy')) return;
     const lossA = r.startPop[r.a === A.id ? 0 : 1] - A.population;
     const lossB = r.startPop[r.a === A.id ? 1 : 0] - B.population;
     const popWeary = Math.max(lossA / Math.max(1, r.startPop[0]), lossB / Math.max(1, r.startPop[1]));
@@ -417,8 +420,25 @@ export const politics = {
   },
 
   // ---------------------------------------------------------------- armies
+  // The laws of the world forbid war: every war ends in an armistice.
+  _endAllWars() {
+    let n = 0;
+    for (const r of this.relations.values()) {
+      if (!r.war) continue;
+      this.makePeace(r.a, r.b, true);
+      n++;
+    }
+    for (const a of [...this.armies]) this._disbandArmy(a);
+    this.battles = [];
+    if (n) this._note(`⚖ War is outlawed: ${n === 1 ? 'the war ends' : n + ' wars end'} in armistice`, 'good', null, 'outlaw', 30);
+  },
+
   _wars() {
     const now = this.game.time.total;
+    if (!this.law('civWars')) {
+      if (this.armies.length || [...this.relations.values()].some((r) => r.war && r.reason !== 'god')) this._endAllWars();
+      return;
+    }
     // spawn armies for kingdoms at war that have none
     for (const k of this.kingdoms) {
       if (!k.alive) continue;
@@ -724,7 +744,7 @@ export const politics = {
     v.loyalty = clamp(v.loyalty + (L - v.loyalty) * 0.2, 0, 100);
     if (v.loyalty < 32 && v.pop >= 8) v.unrest = (v.unrest || 0) + 1;
     else v.unrest = Math.max(0, (v.unrest || 0) - 1);
-    if (v.unrest >= 3 && this.rng.chance(alive < 3 ? 0.3 : 0.14)) this.rebel(v);
+    if (v.unrest >= 3 && this.law('civRebellions') && this.rng.chance(alive < 3 ? 0.3 : 0.14)) this.rebel(v);
   },
 
   _aliveKingdoms() {
@@ -735,6 +755,7 @@ export const politics = {
 
   // Peaceful secession: a big realm in a crowded world lets a distant province go.
   _secession() {
+    if (!this.law('civRebellions')) return;
     const alive = this._aliveKingdoms();
     if (alive >= 6) return;
     const now = this.game.time.total;

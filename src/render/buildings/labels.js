@@ -213,7 +213,9 @@ export class Labels {
     const cam = rig.camera.position;
     const w = g.world;
     const kA = smooth(34, 70, D);
-    const vA = smooth(18, 30, D) * (1 - smooth(120, 190, D));
+    // far zoom keeps only kingdom names
+    const z01 = this.game.view?.zoom01 ?? 0;
+    const vA = smooth(18, 30, D) * (1 - smooth(120, 190, D)) * (1 - smooth(0.4, 0.55, z01)) * (this.game.view?.far ? 0 : 1);
     const cand = [];
     for (const [id, s] of this.kLabels) {
       const k = civ.kingdoms[id];

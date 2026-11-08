@@ -786,8 +786,9 @@ export class BuildingRenderer {
   // Mid zoom: small props are culled beyond propDist.
   _applyLod(force = false) {
     const D = this.game.cameraRig?.cur?.dist ?? 60;
-    const far = this._far ? D > this.lodDist - 12 : D > this.lodDist;
-    const props = D <= this.propDist;
+    const z01 = this.game.view?.zoom01 ?? 0;
+    const far = this._far ? D > this.lodDist - 12 : D > this.lodDist || !!this.game.view?.far;
+    const props = D <= this.propDist && z01 < 0.42;
     if (!force && far === this._far && props === this._props) return;
     this._far = far;
     this._props = props;
@@ -855,7 +856,7 @@ export class BuildingRenderer {
       for (const c of this.chimneys) {
         c.t -= dt;
         if (c.t > 0) continue;
-        c.t = (c.forge ? 0.55 : 2.4 + Math.random() * 2.6) / (c.rate || 1);
+        c.t = ((c.forge ? 0.55 : 2.4 + Math.random() * 2.6) / (c.rate || 1)) * (g.settings?.powerSaver ? 2 : 1);
         const b = c.b;
         if (!b.alive || b.constructing) continue;
         if ((c.x - cx) ** 2 + (c.z - cz) ** 2 > R2) continue;
@@ -867,7 +868,7 @@ export class BuildingRenderer {
     // burning buildings
     this._burnT = (this._burnT || 0) - dt;
     if (this._burnT <= 0) {
-      this._burnT = 0.18;
+      this._burnT = g.settings?.powerSaver ? 0.36 : 0.18;
       let n = 0;
       for (const b of g.civ.buildings) {
         if (b.gone) continue;

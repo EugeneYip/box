@@ -29,10 +29,19 @@ import { politics, relKey } from './politics.js';
 
 // Growth budget: the world stays lively but bounded (performance target is
 // about 1,000 units and 300-400 buildings on a 256 map).
-const HUMAN_SOFT_CAP = 850;
-const BUILDING_SOFT_CAP = 300;
+// Budgets scale with map area (a = w*h / 256^2): a Huge 512 map tops out near
+// 900 people and 900 buildings.
 const VILLAGE_MAX_POP = 64;
-const MAX_VILLAGES = 26;
+function budgets(w, h) {
+  const a = (w * h) / (256 * 256);
+  return {
+    area: a,
+    humans: Math.round(Math.min(900, 850 * Math.pow(a, 0.04))),
+    buildings: Math.round(Math.min(920, 300 * Math.pow(a, 0.8))),
+    villages: Math.round(26 * Math.pow(a, 0.55)),
+    startVillages: Math.max(1, Math.round(3 * Math.pow(a, 0.7))),
+  };
+}
 
 export class Civilization {
   constructor(game) {
@@ -52,11 +61,18 @@ export class Civilization {
     game.units?.registerBrain?.('human', (u, dt) => this.think(u, dt));
     game.events.on('unit:death', ({ unit, cause }) => this._onDeath(unit, cause));
     game.events.on('world:height', (r) => this._onHeight(r));
+    game.events.on('laws', ({ key, value }) => {
+      if ((key === 'civWars' || key == null) && !this.law('civWars')) this._endAllWars();
+      if ((key === 'civDiplomacy' || key == null) && !this.law('civDiplomacy')) for (const r of this.relations.values()) r.ally = false;
+      // settlers on the road turn back home
+      if ((key === 'civExpansion' || key == null) && !this.law('civExpansion')) for (const e of [...this.expeditions]) this._abortExpedition(e);
+    });
   }
 
   _init() {
     const w = this.world;
     this.rng = this.game.rng.fork('civ');
+    this.budget = budgets(w.w, w.h);
     this.use = new Uint8Array(w.size);
     this.plotOf = new Int16Array(w.size).fill(-1);
     this.reservedBy = new Int32Array(w.size);
@@ -375,6 +391,9 @@ export class Civilization {
   }
 
   seedInitial(n = 3) {
+    // the default of three starting villages grows with the map
+    const explicit = this.game.params?.raw?.has?.('civs');
+    if (!explicit && (n == null || n === 3)) n = this.budget.startVillages;
     n = n ?? 3;
     if (!(n > 0)) return;
     this._computeLand();
@@ -389,13 +408,14 @@ export class Civilization {
   // ------------------------------------------------------------------ expansion
   _tryExpand(v) {
     const now = this.game.time.total;
+    if (!this.law('civExpansion')) return false;
     if (v.pop < (this._crowd() < 0.3 ? 18 : 24) || v.food < 50 || v.starving) return false;
     const crowd = this._crowd();
     if (now - v.lastExpand < YEAR * (5 + crowd * 10)) return false;
     const k = this.kingdoms[v.kingdom];
     if (!k || now - (k.lastExpand || -999) < YEAR * (2.5 + crowd * 6)) return false;
     const aliveVillages = this.villages.filter((o) => o.alive).length;
-    if (aliveVillages >= MAX_VILLAGES || k.villages.length >= 8 || crowd >= 0.98) return false;
+    if (aliveVillages >= this.budget.villages || k.villages.length >= 8 || crowd >= 0.98) return false;
     if (this.expeditions.some((e) => e.from === v.id)) return false;
     v.lastExpand = now;
     const site = this._findExpansionSite(v);
@@ -553,7 +573,7 @@ export class Civilization {
       this._seenFrame = g.frame;
       this._ticksSinceFrame = 0;
     } else this._ticksSinceFrame++;
-    this._fxBudget = Math.min(6, this._fxBudget + step * 25);
+    this._fxBudget = Math.min(6, this._fxBudget + step * (g.settings?.powerSaver ? 12 : 25));
     for (const v of this.villages) {
       if (!v.alive) continue;
       if ((v._acc += step) >= 1) {
@@ -728,7 +748,7 @@ export class Civilization {
     const humans = g.units.count?.('human') ?? 0;
     const crowd = this._crowd();
     const popCrowd = this._popCrowd || 0;
-    if (pop < v.housing && pop < VILLAGE_MAX_POP && v.food > pop * 1.2 + 8 && !v.starving && humans < HUMAN_SOFT_CAP && this.rng.chance(1 - popCrowd * 0.85)) {
+    if (pop < v.housing && pop < VILLAGE_MAX_POP && v.food > pop * 1.2 + 8 && !v.starving && humans < this.budget.humans && this.rng.chance(Math.min(1, (1 - popCrowd * 0.85) * this.law('civGrowth', 1)))) {
       let father = false;
       for (const u of v.members) if (u.sex === 'm' && u.age >= 18 && u.age < 60) father = true;
       if (father) {
@@ -736,7 +756,7 @@ export class Civilization {
           if (u.sex !== 'f' || u.age < 18 || u.age > 45) continue;
           const d = u.data.civ;
           if (now - (d.lastBirth ?? -999) < YEAR * 2.5) continue;
-          if (!this.rng.chance(0.022 * dt * (golden ? 1.8 : 1))) continue;
+          if (!this.rng.chance(0.022 * dt * (golden ? 1.8 : 1) * this.law('civGrowth', 1))) continue;
           d.lastBirth = now;
           const home = this._homeFor(v, u);
           const child = this.spawnHuman(v, u.x + this.rng.float(-0.3, 0.3), u.z + this.rng.float(-0.3, 0.3), { age: 0, home: home ? home.id : -1, culture: u.data.culture });
@@ -750,7 +770,7 @@ export class Civilization {
     }
 
     // newcomers drawn to prosperous settlements
-    if (v.housing - pop >= 3 && v.food > pop * 2 + 20 && pop < 40 && now - v.lastImmigrant > 18 && humans < HUMAN_SOFT_CAP * 0.8 && this.rng.chance(0.035 * dt * (1 - popCrowd))) {
+    if (v.housing - pop >= 3 && v.food > pop * 2 + 20 && pop < 40 && now - v.lastImmigrant > 18 && humans < this.budget.humans * 0.8 && this.rng.chance(0.035 * dt * (1 - popCrowd) * this.law('civGrowth', 1))) {
       v.lastImmigrant = now;
       const a = this.rng.float(0, Math.PI * 2);
       const r = v.radius + 3;
@@ -797,8 +817,8 @@ export class Civilization {
     let blds = 0;
     for (const b of this.buildings) if (b.alive) blds += BUILDING_TYPES[b.type].wall ? 0.35 : 1;
     this._crowdT = t;
-    this._popCrowd = clamp((humans - HUMAN_SOFT_CAP * 0.55) / (HUMAN_SOFT_CAP * 0.45), 0, 1);
-    this._crowdV = clamp(Math.max(this._popCrowd, (blds - BUILDING_SOFT_CAP * 0.5) / (BUILDING_SOFT_CAP * 0.5)), 0, 1);
+    this._popCrowd = clamp((humans - this.budget.humans * 0.55) / (this.budget.humans * 0.45), 0, 1);
+    this._crowdV = clamp(Math.max(this._popCrowd, (blds - this.budget.buildings * 0.5) / (this.budget.buildings * 0.5)), 0, 1);
     return this._crowdV;
   }
 
@@ -1532,6 +1552,11 @@ export class Civilization {
   // ------------------------------------------------------------------ helpers
   // Notifications, de-duplicated: the same key (or text) within `cooldown`
   // seconds is dropped, and the feed is limited to meaningful events.
+  law(key, def = true) {
+    const v = this.game.laws?.[key];
+    return v == null ? def : v;
+  }
+
   _noteCollapse(cause) {
     this.collapses = this.collapses || {};
     this.collapses[cause] = (this.collapses[cause] || 0) + 1;
