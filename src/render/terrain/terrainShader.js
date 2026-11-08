@@ -90,6 +90,8 @@ vec3 seasonal(vec3 c, float k, float temp) {
   float lc = dot(c, LW);
   // hue shift toward the season's colour at this surface's own luminance
   vec3 tgt = uSeasonTint.rgb * (lc / max(dot(uSeasonTint.rgb, LW), 1e-3));
+  // warm seasons (autumn gold) glow a little brighter than the green they replace
+  tgt *= 1.0 + 0.22 * smoothstep(0.0, 0.2, uSeasonTint.r - uSeasonTint.g);
   vec3 t = mix(c, tgt, uSeasonTint.w);
   vec3 dryC = vec3(0.45, 0.34, 0.10) * (lc / 0.33) * 1.05;
   t = mix(t, dryC, uDry * 0.6);
@@ -255,22 +257,23 @@ Mat matTundra(NS s) {
 Mat matSnow(NS s) {
   // mid-value snow (never paper white): blue-violet hollows, wind ripples
   float drift = s.meso.r * 0.6 + s.det.g * 0.4;
-  vec3 c = mix(vec3(0.34, 0.38, 0.52), vec3(0.52, 0.55, 0.61), smoothstep(0.2, 0.72, drift));
-  c = mix(c, vec3(0.28, 0.31, 0.48), (1.0 - s.ao) * 0.7);
-  // slopes turn blue
-  c = mix(c, c * vec3(0.80, 0.86, 1.05), smoothstep(0.97, 0.78, s.n.y));
+  // clean, soft, bright snow (never paper white), gentle neutral-blue shading
+  vec3 c = mix(vec3(0.58, 0.61, 0.66), vec3(0.67, 0.70, 0.74), smoothstep(0.2, 0.72, drift));
+  c = mix(c, vec3(0.47, 0.52, 0.60), (1.0 - s.ao) * 0.35);
+  // slopes cool slightly
+  c = mix(c, c * vec3(0.92, 0.95, 1.02), smoothstep(0.97, 0.78, s.n.y));
   // broad wind ridges (read at mid zoom): gentle windward face, blue lee shadow
   vec2 wd = vec2(0.917, 0.401);
   vec2 q = s.p.xz + (s.meso.gb - 0.5) * 7.0;
   float rp = fract(dot(q, wd) * 0.19 + s.det.r * 0.5);
   float ridge = smoothstep(0.0, 0.78, rp) * (1.0 - smoothstep(0.78, 1.0, rp));
   float ridgeFade = 1.0 - smoothstep(0.3, 1.0, s.fw);
-  c = mix(c, c * vec3(0.78, 0.84, 1.02), (1.0 - ridge) * 0.55 * ridgeFade);
+  c = mix(c, c * vec3(0.90, 0.93, 1.0), (1.0 - ridge) * 0.25 * ridgeFade);
   float rip = sin(dot(q, wd) * 3.4 + s.det.r * 6.0) * 0.5 + 0.5;
   float ripFade = 1.0 - smoothstep(0.05, 0.3, s.fw);
   c *= 0.96 + 0.05 * s.micro.r;
-  c *= 1.0 - 0.04 * rip * ripFade;
-  return mk(c, 0.62, 0.40 + 0.3 * drift, 0.03 + 0.45 * ridge * ridgeFade + 0.04 * rip * ripFade);
+  c *= 1.0 - 0.02 * rip * ripFade;
+  return mk(c, 0.62, 0.40 + 0.3 * drift, 0.025 + 0.12 * ridge * ridgeFade + 0.015 * rip * ripFade);
 }
 Mat matRock(NS s) {
   vec3 warm = vec3(0.330, 0.290, 0.245);
@@ -492,7 +495,7 @@ vec3 bumpPerturb(vec3 pos, vec3 n, float H) {
 }
 
 // Territory overlay: soft tint + crisp glowing border line.
-void applyOverlay(vec2 p, inout vec3 albedo, inout vec3 emissive) {
+void applyOverlay(vec2 p, inout vec3 albedo, inout vec3 emissive, float snowK) {
   if (uOverlayOn < 0.5) return;
   ivec2 osz = ivec2(uOverlaySize);
   vec2 sc = uOverlaySize / uWorldSize;
@@ -538,9 +541,11 @@ void applyOverlay(vec2 p, inout vec3 albedo, inout vec3 emissive) {
   float la = lum(albedo);
   vec3 tintC = min(col * (la / max(lum(col), 0.03)), vec3(1.0));
   tintC = mix(tintC, col * 0.6, 0.2);
-  albedo = mix(albedo, tintC, min(1.0, aFill * fillAmt * 1.3));
+  // snow composites above the territory tint (borders still read)
+  float onSnow = 1.0 - 0.85 * snowK;
+  albedo = mix(albedo, tintC, min(1.0, aFill * fillAmt * 1.3) * onSnow);
   vec3 lineCol = col * 1.05 + 0.015;
-  albedo = mix(albedo, albedo * (1.0 - 0.35 * a) + col * 0.35 * a, glow * mix(0.3, 0.6, fillK));
+  albedo = mix(albedo, albedo * (1.0 - 0.35 * a) + col * 0.35 * a, glow * mix(0.3, 0.6, fillK) * onSnow);
   float aLine = min(1.0, a * 1.3);
   albedo = mix(albedo, lineCol, line * aLine);
   albedo = mix(albedo, albedo * 0.3 + col * 0.06, edge * aLine * 0.85);
@@ -725,7 +730,7 @@ void terrainSurface() {
   }
 
   // ---- territory overlay
-  applyOverlay(p, albedo, emit);
+  applyOverlay(p, albedo, emit, clamp(snowB, 0.0, 1.0));
 
   tAlbedo = albedo;
   tRough = clamp(rough, 0.04, 1.0);
@@ -779,5 +784,5 @@ export function patchTerrainMaterial(material, uniforms) {
       )
       .replace('#include <opaque_fragment>', TERRAIN_FRAGMENT_POST + '\n#include <opaque_fragment>');
   };
-  material.customProgramCacheKey = () => 'worldseed-terrain-v6';
+  material.customProgramCacheKey = () => 'worldseed-terrain-v7';
 }

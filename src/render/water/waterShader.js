@@ -255,8 +255,8 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   float edgeZone = 1.0 - smoothstep(0.55, 0.95, max(iceW, fastI));
   float gapW = mix(0.025, 0.11, edgeZone);
   float lead = 1.0 - smoothstep(gapW * 0.45, gapW, fl.g);
-  float drift = step(fl.r, 0.42) * step(0.45, fl.b) * smoothstep(0.06, 0.2, iceW) * (1.0 - outK) * step(0.001, depth);
-  ice = max(ice * (1.0 - lead * smoothstep(0.05, 0.4, ice)), drift * (1.0 - lead));
+  float floeDrift = step(fl.r, 0.42) * step(0.45, fl.b) * smoothstep(0.06, 0.2, iceW) * (1.0 - outK) * step(0.001, depth);
+  ice = max(ice * (1.0 - lead * smoothstep(0.05, 0.4, ice)), floeDrift * (1.0 - lead));
   float iceRim = (1.0 - smoothstep(gapW, gapW * 2.4, fl.g)) * (1.0 - lead);
   // icebergs: rare faceted bergs in cold open water
   vec4 bg = texture2D(uCells, p * (1.0 / 150.0) + 0.53);
