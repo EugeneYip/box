@@ -114,8 +114,18 @@ export class Input {
   }
 
   onUp(e) {
+    const wasPinch = !!this.pinch;
     this.pointers.delete(e.pointerId);
     if (this.pointers.size < 2) this.pinch = null;
+    if (wasPinch && this.pointers.size === 1) {
+      // Lifting one finger of a pinch hands the gesture to the remaining
+      // finger as a pan (never as a power stroke or an inspect tap).
+      const [p] = [...this.pointers.values()];
+      this._pendingTouch = null;
+      this._pressed = false;
+      this.drag = { mode: 'pan', x: p.x, y: p.y, sx: p.x, sy: p.y, button: 0, moved: 99 };
+      return;
+    }
     if (this._pendingTouch && this.pointers.size === 0 && this.game.activePower) {
       // a quick single tap (shorter than the intent delay) still casts once
       this._pendingTouch = null;
