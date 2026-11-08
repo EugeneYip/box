@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { SEA_LEVEL, FLORA } from '../../world/constants.js';
-import { carveCrater, hurt, play, rand } from './util.js';
+import { carveCrater, hurt, play, rand, honourSurvivors, yearLabel } from './util.js';
 import { PF, DF, RAMP, TRAIL, glowFlash, sparks, smokePuff, dustPuff } from '../../render/fx/Effects.js';
 import { heatMaterial } from '../../render/fx/Debris.js';
 
@@ -352,6 +352,10 @@ class CraterAftermath {
       this._e -= 1;
       fx.emit('embers', { x: this.x + rand(-1, 1) * this.R * 0.4, y: y + 0.2, z: this.z + rand(-1, 1) * this.R * 0.4 }, { count: 1 });
     }
-    return this.t < this.life;
+    if (this.t >= this.life) {
+      honourSurvivors(g, this.x, this.z, this.R * 3, `Saw a star fall from the sky, ${yearLabel(g)}`, 8);
+      return false;
+    }
+    return true;
   }
 }

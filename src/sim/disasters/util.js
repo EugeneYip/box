@@ -121,3 +121,53 @@ export function law(game, key, fallback) {
   const v = game.laws?.[key];
   return v === undefined ? fallback : v;
 }
+
+// Current World Age modifier (neutral when ages are missing).
+export function ageMod(game, key, fallback = 1) {
+  const v = game.age?.mods?.[key];
+  return typeof v === 'number' ? v : fallback;
+}
+
+// Fire behaviour factor for the current age: fireRisk, and a cold age
+// (negative temperature offset) slows fire, a hot one quickens it.
+export function fireFactor(game) {
+  const temp = ageMod(game, 'temperature', 0);
+  return Math.max(0.05, ageMod(game, 'fireRisk', 1) * Math.max(0.25, 1 + temp * 1.2));
+}
+
+// Which ages make which disasters notable: notices then open with
+// "In the Age of …," when the current age is relevant to the event.
+const AGE_KINDS = {
+  embers: ['wildfire', 'fire', 'inferno', 'volcano', 'lava'],
+  tempests: ['storm', 'lightning', 'tornado'],
+  rime: ['blizzard'],
+  blight: ['plague'],
+  twilight: ['meteor', 'meteor-shower'],
+  iron: ['earthquake'],
+};
+export function withAge(game, kind, line) {
+  const age = game.age;
+  if (!age || !AGE_KINDS[age.id]?.includes(kind)) return line;
+  return `In the ${age.name}, ${line.charAt(0).toLowerCase()}${line.slice(1)}`;
+}
+
+// Biography + experience for units that lived through a calamity (Life's
+// API, guarded: it may not exist yet).
+export function honourSurvivors(game, x, z, r, text, xp = 12) {
+  const units = game.units?.query?.(x, z, r) || [];
+  for (const u of units) {
+    if (!u.alive || u.def?.kind !== 'humanoid') continue;
+    try {
+      game.units.log?.(u, text);
+      game.units.addXP?.(u, xp);
+      if (law(game, 'lifeTraits', true) !== false && Math.random() < 0.15) game.units.addTrait?.(u, 'survivor');
+    } catch (e) {
+      /* Life API optional */
+    }
+  }
+}
+
+export function yearLabel(game) {
+  const y = Math.floor(game.time?.year ?? 0);
+  return `Year ${y}`;
+}

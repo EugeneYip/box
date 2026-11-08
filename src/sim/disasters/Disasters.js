@@ -8,7 +8,7 @@ import { Earthquake } from './Earthquake.js';
 import { Tornado } from './Tornado.js';
 import { Volcano } from './Volcano.js';
 import { Tsunami } from './Tsunami.js';
-import { play, law } from './util.js';
+import { play, law, ageMod, fireFactor } from './util.js';
 import { Calamities } from './Calamities.js';
 
 // Disasters & hazards (Effects & Disasters owner).
@@ -136,7 +136,7 @@ export class Disasters {
     const w = this.game.world;
     if (!law(this.game, "calamityLightning", true)) return;
     const [tx, ty] = w.tileOf(x, z);
-    if (w.isLand(tx, ty) && Math.random() < 0.6) this.ignite(tx, ty, 0.9);
+    if (w.isLand(tx, ty) && Math.random() < Math.min(1, 0.6 * ageMod(this.game, "lightning", 1) * fireFactor(this.game))) this.ignite(tx, ty, 0.9);
   }
   ignite(tx, ty, intensity = 1) {
     return this.fire.ignite(tx, ty, intensity);

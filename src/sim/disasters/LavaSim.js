@@ -1,5 +1,5 @@
 import { TILE, FLORA, FLORA_INFO, SEA_LEVEL, DIRS8 } from '../../world/constants.js';
-import { law } from './util.js';
+import { law, fireFactor } from './util.js';
 
 // Lava flow as a height-field fluid. world.height holds the lava SURFACE
 // (ground + molten thickness `vol`), so the rendered terrain shows real 3D
@@ -203,7 +203,7 @@ export class LavaSim {
       if (w.isCoastal(x, y)) cool += step * 0.02;
       h -= cool;
       // ---- ignite surroundings ----
-      if (h > 0.45 && fire && rng.next() < step * 0.6 * h) {
+      if (h > 0.45 && fire && rng.next() < step * 0.6 * h * fireFactor(g)) {
         const d = DIRS8[(rng.next() * 8) | 0];
         const nx = x + d[0] + Math.round((rng.next() - 0.5) * 2),
           ny = y + d[1] + Math.round((rng.next() - 0.5) * 2);

@@ -1,5 +1,5 @@
 import { SEA_LEVEL, FLORA_INFO } from '../../world/constants.js';
-import { law, regionName, rand } from './util.js';
+import { law, regionName, rand, ageMod, fireFactor, withAge } from './util.js';
 
 // Natural calamities (World Law `calamityNatural`, default off): a scheduler
 // that now and then strikes a land location with an earthquake, tornado,
@@ -28,6 +28,8 @@ const LINES = {
   volcano: 'The earth tears open and a volcano rises in %.',
   storm: 'A lightning storm rakes %.',
   wildfire: 'A wildfire breaks out in %.',
+  blizzard: 'A howling blizzard buries %.',
+  plague: 'A plague breaks out in %.',
 };
 
 export class Calamities {
@@ -73,12 +75,34 @@ export class Calamities {
     this.strike();
   }
 
+  // Base weights bent by the current World Age: Embers favours wildfire and
+  // eruptions, Tempests storms and tornadoes, Rime blizzards (and few
+  // fires), Blight plague outbreaks, Twilight falling stars...
+  _weights() {
+    const g = this.game;
+    const m = (k, d = 1) => ageMod(g, k, d);
+    const temp = m('temperature', 0);
+    const fire = fireFactor(g);
+    const id = g.age?.id;
+    const w = Object.fromEntries(KINDS);
+    w.wildfire *= fire;
+    w.volcano *= temp > 0.1 ? 1.8 : 1;
+    w.storm *= m('storms') * Math.sqrt(m('lightning'));
+    w.tornado *= Math.pow(m('storms'), 0.8);
+    w.meteor *= id === 'twilight' ? 2 : 1;
+    w.earthquake *= id === 'iron' ? 1.5 : 1;
+    w.blizzard = temp < -0.2 ? 2.4 : 0;
+    w.plague = m('plague') > 1.3 ? 0.9 * m('plague') : 0;
+    return w;
+  }
+
   _pickKind() {
+    const w = this._weights();
     let tot = 0;
-    for (const [, w] of KINDS) tot += w;
+    for (const k in w) tot += w[k];
     let r = this.rng.next() * tot;
-    for (const [k, w] of KINDS) {
-      r -= w;
+    for (const k in w) {
+      r -= w[k];
       if (r <= 0) return k;
     }
     return 'meteor';
@@ -132,12 +156,28 @@ export class Calamities {
         // a dry-lightning strike sparks the blaze
         ds.lightning(x, z, { natural: true, ignite: true });
         for (let k = 0; k < 4; k++) ds.ignite(spot[0] + Math.round(rand(-2, 2)), spot[1] + Math.round(rand(-2, 2)), 1);
+      } else if (kind === 'blizzard') {
+        // a howling snowstorm: snow weather, fires snuffed out, the cold bites
+        if (law(g, 'skyWeather', true) !== false) g.atmosphere?.setWeather?.('snow', 1, 60);
+        w.forEachInRadius(x, z, 26, (tx, ty, d, i) => {
+          if (w.fire[i] > 0) ds.extinguish(tx, ty);
+        });
+        for (const u of g.units?.query?.(x, z, 26) || []) g.units.addStatus?.(u, 'chilled', 40);
+      } else if (kind === 'plague') {
+        // an outbreak in the nearest settlement (or wherever people are)
+        const v = (g.civ?.villages || []).filter((v) => v && v.alive !== false && (v.x ?? v.cx) != null);
+        const pick = v.length ? v[Math.floor(this.rng.next() * v.length)] : null;
+        const px = pick ? pick.x ?? pick.cx : x,
+          pz = pick ? pick.z ?? pick.cz : z;
+        if (!ds.plague(px, pz, 4)) return null;
+        spot[0] = Math.floor(px);
+        spot[1] = Math.floor(pz);
       }
     } catch (err) {
       console.error('[calamity]', kind, err);
       return null;
     }
-    const text = LINES[kind].replace('%', regionName(g, x, z));
+    const text = withAge(g, kind, LINES[kind].replace('%', regionName(g, spot[0] + 0.5, spot[1] + 0.5)));
     this.log.push({ t: g.time.total, kind, x: spot[0], z: spot[1], text });
     if (this.log.length > 64) this.log.shift();
     try {
