@@ -9,6 +9,8 @@ import { poseHumanoid, poseQuad, poseChicken, poseSerpent, poseWyrm } from './po
 import { Overlays, DECAL, EMOTE } from './Overlays.js';
 import { AmbientFauna } from './AmbientFauna.js';
 import { TINY, MID } from './models/tiny.js';
+import { MATERIALS, WEAPON_TOOL } from '../../sim/units/items.js';
+import { STATUS_BY_ID } from '../../sim/units/statuses.js';
 const HAT_TINT = [null, 0xe6c870, 0xc4ccd6, 0xf2c14e, 0x5d5a3a, 0x5b3a26, null, 0xf0c030];
 const SHADOW_RANGE = 60; // creatures farther than this from the camera target cast no shadow-map shadow
 const LOD_HI = 70, LOD_LO = 22; // on-screen height (px) thresholds for hi / lo / tiny models
@@ -67,6 +69,9 @@ const CULTURE_CLOTH = {
   mire: [0x6a7a3a, 0x4a6a3a, 0xa89a5a, 0x2e7a6a, 0x6a4a30, 0xb06a4a, 0x7aa04a, 0x5a4a6a, 0x8a8a50],
 };
 const UNIFORMED = new Set(['soldier', 'guard', 'king', 'queen']);
+const WORK_JOBS = new Set(['farmer', 'woodcutter', 'miner', 'builder', 'fisher']);
+// status -> emote icon (shown above creatures when close or selected)
+const STATUS_ICON = { burning: EMOTE.burning, sick: EMOTE.sick, wounded: EMOTE.wounded, enraged: EMOTE.anger, frightened: EMOTE.alert, chilled: EMOTE.chilled, starving: EMOTE.starving, exhausted: EMOTE.exhausted, mourning: EMOTE.mourning, inspired: EMOTE.inspired, blessed: EMOTE.sparkle };
 // Brighten a linear colour for far-zoom dots so it reads against terrain.
 function bright(c) {
   const m = Math.max(c[0], c[1], c[2], 1e-3);
@@ -111,6 +116,7 @@ export class UnitRenderer {
     this._s = new THREE.Vector3();
     this._n = { x: 0, y: 1, z: 0 };
     this._Pt = new Float32Array(16);
+    this._camRight = new THREE.Vector3(1, 0, 0);
     this._rimDay = new THREE.Color(1, 0.94, 0.82);
     this._rimNight = new THREE.Color(0.32, 0.42, 0.7);
     this._rim = new THREE.Color();
@@ -195,8 +201,11 @@ export class UnitRenderer {
     const wa = u.state === 'work' ? u.data?.workAnim : null;
     const rg = !!u.data?.ranged;
     const k = rs.apK;
-    if (k && k.job === u.job && k.ct === ct && k.kd === u.kingdom && k.ageB === ageB && k.wa === wa && k.rg === rg && k.col === u.color && k.sex === u.sex) return;
-    rs.apK = { job: u.job, ct, kd: u.kingdom, ageB, wa, rg, col: u.color, sex: u.sex };
+    const eq = u._eqVer || 0,
+      nt = u.traits ? u.traits.length : 0;
+    if (k && k.job === u.job && k.ct === ct && k.kd === u.kingdom && k.ageB === ageB && k.wa === wa && k.rg === rg && k.col === u.color && k.sex === u.sex && k.eq === eq && k.nt === nt) return;
+    rs.apK = { job: u.job, ct, kd: u.kingdom, ageB, wa, rg, col: u.color, sex: u.sex, eq, nt };
+    rs.starborn = !!u.traits?.includes('starborn');
     const id = u.id;
     const r = (k) => h1(id, k);
     const seed = r(99);
@@ -302,6 +311,17 @@ export class UnitRenderer {
       else if (anim === 'fish') tool = TOOL_OPT.rod;
     }
     if (u.data?.ranged && tool === TOOL_OPT.none) tool = TOOL_OPT.bow;
+    // equipment shows on the model: weapon shape, armour, material colour
+    const eqp = u.equipment;
+    const wpn = eqp?.weapon,
+      arm = eqp?.armor;
+    if (wpn && !child && !WORK_JOBS.has(job) && WEAPON_TOOL[wpn.kind] != null) {
+      tool = WEAPON_TOOL[wpn.kind];
+      if (tool === TOOL_OPT.bow) offhand = 0;
+    }
+    if (arm && !child) armor = 1;
+    const metalIdx = (wpn && MATERIALS[wpn.material]?.index) || (arm && MATERIALS[arm.material]?.index) || 0;
+    rs.legendary = !!(wpn?.legendary || arm?.legendary);
     const back = BACK_OPT[u.carry?.type] || 0;
     const kc = this._kingdomColor(u.kingdom);
     const pal = CULTURE_CLOTH[u.data?.culture] || NEUTRAL_CLOTH;
@@ -318,7 +338,7 @@ export class UnitRenderer {
       b: cloth,
       c: lin(hairC),
       sec,
-      var: [hair + hat * 16 + beard * 256, tool + offhand * 16 + back * 256, cape + outfit * 16 + armor * 256, kslot + seed * 0.98],
+      var: [hair + hat * 16 + beard * 256, tool + offhand * 16 + back * 256, cape + outfit * 16 + armor * 256 + metalIdx * 4096, kslot + seed * 0.98],
     };
     rs.dot = bright(kc || [0.85, 0.8, 0.7]);
     // tiny LOD: the head-top block shows the hat colour (or the hair)
@@ -395,6 +415,8 @@ export class UnitRenderer {
     const H = g.pipeline?.size?.y || innerHeight;
     this._ppu = H / (2 * Math.tan(THREE.MathUtils.degToRad(cam.fov / 2)));
     const camPos = cam.position;
+    const me = cam.matrixWorld.elements;
+    this._camRight.set(me[0], me[1], me[2]);
     const alpha = Math.min(1, Math.max(0, (g._acc || 0) / (U.tickDt || 1 / 15)));
     const simNow = g.time.total;
     const now = simNow + (g.paused ? 0 : Math.min(g._acc || 0, U.tickDt));
@@ -424,8 +446,13 @@ export class UnitRenderer {
     for (const m of this.mid.values()) m.begin();
     // animation throttling: distant and high-speed views re-pose less often
     const spd = g.paused ? 1 : g.speed || 1;
-    const midEvery = spd >= 8 ? 3 : spd >= 4 ? 2 : 1;
-    const tinyEvery = spd >= 8 ? 5 : spd >= 4 ? 4 : 3;
+    const saver = !!g.settings?.powerSaver;
+    const midEvery = (spd >= 8 ? 3 : spd >= 4 ? 2 : 1) * (saver ? 2 : 1);
+    const tinyEvery = (spd >= 8 ? 5 : spd >= 4 ? 4 : 3) * (saver ? 2 : 1);
+    const hiEvery = saver ? 2 : 1;
+    // far zoom (game.view): creatures are drawn as dots only - no posing, no shadows
+    const dotsOnly = !!(g.view?.far || (g.view?.zoom01 ?? 0) > 0.82);
+    this.dotsOnly = dotsOnly;
     const camT = g.cameraRig.target;
     const frame = g.frame | 0;
     const ov = this.overlays;
@@ -479,7 +506,13 @@ export class UnitRenderer {
       const dCam = camPos.distanceTo(this._sph.center);
       const ppu = this._ppu / Math.max(0.1, dCam);
       const pxH = md.height * scale * ppu;
-      const lod = def.kind === 'monster' ? 1 : smoothstep(2.4, 4.6, pxH);
+      const lod = dotsOnly ? (def.kind === 'monster' ? 1 : 0) : def.kind === 'monster' ? 1 : smoothstep(2.4, 4.6, pxH);
+      if (dotsOnly && lod === 0) {
+        const c = rs.dot || (this._appearance(u, rs), rs.dot) || [0.8, 0.8, 0.8];
+        const dsz = Math.max(0.3, 6 / ppu) * (def.kind === 'humanoid' ? 1 : 0.8);
+        ov.ground.add(ix, Math.max(ground, SEA_LEVEL), iz, dsz, 0, 1, 0, DECAL.dot, c[0], c[1], c[2], 1);
+        continue;
+      }
       this._appearance(u, rs);
       const heading = lerpAngle(u.ph ?? u.heading, u.heading, alpha);
       // spawn pop / emergence
@@ -490,7 +523,7 @@ export class UnitRenderer {
         if (def.brain === 'golem') emerge = 1 - smoothstep(0, 1.5, age);
         else if (age < 0.45) pop = Math.max(0.05, easeOutBack(age / 0.45));
       }
-      const every = md.rig === 'serpent' || md.rig === 'wyrm' ? 1 : rs.lv === 2 ? tinyEvery : rs.lv === 1 ? midEvery : 1;
+      const every = md.rig === 'serpent' || md.rig === 'wyrm' ? hiEvery : rs.lv === 2 ? tinyEvery : rs.lv === 1 ? midEvery : hiEvery;
       const skipPose = every > 1 && rs.init && (frame + u.id) % every !== 0;
       if (lod > 0.001) {
         ctx.speed = u.speedNow || 0;
@@ -547,7 +580,9 @@ export class UnitRenderer {
         this._p.set(ix + Math.sin(heading) * fwd, y + rs.sY * scale - emerge * md.height * scale, iz + Math.cos(heading) * fwd);
         this._m.compose(this._p, this._q, this._s.set(s, s, s));
         const flash = Math.max(0, 1 - (simNow - u.lastHurt) / 0.28) + (u.mad > simNow ? 0.12 + 0.08 * Math.sin(now * 7) : 0);
-        const glow = u.blessed > simNow ? Math.min(1, (u.blessed - simNow) / 2) * (0.55 + 0.2 * Math.sin(now * 3 + rs.seed * 9)) : 0;
+        let glow = u.blessed > simNow ? Math.min(1, (u.blessed - simNow) / 2) * (0.55 + 0.2 * Math.sin(now * 3 + rs.seed * 9)) : 0;
+        if (rs.legendary) glow = Math.max(glow, 0.28 + 0.06 * Math.sin(now * 2 + rs.seed * 7));
+        if (rs.starborn) glow = Math.max(glow, 0.12 + 0.1 * Math.sin(now * 1.7 + rs.seed * 11));
         const pm = this.pick(rm, pxH, rs);
         const near = (ix - camT.x) ** 2 + (iz - camT.z) ** 2 < SHADOW_RANGE * SHADOW_RANGE;
         pm.write(this._m, Ps, pm.tiny && rs.apTiny ? rs.apTiny : rs.ap, Math.min(1, flash), lod, glow, near);
@@ -619,11 +654,27 @@ export class UnitRenderer {
         } else if (u.mad > simNow) {
           ov.emotes.add(ix, top + 0.05, iz, esz * (0.9 + 0.12 * Math.sin(now * 8)), EMOTE.anger, ea, 0);
         }
+        // status conditions: a small icon beside the head when close or selected
+        if (u.statuses && u.statuses.size && (dCam < 28 || g.selected?.ref === u)) {
+          let best = null,
+            bp = -1;
+          for (const id of u.statuses.keys()) {
+            const pr = STATUS_BY_ID[id]?.priority ?? 0;
+            if (STATUS_ICON[id] != null && pr > bp) {
+              bp = pr;
+              best = id;
+            }
+          }
+          if (best) {
+            const side = esz * 0.85;
+            ov.emotes.add(ix + this._camRight.x * side, top - esz * 0.15, iz + this._camRight.z * side, esz * 0.7, STATUS_ICON[best], Math.max(ea, g.selected?.ref === u ? 1 : 0) * 0.95, 0);
+          }
+        }
       }
     }
 
     // ---- corpses: topple, rest, then sink and fade
-    this._corpses(now, simNow, dt);
+    if (!dotsOnly) this._corpses(now, simNow, dt);
     // ---- projectiles
     for (const p of U.projectiles) {
       const t = Math.min(1, (p.t + alpha * U.tickDt) / p.dur);
@@ -634,7 +685,7 @@ export class UnitRenderer {
       ov.addArrow(x, y, z, p.x1 - p.x0, dy, p.z1 - p.z0);
     }
     // ---- ambient birds & fish
-    this.ambient.update(dt, ctx);
+    if (!dotsOnly) this.ambient.update(dt, ctx);
     // ---- ripples
     let j = 0;
     for (const r of this.ripples) {

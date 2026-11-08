@@ -64,7 +64,9 @@ export class AmbientFauna {
   _init() {
     this.inited = true;
     const w = this.game.world;
-    const scale = (w.w * w.h) / 65536;
+    // more wildlife on bigger maps, but sub-linearly (a Huge map ~2x a Medium one)
+    const rate = typeof this.game.laws?.spawnRate === 'number' ? this.game.laws.spawnRate : 1;
+    const scale = Math.sqrt((w.w * w.h) / 65536) * Math.max(0.25, Math.min(2, rate));
     const coast = [],
       forest = [],
       shallows = [];
@@ -207,13 +209,16 @@ export class AmbientFauna {
   }
 
   update(dt, ctx) {
+    if (this.game.laws && this.game.laws.spawnAmbient === false) return; // law: no fish or birds
     if (!this.inited) this._init();
     const g = this.game;
     const sdt = Math.min(0.1, dt * (g.paused ? 0 : Math.min(4, g.speed)));
     const now = ctx.now;
     const day = g.env?.daylight ?? 1;
-    for (const f of this.flocks) this._flock(f, sdt, now, day, ctx);
-    for (const s of this.schools) this._school(s, sdt, now, ctx);
+    // power saver: half the flocks and schools are simulated and drawn
+    const step = g.settings?.powerSaver ? 2 : 1;
+    for (let i = 0; i < this.flocks.length; i += step) this._flock(this.flocks[i], sdt, now, day, ctx);
+    for (let i = 0; i < this.schools.length; i += step) this._school(this.schools[i], sdt, now, ctx);
   }
 
   _flock(f, dt, now, day, ctx) {

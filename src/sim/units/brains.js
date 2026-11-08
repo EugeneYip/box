@@ -23,7 +23,33 @@ function onGraze(u, w) {
 }
 
 // Herd centroid of herd-mates within r. Returns {x, z, n, leader}.
+// Cached per herd for half a game second (herd-mates share one scan).
+const _herdCache = new Map();
+let _herdCacheT = -1;
 function herdInfo(u, U, r = 12) {
+  const now = U.game.time.total;
+  if (now - _herdCacheT > 0.5 || now < _herdCacheT) {
+    _herdCache.clear();
+    _herdCacheT = now;
+  }
+  const key = u.herd * 16 + (u.species.charCodeAt(0) & 15);
+  let c = _herdCache.get(key);
+  if (!c) {
+    c = herdScan(u, U, r);
+    c.ax = c.x * c.n + u.x;
+    c.az = c.z * c.n + u.z;
+    c.all = c.n + 1;
+    if (!c.n) c.leader = u;
+    _herdCache.set(key, c);
+    return c;
+  }
+  // reuse the shared scan, excluding this member
+  const n = c.all - 1;
+  if (n <= 0) return { x: u.x, z: u.z, n: 0, leader: u };
+  const leader = c.leader === u || (u.id < c.leader.id && u.age >= u.def.maturity) ? u : c.leader;
+  return { x: (c.ax - u.x) / n, z: (c.az - u.z) / n, n, leader };
+}
+function herdScan(u, U, r) {
   let sx = 0,
     sz = 0,
     n = 0,
@@ -320,7 +346,7 @@ function bear(u, U, g, now) {
   if (U.sleepLogic(u)) return;
   if (u.busyUntil > now) return;
   // humans that come too close get a warning, then a swipe
-  const intruder = U.nearest(u.x, u.z, 2.2, (o) => o.species === 'human' && !o.sleeping);
+  const intruder = U.law('beastsHuntPeople') ? U.nearest(u.x, u.z, 2.2, (o) => o.species === 'human' && !o.sleeping) : null;
   if (intruder) {
     if (rng.chance(u.hunger > 0.7 ? 0.5 : 0.18)) {
       U.engage(u, intruder, { maxTime: 8 });
@@ -522,6 +548,7 @@ function golem(u, U, g, now) {
     if (o === u || o.def.kind === 'monster') return false;
     if (o.combat && o.combat.target === u.id) return true;
     if (o.mad > now) return true;
+    if (o.species === 'human' && !U.law('beastsHuntPeople')) return false;
     return u.def.prey.includes(o.species) && o.age >= o.def.maturity && (o.x - u.x) ** 2 + (o.z - u.z) ** 2 < (u.sleeping ? 9 : 36);
   });
   if (foe) {
@@ -555,6 +582,7 @@ function serpent(u, U, g, now) {
   if (u.combat) return;
   const prey = U.nearest(u.x, u.z, u.def.sight, (o) => {
     if (o === u || o.def.kind === 'monster' || !u.def.prey.includes(o.species)) return false;
+    if (o.species === 'human' && !U.law('beastsHuntPeople')) return false;
     if (o.swimming || o.wading) return true;
     const [tx, ty] = w.tileOf(o.x, o.z);
     return w.isCoastal(tx, ty) && (o.x - u.x) ** 2 + (o.z - u.z) ** 2 < 25;
@@ -664,7 +692,8 @@ function skywyrm(u, U, g, now) {
   }
   if (now > d.nextBreath) {
     let T = null;
-    const victim = U.nearest(u.x, u.z, 40, (o) => o.species === 'human' || (o.def.kind === 'animal' && o.def.mass >= 1));
+    const people = U.law('beastsHuntPeople');
+    const victim = U.nearest(u.x, u.z, 40, (o) => (people && o.species === 'human') || (o.def.kind === 'animal' && o.def.mass >= 1));
     if (victim) T = { x: victim.x, z: victim.z, unit: victim.id };
     else {
       const f = U.findNearestTile(u.x, u.z, 25, (tx, ty, i) => FLORA_INFO[w.flora[i]].isTree);

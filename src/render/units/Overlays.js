@@ -6,7 +6,7 @@ import * as THREE from 'three';
 //   - emotes: camera-facing status icons (heart, zzz, !, anger, sparkle, ...)
 //   - projectiles (arrows) and the skywyrm's fire-breath plume
 export const DECAL = { shadow: 0, ring: 1, select: 2, dot: 3, glow: 4 };
-export const EMOTE = { heart: 0, zzz: 1, alert: 2, anger: 3, sparkle: 4, note: 5, chat: 6, skull: 7 };
+export const EMOTE = { heart: 0, zzz: 1, alert: 2, anger: 3, sparkle: 4, note: 5, chat: 6, skull: 7, burning: 8, sick: 9, chilled: 10, starving: 11, wounded: 12, mourning: 13, inspired: 14, exhausted: 15 };
 
 const decalVert = /* glsl */ `
 attribute vec4 iA; // x y z size
@@ -140,12 +140,12 @@ class DecalLayer {
 function drawAtlas() {
   const S = 128;
   const cv = document.createElement('canvas');
-  cv.width = S * 4;
+  cv.width = S * 8;
   cv.height = S * 2;
   const g = cv.getContext('2d');
   const cell = (i, fn) => {
     g.save();
-    g.translate((i % 4) * S + S / 2, Math.floor(i / 4) * S + S / 2);
+    g.translate((i % 8) * S + S / 2, Math.floor(i / 8) * S + S / 2);
     fn();
     g.restore();
   };
@@ -269,6 +269,102 @@ function drawAtlas() {
       g.fill();
     }
   });
+  // ---- status icons
+  const disc = (fill) => {
+    g.beginPath();
+    g.arc(0, 0, 50, 0, Math.PI * 2);
+    outline(fill, 'rgba(30,24,30,0.85)', 8);
+  };
+  cell(EMOTE.burning, () => {
+    const flame = (s, c) => {
+      g.beginPath();
+      g.moveTo(0, 48 * s);
+      g.bezierCurveTo(-40 * s, 40 * s, -38 * s, -6 * s, -6 * s, -50 * s);
+      g.bezierCurveTo(-4 * s, -22 * s, 14 * s, -20 * s, 16 * s, -36 * s);
+      g.bezierCurveTo(44 * s, -4 * s, 40 * s, 40 * s, 0, 48 * s);
+      outline(c, 'rgba(80,20,0,0.85)', 8 * s);
+    };
+    flame(1, '#ff7a1a');
+    flame(0.55, '#ffe04a');
+  });
+  cell(EMOTE.sick, () => {
+    g.beginPath();
+    g.moveTo(0, -52);
+    g.bezierCurveTo(30, -14, 40, 6, 40, 20);
+    g.arc(0, 20, 40, 0, Math.PI);
+    g.bezierCurveTo(-40, 6, -30, -14, 0, -52);
+    outline('#8fd24a', 'rgba(30,60,10,0.9)', 9);
+    g.fillStyle = 'rgba(255,255,255,0.5)';
+    g.beginPath();
+    g.ellipse(-14, 14, 7, 12, 0.3, 0, Math.PI * 2);
+    g.fill();
+  });
+  cell(EMOTE.chilled, () => {
+    g.lineCap = 'round';
+    for (const [w, c] of [[18, 'rgba(20,50,90,0.85)'], [9, '#d8f0ff']]) {
+      g.lineWidth = w;
+      g.strokeStyle = c;
+      for (let i = 0; i < 3; i++) {
+        g.save();
+        g.rotate((i * Math.PI) / 3);
+        g.beginPath();
+        g.moveTo(0, -46);
+        g.lineTo(0, 46);
+        g.moveTo(-14, -34);
+        g.lineTo(0, -22);
+        g.lineTo(14, -34);
+        g.moveTo(-14, 34);
+        g.lineTo(0, 22);
+        g.lineTo(14, 34);
+        g.stroke();
+        g.restore();
+      }
+    }
+  });
+  cell(EMOTE.starving, () => {
+    g.beginPath();
+    g.moveTo(-50, -6);
+    g.lineTo(50, -6);
+    g.bezierCurveTo(46, 38, -46, 38, -50, -6);
+    outline('#d8a860', 'rgba(70,40,10,0.9)', 9);
+    text('?', 44, '#ffffff', 0, -30);
+  });
+  cell(EMOTE.wounded, () => {
+    disc('#ffffff');
+    g.fillStyle = '#e0302a';
+    g.fillRect(-12, -34, 24, 68);
+    g.fillRect(-34, -12, 68, 24);
+  });
+  cell(EMOTE.mourning, () => {
+    g.beginPath();
+    g.moveTo(0, -50);
+    g.bezierCurveTo(26, -10, 34, 8, 34, 22);
+    g.arc(0, 22, 34, 0, Math.PI);
+    g.bezierCurveTo(-34, 8, -26, -10, 0, -50);
+    outline('#7fb4ff', 'rgba(20,30,70,0.9)', 9);
+  });
+  cell(EMOTE.inspired, () => {
+    g.beginPath();
+    for (let i = 0; i < 24; i++) {
+      const a = (i / 24) * Math.PI * 2;
+      const r = i % 2 ? 34 : 52;
+      g.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+    }
+    g.closePath();
+    outline('#ffd23a', 'rgba(120,70,10,0.85)', 7);
+    g.beginPath();
+    g.arc(0, 0, 24, 0, Math.PI * 2);
+    g.fillStyle = '#fff2a8';
+    g.fill();
+  });
+  cell(EMOTE.exhausted, () => {
+    g.beginPath();
+    g.moveTo(10, -48);
+    g.bezierCurveTo(40, -6, 44, 14, 32, 30);
+    g.bezierCurveTo(18, 48, -18, 44, -20, 18);
+    g.bezierCurveTo(-20, -2, 0, -18, 10, -48);
+    outline('#9fd4ff', 'rgba(20,40,70,0.9)', 9);
+  });
   const tex = new THREE.CanvasTexture(cv);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 4;
@@ -286,8 +382,8 @@ void main() {
   vec2 q = mat2(c, s, -s, c) * position.xy;
   mv.xy += q * iA.w;
   float icon = iB.x;
-  vec2 cell = vec2(mod(icon, 4.0), floor(icon / 4.0));
-  vUv = (cell + position.xy + 0.5) / vec2(4.0, 2.0);
+  vec2 cell = vec2(mod(icon, 8.0), floor(icon / 8.0));
+  vUv = (cell + position.xy + 0.5) / vec2(8.0, 2.0);
   vUv.y = 1.0 - ((cell.y + 0.5 - position.y) / 2.0);
   vAlpha = iB.y;
   gl_Position = projectionMatrix * mv;

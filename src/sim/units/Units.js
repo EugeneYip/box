@@ -4,6 +4,7 @@ import { SPECIES, registerSpecies } from './species.js';
 import { BRAINS, BRAIN_TICKS } from './brains.js';
 import { makeName, makeMonsterName } from './names.js';
 import { VillageHerds } from './herds.js';
+import { installDepth } from './depth.js';
 
 // Core creature simulation (owned by the Life module; the Civilization module
 // programs humanoid behaviour through registerBrain / unit.job).
@@ -66,6 +67,8 @@ const MVP = { wolf: 6, fox: 5, bear: 3, sheep: 10, cow: 8 };
 const FAR_THINK = { humanoid: 1.7, animal: 2.3, monster: 1.4 };
 const SFX_GAP = { hit: 0.07, death: 0.18, birth: 0.6, growl: 0.5, bleat: 1.4 };
 const THINK_BUDGET_MS = 5; // per rendered frame (high game speeds defer the rest)
+const DCELL = 16; // danger grid cell (tiles): where predators, monsters or fights are
+const OVERVIEW_DIST = 110; // camera farther than this: every creature takes the cheap path
 const FAUNA_TOTAL = 1000; // humans + animals target on a 256 x 256 map
 
 const KIND_ORDER = { humanoid: 0, animal: 1, monster: 2 };
@@ -102,10 +105,45 @@ export class Units {
     this._initGrid();
   }
 
+  // Coarse per-tick grid of cells holding anything that could threaten a
+  // creature (carnivores, monsters, humans, mad or fighting units). Lets calm
+  // grazers skip threat scans entirely.
+  _buildDanger() {
+    const w = this.game.world;
+    const dw = Math.ceil(w.w / DCELL),
+      dh = Math.ceil(w.h / DCELL);
+    if (!this._danger || this._danger.length !== dw * dh) {
+      this._danger = new Uint8Array(dw * dh);
+      this._dw = dw;
+      this._dh = dh;
+    } else this._danger.fill(0);
+    const now = this.game.time.total;
+    const D = this._danger;
+    for (const u of this.list) {
+      if (!u.alive) continue;
+      const def = u.def;
+      if (def.diet === 'herbivore' && !u.combat && !(u.mad > now) && def.kind === 'animal') continue;
+      const cx = Math.min(dw - 1, Math.max(0, Math.floor(u.x / DCELL))),
+        cz = Math.min(dh - 1, Math.max(0, Math.floor(u.z / DCELL)));
+      D[cz * dw + cx] = 1;
+    }
+  }
+  dangerNear(x, z, r) {
+    const D = this._danger;
+    if (!D) return true;
+    const dw = this._dw;
+    const x0 = Math.max(0, Math.floor((x - r) / DCELL)),
+      x1 = Math.min(dw - 1, Math.floor((x + r) / DCELL));
+    const z0 = Math.max(0, Math.floor((z - r) / DCELL)),
+      z1 = Math.min(this._dh - 1, Math.floor((z + r) / DCELL));
+    for (let cz = z0; cz <= z1; cz++) for (let cx = x0; cx <= x1; cx++) if (D[cz * dw + cx]) return true;
+    return false;
+  }
+
   // Wild animals allowed besides humans and village herds (soft global cap).
   faunaBudget() {
     const humans = this._counts.get('human') || 0;
-    return Math.max(220, Math.round(FAUNA_TOTAL * this.areaScale) - humans - this.herds.totalTended);
+    return Math.max(Math.round(220 * this.popScale), Math.round(FAUNA_TOTAL * this.popScale) - humans - this.herds.totalTended);
   }
 
   // Positional, throttled, guarded sound effect (only near the camera).
@@ -216,7 +254,7 @@ export class Units {
     if (!this._forage) this._initForage();
     const f = this._forage,
       cap = this._forageCap;
-    const k = FORAGE_REGROW * dt;
+    const k = FORAGE_REGROW * dt * (this.game.age?.mods?.fertility ?? 1);
     for (let c = 0; c < f.length; c++) {
       const cp = cap[c];
       if (f[c] < cp) f[c] = Math.min(cp, f[c] + cp * k + 0.02 * dt);
@@ -244,9 +282,19 @@ export class Units {
     const w = this.game.world;
     return (w.w * w.h) / (256 * 256);
   }
+  // Population scale: grows with map area but sub-linearly, so a Huge (512)
+  // map holds ~1.6x the creatures of a Medium (256) one, not 4x.
+  get popScale() {
+    return Math.pow(this.areaScale, 0.34);
+  }
   capacity(speciesId) {
     const def = SPECIES[speciesId];
-    return def ? Math.max(4, Math.round(def.maxPopulation * this.areaScale)) : 0;
+    return def ? Math.max(4, Math.round(def.maxPopulation * this.popScale)) : 0;
+  }
+  // World Laws (game.laws), read at the point of use; missing laws default to on.
+  law(key) {
+    const L = this.game.laws;
+    return !L || L[key] !== false;
   }
 
   // ---- initial fauna -------------------------------------------------------
@@ -254,7 +302,7 @@ export class Units {
     const g = this.game;
     const w = g.world;
     const rng = g.rng.fork('fauna');
-    const scale = this.areaScale;
+    const scale = Math.pow(this.areaScale, 0.6);
     for (const def of Object.values(SPECIES)) {
       if (!def.seed) continue;
       const groups = Math.max(1, Math.round(def.seed.groups * scale));
@@ -412,6 +460,7 @@ export class Units {
     u.py = u.y;
     u.ph = u.heading;
     if (def.pack && u.pack) this._packJoin(u);
+    this._depthSpawn(u, opts);
     this.list.push(u);
     this.byId.set(u.id, u);
     this._counts.set(speciesId, (this._counts.get(speciesId) || 0) + 1);
@@ -437,6 +486,7 @@ export class Units {
       u.data.carcass = true;
     }
     if (cause === 'old age' || cause === 'starvation') g.fx.emit?.('death', { x: u.x, y: u.y + 0.2, z: u.z }, { scale: u.def.size * 0.6 });
+    this._depthDeath(u, cause, killer);
     if (cause !== 'slaughter') this.sfx('death', u.x, u.z, { volume: u.def.kind === 'humanoid' ? 0.75 : 0.55, pitch: 1 / Math.sqrt(Math.max(0.4, u.def.mass)) });
     g.events.emit('unit:death', { unit: u, cause, killer });
   }
@@ -446,6 +496,12 @@ export class Units {
     const g = this.game;
     const now = g.time.total;
     if (u.blessed > now) amount *= 0.6;
+    if (u.traits && u.traits.length) {
+      if (source && u.traits.includes('lucky') && g.rng.chance(0.12)) return;
+      if (opts.cause === 'fire' && u.traits.includes('fireheart')) amount *= 0.3;
+    }
+    const arm = u.equipment?.armor;
+    if (arm && source) amount *= 1 - arm.power / (arm.power + 20);
     u.hp -= amount;
     u.lastHurt = now;
     if (source && source.alive) u.data.attacker = source.id;
@@ -456,10 +512,7 @@ export class Units {
     }
     g.events.emit('unit:hurt', { unit: u, amount, source });
     if (u.hp <= 0) {
-      if (source) {
-        source.kills = (source.kills || 0) + 1;
-        this._gainXp(source, u.maxHp * 0.25);
-      }
+      if (source) source.kills = (source.kills || 0) + 1;
       this.kill(u, source ? 'killed' : opts.cause || 'damage', source);
       return;
     }
@@ -713,11 +766,20 @@ export class Units {
   _locomote(u, dt, now) {
     const w = this.game.world;
     const def = u.def;
+    // idle fast path: nothing to push, no destination
+    if (u.kbx === 0 && u.kbz === 0 && u.sepx === 0 && u.sepz === 0 && !u.target && !u.path) {
+      if (u.spd !== 0) u.spd = u.spd > 0.001 ? u.spd * Math.exp(-dt * 10) : 0;
+      u.moving = false;
+      return;
+    }
+    const W = w.w,
+      Hh = w.h;
     // knockback impulse (decays quickly)
     if (u.kbx !== 0 || u.kbz !== 0) {
       const nx = u.x + u.kbx * dt,
         nz = u.z + u.kbz * dt;
-      const [tx, ty] = w.tileOf(nx, nz);
+      const tx = nx < 0 ? 0 : nx >= W ? W - 1 : nx | 0,
+        ty = nz < 0 ? 0 : nz >= Hh ? Hh - 1 : nz | 0;
       if (this.canStand(u, tx, ty) || def.habitat === 'air') {
         u.x = nx;
         u.z = nz;
@@ -731,14 +793,19 @@ export class Units {
     if (u.sepx !== 0 || u.sepz !== 0) {
       const nx = u.x + u.sepx * dt,
         nz = u.z + u.sepz * dt;
-      const [tx, ty] = w.tileOf(nx, nz);
+      const tx = nx < 0 ? 0 : nx >= W ? W - 1 : nx | 0,
+        ty = nz < 0 ? 0 : nz >= Hh ? Hh - 1 : nz | 0;
       if (this.canStand(u, tx, ty)) {
         u.x = nx;
         u.z = nz;
       }
     }
+    if (!u.target && !u.path) {
+      u.spd *= Math.exp(-dt * 10);
+      u.moving = false;
+      return;
+    }
     if (def.habitat === 'land') {
-      const W = w.w;
       u._curB = w.building[Math.floor(u.z) * W + Math.floor(u.x)] ?? -1;
       let gi = -1;
       if (u.path && u.path.length) gi = u.path[u.path.length - 1];
@@ -786,6 +853,7 @@ export class Units {
     if (u.mad > now) sp *= 1.1;
     if (u.data.speedMul) sp *= u.data.speedMul;
     if (u._pounce) sp *= 1.4;
+    if (u._mSpd) sp *= u._mSpd;
     if (def.habitat === 'land') {
       if (u.swimming) sp *= def.swimMul;
       else if (u.wading) sp *= 0.75;
@@ -808,13 +876,12 @@ export class Units {
     const stepLen = Math.min(d, u.spd * facing * dt);
     let nx = u.x + (dx / d) * stepLen,
       nz = u.z + (dz / d) * stepLen;
-    let [ntx, nty] = w.tileOf(nx, nz);
-    if (!this.canStand(u, ntx, nty)) {
+    const clx = (v) => (v < 0 ? 0 : v >= W ? W - 1 : v | 0),
+      clz = (v) => (v < 0 ? 0 : v >= Hh ? Hh - 1 : v | 0);
+    if (!this.canStand(u, clx(nx), clz(nz))) {
       // slide along the obstacle
-      const [ax, ay] = w.tileOf(nx, u.z);
-      const [bx, by] = w.tileOf(u.x, nz);
-      if (this.canStand(u, ax, ay)) nz = u.z;
-      else if (this.canStand(u, bx, by)) nx = u.x;
+      if (this.canStand(u, clx(nx), clz(u.z))) nz = u.z;
+      else if (this.canStand(u, clx(u.x), clz(nz))) nx = u.x;
       else {
         u.blockedT += dt;
         u.moving = false;
@@ -986,6 +1053,7 @@ export class Units {
   findThreat(u, rangeMul = 1) {
     const def = u.def;
     const range = def.sight * def.fleeRange * rangeMul;
+    if (!this.dangerNear(u.x, u.z, range)) return null;
     const now = this.game.time.total;
     const me = u.species;
     const myMass = def.mass;
@@ -1042,13 +1110,20 @@ export class Units {
     if (u.age < def.maturity) d *= 0.4;
     if (u.blessed > now) d *= 1.5;
     if (u.mad > now) d *= 1.25;
+    d *= u._mDmg || 1;
+    const wpn = u.equipment?.weapon;
+    if (wpn) d *= 1 + wpn.power * 0.06;
+    if (def.kind === 'monster' || (def.kind === 'animal' && def.diet !== 'herbivore')) {
+      const f = this.game.laws?.beastsFerocity;
+      if (typeof f === 'number') d *= f;
+    }
     return d;
   }
 
   _combatTick(u, dt, now) {
     const c = u.combat;
     const t = this.byId.get(c.target);
-    if (!t || !t.alive || now - c.since > c.maxTime) {
+    if (!t || !t.alive || now - c.since > c.maxTime || (c.hunt && u.def.kind === 'animal' && !this.law('lifePredators'))) {
       if (c.hunt && u.pack) {
         const p = this.packs.get(u.pack);
         if (p && p.target === c.target) p.target = 0;
@@ -1226,9 +1301,10 @@ export class Units {
     const now = this.game.time.total;
     u.blessCount = u.blessCount || 0;
     if (u.blessCount < 3) {
-      u.maxHp *= 1.2;
+      u._blessHp = (u._blessHp || 1) * 1.2;
       u.blessCount++;
-      u.level += 1;
+      this._refreshMods(u);
+      this.addXP(u, 15);
     }
     u.hp = u.maxHp;
     u.hunger = 0;
@@ -1250,7 +1326,9 @@ export class Units {
     if (u.combat && u.combat.target === src.id) return;
     const def = u.def;
     const canFight = this.attackDamage(u) > 0;
-    const outmatched = def.flees && !(u.mad > now) && (src.def.mass > def.mass * 0.6 || !canFight);
+    let outmatched = def.flees && !(u.mad > now) && (src.def.mass > def.mass * 0.6 || !canFight);
+    if (canFight && (u._mFear || 1) > 1.4 && u.hp < u.maxHp * 0.7) outmatched = true;
+    else if (canFight && (u._mFear || 1) < 0.6) outmatched = false;
     if (outmatched || !canFight) {
       this.flee(u, src.x, src.z, 6);
       this.emote(u, 'alert', 1.2);
@@ -1302,6 +1380,7 @@ export class Units {
     for (let i = 0; i < n; i++) {
       if (!m.data.tended && this.count(m.species) >= this.capacity(m.species) * 1.6) break;
       const baby = this.spawn(m.species, m.x + g.rng.float(-0.3, 0.3), m.z + g.rng.float(-0.3, 0.3), {
+        parents: [m, m._mate && m._mate.alive ? m._mate : null].filter(Boolean),
         age: 0,
         herd: m.herd,
         pack: m.pack,
@@ -1341,6 +1420,11 @@ export class Units {
       this.emote(u, 'heart', 2);
       return true;
     }
+    if (!this.law('lifeWildlife')) return false;
+    // animals breed mainly in spring; the world age speeds or slows births
+    const season = g.time.season;
+    const sf = season == null ? 1 : [1.9, 0.9, 0.45, 0.15][Math.floor(season) % 4];
+    if (!g.rng.chance(Math.min(1, sf * (u._mFert || 1) * (g.age?.mods?.birth ?? 1) * 0.8))) return false;
     const hardK = this.capacity(u.species) * 1.6;
     if (n >= hardK) return false;
     const humans = this._counts.get('human') || 0;
@@ -1387,6 +1471,7 @@ export class Units {
       return false;
     }
     u.pregnant = def.gestation;
+    u._mate = mate;
     this.emote(u, 'heart', 2);
     this.emote(mate, 'heart', 2);
     return true;
@@ -1417,11 +1502,13 @@ export class Units {
 
   findPrey(u, range = null) {
     const def = u.def;
+    if (def.kind === 'animal' && !this.law('lifePredators')) return null;
     const r = range ?? def.sight;
     let best = null,
       bs = Infinity;
     this.forEachNear(u.x, u.z, r, (o, d2) => {
       if (!def.prey.includes(o.species) || o === u) return;
+      if (o.species === 'human' && !this.law('beastsHuntPeople')) return;
       // refuge: rare species are hard to find (keeps the ecosystem from collapsing)
       if (this.count(o.species) < 6 && def.kind !== 'monster') return;
       // adult cows and bears are too big for a lone hunter
@@ -1502,8 +1589,9 @@ export class Units {
     }
     // escape fire
     const w = g.world;
-    const [tx, ty] = w.tileOf(u.x, u.z);
-    if (u.def.habitat === 'land' && w.fire[w.idx(tx, ty)] > 0.05) {
+    const tx = Math.min(w.w - 1, Math.max(0, u.x | 0)),
+      ty = Math.min(w.h - 1, Math.max(0, u.z | 0));
+    if (u.def.habitat === 'land' && w.fire[ty * w.w + tx] > 0.05) {
       const f = this.findNearestTile(u.x, u.z, 5, (x, y, i) => w.fire[i] <= 0 && this._pathable(u, x, y));
       if (f) {
         u.path = null;
@@ -1560,6 +1648,8 @@ export class Units {
     // fast-forward runs many ticks per frame: no budget there (correctness first)
     const budgetOn = ++this._ticksThisFrame <= 64;
     if (this._tickN % 75 === 0) this.herds.tick(now);
+    this._buildDanger();
+    const overview = (g.cameraRig?.cur?.dist ?? 0) > OVERVIEW_DIST;
     const cam = g.cameraRig?.cur;
     const focus = this._focus;
     if (cam) {
@@ -1570,6 +1660,7 @@ export class Units {
     }
     const yearDt = dt / YEAR;
     const list = this.list;
+    const lifeLaw = typeof g.laws?.lifeLifespan === 'number' ? g.laws.lifeLifespan : 1;
     const tickN = this._tickN;
     for (let k = 0; k < list.length; k++) {
       const u = list[k];
@@ -1585,7 +1676,8 @@ export class Units {
       // ---- needs
       const active = u.state === 'run' || u.state === 'flee' || u.state === 'hunt' || u.state === 'attack';
       const lean = MVP[u.species] && (this._counts.get(u.species) || 0) < MVP[u.species] * 2 ? 0.6 : 1;
-      u.hunger = Math.min(1, u.hunger + dt * def.hungerRate * lean * (u.sleeping ? 0.5 : active ? 1.6 : 1));
+      if (this.law('lifeHunger')) u.hunger = Math.min(1, u.hunger + dt * def.hungerRate * lean * (u.sleeping ? 0.5 : active ? 1.6 : 1));
+      else if (u.hunger > 0) u.hunger = Math.max(0, u.hunger - dt * 0.02);
       if (u.sleeping || u.state === 'sleep' || u.data.inside) u.energy = Math.min(1, u.energy + dt * 0.0075);
       else if (u._ext) {
         // brain-driven villagers: tire while busy, recover when idle and at night
@@ -1604,7 +1696,7 @@ export class Units {
           continue;
         }
       }
-      if (u.age > u.lifespan) {
+      if (u.age > u.lifespan * lifeLaw && this.law('lifeAging')) {
         this.kill(u, 'old age');
         continue;
       }
@@ -1657,13 +1749,16 @@ export class Units {
       if (u.combat) this._combatTick(u, dt, now);
       const fdx = u.x - focus.x,
         fdz = u.z - focus.z;
-      u._far = fdx * fdx + fdz * fdz > focus.r2 && !u.combat;
+      u._far = (overview || fdx * fdx + fdz * fdz > focus.r2) && !u.combat;
       u.thinkT -= dt;
       if (u.thinkT <= 0) {
         if (budgetOn && this._frameThinkMs > THINK_BUDGET_MS && !u.combat) {
           u.thinkT = 0.05 + g.rng.next() * 0.15; // over budget: think a little later
         } else {
-          u.thinkT = THINK_INTERVAL * (0.8 + g.rng.next() * 0.4) * (u._far ? FAR_THINK[def.kind] || 2 : 1);
+          let mul = u._far ? FAR_THINK[def.kind] || 2 : 1;
+          // calm grazers with no danger about re-decide less often
+          if (def.kind === 'animal' && def.diet === 'herbivore' && !u.combat && u.hunger < 0.4 && !u.alarm && u.fleeUntil < now && !this.dangerNear(u.x, u.z, def.sight)) mul *= 1.6;
+          u.thinkT = THINK_INTERVAL * (0.8 + g.rng.next() * 0.4) * mul;
           u._ext = this.brains.has(u.species);
           const t0 = budgetOn ? performance.now() : 0;
           this._think(u, now);
@@ -1673,7 +1768,12 @@ export class Units {
       }
       const bt = BRAIN_TICKS[def.brain];
       if (bt) bt(u, dt, this, g, now);
-      if ((tickN + u.id) % (u._far ? 8 : 4) === 0) this._separate(u);
+      if ((tickN + u.id) % 15 === 0) {
+        this._depthStatusTick(u, dt * 15, now);
+        if (!u.alive) continue;
+      }
+      const sepEvery = (u._far ? 8 : 4) * (u.moving || u.target ? 1 : 2);
+      if ((tickN + u.id) % sepEvery === 0) this._separate(u);
       // ---- locomotion
       if (def.habitat === 'air') {
         this._flyTick(u, dt);
@@ -1806,14 +1906,16 @@ export class Units {
   // Wild species that died out wander back in from the map edge after a while.
   _migrationCheck(now) {
     this._disperseGroups();
-    if (!this.migration) return;
+    this._wanderingMonsters();
+    if (!this.migration || !this.law('lifeWildlife')) return;
     for (const def of Object.values(SPECIES)) {
       if (!def.seed) continue;
       const n = this.count(def.id);
       const mvp = MVP[def.id] || 5;
       if (n >= mvp) continue;
-      // rare migrants arrive from the map edge (at most one party per 100 s)
-      if (now - (this._rescueAt.get(def.id) ?? -1e9) < (n === 0 ? 30 : 75)) continue;
+      // rare migrants arrive from the map edge (spawnRate law scales how often)
+      const rate = typeof this.game.laws?.spawnRate === 'number' ? Math.max(0.1, this.game.laws.spawnRate) : 1;
+      if (now - (this._rescueAt.get(def.id) ?? -1e9) < (n === 0 ? 30 : 75) / rate) continue;
       const spot = this._edgeSpot(def);
       if (!spot) continue;
       const grp = this.spawnGroup(def.id, spot.x, spot.z, this.game.rng, def.pack ? 3 : def.solitary ? 2 : null);
@@ -1824,6 +1926,31 @@ export class Units {
       }
     }
   }
+  // Wandering monsters (beastsMonsters law, World Age 'monsters' modifier).
+  _wanderingMonsters() {
+    const g = this.game;
+    if (!this.law('beastsMonsters')) return;
+    const rate = (g.age?.mods?.monsters ?? 1) * (typeof g.laws?.spawnRate === 'number' ? g.laws.spawnRate : 1);
+    let monsters = 0;
+    for (const sp of ['golem', 'serpent', 'skywyrm']) monsters += this.count(sp);
+    if (monsters >= Math.round(3 * this.popScale) || !g.rng.chance(0.03 * rate)) return;
+    const w = g.world;
+    const roll = g.rng.next();
+    const species = roll < 0.5 ? 'golem' : roll < 0.8 ? 'serpent' : 'skywyrm';
+    for (let t = 0; t < 200; t++) {
+      const tx = g.rng.int(4, w.w - 5),
+        ty = g.rng.int(4, w.h - 5);
+      const i = w.idx(tx, ty);
+      if (w.owner[i] >= 0) continue;
+      if (species === 'serpent' ? w.height[i] > -1.2 : !w.isWalkable(tx, ty)) continue;
+      // deep wilds: far from any village
+      if ((g.civ?.villages || []).some((v) => v.alive && (v.cx - tx) ** 2 + (v.cz - ty) ** 2 < 30 * 30)) continue;
+      const u = this.spawn(species, tx + 0.5, ty + 0.5, { age: 1, alt: species === 'skywyrm' ? 8 : undefined });
+      if (u) g.notify?.(`${u.name} has emerged from the wilds.`, 'disaster', { x: u.x, z: u.z });
+      return;
+    }
+  }
+
   _edgeSpot(def) {
     const w = this.game.world;
     const rng = this.game.rng;
@@ -1932,12 +2059,13 @@ export class Units {
     }
     stats.push(['Kills', u.kills]);
     if (u.level > 1) stats.push(['Level', u.level]);
+    if (u.traits && u.traits.length) stats.push(['Traits', u.traits.map((id) => this.TRAITS.find((t) => t.id === id)?.name || id).join(', ')]);
     const kname = u.kingdom >= 0 ? g.civ?.kingdomName?.(u.kingdom) || 'Kingdom ' + u.kingdom : null;
     return {
       priority: 10,
       kind: 'unit',
       unit: u,
-      title: u.name || def.name,
+      title: (u.name || def.name) + (this.levelTitle(u) ? ' ' + this.levelTitle(u) : ''),
       subtitle: (u.name ? def.name : stage + ' ' + (u.sex === 'f' ? 'female' : 'male')) + (kname ? ' · ' + kname : ''),
       stats,
     };
@@ -1955,5 +2083,7 @@ export class Units {
     return out;
   }
 }
+
+installDepth(Units);
 
 export { FLORA, FLORA_INFO };
