@@ -272,6 +272,7 @@ export class GroundCover {
     ev.on('world:type', mark);
     ev.on('world:height', mark);
     ev.on('world:flora', (r) => this.markRect(r, true));
+    ev.on('powersaver', () => this.reset());
   }
 
   computeTileColors() {
@@ -455,6 +456,7 @@ export class GroundCover {
             continue;
         }
         if ((slope > 1.6 || ny < 0.88) && plan !== 'rock') n = Math.max(1, n - 2);
+        if (this.game.settings?.powerSaver && plan !== 'rock') n = Math.max(1, n >> 1);
         for (let k = 0; k < n; k++) {
           const r1 = hash2(tx * 4 + k, ty, 1301),
             r2 = hash2(tx, ty * 4 + k, 1303),
