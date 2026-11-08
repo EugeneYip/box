@@ -9,7 +9,7 @@ export const WEATHER_TYPES = ['clear', 'rain', 'storm', 'snow', 'fog'];
 
 // Target mix channels for each weather type at intensity i (0..1).
 function targets(type, i) {
-  const t = { cover: 0.42, overcast: 0, rain: 0, snow: 0, storm: 0, fog: 0, wind: 0.32 };
+  const t = { cover: 0.52, overcast: 0, rain: 0, snow: 0, storm: 0, fog: 0, wind: 0.32 };
   switch (type) {
     case 'rain':
       t.cover = 0.72 + 0.22 * i;
@@ -40,7 +40,7 @@ function targets(type, i) {
       t.wind = 0.1;
       break;
     default:
-      t.cover = 0.38 + 0.12 * i;
+      t.cover = 0.5 + 0.14 * i;
       break;
   }
   return t;

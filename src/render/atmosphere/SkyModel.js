@@ -13,9 +13,9 @@ const C = (hex) => new THREE.Color(hex); // sRGB hex -> linear working colour
 
 // s = sin(sun elevation)
 const KEYS = [
-  { s: -1.0, zen: '#060f29', hor: '#152447', glow: '#000000', belt: '#000000', halo: '#000000', key: '#000000', keyI: 0, hemiS: '#4c5f86', hemiG: '#1d2230', hemiI: 1.15, exp: 1.85, sky: 1.0 },
+  { s: -1.0, zen: '#060f29', hor: '#152447', glow: '#000000', belt: '#000000', halo: '#000000', key: '#000000', keyI: 0, hemiS: '#4c5f86', hemiG: '#1d2230', hemiI: 1.05, exp: 1.72, sky: 1.0 },
   { s: -0.3, zen: '#071029', hor: '#172649', glow: '#000000', belt: '#000000', halo: '#000000', key: '#000000', keyI: 0, hemiS: '#4c5f86', hemiG: '#1d2230', hemiI: 1.15, exp: 1.85, sky: 1.0 },
-  { s: -0.17, zen: '#0c1a40', hor: '#253563', glow: '#2c2450', belt: '#000000', halo: '#000000', key: '#000000', keyI: 0, hemiS: '#50628a', hemiG: '#1e2232', hemiI: 1.12, exp: 1.8, sky: 1.0 },
+  { s: -0.17, zen: '#0c1a40', hor: '#253563', glow: '#2c2450', belt: '#000000', halo: '#000000', key: '#000000', keyI: 0, hemiS: '#50628a', hemiG: '#1e2232', hemiI: 1.05, exp: 1.68, sky: 1.0 },
   { s: -0.09, zen: '#172a5e', hor: '#5a5288', glow: '#a8483a', belt: '#33294e', halo: '#40202a', key: '#c04848', keyI: 0.0, hemiS: '#4e5f9c', hemiG: '#2a2430', hemiI: 1.1, exp: 1.7, sky: 1.0 },
   { s: -0.035, zen: '#233d7c', hor: '#a8708c', glow: '#ff5e26', belt: '#5a3a5c', halo: '#a04020', key: '#ff6a40', keyI: 0.35, hemiS: '#6a6ea6', hemiG: '#3a2c30', hemiI: 1.05, exp: 1.55, sky: 1.0 },
   { s: 0.0, zen: '#2c4c90', hor: '#d9846c', glow: '#ff7020', belt: '#3c3346', halo: '#ff7a30', key: '#ff7a44', keyI: 1.0, hemiS: '#7e86b4', hemiG: '#4a3830', hemiI: 1.0, exp: 1.4, sky: 1.0 },
@@ -56,7 +56,7 @@ const FOGSKY = { zen: C('#a9b6c2'), hor: C('#d2d7d9') };
 const MOON_KEY = C('#aabde6');
 const MOON_TWILIGHT = C('#8c7ee0');
 const HEAT_HAZE = C('#e9d2a6');
-const SEASON_LIGHT = [C('#fffbf4'), C('#fff6e6'), C('#ffe9d2'), C('#eef3ff')]; // spring..winter
+const SEASON_LIGHT = [C('#fffbf4'), C('#fff6e6'), C('#ffe9d2'), C('#f6f7fb')]; // spring..winter
 
 export class SkyModel {
   constructor() {
@@ -218,7 +218,7 @@ export class SkyModel {
     this.sunLightColor.lerp(this._tmp.setRGB(lumKey, lumKey * 1.01, lumKey * 1.06), oc * 0.7);
 
     const moonUp = smooth(-0.02, 0.15, this.moonDir.y);
-    const moonI = 0.8 * smooth(-0.04, -0.17, s) * moonUp * (1 - 0.7 * oc) * (1 - 0.38 * night);
+    const moonI = 0.92 * smooth(-0.04, -0.17, s) * moonUp * (1 - 0.7 * oc) * (1 - 0.38 * night);
     this.moonVis = moonUp * smooth(-0.02, -0.14, s);
     this.keyIsMoon = moonI > sunI;
     if (this.keyIsMoon) {
@@ -252,7 +252,14 @@ export class SkyModel {
     // overcast skylight is greyer
     const hl = this.hemiSky.r * 0.3 + this.hemiSky.g * 0.59 + this.hemiSky.b * 0.11;
     this.hemiSky.lerp(this._tmp.setRGB(hl * 0.96, hl, hl * 1.07), oc * 0.6);
-    if (w.snow > 0) this.hemiGround.lerp(this._tmp.setRGB(0.55, 0.6, 0.68), w.snow * 0.5);
+    if (w.snow > 0) this.hemiGround.lerp(this._tmp.setRGB(0.6, 0.62, 0.66), w.snow * 0.5);
+    // snow / winter: keep whites white (neutral skylight, no lilac cast)
+    const wint = Math.max(w.snow, winter * 0.7);
+    if (wint > 0.01) {
+      const hl2 = this.hemiSky.r * 0.3 + this.hemiSky.g * 0.59 + this.hemiSky.b * 0.11;
+      this.hemiSky.lerp(this._tmp.setRGB(hl2 * 0.97, hl2, hl2 * 1.04), 0.45 * wint);
+    }
+    this._wint = wint;
 
     this.exposure = n.exp * (1 - 0.18 * storm) * (1 - 0.14 * night * this.night);
 
@@ -279,6 +286,7 @@ export class SkyModel {
     // warm midtone lift through golden hour (not only highlights)
     this.midTint.set(0.04, 0.016, -0.026).multiplyScalar(g * (1 - 0.6 * oc));
     this.shadowTint.multiplyScalar(1 - 0.55 * g);
+    if (this._wint) this.shadowTint.multiplyScalar(1 - 0.6 * this._wint); // winter whites stay neutral
     this.saturation = (1.06 + 0.06 * g) * (1 - 0.3 * nt) * (1 - 0.16 * oc - 0.08 * storm) * (1 - 0.1 * w.fog);
     this.vibrance = 0.16 * (1 - 0.5 * oc);
     this.contrast = 1.06 + 0.04 * g - 0.03 * w.fog + 0.04 * storm;

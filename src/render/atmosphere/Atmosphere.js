@@ -80,6 +80,12 @@ export class Atmosphere {
     this.flashLight = new THREE.DirectionalLight(0xcfe0ff, 0);
     scene.add(this.flashLight);
     scene.add(this.flashLight.target);
+    // lightning impact pool light (always present, intensity 0 at rest, so
+    // the light count never changes and no material recompiles)
+    this.strikeLight = new THREE.PointLight(0xd2d6ff, 0, 40, 2);
+    this.strikeLight.castShadow = false;
+    scene.add(this.strikeLight);
+    this._strikeGlow = 0;
 
     // ---- sky, clouds, precipitation, lightning --------------------------
     this.sky = new SkyDome(this);
@@ -206,6 +212,8 @@ export class Atmosphere {
   }
 
   _boltFlash(bolt, sound) {
+    this.strikeLight.position.set(bolt.x, bolt.y + 2.5, bolt.z);
+    this._strikeBolt = bolt;
     const rig = this.game.cameraRig;
     this.flashLight.position.set(bolt.x + 10, bolt.y + 80, bolt.z + 6);
     this.flashLight.target.position.set(bolt.x, bolt.y, bolt.z);
@@ -332,6 +340,13 @@ export class Atmosphere {
     this.hemi.groundColor.copy(M.hemiGround);
     this.hemi.intensity = M.hemiIntensity * (1 + flash * 0.6);
     this.flashLight.intensity = flash * 3.2;
+    {
+      const b = this._strikeBolt;
+      const br = b && b.age < b.life ? this.lightning.brightness(b) : 0;
+      const D = rig.cur.dist;
+      this.strikeLight.distance = 22 + D * 0.18;
+      this.strikeLight.intensity = br * (260 + D * 9);
+    }
     this.fitShadow(camera, M.keyDir);
     game.scene.environmentIntensity = (0.62 + 0.12 * mix.overcast + 0.1 * W.wetness) * (1 - 0.35 * mix.storm);
 
