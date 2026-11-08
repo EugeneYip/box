@@ -86,9 +86,13 @@ Mat mk(vec3 a, float r, float h, float b) { Mat m; m.albedo = a; m.rough = r; m.
 // material follows the year (evergreen tropics barely do).
 vec3 seasonal(vec3 c, float k, float temp) {
   k *= 1.0 - smoothstep(0.66, 0.88, temp);
-  vec3 t = c * uSeasonTint.rgb;
-  t = mix(t, vec3(dot(t, vec3(0.2126, 0.7152, 0.0722))) * vec3(0.98, 0.97, 1.02), uSeasonTint.w);
-  t = mix(t, c * vec3(1.38, 1.06, 0.52), uDry * 0.6);
+  const vec3 LW = vec3(0.2126, 0.7152, 0.0722);
+  float lc = dot(c, LW);
+  // hue shift toward the season's colour at this surface's own luminance
+  vec3 tgt = uSeasonTint.rgb * (lc / max(dot(uSeasonTint.rgb, LW), 1e-3));
+  vec3 t = mix(c, tgt, uSeasonTint.w);
+  vec3 dryC = vec3(0.45, 0.34, 0.10) * (lc / 0.33) * 1.05;
+  t = mix(t, dryC, uDry * 0.6);
   return mix(c, t, k);
 }
 

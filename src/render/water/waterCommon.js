@@ -38,7 +38,7 @@ export function landscapeUniforms(game) {
       uWet: { value: 0 },
       uCamDist: { value: 100 },
       // seasons & climate (game.time.season, game.age.mods.temperature, biomeFrost law)
-      uSeasonTint: { value: new THREE.Vector4(0.82, 0.96, 0.8, 0) }, // rgb multiply, w = frost dulling
+      uSeasonTint: { value: new THREE.Vector4(0.07, 0.3, 0.045, 0.25) }, // rgb target hue, w = strength
       uSnowT: { value: -1 }, // seasonal snow where temperature < uSnowT
       uMeltH: { value: 0 }, // snow tiles below this height melt (warm ages)
       uFreezeT: { value: -1 }, // lakes / calm shallows freeze where temperature < uFreezeT
@@ -105,13 +105,13 @@ export function refreshLandscapeUniforms(game, dt) {
 }
 
 // ---- seasons & climate ------------------------------------------------------
-// Grass tint keyframes at season centres (spring, summer, autumn, winter):
-// rgb multiply + w = frost dulling toward grey.
+// Ground-cover hue keyframes at season centres (spring, summer, autumn, winter):
+// rgb = target hue (applied at the surface's own luminance), w = strength.
 const SEASON_TINTS = [
-  [0.95, 1.1, 0.78, 0.0],
-  [0.82, 0.96, 0.8, 0.0],
-  [1.5, 1.02, 0.5, 0.08],
-  [1.04, 0.93, 0.9, 0.55],
+  [0.15, 0.44, 0.06, 0.35],
+  [0.07, 0.3, 0.045, 0.25],
+  [0.48, 0.3, 0.06, 0.8],
+  [0.25, 0.27, 0.22, 0.6],
 ];
 const _ease = (t) => t * t * (3 - 2 * t);
 function updateSeasonUniforms(game, u, dt = 0.016) {
