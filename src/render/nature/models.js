@@ -217,7 +217,7 @@ function buildOak(b, v, lod) {
     }
     if (v === 3) limb(b, V(0.02, 0.8, 0), V(-0.42, 1.25, 0.1), 0.04, 0.012, 4, P.oakBark, 2, { bend: 0.06 });
   }
-  foliage(b, blobs.map((bl) => ({ ...bl, d })), pal, { lump: 0.22 });
+  foliage(b, blobs.map((bl) => ({ ...bl, d })), pal, { lump: 0.22, mat: MAT.DLEAF });
   return { bendScale: 1, height: 2.2 };
 }
 
@@ -392,7 +392,7 @@ function buildBirch(b, v, lod) {
       limb(b, from, V(bl.p.x * 0.8, bl.p.y - 0.1, bl.p.z * 0.8), 0.022, 0.01, 4, { base: C(0xd8d2c4), top: C(0xe8e4da) }, H);
     }
   }
-  foliage(b, blobs.map((bl) => ({ ...bl, d: lod ? 'd' : 1, lump: 0.26 })), pal, { lump: 0.26, freq: 2.0 });
+  foliage(b, blobs.map((bl) => ({ ...bl, d: lod ? 'd' : 1, lump: 0.26 })), pal, { lump: 0.26, freq: 2.0, mat: MAT.DLEAF });
   return { bendScale: 1.25, height: H + 0.4 };
 }
 
@@ -643,7 +643,7 @@ function buildWillow(b, v, lod) {
   }
   if (lod) blobs = [{ p: V(top.x, th + 0.42, top.z), r: R + 0.05, sq: 0.55 }];
   if (!lod) for (let k = 1; k < blobs.length; k++) limb(b, top, V(blobs[k].p.x * 0.9 + top.x * 0.1, blobs[k].p.y - 0.1, blobs[k].p.z * 0.9 + top.z * 0.1), 0.055, 0.025, 4, P.willowBark, 1.8);
-  foliage(b, blobs.map((bl) => ({ ...bl, d: lod ? 'd' : 1 })), pal, { lump: 0.18, aoMin: 0.55 });
+  foliage(b, blobs.map((bl) => ({ ...bl, d: lod ? 'd' : 1 })), pal, { lump: 0.18, aoMin: 0.55, mat: MAT.DLEAF });
   // weeping curtain: an outer ring reaching almost to the ground, an inner ring
   const rings = lod ? [[7, 0.9, 0.8]] : [[[22, 18, 24][v], 0.95, 0.94], [8, 0.6, 0.72]];
   const cShade = mix3(pal.dark, pal.mid, 0.35),
@@ -674,7 +674,7 @@ function buildWillow(b, v, lod) {
           b1 = path[i + 1].clone().addScaledVector(tan, w1);
         const c0 = t0 < 0.25 ? mix3(cMid, cTip, 0.3) : mix3(cMid, cShade, (t0 - 0.25) / 0.75 * 0.6),
           c1 = t1 < 0.25 ? mix3(cMid, cTip, 0.3) : mix3(cMid, cShade, (t1 - 0.25) / 0.75 * 0.6);
-        const o = { leaf: 1, flutter: 0.9 + t0 * 1.4, mat: MAT.LEAF, pivot: s, bend: NaN, normals: [nOut, nOut, nOut], up: true };
+        const o = { leaf: 1, flutter: 0.9 + t0 * 1.4, mat: MAT.DLEAF, pivot: s, bend: NaN, normals: [nOut, nOut, nOut], up: true };
         b.tri(a0, b0, b1, [c0, c0, c1], o);
         b.tri(a0, b1, a1, [c0, c1, c1], o);
       }
@@ -735,7 +735,7 @@ function buildBush(b, v, lod) {
   let blobs = [];
   for (let k = 0; k < cfg.length; k += 2) blobs.push({ p: cfg[k], r: cfg[k + 1], sq: 0.86, d: lod ? 'd' : 1, fb: 0.3 });
   if (lod) blobs = blobs.slice(0, 2);
-  foliage(b, blobs, pal, { lump: 0.24, freq: 2.2, aoMin: 0.45, flutter: 0.6 });
+  foliage(b, blobs, pal, { lump: 0.24, freq: 2.2, aoMin: 0.45, flutter: 0.6, mat: MAT.DLEAF });
   // flowering shrub: tiny blossoms
   if (v === 3 && !lod) blossoms(b, blobs, [C(0xfff4f0), C(0xffd0e0)], 14);
   // a few stems peeking out at the base
@@ -765,7 +765,7 @@ function buildBerry(b, v, lod) {
     { p: V(0.22, 0.18, 0.06), r: 0.2, sq: 0.88, fb: 0.3 },
     { p: V(-0.18, 0.18, 0.12), r: 0.2, sq: 0.88, fb: 0.3 },
   ].map((bl) => ({ ...bl, d: lod ? 'd' : 1 }));
-  foliage(b, lod ? blobs.slice(0, 2) : blobs, P.berryLeaf, { lump: 0.25, freq: 2.4, aoMin: 0.45, flutter: 0.5 });
+  foliage(b, lod ? blobs.slice(0, 2) : blobs, P.berryLeaf, { lump: 0.25, freq: 2.4, aoMin: 0.45, flutter: 0.5, mat: MAT.DLEAF });
   blossoms(b, blobs, berry, lod ? 3 : 14, lod ? 0.06 : 0.04, MAT.GLOSS);
   return { bendScale: 0.3, height: 0.6 };
 }
@@ -948,7 +948,7 @@ function mushroom(b, x, z, h, r, capC, stemC, spots, o = {}) {
     normals: 'geoblend',
     blend: 0.65,
     color: (p, n) => mul3(capC, 0.65 + 0.35 * clamp01(n.y) * (0.92 + 0.1 * hashV(p))),
-    mat: MAT.GLOSS,
+    mat: MAT.SHROOM,
     leaf: 1,
     flutter: 0.05,
     pivot: V(x, 0, z),
@@ -963,7 +963,7 @@ function mushroom(b, x, z, h, r, capC, stemC, spots, o = {}) {
       const dir = V(Math.cos(a) * Math.sin(el), Math.cos(el), Math.sin(a) * Math.sin(el));
       const p = V(top.x + dir.x * r * 0.98, top.y - r * 0.18 + dir.y * r * (o.sq ?? 0.62) * 0.98 + 0.004, top.z + dir.z * r * 0.98);
       const g = new THREE.OctahedronGeometry(r * b.r(0.12, 0.18), 0);
-      b.add(g, { matrix: M(p.x, p.y, p.z, 0, 0, 0, 1, 0.45, 1), normals: 'up', color: C(0xfff6e8), mat: MAT.GLOSS, leaf: 1, flutter: 0.05, pivot: V(x, 0, z) });
+      b.add(g, { matrix: M(p.x, p.y, p.z, 0, 0, 0, 1, 0.45, 1), normals: 'up', color: C(0xfff6e8), mat: MAT.SHROOM, leaf: 1, flutter: 0.05, pivot: V(x, 0, z) });
     }
   }
 }
@@ -1217,7 +1217,8 @@ function buildFar(src, cfg, seed) {
     woodC = [0, 0, 0];
   let nl = 0,
     nw = 0,
-    ns = 0;
+    ns = 0,
+    nd = 0;
   for (let k = 0; k < P2.count; k++) {
     const mat = I2.getW(k),
       leaf = I2.getZ(k) > 0.5;
@@ -1225,7 +1226,8 @@ function buildFar(src, cfg, seed) {
       lo.min(V(P2.getX(k), P2.getY(k), P2.getZ(k)));
       hi.max(V(P2.getX(k), P2.getY(k), P2.getZ(k)));
       if (Math.abs(mat - MAT.SNOW) < 0.5) ns++;
-      else if (Math.abs(mat - MAT.LEAF) < 0.5) {
+      else if (Math.abs(mat - MAT.LEAF) < 0.5 || Math.abs(mat - MAT.DLEAF) < 0.5) {
+        if (Math.abs(mat - MAT.DLEAF) < 0.5) nd++;
         leafC[0] += C2.getX(k), leafC[1] += C2.getY(k), leafC[2] += C2.getZ(k);
         nl++;
       }
@@ -1237,6 +1239,7 @@ function buildFar(src, cfg, seed) {
   if (!nl) return null;
   const lc = mul3(leafC, 1 / nl),
     wc = nw ? mul3(woodC, 1 / nw) : lc;
+  const fmat = nd > nl * 0.5 ? MAT.DLEAF : MAT.LEAF;
   const b = new MeshBuilder(seed);
   const ctr = lo.clone().add(hi).multiplyScalar(0.5);
   const ext = hi.clone().sub(lo).multiplyScalar(0.5 * 0.92);
@@ -1256,11 +1259,11 @@ function buildFar(src, cfg, seed) {
       ring.push(V(ctr.x + Math.cos(a) * rr, lo.y + 0.05, ctr.z + Math.sin(a) * rr));
     }
     const start = b.count;
-    for (let k = 0; k < 6; k++) b.tri(apex, ring[(k + 1) % 6], ring[k], [1, 1, 1], { leaf: 1, flutter: 0.3, mat: MAT.LEAF, pivot: ctr, single: true });
+    for (let k = 0; k < 6; k++) b.tri(apex, ring[(k + 1) % 6], ring[k], [1, 1, 1], { leaf: 1, flutter: 0.3, mat: fmat, pivot: ctr, single: true });
     recolorRange(b, start, shade, V(ctr.x, lo.y, ctr.z), 0.4);
   } else {
     const g = new THREE.IcosahedronGeometry(1, 0);
-    b.add(g, { matrix: M(ctr.x, ctr.y, ctr.z, 0, 0.4, 0, ext.x, ext.y, ext.z), normals: 'blend', blend: 0.55, center: ctr, color: shade, leaf: 1, mat: MAT.LEAF, pivot: ctr });
+    b.add(g, { matrix: M(ctr.x, ctr.y, ctr.z, 0, 0.4, 0, ext.x, ext.y, ext.z), normals: 'blend', blend: 0.55, center: ctr, color: shade, leaf: 1, mat: fmat, pivot: ctr });
   }
   if (nw && lo.y > 0.2) {
     b.add(tubeGeo([V(0, 0, 0), V(ctr.x * 0.6, lo.y + ext.y * 0.4, ctr.z * 0.6)], [0.075, 0.05], 3, { capTop: false }), { normals: 'geo', color: (p) => mul3(wc, 0.7 + 0.3 * clamp01(p.y)), mat: MAT.WOOD });
@@ -1301,7 +1304,10 @@ function buildDot(src, cfg, seed) {
   const ring = [V(ctr.x + rx, y0, ctr.z), V(ctr.x, y0, ctr.z + rz), V(ctr.x - rx, y0, ctr.z), V(ctr.x, y0, ctr.z - rz)];
   const top = mul3(c, 1.18),
     base = mul3(c, 0.72);
-  for (let k = 0; k < 4; k++) b.tri(apex, ring[(k + 1) % 4], ring[k], [top, base, base], { leaf: anyLeaf ? 1 : 0, flutter: 0, mat: anyLeaf ? MAT.LEAF : MAT.ROCK, pivot: ctr, single: true, bend: 0 });
+  let dec = 0;
+  for (let k = 0; k < P2.count; k++) if (Math.abs(I2.getW(k) - MAT.DLEAF) < 0.5) dec++;
+  const dmat = !anyLeaf ? MAT.ROCK : dec > P2.count * 0.25 ? MAT.DLEAF : MAT.LEAF;
+  for (let k = 0; k < 4; k++) b.tri(apex, ring[(k + 1) % 4], ring[k], [top, base, base], { leaf: anyLeaf ? 1 : 0, flutter: 0, mat: dmat, pivot: ctr, single: true, bend: 0 });
   return b.build({ bendScale: 0 });
 }
 

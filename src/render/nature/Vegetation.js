@@ -74,8 +74,10 @@ export class Vegetation {
     this.stateTex.needsUpdate = true;
     this.uniforms = createSharedUniforms(this.stateTex, world.w, world.h);
     // Canopy-over-units occupancy (one texel per tile, eased 0..1)
-    this.occData = new Uint8Array(n);
-    this.occTex = new THREE.DataTexture(this.occData, world.w, world.h, THREE.RedFormat, THREE.UnsignedByteType);
+    // R: canopy-over-units occupancy, G: tile temperature (seasons by climate)
+    this.occData = new Uint8Array(n * 2);
+    this.occTex = new THREE.DataTexture(this.occData, world.w, world.h, THREE.RGFormat, THREE.UnsignedByteType);
+    this.writeTemperature();
     this.occTex.minFilter = this.occTex.magFilter = THREE.NearestFilter;
     this.occTex.generateMipmaps = false;
     this.occTex.needsUpdate = true;
@@ -606,12 +608,17 @@ export class Vegetation {
       c += (t - c) * (t > c ? kO : kC);
       if (Math.abs(t - c) < 0.01) c = t;
       this.occCur[i] = c;
-      this.occData[i] = Math.round(c * 255);
+      this.occData[i * 2] = Math.round(c * 255);
       if (c !== t) A[w++] = i;
       else this.occFlag[i] = 0;
     }
     A.length = w;
     this.occTex.needsUpdate = true;
+  }
+  writeTemperature() {
+    const t = this.world.temperature;
+    for (let i = 0; i < this.world.size; i++) this.occData[i * 2 + 1] = Math.round(Math.min(1, Math.max(0, t[i])) * 255);
+    if (this.occTex) this.occTex.needsUpdate = true;
   }
   occEnqueue(i) {
     if (this.occFlag[i]) return;
@@ -640,6 +647,10 @@ export class Vegetation {
     const windK = 1 - THREE.MathUtils.smoothstep(zoom01, 0.55, 0.75);
     u.uWind.value.set(wind.x / wl, wind.z / wl, THREE.MathUtils.clamp(wind.strength ?? 0.3, 0, 1.5) * windK, 0);
     u.uFlutter.value = g.settings?.powerSaver ? 0 : 1;
+    u.uSeason.value = g.time?.season ?? 1.5;
+    u.uTempOff.value = g.age?.mods?.temperature ?? 0;
+    const glowGoal = g.laws?.fungiGlow === false ? 0 : 1;
+    u.uFungiGlow.value += (glowGoal - u.uFungiGlow.value) * Math.min(1, dt * 2);
     if (g.env.sunDir) u.uSunDir.value.copy(g.env.sunDir);
     if (g.env.sunColor) u.uSunColor.value.copy(g.env.sunColor);
     u.uDaylight.value = g.env.daylight ?? 1;
@@ -696,7 +707,10 @@ export class Vegetation {
     const g = this.game;
     const rig = g.cameraRig;
     if (rig.cur.dist > 70 || !g.fx?.emit) return;
-    this._leafT -= dt * (0.6 + (g.env.wind?.strength ?? 0.3) * 2.5);
+    const season = g.time?.season ?? 1.5;
+    const sIdx = Math.floor(season) % 4;
+    const autumn = sIdx === 2 ? 4 : sIdx === 3 ? 0.15 : 1;
+    this._leafT -= dt * (0.6 + (g.env.wind?.strength ?? 0.3) * 2.5) * autumn;
     if (this._leafT > 0) return;
     this._leafT = 0.35 + Math.random() * 0.4;
     const world = this.world;
@@ -710,12 +724,16 @@ export class Vegetation {
       const x = tx + 0.5,
         z = ty + 0.5;
       const w = g.env.wind || { x: 1, z: 0, strength: 0.3 };
-      g.fx.emit('leaves', { x, y: world.heightAt(x, z) + 1.5, z }, { count: 3, scale: 0.6, dir: { x: w.x * (w.strength ?? 0.3), y: -0.3, z: w.z * (w.strength ?? 0.3) }, color: f === FLORA.BIRCH ? 0xc8d860 : 0x6fa040 });
+      const deciduous = f === FLORA.OAK || f === FLORA.BIRCH || f === FLORA.SWAMP_TREE;
+      if (sIdx === 2 && !deciduous) continue;
+      const col = sIdx === 2 ? [0xd8862a, 0xb8401e, 0xe0b040][Math.floor(Math.random() * 3)] : f === FLORA.BIRCH ? 0xc8d860 : 0x6fa040;
+      g.fx.emit('leaves', { x, y: world.heightAt(x, z) + 1.5, z }, { count: sIdx === 2 ? 6 : 3, scale: 0.6, dir: { x: w.x * (w.strength ?? 0.3), y: -0.3, z: w.z * (w.strength ?? 0.3) }, color: col });
       break;
     }
   }
 
   reset() {
+    this.writeTemperature();
     this.animList.length = 0;
     this.animFlag.fill(0);
     this.builtFlora.fill(0);
