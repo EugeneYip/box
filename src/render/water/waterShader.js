@@ -55,12 +55,16 @@ vec2 waveSlope(vec2 p, float t, float fw, float calm) {
   g += swell(p, vec2(0.97, -0.24), 0.71, 0.08, 1.35, t) * f1;
   g += swell(p, vec2(0.20, 0.98), 1.13, 0.05, 1.80, t) * f1;
   g += swell(p, vec2(-0.86, -0.51), 1.77, 0.030, 2.30, t) * f2;
-  // choppy detail from two scrolling noise layers
+  // choppy detail from scrolling noise layers (skipped when far / power saver)
   vec4 a = texture2D(uNoise, p * (1.0 / 9.0) + vec2(t * 0.011, t * 0.007));
-  vec4 b = texture2D(uNoise, WROT1 * p * (1.0 / 5.7) - vec2(t * 0.009, -t * 0.012));
-  g += ((a.rg - 0.5) * 0.55 + (b.gr - 0.5) * 0.45) * 0.35 * f2;
-  vec4 c = texture2D(uNoise, WROT2 * p * (1.0 / 2.1) + vec2(-t * 0.02, t * 0.015));
-  g += (c.rg - 0.5) * 0.22 * f3;
+  if (uDetail > 0.001) {
+    vec4 b = texture2D(uNoise, WROT1 * p * (1.0 / 5.7) - vec2(t * 0.009, -t * 0.012));
+    g += ((a.rg - 0.5) * 0.55 + (b.gr - 0.5) * 0.45) * 0.35 * f2;
+    vec4 c = texture2D(uNoise, WROT2 * p * (1.0 / 2.1) + vec2(-t * 0.02, t * 0.015));
+    g += (c.rg - 0.5) * 0.22 * f3;
+  } else {
+    g += (a.rg - 0.5) * 0.35 * f2;
+  }
   return g * calm;
 }
 `;
@@ -78,7 +82,8 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   float hc = hAt(p);
   vec2 od = max(max(-p, p - uWorldSize), 0.0);
   float outside = length(od);
-  float outK = smoothstep(4.0, 70.0, outside);
+  float oscale = max(1.0, max(uWorldSize.x, uWorldSize.y) / 256.0);
+  float outK = smoothstep(4.0 * oscale, 70.0 * oscale, outside);
   float depth = mix(max(0.0, -hc), 16.0, outK);
   float e = 0.6;
   vec2 grad = vec2(hAt(p + vec2(e, 0.0)) - hAt(p - vec2(e, 0.0)), hAt(p + vec2(0.0, e)) - hAt(p - vec2(0.0, e))) / (2.0 * e);
@@ -116,8 +121,9 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   vec2 flow = dl > 1e-4 ? dn / dl : vec2(0.7071);
   vec2 perp = vec2(-flow.y, flow.x);
   float fu = dot(p, flow), fv = dot(p, perp);
-  vec4 st1 = texture2D(uNoise, vec2(fu * 0.16 - t * 0.085, fv * 0.85));
-  vec4 st2 = texture2D(uNoise, vec2(fu * 0.42 - t * 0.21, fv * 1.9) + 0.37);
+  bool fineW = uDetail > 0.001;
+  vec4 st1 = fineW ? texture2D(uNoise, vec2(fu * 0.16 - t * 0.085, fv * 0.85)) : vec4(0.5);
+  vec4 st2 = fineW ? texture2D(uNoise, vec2(fu * 0.42 - t * 0.21, fv * 1.9) + 0.37) : vec4(0.5);
   float streak = smoothstep(0.56, 0.86, st1.r) * 0.7 + smoothstep(0.6, 0.9, st2.g) * 0.5 * (1.0 - smoothstep(0.08, 0.35, fw));
   float riffle = smoothstep(0.62, 0.92, st2.r) * (1.0 - smoothstep(0.25, 0.7, depth)) * (1.0 - smoothstep(0.1, 0.4, fw));
   // bends: how fast the flow direction turns per world unit
@@ -153,18 +159,26 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   float rgh = mix(0.07, 0.30, smoothstep(0.06, 0.6, fw));
   float Fs = 0.02 + 0.98 * pow(1.0 - max(dot(V, Hs), 0.0), 5.0);
   float glint = ggxD(nh, rgh) * Fs * mix(1.1, 0.55, smoothstep(0.1, 0.6, fw)) + pow(nh, 1400.0) * 6.5 * sharpK;
-  glint *= mix(1.0, 0.35, narrow); // rivers must not flare to white
+  // rivers, channels and calm shallow flats are not mirrors: never flare to white
+  float narrowW = (1.0 - smoothstep(1.2, 3.6, wide)) * (1.0 - outK);
+  float shallowK = 1.0 - smoothstep(0.05, 0.6, depth);
+  glint *= mix(1.0, 0.3, max(max(narrow, narrowW), shallowK * 0.8));
   vec3 keyL = uKeyCol * KEYN;
   vec3 spec = keyL * glint * keyUp * lightVis;
   // low sun: a glittering sun path on the water toward the sun (resolvable at map zoom)
   float lowSun = smoothstep(0.02, 0.10, L.y) * (1.0 - smoothstep(0.25, 0.55, L.y));
-  vec4 gz1 = texture2D(uNoise, p * (1.0 / 16.0) + vec2(t * 0.012, -t * 0.009));
-  vec4 gz2 = texture2D(uNoise, WROT1 * p * (1.0 / 9.0) - vec2(t * 0.010, t * 0.013));
+  bool glit = lowSun > 0.0; // uniform: depends on the key light only
+  vec4 gz1 = glit ? texture2D(uNoise, p * (1.0 / 16.0) + vec2(t * 0.012, -t * 0.009)) : vec4(0.5);
+  vec4 gz2 = glit ? texture2D(uNoise, WROT1 * p * (1.0 / 9.0) - vec2(t * 0.010, t * 0.013)) : vec4(0.5);
   vec2 gs = ((gz1.rg - 0.5) + (gz2.gr - 0.5)) * 1.4;
   vec3 Ng = normalize(vec3(-gs.x, 1.0, -gs.y));
   float pathK = ggxD(max(dot(Ng, Hs), 0.0), 0.45) * Fs * 5.0;
   float flick = smoothstep(0.55, 0.85, gz1.b);
-  spec += keyL * pathK * (0.5 + 1.5 * flick) * lowSun * lightVis * (1.0 - narrow * 0.7);
+  // confine it to a strip running from below the camera toward the sun's azimuth
+  vec2 vdir = wp.xz - cameraPosition.xz;
+  float al2 = dot(vdir / max(length(vdir), 1e-3), L.xz / max(length(L.xz), 1e-3));
+  float pathMask = smoothstep(0.86, 0.99, al2);
+  spec += keyL * pathK * (0.5 + 1.5 * flick) * lowSun * lightVis * (1.0 - narrow * 0.7) * (0.05 + 0.95 * pathMask);
 
   // ---- water body veil (the seabed below is already tinted by the terrain)
   vec3 scat = mix(waterShallowColorV(lightVis), waterDeepColorV(lightVis), smoothstep(0.6, 6.0, depth));
@@ -185,9 +199,10 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   vec2 drift = vec2(t * 0.020, t * 0.013);
   vec4 fn = texture2D(uNoise, p * (1.0 / 13.0) + drift);
   vec4 fc = texture2D(uCells, WROT1 * p * (1.0 / 6.5) + drift * 0.6);
-  vec4 fc2 = texture2D(uCells, WROT2 * p * (1.0 / 3.1) - drift * 0.8);
-  vec4 fcl = texture2D(uCells, WROT1 * (p + (fn.gb - 0.5) * 3.2) * (1.0 / 4.3) - drift * 0.7);
-  float breakup = smoothstep(0.12, 0.55, fc.g + (fn.r - 0.5) * 0.5) * 0.65 + smoothstep(0.05, 0.4, fc2.g) * 0.35;
+  vec4 fc2 = fineW ? texture2D(uCells, WROT2 * p * (1.0 / 3.1) - drift * 0.8) : vec4(0.45, 0.5, 0.5, 0.5);
+  vec4 fcl = fineW ? texture2D(uCells, WROT1 * (p + (fn.gb - 0.5) * 3.2) * (1.0 / 4.3) - drift * 0.7) : vec4(0.45, 0.5, 0.5, 0.5);
+  // organic (noise-led) breakup; cell edges only as a warped minor term (no crackle glaze)
+  float breakup = smoothstep(0.30, 0.70, fn.r * 0.55 + fn.b * 0.25 + fcl.g * 0.35);
   float breath = 0.5 + 0.5 * sin(t * 0.9 + fn.g * 6.0);
   float contactW = 0.30 + 0.25 * breath + 0.15 * fn.b;
   float contact = 1.0 - smoothstep(contactW * 0.25, contactW * 1.15, shoreD);
@@ -289,5 +304,5 @@ export function patchWaterMaterial(material, uniforms) {
       .replace('#include <fog_fragment>', WATER_FOG)
       .replace('#include <premultiplied_alpha_fragment>', '');
   };
-  material.customProgramCacheKey = () => 'worldseed-water-v3';
+  material.customProgramCacheKey = () => 'worldseed-water-v4';
 }

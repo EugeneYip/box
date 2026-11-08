@@ -217,14 +217,14 @@ Mat matSwamp(NS s) {
 }
 Mat matTundra(NS s) {
   // clean patches: moss green base, lichen ochre, russet heath, grey stone
-  vec3 c = vec3(0.115, 0.190, 0.070) * (0.85 + 0.3 * s.det.g);
-  float lich = smoothstep(0.54, 0.60, s.det.r * 0.55 + s.meso.g * 0.30 + s.micro.r * 0.15);
-  c = mix(c, vec3(0.420, 0.310, 0.110) * (0.85 + 0.3 * s.micro.g), lich);
-  float hth = smoothstep(0.60, 0.66, s.meso.r * 0.6 + s.det.b * 0.4) * (1.0 - lich);
-  c = mix(c, vec3(0.250, 0.120, 0.075) * (0.85 + 0.3 * s.micro.r), hth * 0.85);
-  float stn = smoothstep(0.62, 0.68, s.meso.b * 0.6 + s.det.g * 0.4);
+  vec3 c = vec3(0.130, 0.190, 0.080) * (0.88 + 0.24 * s.det.g);
+  float lich = smoothstep(0.52, 0.68, s.meso.g * 0.60 + s.det.r * 0.30 + s.micro.r * 0.10);
+  c = mix(c, vec3(0.340, 0.280, 0.130) * (0.9 + 0.2 * s.micro.g), lich * 0.75);
+  float hth = smoothstep(0.58, 0.72, s.meso.r * 0.6 + s.det.b * 0.4) * (1.0 - lich);
+  c = mix(c, vec3(0.210, 0.130, 0.090) * (0.9 + 0.2 * s.micro.r), hth * 0.55);
+  float stn = smoothstep(0.60, 0.74, s.meso.b * 0.6 + s.det.g * 0.4);
   float peb = smoothstep(0.6, 0.3, s.cellS.r);
-  c = mix(c, vec3(0.30, 0.30, 0.29) * (0.75 + 0.45 * s.cellS.b) * mix(0.72, 1.0, peb), stn);
+  c = mix(c, vec3(0.30, 0.30, 0.29) * (0.80 + 0.35 * s.cellS.b) * mix(0.78, 1.0, peb), stn * 0.85);
   c *= 0.90 + 0.2 * s.macro.g;
   return mk(c, 0.90, 0.40 + 0.25 * lich + 0.3 * stn, 0.05 + 0.04 * stn);
 }
@@ -380,12 +380,16 @@ Mat matCliff(NS s, out vec3 facetN) {
   float wx = smoothstep(0.35, 0.65, abs(n.x) / (abs(n.x) + abs(n.z) + 1e-4));
   vec2 uvX = vec2(p.z, p.y);
   vec2 uvZ = vec2(p.x, p.y);
-  vec4 tX = nz(uvX * 0.085);
-  vec4 tZ = nz(uvZ * 0.085);
-  vec4 t = mix(tZ, tX, wx);
-  vec4 dX = nz(uvX * 0.37);
-  vec4 dZ = nz(uvZ * 0.37);
-  vec4 d = mix(dZ, dX, wx);
+  vec4 t, d;
+  if (uPower > 0.5) {
+    // power saver: dominant projection only (half the taps, no triplanar blend)
+    vec2 uvD = mix(uvZ, uvX, step(0.5, wx));
+    t = nz(uvD * 0.085);
+    d = nz(uvD * 0.37);
+  } else {
+    t = mix(nz(uvZ * 0.085), nz(uvX * 0.085), wx);
+    d = mix(nz(uvZ * 0.37), nz(uvX * 0.37), wx);
+  }
   // strata: level, crisp (anti-aliased) layers with a shadowed lip under each ledge
   float sy = p.y * 0.75 + (t.r - 0.5) * 0.55 + (s.macro.r - 0.5) * 0.45;
   float layer = floor(sy);
@@ -527,8 +531,10 @@ void terrainSurface() {
   s.macro = nz(p * (1.0 / 97.0));
   s.meso = nz(ROT1 * p * (1.0 / 23.0));
   s.det = nz(ROT2 * p * (1.0 / 5.3));
-  s.micro = nz(ROT3 * p * (1.0 / 1.37));
-  s.cellS = cz(p * (1.0 / 9.0));
+  // fine layers only when they can be seen (uniform branch: derivatives stay valid)
+  bool fine = uDetail > 0.001;
+  s.micro = fine ? nz(ROT3 * p * (1.0 / 1.37)) : vec4(0.5);
+  s.cellS = fine ? cz(p * (1.0 / 9.0)) : vec4(0.45, 0.5, 0.5, 0.5);
   s.cellL = cz(ROT1 * p * (1.0 / 37.0));
   vec4 clim = texture2D(uClimTex, p / uWorldSize);
   s.moist = clim.r;
@@ -649,12 +655,12 @@ void terrainSurface() {
   emit += vec3(0.8, 0.15, 0.015) * smoothstep(0.05, 1.0, lavaRaw) * (1.0 - lavaB) * 0.45 * (0.6 + 0.8 * s.meso.r);
 
   // ---- normals: material bump + seabed ripples
-  vec3 nb = bumpPerturb(s.p, nrm, H);
+  vec3 nb = fine ? bumpPerturb(s.p, nrm, H * uDetail) : nrm;
   tNormalW = nb;
 
   // ---- snow sparkle (view dependent, band-limited)
   float snowAll = snowB * (1.0 - cliff * 0.7);
-  if (snowAll > 0.01) {
+  if (snowAll > 0.01 && fine) {
     vec2 sp = p * 7.0;
     vec2 cid = floor(sp);
     float r = hash12(cid);
@@ -688,7 +694,7 @@ export const TERRAIN_FRAGMENT_POST = /* glsl */ `
     vec3 vdir = normalize(vWPos - cameraPosition);
     float viewY = abs(vdir.y);
     // caustics are light: modulate the lit seabed in shallow, sunny water
-    float cs = causticsAt(vWPos.xz, uLTime) * (1.0 - smoothstep(0.3, 4.5, depthW)) * smoothstep(0.0, 0.35, depthW) * (1.0 - smoothstep(0.06, 0.25, cfw)) * (1.0 - tCold);
+    float cs = (uDetail > 0.001 ? causticsAt(vWPos.xz, uLTime) * uDetail : 0.0) * (1.0 - smoothstep(0.3, 4.5, depthW)) * smoothstep(0.0, 0.35, depthW) * (1.0 - smoothstep(0.06, 0.25, cfw)) * (1.0 - tCold);
     float sunVis = clamp(lum(uKeyCol * KEYN), 0.0, 1.0) * smoothstep(0.0, 0.2, uKeyDir.y) * tCloud;
     gCold = tCold;
     outgoingLight *= 1.0 + cs * 0.45 * sunVis;
@@ -720,5 +726,5 @@ export function patchTerrainMaterial(material, uniforms) {
       )
       .replace('#include <opaque_fragment>', TERRAIN_FRAGMENT_POST + '\n#include <opaque_fragment>');
   };
-  material.customProgramCacheKey = () => 'worldseed-terrain-v4';
+  material.customProgramCacheKey = () => 'worldseed-terrain-v5';
 }
