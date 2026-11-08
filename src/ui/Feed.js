@@ -1,6 +1,6 @@
 import { uiIcon } from './icons.js';
 import { el, esc } from './dom.js';
-import { classify } from './Chronicle.js';
+import { classify, isMinor } from './Chronicle.js';
 
 const LIFETIME = 7.5; // seconds before an entry fades
 const maxVisible = () => (innerHeight <= 760 ? 3 : 4);
@@ -22,6 +22,8 @@ export class Feed {
 
   push(n) {
     if (!n || !n.text) return;
+    if (this.game.laws?.miscMinorEvents === false && isMinor(n)) return;
+    if (n.kind === 'age' && n.color == null && this.game.age) n = { ...n, color: this.game.age.color };
     const e = this.ui.chronicle ? this.ui.chronicle.add(n) : classify(n);
     const now = performance.now() / 1000;
     const dup = this.items.find((it) => it.text === e.text && now - it.born < 6 && !it.leaving);

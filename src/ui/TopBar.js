@@ -3,6 +3,7 @@ import { el, fmtNum, safe, titleCase } from './dom.js';
 import { seasonOf } from './Chronicle.js';
 
 const SEASON_TINT = { Spring: '#9fe08a', Summer: '#ffd36a', Autumn: '#f0a050', Winter: '#bfe0ff' };
+const SEASON_GLYPH = { Spring: 'plant-flowers', Summer: 'sun', Autumn: 'clear-flora', Winter: 'weather-snow' };
 
 // The Worldseed emblem: a sprouting seed that is also a tiny globe.
 export function emblemSvg(cls = '', id = 'e') {
@@ -89,6 +90,11 @@ export class TopBar {
         (this.kBtn = this.navBtn('kingdoms', 'Kingdoms', 'K', () => ui.kingdoms.toggle())),
         this.navBtn('chronicle', 'Chronicle', 'J', () => ui.chronicle.toggle()),
         this.navBtn('trade', 'World laws', 'L', () => ui.modals.toggle('laws')),
+        (() => {
+          const b = this.navBtn('eclipse', 'World ages', 'Y', () => ui.modals.toggle('ages'));
+          b.classList.add('ws-nav__ages');
+          return b;
+        })(),
         this.navBtn('settings', 'Settings', 'O', () => ui.modals.toggle('settings')),
         this.navBtn('help', 'Controls', 'H', () => ui.modals.toggle('help')),
       ),
@@ -253,14 +259,15 @@ export class TopBar {
       this._t = 0.25;
       const hh = Math.floor(t.hour);
       const mm = Math.floor((t.hour - hh) * 60);
-      const year = `Year ${Math.floor(t.year) + 1}`;
-      const season = seasonOf(t.year);
-      const day = `${season} · ${String(hh).padStart(2, '0')}:${String(Math.floor(mm / 5) * 5).padStart(2, '0')}`;
-      if (this.yearEl.textContent !== year) this.yearEl.textContent = year;
-      if (this.dayEl.textContent !== day) {
-        this.dayEl.textContent = day;
+      const season = t.seasonName || seasonOf(t.year);
+      const year = `Year ${Math.floor(t.year) + 1} · ${season}`;
+      const day = `${String(hh).padStart(2, '0')}:${String(Math.floor(mm / 5) * 5).padStart(2, '0')}`;
+      if (this._yearTxt !== year) {
+        this._yearTxt = year;
+        this.yearEl.innerHTML = `<span>Year ${Math.floor(t.year) + 1}</span><i class="ws-season" style="--season:${SEASON_TINT[season]}">${uiIcon(SEASON_GLYPH[season] || 'sun')}</i><span class="ws-season__name">${season}</span>`;
         this.dayEl.style.setProperty('--season', SEASON_TINT[season]);
       }
+      if (this.dayEl.textContent !== day) this.dayEl.textContent = day;
     }
     // effective speed: game seconds advanced per real second
     const E = this._eff;

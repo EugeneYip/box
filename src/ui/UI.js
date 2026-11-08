@@ -1,6 +1,7 @@
 import '@fontsource/cinzel/700.css';
 import './hud2.css';
 import './hud3.css';
+import './hud4.css';
 import { CATEGORIES, listPowers, getPower } from '../powers/registry.js';
 import { el, safe } from './dom.js';
 import { TopBar, PRESET_NAMES } from './TopBar.js';
@@ -13,6 +14,9 @@ import { TitleScreen } from './TitleScreen.js';
 import { ChroniclePanel } from './Chronicle.js';
 import { Onboarding } from './Onboarding.js';
 import { CameraPad } from './CameraPad.js';
+import { AgeChip, AgeBanner } from './Ages.js';
+import { loadRegistries } from './depth.js';
+import { uiIcon } from './icons.js';
 
 const PREF_KEY = 'worldseed.ui.v1';
 
@@ -57,6 +61,20 @@ export class UI {
     this.hud.append(this.topbar.el, this.feed.el, this.kingdoms.el, this.chronicle.el, this.inspector.el, this.minimap.wrap, this.toolbar.el, this.toastEl);
     root.append(this.modals.layer, this.veil);
     this.onboarding = new Onboarding(this);
+    // ages: chip under the clock, banner on change
+    this.ageChip = new AgeChip(this);
+    this.topbar.centre.insertBefore(this.ageChip.el, this.topbar.pausedEl);
+    this.ageBanner = new AgeBanner(this);
+    this.parts.push(this.ageChip);
+    // Overview replaces the always-on minimap (M)
+    this.overviewBtn = el(
+      'button',
+      { class: 'ws-overview ws-glass', type: 'button', 'aria-label': 'Overview (M)', 'data-tip': 'Overview · M', onclick: () => this.overview() },
+      el('span', { class: 'ws-overview__ico', html: uiIcon('expand') }),
+      el('span', { class: 'ws-overview__txt', text: 'Overview' }),
+    );
+    this.hud.append(this.overviewBtn);
+    loadRegistries(() => this.inspector.open && this.inspector.render());
     if (root.classList.contains('is-touch')) {
       this.campad = new CameraPad(this);
       this.hud.append(this.campad.el);
@@ -111,7 +129,8 @@ export class UI {
     const g = this.game;
     const p = this.prefs;
     this.root.classList.toggle('no-blur', !this.blurOn());
-    this.minimap.setVisible(p.minimap !== false);
+    this.minimap.setVisible(p.minimap === true);
+    this.root.classList.toggle('has-minimap', p.minimap === true);
     this.feed.el.classList.toggle('is-off', p.feed === false);
     if (initial) {
       const narrow = innerWidth <= 1000 || innerHeight <= 500;
@@ -197,6 +216,31 @@ export class UI {
     /* handled by the 'world:regenerated' event */
   }
 
+  // Ease out to frame the whole map; press again to return to the previous view.
+  overview() {
+    const rig = this.game.cameraRig;
+    const W = this.game.world;
+    if (this._overview) {
+      const p = this._overview;
+      this._overview = null;
+      rig.goal.x = p.x;
+      rig.goal.z = p.z;
+      rig.goal.dist = p.dist;
+      rig.goal.yaw = p.yaw;
+      if (p.follow) rig.follow = p.follow;
+    } else {
+      this._overview = { x: rig.goal.x, z: rig.goal.z, dist: rig.goal.dist, yaw: rig.goal.yaw, follow: rig.follow };
+      rig.follow = null;
+      rig.goal.x = W.w / 2;
+      rig.goal.z = W.h / 2 + W.h * 0.04;
+      rig.goal.dist = rig.maxDist;
+    }
+    this.root.classList.toggle('is-overview', !!this._overview);
+    this.overviewBtn.querySelector('.ws-overview__txt').textContent = this._overview ? 'Back' : 'Overview';
+    this.overviewBtn.querySelector('.ws-overview__ico').innerHTML = uiIcon(this._overview ? 'collapse' : 'expand');
+    this.game.audio?.play?.('ui-click', { volume: 0.45 });
+  }
+
   togglePhoto() {
     const on = !this.root.classList.contains('is-photo');
     this.root.classList.toggle('is-photo', on);
@@ -245,7 +289,7 @@ export class UI {
     }
     if (this.modals.current && !this.isTyping(e)) {
       // only the panel's own toggle key passes through while a dialog is up
-      const own = { help: 'KeyH', settings: 'KeyO', newworld: 'KeyG', laws: 'KeyL' }[this.modals.current];
+      const own = { help: 'KeyH', settings: 'KeyO', newworld: 'KeyG', laws: 'KeyL', ages: 'KeyY' }[this.modals.current];
       if (e.code === own) {
         this.modals.close();
         e.preventDefault();
@@ -260,7 +304,7 @@ export class UI {
     const g = this.game;
     const code = e.code;
     const slot = SLOT_CODES.indexOf(code);
-    if (slot >= 0 && this.toolbar.pickSlot(slot + (e.shiftKey ? 10 : 0))) {
+    if (slot >= 0 && this.toolbar.pickSlot(slot + (e.shiftKey ? SLOT_CODES.length : 0))) {
       e.preventDefault();
       return;
     }
@@ -286,6 +330,12 @@ export class UI {
         break;
       case 'KeyL':
         this.modals.toggle('laws');
+        break;
+      case 'KeyM':
+        this.overview();
+        break;
+      case 'KeyY':
+        this.modals.toggle('ages');
         break;
       case 'Backquote':
         this.toolbar.setMin(!this.toolbar.el.classList.contains('is-min'));
