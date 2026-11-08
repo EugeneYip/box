@@ -235,6 +235,12 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   float i11 = isIceAt(ic + ivec2(1, 1), isz);
   float iceF = mix(mix(i00, i10, ifr.x), mix(i01, i11, ifr.x), ifr.y);
   float ice = smoothstep(0.18, 0.82, iceF + (fc.b - 0.5) * 0.3 + (fn.g - 0.5) * 0.25) * (1.0 - outK) * step(0.001, depth);
+  // seasonal freeze: lakes, rivers and calm shallows at the coldest latitudes
+  if (uFreezeT > -0.1) {
+    float calmW = max(1.0 - open, 1.0 - smoothstep(1.2, 3.0, depth));
+    float fz = smoothstep(0.035, -0.035, temp - uFreezeT + (fn.r - 0.5) * 0.07 + (fc.b - 0.5) * 0.03);
+    ice = max(ice, fz * calmW * (1.0 - outK) * step(0.001, depth));
+  }
 
   // ---- compose (premultiplied)
   vec3 refl = sky * F;
@@ -304,5 +310,5 @@ export function patchWaterMaterial(material, uniforms) {
       .replace('#include <fog_fragment>', WATER_FOG)
       .replace('#include <premultiplied_alpha_fragment>', '');
   };
-  material.customProgramCacheKey = () => 'worldseed-water-v4';
+  material.customProgramCacheKey = () => 'worldseed-water-v5';
 }

@@ -37,6 +37,12 @@ export function landscapeUniforms(game) {
       uCloudOn: { value: 0 },
       uWet: { value: 0 },
       uCamDist: { value: 100 },
+      // seasons & climate (game.time.season, game.age.mods.temperature, biomeFrost law)
+      uSeasonTint: { value: new THREE.Vector4(0.82, 0.96, 0.8, 0) }, // rgb multiply, w = frost dulling
+      uSnowT: { value: -1 }, // seasonal snow where temperature < uSnowT
+      uMeltH: { value: 0 }, // snow tiles below this height melt (warm ages)
+      uFreezeT: { value: -1 }, // lakes / calm shallows freeze where temperature < uFreezeT
+      uDry: { value: 0 }, // sun-baked grass (warm ages)
       uDetail: { value: 1 }, // 1 = full close-up detail .. 0 = far / power-saver path
       uPower: { value: 0 }, // 1 = power saver: fewer texture taps, no triplanar
     };
@@ -79,6 +85,7 @@ export function refreshLandscapeUniforms(game, dt) {
   if (env.ambientColor) u.uAmbCol.value.copy(env.ambientColor);
   else u.uAmbCol.value.copy(u.uSkyCol.value).multiplyScalar(0.3 + 0.5 * u.uDay.value);
   u.uCamDist.value = game.cameraRig?.cur?.dist ?? 100;
+  updateSeasonUniforms(game, u, dt);
   // cloud shadows from Atmosphere (applied per material to direct light)
   const cs = env.cloudShadow;
   if (cs && cs.texture && cs.params) {
@@ -95,6 +102,60 @@ export function refreshLandscapeUniforms(game, dt) {
   const k = 1 - Math.exp(-(dt || 0.016) * (target > u.uWet.value ? 0.35 : 0.12));
   u.uWet.value += (target - u.uWet.value) * k;
   return u;
+}
+
+// ---- seasons & climate ------------------------------------------------------
+// Grass tint keyframes at season centres (spring, summer, autumn, winter):
+// rgb multiply + w = frost dulling toward grey.
+const SEASON_TINTS = [
+  [0.95, 1.1, 0.78, 0.0],
+  [0.82, 0.96, 0.8, 0.0],
+  [1.5, 1.02, 0.5, 0.08],
+  [1.04, 0.93, 0.9, 0.55],
+];
+const _ease = (t) => t * t * (3 - 2 * t);
+function updateSeasonUniforms(game, u, dt = 0.016) {
+  let s = game.time?.season;
+  if (typeof s !== 'number' || !isFinite(s)) s = 1.5;
+  s = ((s % 4) + 4) % 4;
+  // blend between the two nearest season centres (continuous, eased)
+  const x = s - 0.5;
+  const i0 = (Math.floor(x) + 4) % 4,
+    i1 = (i0 + 1) % 4;
+  const f = _ease(x - Math.floor(x));
+  const a = SEASON_TINTS[i0],
+    b = SEASON_TINTS[i1];
+  const temp = Math.max(-0.5, Math.min(0.5, game.age?.mods?.temperature ?? 0));
+  const frost = Math.max(0.5, Math.min(2, game.laws?.biomeFrost ?? 1));
+  // winter amount: full around mid-winter, building in late autumn, melting in early spring
+  let d = Math.abs(s - 3.5);
+  d = Math.min(d, 4 - d);
+  const winter = _ease(Math.max(0, Math.min(1, 1 - (d - 0.3) / 0.65)));
+  const cold = Math.max(0, -temp),
+    warm = Math.max(0, temp);
+  const target = {
+    snow: (winter * 0.3 + cold * 0.75) * frost - warm * 0.5 - (frost < 1 ? (1 - frost) * 0.12 : 0),
+    melt: warm * 30 + Math.max(0, 1 - frost) * 10,
+    freeze: (winter * 0.2 + cold * 0.6) * frost - warm * 0.3,
+    dry: Math.min(1, warm * 2),
+  };
+  // ease toward targets so snow builds in and melts out gradually (time based);
+  // snap on discontinuities: first frame, time jumps (fast-forward), age changes
+  let ds = Math.abs(s - (u._lastSeason ?? s));
+  ds = Math.min(ds, 4 - ds);
+  const ageId = game.age?.id ?? '';
+  const jump = !u._seasonInit || ds > 0.15 || ageId !== u._lastAge || frost !== u._lastFrost;
+  u._seasonInit = true;
+  u._lastSeason = s;
+  u._lastAge = ageId;
+  u._lastFrost = frost;
+  const k = jump ? 1 : 1 - Math.exp(-Math.min(0.25, dt || 0.016) * 1.5);
+  u.uSnowT.value += (target.snow - u.uSnowT.value) * k;
+  u.uMeltH.value += (target.melt - u.uMeltH.value) * k;
+  u.uFreezeT.value += (target.freeze - u.uFreezeT.value) * k;
+  u.uDry.value += (target.dry - u.uDry.value) * k;
+  const t = u.uSeasonTint.value;
+  t.set(a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f, a[3] + (b[3] - a[3]) * f);
 }
 
 export const WATER_PARS_GLSL = /* glsl */ `
@@ -116,6 +177,11 @@ uniform float uWet;
 uniform float uCamDist;
 uniform float uDetail;
 uniform float uPower;
+uniform vec4 uSeasonTint;
+uniform float uSnowT;
+uniform float uMeltH;
+uniform float uFreezeT;
+uniform float uDry;
 
 // key light normalised so the noon sun is ~1
 const float KEYN = 0.30;
