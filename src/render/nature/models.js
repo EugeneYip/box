@@ -307,12 +307,14 @@ function recolorRange(b, start, col, center, blend = 0) {
 }
 
 function buildPine(b, v, lod, snowy = false) {
-  const cfg = [
+  const base = [
     { tiers: 5, R: 0.6, H: 2.7, base: 0.42 },
     { tiers: 6, R: 0.46, H: 3.05, base: 0.45 },
     { tiers: 4, R: 0.74, H: 2.35, base: 0.36 },
     { tiers: 4, R: 0.5, H: 2.2, base: 0.55 },
   ][v];
+  // snow-laden spruce: narrower and taller than lowland pines
+  const cfg = snowy ? { ...base, R: base.R * 0.84, H: base.H * 1.12 } : base;
   const segs = lod ? 5 : v === 1 ? 8 : 9;
   const tiers = lod ? Math.min(3, Math.max(2, cfg.tiers - 2)) : cfg.tiers;
   const pal = v % 2 ? P.pineB : P.pine;
@@ -358,6 +360,7 @@ function snowCap(b, y0, h, r, segs, rot, lod) {
 }
 
 function buildBirch(b, v, lod) {
+  if (v === 2) return buildBirchClump(b, lod);
   const H = [1.55, 1.75, 1.4, 1.6][v];
   const lean = [V(0.05, 0, 0.0), V(-0.04, 0, 0.06), V(0.08, 0, -0.06), V(-0.02, 0, -0.04)][v];
   const segs = lod ? 2 : 7;
@@ -394,6 +397,34 @@ function buildBirch(b, v, lod) {
   }
   foliage(b, blobs.map((bl) => ({ ...bl, d: lod ? 'd' : 1, lump: 0.26 })), pal, { lump: 0.26, freq: 2.0, mat: MAT.DLEAF });
   return { bendScale: 1.25, height: H + 0.4 };
+}
+
+// A clump of three slender birches leaning out from one root, each with a
+// small airy crown: the classic birch grove silhouette.
+function buildBirchClump(b, lod) {
+  const stems = [
+    [V(0.22, 0, 0.06), 1.75],
+    [V(-0.16, 0, 0.18), 1.45],
+    [V(-0.02, 0, -0.24), 1.6],
+  ];
+  const pal = P.birch;
+  const blobs = [];
+  for (const [dir, H] of stems) {
+    const top = V(dir.x * 0.75, H, dir.z * 0.75);
+    const pts = bezier(V(dir.x * 0.08, 0, dir.z * 0.08), V(dir.x * 0.3, H * 0.5, dir.z * 0.3), top, lod ? 2 : 6);
+    const bark = (p, n, fc) => {
+      const h1 = hashV(V(Math.floor(fc.y * 11), Math.floor(fc.x * 40 + fc.z * 40), 7));
+      const dark = h1 < 0.24 || (fc.y < 0.1 && h1 < 0.6);
+      const c = dark ? C(0x2e2a26) : mix3(P.birchBark.base, P.birchBark.top, clamp01(fc.y / H + 0.3));
+      return mul3(c, (0.7 + 0.3 * smooth(0, 0.25, p.y)) * (0.9 + 0.12 * clamp01(n.y * 0.5 + 0.5)));
+    };
+    trunk(b, pts, pts.map((_, i) => 0.05 - (0.026 * i) / (pts.length - 1)), lod ? 4 : 5, null, { color: bark, faceColor: true, yTop: H });
+    blobs.push({ p: V(top.x, H + 0.04, top.z), r: 0.27 });
+    blobs.push({ p: V(top.x * 1.15, H - 0.24, top.z * 1.15), r: 0.22 });
+    if (!lod) blobs.push({ p: V(top.x * 0.9, H + 0.3, top.z * 0.9), r: 0.18 });
+  }
+  foliage(b, blobs.map((bl) => ({ ...bl, d: lod ? 'd' : 1, lump: 0.28 })), pal, { lump: 0.28, freq: 2.0, mat: MAT.DLEAF });
+  return { bendScale: 1.25, height: 2.1 };
 }
 
 function buildPalm(b, v, lod) {
@@ -530,17 +561,17 @@ function buildJungle(b, v, lod) {
   // canopy: broad, layered, flattened
   let blobs = [];
   const layers = v === 1 ? 3 : 2;
-  const rad = [0.62, 0.55, 0.7, 0.6][v];
+  const rad = [0.66, 0.58, 0.74, 0.64][v];
   for (let L = 0; L < layers; L++) {
     const y = H * 0.82 + 0.18 + L * 0.32;
     const n = L === layers - 1 ? (layers === 3 ? 1 : 2) : 4;
     const rr = rad * (L === layers - 1 ? 0.3 : 1);
     for (let k = 0; k < n; k++) {
       const a = (k / n) * TAU + L * 0.7 + v;
-      blobs.push({ p: V(top.x + Math.cos(a) * rr, y + b.r(-0.05, 0.05), top.z + Math.sin(a) * rr), r: L === layers - 1 ? 0.44 : 0.46, sq: 0.62 });
+      blobs.push({ p: V(top.x + Math.cos(a) * rr, y + b.r(-0.05, 0.05), top.z + Math.sin(a) * rr), r: (L === layers - 1 ? 0.5 : 0.52) * b.r(0.92, 1.1), sq: 0.8 });
     }
   }
-  blobs.push({ p: V(top.x + b.r(-0.08, 0.08), H * 0.82 + 0.3 + (layers - 1) * 0.3, top.z + b.r(-0.08, 0.08)), r: 0.5, sq: 0.6 });
+  blobs.push({ p: V(top.x + b.r(-0.08, 0.08), H * 0.82 + 0.36 + (layers - 1) * 0.3, top.z + b.r(-0.08, 0.08)), r: 0.6, sq: 0.82 });
   if (lod) blobs = [{ p: V(top.x, H * 0.82 + 0.25, top.z), r: rad + 0.4, sq: 0.5 }, { p: V(top.x, H * 0.82 + 0.6, top.z), r: 0.45, sq: 0.6 }];
   // limbs to the outer blobs
   if (!lod) {
@@ -643,6 +674,18 @@ function buildWillow(b, v, lod) {
   }
   if (lod) blobs = [{ p: V(top.x, th + 0.42, top.z), r: R + 0.05, sq: 0.55 }];
   if (!lod) for (let k = 1; k < blobs.length; k++) limb(b, top, V(blobs[k].p.x * 0.9 + top.x * 0.1, blobs[k].p.y - 0.1, blobs[k].p.z * 0.9 + top.z * 0.1), 0.055, 0.025, 4, P.willowBark, 1.8);
+  if (!lod) {
+    // gnarled prop roots arching out of the trunk into the mud
+    for (let k = 0; k < 4; k++) {
+      const a = (k / 4) * TAU + v * 0.9 + b.r(-0.3, 0.3);
+      const d = V(Math.cos(a), 0, Math.sin(a));
+      const from = V(pts[1].x * 0.5, th * b.r(0.25, 0.4), pts[1].z * 0.5);
+      const to = V(d.x * b.r(0.36, 0.5), -0.04, d.z * b.r(0.36, 0.5));
+      const mid = from.clone().lerp(to, 0.5).add(V(d.x * 0.1, 0.12, d.z * 0.1));
+      const path = bezier(from, mid, to, 3);
+      b.add(tubeGeo(path, path.map((_, i) => 0.045 - i * 0.008), 4, { capTop: false }), { normals: 'geoblend', blend: 0.7, color: barkColor(P.willowBark, 1.8, { moss: P.moss }), mat: MAT.WOOD });
+    }
+  }
   foliage(b, blobs.map((bl) => ({ ...bl, d: lod ? 'd' : 1 })), pal, { lump: 0.18, aoMin: 0.55, mat: MAT.DLEAF });
   // weeping curtain: an outer ring reaching almost to the ground, an inner ring
   const rings = lod ? [[7, 0.9, 0.8]] : [[[22, 18, 24][v], 0.95, 0.94], [8, 0.6, 0.72]];

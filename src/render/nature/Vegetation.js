@@ -430,6 +430,12 @@ export class Vegetation {
     } else if (!cfg.snapYaw) {
       // a touch of natural lean
       _e.set((h5 - 0.5) * 0.09, 0, (hash2(tx, ty, 77) - 0.5) * 0.09);
+      if (f === FLORA.ACACIA) {
+        // savanna acacias lean with a regional prevailing wind
+        const wa = 0.6 + Math.sin(tx * 0.02) * 0.5 + Math.cos(ty * 0.017) * 0.4;
+        const lean = 0.13 + 0.07 * h5;
+        _e.set(Math.sin(wa) * lean, 0, -Math.cos(wa) * lean);
+      }
       _q2.setFromEuler(_e);
       _q.premultiply(_q2);
     }
