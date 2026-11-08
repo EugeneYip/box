@@ -60,6 +60,10 @@ export function generateWorld(world, seed = 1, options = {}) {
     N = W * H;
   const S = Math.max(W, H);
   const sc = S / 256; // tile-distance scale relative to a 256 map
+  // Feature scale: noise frequencies grow with the map so a Huge map gets more
+  // continents, ranges and lakes instead of one magnified island.
+  const fs = Math.max(1, sc);
+  const ds = Math.min(1, sc); // distance shaping in absolute tiles on big maps
   const ox = rand() * 100,
     oy = rand() * 100;
 
@@ -79,55 +83,104 @@ export function generateWorld(world, seed = 1, options = {}) {
 
   // Low-frequency fields are evaluated on a coarse grid and upsampled.
   const coarse = (step, fn) => lowRes(W, H, step, fn);
-  const warpX1 = coarse(2, (u, v) => fbm(nWarpA, u * 2.1 + ox, v * 2.1 + oy, 3));
-  const warpY1 = coarse(2, (u, v) => fbm(nWarpB, u * 2.1 + ox, v * 2.1 + oy, 3));
+  const warpX1 = coarse(2, (u, v) => fbm(nWarpA, u * 2.1 * fs + ox, v * 2.1 * fs + oy, 3));
+  const warpY1 = coarse(2, (u, v) => fbm(nWarpB, u * 2.1 * fs + ox, v * 2.1 * fs + oy, 3));
 
   _t('shape0');
   // ------------------------------------------------------------------ 1. shape
-  const blobs = makeBlobs(presetName, rand);
+  const blobs = makeBlobs(presetName, rand, fs);
+  const warpAmp = P.warp / fs;
+  // big continent maps: keep the continents apart (max-like union, a little less land)
+  const bigCont = presetName === 'continent' && fs >= 1.25;
+  const union = bigCont ? 0.97 : P.union ?? 0.5;
+  const landFrac = bigCont ? P.land - 0.06 * Math.min(1, fs - 1) : P.land;
+  // shape(u, v) -> [shape, warpedU, warpedV]; evaluated per tile, or on a half
+  // resolution grid on Large / Huge maps (the field is smooth at that scale)
+  const shapeAt = (u, v, wx1, wy1, out) => {
+    const wx2 = nWarpA(u * 7.3 * fs + oy + wx1, v * 7.3 * fs + ox);
+    const wy2 = nWarpB(u * 7.3 * fs + ox, v * 7.3 * fs + oy + wy1);
+    const uu = u + wx1 * warpAmp + wx2 * warpAmp * 0.22;
+    const vv = v + wy1 * warpAmp + wy2 * warpAmp * 0.22;
+    let bsum = 0;
+    for (let bi = 0; bi < blobs.length; bi++) {
+      const bl = blobs[bi];
+      const dx = uu - bl.x,
+        dy = vv - bl.y;
+      const rx = dx * bl.c + dy * bl.s,
+        ry = -dx * bl.s + dy * bl.c;
+      const d = Math.sqrt((rx * rx) / (bl.a * bl.a) + (ry * ry) / (bl.b * bl.b));
+      if (d < 1.35) {
+        const t = Math.max(0, 1 - d / 1.35);
+        const k = t * t * (3 - 2 * t) * bl.w;
+        bsum = bsum + k - bsum * k * union; // soft union (1 = max-like)
+      }
+    }
+    const n1 = fbm(nShape, uu * 3.2 * fs + ox, vv * 3.2 * fs + oy, 5);
+    const n2 = fbm(nDetail, uu * 11 * fs + oy, vv * 11 * fs + ox, 3);
+    // keep the border oceanic (rounded square falloff)
+    const ex = Math.abs(u - 0.5) * 2,
+      ey = Math.abs(v - 0.5) * 2;
+    const rr = Math.cbrt(ex * ex * ex + ey * ey * ey); // squircle
+    const edge = smoothstep(0.62, 1.0, rr);
+    out[0] = bsum * 1.15 + n1 * (0.42 - P.detail * 0.25) + n2 * P.detail * 0.32 - edge * edge * 1.4;
+    out[1] = uu;
+    out[2] = vv;
+  };
   const shape = new Float32Array(N);
   const warpU = new Float32Array(N),
     warpV = new Float32Array(N);
-  for (let y = 0; y < H; y++) {
-    for (let x = 0; x < W; x++) {
-      const i = y * W + x;
-      const u = (x + 0.5) / W,
-        v = (y + 0.5) / H;
-      // two-level domain warp: big bends (bays, peninsulas) + curly detail
-      const wx1 = warpX1[i];
-      const wy1 = warpY1[i];
-      const wx2 = nWarpA(u * 7.3 + oy + wx1, v * 7.3 + ox);
-      const wy2 = nWarpB(u * 7.3 + ox, v * 7.3 + oy + wy1);
-      const uu = u + wx1 * P.warp + wx2 * P.warp * 0.22;
-      const vv = v + wy1 * P.warp + wy2 * P.warp * 0.22;
-      warpU[i] = uu;
-      warpV[i] = vv;
-      let b = 0;
-      for (let bi = 0; bi < blobs.length; bi++) {
-        const bl = blobs[bi];
-        const dx = uu - bl.x,
-          dy = vv - bl.y;
-        const rx = dx * bl.c + dy * bl.s,
-          ry = -dx * bl.s + dy * bl.c;
-        const d = Math.sqrt((rx * rx) / (bl.a * bl.a) + (ry * ry) / (bl.b * bl.b));
-        if (d < 1.35) {
-          const t = Math.max(0, 1 - d / 1.35);
-          const k = t * t * (3 - 2 * t) * bl.w;
-          b = b + k - b * k * (P.union ?? 0.5); // soft union (1 = max-like)
-        }
+  const tmp3 = [0, 0, 0];
+  const sstep = sc >= 1.4 ? 2 : 1;
+  if (sstep === 1) {
+    for (let y = 0; y < H; y++)
+      for (let x = 0; x < W; x++) {
+        const i = y * W + x;
+        shapeAt((x + 0.5) / W, (y + 0.5) / H, warpX1[i], warpY1[i], tmp3);
+        shape[i] = tmp3[0];
+        warpU[i] = tmp3[1];
+        warpV[i] = tmp3[2];
       }
-      const n1 = fbm(nShape, uu * 3.2 + ox, vv * 3.2 + oy, 5);
-      const n2 = fbm(nDetail, uu * 11 + oy, vv * 11 + ox, 3);
-      // keep the border oceanic (rounded square falloff)
-      const ex = Math.abs(u - 0.5) * 2,
-        ey = Math.abs(v - 0.5) * 2;
-      const rr = Math.cbrt(ex * ex * ex + ey * ey * ey); // squircle
-      const edge = smoothstep(0.62, 1.0, rr);
-      shape[i] = b * 1.15 + n1 * (0.42 - P.detail * 0.25) + n2 * P.detail * 0.32 - edge * edge * 1.4;
+  } else {
+    const cw = Math.ceil(W / sstep) + 2,
+      chh = Math.ceil(H / sstep) + 2;
+    const cS = new Float32Array(cw * chh),
+      cU = new Float32Array(cw * chh),
+      cV = new Float32Array(cw * chh);
+    for (let j = 0; j < chh; j++)
+      for (let i = 0; i < cw; i++) {
+        const x = Math.min(W - 1, i * sstep),
+          y = Math.min(H - 1, j * sstep);
+        const k = y * W + x;
+        shapeAt((i * sstep + 0.5) / W, (j * sstep + 0.5) / H, warpX1[k], warpY1[k], tmp3);
+        cS[j * cw + i] = tmp3[0];
+        cU[j * cw + i] = tmp3[1];
+        cV[j * cw + i] = tmp3[2];
+      }
+    for (let y = 0; y < H; y++) {
+      const fy = y / sstep,
+        j0 = Math.floor(fy),
+        ty = fy - j0;
+      for (let x = 0; x < W; x++) {
+        const fx = x / sstep,
+          i0 = Math.floor(fx),
+          tx = fx - i0;
+        const a00 = j0 * cw + i0,
+          a10 = a00 + 1,
+          a01 = a00 + cw,
+          a11 = a01 + 1;
+        const w00 = (1 - tx) * (1 - ty),
+          w10 = tx * (1 - ty),
+          w01 = (1 - tx) * ty,
+          w11 = tx * ty;
+        const i = y * W + x;
+        shape[i] = cS[a00] * w00 + cS[a10] * w10 + cS[a01] * w01 + cS[a11] * w11;
+        warpU[i] = cU[a00] * w00 + cU[a10] * w10 + cU[a01] * w01 + cU[a11] * w11;
+        warpV[i] = cV[a00] * w00 + cV[a10] * w10 + cV[a01] * w01 + cV[a11] * w11;
+      }
     }
   }
   // threshold at the preset's land fraction
-  const thr = quantile(shape, 1 - P.land);
+  const thr = quantile(shape, 1 - landFrac);
   const land = new Uint8Array(N);
   for (let i = 0; i < N; i++) land[i] = shape[i] > thr ? 1 : 0;
   // hard-clear a 3-tile ring at the map edge
@@ -144,10 +197,10 @@ export function generateWorld(world, seed = 1, options = {}) {
   // ------------------------------------------------------------ 3. elevation
   const hgt = world.height;
   const rangeMask = new Float32Array(N);
-  const cliffF = coarse(2, (u, v) => nCliff(u * 3 + ox, v * 3 + oy));
+  const cliffF = coarse(2, (u, v) => nCliff(u * 3 * fs + ox, v * 3 * fs + oy));
   const regionalF = coarse(4, (u, v) => {
     // evaluated on unwarped coordinates (smooth enough at this frequency)
-    return fbm(nMisc, u * 1.7 + ox * 0.5, v * 1.7 + oy * 0.5, 2) * 0.5 + 0.5;
+    return fbm(nMisc, u * 1.7 * fs + ox * 0.5, v * 1.7 * fs + oy * 0.5, 2) * 0.5 + 0.5;
   });
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
@@ -155,15 +208,15 @@ export function generateWorld(world, seed = 1, options = {}) {
       const uu = warpU[i],
         vv = warpV[i];
       if (land[i]) {
-        const d = dLand[i] / sc;
+        const d = dLand[i] / ds;
         // coastal plain rising inland
         let e = 0.28 + 2.1 * (1 - Math.exp(-d / 7));
         // rolling hills
-        const hn = fbm(nHills, uu * 9 + ox, vv * 9 + oy, 4);
+        const hn = fbm(nHills, uu * 9 * fs + ox, vv * 9 * fs + oy, sstep > 1 ? 3 : 4);
         const hillK = smoothstep(1, 9, d);
         e += Math.pow(Math.max(0, hn * 0.5 + 0.5), 2.2) * 4.2 * hillK;
         // mountain spines: ridged low-frequency noise along warped coordinates
-        const rn = nRange(uu * 2.3 + oy, vv * 2.3 + ox);
+        const rn = nRange(uu * 2.3 * fs + oy, vv * 2.3 * fs + ox);
         const spine = 1 - Math.abs(rn);
         const regional = regionalF[i];
         const rm = spine * spine * (0.55 + 0.75 * regional) * P.mountains;
@@ -178,20 +231,24 @@ export function generateWorld(world, seed = 1, options = {}) {
           freq = 1,
           prev = 1;
         for (let o = 0; o < 4; o++) {
-          let r = 1 - Math.abs(nRidge(uu * 6.5 * freq + ox, vv * 6.5 * freq + oy));
+          let r = 1 - Math.abs(nRidge(uu * 6.5 * fs * freq + ox, vv * 6.5 * fs * freq + oy));
           r *= r;
           rr += r * amp * prev;
           prev = r;
           amp *= 0.5;
           freq *= 2.05;
         }
-        e += foot * (2.2 + hn * 1.2) + core * (5.0 + Math.pow(rr, 1.35) * 14.0);
+        // several sharp summits per massif: a finer ridge field and scattered peaks
+        let pk = 1 - Math.abs(nRidge(uu * 15.5 * fs + oy * 1.7, vv * 15.5 * fs - ox * 1.3));
+        pk = pk * pk * pk;
+        const bumps = Math.max(0, nHills(uu * 11 * fs - oy, vv * 11 * fs + ox));
+        e += foot * (2.2 + hn * 1.2) + core * (4.0 + Math.pow(rr, 1.35) * 10.5 + pk * 4.5 + bumps * bumps * 5.0);
         rangeMask[i] = Math.max(foot, core);
         hgt[i] = e;
       } else {
-        const d = dSea[i] / sc;
+        const d = dSea[i] / ds;
         const shelf = 3.6 * P.shelf;
-        const bank = fbm(nMisc, uu * 6 + oy, vv * 6 + ox, 3);
+        const bank = fbm(nMisc, uu * 6 * fs + oy, vv * 6 * fs + ox, 3);
         let depth = 0.22 + 1.35 * smoothstep(0, shelf, d) + 6.4 * smoothstep(shelf * 0.7, shelf * 3.4, d);
         depth += bank * 1.1 * smoothstep(1, shelf, d);
         // occasional shallow reefs / sand banks
@@ -212,15 +269,15 @@ export function generateWorld(world, seed = 1, options = {}) {
     const x = Math.floor(rand() * W),
       y = Math.floor(rand() * H);
     const i = y * W + x;
-    if (!land[i] || dLand[i] < 9 * sc || hgt[i] > 6.5 || rangeMask[i] > 0.3) continue;
-    const r = (3 + rand() * 4.5) * sc;
+    if (!land[i] || dLand[i] < 9 * ds || hgt[i] > 6.5 || rangeMask[i] > 0.3) continue;
+    const r = (3 + rand() * 4.5) * ds;
     carveLake(hgt, land, W, H, x, y, r, rand, nMisc);
     k++;
   }
 
   _t('lakes');
   // --------------------------------------------------------------- 5. rivers
-  const moistPre = coarse(3, (u, v) => 0.5 + 0.5 * fbm(nMoist, u * 3.1 + oy, v * 3.1 + ox, 3));
+  const moistPre = coarse(3, (u, v) => 0.5 + 0.5 * fbm(nMoist, u * 3.1 * fs + oy, v * 3.1 * fs + ox, 3));
   const sea = oceanMask(hgt, W, H); // before rivers join everything to the ocean
   const riverMask = carveRivers(world, land, moistPre, P, sc, rand);
 
@@ -231,7 +288,7 @@ export function generateWorld(world, seed = 1, options = {}) {
   for (let i = 0; i < N; i++) wet[i] = hgt[i] < SEA_LEVEL ? 1 : 0;
   const dWater = distanceField(wet, W, H, 0, true); // land tiles: dist to any water
   const dOcean = distanceField(sea, W, H, 0, true); // land tiles: dist to the open sea (not rivers)
-  const tempN = coarse(3, (u, v) => fbm(nTemp, u * 2.6 + ox, v * 2.6 + oy, 3));
+  const tempN = coarse(3, (u, v) => fbm(nTemp, u * 2.6 * fs + ox, v * 2.6 * fs + oy, 3));
   const flip = rand() < 0.5;
   const eq = 0.82 + rand() * 0.25; // the warm side of the map
   for (let y = 0; y < H; y++) {
@@ -358,7 +415,7 @@ function clamp01(v) {
   return v < 0 ? 0 : v > 1 ? 1 : v;
 }
 
-function makeBlobs(preset, rand) {
+function makeBlobs(preset, rand, fs = 1) {
   const blobs = [];
   const add = (x, y, r, aspect = 1, w = 1) => {
     const ang = rand() * Math.PI;
@@ -376,17 +433,29 @@ function makeBlobs(preset, rand) {
     }
     return pts;
   };
+  const f2 = fs * fs;
   if (preset === 'pangaea') {
     add(0.5 + (rand() - 0.5) * 0.06, 0.5 + (rand() - 0.5) * 0.06, 0.36, 1.25, 1.1);
-    for (let k = 0; k < 3; k++) {
+    const lobes = Math.round(3 + 2 * (fs - 1));
+    for (let k = 0; k < lobes; k++) {
       const a = rand() * Math.PI * 2;
-      add(0.5 + Math.cos(a) * 0.2, 0.5 + Math.sin(a) * 0.2, 0.17 + rand() * 0.06, 1.5, 0.9);
+      const r = 0.18 + rand() * 0.08;
+      add(0.5 + Math.cos(a) * r, 0.5 + Math.sin(a) * r, (0.17 + rand() * 0.06) / Math.sqrt(fs), 1.5, 0.9);
     }
   } else if (preset === 'archipelago') {
-    spread(22, 0.135, 0.035, 0.075, 0.12, 1.0, 2.0);
+    spread(Math.round(22 * f2), 0.135 / fs, 0.035 / fs, 0.075 / fs, 0.1, 1.0, 2.0);
   } else if (preset === 'islands') {
-    spread(6, 0.27, 0.10, 0.145, 0.2, 1.0, 1.7);
-    spread(5, 0.08, 0.025, 0.04, 0.12, 0.8, 1.5);
+    spread(Math.round(6 * f2), 0.27 / fs, 0.10 / fs, 0.145 / fs, 0.16, 1.0, 1.7);
+    spread(Math.round(5 * f2), 0.08 / fs, 0.025 / fs, 0.04 / fs, 0.1, 0.8, 1.5);
+  } else if (fs >= 1.25) {
+    // big continent maps: several continents, each with a satellite, plus islets
+    const nC = fs >= 1.75 ? 3 : 2;
+    const centres = spread(nC, nC >= 3 ? 0.4 : 0.46, 0.22 / Math.sqrt(nC) * 1.2, 0.25 / Math.sqrt(nC) * 1.3, 0.2, 1.05, 1.6);
+    for (const [x, y] of centres) {
+      const a = rand() * Math.PI * 2;
+      add(x + Math.cos(a) * 0.14, y + Math.sin(a) * 0.14, 0.09 + rand() * 0.04, 1.8, 0.9);
+    }
+    spread(Math.round(5 * f2), 0.1 / fs, 0.025 / fs, 0.05 / fs, 0.08, 0.75, 1.6);
   } else {
     // continent: a main landmass, a sizeable second one and a few islets
     const cx = 0.5 + (rand() - 0.5) * 0.12,
@@ -515,7 +584,7 @@ function blurHeights(hgt, land, W, H, passes) {
 // Soft terracing of mountain cores: flat benches separated by steep risers, so
 // ranges read as stepped, stratified massifs instead of smooth cones.
 function terraceMountains(hgt, rangeMask, N) {
-  const step = 1.9;
+  const step = 3.0;
   for (let i = 0; i < N; i++) {
     const m = rangeMask[i];
     if (m <= 0.08) continue;
@@ -523,8 +592,8 @@ function terraceMountains(hgt, rangeMask, N) {
     if (h < 2.5) continue;
     const b = Math.floor(h / step) * step;
     const f = (h - b) / step;
-    const g = smoothstep(0.5, 1.0, f);
-    const k = 0.88 * smoothstep(0.08, 0.5, m) * smoothstep(2.5, 5, h);
+    const g = smoothstep(0.6, 1.0, f);
+    const k = smoothstep(0.08, 0.45, m) * smoothstep(2.5, 5, h);
     hgt[i] = h + (b + g * step - h) * k;
   }
 }
@@ -648,7 +717,8 @@ function carveRivers(world, land, moist, P, sc, rand) {
   // routing surface: real heights plus gentle noise so channels meander
   // across flats instead of running in straight D8 lines
   const nMe = createNoise2D(mulberry32((world.seed * 31 + 7) >>> 0));
-  const meander = lowRes(W, H, 2, (u, v) => nMe(u * 15.4, v * 15.4) * 0.9 + nMe(u * 48.6 + 40, v * 48.6) * 0.35);
+  const mf = Math.max(1, sc); // meanders keep their size in tiles on big maps
+  const meander = lowRes(W, H, 2, (u, v) => nMe(u * 15.4 * mf, v * 15.4 * mf) * 0.9 + nMe(u * 48.6 * mf + 40, v * 48.6 * mf) * 0.35);
   const route = new Float32Array(N);
   for (let i = 0; i < N; i++) {
     const m = meander[i];
@@ -724,7 +794,7 @@ function carveRivers(world, land, moist, P, sc, rand) {
     if (d >= 0 && river[d]) len[d] = Math.max(len[d], len[i]);
   }
   const keep = new Uint8Array(N);
-  const minLen = 14 * sc;
+  const minLen = 14 * Math.min(1, sc);
   for (let k = 0; k < oc; k++) {
     const i = order[k];
     if (!river[i]) continue;
@@ -737,7 +807,7 @@ function carveRivers(world, land, moist, P, sc, rand) {
     const i = order[k];
     if (!keep[i]) continue;
     const size = Math.min(1, Math.log2(acc[i] / T + 1) / 3.2);
-    const w = (0.12 + 0.62 * size) * Math.max(1, sc * 0.8);
+    const w = 0.12 + 0.62 * size;
     const bed = -(0.30 + 0.45 * size);
     const R = Math.ceil(w + 15);
     const x = i % W,

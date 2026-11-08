@@ -24,6 +24,14 @@ import { GradeEffect } from './atmosphere/post/GradeEffect.js';
 //   game.pipeline.removePass(pass)
 //   game.pipeline.beforeRender      array of fn(renderer, dt) run each frame
 //                                   before the scene is drawn (offscreen work)
+//   game.pipeline.passInfo()        {composer, enabled: [...pass names]}
+//
+// Detail by zoom and power saving (round 5): as game.view.zoom01 rises the
+// pipeline drops AO (and DOF, via the atmosphere's focus params) and cuts
+// bloom mip levels; game.settings.powerSaver (event 'powersaver') lowers the
+// pixel ratio (0.85x, max 1), disables AO and DOF, uses 3 bloom levels, and
+// enables dynamic resolution scaling that keeps the rolling frame time
+// inside the frame budget. game.settings.dynamicResolution forces DRS on.
 //
 // Frame (medium and up):
 //   Render (HDR half-float) -> linear depth -> N8AO (high+) -> aerial haze /
@@ -61,7 +69,10 @@ export class RenderPipeline {
       stencil: false,
       alpha: false,
     });
-    renderer.setPixelRatio(Math.min(devicePixelRatio || 1, this.tier.pixelRatio));
+    this.dynScale = 1; // dynamic resolution factor (power saver / opt-in)
+    this._dt = [];
+    this._drsT = 0;
+    renderer.setPixelRatio(this.targetPixelRatio());
     renderer.setSize(innerWidth, innerHeight);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.NoToneMapping;
@@ -78,6 +89,10 @@ export class RenderPipeline {
     this.beforeRender = [];
     this._flash = new THREE.Vector3();
     this._fog = new THREE.Fog(0x9fc6e8, 300, 900);
+    game.events?.on?.('powersaver', () => {
+      this.dynScale = 1;
+      this.applyPixelRatio();
+    });
     this.linearDepthTexture = null;
     const gl = renderer.getContext();
     this.floatTargets = renderer.capabilities.isWebGL2 && !!(renderer.extensions.has('EXT_color_buffer_float') || gl.getExtension('EXT_color_buffer_float'));
@@ -97,9 +112,61 @@ export class RenderPipeline {
     this.tier = QUALITY_TIERS[q];
     this.destroyComposer();
     if (this.floatTargets) this.failed = false;
-    this.renderer.setPixelRatio(Math.min(devicePixelRatio || 1, this.tier.pixelRatio));
+    this.renderer.setPixelRatio(this.targetPixelRatio());
     this.renderer.setSize(this.size.x, this.size.y);
     this.game.events?.emit?.('quality', { quality: q });
+  }
+
+  get powerSaver() {
+    return !!this.game.settings?.powerSaver;
+  }
+
+  targetPixelRatio() {
+    let pr = Math.min(devicePixelRatio || 1, this.tier.pixelRatio);
+    if (this.powerSaver) pr = Math.min(pr, 1) * 0.85;
+    return Math.max(0.5, pr * this.dynScale);
+  }
+
+  applyPixelRatio() {
+    const pr = this.targetPixelRatio();
+    if (Math.abs(this.renderer.getPixelRatio() - pr) < 0.01) return;
+    this.renderer.setPixelRatio(pr);
+    this.renderer.setSize(this.size.x, this.size.y);
+    this.composer?.setSize(this.size.x, this.size.y);
+  }
+
+  // Dynamic resolution: keep the rolling frame time inside the budget.
+  updateDynamicResolution(dt) {
+    const on = this.powerSaver || this.game.settings?.dynamicResolution;
+    if (!on) {
+      if (this.dynScale !== 1) {
+        this.dynScale = 1;
+        this.applyPixelRatio();
+      }
+      return;
+    }
+    const cap = this.game.settings?.fpsCap || (this.powerSaver ? 30 : 60);
+    const budget = 1 / cap;
+    this._dt.push(dt);
+    if (this._dt.length > 45) this._dt.shift();
+    this._drsT += dt;
+    if (this._dt.length < 30) return;
+    const avg = this._dt.reduce((a, b) => a + b, 0) / this._dt.length;
+    let next = this.dynScale;
+    if (avg > budget * 1.3 && this._drsT > 1.5) next = Math.max(0.6, this.dynScale * 0.85);
+    else if (avg < budget * 1.08 && this._drsT > 6) next = Math.min(1, this.dynScale * 1.1);
+    if (next !== this.dynScale) {
+      this.dynScale = next;
+      this._drsT = 0;
+      this._dt.length = 0;
+      this.applyPixelRatio();
+    }
+  }
+
+  passInfo() {
+    const c = this.composer;
+    if (!c) return { composer: false, enabled: [] };
+    return { composer: true, enabled: c.passes.filter((p) => p.enabled).map((p) => p.name || p.constructor.name) };
   }
 
   addPass(pass) {
@@ -237,12 +304,27 @@ export class RenderPipeline {
     const cam = this.game.cameraRig.camera;
     p.atmos.sync(cam, P.sky, P);
     const H = this.renderer.getDrawingBufferSize(this._v2 || (this._v2 = new THREE.Vector2())).y;
+    const ps = this.powerSaver;
+    const zoom = this.game.view?.zoom01 ?? 0.5;
     if (p.dof) {
       const d = P.dof;
-      const maxCoc = (d.maxCoc * (H / 1080)) / 2; // half-res px
+      const maxCoc = ps ? 0 : (d.maxCoc * (H / 1080)) / 2; // half-res px
       p.dof.setFocus(d.focus, d.band, d.ramp, maxCoc, d.nearBoost);
     }
+    if (p.ao) {
+      // AO only up close (it reads as noise at map scale) and never in power saver
+      const want = !ps && zoom < (p.ao.enabled ? 0.62 : 0.56);
+      if (p.ao.enabled !== want) p.ao.enabled = want;
+    }
     if (p.bloom) {
+      const lv = ps ? 3 : zoom > (this._bloomFar ? 0.56 : 0.62) ? Math.min(4, this.tier.bloomLevels) : this.tier.bloomLevels;
+      this._bloomFar = zoom > 0.59;
+      const mb = p.bloom.mipmapBlurPass;
+      if (mb && mb.levels !== lv && (this._bloomT || 0) <= 0) {
+        mb.levels = lv;
+        this._bloomT = 1.5;
+      }
+      this._bloomT = (this._bloomT || 0) - dt;
       p.bloom.luminanceMaterial.threshold = P.bloom.threshold;
       p.bloom.luminanceMaterial.smoothing = P.bloom.smoothing;
       p.bloom.intensity = P.bloom.intensity;
@@ -285,6 +367,7 @@ export class RenderPipeline {
     const renderer = this.renderer;
     const k = Math.exp(-dt * 7);
     this._flash.multiplyScalar(k);
+    this.updateDynamicResolution(dt);
     try {
       game.atmosphere?.preRender?.(renderer, dt);
       for (const fn of this.beforeRender) fn(renderer, dt);

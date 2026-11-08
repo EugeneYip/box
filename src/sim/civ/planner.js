@@ -1,6 +1,6 @@
 import { TILE, TILE_INFO, FLORA, FLORA_INFO, SEA_LEVEL } from '../../world/constants.js';
 import { BUILDING_TYPES, costOf, canAfford, pay } from './catalog.js';
-import { CULTURES } from './cultures.js';
+import { CULTURES, baseCulture } from './cultures.js';
 import { USE, ROT, ROT_DIR, SPIRAL, spiralCount, clamp, lerp } from './util.js';
 import { civPath } from './pathing.js';
 
@@ -169,7 +169,8 @@ export const planner = {
     const w = this.world;
     const rng = this.rng;
     const cands = [];
-    const step = 5;
+    const scale = Math.sqrt((w.w * w.h) / (256 * 256));
+    const step = Math.max(5, Math.round(5 * scale));
     for (let y = 16; y < w.h - 16; y += step)
       for (let x = 16; x < w.w - 16; x += step) {
         const tx = x + rng.int(-2, 2),
@@ -180,7 +181,7 @@ export const planner = {
     cands.sort((a, b) => b.s - a.s);
     const chosen = [];
     const usedCultures = new Map();
-    let minD = n <= 3 ? 64 : n <= 5 ? 50 : 36;
+    let minD = (n <= 3 ? 64 : n <= 5 ? 50 : 36) * Math.max(1, Math.sqrt((w.w * w.h) / (256 * 256)) * (n <= 3 ? 1 : 0.95));
     // prefer the largest landmasses so kingdoms can meet over land
     const landSize = this._landSizes;
     while (chosen.length < n && minD >= 14) {
@@ -309,7 +310,8 @@ export const planner = {
       burning: 0,
       alive: true,
       ruin: false,
-      style: CULTURES[v.culture]?.style || 'vale',
+      style: CULTURES[baseCulture(v.culture)]?.style || 'vale',
+      era: this.kingdoms[v.kingdom]?.era ?? 0,
       culture: v.culture,
       seed: this.rng.next(),
       builtAt: this.game.time.total,
@@ -432,7 +434,8 @@ export const planner = {
       if (v && FLORA_INFO[w.flora[i]]?.isTree) v.wood += 1;
       w.setFlora(x, y, FLORA.NONE);
     }
-    w.setType(x, y, TILE.ROAD);
+    // with the roads law off, streets stay as worn paths rather than paving
+    if (this.law ? this.law('civRoads') : true) w.setType(x, y, TILE.ROAD);
     return true;
   },
 

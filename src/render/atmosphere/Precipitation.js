@@ -236,7 +236,11 @@ export class Precipitation {
     this._c = new THREE.Vector3();
   }
 
-  update(dt, time, weather, env, model) {
+  update(dt, time, weatherIn, env, model, localTemp = 0.5) {
+    // rain turns to snow over cold ground, snow to sleet-rain over warm ground
+    const sf = Math.min(1, Math.max(0, (0.36 - localTemp) / 0.12));
+    const wf = Math.min(1, Math.max(0, (localTemp - 0.62) / 0.15));
+    const weather = { ...weatherIn, rain: weatherIn.rain * (1 - sf) + weatherIn.snow * wf, snow: weatherIn.snow * (1 - wf) + weatherIn.rain * sf };
     const game = this.game;
     const rig = game.cameraRig;
     const cam = rig.camera;

@@ -8,7 +8,8 @@ import { Earthquake } from './Earthquake.js';
 import { Tornado } from './Tornado.js';
 import { Volcano } from './Volcano.js';
 import { Tsunami } from './Tsunami.js';
-import { play } from './util.js';
+import { play, law, ageMod, fireFactor } from './util.js';
+import { Calamities } from './Calamities.js';
 
 // Disasters & hazards (Effects & Disasters owner).
 //
@@ -32,6 +33,7 @@ export class Disasters {
     this.fire = new FireSim(game);
     this.lava = new LavaSim(game);
     this.plagueSim = new PlagueSim(game);
+    this.calamities = new Calamities(this);
     this.active = [];
     this._sky = 0;
     this._skyWritten = 0;
@@ -44,12 +46,14 @@ export class Disasters {
     this.fire.reset();
     this.lava.reset();
     this.plagueSim.reset();
+    this.calamities.reset();
   }
 
   tick(step) {
     this.fire.tick(step);
     this.lava.tick(step);
     this.plagueSim.tick(step);
+    this.calamities.tick(step);
     for (const e of this.active) e.tick?.(step);
   }
 
@@ -75,9 +79,18 @@ export class Disasters {
     // steam where lava meets water
     const st = this.lava.steam;
     if (st.length) {
-      for (const s of st) {
-        g.fx.emit('steam', { x: s.x, y: SEA_LEVEL + 0.1, z: s.z }, { scale: s.s * 1.4, count: 2 });
-        if (Math.random() < 0.6) g.fx.emit('steamColumn', { x: s.x, y: SEA_LEVEL + 0.2, z: s.z }, { scale: 0.8 + s.s * 0.5 });
+      // a wide lava front can quench dozens of tiles per tick: sample a few
+      // events per frame and rate-limit the big columns so steam marks the
+      // contact without burying the scene
+      this._steamT = (this._steamT || 0) - dt;
+      const n = Math.min(3, st.length);
+      for (let k = 0; k < n; k++) {
+        const s = st[(Math.random() * st.length) | 0];
+        g.fx.emit('steam', { x: s.x, y: SEA_LEVEL + 0.1, z: s.z }, { scale: Math.min(1.6, s.s), count: 1 });
+        if (this._steamT <= 0) {
+          this._steamT = 0.35;
+          g.fx.emit('steamColumn', { x: s.x, y: SEA_LEVEL + 0.2, z: s.z }, { scale: 0.7 + Math.min(1, s.s) * 0.4, count: 1 });
+        }
       }
       if (Math.random() < 0.3) play(g, 'splash', st[0], 0.3, 0.6);
       st.length = 0;
@@ -116,6 +129,15 @@ export class Disasters {
   }
 
   // ---- contract -------------------------------------------------------------
+  // Hook for storm bolts drawn by other modules (e.g. the atmosphere):
+  // applies the ground effects of a natural strike; ignition follows the
+  // calamityLightning law.
+  onStrike(x, z) {
+    const w = this.game.world;
+    if (!law(this.game, "calamityLightning", true)) return;
+    const [tx, ty] = w.tileOf(x, z);
+    if (w.isLand(tx, ty) && Math.random() < Math.min(1, 0.6 * ageMod(this.game, "lightning", 1) * fireFactor(this.game))) this.ignite(tx, ty, 0.9);
+  }
   ignite(tx, ty, intensity = 1) {
     return this.fire.ignite(tx, ty, intensity);
   }

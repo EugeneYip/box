@@ -3,10 +3,11 @@ import { powerIcon, categoryIcon, uiIcon, CATEGORY_TINT } from './icons.js';
 import { el, esc } from './dom.js';
 
 // Power slots in the active category are bound to the bottom letter row.
-export const SLOT_CODES = ['KeyZ', 'KeyX', 'KeyC', 'KeyV', 'KeyB', 'KeyN', 'KeyM', 'Comma', 'Period', 'Slash'];
-export const SLOT_LABELS = ['Z', 'X', 'C', 'V', 'B', 'N', 'M', ',', '.', '/'];
-// slot i (0-based in display order): 0-9 plain, 10-19 with Shift
-export const slotLabel = (i) => (i < 10 ? SLOT_LABELS[i] : i < 20 ? '⇧' + SLOT_LABELS[i - 10] : null);
+export const SLOT_CODES = ['KeyZ', 'KeyX', 'KeyC', 'KeyV', 'KeyB', 'KeyN', 'Comma', 'Period', 'Slash'];
+export const SLOT_LABELS = ['Z', 'X', 'C', 'V', 'B', 'N', ',', '.', '/'];
+const NS = SLOT_LABELS.length;
+// slot i (0-based in display order): first row plain, second row with Shift
+export const slotLabel = (i) => (i < NS ? SLOT_LABELS[i] : i < NS * 2 ? '⇧' + SLOT_LABELS[i - NS] : null);
 
 const MONSTER = /golem|serpent|wyrm|dragon|troll|giant|kraken|monster|demon|skeleton|zombie|undead|behemoth/;
 // Optional sub-groups inside a category (a power may also set p.group).
@@ -184,7 +185,7 @@ export class Toolbar {
     const edge = parseFloat(cs.getPropertyValue('--ws-edge')) || 14;
     const cell = tile + 6;
     const drawer = this.isDrawer();
-    const avail = drawer ? innerWidth - 2 * edge - 16 : Math.min(innerWidth - 2 * edge - 2 * (map + 16), 1500) - 22;
+    const avail = drawer ? Math.min(innerWidth, innerWidth > 720 ? 600 : innerWidth) - 2 * edge - 16 : Math.min(innerWidth - 2 * edge - 2 * (map + 16), 1500) - 22;
     const n = groups.reduce((s, gr) => s + gr.list.length, 0);
     const extra = (groups.length - 1) * 17;
     if (drawer) return groups.map(() => Math.max(1, Math.floor((avail + 6) / cell)));
@@ -245,7 +246,7 @@ export class Toolbar {
         onblur: () => this.hideTip(),
       },
       el('span', { class: 'ws-pw__ico', html: svg }),
-      key ? el('span', { class: 'ws-pw__key' + (i >= 10 ? ' is-shift' : ''), text: key }) : null,
+      key ? el('span', { class: 'ws-pw__key' + (i >= NS ? ' is-shift' : ''), text: key }) : null,
     );
     parent.append(b);
     this.tiles.set(p.id, b);
@@ -401,23 +402,39 @@ export class Toolbar {
     this.positionTip(anchor);
   }
 
+  // The card sits beside the dock (left of it, bottom-aligned) so it never
+  // covers the land the player is about to target; if there is no room it
+  // goes above the dock at its left edge.
   positionTip(anchor) {
     const tip = this.tip;
     const vw = innerWidth;
     const tw = tip.offsetWidth || 280;
     const th = tip.offsetHeight || 120;
-    let cx = vw / 2,
-      top = innerHeight - 260;
-    if (anchor) {
-      const r = anchor.getBoundingClientRect();
-      cx = r.left + r.width / 2;
-      const stackTop = Math.min(this.panel.getBoundingClientRect().top, this.brush.el.classList.contains('is-shown') ? this.brush.el.getBoundingClientRect().top : 1e9);
-      top = stackTop - th - 12;
-      if (top < 64) top = r.bottom + 10;
+    const pr = this.panel.getBoundingClientRect();
+    const stackTop = Math.min(pr.top, this.brush.el.classList.contains('is-shown') ? this.brush.el.getBoundingClientRect().top : 1e9);
+    let left, top, side;
+    if (this.isDrawer()) {
+      left = Math.max(10, (vw - tw) / 2);
+      top = stackTop - th - 10;
+      side = 'none';
+    } else if (pr.left - tw - 14 >= 10) {
+      left = pr.left - tw - 14;
+      top = pr.bottom - th;
+      side = 'right';
+    } else {
+      left = Math.max(10, pr.left);
+      top = stackTop - th - 10;
+      side = 'down';
     }
-    const left = Math.max(10, Math.min(vw - tw - 10, cx - tw / 2));
-    tip.style.transform = `translate(${Math.round(left)}px, ${Math.round(top)}px)`;
-    tip.style.setProperty('--arrow-x', Math.round(cx - left) + 'px');
+    tip.classList.toggle('is-side', side === 'right');
+    tip.classList.toggle('no-arrow', side === 'none');
+    tip.style.transform = `translate(${Math.round(left)}px, ${Math.round(Math.max(64, top))}px)`;
+    if (anchor && side === 'down') {
+      const r = anchor.getBoundingClientRect();
+      const ax = r.left + r.width / 2 - left;
+      tip.classList.toggle('no-arrow', ax < 16 || ax > tw - 16);
+      tip.style.setProperty('--arrow-x', Math.round(ax) + 'px');
+    }
   }
 
   hideTip(instant = false) {
@@ -430,7 +447,7 @@ export class Toolbar {
 
   // ------------------------------------------------------------------ drawer (phones)
   isDrawer() {
-    return matchMedia('(max-width: 720px)').matches;
+    return matchMedia('(max-width: 720px), (max-height: 500px)').matches;
   }
   toggleDrawer(open = !this.el.classList.contains('is-open')) {
     this.el.classList.toggle('is-open', open);

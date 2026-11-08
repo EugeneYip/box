@@ -4,7 +4,7 @@ import { uiIcon } from './icons.js';
 const STEPS = [
   { icon: 'grid', title: 'Choose a power', text: 'Open a tab in the tray below and pick a god power. Raise Land is a fine first gift.', done: 'power' },
   { icon: 'brush', title: 'Shape the world', text: 'Hold and drag across the land to paint with it. [ and ] change the brush size.', done: 'apply' },
-  { icon: 'inspect', title: 'Look closer', text: 'Press Esc to put the power away, then click any creature, house or field to inspect it.', done: 'inspect' },
+  { icon: 'inspect', title: 'Look closer', text: 'Press Esc to put the power away, then click any creature, house or field to inspect it.', touch: 'Tap ✕ on the power bar to put it away, then tap any creature, house or field.', done: 'inspect' },
 ];
 
 // Three gentle hints after the title screen. Each step completes itself when
@@ -41,7 +41,7 @@ export class Onboarding {
         { class: 'ws-coach__body' },
         el('div', { class: 'ws-coach__step', html: STEPS.map((_, k) => `<i class="${k < i ? 'is-done' : k === i ? 'is-on' : ''}"></i>`).join('') + `<span>Step ${i + 1} of ${STEPS.length}</span>` }),
         el('div', { class: 'ws-coach__title', text: s.title }),
-        el('p', { class: 'ws-coach__text', text: s.text }),
+        el('p', { class: 'ws-coach__text', text: (this.ui.root.classList.contains('is-touch') && s.touch) || s.text }),
       ),
       el(
         'div',

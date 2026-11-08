@@ -7,8 +7,9 @@ import { bakeAO } from './bake.js';
 
 // Terrain renderer (Landscape).
 //
-// Geometry: the map is split into CHUNK x CHUNK-tile chunks, each a grid with
-// RES vertices per tile. Vertex heights are sampled from world.heightAt() so
+// Geometry: the map is split into CHUNK x CHUNK-tile chunks (32, or 64 on Large
+// and Huge maps), each a grid with 2, 1 or 0.5 vertices per tile chosen per
+// frame by projected size (LOD), skirted against cracks. Heights follow world.heightAt() so
 // the rendered surface matches the CPU heightfield used by every other system;
 // normals come from central differences of the same global function, so they
 // are continuous across chunk seams. Edits only rebuild touched chunks.
@@ -30,8 +31,11 @@ import { bakeAO } from './bake.js';
 //                                    to date. Sample with uv = worldXZ / (w, h).
 //   terrain.typeTexture              R8 DataTexture of world.type (nearest).
 //   terrain.noiseTextures            { noise, cells } procedural tileable noise.
-const CHUNK = 32;
-const RES = 2; // vertices per tile (per axis)
+// Chunk level of detail: vertices per tile at each LOD. Distant chunks drop to
+// 1 and then 0.5 vertices per tile; a short skirt around every chunk hides the
+// T-junction cracks where neighbours use different LODs.
+const LOD_RES = [2, 1, 0.5];
+const SKIRT_DEPTH = 1.8;
 
 export class Terrain {
   constructor(game) {
@@ -102,9 +106,10 @@ export class Terrain {
     this.material = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, metalness: 0 });
     patchTerrainMaterial(this.material, this.uniforms);
 
-    // ---- chunks
-    this.cw = Math.ceil(W / CHUNK);
-    this.ch = Math.ceil(H / CHUNK);
+    // ---- chunks (bigger chunks on big maps keep draw calls at Medium levels)
+    this.CHUNK = Math.max(W, H) >= 384 ? 64 : 32;
+    this.cw = Math.ceil(W / this.CHUNK);
+    this.ch = Math.ceil(H / this.CHUNK);
     this.chunks = [];
     this._indexCache = new Map();
     this._hpad = null;
@@ -148,6 +153,8 @@ export class Terrain {
   update(dt) {
     const g = this.game;
     refreshLandscapeUniforms(g, dt);
+    this._updateDetail();
+    this._updateLods();
     if (this._dirtyHeight) {
       const r = this._dirtyHeight;
       this._dirtyHeight = null;
@@ -201,7 +208,10 @@ export class Terrain {
     this._writeClimate(all);
     this.ao = bakeAO(this.game.world, null, this.ao);
     this._writeAO(all);
-    for (const c of this.chunks) this._buildChunk(c);
+    for (const c of this.chunks) {
+      c.dirty.fill(true);
+      this._setLod(c, c.lod >= 0 ? c.lod : 1, true);
+    }
     this._buildSkirt();
     this._dirtyHeight = this._dirtyType = this._dirtyFire = this._aoPending = null;
   }
@@ -214,11 +224,13 @@ export class Terrain {
       x1 = r.x1 + 2,
       y1 = r.y1 + 2;
     let touchesEdge = false;
+    const CH = this.CHUNK;
     for (const c of this.chunks) {
-      const cx0 = c.cx * CHUNK,
-        cy0 = c.cy * CHUNK;
-      if (cx0 > x1 || cy0 > y1 || cx0 + CHUNK < x0 || cy0 + CHUNK < y0) continue;
-      this._buildChunk(c);
+      const cx0 = c.cx * CH,
+        cy0 = c.cy * CH;
+      if (cx0 > x1 || cy0 > y1 || cx0 + CH < x0 || cy0 + CH < y0) continue;
+      c.dirty.fill(true);
+      this._setLod(c, c.lod, true);
     }
     if (x0 <= 1 || y0 <= 1 || x1 >= this.w - 2 || y1 >= this.h - 2) touchesEdge = true;
     if (touchesEdge) this._buildSkirt();
@@ -288,19 +300,64 @@ export class Terrain {
     this._writeAO(rr);
   }
 
-  _indexFor(n) {
-    let idx = this._indexCache?.get(n);
+  // Shader detail tier: fine noise layers, caustics and foam micro detail fade
+  // out as the camera pulls back (game.view.zoom01), sooner in power-saver mode.
+  _updateDetail() {
+    const g = this.game;
+    const z = g.view?.zoom01 ?? 0.3;
+    const saver = !!g.settings?.powerSaver;
+    const u = this.uniforms;
+    u.uDetail.value = saver ? 1 - smooth01((z - 0.12) / 0.2) : 1 - smooth01((z - 0.5) / 0.3);
+    u.uPower.value = saver ? 1 : 0;
+  }
+
+  // Pick a LOD per chunk from its projected tile size (pixels per world unit at
+  // the chunk's nearest point), with hysteresis so chunks don't flicker.
+  _updateLods() {
+    const g = this.game;
+    const cam = g.cameraRig?.camera;
+    if (!cam) return;
+    const vh = g.pipeline?.size?.y || (typeof innerHeight !== 'undefined' ? innerHeight : 720);
+    const k = (vh * 0.5) / Math.tan((cam.fov * Math.PI) / 360);
+    const bias = g.settings?.powerSaver ? 1.7 : 1.0;
+    const cp = cam.position;
+    const T0 = 9.0 * bias,
+      T1 = 3.0 * bias;
+    for (const c of this.chunks) {
+      const b = c.box;
+      const dx = Math.max(b.min.x - cp.x, 0, cp.x - b.max.x);
+      const dy = Math.max(b.min.y - cp.y, 0, cp.y - b.max.y);
+      const dz = Math.max(b.min.z - cp.z, 0, cp.z - b.max.z);
+      const ppu = k / Math.max(1, Math.sqrt(dx * dx + dy * dy + dz * dz));
+      let want = c.lod;
+      if (c.lod === 0) {
+        if (ppu < T0 * 0.88) want = ppu > T1 ? 1 : 2;
+      } else if (c.lod === 1) {
+        if (ppu > T0 * 1.12) want = 0;
+        else if (ppu < T1 * 0.88) want = 2;
+      } else {
+        if (ppu > T1 * 1.12) want = ppu > T0 ? 0 : 1;
+      }
+      if (want !== c.lod) this._setLod(c, want, false);
+    }
+  }
+
+  // Shared index buffer for an nx x ny grid plus its (double-sided) skirt.
+  _indexFor(nx, ny) {
+    const key = nx + 'x' + ny;
+    let idx = this._indexCache.get(key);
     if (idx) return idx;
-    const verts = n + 1;
-    const arr = new (verts * verts > 65535 ? Uint32Array : Uint16Array)(n * n * 6);
+    const vx = nx + 1;
+    const G = vx * (ny + 1);
+    const P = 2 * (nx + ny);
+    const arr = new (G + P > 65535 ? Uint32Array : Uint16Array)(nx * ny * 6 + P * 12);
     let k = 0;
-    for (let j = 0; j < n; j++)
-      for (let i = 0; i < n; i++) {
-        const a = j * verts + i,
+    for (let j = 0; j < ny; j++)
+      for (let i = 0; i < nx; i++) {
+        const a = j * vx + i,
           b = a + 1,
-          c = a + verts,
+          c = a + vx,
           d = c + 1;
-        // alternate the diagonal in a checkerboard for isotropic shading
         if ((i + j) & 1) {
           arr[k++] = a;
           arr[k++] = c;
@@ -317,80 +374,101 @@ export class Terrain {
           arr[k++] = b;
         }
       }
+    const per = perimeter(nx, ny);
+    for (let q = 0; q < P; q++) {
+      const t0 = per[q],
+        t1 = per[(q + 1) % P];
+      const b0 = G + q,
+        b1 = G + ((q + 1) % P);
+      // both windings: the skirt must hide cracks seen from either side
+      arr[k++] = t0;
+      arr[k++] = b0;
+      arr[k++] = t1;
+      arr[k++] = t1;
+      arr[k++] = b0;
+      arr[k++] = b1;
+      arr[k++] = t0;
+      arr[k++] = t1;
+      arr[k++] = b0;
+      arr[k++] = t1;
+      arr[k++] = b1;
+      arr[k++] = b0;
+    }
     idx = new THREE.BufferAttribute(arr, 1);
-    if (!this._indexCache) this._indexCache = new Map();
-    this._indexCache.set(n, idx);
+    this._indexCache.set(key, idx);
     return idx;
   }
 
   _makeChunk(cx, cy) {
-    const tilesX = Math.min(CHUNK, this.w - cx * CHUNK);
-    const tilesY = Math.min(CHUNK, this.h - cy * CHUNK);
-    const nx = tilesX * RES,
-      ny = tilesY * RES;
-    const geo = new THREE.BufferGeometry();
-    const count = (nx + 1) * (ny + 1);
-    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(count * 3), 3));
-    geo.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(count * 3), 3));
-    // index (grid may be non-square at the map's far edges)
-    let index;
-    if (nx === ny) index = this._indexFor(nx);
-    else {
-      const arr = new Uint32Array(nx * ny * 6);
-      let k = 0;
-      for (let j = 0; j < ny; j++)
-        for (let i = 0; i < nx; i++) {
-          const a = j * (nx + 1) + i,
-            b = a + 1,
-            c = a + nx + 1,
-            d = c + 1;
-          arr[k++] = a;
-          arr[k++] = c;
-          arr[k++] = b;
-          arr[k++] = b;
-          arr[k++] = c;
-          arr[k++] = d;
-        }
-      index = new THREE.BufferAttribute(arr, 1);
-    }
-    geo.setIndex(index);
-    geo.boundingBox = new THREE.Box3();
-    geo.boundingSphere = new THREE.Sphere();
-    const mesh = new THREE.Mesh(geo, this.material);
+    const CH = this.CHUNK;
+    const tilesX = Math.min(CH, this.w - cx * CH);
+    const tilesY = Math.min(CH, this.h - cy * CH);
+    const mesh = new THREE.Mesh(new THREE.BufferGeometry(), this.material);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     mesh.matrixAutoUpdate = false;
     mesh.name = `terrain-chunk-${cx}-${cy}`;
     this.group.add(mesh);
-    return { cx, cy, nx, ny, geo, mesh, tilesX, tilesY };
+    const box = new THREE.Box3(new THREE.Vector3(cx * CH, -10, cy * CH), new THREE.Vector3(cx * CH + tilesX, 25, cy * CH + tilesY));
+    return { cx, cy, tilesX, tilesY, mesh, box, geos: [null, null, null], dirty: [true, true, true], lod: -1 };
+  }
+
+  // Make sure the chunk's geometry for `lod` exists and is up to date, then use it.
+  _setLod(c, lod, force) {
+    if (lod < 0) lod = 1;
+    let geo = c.geos[lod];
+    if (!geo) {
+      const res = LOD_RES[lod];
+      const nx = Math.max(1, Math.round(c.tilesX * res)),
+        ny = Math.max(1, Math.round(c.tilesY * res));
+      geo = new THREE.BufferGeometry();
+      const count = (nx + 1) * (ny + 1) + 2 * (nx + ny);
+      geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(count * 3), 3));
+      geo.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(count * 3), 3));
+      geo.setIndex(this._indexFor(nx, ny));
+      geo.boundingBox = new THREE.Box3();
+      geo.boundingSphere = new THREE.Sphere();
+      geo.userData = { nx, ny };
+      c.geos[lod] = geo;
+      c.dirty[lod] = true;
+    }
+    if (c.dirty[lod] || force) {
+      this._buildChunk(c, geo);
+      c.dirty[lod] = false;
+    }
+    c.mesh.geometry = geo;
+    c.lod = lod;
   }
 
   // Vertex heights come from the same bilinear rule as world.heightAt(); a
   // padded grid (PAD vertices beyond the chunk) gives seam-free normals from
-  // central differences averaged over two spans (0.5 and 1.0 world units).
-  _buildChunk(c) {
+  // central differences averaged over one and two vertex spans.
+  _buildChunk(c, geo) {
     const world = this.game.world;
     const hgt = world.height;
     const W = world.w,
       H = world.h;
-    const pos = c.geo.attributes.position.array;
-    const nrm = c.geo.attributes.normal.array;
-    const x0 = c.cx * CHUNK,
-      z0 = c.cy * CHUNK;
-    const step = 1 / RES;
+    const { nx, ny } = geo.userData;
+    const pos = geo.attributes.position.array;
+    const nrm = geo.attributes.normal.array;
+    const CH = this.CHUNK;
+    const x0 = c.cx * CH,
+      z0 = c.cy * CH;
+    const sx = c.tilesX / nx,
+      sz = c.tilesY / ny;
     const PAD = 2;
-    const pw = c.nx + 1 + PAD * 2,
-      ph = c.ny + 1 + PAD * 2;
+    const pw = nx + 1 + PAD * 2,
+      ph = ny + 1 + PAD * 2;
     if (!this._hpad || this._hpad.length < pw * ph) this._hpad = new Float32Array(pw * ph);
     const hp = this._hpad;
     for (let j = 0; j < ph; j++) {
-      const fz = z0 + (j - PAD) * step - 0.5;
+      const fz = z0 + (j - PAD) * sz - 0.5;
       const zi = Math.floor(fz),
         tz = fz - zi;
       const za = zi < 0 ? 0 : zi >= H ? H - 1 : zi,
         zb = zi + 1 < 0 ? 0 : zi + 1 >= H ? H - 1 : zi + 1;
       for (let i = 0; i < pw; i++) {
-        const fx = x0 + (i - PAD) * step - 0.5;
+        const fx = x0 + (i - PAD) * sx - 0.5;
         const xi = Math.floor(fx),
           tx = fx - xi;
         const xa = xi < 0 ? 0 : xi >= W ? W - 1 : xi,
@@ -405,18 +483,17 @@ export class Terrain {
     let ymin = Infinity,
       ymax = -Infinity;
     let k = 0;
-    for (let j = 0; j <= c.ny; j++) {
-      const z = z0 + j * step;
+    for (let j = 0; j <= ny; j++) {
+      const z = z0 + j * sz;
       const row = (j + PAD) * pw + PAD;
-      for (let i = 0; i <= c.nx; i++) {
+      for (let i = 0; i <= nx; i++) {
         const o = row + i;
         const y = hp[o];
-        pos[k] = x0 + i * step;
+        pos[k] = x0 + i * sx;
         pos[k + 1] = y;
         pos[k + 2] = z;
-        // d/dx over spans 0.5 (+-1 vertex) and 1.0 (+-2 vertices), averaged
-        const gx = ((hp[o + 1] - hp[o - 1]) / (2 * step) + (hp[o + 2] - hp[o - 2]) / (4 * step)) * 0.5;
-        const gz = ((hp[o + pw] - hp[o - pw]) / (2 * step) + (hp[o + 2 * pw] - hp[o - 2 * pw]) / (4 * step)) * 0.5;
+        const gx = ((hp[o + 1] - hp[o - 1]) / (2 * sx) + (hp[o + 2] - hp[o - 2]) / (4 * sx)) * 0.5;
+        const gz = ((hp[o + pw] - hp[o - pw]) / (2 * sz) + (hp[o + 2 * pw] - hp[o - 2 * pw]) / (4 * sz)) * 0.5;
         const inv = 1 / Math.sqrt(gx * gx + 1 + gz * gz);
         nrm[k] = -gx * inv;
         nrm[k + 1] = inv;
@@ -426,11 +503,25 @@ export class Terrain {
         k += 3;
       }
     }
-    c.geo.attributes.position.needsUpdate = true;
-    c.geo.attributes.normal.needsUpdate = true;
-    c.geo.boundingBox.min.set(x0, ymin, z0);
-    c.geo.boundingBox.max.set(x0 + c.tilesX, ymax, z0 + c.tilesY);
-    c.geo.boundingBox.getBoundingSphere(c.geo.boundingSphere);
+    // skirt: perimeter vertices pushed straight down, same normals
+    const per = perimeter(nx, ny);
+    const G = (nx + 1) * (ny + 1);
+    for (let q = 0; q < per.length; q++) {
+      const s3 = per[q] * 3,
+        d3 = (G + q) * 3;
+      pos[d3] = pos[s3];
+      pos[d3 + 1] = pos[s3 + 1] - SKIRT_DEPTH;
+      pos[d3 + 2] = pos[s3 + 2];
+      nrm[d3] = nrm[s3];
+      nrm[d3 + 1] = nrm[s3 + 1];
+      nrm[d3 + 2] = nrm[s3 + 2];
+    }
+    geo.attributes.position.needsUpdate = true;
+    geo.attributes.normal.needsUpdate = true;
+    geo.boundingBox.min.set(x0, ymin - SKIRT_DEPTH, z0);
+    geo.boundingBox.max.set(x0 + c.tilesX, ymax, z0 + c.tilesY);
+    geo.boundingBox.getBoundingSphere(geo.boundingSphere);
+    c.box.copy(geo.boundingBox);
   }
 
   // Seabed skirt from the map edge out into the deep ocean (hidden by water,
@@ -439,9 +530,11 @@ export class Terrain {
     const world = this.game.world;
     const W = this.w,
       H = this.h;
+    const RES = 1; // under deep water: one vertex per tile edge is plenty
     const perSide = [W * RES, H * RES, W * RES, H * RES];
     const ringN = perSide[0] + perSide[1] + perSide[2] + perSide[3];
-    const rings = [0, 1.5, 4, 9, 18, 34, 60, 100];
+    const ringScale = Math.max(1, Math.max(W, H) / 256);
+    const rings = [0, 1.5, 4, 9, 18, 34, 60, 100].map((r) => r * ringScale);
     const deep = MIN_HEIGHT - 6;
     const count = ringN * rings.length;
     let geo = this.skirt?.geometry;
@@ -514,7 +607,7 @@ export class Terrain {
           oz = ez === 0 ? -1 : 1;
         }
         const h0 = world.heightAt(ex, ez);
-        const t = Math.min(1, d / 70);
+        const t = Math.min(1, d / (70 * ringScale));
         const s = t * t * (3 - 2 * t);
         const y = h0 + (deep - h0) * s;
         const o = (r * ringN + i) * 3;
@@ -530,6 +623,25 @@ export class Terrain {
   }
 }
 
+function smooth01(t) {
+  t = t < 0 ? 0 : t > 1 ? 1 : t;
+  return t * t * (3 - 2 * t);
+}
+// Grid indices around the border of an nx x ny vertex grid, in order.
+const _perCache = new Map();
+function perimeter(nx, ny) {
+  const key = nx + 'x' + ny;
+  let p = _perCache.get(key);
+  if (p) return p;
+  const vx = nx + 1;
+  p = [];
+  for (let i = 0; i < nx; i++) p.push(i);
+  for (let j = 0; j < ny; j++) p.push(j * vx + nx);
+  for (let i = nx; i > 0; i--) p.push(ny * vx + i);
+  for (let j = ny; j > 0; j--) p.push(j * vx);
+  _perCache.set(key, p);
+  return p;
+}
 function clamp255(v) {
   return v < 0 ? 0 : v > 255 ? 255 : Math.round(v);
 }

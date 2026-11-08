@@ -27,6 +27,7 @@ uniform vec3 uWind;
 uniform float uNear;
 uniform vec4 uPL[6];
 uniform vec3 uPLC[6];
+uniform float uPLOn;
 varying vec3 vPL;
 attribute vec4 iA;
 attribute vec4 iB;
@@ -139,7 +140,7 @@ void main() {
   vGlow = iH.w * pow(1.0 - t, 3.0);
   // pooled point lights (fires, explosions) light lit particles from nearby
   vec3 pl = vec3(0.0);
-  if (iG.y > 0.0) {
+  if (iG.y > 0.0 && uPLOn > 0.5) {
     for (int k = 0; k < 6; k++) {
       vec3 d = p - uPL[k].xyz;
       float dd = dot(d, d);
@@ -280,6 +281,7 @@ export class ParticleLayer {
       uNear: fx.uniforms.uNear,
       uPL: fx.uniforms.uPL,
       uPLC: fx.uniforms.uPLC,
+      uPLOn: fx.uniforms.uPLOn,
       uAtlas: { value: fx.textures.atlas },
       uRamp: { value: fx.textures.ramp },
       uSunView: fx.uniforms.uSunView,

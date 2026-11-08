@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { TILE, FLORA, FLORA_INFO, SEA_LEVEL, MAX_HEIGHT } from '../../world/constants.js';
 import { hash2 } from '../../core/Random.js';
-import { hurt, play, rand, smooth } from './util.js';
+import { hurt, play, rand, smooth, honourSurvivors, yearLabel } from './util.js';
 import { PF, DF, RAMP, TRAIL, sparks, glowFlash, smokePuff, dustPuff } from '../../render/fx/Effects.js';
 
 // Volcano: the ground heaves up into a ridged cone with a crater, then it
@@ -216,7 +216,11 @@ export class Volcano {
       this.phase = 2;
       this.t = 0;
     }
-    return this.phase === 1 || this.t < this.waneT;
+    if (this.phase === 2 && this.t >= this.waneT) {
+      honourSurvivors(g, x, z, this.R * 2.5, `Lived through the eruption of a volcano, ${yearLabel(g)}`, 14);
+      return false;
+    }
+    return true;
   }
 
   _erupt() {

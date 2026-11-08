@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { SEA_LEVEL } from '../../world/constants.js';
-import { hurt, play, rand } from './util.js';
+import { hurt, play, rand, law, ageMod, fireFactor } from './util.js';
 import { DF, RAMP, PF, TRAIL, glowFlash, sparks, dustPuff } from '../../render/fx/Effects.js';
 
 // Lightning strike (god power): our own branching bolt entering from the top
@@ -53,8 +53,11 @@ export function lightningStrike(ds, x, z, opts = {}) {
   for (let k = 0; k < 4; k++) dustPuff(fx, x, y, z, 0.5, { out: rand(1, 2.5), life: rand(1, 2) });
   const tx = Math.floor(x),
     ty = Math.floor(z);
-  ds.ignite(tx, ty, 1);
-  for (let k = 0; k < 3; k++) if (Math.random() < 0.55) ds.ignite(tx + Math.round(rand(-1, 1)), ty + Math.round(rand(-1, 1)), 0.8);
+  // natural (storm) strikes only ignite when the calamityLightning law allows
+  // (the chance of a lightning fire follows the age: lightning x fireRisk)
+  const canIgnite = !opts.natural || opts.ignite || (law(g, "calamityLightning", true) && Math.random() < Math.min(1, 0.7 * ageMod(g, "lightning", 1) * fireFactor(g)));
+  if (canIgnite) ds.ignite(tx, ty, 1);
+  if (canIgnite) for (let k = 0; k < 3; k++) if (Math.random() < 0.55) ds.ignite(tx + Math.round(rand(-1, 1)), ty + Math.round(rand(-1, 1)), 0.8);
   hurt(g, x, z, 1.8, 70, 45, 'lightning');
 }
 

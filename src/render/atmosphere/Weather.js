@@ -93,7 +93,7 @@ export class Weather {
         this.nextAuto = g.time.total + 90 + this.rng() * 150;
       }
     }
-    const auto = g.settings.autoWeather !== false;
+    const auto = (g.laws?.skyWeather ?? g.settings.autoWeather) !== false;
     if (auto && this.remaining == null && g.time.total > this.nextAuto && g.time.total > this.autoHeld) this.autoPick();
 
     // surface wetness / snow cover (global + per tile)
@@ -139,7 +139,6 @@ export class Weather {
       this.nextAuto = g.time.total + 110 + this.rng() * 180;
       return;
     }
-    const r = this.rng();
     const world = g.world;
     // How cold is the land? (sample a sparse grid)
     let cold = 0,
@@ -153,12 +152,44 @@ export class Weather {
     cold = n ? cold / n : 0;
     const hour = g.time.hour;
     const early = g.time.total < 420; // no storms in the first minutes
-    let type = 'rain';
-    if (r >= 0.36 && r < 0.48) type = early ? 'rain' : 'storm';
-    else if (r >= 0.48 && r < 0.48 + 0.3 * cold) type = 'snow';
-    else if (r >= 0.8 && (hour < 9.5 || hour > 20)) type = 'fog';
+    // seasonal odds: spring showers, summer storms, autumn fog and rain,
+    // winter snow; ages and the weatherStorms law bend them
+    const season = Math.floor(g.time.season ?? 1.5) % 4;
+    const W = [
+      { rain: 0.42, storm: 0.06, snow: 0.02, fog: 0.08 },
+      { rain: 0.2, storm: 0.22, snow: 0.0, fog: 0.03 },
+      { rain: 0.32, storm: 0.07, snow: 0.04, fog: 0.22 },
+      { rain: 0.12, storm: 0.03, snow: 0.38, fog: 0.12 },
+    ][season];
+    const age = this.atm?.ageState;
+    const temp = age?.temp ?? g.age?.mods?.temperature ?? 0;
+    const stormK = (age?.storms ?? g.age?.mods?.storms ?? 1) * (g.laws?.weatherStorms ?? 1);
+    const hot = Math.max(0, temp) * 2,
+      chill = Math.max(0, -temp) * 2;
+    const wet = 1 - 0.7 * hot; // hot ages are clear and dry
+    const w = {
+      clear: 0.3 + 0.5 * hot,
+      rain: W.rain * wet * (1 - 0.5 * chill),
+      storm: early ? 0 : W.storm * stormK * (1 - 0.4 * hot),
+      snow: (W.snow + 0.25 * chill) * (0.4 + 1.2 * cold + 1.5 * chill) * (1 - hot),
+      fog: W.fog * wet * (hour < 10 || hour > 19 ? 1.4 : 0.7),
+    };
+    let sum = 0;
+    for (const v of Object.values(w)) sum += v;
+    let r = this.rng() * sum;
+    let type = 'clear';
+    for (const [k, v] of Object.entries(w)) {
+      if ((r -= v) <= 0) {
+        type = k;
+        break;
+      }
+    }
+    if (type === 'clear') {
+      this.nextAuto = g.time.total + 60 + this.rng() * 120;
+      return;
+    }
     const intensity = 0.55 + this.rng() * 0.45;
-    const dur = type === 'storm' ? 45 + this.rng() * 50 : 60 + this.rng() * 100;
+    const dur = type === 'storm' ? 45 + this.rng() * 50 : season === 0 && type === 'rain' ? 35 + this.rng() * 45 : 60 + this.rng() * 100;
     this.set(type, intensity, null);
     this.nextAuto = g.time.total + dur;
   }

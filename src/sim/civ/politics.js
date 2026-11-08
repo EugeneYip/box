@@ -1,4 +1,4 @@
-import { CULTURES, HERALDRY, HERALDRY_AVOID, placeName, kingdomName as makeKingdomName, rulerTitle } from './cultures.js';
+import { CULTURES, HERALDRY, HERALDRY_AVOID, hueOf, baseCulture, placeName, kingdomName as makeKingdomName, rulerTitle } from './cultures.js';
 import { BUILDING_TYPES } from './catalog.js';
 import { YEAR, ADULT_AGE, clamp } from './util.js';
 
@@ -13,10 +13,35 @@ export const politics = {
     const rng = this.rng;
     const id = this.kingdoms.length;
     const used = new Set(this.kingdoms.filter((k) => k.alive).map((k) => k.color));
-    const avoid = new Set(HERALDRY_AVOID[culture] || []);
-    let free = HERALDRY.filter((h) => !used.has(h.color) && !avoid.has(h.name));
-    if (!free.length) free = HERALDRY.filter((h) => !avoid.has(h.name));
-    const her = opts.color != null ? HERALDRY.find((h) => h.color === opts.color) || free[0] : free[(rng.next() * free.length) | 0];
+    // the tincture farthest in hue from every living realm (neighbours count double)
+    const avoid = new Set(HERALDRY_AVOID[baseCulture(culture)] || []);
+    const others = this.kingdoms.filter((k) => k.alive && k.villages.length);
+    const near = (k) => {
+      if (opts.x == null) return 1;
+      const v = this.villages[k.capital];
+      return v && Math.hypot(v.cx - opts.x, v.cz - opts.z) < 90 ? 2.2 : 1;
+    };
+    let her = null,
+      bs = -Infinity;
+    for (const h of HERALDRY) {
+      if (avoid.has(h.name)) continue;
+      const hh = hueOf(h.color);
+      let score = 360;
+      for (const k of others) {
+        let dh = Math.abs(hueOf(k.color) - hh);
+        if (dh > 180) dh = 360 - dh;
+        if (k.color === h.color) dh = 0;
+        // neighbours must differ most; distant realms may repeat a tincture
+        score = Math.min(score, near(k) > 1 ? dh : dh + 75);
+      }
+      score += rng.next() * 6;
+      if (score > bs) {
+        bs = score;
+        her = h;
+      }
+    }
+    if (opts.color != null) her = HERALDRY.find((h) => h.color === opts.color) || her;
+    if (!her) her = HERALDRY[id % HERALDRY.length];
     const base = opts.baseName || placeName(culture, rng, this.usedNames);
     const k = {
       id,
@@ -43,6 +68,14 @@ export const politics = {
       parent: opts.parent ?? -1,
       lastWar: -999,
     };
+    this._initTech(k);
+    k.inventory = { food: 0, wood: 0, stone: 0, ore: 0, gold: 0, tools: 0, weapons: 0, armor: 0 };
+    // a breakaway realm inherits what its parent knew
+    const par = this.kingdoms[opts.parent];
+    if (par?.techs) {
+      for (const t of par.techs) k.techs.add(t);
+      k.era = par.era;
+    }
     this.kingdoms.push(k);
     this.colorVersion++;
     return k;
@@ -97,6 +130,13 @@ export const politics = {
     u.data.civ.royal = true;
     k.ruler = u.id;
     k.rulerName = u.name;
+    k.council = false;
+    this.game.units.log?.(u, `Crowned ${title} of the ${k.name}`);
+    // name an heir straight away so the realm never drifts without one
+    let heir = null;
+    const v = this.villages[u.village];
+    if (v) for (const m of v.members) if (m !== u && m.alive && m.age >= ADULT_AGE && (!heir || Math.abs(m.age - 24) < Math.abs(heir.age - 24))) heir = m;
+    k.heir = heir ? heir.id : -1;
   },
 
   _succession(k, deadName) {
@@ -114,6 +154,9 @@ export const politics = {
       }
       if (heir) break;
     }
+    // the designated heir, if alive
+    const named = this.game.units.byId.get(k.heir);
+    if (named && named.alive && named.kingdom === k.id && named !== this.game.units.byId.get(k.ruler)) heir = named;
     if (!heir) {
       // no adult left: the eldest child rules under a regency
       for (const v of pools) {
@@ -121,12 +164,13 @@ export const politics = {
         for (const u of v.members) if (u.alive && (!heir || u.age > heir.age)) heir = u;
       }
     }
+    if (cap) for (const m of cap.members) this.game.units.addStatus?.(m, 'mourning', 30);
     if (heir) {
       if (heir.village !== k.capital && cap && cap.alive) this._moveMember(heir, cap);
       this.crown(k, heir);
       this._note(`${deadName} dies; ${heir.name} rules ${this._kn(k)}`, 'info', { x: heir.x, z: heir.z }, 'succ' + k.id, 20);
       // a contested succession can split a large realm
-      if (k.villages.length >= 3 && this.rng.chance(0.3)) {
+      if (k.villages.length >= 3 && this.law('civRebellions') && this.rng.chance(0.3)) {
         let claimant = null;
         for (const vid of k.villages) {
           const v = this.villages[vid];
@@ -141,7 +185,8 @@ export const politics = {
     } else {
       k.ruler = -1;
       k.interregnumUntil = this.game.time.total + YEAR * 5;
-      this._note(`${deadName} dies heirless; ${this._kn(k)} in turmoil`, 'bad', cap ? { x: cap.cx, z: cap.cz } : null);
+      this._note(`${deadName} dies heirless; a council of elders rules ${this._kn(k)}`, 'bad', cap ? { x: cap.cx, z: cap.cz } : null);
+      k.council = true;
     }
   },
 
@@ -159,6 +204,7 @@ export const politics = {
   _killKingdom(k, cause = 'fallen') {
     if (!k.alive) return;
     k.alive = false;
+    this._noteCollapse?.((k.council ? 'heirless/' : '') + cause);
     for (const r of this.relations.values()) {
       if (r.a === k.id || r.b === k.id) {
         r.war = false;
@@ -208,7 +254,8 @@ export const politics = {
         let target = 8;
         target -= Math.min(26, border * 0.32);
         if (near < 34) target -= (34 - near) * 0.3;
-        target += A.culture === B.culture ? 14 : -14;
+        const kin = baseCulture(A.culture) === baseCulture(B.culture);
+        target += A.culture === B.culture ? 14 : this.law('diploCultureFriction') ? (kin ? -5 : -14) : 0;
         target -= (A.aggression + B.aggression) * 9;
         target -= r.grievance;
         if (r.ally) target += 30;
@@ -237,7 +284,8 @@ export const politics = {
           this._note(`${this._kn(A)}–${this._kn(B)} alliance ends`, 'info', this._kingdomPos(A));
         }
         // alliance
-        if (!r.ally && r.opinion > 25 && (A.culture === B.culture || ea.some((e) => eb.includes(e)) || r.opinion > 32) && rng.chance(0.08)) {
+        const charm = this._rulerTrait(A, 'gentle', 'silver-tongued', 'silvertongued') || this._rulerTrait(B, 'gentle', 'silver-tongued', 'silvertongued');
+        if (this.law('civDiplomacy') && !r.ally && r.opinion > (charm ? 18 : 25) && (A.culture === B.culture || ea.some((e) => eb.includes(e)) || r.opinion > 32) && rng.chance(0.08)) {
           r.ally = true;
           this._note(`🤝 ${this._kn(A)} and ${this._kn(B)} ally`, 'good', this._kingdomPos(A));
           continue;
@@ -258,7 +306,11 @@ export const politics = {
           const hungry = border > 6 && ratio > 1.3 && now - att.lastWar > YEAR * 8 && r.opinion < 30 && crowd > 0.5;
           if (!hostile && !ambitious && !hungry) continue;
           if (ratio < 0.6) continue;
-          const p = 0.03 + att.aggression * 0.08 + (ambitious ? 0.05 : 0) + (hungry ? 0.04 + crowd * 0.05 : 0);
+          let p = 0.03 + att.aggression * 0.08 + (ambitious ? 0.05 : 0) + (hungry ? 0.04 + crowd * 0.05 : 0);
+          p *= this.law('diploWarlike', 1) * (g.age?.mods?.warlike ?? 1);
+          if (this._rulerTrait(att, 'cruel', 'valiant')) p *= 1.6;
+          if (this._rulerTrait(att, 'gentle', 'silver-tongued', 'silvertongued')) p *= 0.55;
+          if (this.hasCultureTrait(att.culture, 'Martial')) p *= 1.3;
           if (!rng.chance(p)) continue;
           let reason;
           if ((ambitious && ratio > 1.6 && att.ambition > 0.7) || (hungry && !hostile)) reason = 'ambition';
@@ -293,6 +345,7 @@ export const politics = {
 
   declareWar(a, b, reason = 'border', silent = false) {
     if (a === b) return false;
+    if (reason !== 'god' && !this.law('civWars')) return false;
     const A = this.kingdoms[a],
       B = this.kingdoms[b];
     if (!A?.alive || !B?.alive) return false;
@@ -305,10 +358,15 @@ export const politics = {
     r.attacker = a;
     r.losses = [0, 0];
     r.startPop = [A.population || 1, B.population || 1];
+    r.lossBase = { [A.id]: A.warLosses, [B.id]: B.warLosses };
     r.opinion = Math.min(r.opinion, -40);
     A.lastWar = B.lastWar = this.game.time.total;
     const why = { border: 'border dispute', culture: 'old enmity', ambition: 'conquest', rebellion: 'rebellion', alliance: 'alliance', god: 'divine will' }[reason] || 'grievance';
     if (!silent) this._note(`⚔ ${this._kn(A)} declares war on ${this._kn(B)} (${why})`, 'war', this._kingdomPos(B));
+    const ra = this.game.units.byId.get(A.ruler),
+      rb = this.game.units.byId.get(B.ruler);
+    if (ra) this.game.units.log?.(ra, `Declared war on ${this._kn(B)}`);
+    if (rb) this.game.units.log?.(rb, `${this._kn(A)} declared war on us`);
     const pb = this._kingdomPos(B);
     this._sfx('war-horn', pb?.x ?? 0, pb?.z ?? 0, 0, true);
     // allies of the defender may join
@@ -350,13 +408,25 @@ export const politics = {
   },
 
   _considerPeace(A, B, r, now) {
+    if (!this.law('diploPeace')) return; // no treaties: wars end only by the sword
     const dur = now - r.warSince;
-    if (dur < YEAR * 4) return;
+    // war weariness: the dead weigh on both crowns
+    const killedA = A.warLosses - (r.lossBase?.[A.id] ?? A.warLosses);
+    const killedB = B.warLosses - (r.lossBase?.[B.id] ?? B.warLosses);
+    const wearyA = killedA / Math.max(8, r.startPop[r.a === A.id ? 0 : 1]);
+    const wearyB = killedB / Math.max(8, r.startPop[r.a === A.id ? 1 : 0]);
+    const weary = Math.max(wearyA, wearyB);
+    if (weary > 0.22 && dur > YEAR * 2) return this.makePeace(A.id, B.id);
+    if (dur < YEAR * 3) return;
+    // without diplomacy, wars end only in exhaustion
+    if (!this.law('civDiplomacy')) return;
     const lossA = r.startPop[r.a === A.id ? 0 : 1] - A.population;
     const lossB = r.startPop[r.a === A.id ? 1 : 0] - B.population;
-    const weary = Math.max(lossA / Math.max(1, r.startPop[0]), lossB / Math.max(1, r.startPop[1]));
-    let p = 0.012 + Math.max(0, weary) * 0.15 + Math.max(0, dur - YEAR * 10) / (YEAR * 200);
+    const popWeary = Math.max(lossA / Math.max(1, r.startPop[0]), lossB / Math.max(1, r.startPop[1]));
+    let p = 0.02 + Math.max(0, popWeary) * 0.25 + weary * 0.5 + Math.max(0, dur - YEAR * 8) / (YEAR * 100);
     if (!this._reachable(A, B)) p += 0.08;
+    if (this._rulerTrait(A, 'gentle', 'silver-tongued', 'silvertongued') || this._rulerTrait(B, 'gentle', 'silver-tongued', 'silvertongued')) p *= 1.8;
+    if (this._rulerTrait(A, 'cruel') || this._rulerTrait(B, 'cruel')) p *= 0.6;
     if (this.rng.chance(p)) this.makePeace(A.id, B.id);
   },
 
@@ -373,8 +443,25 @@ export const politics = {
   },
 
   // ---------------------------------------------------------------- armies
+  // The laws of the world forbid war: every war ends in an armistice.
+  _endAllWars() {
+    let n = 0;
+    for (const r of this.relations.values()) {
+      if (!r.war) continue;
+      this.makePeace(r.a, r.b, true);
+      n++;
+    }
+    for (const a of [...this.armies]) this._disbandArmy(a);
+    this.battles = [];
+    if (n) this._note(`⚖ War is outlawed: ${n === 1 ? 'the war ends' : n + ' wars end'} in armistice`, 'good', null, 'outlaw', 30);
+  },
+
   _wars() {
     const now = this.game.time.total;
+    if (!this.law('civWars')) {
+      if (this.armies.length || [...this.relations.values()].some((r) => r.war && r.reason !== 'god')) this._endAllWars();
+      return;
+    }
     // spawn armies for kingdoms at war that have none
     for (const k of this.kingdoms) {
       if (!k.alive) continue;
@@ -625,12 +712,24 @@ export const politics = {
         this.game.units.kill(ru, 'executed');
       }
     }
-    if (cause === 'conquest') this._note(`⚑ ${this._kn(K)} conquers ${v.name}`, 'war', { x: v.cx, z: v.cz });
+    if (cause === 'conquest') {
+      this._note(`⚑ ${this._kn(K)} conquers ${v.name}`, 'war', { x: v.cx, z: v.cz });
+      const rk = this.game.units.byId.get(K.ruler);
+      if (rk) this.game.units.log?.(rk, `Conquered ${v.name}`);
+      // the conquerors bring their tongue
+      this._mixAdd?.(v, K.culture, 0.25);
+    }
+    // the hall changes hands visibly: new colours run up with a flourish
+    const hb = v.hall;
+    if (hb) {
+      this.game.fx?.burst?.('magic', { x: hb.x, z: hb.z }, 14, { scale: 1.6, color: K.color });
+      this._sfx?.(cause === 'conquest' ? 'war-horn' : 'bell', hb.x, hb.z, 1);
+    }
     this.version++;
     this.colorVersion++;
     if (old && old.alive) {
       if (!old.villages.length) {
-        this._killKingdom(old, 'fallen');
+        this._killKingdom(old, cause);
       } else if (old.capital === v.id) {
         const nc = this._chooseCapital(old);
         if (nc) this._note(`${this._kn(old)} moves its capital to ${nc.name}`, 'info', { x: nc.cx, z: nc.cz });
@@ -656,8 +755,8 @@ export const politics = {
     if (cap) L -= Math.max(0, Math.hypot(cap.cx - v.cx, cap.cz - v.cz) - 28) * 0.75;
     if (v.culture !== k.culture) L -= 18;
     if (v.conqueredAt) L -= Math.max(0, 34 - ((now - v.conqueredAt) / YEAR) * 3);
-    if (v.starving) L -= 22;
-    if (this.warCount(k.id) > 0) L -= 6;
+    if (v.starving && this.law('harmonyUnrest')) L -= 22;
+    if (this.warCount(k.id) > 0 && this.law('harmonyUnrest')) L -= 6;
     if (now < k.interregnumUntil) L -= 18;
     if (now < k.goldenUntil) L += 30;
     if (v.buildings.some((b) => b.alive && b.type === 'temple' && !b.constructing)) L += 8;
@@ -668,13 +767,16 @@ export const politics = {
     L -= (this._crowd?.() || 0) * 12;
     if (alive < 3) L -= 14; // a world of two empires is a powder keg
     if (alive >= 7) L += 12;
-    if (v.famineT && now - v.famineT < YEAR * 4) L -= 10;
+    if (this.law('harmonyUnrest') && v.famineT && now - v.famineT < YEAR * 4) L -= 10;
+    L += (this.law('harmonyLoyalty', 1) * (this.game.age?.mods?.harmony ?? 1) - 1) * 35;
+    L += this.techAdd(k.id, 'loyalty');
+    if (this.hasCultureTrait(v.culture, 'Mystic')) L += 5;
     L += (v.loyaltyBoost || 0);
     v.loyaltyBoost = Math.max(0, (v.loyaltyBoost || 0) - 1);
     v.loyalty = clamp(v.loyalty + (L - v.loyalty) * 0.2, 0, 100);
     if (v.loyalty < 32 && v.pop >= 8) v.unrest = (v.unrest || 0) + 1;
     else v.unrest = Math.max(0, (v.unrest || 0) - 1);
-    if (v.unrest >= 3 && this.rng.chance(alive < 3 ? 0.3 : 0.14)) this.rebel(v);
+    if (v.unrest >= 3 && this.law('civRebellions') && this.rng.chance(alive < 3 ? 0.3 : 0.14)) this.rebel(v);
   },
 
   _aliveKingdoms() {
@@ -685,6 +787,7 @@ export const politics = {
 
   // Peaceful secession: a big realm in a crowded world lets a distant province go.
   _secession() {
+    if (!this.law('civRebellions') || !this.law('harmonySecession')) return;
     const alive = this._aliveKingdoms();
     if (alive >= 6) return;
     const now = this.game.time.total;
@@ -721,6 +824,12 @@ export const politics = {
     } else this._note(`✊ ${far.name} breaks away from ${this._kn(old)}: the ${K.name}`, 'war', { x: far.cx, z: far.cz });
   },
 
+  _rulerTrait(k, ...ids) {
+    const u = this.game.units.byId.get(k?.ruler);
+    if (!u || !this.game.units.hasTrait) return false;
+    return ids.some((id) => this.game.units.hasTrait(u, id));
+  },
+
   _kn(k) {
     return k ? k.base || k.name : 'nobody';
   },
@@ -729,7 +838,7 @@ export const politics = {
   rebel(v, silent = false) {
     const old = this.kingdoms[v.kingdom];
     if (!old || old.capital === v.id) return null;
-    const K = this.createKingdom(v.culture, { baseName: v.name, parent: old.id });
+    const K = this.createKingdom(v.culture, { baseName: v.name, parent: old.id, x: v.cx, z: v.cz });
     const oldName = old.base || old.name;
     this.transferVillage(v, K.id, 'rebellion');
     K.capital = v.id;
@@ -760,6 +869,7 @@ export const politics = {
       const v = this.villages[vid];
       if (!v?.alive) continue;
       v.loyalty = Math.min(100, v.loyalty + 25);
+      for (const m of v.members) this.game.units.addStatus?.(m, 'inspired', 90);
       this.game.fx?.burst?.('sparkle', { x: v.cx, z: v.cz }, 12, { scale: 2 });
     }
     this._note(`✨ Golden age in ${this._kn(k)}`, 'good', this._kingdomPos(k));

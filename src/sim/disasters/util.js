@@ -68,3 +68,106 @@ export function carveCrater(game, cx, cz, R, depth, opts = {}) {
 export function rand(a, b) {
   return a + (b - a) * Math.random();
 }
+
+const DIRS = ['northern', 'north-eastern', 'eastern', 'south-eastern', 'southern', 'south-western', 'western', 'north-western'];
+
+// "the northern hills", "the eastern waters near Oakridge", ... (direction
+// from the map centre, terrain, nearest village if close)
+export function regionName(g, x, z) {
+  const w = g.world;
+  const dx = x - w.w / 2,
+    dz = z - w.h / 2;
+  const far = Math.hypot(dx, dz) > Math.min(w.w, w.h) * 0.16;
+  // north is -z (the top of the map at the default camera yaw)
+  const ang = Math.atan2(dx, -dz);
+  const dir = far ? DIRS[(Math.round(ang / (Math.PI / 4)) + 8) % 8] : 'central';
+  const [tx, ty] = w.tileOf(x, z);
+  const i = w.idx(tx, ty);
+  const h = w.height[i];
+  const t = w.type[i];
+  let place;
+  if (h < SEA_LEVEL) place = 'waters';
+  else if (h > 10) place = 'peaks';
+  else if (h > 5) place = 'hills';
+  else if (w.isCoastal?.(tx, ty)) place = 'shore';
+  else if (t === TILE.FOREST || t === TILE.JUNGLE) place = 'woods';
+  else if (t === TILE.DESERT) place = 'dunes';
+  else if (t === TILE.SNOW || t === TILE.TUNDRA || t === TILE.ICE) place = 'snowfields';
+  else if (t === TILE.SWAMP) place = 'marshes';
+  else if (t === TILE.SAVANNA) place = 'grasslands';
+  else place = 'plains';
+  let near = '';
+  try {
+    let best = 14 * 14;
+    for (const v of g.civ?.villages || []) {
+      if (!v || v.alive === false || !v.name) continue;
+      const vx = v.x ?? v.cx,
+        vz = v.z ?? v.cz;
+      if (vx == null) continue;
+      const d2 = (vx - x) ** 2 + (vz - z) ** 2;
+      if (d2 < best) {
+        best = d2;
+        near = ' near ' + v.name;
+      }
+    }
+  } catch (e) {
+    /* villages are optional */
+  }
+  return `the ${dir} ${place}${near}`;
+}
+
+// Read a world law at the point of use (default when laws are missing).
+export function law(game, key, fallback) {
+  const v = game.laws?.[key];
+  return v === undefined ? fallback : v;
+}
+
+// Current World Age modifier (neutral when ages are missing).
+export function ageMod(game, key, fallback = 1) {
+  const v = game.age?.mods?.[key];
+  return typeof v === 'number' ? v : fallback;
+}
+
+// Fire behaviour factor for the current age: fireRisk, and a cold age
+// (negative temperature offset) slows fire, a hot one quickens it.
+export function fireFactor(game) {
+  const temp = ageMod(game, 'temperature', 0);
+  return Math.max(0.05, ageMod(game, 'fireRisk', 1) * Math.max(0.25, 1 + temp * 1.2));
+}
+
+// Which ages make which disasters notable: notices then open with
+// "In the Age of …," when the current age is relevant to the event.
+const AGE_KINDS = {
+  embers: ['wildfire', 'fire', 'inferno', 'volcano', 'lava'],
+  tempests: ['storm', 'lightning', 'tornado'],
+  rime: ['blizzard'],
+  blight: ['plague'],
+  twilight: ['meteor', 'meteor-shower'],
+  iron: ['earthquake'],
+};
+export function withAge(game, kind, line) {
+  const age = game.age;
+  if (!age || !AGE_KINDS[age.id]?.includes(kind)) return line;
+  return `In the ${age.name}, ${line.charAt(0).toLowerCase()}${line.slice(1)}`;
+}
+
+// Biography + experience for units that lived through a calamity (Life's
+// API, guarded: it may not exist yet).
+export function honourSurvivors(game, x, z, r, text, xp = 12) {
+  const units = game.units?.query?.(x, z, r) || [];
+  for (const u of units) {
+    if (!u.alive || u.def?.kind !== 'humanoid') continue;
+    try {
+      game.units.log?.(u, text);
+      game.units.addXP?.(u, xp);
+      if (law(game, 'lifeTraits', true) !== false && Math.random() < 0.15) game.units.addTrait?.(u, 'survivor');
+    } catch (e) {
+      /* Life API optional */
+    }
+  }
+}
+
+export function yearLabel(game) {
+  const y = Math.floor(game.time?.year ?? 0);
+  return `Year ${y}`;
+}

@@ -84,6 +84,7 @@ export function smokePuff(fx, x, y, z, o = {}) {
 }
 
 export function ember(fx, x, y, z, o = {}) {
+  if (!fx.tinyOK) return; // sub-pixel at far zoom
   const P = fx.P.reset();
   P.x = x + rr(-0.3, 0.3);
   P.y = y;
@@ -112,6 +113,7 @@ export function ember(fx, x, y, z, o = {}) {
 }
 
 export function sparks(fx, x, y, z, n, o = {}) {
+  if (!fx.tinyOK && (o.size ?? 1) < 1.5) n = Math.ceil(n * 0.25);
   const sp = o.speed ?? 6;
   for (let i = 0; i < n; i++) {
     const P = fx.P.reset();
@@ -222,6 +224,7 @@ function droplets(fx, x, y, z, n, o = {}) {
 }
 
 function glints(fx, x, y, z, n, o = {}) {
+  if (!fx.tinyOK) n = Math.ceil(n * 0.25);
   for (let i = 0; i < n; i++) {
     const P = fx.P.reset();
     const r = (o.radius ?? 0.8) * Math.sqrt(R());
@@ -626,6 +629,7 @@ export const PRESETS = {
     }
   },
   ash(fx, p, o) {
+    if (!fx.tinyOK) return;
     const s = o.scale ?? 1;
     for (let i = 0; i < fx.k(o.count ?? 4); i++) {
       const P = fx.P.reset();

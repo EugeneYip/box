@@ -11,13 +11,19 @@ export const KINDS = {
   bad: { icon: 'bad', tint: '#ffbf6a' },
   war: { icon: 'war', tint: '#ff7a6e' },
   disaster: { icon: 'disaster', tint: '#ff8a4a' },
+  age: { icon: 'eclipse', tint: '#e6c98a' },
 };
+const MINOR = /legendar|forged|\bhero\b|is born|completes its|raises a|reaches level|earns the title|named the/i;
+export function isMinor(n) {
+  return n?.minor === true || (n?.kind !== 'war' && n?.kind !== 'disaster' && n?.kind !== 'age' && MINOR.test(String(n?.text || '')));
+}
 export const FILTERS = [
   { id: 'all', name: 'All' },
   { id: 'war', name: 'Wars' },
   { id: 'disaster', name: 'Disasters' },
   { id: 'realm', name: 'Realms' },
   { id: 'settle', name: 'Settlements' },
+  { id: 'age', name: 'Ages' },
   { id: 'other', name: 'Other' },
 ];
 const EMOJI_ICON = { '🤝': 'alliance', '⚔': 'war', '🕊': 'make-peace', '🔥': 'fire', '⚑': 'banner', '✊': 'rebellion', '✨': 'golden-age', '👑': 'crown', '💀': 'kill' };
@@ -72,9 +78,15 @@ export function classify(n) {
     }
   }
   const kind = KINDS[n?.kind] ? n.kind : 'info';
+  if (kind === 'age') {
+    cat = 'age';
+    icon = 'eclipse';
+  }
   if (!cat) cat = kind === 'war' ? 'war' : kind === 'disaster' ? 'disaster' : 'other';
   if (kind === 'war' && cat !== 'war' && cat !== 'realm') cat = 'war';
-  return { text, icon: icon || KINDS[kind].icon, cat, kind, tint: KINDS[kind].tint };
+  let tint = KINDS[kind].tint;
+  if (kind === 'age' && n?.color != null) tint = '#' + (n.color >>> 0).toString(16).padStart(6, '0');
+  return { text, icon: icon || KINDS[kind].icon, cat, kind, tint };
 }
 
 export function seasonOf(yearFloat) {

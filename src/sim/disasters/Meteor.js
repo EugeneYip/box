@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { SEA_LEVEL, FLORA } from '../../world/constants.js';
-import { carveCrater, hurt, play, rand } from './util.js';
+import { carveCrater, hurt, play, rand, honourSurvivors, yearLabel } from './util.js';
 import { PF, DF, RAMP, TRAIL, glowFlash, sparks, smokePuff, dustPuff } from '../../render/fx/Effects.js';
 import { heatMaterial } from '../../render/fx/Debris.js';
 
@@ -173,7 +173,8 @@ export class Meteor {
       P.tz = P.vz;
       P.drag = 0.02;
       P.life = 0.1;
-      P.s0 = r * (k ? 0.8 : 1.5);
+      P.s0 = r * (k ? 0.4 : 0.85);
+      P.a = k ? 1 : 0.6;
       P.s1 = P.s0 * 0.9;
       P.mode = 1;
       P.aspect = 1;
@@ -312,6 +313,7 @@ class CraterAftermath {
     this.R = R;
     this.t = 0;
     this.life = 32;
+    this.isAftermath = true; // not a set piece (calamity scheduler may proceed)
     this._acc = 0;
     this._e = 0;
     this._c = new THREE.Color(1, 0.36, 0.08);
@@ -350,6 +352,10 @@ class CraterAftermath {
       this._e -= 1;
       fx.emit('embers', { x: this.x + rand(-1, 1) * this.R * 0.4, y: y + 0.2, z: this.z + rand(-1, 1) * this.R * 0.4 }, { count: 1 });
     }
-    return this.t < this.life;
+    if (this.t >= this.life) {
+      honourSurvivors(g, this.x, this.z, this.R * 3, `Saw a star fall from the sky, ${yearLabel(g)}`, 8);
+      return false;
+    }
+    return true;
   }
 }

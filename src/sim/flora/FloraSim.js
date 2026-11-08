@@ -35,8 +35,10 @@ import {
 // Growth-only changes are written straight to world.floraGrowth (the
 // renderer eases them); kind changes go through world.setFlora. A coarse
 // 'world:flora' dirty mark is raised when a plant crosses a growth stage.
-const SWEEP = 4; // seconds per full sweep of the map
-const TICK_GUESS = 1 / 15;
+const SWEEP = 4; // seconds per full sweep of a 256x256 map
+// Larger maps keep the same tiles-per-tick budget (same ms per tick) and
+// simply sweep more slowly; rates are per game second so behaviour matches.
+const TICK_BUDGET_MS = 0.8; // never spend more than this per simulation tick
 
 export class FloraSim {
   constructor(game) {
@@ -117,12 +119,37 @@ export class FloraSim {
   tick(step) {
     const world = this.game.world;
     const n = world.size;
-    // tiles per tick so a full sweep takes SWEEP seconds
-    this._acc += (n * step) / SWEEP;
+    const sweep = SWEEP * Math.max(1, n / 65536);
+    this._acc += (n * step) / sweep;
     let count = Math.floor(this._acc);
     this._acc -= count;
-    const dt = SWEEP;
+    const dt = sweep;
+    // World Laws, read each tick so a toggle applies on the next one
+    const laws = this.game.laws || {};
+    const mods = this.game.age?.mods || {};
+    this._grow = laws.natureGrowth !== false;
+    this._regrow = laws.natureRegrowth !== false;
+    this._treesSpread = laws.treesSpread !== false;
+    this._plantsSpread = laws.plantsSpread !== false;
+    this._fungiSpread = laws.fungiSpread !== false;
+    this._treeSpeed = laws.treesGrowSpeed ?? 1;
+    this._density = laws.treesDensity ?? 1;
+    this._crops = laws.plantsCrops ?? 1;
+    this._fert = mods.fertility ?? 1;
+    this._fungi = mods.fungi ?? 1;
+    this._tOff = mods.temperature ?? 0;
+    // seasons: 0 spring .. 3 winter (fraction = progress)
+    const season = this.game.time?.season ?? 1.5;
+    this._season = Math.floor(season) % 4;
+    if (laws.biomeShift !== false) this.shiftBiomes(dt, step);
+    // hard time budget per tick: leftover visits carry over (bounded)
+    const t0 = performance.now();
+    let k = 0;
     while (count-- > 0) {
+      if ((++k & 255) === 0 && performance.now() - t0 > TICK_BUDGET_MS) {
+        this._acc = Math.min(this._acc + count + 1, (n * step * 4) / sweep);
+        break;
+      }
       const i = this._cursor;
       if (++this._cursor >= n) {
         this._cursor = 0;
@@ -142,14 +169,14 @@ export class FloraSim {
       ty = (i / W) | 0;
 
     // ---- burnt land heals ------------------------------------------------
-    if (t === TILE.ASH) {
+    if (t === TILE.ASH && this._regrow !== false) {
       if (world.fire[i] > 0) {
         this.age[i] = 0;
       } else {
         this.age[i] += dt * (1 + this.boost[i] * 6);
         const need = 55 + this.hash(i) * 70;
         if (this.age[i] > need && world.height[i] >= SEA_LEVEL) {
-          const nb = naturalBiome(world, i);
+          const nb = naturalBiome(world, i, this._tOff);
           world.setType(tx, ty, nb === TILE.SAND && world.height[i] > SEA_LEVEL + 0.7 ? TILE.GRASS : nb);
           this.age[i] = 0;
         }
@@ -162,9 +189,15 @@ export class FloraSim {
       // spontaneous undergrowth on fertile empty ground (rare)
       if (world.height[i] >= SEA_LEVEL && !BARREN[t] && world.building[i] < 0 && world.fire[i] <= 0) {
         const p = t === TILE.FOREST ? 0.0016 : t === TILE.JUNGLE ? 0.002 : t === TILE.GRASS ? 0.0009 : t === TILE.SWAMP ? 0.0012 : 0;
-        if (p && this.rng() < p * (1 + this.boost[i] * 10)) {
+        const spring = this._season === 0 ? 2.5 : this._season === 3 ? 0.2 : 1;
+        if (p && this._grow !== false && this.rng() < p * spring * this._fert * (1 + this.boost[i] * 10)) {
           const u = pickUndergrowth(t, this.rng());
-          if (u && this.canSeed(u, tx, ty)) world.setFlora(tx, ty, u, 0.04);
+          if (u && this.lawAllows(u) && this.canSeed(u, tx, ty)) world.setFlora(tx, ty, u, 0.04);
+        }
+        // fungi creep through damp woodland and swamp (more in autumn and fungal ages)
+        if (this._fungiSpread && this._grow !== false && (t === TILE.FOREST || t === TILE.SWAMP || t === TILE.JUNGLE) && world.moisture[i] > 0.5) {
+          const pf = 0.0012 * this._fungi * (this._season === 2 ? 2.2 : this._season === 3 ? 0.3 : 1);
+          if (this.rng() < pf && this.canSeed(FLORA.MUSHROOM, tx, ty)) world.setFlora(tx, ty, FLORA.MUSHROOM, 0.05);
         }
       }
       return;
@@ -197,8 +230,8 @@ export class FloraSim {
         if (f === FLORA.DEAD_TREE) world.setFlora(tx, ty, FLORA.STUMP, 1);
         else {
           // stumps rot away; sometimes a sapling takes their place
-          const tree = pickTree(t, world.temperature[i], this.rng());
-          if (tree && this.rng() < 0.35 && suitAt(world, tree, tx, ty, i) >= 0.5) world.setFlora(tx, ty, tree, 0.03);
+          const tree = pickTree(t, world.temperature[i] + this._tOff, this.rng());
+          if (tree && this._grow !== false && this._treesSpread && this.rng() < 0.35 && suitAt(world, tree, tx, ty, i, this._tOff) >= 0.5) world.setFlora(tx, ty, tree, 0.03);
           else world.setFlora(tx, ty, FLORA.NONE);
         }
       }
@@ -206,13 +239,15 @@ export class FloraSim {
     }
 
     // ---- stress from hostile ground ------------------------------------------
-    const suit = suitAt(world, f, tx, ty, i);
+    const suit = suitAt(world, f, tx, ty, i, this._tOff);
     if (this.stress[i] >= 0.999) {
       this.die(i, tx, ty, f, sp);
       return;
     }
     if (suit < 0.15) {
-      this.stress[i] = Math.min(1, this.stress[i] + dt / (sp.stressTime * (1 + suit * 4)));
+      // a hostile age (palms in Rime, pines in Embers) wears plants down slowly
+      const climateOnly = suitAt(world, f, tx, ty, i, 0) >= 0.15;
+      this.stress[i] = Math.min(1, this.stress[i] + dt / (sp.stressTime * (1 + suit * 4) * (climateOnly ? 5 : 1)));
     } else if (this.stress[i] > 0) {
       const heal = suit >= 0.5 ? dt / 25 : dt / 60;
       this.stress[i] = Math.max(0, this.stress[i] - heal * (1 + this.boost[i] * 4));
@@ -220,10 +255,14 @@ export class FloraSim {
     if (this.stress[i] > 0.5) return; // struggling plants neither grow nor spread
 
     // ---- growth -------------------------------------------------------------
+    if (this._grow === false) return; // law: plants neither grow nor spread
     let g = world.floraGrowth[i];
     if (g < 1) {
       const fert = 0.35 + 0.65 * Math.max(suit, f === FLORA.WHEAT ? 0 : 0.3);
-      const rate = (dt / sp.growTime) * fert * (0.85 + this.hash(i) * 0.3) * (1 + this.boost[i] * 5);
+      let mul = this._fert;
+      if (isTreeId(f)) mul *= this._treeSpeed;
+      if (f === FLORA.WHEAT) mul *= this._crops * [1, 1.7, 0.6, 0][this._season]; // sown spring, ripe summer, fallow winter
+      const rate = (dt / sp.growTime) * fert * (0.85 + this.hash(i) * 0.3) * (1 + this.boost[i] * 5) * mul;
       const before = g;
       g = Math.min(1, g + rate);
       world.floraGrowth[i] = g;
@@ -232,6 +271,11 @@ export class FloraSim {
     }
 
     // ---- mature life ------------------------------------------------------------
+    if (f === FLORA.WHEAT && this._season === 3 && this.rng() < 0.3) {
+      world.floraGrowth[i] = 0.12;
+      world.markDirty('flora', tx, ty);
+      return;
+    }
     this.age[i] += dt;
     if (sp.life > 0) {
       const lifespan = sp.life * (0.7 + this.hash(i) * 0.6);
@@ -246,7 +290,62 @@ export class FloraSim {
       this.age[i] = 0;
       world.markDirty('flora', tx, ty);
     }
-    if (sp.spread > 0 && suit >= 0.35 && this.rng() < sp.spread * (dt / SWEEP) * (1 + this.boost[i] * 3)) this.spread(i, tx, ty, f, sp);
+    if (sp.spread > 0 && suit >= 0.35 && this.lawAllows(f)) {
+      const m = (f === FLORA.MUSHROOM ? this._fungi : 1) * this._fert * (this._season === 3 ? 0.25 : 1);
+      if (this.rng() < sp.spread * (dt / SWEEP) * m * (1 + this.boost[i] * 3)) this.spread(i, tx, ty, f, sp);
+    }
+  }
+
+  // Which spreading laws allow a species to appear by itself.
+  lawAllows(f) {
+    if (isTreeId(f)) return this._treesSpread !== false;
+    if (f === FLORA.MUSHROOM) return this._fungiSpread !== false;
+    if (f === FLORA.FLOWERS || f === FLORA.BUSH || f === FLORA.BERRY_BUSH) return this._plantsSpread !== false;
+    return true;
+  }
+
+  // Living biomes: a budgeted handful of tiles per tick drift toward the
+  // biome their climate (plus the age's temperature) calls for, one step at a
+  // time and only along an existing front; dense woodland creeps into moist
+  // grassland. Slow by design: fronts move a tile every few minutes.
+  shiftBiomes(dt, step) {
+    const world = this.game.world;
+    const W = world.w,
+      H = world.h;
+    const tries = Math.max(1, Math.round(600 * step)); // ~40 tiles per 1/15 s tick
+    const NATURAL = this._natural || (this._natural = new Set([TILE.GRASS, TILE.FOREST, TILE.SAVANNA, TILE.DESERT, TILE.TUNDRA, TILE.SNOW, TILE.JUNGLE, TILE.SWAMP]));
+    for (let k = 0; k < tries; k++) {
+      const tx = 1 + Math.floor(this.rng() * (W - 2)),
+        ty = 1 + Math.floor(this.rng() * (H - 2));
+      const i = ty * W + tx;
+      const t = world.type[i];
+      if (world.height[i] < SEA_LEVEL + 0.2 || world.building[i] >= 0 || world.fire[i] > 0) continue;
+      const rockSnow = t === TILE.ROCK;
+      if (!NATURAL.has(t) && !rockSnow) continue;
+      let target = naturalBiome(world, i, this._tOff);
+      if (rockSnow && target !== TILE.SNOW) continue;
+      if (t === TILE.SNOW && target === TILE.ROCK) target = TILE.ROCK;
+      else if (target === TILE.ROCK || target === TILE.SAND) continue;
+      // woodland advance into moist meadow
+      if (t === TILE.GRASS && world.moisture[i] > 0.48 && this.countAround(tx, ty, TILE.FOREST) >= 3 && this.treesAround(tx, ty) >= 3) target = TILE.FOREST;
+      if (target === t) continue;
+      if (target !== TILE.FOREST && this.countAround(tx, ty, target) < 1) continue;
+      if (this.rng() > 0.35) continue;
+      world.setType(tx, ty, target);
+    }
+  }
+  countAround(tx, ty, type) {
+    const world = this.game.world;
+    let c = 0;
+    for (let dy = -1; dy <= 1; dy++)
+      for (let dx = -1; dx <= 1; dx++) if ((dx || dy) && world.type[(ty + dy) * world.w + tx + dx] === type) c++;
+    return c;
+  }
+  treesAround(tx, ty) {
+    const world = this.game.world;
+    let c = 0;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (isTreeId(world.flora[(ty + dy) * world.w + tx + dx])) c++;
+    return c;
   }
 
   die(i, tx, ty, f, sp) {
@@ -288,14 +387,15 @@ export class FloraSim {
     if (t === TILE.FARMLAND && f !== FLORA.WHEAT) return false;
     if (world.height[i] < SEA_LEVEL && !(f === FLORA.REEDS && world.height[i] > SEA_LEVEL - 0.5)) return false;
     if (world.slopeAt(tx, ty) > 2.6 && !isTreeId(f)) return false;
-    if (suitAt(world, f, tx, ty, i) < 0.5) return false;
+    if (suitAt(world, f, tx, ty, i, this._tOff || 0) < 0.5) return false;
     if (f === FLORA.FLOWERS && flowerDrift(tx, ty) < 0.45) return false;
     const group = densityGroup(f);
     if (group === 1) {
-      const cap = TREE_CAP[t] || 1;
+      const cap = Math.max(1, Math.round((TREE_CAP[t] || 1) * (this._density ?? 1)));
       if (this.localCount(tx, ty, 1) >= cap) return false;
     } else if (group) {
-      if (this.localCount(tx, ty, group) >= SPECIES[f].cap) return false;
+      const cap = SPECIES[f].cap * (f === FLORA.MUSHROOM ? Math.min(2.5, this._fungi ?? 1) : 1);
+      if (this.localCount(tx, ty, group) >= cap) return false;
     }
     return true;
   }
@@ -312,10 +412,10 @@ export class FloraSim {
     const j = world.idx(x, y);
     let child = f;
     // trees seed the species that suits the landing spot (natural succession)
-    if (isTreeId(f) && suitAt(world, f, x, y, j) < 0.5) child = pickTree(world.type[j], world.temperature[j], this.rng());
+    if (isTreeId(f) && suitAt(world, f, x, y, j, this._tOff || 0) < 0.5) child = pickTree(world.type[j], world.temperature[j] + (this._tOff || 0), this.rng());
     // forests also scatter undergrowth beneath themselves
     if (isTreeId(f) && this.rng() < 0.3) child = pickUndergrowth(world.type[j], this.rng()) || child;
-    if (child && this.canSeed(child, x, y)) {
+    if (child && this.lawAllows(child) && this.canSeed(child, x, y)) {
       world.setFlora(x, y, child, 0.03);
       this.stress[j] = 0;
       this.age[j] = 0;

@@ -33,6 +33,7 @@ const SKIP_FAR = 72; // tiny props (mushrooms, stones, reeds, stumps) culled
 export const SHADOW_LAYER = 7; // shadow-only proxy meshes
 const FLOWER_CULL = 41; // petals have fully closed (shader fade 28..40)
 const SHADOW_RADIUS = 72; // trees cast shadows only near the camera target
+const LOD3_DIST = 290; // 4-triangle canopy dots beyond (whole-map views of big worlds)
 const POLL_PER_FRAME = 4096;
 const REBUILD_BUDGET_MS = 4;
 
@@ -72,6 +73,20 @@ export class Vegetation {
     this.stateTex.generateMipmaps = false;
     this.stateTex.needsUpdate = true;
     this.uniforms = createSharedUniforms(this.stateTex, world.w, world.h);
+    // Canopy-over-units occupancy (one texel per tile, eased 0..1)
+    this.occData = new Uint8Array(n);
+    this.occTex = new THREE.DataTexture(this.occData, world.w, world.h, THREE.RedFormat, THREE.UnsignedByteType);
+    this.occTex.minFilter = this.occTex.magFilter = THREE.NearestFilter;
+    this.occTex.generateMipmaps = false;
+    this.occTex.needsUpdate = true;
+    this.uniforms.uOcc.value = this.occTex;
+    this.occTarget = new Float32Array(n);
+    this.occCur = new Float32Array(n);
+    this.occFlag = new Uint8Array(n);
+    this.occActive = [];
+    this.occMarked = [];
+    this._occSig = 0;
+    this.occMs = 0;
     const mats = createMaterials(this.uniforms);
     this.mat = mats.flora;
     this.groundMat = mats.ground;
@@ -424,6 +439,9 @@ export class Vegetation {
     const h = c.lod === 0 ? LOD_HYST : -LOD_HYST;
     const h2 = c.lod === 2 ? -LOD_HYST : LOD_HYST;
     c.lod = d < LOD1_DIST + h ? 0 : d < LOD2_DIST + h2 ? 1 : 2;
+    const zoom01 = this.game.view?.zoom01 ?? 0;
+    if (c.lod === 2 && (d > LOD3_DIST + (c.lod3 ? -LOD_HYST : LOD_HYST) || zoom01 > 0.82)) c.lod = 3;
+    c.lod3 = c.lod === 3;
     c.near = d < LOD1_DIST * 0.55 + h ? 1 : 0; // inside the small-plant LOD0 radius
     c.skip = d > SKIP_FAR;
     c.flowerSkip = d > FLOWER_CULL;
@@ -447,7 +465,7 @@ export class Vegetation {
         this.applyLod(c);
         sph.center.copy(c.sphere.center);
         sph.radius = c.sphere.radius + 7; // off-screen trees still cast shadows in
-        if (this._frustum.intersectsSphere(sph)) state = 1 + c.lod + (c.skip ? 3 : 0) + (c.flowerSkip ? 6 : 0) + (c.shadow ? 12 : 0) + (c.near ? 24 : 0);
+        if (this._frustum.intersectsSphere(sph)) state = 1 + c.lod + (c.skip ? 4 : 0) + (c.flowerSkip ? 8 : 0) + (c.shadow ? 16 : 0) + (c.near ? 32 : 0);
       }
       if (state !== c.state) {
         c.state = state;
@@ -457,7 +475,8 @@ export class Vegetation {
     this._compactT -= dt;
     if (!changed && !(this._needCompact && this._compactT <= 0)) return;
     this._needCompact = false;
-    this._compactT = 0.12;
+    // data-driven repacks are rarer when the whole (possibly huge) map is in view
+    this._compactT = this.game.view?.far ? 1.0 : 0.12;
     const B = this.batcher;
     const S = this.shadowBatcher;
     B.begin();
@@ -469,6 +488,14 @@ export class Vegetation {
         const cfg = model.cfg;
         if (c.skip && cfg.far === 'skip') continue;
         if (c.flowerSkip && list.f === FLORA.FLOWERS) continue;
+        if (c.lod === 3) {
+          // whole-map view: one 4-triangle dot batch per species, no shrubs
+          if (cfg.smallLod || !model.dot) continue;
+          B.add(list.f * 8 * 4 + 3, list, { geo: model.dot, material: this.mat.material, depth: null, castShadow: false, label: FLORA_INFO[list.f].name + '-dot' });
+          if (cfg.castShadow && c.shadow)
+            S.add((list.f * 8) * 4 + 3, list, { geo: model.dot, material: this.mat.material, depth: this.mat.depth, castShadow: true, layer: SHADOW_LAYER, label: FLORA_INFO[list.f].name + '-shadow-dot' });
+          continue;
+        }
         let L = Math.min(c.lod, model.variants[list.v].length - 1);
         if (cfg.smallLod && L === 0 && !c.near) L = 1; // shrubs drop detail sooner
         if (L === 1 && cfg.far2 && cfg.farEarly) L = 2;
@@ -490,6 +517,108 @@ export class Vegetation {
     S.end();
   }
 
+  // Canopy fade over units. Humanoids (soldiers, kings, the selected and the
+  // followed unit strongest; big animals faintly) mark their tile, its
+  // neighbours and the tiles toward the camera whose crowns would hide them.
+  // Targets are rebuilt only when a unit changes tile; per-tile values ease
+  // so holes open and close softly. Off entirely at far zoom.
+  updateOcclusion(dt) {
+    const g = this.game;
+    const rig = g.cameraRig;
+    const u = this.uniforms.uOccStrength;
+    const ps = !!g.settings?.powerSaver;
+    const goal = 1 - THREE.MathUtils.smoothstep(rig.cur.dist, ps ? 45 : 70, ps ? 60 : 95);
+    u.value += (goal - u.value) * Math.min(1, dt * 4);
+    if (u.value < 0.002 && goal === 0) {
+      u.value = 0;
+      return;
+    }
+    const world = this.world;
+    const W = world.w,
+      H = world.h;
+    const list = g.units?.list || [];
+    const sel = g.selected?.kind === 'unit' ? g.selected.ref : null;
+    const fol = rig.follow;
+    // camera direction in tile steps (crowns between unit and camera)
+    const cdx = rig.camera.position.x - rig.target.x,
+      cdz = rig.camera.position.z - rig.target.z;
+    const cl = Math.hypot(cdx, cdz) || 1;
+    const sx = Math.round(cdx / cl),
+      sz = Math.round(cdz / cl);
+    let sig = (sx + 2) * 5 + (sz + 2);
+    const n = Math.min(list.length, 1000);
+    for (let k = 0; k < n; k++) {
+      const un = list[k];
+      if (!un.alive || un.data?.hidden || un.data?.inside) continue;
+      const kind = un.def?.kind;
+      if (kind !== 'humanoid' && kind !== 'monster' && !((un.def?.mass ?? 0) >= 3)) continue;
+      const tx = un.x | 0,
+        tz = un.z | 0;
+      const strong = un === sel || un === fol || un.job === 'soldier' || un.job === 'king' || kind === 'monster' ? 2 : kind === 'humanoid' ? 1 : 3;
+      sig = (Math.imul(sig, 31) + tz * W + tx) | 0;
+      sig = (Math.imul(sig, 7) + strong) | 0;
+    }
+    this._occT = (this._occT || 0) - dt;
+    if (sig !== this._occSig && this._occT <= 0) {
+      this._occSig = sig;
+      this._occT = 0.08; // at most ~12 rebuilds/s; easing hides the step
+      const T = this.occTarget;
+      for (const i of this.occMarked) {
+        T[i] = 0;
+        this.occEnqueue(i);
+      }
+      this.occMarked.length = 0;
+      const mark = (x, z, v) => {
+        if (x < 0 || z < 0 || x >= W || z >= H) return;
+        const i = z * W + x;
+        if (!this.world.flora[i]) return;
+        if (T[i] === 0) this.occMarked.push(i);
+        if (v > T[i]) T[i] = v;
+        this.occEnqueue(i);
+      };
+      for (let k = 0; k < n; k++) {
+        const un = list[k];
+        if (!un.alive || un.data?.hidden || un.data?.inside) continue;
+        const kind = un.def?.kind;
+        const big = !(kind === 'humanoid' || kind === 'monster') && (un.def?.mass ?? 0) >= 3;
+        if (kind !== 'humanoid' && kind !== 'monster' && !big) continue;
+        const v = un === sel || un === fol ? 1 : un.job === 'soldier' || un.job === 'king' || kind === 'monster' ? 0.92 : big ? 0.45 : 0.7;
+        const tx = un.x | 0,
+          tz = un.z | 0;
+        mark(tx, tz, v);
+        for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) if (dx || dz) mark(tx + dx, tz + dz, v * 0.62);
+        mark(tx + sx, tz + sz, v);
+        mark(tx + 2 * sx, tz + 2 * sz, v * 0.78);
+        mark(tx + 2 * sx + sz, tz + 2 * sz - sx, v * 0.5);
+        mark(tx + 2 * sx - sz, tz + 2 * sz + sx, v * 0.5);
+      }
+    }
+    // ease toward targets: open quickly, close gently
+    const A = this.occActive;
+    if (!A.length) return;
+    const kO = 1 - Math.exp(-dt * 6),
+      kC = 1 - Math.exp(-dt * 1.8);
+    let w = 0;
+    for (let r = 0; r < A.length; r++) {
+      const i = A[r];
+      const t = this.occTarget[i];
+      let c = this.occCur[i];
+      c += (t - c) * (t > c ? kO : kC);
+      if (Math.abs(t - c) < 0.01) c = t;
+      this.occCur[i] = c;
+      this.occData[i] = Math.round(c * 255);
+      if (c !== t) A[w++] = i;
+      else this.occFlag[i] = 0;
+    }
+    A.length = w;
+    this.occTex.needsUpdate = true;
+  }
+  occEnqueue(i) {
+    if (this.occFlag[i]) return;
+    this.occFlag[i] = 1;
+    this.occActive.push(i);
+  }
+
   // Let shadow-casting lights see the proxy layer (cheap, every ~2 s).
   enableShadowLayer() {
     if (--this._lightScan > 0) return;
@@ -506,7 +635,11 @@ export class Vegetation {
     u.uTime.value = g.time.realTime;
     const wind = g.env.wind || { x: 1, z: 0, strength: 0.3 };
     const wl = Math.hypot(wind.x, wind.z) || 1;
-    u.uWind.value.set(wind.x / wl, wind.z / wl, THREE.MathUtils.clamp(wind.strength ?? 0.3, 0, 1.5), 0);
+    // no sway when the whole map is in view; power saver keeps a simple sway
+    const zoom01 = g.view?.zoom01 ?? 0;
+    const windK = 1 - THREE.MathUtils.smoothstep(zoom01, 0.55, 0.75);
+    u.uWind.value.set(wind.x / wl, wind.z / wl, THREE.MathUtils.clamp(wind.strength ?? 0.3, 0, 1.5) * windK, 0);
+    u.uFlutter.value = g.settings?.powerSaver ? 0 : 1;
     if (g.env.sunDir) u.uSunDir.value.copy(g.env.sunDir);
     if (g.env.sunColor) u.uSunColor.value.copy(g.env.sunColor);
     u.uDaylight.value = g.env.daylight ?? 1;
@@ -537,6 +670,9 @@ export class Vegetation {
     }
     this.compactIfNeeded(dt);
     this.enableShadowLayer();
+    const tOcc = performance.now();
+    this.updateOcclusion(Math.min(dt, 0.1));
+    this.occMs = this.occMs * 0.95 + (performance.now() - tOcc) * 0.05;
     this.ground.update(dt);
     this.emitLeaves(dt);
   }
@@ -609,7 +745,7 @@ export class Vegetation {
   stats() {
     let inst = 0;
     for (const c of this.chunks) inst += c.count;
-    return { floraInstances: inst, floraDrawn: this.batcher.drawn };
+    return { floraInstances: inst, floraDrawn: this.batcher.drawn, canopyFadeMs: +this.occMs.toFixed(3) };
   }
 }
 

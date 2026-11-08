@@ -1,4 +1,5 @@
 import { TILE, FLORA, FLORA_INFO, SEA_LEVEL, DIRS8 } from '../../world/constants.js';
+import { law, fireFactor } from './util.js';
 
 // Lava flow as a height-field fluid. world.height holds the lava SURFACE
 // (ground + molten thickness `vol`), so the rendered terrain shows real 3D
@@ -76,7 +77,7 @@ export class LavaSim {
     const W = w.w;
     const x = i % W,
       y = (i / W) | 0;
-    if (w.type[i] !== TILE.LAVA && this.vol[i] > 0.05) {
+    if (w.type[i] !== TILE.LAVA && this.vol[i] > 0.012) {
       w.type[i] = TILE.LAVA;
       this._markT(i);
     }
@@ -142,6 +143,7 @@ export class LavaSim {
     const rain = wt === 'rain' || wt === 'storm' ? 1 : 0;
     const rng = this.rng;
     const fire = g.disasters?.fire;
+    const flowOn = law(g, "natureLavaFlow", true);
     for (let k = this.count - 1; k >= 0; k--) {
       const i = this.list[k];
       const x = i % W,
@@ -149,7 +151,8 @@ export class LavaSim {
       let v = this.vol[i];
       let h = this.heat[i];
       // ---- flow ----
-      if (v > 0.02 && h > COOL_HEAT) {
+      // World Law natureLavaFlow: when off, lava stays put and simply cools
+      if (flowOn && v > 0.02 && h > COOL_HEAT) {
         const visc = Math.min(1, (h - COOL_HEAT) * 2.6); // hot = runny
         const L = w.height[i];
         let total = 0;
@@ -187,7 +190,7 @@ export class LavaSim {
               if (!this.inList[j]) {
                 this._melt(j);
                 this._add(j);
-              } else if (w.type[j] !== TILE.LAVA && this.vol[j] > 0.05) this._melt(j);
+              } else if (w.type[j] !== TILE.LAVA && this.vol[j] > 0.012) this._melt(j);
               this._markH(j);
             }
           }
@@ -200,7 +203,7 @@ export class LavaSim {
       if (w.isCoastal(x, y)) cool += step * 0.02;
       h -= cool;
       // ---- ignite surroundings ----
-      if (h > 0.45 && fire && rng.next() < step * 0.6 * h) {
+      if (h > 0.45 && fire && rng.next() < step * 0.6 * h * fireFactor(g)) {
         const d = DIRS8[(rng.next() * 8) | 0];
         const nx = x + d[0] + Math.round((rng.next() - 0.5) * 2),
           ny = y + d[1] + Math.round((rng.next() - 0.5) * 2);
@@ -209,7 +212,7 @@ export class LavaSim {
       this.vol[i] = Math.max(0, v);
       this.heat[i] = h;
       // ---- solidify ----
-      if (h <= COOL_HEAT || v <= 0.012) {
+      if (h <= COOL_HEAT || v <= 0.002) {
         const thick = this.vol[i];
         this.vol[i] = 0;
         this.heat[i] = 0;

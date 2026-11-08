@@ -23,6 +23,10 @@ import { UI } from '../ui/UI.js';
 import { BrushCursor } from '../ui/BrushCursor.js';
 import { getPower } from '../powers/registry.js';
 import '../powers/index.js';
+import { loadLaws, saveLaws, defaultLaws, lawDef } from './laws.js';
+import { Ages } from './ages.js';
+import { SEASON, SEASONS } from './time.js';
+import { IS_TOUCH } from './params.js';
 
 export const TICK = 1 / 15; // fixed simulation step (game seconds)
 export const YEAR_SECONDS = 30; // game seconds per in-world year
@@ -47,10 +51,34 @@ export class Game {
       day: 1,
       year: 0,
       realTime: 0, // wall-clock seconds since start (for visual animation)
+      // Season as a continuous value in [0, 4): integer part indexes
+      // SEASONS (Spring, Summer, Autumn, Winter), fraction is progress.
+      // Fixed at mid-summer when the 'weatherSeasons' law is off.
+      season: 0.5,
+      seasonName: 'Spring',
     };
     this.speed = params.speed > 0 ? params.speed : 1;
     this.paused = params.speed === 0;
-    this.settings = { dayNight: params.hour == null, autosave: false };
+    // World Laws (src/core/laws.js): player-editable simulation rules.
+    this.laws = loadLaws();
+    this.settings = {
+      // ?hour= pins the time of day (screenshots) without touching the law.
+      dayNight: this.laws.skyDayNight && params.hour == null,
+      autoWeather: this.laws.skyWeather,
+      autosave: false,
+      // Power saver: caps rendering at 30 fps and asks renderers for lighter
+      // work (read game.settings.powerSaver). Default on for touch devices.
+      powerSaver: params.power ?? IS_TOUCH,
+      fpsCap: 0, // 0 = uncapped (vsync); otherwise frames per second
+    };
+    // Shared view level-of-detail signal, updated every frame before visual
+    // systems run: dist (camera distance), zoom01 (0 closest .. 1 farthest),
+    // far (true when the whole map is roughly in view), worldScale (map
+    // size relative to the 256 baseline). Renderers use it to drop detail
+    // when the player is looking at a large area.
+    this.view = { dist: 100, zoom01: 0.5, far: false, worldScale: params.size / 256 };
+    // World Ages (src/core/ages.js): game.age is always defined.
+    this.ages = new Ages(this);
     // Shared environment state. Written by the atmosphere module, read by all.
     this.env = {
       sunDir: new THREE.Vector3(0.5, 0.8, 0.3).normalize(), // direction TO the sun
@@ -136,6 +164,32 @@ export class Game {
     this.brushSize = Math.max(min, Math.min(max, Math.round(n)));
     this.events.emit('brush', { size: this.brushSize });
   }
+  setLaw(key, value) {
+    const def = lawDef(key);
+    if (!def) return;
+    if (def.type === 'bool') value = !!value;
+    else value = Math.min(def.max, Math.max(def.min, +value || def.default));
+    this.laws[key] = value;
+    if (key === 'skyDayNight') this.settings.dayNight = value && this.params.hour == null;
+    if (key === 'skyWeather') this.settings.autoWeather = value;
+    saveLaws(this.laws);
+    this.events.emit('laws', { key, value });
+  }
+  resetLaws() {
+    Object.assign(this.laws, defaultLaws());
+    this.settings.dayNight = this.laws.skyDayNight;
+    this.settings.autoWeather = this.laws.skyWeather;
+    saveLaws(this.laws);
+    this.events.emit('laws', { key: null, value: null });
+  }
+  setAge(id) {
+    this.ages.begin(id);
+  }
+  setPowerSaver(on) {
+    this.settings.powerSaver = !!on;
+    this.events.emit('powersaver', { on: this.settings.powerSaver });
+  }
+
   selectPower(p) {
     if (typeof p === 'string') p = getPower(p);
     if (this.activePower === p) return;
@@ -177,6 +231,7 @@ export class Game {
     this.params.preset = preset;
     this.rng = new Random(seed);
     generateWorld(this.world, seed, { preset });
+    this.ages.reset();
     for (const s of this.allSystems) s.reset?.();
     this.world.flushDirty();
     this.events.emit('world:regenerated', {});
@@ -189,12 +244,15 @@ export class Game {
     this.time.total += step;
     this.time.year = this.time.total / YEAR_SECONDS;
     if (this.settings.dayNight) {
-      this.time.hour += (step / DAY_SECONDS) * 24;
+      this.time.hour += (step / DAY_SECONDS) * 24 * (this.laws.skyDaySpeed || 1);
       if (this.time.hour >= 24) {
         this.time.hour -= 24;
         this.time.day++;
       }
     }
+    this.time.season = this.laws.weatherSeasons ? (0.5 + this.time.total / SEASON) % 4 : 1.5;
+    this.time.seasonName = SEASONS[Math.floor(this.time.season) % 4];
+    this.ages.tick();
     for (const s of this.simSystems) s.tick?.(step);
   }
 
@@ -228,6 +286,11 @@ export class Game {
     }
     this.input.update(dt);
     this.cameraRig.update(dt);
+    const rig = this.cameraRig;
+    const v = this.view;
+    v.dist = rig.cur.dist;
+    v.zoom01 = Math.min(1, Math.max(0, (rig.cur.dist - rig.minDist) / Math.max(1, rig.maxDist - rig.minDist)));
+    v.far = v.zoom01 > 0.62;
     this.world.flushDirty();
     for (const s of this.visualSystems) s.update?.(dt);
     this.pipeline.render(dt);
@@ -242,6 +305,12 @@ export class Game {
       // screenshots can capture the last presented frame without starving.
       if (window.__hold) {
         last = now;
+        requestAnimationFrame(loop);
+        return;
+      }
+      // Frame cap: power saver renders at 30 fps; fpsCap overrides.
+      const cap = this.settings.fpsCap || (this.settings.powerSaver ? 30 : 0);
+      if (cap > 0 && now - last < 1000 / cap - 2) {
         requestAnimationFrame(loop);
         return;
       }

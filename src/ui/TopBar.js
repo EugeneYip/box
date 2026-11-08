@@ -3,6 +3,7 @@ import { el, fmtNum, safe, titleCase } from './dom.js';
 import { seasonOf } from './Chronicle.js';
 
 const SEASON_TINT = { Spring: '#9fe08a', Summer: '#ffd36a', Autumn: '#f0a050', Winter: '#bfe0ff' };
+const SEASON_GLYPH = { Spring: 'plant-flowers', Summer: 'sun', Autumn: 'clear-flora', Winter: 'weather-snow' };
 
 // The Worldseed emblem: a sprouting seed that is also a tiny globe.
 export function emblemSvg(cls = '', id = 'e') {
@@ -88,6 +89,12 @@ export class TopBar {
         this.navBtn('new-world', 'New world', 'G', () => ui.modals.toggle('newworld')),
         (this.kBtn = this.navBtn('kingdoms', 'Kingdoms', 'K', () => ui.kingdoms.toggle())),
         this.navBtn('chronicle', 'Chronicle', 'J', () => ui.chronicle.toggle()),
+        this.navBtn('trade', 'World laws', 'L', () => ui.modals.toggle('laws')),
+        (() => {
+          const b = this.navBtn('eclipse', 'World ages', 'Y', () => ui.modals.toggle('ages'));
+          b.classList.add('ws-nav__ages');
+          return b;
+        })(),
         this.navBtn('settings', 'Settings', 'O', () => ui.modals.toggle('settings')),
         this.navBtn('help', 'Controls', 'H', () => ui.modals.toggle('help')),
       ),
@@ -125,12 +132,24 @@ export class TopBar {
       this.seg.append(b);
       return b;
     });
+    this.effEl = el('span', { class: 'ws-speed__eff', 'data-tip': 'The simulation cannot keep up: actual speed' });
+    this.cycleBtn = el('button', {
+      class: 'ws-speed__cycle',
+      type: 'button',
+      'aria-label': 'Change speed',
+      onclick: () => {
+        const i = SPEEDS.indexOf(g.speed);
+        g.setSpeed(SPEEDS[(i + 1) % SPEEDS.length]);
+        g.audio?.play?.('ui-click', { volume: 0.45 });
+      },
+    });
+    this._eff = { t: performance.now(), sim: g.time.total, ema: null };
     this.clock = el(
       'div',
       { class: 'ws-clock ws-glass' },
       el('div', { class: 'ws-clock__time', 'data-tip': 'Year, season and time of day' }, this.dialEl, el('span', { class: 'ws-clock__txt' }, this.yearEl, this.dayEl)),
       el('span', { class: 'ws-sep' }),
-      el('div', { class: 'ws-speed' }, this.pauseBtn, this.seg),
+      el('div', { class: 'ws-speed' }, this.pauseBtn, this.seg, this.cycleBtn, this.effEl, (this.leafEl = el('span', { class: 'ws-leaf', 'data-tip': 'Power saver on · 30 fps', html: uiIcon('leaf') }))),
     );
     this.pausedEl = el('div', { class: 'ws-paused' }, el('span', { class: 'ws-paused__dot' }), 'Time is paused', el('kbd', { class: 'ws-key', text: 'Space' }));
     this.centre = el('div', { class: 'ws-top__centre' }, this.clock, this.pausedEl);
@@ -165,6 +184,9 @@ export class TopBar {
     this.refreshWorld();
     this.syncSpeed();
     g.events.on('speed', () => this.syncSpeed());
+    const leaf = () => this.leafEl.classList.toggle('is-shown', !!g.settings?.powerSaver);
+    g.events.on('powersaver', leaf);
+    leaf();
     g.events.on('world:regenerated', () => this.refreshWorld());
     addEventListener('resize', () => this.syncSpeed());
   }
@@ -203,6 +225,9 @@ export class TopBar {
     this.seg.classList.toggle('is-paused', !!g.paused);
     this.seg.style.setProperty('--idx', Math.max(0, idx));
     this.seg.classList.toggle('no-thumb', idx < 0);
+    this.cycleBtn.innerHTML = `${g.speed}<small>×</small>`;
+    this._eff = { t: performance.now(), sim: g.time.total, ema: null };
+    this.effEl.classList.remove('is-shown');
     this.ui.root.classList.toggle('is-paused', !!g.paused);
   }
 
@@ -234,13 +259,33 @@ export class TopBar {
       this._t = 0.25;
       const hh = Math.floor(t.hour);
       const mm = Math.floor((t.hour - hh) * 60);
-      const year = `Year ${Math.floor(t.year) + 1}`;
-      const season = seasonOf(t.year);
-      const day = `${season} · ${String(hh).padStart(2, '0')}:${String(Math.floor(mm / 5) * 5).padStart(2, '0')}`;
-      if (this.yearEl.textContent !== year) this.yearEl.textContent = year;
-      if (this.dayEl.textContent !== day) {
-        this.dayEl.textContent = day;
+      const season = t.seasonName || seasonOf(t.year);
+      const year = `Year ${Math.floor(t.year) + 1} · ${season}`;
+      const day = `${String(hh).padStart(2, '0')}:${String(Math.floor(mm / 5) * 5).padStart(2, '0')}`;
+      if (this._yearTxt !== year) {
+        this._yearTxt = year;
+        this.yearEl.innerHTML = `<span>Year ${Math.floor(t.year) + 1}</span><i class="ws-season" style="--season:${SEASON_TINT[season]}">${uiIcon(SEASON_GLYPH[season] || 'sun')}</i><span class="ws-season__name">${season}</span>`;
         this.dayEl.style.setProperty('--season', SEASON_TINT[season]);
+      }
+      if (this.dayEl.textContent !== day) this.dayEl.textContent = day;
+    }
+    // effective speed: game seconds advanced per real second
+    const E = this._eff;
+    const now = performance.now();
+    if (g.paused || this.ui.root.classList.contains('is-intro')) {
+      E.t = now;
+      E.sim = t.total;
+    } else if (now - E.t > 1000) {
+      const eff = (t.total - E.sim) / ((now - E.t) / 1000);
+      E.ema = E.ema == null ? eff : E.ema * 0.5 + eff * 0.5;
+      E.t = now;
+      E.sim = t.total;
+      const slow = E.ema < g.speed * 0.8;
+      this.effEl.classList.toggle('is-shown', slow);
+      if (slow) {
+        const v = E.ema < 9.95 ? E.ema.toFixed(1).replace(/\.0$/, '') : Math.round(E.ema);
+        this.effEl.textContent = `≈${v}×`;
+        this.effEl.dataset.tip = `Running at about ${v}× — the machine can't keep up with ${g.speed}×`;
       }
     }
     this._statT -= dt;

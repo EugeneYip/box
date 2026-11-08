@@ -1,0 +1,553 @@
+/* ==========================================================================
+   Worldseed UI, round 5: world laws, map sizes, compass, power saver,
+   touch camera pad, tablet + landscape-phone layouts. Loaded last.
+   ========================================================================== */
+
+/* ---- world laws */
+.ws-lawsbox {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ws-laws__intro {
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  color: var(--ws-ink-2);
+}
+.ws-lawtabs {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 2px 0;
+}
+.ws-lawtabs::-webkit-scrollbar {
+  display: none;
+}
+.ws-lawtab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: none;
+  height: 36px;
+  padding: 0 14px 0 10px;
+  border-radius: 18px;
+  font-weight: 600;
+  font-size: 12.5px;
+  color: var(--ws-ink-2);
+  background: rgba(0, 0, 0, 0.25);
+  box-shadow: inset 0 0 0 1px var(--ws-line);
+  transition:
+    color 0.18s,
+    background 0.18s,
+    box-shadow 0.18s;
+}
+.ws-lawtab__ico {
+  font-size: 17px;
+  --tint: #ebc977;
+}
+.ws-lawtab:hover {
+  color: var(--ws-ink);
+}
+.ws-lawtab.is-on {
+  color: #1d1608;
+  background: linear-gradient(180deg, var(--ws-gold-hi), var(--ws-gold));
+  box-shadow: 0 0 14px rgba(235, 201, 119, 0.3);
+}
+.ws-lawtab.is-on .ws-lawtab__ico {
+  --tint: #3b2c0e;
+}
+.ws-lawtab__dot {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ffb36a;
+  box-shadow: 0 0 6px #ffb36a;
+}
+.ws-laws {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 250px;
+}
+.ws-law {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 56px;
+  padding: 10px 12px 10px 14px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.22);
+  box-shadow: inset 0 0 0 1px var(--ws-line);
+  cursor: pointer;
+  transition: box-shadow 0.2s;
+}
+div.ws-law {
+  cursor: default;
+}
+.ws-law.is-changed {
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 179, 106, 0.4),
+    inset 3px 0 0 #ffb36a;
+}
+.ws-law__txt {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.ws-law .ws-row__ctl .ws-range {
+  width: 140px;
+}
+.ws-foot__grow {
+  flex: 1;
+}
+
+/* ---- new world: size cards */
+.ws-sizes {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+}
+.ws-size {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-height: 74px;
+  padding: 8px 4px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.22);
+  box-shadow: inset 0 0 0 1px var(--ws-line);
+  transition:
+    box-shadow 0.2s,
+    transform 0.2s var(--ws-ease);
+}
+.ws-size:hover {
+  transform: translateY(-2px);
+}
+.ws-size.is-on {
+  background: linear-gradient(180deg, rgba(235, 201, 119, 0.14), rgba(235, 201, 119, 0.03));
+  box-shadow:
+    inset 0 0 0 1.5px var(--ws-gold),
+    0 0 18px rgba(235, 201, 119, 0.2);
+}
+.ws-size__box {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+}
+.ws-size__box i {
+  width: calc(28px * var(--s));
+  height: calc(28px * var(--s));
+  border-radius: 4px;
+  background: linear-gradient(135deg, #5ea84a, #2f8fb8);
+  box-shadow: inset 0 0 0 1px rgba(255, 240, 200, 0.3);
+}
+.ws-size b {
+  font: 700 11.5px var(--ws-display);
+  letter-spacing: 0.04em;
+}
+.ws-size small {
+  font-size: 10px;
+  color: var(--ws-ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.ws-size__note {
+  min-height: 16px;
+}
+.ws-rules {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.18);
+  box-shadow: inset 0 0 0 1px var(--ws-line);
+  cursor: default;
+}
+
+/* ---- minimap compass */
+.ws-map__compass {
+  position: absolute;
+  left: 12px;
+  top: 12px;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 50%;
+  background: rgba(10, 12, 19, 0.78);
+  box-shadow:
+    inset 0 0 0 1px rgba(235, 201, 119, 0.45),
+    0 2px 6px rgba(0, 0, 0, 0.4);
+  z-index: 2;
+}
+.ws-map__compass svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  transition: transform 0.12s linear;
+}
+.ws-map__compass .ring {
+  fill: none;
+  stroke: rgba(235, 201, 119, 0.35);
+  stroke-width: 1.2;
+}
+.ws-map__compass .n {
+  fill: #ff7a5a;
+}
+.ws-map__compass .s {
+  fill: rgba(246, 239, 224, 0.75);
+}
+.ws-map__compass .hub {
+  fill: #10131c;
+  stroke: var(--ws-gold-hi);
+  stroke-width: 1;
+}
+
+/* ---- power saver leaf */
+.ws-leaf {
+  display: none;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  font-size: 15px;
+  color: #9fe08a;
+  --tint: #9fe08a;
+  background: rgba(120, 220, 120, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(159, 224, 138, 0.4);
+  pointer-events: auto;
+}
+.ws-leaf.is-shown {
+  display: grid;
+}
+
+/* ---- touch camera pad (touch devices only) */
+.ws-campad {
+  position: absolute;
+  left: var(--ws-edge);
+  bottom: var(--ws-edge);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 5px;
+  border-radius: 16px;
+}
+.ws-campad__btn {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  font-size: 20px;
+  color: var(--ws-ink);
+  --tint: #ebc977;
+  background: rgba(255, 247, 230, 0.05);
+  box-shadow: inset 0 0 0 1px rgba(255, 240, 210, 0.1);
+  touch-action: none;
+}
+.ws-campad__btn:active {
+  background: rgba(235, 201, 119, 0.25);
+  transform: scale(0.94);
+}
+.ws-campad__sep {
+  height: 1px;
+  margin: 2px 6px;
+  background: var(--ws-line);
+}
+.is-intro .ws-campad,
+.is-photo .ws-campad {
+  opacity: 0;
+  pointer-events: none !important;
+}
+
+/* phones (portrait): pad on the right edge, clear of the drawer and sheet */
+@media (max-width: 720px) {
+  .ws-campad {
+    left: auto;
+    right: var(--ws-edge);
+    bottom: auto;
+    top: calc(116px + 56px);
+  }
+  .has-insp .ws-campad,
+  .ws-dock.is-open ~ .ws-campad {
+    opacity: 0;
+    pointer-events: none !important;
+  }
+  .ws-sizes {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .ws-law {
+    flex-wrap: wrap;
+  }
+  .ws-law .ws-row__ctl {
+    width: 100%;
+  }
+  .ws-law .ws-row__ctl .ws-range {
+    flex: 1;
+  }
+  .ws-modal__foot {
+    flex-wrap: wrap;
+  }
+  .ws-modal__foot .ws-foot__grow {
+    display: none;
+  }
+}
+
+/* ---- tablets / narrow desktops: keep the top bar from colliding */
+@media (max-width: 1100px) and (min-width: 721px) {
+  .ws-brand__txt {
+    display: none;
+  }
+  .ws-brand__id {
+    padding: 0 4px;
+  }
+}
+@media (max-width: 1000px) and (min-width: 721px) and (min-height: 501px) {
+  /* clock drops to a second row, centred */
+  .ws-top__centre {
+    top: 62px;
+  }
+  .ws-feed,
+  .ws-side,
+  .ws-insp {
+    top: calc(var(--ws-edge) + 126px);
+  }
+  .ws-side {
+    max-height: calc(100vh - 126px - var(--ws-edge) * 2 - 175px);
+  }
+  /* minimap moves up beside the panels; the dock gets the full width */
+  .ws-mapwrap {
+    top: calc(var(--ws-edge) + 126px);
+    bottom: auto;
+  }
+  .ws-mapwrap .ws-map {
+    transform-origin: 100% 0;
+  }
+  .ws-map__open {
+    top: 0;
+    bottom: auto;
+  }
+  .has-insp .ws-mapwrap {
+    opacity: 0;
+    pointer-events: none;
+  }
+  .ws-dock {
+    max-width: calc(100vw - 2 * var(--ws-edge) - 2 * 70px);
+  }
+  .ws-insp {
+    max-height: calc(100vh - 126px - var(--ws-edge) * 2 - 200px);
+  }
+}
+
+/* ---- short landscape (phones on their side): compact bar, drawer dock */
+@media (max-height: 500px) and (min-width: 721px) {
+  :root {
+    --ws-edge: 8px;
+    --ws-map: 132px;
+    --ws-tile: 50px;
+    --ws-ico: 32px;
+  }
+  .ws-brand,
+  .ws-clock,
+  .ws-stats {
+    height: 46px;
+  }
+  .ws-brand__txt,
+  .ws-stat__k,
+  .ws-paused {
+    display: none;
+  }
+  .ws-stat {
+    padding: 0 6px;
+  }
+  .ws-feed {
+    top: calc(var(--ws-edge) + 54px);
+    width: 260px;
+  }
+  .ws-feed__item:nth-child(n + 3) {
+    display: none;
+  }
+  .ws-side {
+    top: calc(var(--ws-edge) + 54px);
+    max-height: calc(100vh - 54px - var(--ws-edge) * 2 - 8px);
+  }
+  .ws-insp {
+    top: calc(var(--ws-edge) + 54px);
+    max-height: calc(100vh - 54px - var(--ws-edge) * 2 - 8px);
+  }
+  .has-insp .ws-mapwrap,
+  .has-insp .ws-dock {
+    opacity: 0;
+    pointer-events: none;
+  }
+  .has-insp .ws-dock * {
+    pointer-events: none !important;
+  }
+  /* dock as a bottom drawer, centred */
+  .ws-dock {
+    width: min(560px, calc(100vw - 2 * (var(--ws-map) + 24px)));
+    max-width: none;
+    align-items: stretch;
+  }
+  .ws-dock__panel {
+    padding: 0 8px;
+  }
+  .ws-dock__handle {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    height: 52px;
+    padding: 0 4px 0 2px;
+    text-align: left;
+  }
+  .ws-dock__handle-ico {
+    display: grid;
+    place-items: center;
+    width: 38px;
+    height: 38px;
+    border-radius: 11px;
+    font-size: 27px;
+    background: radial-gradient(circle at 50% 25%, color-mix(in srgb, var(--tint) 32%, transparent), rgba(0, 0, 0, 0.25) 85%);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tint) 55%, transparent);
+  }
+  .ws-dock__handle-text {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .ws-dock__handle-text b {
+    font: 700 13.5px var(--ws-display);
+    letter-spacing: 0.06em;
+  }
+  .ws-dock__handle-text small {
+    font-size: 10.5px;
+    color: var(--ws-ink-3);
+  }
+  .ws-dock__handle-chev {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    font-size: 18px;
+    color: var(--ws-gold-hi);
+    background: var(--ws-well-2);
+    transition: transform 0.3s var(--ws-ease);
+  }
+  .ws-dock.is-open .ws-dock__handle-chev {
+    transform: rotate(180deg);
+  }
+  .ws-dock:not(.is-open) .ws-tabrow,
+  .ws-dock:not(.is-open) .ws-powers {
+    display: none;
+  }
+  .ws-dock__min {
+    display: none;
+  }
+  .ws-tabrow .ws-tabs {
+    justify-content: flex-start;
+  }
+  .ws-tab:not(.is-active) .ws-tab__label {
+    display: inline;
+  }
+  .ws-powers {
+    flex-direction: column;
+    align-items: stretch;
+    max-height: calc(100vh - 54px - 52px - 70px - var(--ws-edge) * 2);
+    overflow-y: auto;
+    gap: 8px;
+    padding-bottom: 8px;
+  }
+  .ws-pgroup {
+    align-items: flex-start;
+    padding: 0;
+  }
+  .ws-pgroup + .ws-pgroup {
+    border-left: 0;
+    border-top: 1px solid var(--ws-line);
+    padding-top: 8px;
+  }
+  .ws-pgroup__grid {
+    justify-content: start;
+  }
+  .ws-pw__key {
+    display: none;
+  }
+  .ws-brush__keys {
+    display: none !important;
+  }
+  .ws-campad {
+    display: grid;
+    grid-template-columns: repeat(2, 44px);
+    bottom: var(--ws-edge);
+    left: var(--ws-edge);
+  }
+  .ws-campad__sep {
+    display: none;
+  }
+  .ws-modal {
+    max-height: calc(100vh - 16px);
+  }
+  .ws-modals {
+    padding: 8px;
+  }
+}
+
+/* brand plate: the emblem opens New World, so the duplicate nav button goes;
+   narrower nav buttons keep the plate clear of the centred clock at 1280 */
+.ws-nav .ws-iconbtn:first-child {
+  display: none;
+}
+@media (max-width: 1440px) and (min-width: 721px) {
+  .ws-nav .ws-iconbtn {
+    width: 31px;
+  }
+}
+
+/* modals never exceed the viewport (wide tab rows must scroll, not stretch) */
+.ws-modals {
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: center;
+}
+.ws-modal {
+  min-width: 0;
+  max-width: calc(100vw - 20px);
+}
+.ws-modal__body,
+.ws-lawsbox,
+.ws-lawtabs,
+.ws-laws {
+  min-width: 0;
+}
+
+/* ~1100-1240 px: a slimmer speed control keeps the clock clear of the stats */
+@media (max-width: 1240px) and (min-width: 721px) {
+  .ws-seg {
+    grid-template-columns: repeat(5, 33px);
+  }
+  .ws-seg__thumb {
+    width: 27px;
+    transform: translateX(calc(var(--idx) * 33px));
+  }
+  .ws-clock__txt {
+    min-width: 84px;
+  }
+}
+
+/* phones: an expanded minimap pushes the camera pad and the feed aside */
+@media (max-width: 720px) {
+  .ws-mapwrap:not(.is-collapsed) ~ .ws-campad {
+    top: calc(116px + 176px);
+  }
+  .map-open .ws-feed {
+    right: calc(var(--ws-edge) + 172px);
+  }
+}

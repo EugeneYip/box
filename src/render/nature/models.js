@@ -1268,6 +1268,43 @@ function buildFar(src, cfg, seed) {
   return b.build({ bendScale: 0.8, height: hi.y });
 }
 
+// LOD3: a 4-triangle coloured canopy "dot" (square pyramid) per species for
+// whole-map views of large worlds.
+function buildDot(src, cfg, seed) {
+  const P2 = src.attributes.position,
+    I2 = src.attributes.aInfo,
+    C2 = src.attributes.color;
+  const lo = V(Infinity, Infinity, Infinity),
+    hi = V(-Infinity, -Infinity, -Infinity);
+  const acc = [0, 0, 0];
+  let n = 0;
+  let anyLeaf = false;
+  for (let k = 0; k < P2.count; k++) if (I2.getZ(k) > 0.5) anyLeaf = true;
+  for (let k = 0; k < P2.count; k++) {
+    if (anyLeaf && I2.getZ(k) <= 0.5) continue;
+    const p = V(P2.getX(k), P2.getY(k), P2.getZ(k));
+    lo.min(p);
+    hi.max(p);
+    if (Math.abs(I2.getW(k) - MAT.SNOW) > 0.5) {
+      acc[0] += C2.getX(k), acc[1] += C2.getY(k), acc[2] += C2.getZ(k);
+      n++;
+    }
+  }
+  if (!n) return null;
+  const c = mul3(acc, 1 / n);
+  const b = new MeshBuilder(seed);
+  const ctr = lo.clone().add(hi).multiplyScalar(0.5);
+  const rx = (hi.x - lo.x) * 0.5,
+    rz = (hi.z - lo.z) * 0.5;
+  const apex = V(ctr.x, hi.y, ctr.z);
+  const y0 = Math.max(0.02, lo.y + (hi.y - lo.y) * 0.25);
+  const ring = [V(ctr.x + rx, y0, ctr.z), V(ctr.x, y0, ctr.z + rz), V(ctr.x - rx, y0, ctr.z), V(ctr.x, y0, ctr.z - rz)];
+  const top = mul3(c, 1.18),
+    base = mul3(c, 0.72);
+  for (let k = 0; k < 4; k++) b.tri(apex, ring[(k + 1) % 4], ring[k], [top, base, base], { leaf: anyLeaf ? 1 : 0, flutter: 0, mat: anyLeaf ? MAT.LEAF : MAT.ROCK, pivot: ctr, single: true, bend: 0 });
+  return b.build({ bendScale: 0 });
+}
+
 // Build every model: returns KINDS-indexed { variants: [[lod0, lod1|null, lod2?], ...], cfg }
 export function buildAllModels() {
   const out = [];
@@ -1295,7 +1332,12 @@ export function buildAllModels() {
         for (const lods of variants) lods[2] = far;
       }
     }
-    out[k.id] = { cfg: k, variants };
+    let dot = null;
+    if (k.far === 'lod' && !k.smallLod) {
+      dot = buildDot(variants[0][1] || variants[0][0], k, k.id * 53 + 11);
+      if (dot) dot.userData.kind = k.id;
+    }
+    out[k.id] = { cfg: k, variants, dot };
   }
   out.totalVerts = verts;
   return out;

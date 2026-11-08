@@ -132,6 +132,10 @@ export class Atmosphere {
       ao: { radius: 2.5, intensity: 2.5, falloff: 1 },
     };
 
+    this.ageState = { storms: 1, lightning: 1, temp: 0, night: 0, tintK: 0, tint: new THREE.Color(1, 1, 1) };
+    this._ageTint = new THREE.Color(1, 1, 1);
+    this._ageSnap = true; // the first frame starts in the current age
+    this.weather.atm = this;
     this._windAngle = this.rng() * Math.PI * 2;
     this._boltT = 0.6;
     this._extFlash = 0;
@@ -188,6 +192,13 @@ export class Atmosphere {
     }
     const bolt = this.lightning.spawn(x, y, z, { intensity: opts.intensity ?? 1, top });
     this._boltFlash(bolt, opts.sound !== false);
+    if (opts.dust !== false) {
+      try {
+        this.game.fx?.emit?.('dust', { x, y, z }, { scale: 1.4 });
+      } catch (e) {
+        /* effects are optional */
+      }
+    }
     return bolt;
   }
 
@@ -204,6 +215,30 @@ export class Atmosphere {
         volume: THREE.MathUtils.clamp(1.15 - d / 320, 0.25, 1),
       });
     }
+  }
+
+  // ---- ages ---------------------------------------------------------------
+  // Eased copy of game.age.mods: every change glides in over a few seconds.
+  updateAge(dt) {
+    const S = this.ageState;
+    const mods = this.game.age?.mods;
+    const tgt = {
+      storms: mods?.storms ?? 1,
+      lightning: mods?.lightning ?? 1,
+      temp: mods?.temperature ?? 0,
+      night: mods?.night ?? 0,
+      tintK: mods?.skyTint != null ? 1 : 0,
+    };
+    if (mods?.skyTint != null) this._ageTint.set(mods.skyTint);
+    const k = this._ageSnap ? 1 : 1 - Math.exp(-(dt || 0) * 0.7);
+    this._ageSnap = false;
+    for (const key of ['storms', 'lightning', 'temp', 'night', 'tintK']) S[key] += (tgt[key] - S[key]) * k;
+    if (tgt.tintK) S.tint.lerp(this._ageTint, S.tintK > 0.02 ? k : 1);
+  }
+
+  // Tooling helper: jump straight to the current age (no easing).
+  snapAge() {
+    this._ageSnap = true;
   }
 
   // ---- loop -----------------------------------------------------------------
@@ -243,19 +278,25 @@ export class Atmosphere {
 
     // ---- sky model -----------------------------------------------------------
     const M = this.model;
-    M.update(hour, mix);
+    this.updateAge(dt);
+    M.update(hour, mix, this.ageState, game.time.season ?? 1.5);
 
     // ---- storms & lightning ---------------------------------------------------
     if (!paused && mix.storm > 0.3) {
       this._boltT -= dt;
       if (this._boltT <= 0) {
-        this._boltT = (0.5 + this.rng() * 1.9) / Math.max(0.4, mix.storm);
+        this._boltT = (0.5 + this.rng() * 1.9) / Math.max(0.4, mix.storm) / Math.max(0.3, this.ageState.lightning);
         const span = 20 + rig.cur.dist * 0.75;
         const x = THREE.MathUtils.clamp(rig.target.x + (this.rng() - 0.5) * span * 1.6, 2, game.world.w - 2);
         const z = THREE.MathUtils.clamp(rig.target.z + (this.rng() - 0.65) * span * 1.4, 2, game.world.h - 2);
         // some bolts stay inside the clouds (sheet lightning)
         if (this.rng() < 0.2) this._myFlash = Math.max(this._myFlash, 0.45 + this.rng() * 0.3);
-        else this.strike(x, z, { intensity: 0.8 + this.rng() * 0.4 });
+        else {
+          this.strike(x, z, { intensity: 0.8 + this.rng() * 0.4 });
+          // Occasionally a bolt lands with ground effects (ignition follows
+          // the calamityLightning law inside the disasters module).
+          if (this.rng() < 0.15) game.disasters?.onStrike?.(x, z);
+        }
       }
     }
     for (const th of this._thunder) th.t -= dt;
@@ -294,7 +335,12 @@ export class Atmosphere {
     this.sky.uniforms.uFlash.value = flash;
     this.sky.uniforms.uCloudOffset.value.set(this.clouds.drift.x / 900, this.clouds.drift.y / 900);
     this.clouds.update(dt, M, mix, env);
-    this.precip.update(dt, time, mix, env, M);
+    // precipitation falls as snow over cold ground (latitude, season, age)
+    const tw = game.world;
+    const ti = tw.idx(tw.clampTx(Math.floor(rig.target.x)), tw.clampTy(Math.floor(rig.target.z)));
+    const seasonT = [0, 0.1, -0.06, -0.3][Math.floor(game.time.season ?? 1.5) % 4];
+    this.localTemp = (tw.temperature[ti] ?? 0.5) + this.ageState.temp + seasonT;
+    this.precip.update(dt, time, mix, env, M, this.localTemp);
 
     // ---- env -------------------------------------------------------------------
     env.sunDir.copy(M.sunDir);
@@ -329,7 +375,12 @@ export class Atmosphere {
 
   // Offscreen work right before the frame is drawn.
   preRender(renderer, dt) {
-    const want = this.game.pipeline?.tier?.shadowMap || 2048;
+    // shadow resolution by tier, power saver and zoom (with hysteresis)
+    let want = this.game.pipeline?.tier?.shadowMap || 2048;
+    const z = this.game.view?.zoom01 ?? 0.5;
+    this._shadowFar = z > (this._shadowFar ? 0.56 : 0.64);
+    if (this.game.settings?.powerSaver) want = Math.min(want, 1024);
+    else if (this._shadowFar) want = Math.max(1024, want / 2);
     const sh = this.key.shadow;
     if (sh.mapSize.x !== want) {
       sh.mapSize.set(want, want);
@@ -369,10 +420,21 @@ export class Atmosphere {
     const now = [lp.x, lp.y, lp.z, tp.x, tp.y, tp.z, c.right - c.left, c.top - c.bottom, c.near, c.far];
     let changed = !this._shadowInit;
     for (let i = 0; i < 10; i++) {
-      if (Math.abs(now[i] - sig[i]) > 1e-4) changed = true;
+      if (Math.abs(now[i] - sig[i]) > 1e-3) changed = true;
       sig[i] = now[i];
     }
     this._shadowInit = true;
+    // zoomed far out the shadow window may trail the camera by two frames:
+    // re-render at most every third frame while moving
+    if (changed) this._shadowPending = true;
+    if (this._shadowPending && ((this.game.view?.zoom01 ?? 0) > 0.62 || this.game.settings?.powerSaver)) {
+      this._shadowSkip = (this._shadowSkip || 0) + 1;
+      changed = this._shadowSkip >= 3;
+    } else changed = !!this._shadowPending;
+    if (changed) {
+      this._shadowPending = false;
+      this._shadowSkip = 0;
+    }
     if (this.shadowCache && !this.shadowCache.disabled) this.shadowCache.begin(renderer, changed);
     else {
       renderer.shadowMap.autoUpdate = true;
@@ -419,7 +481,7 @@ export class Atmosphere {
     pts[n++].copy(rig.target);
 
     const sd = this._shadowDir || (this._shadowDir = lightDir.clone().normalize());
-    if (sd.angleTo(lightDir) > 0.014) sd.copy(lightDir).normalize(); // ~0.8 deg steps
+    if (sd.angleTo(lightDir) > 0.021) sd.copy(lightDir).normalize(); // ~1.2 deg steps
     const lz = this._lz.copy(sd);
     const lx = this._lx;
     if (Math.abs(lz.y) > 0.999) lx.set(1, 0, 0);
@@ -502,11 +564,11 @@ export class Atmosphere {
     P.vignetteColor.setRGB(0.28, 0.22, 0.34).lerp(this._c1 || (this._c1 = new THREE.Color(0.1, 0.14, 0.3)), M.night * 0.6);
 
     // haze starts around the focus distance; thicker in rain / fog
-    const hazeDensity = 0.0026 + 0.0025 * W.overcast + 0.012 * W.fog + 0.0015 * W.rain + 0.0012 * W.snow;
-    P.haze.set(dist * 0.9 + 8, hazeDensity, 0.022, 1);
+    const hazeDensity = 0.0026 + 0.001 * W.overcast + 0.012 * W.fog + 0.0008 * W.rain + 0.0012 * W.snow + 0.0022 * Math.max(0, this.ageState.temp) * 2;
+    P.haze.set(dist * 0.9 + 8, hazeDensity / Math.max(1, game.view?.worldScale || 1), 0.022, 1);
     // ground mist: dawn wisps, thick in fog weather, a little in snow / rain
     const mistAmt = Math.max(W.fog, this.weather.morningMist);
-    const mistDensity = 0.004 + 0.05 * mistAmt * mistAmt + 0.006 * W.rain + 0.006 * W.snow;
+    const mistDensity = 0.004 + 0.05 * mistAmt * mistAmt + 0.002 * W.rain + 0.006 * W.snow;
     const mistH = 1.5 + 4.5 * W.fog;
     P.mist.set(mistDensity, 1 / mistH, 0.2, 0.55 + 0.4 * W.fog);
     P.mistColor.copy(M.mistColor);
@@ -514,6 +576,9 @@ export class Atmosphere {
     if (cs) {
       P.cloudTex = cs.texture;
     }
+    P.heightTex = game.terrain?.heightTexture || null;
+    P.worldW = game.world.w;
+    P.worldH = game.world.h;
     P.fogColor.copy(M.horizon).lerp(M.groundHaze, 0.4);
 
     // high threshold by day (only true highlights glow), lower at night for lamps

@@ -21,6 +21,8 @@ uniform vec3 uCamPos;
 uniform vec4 uHaze;   // start, density, height falloff, max
 uniform vec4 uMist;   // density, falloff (1/H), base height, max
 uniform vec3 uMistColor;
+uniform sampler2D tHeight;  // world heights (game.terrain.heightTexture)
+uniform vec3 uWorld;       // world w, h, has-height-texture
 uniform float uWet;
 uniform vec3 uLightDir;
 uniform vec3 uLightCol;
@@ -82,6 +84,16 @@ void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor)
   // out completely into the horizon glow.
   float down = smoothstep(0.06, 0.4, -dir.y);
   hz = min(hz, mix(uHaze.w, 0.35, down));
+  // much less haze over open water seen from above: the sea keeps its own
+  // colour (and the sun-path glitter) instead of turning into a flat veil
+  float water = smoothstep(0.6, 0.05, wp.y);
+  if (uWorld.z > 0.5) {
+    vec2 huv = wp.xz / uWorld.xy;
+    bool inside = huv.x > 0.0 && huv.y > 0.0 && huv.x < 1.0 && huv.y < 1.0;
+    float th = inside ? texture2D(tHeight, huv).r : -4.0;
+    water = smoothstep(0.25, -0.35, th);
+  }
+  hz *= mix(1.0, 0.35, water * down);
   vec3 hc = mix(hazeColor(dir), mix(uHorizon, uZenith, 0.55), smoothstep(0.08, 0.5, -dir.y));
   col = mix(col, hc, hz);
 
@@ -102,6 +114,8 @@ export class AtmosphereEffect extends Effect {
         ['uHaze', u(new THREE.Vector4(300, 0.004, 0.02, 1))],
         ['uMist', u(new THREE.Vector4(0, 0.4, 0, 0.9))],
         ['uMistColor', u(new THREE.Color(0.8, 0.85, 0.9))],
+        ['tHeight', u(null)],
+        ['uWorld', u(new THREE.Vector3(256, 256, 0))],
         ['uWet', u(0)],
         ['uLightDir', u(new THREE.Vector3(0, 1, 0))],
         ['uLightCol', u(new THREE.Color())],
@@ -130,6 +144,8 @@ export class AtmosphereEffect extends Effect {
       U.get('uMist').value.copy(params.mist);
       U.get('uMistColor').value.copy(params.mistColor);
       U.get('uWet').value = params.wet || 0;
+      U.get('tHeight').value = params.heightTex || null;
+      U.get('uWorld').value.set(params.worldW || 256, params.worldH || 256, params.heightTex ? 1 : 0);
       U.get('uLightDir').value.copy(params.lightDir);
       U.get('uLightCol').value.copy(params.lightColor);
     }

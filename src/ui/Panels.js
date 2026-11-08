@@ -2,6 +2,41 @@ import { uiIcon } from './icons.js';
 import { el, esc, safe, hexCss, fmtNum, clamp } from './dom.js';
 import { PRESET_NAMES } from './TopBar.js';
 import { SLOT_LABELS } from './Toolbar.js';
+import { LAWS, LAW_CATEGORIES, lawDef } from '../core/laws.js';
+import { agesPanel } from './Ages.js';
+import { techPanel } from './TechPanel.js';
+import { eraNames, traitDef } from './depth.js';
+import { WORLD_SIZES } from '../core/params.js';
+
+const SIZE_NOTES = {
+  128: 'Quick and intimate. Lightest on phones.',
+  192: 'Cosy. The default on phones and tablets.',
+  256: 'The classic balance of land and sea.',
+  384: 'Room for many rival realms.',
+  512: 'Epic scale. Best on desktop.',
+};
+const LAW_ICON = {
+  harmony: 'alliance',
+  diplomacy: 'make-peace',
+  civilization: 'found-kingdom',
+  creatures: 'spawn-human',
+  beasts: 'spawn-wolf',
+  spawning: 'sparkle',
+  trees: 'plant-tree',
+  plants: 'plant-flowers',
+  fungi: 'plant-mushroom',
+  biomes: 'paint-grass',
+  weather: 'weather-rain',
+  calamities: 'fire',
+  ages: 'eclipse',
+  others: 'settings',
+  peoples: 'banner',
+  life: 'paw',
+  nature: 'tree',
+  sky: 'sun',
+  calamity: 'disaster',
+};
+const fmtLaw = (def, v) => (def.type === 'bool' ? (v ? 'On' : 'Off') : `×${(+v).toFixed(2).replace(/0$/, '').replace(/\.0$/, '')}`);
 
 // ---------------------------------------------------------------- shared bits
 export const PRESETS = [
@@ -92,15 +127,24 @@ export class Modals {
     else this.open(name);
   }
 
-  open(name) {
-    const build = { settings: () => this.settings(), newworld: () => this.newWorld(), help: () => this.help() }[name];
+  open(name, opts = {}) {
+    this.lawBack = name === 'laws' ? opts.back || null : this.lawBack;
+    if (name === 'tech') this.techKingdom = opts.kingdom ?? this.techKingdom;
+    const build = {
+      settings: () => this.settings(),
+      newworld: () => this.newWorld(),
+      help: () => this.help(),
+      laws: () => this.laws(),
+      ages: () => agesPanel(this.ui),
+      tech: () => techPanel(this.ui, this.techKingdom),
+    }[name];
     if (!build) return;
     if (this.card) this.card.remove();
     this.current = name;
     const { title, icon, body, foot, wide } = build();
     const card = el(
       'div',
-      { class: `ws-modal ws-glass ws-orn${wide ? ' is-wide' : ''}`, role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
+      { class: `ws-modal ws-glass ws-orn${wide ? ' is-wide' : ''}${wide === 'xl' ? ' is-xl' : ''}`, role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
       el(
         'header',
         { class: 'ws-modal__head' },
@@ -166,18 +210,33 @@ export class Modals {
           ui.savePrefs({ blur: v });
           ui.applyPrefs();
         }),
+        toggleRow('Power saver', 'Smoother battery life: 30 fps, lighter effects', !!g.settings?.powerSaver, (v) => {
+          safe(() => g.setPowerSaver?.(v), null, 'setPowerSaver');
+          ui.savePrefs({ powerSaver: v });
+        }),
+        segRow(
+          'Frame rate cap',
+          'Limit how often the world is drawn',
+          [
+            { id: 0, name: 'Off' },
+            { id: 30, name: '30 fps' },
+            { id: 60, name: '60 fps' },
+          ],
+          g.settings?.fpsCap || 0,
+          (v) => {
+            if (g.settings) g.settings.fpsCap = v;
+            ui.savePrefs({ fpsCap: v });
+          },
+        ),
       ),
       section(
         'World',
-        toggleRow('Day & night cycle', 'Let the sun rise and set', !!g.settings?.dayNight, (v) => {
-          if (g.settings) g.settings.dayNight = v;
-          ui.savePrefs({ dayNight: v });
-        }),
-        toggleRow('Living weather', 'Rain, storms and snow come and go on their own', g.settings?.autoWeather !== false, (v) => {
-          if (g.settings) g.settings.autoWeather = v;
-          safe(() => g.atmosphere?.setAutoWeather?.(v), null, 'setAutoWeather');
-          ui.savePrefs({ autoWeather: v });
-        }),
+        el(
+          'div',
+          { class: 'ws-row' },
+          el('span', { class: 'ws-row__txt' }, el('span', { class: 'ws-row__label', text: 'World laws' }), el('span', { class: 'ws-row__desc', text: `Wars, wildlife, disasters, day length… ${this.lawsChanged() ? `(${this.lawsChanged()} changed)` : ''}` })),
+          el('button', { class: 'ws-btn ws-btn--sm', type: 'button', onclick: () => this.open('laws', { back: 'settings' }), html: `${uiIcon('trade')}<span>Open</span>` }),
+        ),
       ),
       section(
         'Sound',
@@ -206,7 +265,7 @@ export class Modals {
       ),
       section(
         'Interface',
-        toggleRow('Show minimap', null, prefs.minimap !== false, (v) => {
+        toggleRow('Show minimap', 'Overview (M) frames the whole world instead', prefs.minimap === true, (v) => {
           ui.savePrefs({ minimap: v });
           ui.applyPrefs();
         }),
@@ -222,7 +281,8 @@ export class Modals {
   // ---- new world
   newWorld() {
     const g = this.game;
-    const state = { seed: String(g.params.seed), preset: g.params.preset || 'continent', civs: clamp(g.params.civs ?? 3, 0, 8), size: g.world.w };
+    const state = this.nwState && this.reopenNW ? this.nwState : { seed: String(g.params.seed), preset: g.params.preset || 'continent', civs: clamp(g.params.civs ?? 3, 0, 8), size: g.world.w };
+    this.reopenNW = false;
     const seedIn = el('input', { class: 'ws-input', type: 'text', inputmode: 'numeric', value: state.seed, 'aria-label': 'World seed', autofocus: true, spellcheck: 'false' });
     seedIn.addEventListener('input', () => (state.seed = seedIn.value));
     seedIn.addEventListener('keydown', (e) => e.key === 'Enter' && create());
@@ -269,17 +329,27 @@ export class Modals {
       civOut.textContent = civ.value;
       paint();
     });
-    const sizes = segRow(
-      'World size',
-      null,
-      [
-        { id: 128, name: 'Small · 128' },
-        { id: 192, name: 'Medium · 192' },
-        { id: 256, name: 'Large · 256' },
-      ],
-      [128, 192, 256].includes(state.size) ? state.size : 256,
-      (v) => (state.size = v),
-    );
+    const sizeNote = el('span', { class: 'ws-row__desc ws-size__note' });
+    const sizeCards = el('div', { class: 'ws-sizes', role: 'radiogroup', 'aria-label': 'World size' });
+    const pickSize = (v) => {
+      state.size = v;
+      sizeCards.querySelectorAll('.ws-size').forEach((b) => b.classList.toggle('is-on', +b.dataset.size === v));
+      sizeNote.textContent = SIZE_NOTES[v] || `${v} × ${v} tiles`;
+    };
+    for (const z of WORLD_SIZES) {
+      sizeCards.append(
+        el(
+          'button',
+          { class: 'ws-size', type: 'button', role: 'radio', 'data-size': z.size, onclick: () => pickSize(z.size) },
+          el('span', { class: 'ws-size__box', style: `--s:${(0.42 + 0.58 * (z.size / 512)).toFixed(3)}` }, el('i')),
+          el('b', { text: z.name }),
+          el('small', { text: `${z.size}²` }),
+        ),
+      );
+    }
+    pickSize(WORLD_SIZES.some((z) => z.size === state.size) ? state.size : 256);
+    const sizes = el('div', { class: 'ws-field' }, el('label', { class: 'ws-field__label', text: 'World size' }), sizeCards, sizeNote);
+    this.nwState = state;
     const create = () => {
       const n = parseInt(String(state.seed).replace(/[^0-9]/g, ''), 10);
       const seed = Number.isFinite(n) ? n : hashSeed(state.seed);
@@ -310,6 +380,12 @@ export class Modals {
         el('div', { class: 'ws-field' }, el('label', { class: 'ws-field__label', text: 'Starting villages' }), el('div', { class: 'ws-row__ctl' }, civ, civOut)),
       ),
       sizes,
+      el(
+        'div',
+        { class: 'ws-row ws-rules' },
+        el('span', { class: 'ws-row__txt' }, el('span', { class: 'ws-row__label', text: 'World rules' }), el('span', { class: 'ws-row__desc', text: this.lawsChanged() ? `${this.lawsChanged()} laws differ from the defaults` : 'All laws at their defaults' })),
+        el('button', { class: 'ws-btn ws-btn--sm', type: 'button', onclick: () => this.open('laws', { back: 'newworld' }), html: `${uiIcon('trade')}<span>World rules…</span>` }),
+      ),
       el('p', { class: 'ws-note', html: `${uiIcon('info')}<span>The current world will be replaced. Seeds are shareable — the same seed always grows the same world.</span>` }),
     );
     const foot = [
@@ -317,6 +393,145 @@ export class Modals {
       el('button', { class: 'ws-btn ws-btn--gold', type: 'button', onclick: create }, el('span', { html: uiIcon('new-world') }), el('span', { text: 'Seed this world' })),
     ];
     return { title: 'New World', icon: 'new-world', body, foot, wide: true };
+  }
+
+  lawsChanged() {
+    const L = this.game.laws || {};
+    return LAWS.filter((l) => L[l.key] != null && L[l.key] !== l.default).length;
+  }
+
+  // ---- world laws: search, category rail, sectioned list (built once, filtered in place)
+  laws() {
+    const g = this.game;
+    const back = this.lawBack;
+    const ctl = new Map();
+    const rows = [];
+    const sections = new Map();
+    const railBtns = new Map();
+    const rail = el('nav', { class: 'ws-lawrail', role: 'tablist', 'aria-label': 'Law categories' });
+    const list = el('div', { class: 'ws-lawlist' });
+    const none = el('div', { class: 'ws-empty ws-lawnone', hidden: true }, el('div', { class: 'ws-empty__art', html: uiIcon('inspect') }), el('div', { class: 'ws-empty__title', text: 'No laws match' }), el('p', { class: 'ws-empty__txt', text: 'Try another word, such as “fire”, “war” or “snow”.' }));
+    const isChanged = (def) => (g.laws?.[def.key] ?? def.default) !== def.default;
+    const changedIn = (cid) => LAWS.filter((l) => l.category === cid && isChanged(l)).length;
+    const countEl = el('span', { class: 'ws-lawsx__count' });
+    const syncCounts = () => {
+      for (const [cid, b] of railBtns) b.classList.toggle('has-changes', changedIn(cid) > 0);
+      const n = LAWS.filter(isChanged).length;
+      countEl.textContent = n ? `${n} changed` : 'All at defaults';
+      countEl.classList.toggle('is-changed', n > 0);
+    };
+    const scrollToCat = (cid) => {
+      const sec = sections.get(cid);
+      if (!sec) return;
+      list.scrollTo({ top: sec.offsetTop - list.offsetTop - 4, behavior: 'smooth' });
+      setActive(cid);
+    };
+    const setActive = (cid) => {
+      this.lawCat = cid;
+      for (const [id, b] of railBtns) {
+        b.classList.toggle('is-on', id === cid);
+        if (id === cid) b.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+      }
+    };
+    for (const c of LAW_CATEGORIES) {
+      const defs = LAWS.filter((l) => l.category === c.id);
+      if (!defs.length) continue;
+      const b = el('button', { class: 'ws-lawrail__btn', type: 'button', role: 'tab', onclick: () => scrollToCat(c.id) }, el('span', { class: 'ws-lawrail__ico', html: uiIcon(LAW_ICON[c.id] || 'settings') }), el('span', { class: 'ws-lawrail__name', text: c.name }), el('i', { class: 'ws-lawrail__dot' }));
+      railBtns.set(c.id, b);
+      rail.append(b);
+      const sec = el('section', { class: 'ws-lawsec', 'data-cat': c.id }, el('header', { class: 'ws-lawsec__head' }, el('span', { class: 'ws-lawsec__ico', html: uiIcon(LAW_ICON[c.id] || 'settings') }), el('div', null, el('h4', { class: 'ws-lawsec__name', text: c.name }), c.blurb ? el('p', { class: 'ws-lawsec__blurb', text: c.blurb }) : null)));
+      sections.set(c.id, sec);
+      for (const def of defs) {
+        const v = g.laws?.[def.key] ?? def.default;
+        let control;
+        if (def.type === 'bool') {
+          const input = el('input', { type: 'checkbox', class: 'ws-switch__in', role: 'switch', 'aria-label': def.label });
+          input.checked = !!v;
+          input.addEventListener('change', () => g.setLaw?.(def.key, input.checked));
+          control = el('span', { class: 'ws-switch' }, input, el('span', { class: 'ws-switch__track' }, el('span', { class: 'ws-switch__knob' })));
+          ctl.set(def.key, (nv) => (input.checked = !!nv));
+        } else {
+          const out = el('output', { class: 'ws-row__val', text: fmtLaw(def, v) });
+          const r = el('input', { type: 'range', class: 'ws-range', min: def.min, max: def.max, step: def.step || 0.25, value: v, 'aria-label': def.label });
+          const paint = () => r.style.setProperty('--p', ((r.value - def.min) / (def.max - def.min)) * 100 + '%');
+          paint();
+          r.addEventListener('input', () => {
+            paint();
+            out.textContent = fmtLaw(def, +r.value);
+            g.setLaw?.(def.key, +r.value);
+          });
+          control = el('span', { class: 'ws-row__ctl' }, r, out);
+          ctl.set(def.key, (nv) => {
+            r.value = nv;
+            paint();
+            out.textContent = fmtLaw(def, nv);
+          });
+        }
+        const row = el(def.type === 'bool' ? 'label' : 'div', { class: 'ws-law' + (isChanged(def) ? ' is-changed' : ''), 'data-key': def.key }, el('span', { class: 'ws-law__txt' }, el('span', { class: 'ws-row__label', text: def.label }), el('span', { class: 'ws-row__desc', text: def.description })), control);
+        rows.push({ row, def, sec, hay: `${def.label} ${def.description} ${c.name} ${def.key}`.toLowerCase() });
+        sec.append(row);
+      }
+      list.append(sec);
+    }
+    list.append(none);
+    // scroll spy keeps the rail in step with the list
+    list.addEventListener(
+      'scroll',
+      () => {
+        if (this._lawSearch) return;
+        let cur = null;
+        for (const [cid, sec] of sections) if (!sec.hidden && sec.offsetTop - list.offsetTop <= list.scrollTop + 24) cur = cid;
+        if (cur && cur !== this.lawCat) setActive(cur);
+      },
+      { passive: true },
+    );
+    const search = el('input', { class: 'ws-input ws-lawsx__search', type: 'search', placeholder: 'Search laws…', 'aria-label': 'Search laws', spellcheck: 'false' });
+    search.addEventListener('input', () => {
+      const q = search.value.trim().toLowerCase();
+      this._lawSearch = q;
+      for (const r of rows) r.row.hidden = !!q && !q.split(/\s+/).every((w) => r.hay.includes(w));
+      let any = false;
+      for (const [cid, sec] of sections) {
+        const vis = [...sec.querySelectorAll('.ws-law')].some((x) => !x.hidden);
+        sec.hidden = !vis;
+        railBtns.get(cid)?.classList.toggle('is-empty', !vis);
+        any = any || vis;
+      }
+      none.hidden = any;
+      list.scrollTop = 0;
+    });
+    setActive(this.lawCat && sections.has(this.lawCat) ? this.lawCat : LAW_CATEGORIES[0].id);
+    syncCounts();
+    requestAnimationFrame(() => this.lawCat && sections.get(this.lawCat) && (list.scrollTop = sections.get(this.lawCat).offsetTop - list.offsetTop - 4));
+    const off = g.events.on('laws', ({ key } = {}) => {
+      if (!this.card || this.current !== 'laws') return off?.();
+      const keys = key == null ? LAWS.map((l) => l.key) : [key];
+      for (const k of keys) {
+        const def = lawDef(k);
+        if (!def) continue;
+        ctl.get(k)?.(g.laws?.[k] ?? def.default);
+        list.querySelector(`[data-key="${k}"]`)?.classList.toggle('is-changed', isChanged(def));
+      }
+      syncCounts();
+    });
+    const body = el(
+      'div',
+      { class: 'ws-lawsx' },
+      el('div', { class: 'ws-lawsx__top' }, el('label', { class: 'ws-lawsx__searchbox' }, el('span', { html: uiIcon('inspect') }), search), countEl),
+      el('div', { class: 'ws-lawsx__main' }, rail, list),
+    );
+    const foot = [
+      back ? el('button', { class: 'ws-btn ws-btn--ghost', type: 'button', html: `${uiIcon('chev-left')}<span>Back</span>`, onclick: () => ((this.reopenNW = back === 'newworld'), this.open(back)) }) : null,
+      el('span', { class: 'ws-foot__grow' }),
+      el('button', {
+        class: 'ws-btn ws-btn--ghost',
+        type: 'button',
+        text: 'Restore defaults',
+        onclick: () => g.resetLaws?.(),
+      }),
+      el('button', { class: 'ws-btn ws-btn--gold', type: 'button', text: 'Done', onclick: () => (back ? ((this.reopenNW = back === 'newworld'), this.open(back)) : this.close()) }),
+    ];
+    return { title: 'World Laws', icon: 'trade', body, foot, wide: 'xl' };
   }
 
   // ---- help
@@ -333,8 +548,8 @@ export class Modals {
       ]],
       ['Powers', [
         [k('Click'), 'Cast / hold to paint'],
-        [k(SLOT_LABELS[0], SLOT_LABELS[1], SLOT_LABELS[2], '…'), 'Powers 1–10 in the open tab'],
-        [k('Shift') + '+' + k(SLOT_LABELS[0], '…'), 'Powers 11–20'],
+        [k(SLOT_LABELS[0], SLOT_LABELS[1], SLOT_LABELS[2], '…'), 'Powers in the open tab'],
+        [k('Shift') + '+' + k(SLOT_LABELS[0], '…'), 'More powers in the tab'],
         [k('Tab'), 'Next power category'],
         [k('[', ']'), 'Brush size'],
         [k('I'), 'Inspect tool'],
@@ -347,6 +562,9 @@ export class Modals {
       ['Panels', [
         [k('K'), 'Kingdoms'],
         [k('J'), 'Chronicle'],
+        [k('L'), 'World laws'],
+        [k('Y'), 'World ages'],
+        [k('M'), 'Overview of the whole world'],
         [k('`'), 'Fold power tray'],
         [k('G'), 'New world'],
         [k('O'), 'Settings'],
@@ -503,6 +721,19 @@ export class KingdomsPanel {
       el: el('button', { class: 'ws-king', type: 'button', onclick: () => this.focusKingdom(x.id) }),
       crest: el('span', { class: 'ws-king__crest' }, el('span')),
       name: el('span', { class: 'ws-king__name' }),
+      era: el('span', { class: 'ws-era ws-era--sm' }),
+      tech: el('span', {
+        class: 'ws-king__tech',
+        role: 'button',
+        tabindex: '0',
+        'aria-label': 'Technology',
+        'data-tip': 'Technology',
+        html: uiIcon('chronicle'),
+        onclick: (e) => {
+          e.stopPropagation();
+          this.ui.modals.open('tech', { kingdom: x.id });
+        },
+      }),
       ruler: el('b'),
       capital: el('b'),
       bar: el('i'),
@@ -515,7 +746,7 @@ export class KingdomsPanel {
       el(
         'span',
         { class: 'ws-king__body' },
-        R.name,
+        el('span', { class: 'ws-king__line' }, R.name, R.era, R.tech),
         el('span', { class: 'ws-king__court' }, el('span', null, el('small', { text: 'Ruler' }), R.ruler), el('span', null, el('small', { text: 'Capital' }), R.capital)),
         el('span', { class: 'ws-king__stats' }, S.pop.box, S.villages.box, S.army.box, S.land.box),
         el('span', { class: 'ws-king__bar' }, R.bar),
@@ -551,6 +782,12 @@ export class KingdomsPanel {
         R.el.style.setProperty('--k', x.color);
       }
       set(R.name, 'name', x.name);
+      const era = Math.max(0, Math.min(3, safe(() => this.game.civ?.kingdomEra?.(x.id), null) ?? x.k.era ?? 0));
+      if (R.sig.era !== era) {
+        R.sig.era = era;
+        R.era.className = `ws-era ws-era--sm is-era${era}`;
+        R.era.textContent = eraNames()[era] || '';
+      }
       set(R.crest.firstChild, 'crest', (x.name || '?').replace(/^(the|kingdom of)\s+/i, '')[0] || '?');
       set(R.ruler, 'ruler', x.ruler);
       set(R.capital, 'capital', x.capital);

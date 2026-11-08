@@ -1,5 +1,5 @@
 import { TILE, FLORA, FLORA_INFO, SEA_LEVEL, MIN_HEIGHT } from '../../world/constants.js';
-import { hurt, play, rand, smooth } from './util.js';
+import { hurt, play, rand, smooth, honourSurvivors, yearLabel } from './util.js';
 import { hash2 } from '../../core/Random.js';
 import { DF, RAMP, TRAIL, dustPuff } from '../../render/fx/Effects.js';
 
@@ -138,7 +138,11 @@ export class Earthquake {
     }
     // ---- damage ----
     hurt(g, this.x, this.z, this.r, 2.2 * vt * env, 16 * vt * env, 'earthquake');
-    return this.t < this.duration;
+    if (this.t >= this.duration) {
+      honourSurvivors(g, this.x, this.z, this.r, `Survived the great earthquake, ${yearLabel(g)}`, 12);
+      return false;
+    }
+    return true;
   }
 
   _topple(tx, ty, fl) {
@@ -171,7 +175,7 @@ export class Earthquake {
       // hard-edged near-black void hugging the carved trench (lifted so it
       // sits above the chasm floor and walls rather than being buried)
       const rot = Math.atan2(dz, dx);
-      fx.decal({ frame: DF.CRACKLINE, x: mx, z: mz, size: L * 5.2, rot, life: 170, color: 0x000000, alpha: 1, lift: 0.4, fadeIn: 0.0005, fadeOut: 0.9, grain: 0 });
+      fx.decal({ frame: DF.CRACKLINE, x: mx, z: mz, size: L * 4.4, rot, life: 170, color: 0x000000, alpha: 1, overlay: true, lift: 0.1, fadeIn: 0.0005, fadeOut: 0.9, grain: 0 });
       fx.decal({ frame: DF.CRACKLINE, x: mx, z: mz, size: L * 3.4, rot, life: 160, color: 0x020101, alpha: 1, lift: 0.2, fadeIn: 0.0005, fadeOut: 0.88, grain: 0 });
       // sunlit lips: a faint warm highlight just outside both edges
       for (const sd of [1, -1])

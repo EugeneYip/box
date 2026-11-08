@@ -1,3 +1,5 @@
+import { law, ageMod, yearLabel } from './util.js';
+
 // Plague: a contagious sickness among humanoids. Infection state lives in
 // unit.data.plague = {t, severity, prevColor}. Infected units lose health
 // over time, may recover, and pass the disease to humanoids nearby. While
@@ -43,6 +45,11 @@ export class PlagueSim {
     u.data = u.data || {};
     u.data.plague = { t: 0, severity, prevColor: u.color ?? null };
     u.color = SICK_TINT;
+    try {
+      this.game.units.addStatus?.(u, "sick", 600);
+    } catch (e) {
+      /* Life API optional */
+    }
     this.infected.add(u);
     this.total++;
     return true;
@@ -54,6 +61,14 @@ export class PlagueSim {
     u.color = p.prevColor;
     delete u.data.plague;
     u.data.plagueImmune = this.game.time.total + 120;
+    try {
+      this.game.units.removeStatus?.(u, "sick");
+      this.game.units.log?.(u, `Recovered from the plague, ${yearLabel(this.game)}`);
+      this.game.units.addXP?.(u, 10);
+      if (Math.random() < 0.3) this.game.units.addTrait?.(u, "plague-touched");
+    } catch (e) {
+      /* Life API optional */
+    }
     this.infected.delete(u);
     try {
       this.game.fx?.emit('heal', { x: u.x, z: u.z }, { scale: 0.7 });
@@ -97,11 +112,12 @@ export class PlagueSim {
         this.cure(u);
         continue;
       }
-      // contagion
-      if (rng.next() < step * 1.4) {
+      // contagion (World Law calamityPlague: the sick still suffer when off,
+      // but the disease no longer passes between people)
+      if (law(g, 'calamityPlague', true) && rng.next() < step * 1.4) {
         const near = g.units.query(u.x, u.z, SPREAD_RADIUS);
         for (const o of near) {
-          if (o !== u && this.canCatch(o) && rng.next() < 0.35) this.infect(o, Math.max(0.6, p.severity * (0.85 + rng.next() * 0.3)));
+          if (o !== u && this.canCatch(o) && rng.next() < Math.min(0.95, 0.35 * ageMod(g, "plague", 1))) this.infect(o, Math.max(0.6, p.severity * (0.85 + rng.next() * 0.3)));
         }
       }
     }
