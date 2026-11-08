@@ -1686,9 +1686,9 @@ export function proxyGeometry(style) {
 const ERA_DRESS = {
   vale: [
     { tile: 0xcf9f52, wall: 0xe9dcc0, stone: 0x8e7656, stone2: 0x6e5a42, glass: 0x2a2f36 },
-    {},
-    { tile: 0x515b67, stone: 0x8f8b85, stone2: 0x6f6b66, wall2: 0xc9c2b6 },
-    { tile: 0x5b6e86, wall: 0xece6da, wall2: 0xd9d2c4, stone: 0xbab3a6, stone2: 0x9a9387, glass: 0x3f6e95, timber: 0x4a3a2c },
+    { thatch: 0xb0563c, thatch2: 0x8f4530 },
+    { tile: 0x515b67, thatch: 0x515b67, thatch2: 0x3f4852, stone: 0x8f8b85, stone2: 0x6f6b66, wall2: 0xc9c2b6 },
+    { tile: 0x5b6e86, thatch: 0x5b6e86, thatch2: 0x4a5a6e, wall: 0xece6da, wall2: 0xd9d2c4, stone: 0xbab3a6, stone2: 0x9a9387, glass: 0x3f6e95, timber: 0x4a3a2c },
   ],
   dune: [
     { wall: 0xc99c6a, wall2: 0xd8b282, tile: 0xcfa676, stone: 0xb98a5a },
@@ -1698,9 +1698,9 @@ const ERA_DRESS = {
   ],
   frost: [
     { tile: 0x6c7e40, stone: 0x857f74 },
-    { tile: 0x7a5a3c, stone: 0x928d84 },
-    {},
-    { tile: 0x5c9a86, wall: 0x7a5236, stone: 0xb4afa6, stone2: 0x948f86, glass: 0x3f6e95 },
+    { tile: 0x7a5a3c, thatch: 0x7a5a3c, thatch2: 0x5e4428, stone: 0x928d84 },
+    { thatch: 0x4b5562, thatch2: 0x3c4450 },
+    { tile: 0x5c9a86, thatch: 0x5c9a86, thatch2: 0x4a7e6c, wall: 0x7a5236, stone: 0xb4afa6, stone2: 0x948f86, glass: 0x3f6e95 },
   ],
   mire: [
     {},
@@ -1709,7 +1709,7 @@ const ERA_DRESS = {
     { thatch: 0x9e3c2c, thatch2: 0x7e2c20, tile: 0x9e3c2c, wall: 0xdcc494, glass: 0x3f6e95 },
   ],
 };
-const ROOF_OF = { 0xcf9f52: 1, 0x515b67: 3, 0x5b6e86: 3, 0xcfa676: 0, 0x2f9a96: 0, 0xd9a830: 0, 0x6c7e40: 4, 0x7a5a3c: 2, 0x5c9a86: 3, 0xb59a52: 1, 0x7a5a38: 2, 0x9e3c2c: 2, 0x7e2c20: 2, 0x5e4428: 2 };
+const ROOF_OF = { 0x8f4530: 2, 0x3f4852: 3, 0x4a5a6e: 3, 0x3c4450: 3, 0x4a7e6c: 3, 0xcf9f52: 1, 0x515b67: 3, 0x5b6e86: 3, 0xcfa676: 0, 0x2f9a96: 0, 0xd9a830: 0, 0x6c7e40: 4, 0x7a5a3c: 2, 0x5c9a86: 3, 0xb59a52: 1, 0x7a5a38: 2, 0x9e3c2c: 2, 0x7e2c20: 2, 0x5e4428: 2 };
 for (const [c, k] of Object.entries(ROOF_OF)) if (k) ROOF_KIND.set(+c, k);
 const _eraPal = new Map();
 export function eraPalette(style, era) {
