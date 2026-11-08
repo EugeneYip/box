@@ -33,14 +33,15 @@ import { culture, TRAIT_INFO } from './culture.js';
 // about 1,000 units and 300-400 buildings on a 256 map).
 // Budgets scale with map area (a = w*h / 256^2): a Huge 512 map tops out near
 // 900 people and 900 buildings.
-const VILLAGE_MAX_POP = 64;
+const VILLAGE_MAX_POP = 64; // legacy reference size (a town)
+const TIER_POP = [40, 70, 115]; // village, town, city
 function budgets(w, h) {
   const a = (w * h) / (256 * 256);
   return {
     area: a,
     humans: Math.round(Math.min(900, 850 * Math.pow(a, 0.04))),
     buildings: Math.round(Math.min(920, 300 * Math.pow(a, 0.8))),
-    villages: Math.round(26 * Math.pow(a, 0.55)),
+    villages: Math.round(36 * Math.pow(a, 0.55)),
     startVillages: Math.max(1, Math.round(3 * Math.pow(a, 0.7))),
   };
 }
@@ -422,7 +423,7 @@ export class Civilization {
     const k = this.kingdoms[v.kingdom];
     if (!k || now - (k.lastExpand || -999) < YEAR * (2.5 + crowd * 6)) return false;
     const aliveVillages = this.villages.filter((o) => o.alive).length;
-    if (aliveVillages >= this.budget.villages || k.villages.length >= 8 || crowd >= 0.98) return false;
+    if (aliveVillages >= this.budget.villages || k.villages.length >= 14) return false;
     if (this.expeditions.some((e) => e.from === v.id)) return false;
     v.lastExpand = now;
     const site = this._findExpansionSite(v);
@@ -450,9 +451,10 @@ export class Civilization {
       }
     }
     if (best) return best;
-    for (let k = 0; k < 70; k++) {
+    const reach = this._crowd() > 0.6 ? 70 : 44; // a full realm looks further afield
+    for (let k = 0; k < 90; k++) {
       const a = rng.float(0, Math.PI * 2),
-        r = rng.float(20, 44);
+        r = rng.float(20, reach);
       const tx = Math.floor(v.cx + Math.cos(a) * r),
         ty = Math.floor(v.cz + Math.sin(a) * r);
       if (!w.inBounds(tx, ty)) continue;
@@ -465,7 +467,8 @@ export class Civilization {
       if (tooClose) continue;
       const s = this._scoreSite(tx, ty, { kingdom: v.kingdom, minSpace: 95 });
       if (s < 0) continue;
-      const sc = s - Math.abs(r - 27) * 2 + rng.next() * 10;
+      // unclaimed land is the prize
+      const sc = s - Math.abs(r - 27) * 1.2 + (w.owner[i] < 0 ? 40 : 0) + rng.next() * 10;
       if (sc > bs) {
         bs = sc;
         best = { tx, ty };
@@ -773,7 +776,7 @@ export class Civilization {
     const humans = g.units.count?.('human') ?? 0;
     const crowd = this._crowd();
     const popCrowd = this._popCrowd || 0;
-    if (pop < v.housing && pop < VILLAGE_MAX_POP && v.food > pop * 1.2 + 8 && !v.starving && humans < this.budget.humans && this.rng.chance(Math.min(1, (1 - popCrowd * 0.85) * this.law('civGrowth', 1)))) {
+    if (pop < v.housing && pop < this._popCap(v) && v.food > pop * 1.2 + 8 && !v.starving && humans < this._humanCap() && this.rng.chance(Math.min(1, (1 - popCrowd * 0.85) * this.law('civGrowth', 1)))) {
       let father = false;
       for (const u of v.members) if (u.sex === 'm' && u.age >= 18 && u.age < 60) father = true;
       if (father) {
@@ -805,7 +808,7 @@ export class Civilization {
     }
 
     // newcomers drawn to prosperous settlements
-    if (v.housing - pop >= 3 && v.food > pop * 2 + 20 && pop < 40 && now - v.lastImmigrant > 18 && humans < this.budget.humans * 0.8 && this.rng.chance(0.035 * dt * (1 - popCrowd) * this.law('civGrowth', 1))) {
+    if (v.housing - pop >= 3 && v.food > pop * 2 + 20 && pop < 40 && now - v.lastImmigrant > 18 && humans < this._humanCap() * 0.8 && this.rng.chance(0.035 * dt * (1 - popCrowd) * this.law('civGrowth', 1))) {
       v.lastImmigrant = now;
       const a = this.rng.float(0, Math.PI * 2);
       const r = v.radius + 3;
@@ -848,6 +851,39 @@ export class Civilization {
         this._bio(mover, `Left ${v.name} for ${best.name}`);
       }
     }
+    // forestry: when the woods around a settlement thin out, groves are replanted
+    if (now - (v.groveCheck || 0) > 12) {
+      v.groveCheck = now;
+      let mature = 0,
+        young = 0;
+      w.forEachInRadius(v.cx, v.cz, Math.min(28, v.buildRadius + 14), (x, y, d, i) => {
+        const f = w.flora[i];
+        if (f && FLORA_INFO[f].isTree) {
+          if (w.floraGrowth[i] >= 0.6) mature++;
+          else young++;
+        }
+      });
+      v.trees = mature;
+      const want = 40 + v.tier * 15;
+      if (mature + young < want) {
+        const species = { vale: [FLORA.OAK, FLORA.BIRCH], dune: [FLORA.PALM, FLORA.ACACIA], frost: [FLORA.PINE, FLORA.PINE], mire: [FLORA.JUNGLE_TREE, FLORA.SWAMP_TREE] }[baseCulture(v.culture)] || [FLORA.OAK];
+        if (v.groveAngle == null) v.groveAngle = this.rng.float(0, Math.PI * 2);
+        let planted = 0;
+        for (let k = 0; k < 30 && planted < 4; k++) {
+          const a = v.groveAngle + this.rng.float(-1.3, 1.3);
+          const r = v.buildRadius + 2 + this.rng.next() * 9;
+          const x = Math.floor(v.cx + Math.cos(a) * r),
+            y = Math.floor(v.cz + Math.sin(a) * r);
+          if (!w.inBounds(x, y)) continue;
+          const i = y * w.w + x;
+          if (w.flora[i] || this.use[i] !== USE.FREE || w.height[i] < SEA_LEVEL + 0.1) continue;
+          const t = w.type[i];
+          if (t === TILE.ROAD || t === TILE.FARMLAND || t === TILE.ROCK || t === TILE.SAND || t === TILE.DESERT) continue;
+          w.setFlora(x, y, species[(this.rng.next() * species.length) | 0], 0.2);
+          planted++;
+        }
+      }
+    }
     // shrinking towns let empty houses crumble rather than stand as ghost towns
     if (v.housing > pop * 1.6 + 8 && now - (v.lastDecay || 0) > 12) {
       v.lastDecay = now;
@@ -867,7 +903,7 @@ export class Civilization {
     const houses = v.houses || 0;
     const prevTier = v.tier;
     if (v.tier === 0 && pop >= 22 && houses >= 5) v.tier = 1;
-    else if (v.tier === 1 && pop >= 42 && houses >= 9 && v.hall?.level >= 2) v.tier = 2;
+    else if (v.tier === 1 && pop >= 50 && houses >= 9 && v.hall?.level >= 2) v.tier = 2;
     else if (v.tier > 0 && pop < 8 + v.tier * 8) v.tier--;
     if (v.tier > prevTier) {
       const k = this.kingdoms[v.kingdom];
@@ -883,7 +919,8 @@ export class Civilization {
     let blds = 0;
     for (const b of this.buildings) if (b.alive) blds += BUILDING_TYPES[b.type].wall ? 0.35 : 1;
     this._crowdT = t;
-    this._popCrowd = clamp((humans - this.budget.humans * 0.55) / (this.budget.humans * 0.45), 0, 1);
+    const hc = this._humanCap();
+    this._popCrowd = clamp((humans - hc * 0.55) / (hc * 0.45), 0, 1);
     this._crowdV = clamp(Math.max(this._popCrowd, (blds - this.budget.buildings * 0.5) / (this.budget.buildings * 0.5)), 0, 1);
     return this._crowdV;
   }
@@ -1112,6 +1149,16 @@ export class Civilization {
     }
   }
 
+  // Population ceiling of a settlement: its tier, lifted by a fertile age.
+  _popCap(v) {
+    const m = this.game.age?.mods || {};
+    return Math.round(TIER_POP[v.tier || 0] * Math.max(1, Math.min(1.35, (m.birth ?? 1) * 0.6 + (m.fertility ?? 1) * 0.4)));
+  }
+  _humanCap() {
+    const b = this.game.age?.mods?.birth ?? 1;
+    return Math.round(this.budget.humans * Math.max(0.85, Math.min(1.25, b)));
+  }
+
   _homeFor(v, u) {
     const own = this._bById.get(u.data.civ?.home);
     if (own && own.alive && own.type === 'house') return own;
@@ -1335,7 +1382,7 @@ export class Civilization {
     if (room() && pop >= 8 && count('granary') === 0 && v.food > v.foodCap * 0.7) build('granary');
     const crowded = this._crowd();
     // 1 housing (bounded: big towns upgrade instead of sprawling)
-    if (room() && v.housing - pop < 2 + v.tier && v.housing < VILLAGE_MAX_POP + 6 && (crowded < 0.97 || v.tier >= 1)) {
+    if (room() && v.housing - pop < 2 + v.tier && v.housing < this._popCap(v) + 6 && (crowded < 0.97 || v.tier >= 1)) {
       const cand = v.tier >= 1 ? v.buildings.find((b) => b.alive && b.type === 'house' && !b.constructing && !b.upgrading && b.level < Math.min(3, v.tier + 1)) : null;
       if (!(cand && this.rng.chance(0.5) && upgrade(cand))) build('house');
     }
@@ -1383,13 +1430,14 @@ export class Civilization {
     }
     // only royal capitals raise curtain walls (each section is a building)
     const canWall = this.law('civWalls') && (this.hasTech(v.kingdom, 'fortification') || (this.kingdoms[v.kingdom]?.era ?? 0) >= 2 || this.law('civTechnology') === false);
-    if (canWall && v.tier >= 2 && !v.wallsPlanned && v.stone >= 60 && (this.kingdoms[v.kingdom]?.capital === v.id || this.hasCultureTrait(v.culture, 'Masons')) && crowded < 0.9) this._planWalls(v);
+    const isCap = this.kingdoms[v.kingdom]?.capital === v.id;
+    if (canWall && !v.wallsPlanned && v.stone >= 50 && ((isCap && v.tier >= 1) || (v.tier >= 2 && (this.hasCultureTrait(v.culture, 'Masons') || crowded < 0.7)))) this._planWalls(v);
     if (v.wallsPlanned && v.wallPlan?.length && this.law('civWalls')) this._advanceWalls(v, 3);
     if (room() && v.tier >= 1) {
       const cand = v.buildings.find((b) => b.alive && b.type === 'house' && !b.constructing && !b.upgrading && b.level < Math.min(3, v.tier + 1));
       if (cand && v.wood > 40) upgrade(cand);
     }
-    if (room() && v.wood > 45 && v.housing < pop + 6 && v.housing < VILLAGE_MAX_POP && crowded < 0.6) build('house');
+    if (room() && v.wood > 45 && v.housing < pop + 6 && v.housing < this._popCap(v) && crowded < 0.6) build('house');
     // keep a few streets in hand for growth
     if (actions === 0 && this.rng.chance(0.25)) this._extendRoads(v);
     this._tryExpand(v);

@@ -335,6 +335,7 @@ export const brain = {
     if (u.carry && u.carry.type !== 'wood') return this._deposit(u, v, d);
     if (u.carry && u.carry.amount >= CARRY_MAX.wood) return this._deposit(u, v, d);
     let t = d.task;
+    if ((!t || t.kind !== 'chop') && v.wood > (v.woodCap || 200) * 0.6 && (v.trees ?? 99) < 60) return this._forester(u, v, d, dt);
     if (!t || t.kind !== 'chop') {
       const i = this._findTree(u, v);
       if (i < 0) {
@@ -382,7 +383,7 @@ export const brain = {
     const wood = Math.max(4, FLORA_INFO[f].wood || 2) * 2;
     w.setFlora(tx, ty, FLORA.STUMP, 1);
     this._fx('debris', t.cx, t.cz, 0.4);
-    if (this.rng.chance(0.45)) this.regrow.push({ i: t.i, at: this.game.time.total + YEAR * (2 + this.rng.next() * 3), flora: f });
+    if (this.rng.chance(0.85)) this.regrow.push({ i: t.i, at: this.game.time.total + YEAR * (1.5 + this.rng.next() * 2), flora: f });
     else this.regrow.push({ i: t.i, at: this.game.time.total + YEAR * 3, flora: FLORA.NONE });
     this._release(t.i, u);
     u.carry = { type: 'wood', amount: Math.min(CARRY_MAX.wood, (u.carry?.amount || 0) + Math.round(wood * (this.game.units.traitMod?.(u, 'work') ?? 1))) };
@@ -457,6 +458,8 @@ export const brain = {
       const i = y * W + x;
       const f = w.flora[i];
       if (!f || !FLORA_INFO[f].isTree || w.floraGrowth[i] < 0.6) continue;
+      // keep shade trees in town and never strip the last of a grove
+      if (dd < 5 && this.use[i] !== USE.PLOT) continue;
       if (this._reservedByOther(i, u)) continue;
       if (this.use[i] === USE.PLOT && u.job !== 'farmer') continue;
       if (w.owner[i] >= 0 && w.owner[i] !== v.kingdom) continue;
