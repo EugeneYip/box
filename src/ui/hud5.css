@@ -461,3 +461,38 @@
 .ws-chips--sizes .ws-chip {
   padding: 0 12px;
 }
+
+/* phones: the brand rail sizes to its buttons; the rows above it are 52 + 48 */
+@media (max-width: 720px) {
+  .is-touch .ws-brand {
+    height: auto;
+  }
+  .is-touch .ws-clock {
+    height: 52px;
+  }
+  .is-touch .ws-stats {
+    height: 48px;
+  }
+  .ws-brand {
+    top: 112px;
+  }
+  .ws-feed,
+  .ws-mapwrap {
+    top: 122px;
+  }
+  .ws-campad {
+    top: calc(122px + 56px);
+  }
+  .ws-mapwrap:not(.is-collapsed) ~ .ws-campad {
+    top: calc(122px + 176px);
+  }
+}
+/* touch tablets: the wordmark gives way so six 44 px nav buttons fit */
+@media (max-width: 1366px) and (min-width: 721px) {
+  .is-touch .ws-brand__txt {
+    display: none;
+  }
+  .is-touch .ws-brand__id {
+    padding: 0 4px;
+  }
+}
