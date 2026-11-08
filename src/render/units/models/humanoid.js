@@ -177,7 +177,7 @@ export const humanModel = {
         new THREE.Vector3(...(Array.isArray(o.scl) ? o.scl : [o.scl ?? 1, o.scl ?? 1, o.scl ?? 1])),
       );
       geo.applyMatrix4(m);
-      B.add(geo, { pos: HAND_R, rot: [tilt, 0, 0], bone: 'tool', slot: 'tool', opt, mat: o.mat });
+      B.add(geo, { pos: HAND_R, rot: [tilt, 0, 0], scl: 1.35, bone: 'tool', slot: 'tool', opt, mat: o.mat });
     };
     const handle = (z0, z1, r, opt, tilt, mat = 'wood') => tool(P.cyl(r, r, z1 - z0, 6), opt, { pos: [0, 0, (z0 + z1) / 2], rot: [Math.PI / 2, 0, 0], mat }, tilt);
     // 1 axe
@@ -245,6 +245,13 @@ export const humanModel = {
       B.add(P.sphere(1, 10, 8), { pos: [0, 0.3, -0.105], scl: [0.048, 0.056, 0.04], mat: 'leather', opt: 4 });
       B.add(P.cyl(0.018, 0.026, 0.02, 8), { pos: [0, 0.358, -0.105], mat: 'leather', opt: 4 });
       for (const [x, y, z] of [[0.012, 0.372, -0.1], [-0.01, 0.378, -0.11], [0.0, 0.384, -0.098]]) B.add(P.cyl(0.011, 0.011, 0.004, 8), { pos: [x, y, z], rot: [0.5, 0, 0.3], mat: 'gold', opt: 4, minor: true });
+    });
+    // ---- kingdom tabard (every adult of a kingdom): front and back panels
+    B.with({ bone: 'torso', slot: 'cape', opt: 2, mat: 'sash' }, () => {
+      for (const s of [1, -1]) {
+        B.add(P.slab([[-0.052, 0.375], [0.052, 0.375], [0.06, 0.2], [0.0, 0.17], [-0.06, 0.2]], 0.008), { pos: [0, 0, 0.083 * s], rot: [0.06 * s, 0, 0] });
+      }
+      B.add(P.torus(0.062, 0.009, 4, 14), { pos: [0, 0.385, 0], rot: [Math.PI / 2, 0, 0], scl: [1.15, 0.95, 1], mat: 'sash' });
     });
     // ---- royal cape
     B.with({ bone: 'torso', slot: 'cape', opt: 1 }, () => {
