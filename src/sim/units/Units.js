@@ -497,7 +497,14 @@ export class Units {
     const now = g.time.total;
     if (u.blessed > now) amount *= 0.6;
     if (u.traits && u.traits.length) {
-      if (source && u.traits.includes('lucky') && g.rng.chance(0.12)) return;
+      if (source && u.traits.includes('lucky') && g.rng.chance(0.2)) {
+        g.fx.emit?.('dust', { x: u.x, y: u.y + 0.1, z: u.z }, { scale: 0.35 });
+        if (u.def.kind === 'humanoid' && !u._luckLogged && g.rng.chance(0.2)) {
+          u._luckLogged = true;
+          this.log(u, 'Escaped a deadly blow by sheer luck');
+        }
+        return;
+      }
       if (opts.cause === 'fire' && u.traits.includes('fireheart')) amount *= 0.3;
     }
     const arm = u.equipment?.armor;
@@ -927,7 +934,7 @@ export class Units {
           const d2 = dx * dx + dz * dz;
           if (d2 > R * R) continue;
           let f;
-          if (o.species === u.species) f = animal ? (o.herd === u.herd ? 1.65 : 2.1) : 1.15;
+          if (o.species === u.species) f = animal ? (o.herd === u.herd ? 1.65 : 2.1) : u.moving || u.target ? 1.15 : 1.9;
           else f = animal && o.def.kind === 'animal' ? 2.6 : 1.5;
           const minD = (r + o.def.radius) * f + (f > 2 ? 0.15 : 0);
           if (d2 >= minD * minD) continue;
@@ -1052,7 +1059,7 @@ export class Units {
   // Threat that a unit should run from (predators, monsters, mad units, hostile soldiers).
   findThreat(u, rangeMul = 1) {
     const def = u.def;
-    const range = def.sight * def.fleeRange * rangeMul;
+    const range = def.sight * def.fleeRange * rangeMul * (u._mSight || 1);
     if (!this.dangerNear(u.x, u.z, range)) return null;
     const now = this.game.time.total;
     const me = u.species;
@@ -1086,11 +1093,21 @@ export class Units {
     a.busyUntil = 0;
     a.activity = null;
     a.state = opts.hunt ? 'hunt' : 'run';
+    // aggressive creatures press their attacks longer
+    if (a._mAggr && a._mAggr !== 1) a.combat.maxTime *= Math.min(1.8, Math.max(0.6, a._mAggr));
+    if (a.def.kind === 'humanoid' && t.def.kind === 'humanoid' && a.kingdom >= 0 && t.kingdom >= 0 && a.kingdom !== t.kingdom) {
+      if (!a._wars) a._wars = new Set();
+      if (!a._wars.has(t.kingdom)) {
+        a._wars.add(t.kingdom);
+        this.log(a, `Fought against ${this.game.civ?.kingdomName?.(t.kingdom) || 'a rival kingdom'}`);
+      }
+    }
     this.game.events.emit('unit:engage', { unit: a, target: t });
     return true;
   }
   disengage(u) {
     if (!u.combat) return;
+    if (u.alive && u.combat.struck) this.addXP(u, u.combat.hunt ? 2 : 3);
     u.combat = null;
     u._pounce = false;
     u.target = null;
@@ -1199,8 +1216,9 @@ export class Units {
     const g = this.game;
     const rng = g.rng;
     const now = g.time.total;
-    u.attackCd = u.def.attackCooldown * rng.float(0.85, 1.15) * (u.mad > now ? 0.8 : 1);
+    u.attackCd = u.def.attackCooldown * rng.float(0.85, 1.15) * (u.mad > now ? 0.8 : 1) / Math.min(1.4, Math.max(0.8, u._mAggr || 1));
     u.lastAttack = now;
+    if (u.combat) u.combat.struck = true;
     // the swing lands a moment after it starts (renderer shows the wind-up)
     const dmg = this.attackDamage(u) * rng.float(0.8, 1.2);
     const l = d || 1;
@@ -1327,8 +1345,9 @@ export class Units {
     const def = u.def;
     const canFight = this.attackDamage(u) > 0;
     let outmatched = def.flees && !(u.mad > now) && (src.def.mass > def.mass * 0.6 || !canFight);
-    if (canFight && (u._mFear || 1) > 1.4 && u.hp < u.maxHp * 0.7) outmatched = true;
-    else if (canFight && (u._mFear || 1) < 0.6) outmatched = false;
+    const aggr = u._mAggr || 1;
+    if (canFight && ((u._mFear || 1) > 1.4 || aggr < 0.7) && u.hp < u.maxHp * 0.7) outmatched = true;
+    else if (canFight && ((u._mFear || 1) < 0.6 || aggr > 1.3)) outmatched = false;
     if (outmatched || !canFight) {
       this.flee(u, src.x, src.z, 6);
       this.emote(u, 'alert', 1.2);
@@ -1503,7 +1522,7 @@ export class Units {
   findPrey(u, range = null) {
     const def = u.def;
     if (def.kind === 'animal' && !this.law('lifePredators')) return null;
-    const r = range ?? def.sight;
+    const r = (range ?? def.sight) * (u._mSight || 1);
     let best = null,
       bs = Infinity;
     this.forEachNear(u.x, u.z, r, (o, d2) => {
@@ -1568,6 +1587,11 @@ export class Units {
 
   _think(u, now) {
     const g = this.game;
+    // an Enraged status (from any source) works like madness
+    if (u.statuses && u.statuses.has('enraged') && !(u.mad > now)) {
+      const left = u.statuses.get('enraged');
+      u.mad = now + (left === Infinity ? 10 : left);
+    }
     // madness overrides everything (including registered brains)
     if (u.mad > now) {
       if (!u.combat) {
@@ -1604,8 +1628,10 @@ export class Units {
       return;
     }
     // auto-aggro towards hostiles (soldiers, or opted-in units)
-    if (!u.combat && u.data.hostile && (u.data.autoAggro ?? u.job === 'soldier')) {
-      const foe = this.nearest(u.x, u.z, u.def.sight, (o) => o !== u && this.isHostile(u, o));
+    const aggr = u._mAggr || 1;
+    if (!u.combat && u.data.hostile && (u.data.autoAggro ?? (u.job === 'soldier' || aggr >= 1.4))) {
+      const range = u.def.sight * (u._mSight || 1) * (u.job === 'soldier' ? Math.min(1.5, Math.max(0.7, aggr)) : 0.4);
+      const foe = this.nearest(u.x, u.z, range, (o) => o !== u && this.isHostile(u, o));
       if (foe) {
         this.engage(u, foe);
         return;
@@ -1929,11 +1955,13 @@ export class Units {
   // Wandering monsters (beastsMonsters law, World Age 'monsters' modifier).
   _wanderingMonsters() {
     const g = this.game;
-    if (!this.law('beastsMonsters')) return;
-    const rate = (g.age?.mods?.monsters ?? 1) * (typeof g.laws?.spawnRate === 'number' ? g.laws.spawnRate : 1);
+    const ageM = g.age?.mods?.monsters ?? 1;
+    // the law covers ordinary ages; a monstrous age (Twilight) always brings them
+    if (!this.law('beastsMonsters') && ageM <= 1.001) return;
+    const rate = (this.law('beastsMonsters') ? ageM : ageM - 1) * (typeof g.laws?.spawnRate === 'number' ? Math.max(0.1, g.laws.spawnRate) : 1);
     let monsters = 0;
     for (const sp of ['golem', 'serpent', 'skywyrm']) monsters += this.count(sp);
-    if (monsters >= Math.round(3 * this.popScale) || !g.rng.chance(0.03 * rate)) return;
+    if (monsters >= Math.round(3 * this.popScale * Math.max(1, ageM * 0.8)) || !g.rng.chance(0.03 * rate)) return;
     const w = g.world;
     const roll = g.rng.next();
     const species = roll < 0.5 ? 'golem' : roll < 0.8 ? 'serpent' : 'skywyrm';
@@ -2034,7 +2062,7 @@ export class Units {
     const stage = u.age < def.maturity ? (def.kind === 'humanoid' ? 'Child' : 'Young') : u.age > u.lifespan * 0.8 ? 'Elder' : 'Adult';
     const stats = [
       ['Age', `${ageY} (${stage})`],
-      ['Health', Math.ceil(u.hp) + ' / ' + Math.round(u.maxHp)],
+      ['Health', Math.min(Math.ceil(u.hp), Math.ceil(u.maxHp)) + ' / ' + Math.ceil(u.maxHp)],
       ['Mood', this.moodLabel(u)],
       ['Doing', this.activityLabel(u)],
     ];
