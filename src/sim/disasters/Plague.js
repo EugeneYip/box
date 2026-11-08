@@ -1,4 +1,4 @@
-import { law, ageMod, yearLabel } from './util.js';
+import { law, ageMod, yearLabel, withAge, regionName } from './util.js';
 
 // Plague: a contagious sickness among humanoids. Infection state lives in
 // unit.data.plague = {t, severity, prevColor}. Infected units lose health
@@ -34,6 +34,7 @@ export class PlagueSim {
     this.infected.clear();
     this.total = 0;
     this.deaths = 0;
+    this._outT = null;
   }
 
   canCatch(u) {
@@ -84,7 +85,37 @@ export class PlagueSim {
     return n;
   }
 
+  // While an age favours plague (mods.plague > 1), outbreaks begin on their
+  // own every couple of minutes; the calamityPlague law is the off switch.
+  _spontaneous(step) {
+    const g = this.game;
+    const m = ageMod(g, 'plague', 1);
+    if (m <= 1 || !law(g, 'calamityPlague', true) || g.time.total < 120) {
+      this._outT = null;
+      return;
+    }
+    if (this._outT == null) this._outT = (40 + this.rng.next() * 60) / m;
+    this._outT -= step;
+    if (this._outT > 0) return;
+    this._outT = (90 + this.rng.next() * 90) / m;
+    if (this.infected.size > 40) return;
+    const people = (g.units?.list || []).filter((u) => u.alive && u.def?.kind === 'humanoid' && !u.data?.plague);
+    if (!people.length) return;
+    const p0 = people[Math.floor(this.rng.next() * people.length)];
+    let n = 0;
+    if (this.infect(p0, 1)) n++;
+    for (const o of g.units.query(p0.x, p0.z, 3)) if (n < 4 && o !== p0 && this.infect(o, 0.9)) n++;
+    if (!n) return;
+    try {
+      g.fx?.emit('miasma', { x: p0.x, z: p0.z }, { count: 8, scale: 1.4 });
+      g.notify?.(withAge(g, 'plague', `A sickness takes hold in ${regionName(g, p0.x, p0.z)}.`), 'disaster', { x: p0.x, z: p0.z });
+    } catch (e) {
+      /* visuals and feed are optional */
+    }
+  }
+
   tick(step) {
+    this._spontaneous(step);
     if (!this.infected.size) return;
     const g = this.game;
     const rng = this.rng;
