@@ -66,6 +66,8 @@ const MVP = { wolf: 6, fox: 5, bear: 3, sheep: 10, cow: 8 };
 const FAR_THINK = { humanoid: 1.7, animal: 2.3, monster: 1.4 };
 const SFX_GAP = { hit: 0.07, death: 0.18, birth: 0.6, growl: 0.5, bleat: 1.4 };
 const THINK_BUDGET_MS = 5; // per rendered frame (high game speeds defer the rest)
+const DCELL = 16; // danger grid cell (tiles): where predators, monsters or fights are
+const OVERVIEW_DIST = 110; // camera farther than this: every creature takes the cheap path
 const FAUNA_TOTAL = 1000; // humans + animals target on a 256 x 256 map
 
 const KIND_ORDER = { humanoid: 0, animal: 1, monster: 2 };
@@ -100,6 +102,41 @@ export class Units {
     this._frameThinkMs = 0;
     this._ticksThisFrame = 0;
     this._initGrid();
+  }
+
+  // Coarse per-tick grid of cells holding anything that could threaten a
+  // creature (carnivores, monsters, humans, mad or fighting units). Lets calm
+  // grazers skip threat scans entirely.
+  _buildDanger() {
+    const w = this.game.world;
+    const dw = Math.ceil(w.w / DCELL),
+      dh = Math.ceil(w.h / DCELL);
+    if (!this._danger || this._danger.length !== dw * dh) {
+      this._danger = new Uint8Array(dw * dh);
+      this._dw = dw;
+      this._dh = dh;
+    } else this._danger.fill(0);
+    const now = this.game.time.total;
+    const D = this._danger;
+    for (const u of this.list) {
+      if (!u.alive) continue;
+      const def = u.def;
+      if (def.diet === 'herbivore' && !u.combat && !(u.mad > now) && def.kind === 'animal') continue;
+      const cx = Math.min(dw - 1, Math.max(0, Math.floor(u.x / DCELL))),
+        cz = Math.min(dh - 1, Math.max(0, Math.floor(u.z / DCELL)));
+      D[cz * dw + cx] = 1;
+    }
+  }
+  dangerNear(x, z, r) {
+    const D = this._danger;
+    if (!D) return true;
+    const dw = this._dw;
+    const x0 = Math.max(0, Math.floor((x - r) / DCELL)),
+      x1 = Math.min(dw - 1, Math.floor((x + r) / DCELL));
+    const z0 = Math.max(0, Math.floor((z - r) / DCELL)),
+      z1 = Math.min(this._dh - 1, Math.floor((z + r) / DCELL));
+    for (let cz = z0; cz <= z1; cz++) for (let cx = x0; cx <= x1; cx++) if (D[cz * dw + cx]) return true;
+    return false;
   }
 
   // Wild animals allowed besides humans and village herds (soft global cap).
@@ -713,11 +750,20 @@ export class Units {
   _locomote(u, dt, now) {
     const w = this.game.world;
     const def = u.def;
+    // idle fast path: nothing to push, no destination
+    if (u.kbx === 0 && u.kbz === 0 && u.sepx === 0 && u.sepz === 0 && !u.target && !u.path) {
+      if (u.spd !== 0) u.spd = u.spd > 0.001 ? u.spd * Math.exp(-dt * 10) : 0;
+      u.moving = false;
+      return;
+    }
+    const W = w.w,
+      Hh = w.h;
     // knockback impulse (decays quickly)
     if (u.kbx !== 0 || u.kbz !== 0) {
       const nx = u.x + u.kbx * dt,
         nz = u.z + u.kbz * dt;
-      const [tx, ty] = w.tileOf(nx, nz);
+      const tx = nx < 0 ? 0 : nx >= W ? W - 1 : nx | 0,
+        ty = nz < 0 ? 0 : nz >= Hh ? Hh - 1 : nz | 0;
       if (this.canStand(u, tx, ty) || def.habitat === 'air') {
         u.x = nx;
         u.z = nz;
@@ -731,14 +777,19 @@ export class Units {
     if (u.sepx !== 0 || u.sepz !== 0) {
       const nx = u.x + u.sepx * dt,
         nz = u.z + u.sepz * dt;
-      const [tx, ty] = w.tileOf(nx, nz);
+      const tx = nx < 0 ? 0 : nx >= W ? W - 1 : nx | 0,
+        ty = nz < 0 ? 0 : nz >= Hh ? Hh - 1 : nz | 0;
       if (this.canStand(u, tx, ty)) {
         u.x = nx;
         u.z = nz;
       }
     }
+    if (!u.target && !u.path) {
+      u.spd *= Math.exp(-dt * 10);
+      u.moving = false;
+      return;
+    }
     if (def.habitat === 'land') {
-      const W = w.w;
       u._curB = w.building[Math.floor(u.z) * W + Math.floor(u.x)] ?? -1;
       let gi = -1;
       if (u.path && u.path.length) gi = u.path[u.path.length - 1];
@@ -808,13 +859,12 @@ export class Units {
     const stepLen = Math.min(d, u.spd * facing * dt);
     let nx = u.x + (dx / d) * stepLen,
       nz = u.z + (dz / d) * stepLen;
-    let [ntx, nty] = w.tileOf(nx, nz);
-    if (!this.canStand(u, ntx, nty)) {
+    const clx = (v) => (v < 0 ? 0 : v >= W ? W - 1 : v | 0),
+      clz = (v) => (v < 0 ? 0 : v >= Hh ? Hh - 1 : v | 0);
+    if (!this.canStand(u, clx(nx), clz(nz))) {
       // slide along the obstacle
-      const [ax, ay] = w.tileOf(nx, u.z);
-      const [bx, by] = w.tileOf(u.x, nz);
-      if (this.canStand(u, ax, ay)) nz = u.z;
-      else if (this.canStand(u, bx, by)) nx = u.x;
+      if (this.canStand(u, clx(nx), clz(u.z))) nz = u.z;
+      else if (this.canStand(u, clx(u.x), clz(nz))) nx = u.x;
       else {
         u.blockedT += dt;
         u.moving = false;
@@ -986,6 +1036,7 @@ export class Units {
   findThreat(u, rangeMul = 1) {
     const def = u.def;
     const range = def.sight * def.fleeRange * rangeMul;
+    if (!this.dangerNear(u.x, u.z, range)) return null;
     const now = this.game.time.total;
     const me = u.species;
     const myMass = def.mass;
@@ -1502,8 +1553,9 @@ export class Units {
     }
     // escape fire
     const w = g.world;
-    const [tx, ty] = w.tileOf(u.x, u.z);
-    if (u.def.habitat === 'land' && w.fire[w.idx(tx, ty)] > 0.05) {
+    const tx = Math.min(w.w - 1, Math.max(0, u.x | 0)),
+      ty = Math.min(w.h - 1, Math.max(0, u.z | 0));
+    if (u.def.habitat === 'land' && w.fire[ty * w.w + tx] > 0.05) {
       const f = this.findNearestTile(u.x, u.z, 5, (x, y, i) => w.fire[i] <= 0 && this._pathable(u, x, y));
       if (f) {
         u.path = null;
@@ -1560,6 +1612,8 @@ export class Units {
     // fast-forward runs many ticks per frame: no budget there (correctness first)
     const budgetOn = ++this._ticksThisFrame <= 64;
     if (this._tickN % 75 === 0) this.herds.tick(now);
+    this._buildDanger();
+    const overview = (g.cameraRig?.cur?.dist ?? 0) > OVERVIEW_DIST;
     const cam = g.cameraRig?.cur;
     const focus = this._focus;
     if (cam) {
@@ -1657,13 +1711,16 @@ export class Units {
       if (u.combat) this._combatTick(u, dt, now);
       const fdx = u.x - focus.x,
         fdz = u.z - focus.z;
-      u._far = fdx * fdx + fdz * fdz > focus.r2 && !u.combat;
+      u._far = (overview || fdx * fdx + fdz * fdz > focus.r2) && !u.combat;
       u.thinkT -= dt;
       if (u.thinkT <= 0) {
         if (budgetOn && this._frameThinkMs > THINK_BUDGET_MS && !u.combat) {
           u.thinkT = 0.05 + g.rng.next() * 0.15; // over budget: think a little later
         } else {
-          u.thinkT = THINK_INTERVAL * (0.8 + g.rng.next() * 0.4) * (u._far ? FAR_THINK[def.kind] || 2 : 1);
+          let mul = u._far ? FAR_THINK[def.kind] || 2 : 1;
+          // calm grazers with no danger about re-decide less often
+          if (def.kind === 'animal' && def.diet === 'herbivore' && !u.combat && u.hunger < 0.4 && !u.alarm && u.fleeUntil < now && !this.dangerNear(u.x, u.z, def.sight)) mul *= 1.6;
+          u.thinkT = THINK_INTERVAL * (0.8 + g.rng.next() * 0.4) * mul;
           u._ext = this.brains.has(u.species);
           const t0 = budgetOn ? performance.now() : 0;
           this._think(u, now);
@@ -1673,7 +1730,8 @@ export class Units {
       }
       const bt = BRAIN_TICKS[def.brain];
       if (bt) bt(u, dt, this, g, now);
-      if ((tickN + u.id) % (u._far ? 8 : 4) === 0) this._separate(u);
+      const sepEvery = (u._far ? 8 : 4) * (u.moving || u.target ? 1 : 2);
+      if ((tickN + u.id) % sepEvery === 0) this._separate(u);
       // ---- locomotion
       if (def.habitat === 'air') {
         this._flyTick(u, dt);

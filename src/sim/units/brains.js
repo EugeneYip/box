@@ -23,7 +23,33 @@ function onGraze(u, w) {
 }
 
 // Herd centroid of herd-mates within r. Returns {x, z, n, leader}.
+// Cached per herd for half a game second (herd-mates share one scan).
+const _herdCache = new Map();
+let _herdCacheT = -1;
 function herdInfo(u, U, r = 12) {
+  const now = U.game.time.total;
+  if (now - _herdCacheT > 0.5 || now < _herdCacheT) {
+    _herdCache.clear();
+    _herdCacheT = now;
+  }
+  const key = u.herd * 16 + (u.species.charCodeAt(0) & 15);
+  let c = _herdCache.get(key);
+  if (!c) {
+    c = herdScan(u, U, r);
+    c.ax = c.x * c.n + u.x;
+    c.az = c.z * c.n + u.z;
+    c.all = c.n + 1;
+    if (!c.n) c.leader = u;
+    _herdCache.set(key, c);
+    return c;
+  }
+  // reuse the shared scan, excluding this member
+  const n = c.all - 1;
+  if (n <= 0) return { x: u.x, z: u.z, n: 0, leader: u };
+  const leader = c.leader === u || (u.id < c.leader.id && u.age >= u.def.maturity) ? u : c.leader;
+  return { x: (c.ax - u.x) / n, z: (c.az - u.z) / n, n, leader };
+}
+function herdScan(u, U, r) {
   let sx = 0,
     sz = 0,
     n = 0,
