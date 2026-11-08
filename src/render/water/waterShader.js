@@ -245,6 +245,24 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
     float fz = smoothstep(0.035, -0.035, temp - uFreezeT + (fn.r - 0.5) * 0.07 + (fc.b - 0.5) * 0.03);
     ice = max(ice, fz * calmW * (1.0 - outK) * step(0.001, depth));
   }
+  // fast ice: a shelf welded to cold shores
+  float fastI = smoothstep(0.72, 0.92, gCold) * (1.0 - smoothstep(1.3 + 0.9 * fn.r, 2.4 + 0.9 * fn.r, shoreD)) * (1.0 - outK) * step(0.001, depth);
+  ice = max(ice, fastI);
+  // floes: the sheet breaks into plates with dark leads, wider toward the margin;
+  // a few loose floes drift just beyond the edge
+  vec4 fl = texture2D(uCells, WROT2 * p * (1.0 / 38.0) + 0.37);
+  float iceW = iceF + (fc.b - 0.5) * 0.3 + (fn.g - 0.5) * 0.25;
+  float edgeZone = 1.0 - smoothstep(0.55, 0.95, max(iceW, fastI));
+  float gapW = mix(0.025, 0.11, edgeZone);
+  float lead = 1.0 - smoothstep(gapW * 0.45, gapW, fl.g);
+  float drift = step(fl.r, 0.42) * step(0.45, fl.b) * smoothstep(0.06, 0.2, iceW) * (1.0 - outK) * step(0.001, depth);
+  ice = max(ice * (1.0 - lead * smoothstep(0.05, 0.4, ice)), drift * (1.0 - lead));
+  float iceRim = (1.0 - smoothstep(gapW, gapW * 2.4, fl.g)) * (1.0 - lead);
+  // icebergs: rare faceted bergs in cold open water
+  vec4 bg = texture2D(uCells, p * (1.0 / 150.0) + 0.53);
+  float berg = smoothstep(0.11, 0.075, bg.r) * step(0.84, bg.b) * smoothstep(0.55, 0.8, gCold) * smoothstep(1.5, 3.0, depth) * (1.0 - outK);
+  // shadow line on the water just outside any ice edge (thickness)
+  float iceNear = max(smoothstep(0.0, 0.35, iceW), smoothstep(0.16, 0.11, bg.r) * step(0.84, bg.b) * smoothstep(0.55, 0.8, gCold));
 
   // ---- compose (premultiplied)
   vec3 refl = sky * F;
@@ -266,20 +284,34 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   a = mix(a, 1.0, foam);
   col += spec * (1.0 - foam);
   a = clamp(a + lum(spec) * 0.25, 0.0, 1.0); // glare adds light, it must not hide the water's blue
+  col *= 1.0 - 0.35 * iceNear * (1.0 - ice) * (1.0 - outK);
   if (ice > 0.0) {
     float cracks = 1.0 - smoothstep(0.0, 0.06, fc.g);
-    vec3 iceAlb = mix(vec3(0.24, 0.30, 0.37), vec3(0.33, 0.39, 0.45), smoothstep(0.3, 0.8, fn.r));
+    vec3 iceAlb = mix(vec3(0.27, 0.33, 0.40), vec3(0.38, 0.44, 0.50), smoothstep(0.3, 0.8, fn.r));
     iceAlb = mix(iceAlb, vec3(0.20, 0.24, 0.33), smoothstep(0.55, 0.85, fn.b) * 0.5); // blue-violet hollows
     float cracks2 = 1.0 - smoothstep(0.0, 0.05, fc2.g);
     iceAlb *= (1.0 - cracks * 0.38) * (1.0 - cracks2 * 0.18);
     // thin, darker slush towards the floe edge
     iceAlb = mix(scat * 4.0 + vec3(0.06, 0.08, 0.10), iceAlb, smoothstep(0.0, 0.6, ice));
+    // raised rim along every plate and sheet edge (reads as thickness)
+    float rimK = max(iceRim, smoothstep(0.3, 0.5, ice) * (1.0 - smoothstep(0.55, 0.85, ice)));
+    iceAlb = mix(iceAlb, vec3(0.52, 0.58, 0.63), rimK * 0.55);
     float ndl = max(L.y, 0.0);
     vec3 iceCol = iceAlb * (keyL * ndl * lightVis * 0.85 + uAmbCol * 0.65);
     float Fi = 0.04 + 0.96 * pow(1.0 - max(V.y, 0.0), 5.0);
     iceCol += sky * Fi * 0.5 + keyL * ggxD(max(dot(vec3(0.0, 1.0, 0.0), Hs), 0.0), 0.12) * 0.04 * lightVis;
     col = mix(col, iceCol, ice);
     a = mix(a, 1.0, ice);
+  }
+  if (berg > 0.0) {
+    // faceted berg: brighter sunlit top, darker flanks, cool rim at the waterline
+    vec4 bf = texture2D(uCells, p * (1.0 / 5.0) + 0.21);
+    float topK = smoothstep(0.6, 0.0, bg.r / 0.11);
+    vec3 bAlb = mix(vec3(0.30, 0.38, 0.46), vec3(0.56, 0.62, 0.67), topK) * (0.85 + 0.3 * bf.b);
+    float ndlB = max(L.y, 0.0) * (0.6 + 0.4 * topK);
+    vec3 bCol = bAlb * (keyL * ndlB * lightVis + uAmbCol * 0.7);
+    col = mix(col, bCol, berg);
+    a = mix(a, 1.0, berg);
   }
 
   // ---- distance fade into the horizon (never show the far-plane cut)
