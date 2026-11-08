@@ -471,10 +471,12 @@ export class Clouds {
     const flash = env.lightning || 0;
     u.uFlash.value.setRGB(0.85, 0.9, 1.25).multiplyScalar(flash * 1.2);
     // visibility: gone when close, soft and prominent when zoomed out
-    const st = weather.storm;
-    const vis = THREE.MathUtils.smoothstep(camDist, 80 - 45 * st, 165 - 85 * st);
-    u.uOpacity.value = Math.min(1.25, vis * (0.82 + 0.18 * weather.overcast + 0.3 * st));
-    u.uNearFade.value = THREE.MathUtils.lerp(40 + camDist * 0.28, 22 + camDist * 0.18, weather.storm);
+    // In storms the low structured deck carries the drama; the high puffs
+    // keep their normal zoom fade so they never become a milky veil right
+    // under the lens at mid zoom.
+    const vis = THREE.MathUtils.smoothstep(camDist, 80, 165);
+    u.uOpacity.value = vis * (0.82 + 0.18 * weather.overcast) * (1 - 0.35 * weather.storm);
+    u.uNearFade.value = 40 + camDist * 0.28;
     this.group.visible = vis > 0.01;
 
     // ---- storm scud layer ------------------------------------------------
