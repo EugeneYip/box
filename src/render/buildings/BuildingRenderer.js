@@ -5,7 +5,7 @@ import { createBuildingMaterial, createPropMaterial } from './material.js';
 import { bannerGeometry, bannerMaterial, bladesGeometry, boatGeometry, FENCE, scarecrowGeometry, glowTexture, PuffSystem } from './props.js';
 import { TerritoryOverlay } from './TerritoryOverlay.js';
 import { BUILDING_TYPES } from '../../sim/civ/catalog.js';
-import { CULTURES } from '../../sim/civ/cultures.js';
+import { CULTURES, baseCulture } from '../../sim/civ/cultures.js';
 import { SEA_LEVEL, TILE } from '../../world/constants.js';
 import { hash2 } from '../../core/Random.js';
 
@@ -233,7 +233,7 @@ export class BuildingRenderer {
     else if (kind === 'lamppost') {
       const l = lampPost();
       a = { geo: l.geo, anchors: l.anchors, maxY: 0.8 };
-    } else a = buildArchetype(kind, p1, +p2);
+    } else a = buildArchetype(kind, p1, +p2, p3 == null ? 1 : +p3);
     this.arche.set(key, a);
     return a;
   }
@@ -316,7 +316,7 @@ export class BuildingRenderer {
         continue;
       }
       const lvl = Math.min(b.level || 1, def.levels);
-      const akey = `${b.type}|${b.style}|${lvl}`;
+      const akey = `${b.type}|${b.style}|${lvl}|${b.era ?? 1}`;
       const a = this._arch(akey);
       if (stage === 'found' || stage === 'frame' || stage === 'build') {
         // footings, then a timber frame, then walls rising, then the roof;
@@ -416,7 +416,7 @@ export class BuildingRenderer {
       const key = 'proxy|' + b.style;
       let L = proxies.get(key);
       if (!L) proxies.set(key, (L = { m: [], col: [], bs: [] }));
-      const a = this._arch(def.wall ? `wpost|${b.style}` : `${b.type}|${b.style}|${Math.min(b.level || 1, def.levels)}`);
+      const a = this._arch(def.wall ? `wpost|${b.style}` : `${b.type}|${b.style}|${Math.min(b.level || 1, def.levels)}|${b.era ?? 1}`);
       const hgt = def.wall ? 1.1 : Math.max(0.5, Math.min(3, a.maxY)) * (b.constructing ? Math.max(0.2, b.progress) : 1);
       const pm = this._m2.makeRotationY(b.rotation || 0).setPosition(b.x, b.y, b.z).multiply(this._m3.makeScale(def.w * 0.82, hgt, def.h * 0.82));
       for (let i = 0; i < 16; i++) L.m.push(pm.elements[i]);
@@ -506,7 +506,7 @@ export class BuildingRenderer {
       const tx = Math.floor(p.x),
         tz = Math.floor(p.z);
       if (!world.inBounds(tx, tz) || world.height[tz * world.w + tx] >= SEA_LEVEL) continue;
-      this.boats.push({ x: p.x, z: p.z, ry: (b.rotation || 0) + (c.ry || 0), style: b.style, phase: b.seed * 20 + this.boats.length });
+      this.boats.push({ x: p.x, z: p.z, ry: (b.rotation || 0) + (c.ry || 0), style: c.ship ? (b.style === 'frost' || b.style === 'vale' ? 'frost' : 'dune') : b.style, phase: b.seed * 20 + this.boats.length, s: c.ship ? 1.75 : 1 });
     }
     for (const c of an.lamps) {
       if (c.water) continue;
@@ -573,7 +573,7 @@ export class BuildingRenderer {
     const q = this._q;
     for (const v of civ.villages) {
       if (!v.alive) continue;
-      const st = CULTURES[v.culture]?.style || 'vale';
+      const st = CULTURES[baseCulture(v.culture)]?.style || 'vale';
       const F = FENCE[st];
       const P = per.get(st);
       for (const p of v.plots) {
@@ -708,7 +708,7 @@ export class BuildingRenderer {
         z = u.z - h * 0.14;
       const y = (u.y ?? this.game.world.surfaceAt(u.x, u.z)) + 0.15;
       staffs.push([x, y, z, 1.85]);
-      const st = CULTURES[civ.kingdoms[a.kingdom]?.culture]?.style || 'vale';
+      const st = CULTURES[baseCulture(civ.kingdoms[a.kingdom]?.culture)]?.style || 'vale';
       let L = per.get(st);
       if (!L) per.set(st, (L = []));
       L.push({ x: x + 0.02, y: y + 1.8, z, s: 1.7, style: st, color: civ.kingdomColor(a.kingdom) });
@@ -772,7 +772,7 @@ export class BuildingRenderer {
         const t = this.t + b.phase;
         const bob = Math.sin(t * 1.6) * 0.025;
         this._q.setFromEuler(new THREE.Euler(Math.sin(t * 1.3) * 0.05, b.ry + Math.PI / 2 + Math.sin(t * 0.3) * 0.08, Math.sin(t * 1.1 + 1) * 0.04));
-        this._m.compose(this._p.set(b.x + Math.sin(t * 0.25) * 0.08, SEA_LEVEL - 0.03 + bob, b.z), this._q, this._s.set(1, 1, 1));
+        this._m.compose(this._p.set(b.x + Math.sin(t * 0.25) * 0.08, SEA_LEVEL - 0.03 + bob, b.z), this._q, this._s.set(b.s || 1, b.s || 1, b.s || 1));
         mesh.setMatrixAt(i, this._m);
       }
       mesh.count = L.length;
