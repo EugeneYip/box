@@ -262,7 +262,12 @@ export class Atmosphere {
         const z = THREE.MathUtils.clamp(rig.target.z + (this.rng() - 0.65) * span * 1.4, 2, game.world.h - 2);
         // some bolts stay inside the clouds (sheet lightning)
         if (this.rng() < 0.2) this._myFlash = Math.max(this._myFlash, 0.45 + this.rng() * 0.3);
-        else this.strike(x, z, { intensity: 0.8 + this.rng() * 0.4 });
+        else {
+          this.strike(x, z, { intensity: 0.8 + this.rng() * 0.4 });
+          // Occasionally a bolt lands with ground effects (ignition follows
+          // the calamityLightning law inside the disasters module).
+          if (this.rng() < 0.15) game.disasters?.onStrike?.(x, z);
+        }
       }
     }
     for (const th of this._thunder) th.t -= dt;
