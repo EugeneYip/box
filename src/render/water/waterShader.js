@@ -134,9 +134,16 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   vec3 N = normalize(vec3(-sl.x, 1.0, -sl.y));
   float NdV = max(dot(N, V), 0.0);
 
-  // ---- reflection of the actual sky gradient (Atmosphere's zenith / horizon)
+  // ---- reflection of the actual sky gradient (Atmosphere's zenith / horizon).
+  // At golden hour the warm horizon colour is only reflected along the sun's
+  // path; elsewhere the sea mirrors the blue zenith and keeps its own blue body.
+  vec3 Lk = normalize(uKeyDir);
+  float lowSunE = smoothstep(0.02, 0.10, Lk.y) * (1.0 - smoothstep(0.25, 0.55, Lk.y));
+  vec2 vdirE = wp.xz - cameraPosition.xz;
+  float pathE = smoothstep(0.88, 0.99, dot(vdirE / max(length(vdirE), 1e-3), Lk.xz / max(length(Lk.xz), 1e-3)));
+  vec3 horizonE = mix(uSkyCol, mix(uZenCol * 1.15, uSkyCol, pathE), lowSunE);
   vec3 R = reflect(-V, N);
-  vec3 sky = mix(uSkyCol, uZenCol, pow(clamp(R.y, 0.0, 1.0), 0.55));
+  vec3 sky = mix(horizonE, uZenCol, pow(clamp(R.y, 0.0, 1.0), 0.55));
   // ~3.5% straight down, rising towards grazing angles (Schlick)
   float F = clamp(0.035 + 0.965 * pow(1.0 - NdV, 5.0), 0.0, 1.0);
 
