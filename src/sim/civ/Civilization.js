@@ -978,8 +978,9 @@ export class Civilization {
     // tiers
     const houses = v.houses || 0;
     const prevTier = v.tier;
-    if (v.tier === 0 && pop >= 22 && houses >= 5) v.tier = 1;
-    else if (v.tier === 1 && pop >= 50 && houses >= 9 && v.hall?.level >= 2) v.tier = 2;
+    // (a town is measured by its homes: a few fine houses count as many cottages)
+    if (v.tier === 0 && pop >= 22 && (houses >= 5 || v.housing >= 24)) v.tier = 1;
+    else if (v.tier === 1 && pop >= 50 && (houses >= 9 || v.housing >= 54) && v.hall?.level >= 2) v.tier = 2;
     else if (v.tier > 0 && pop < 8 + v.tier * 8) v.tier--;
     if (v.tier > prevTier) {
       const k = this.kingdoms[v.kingdom];
