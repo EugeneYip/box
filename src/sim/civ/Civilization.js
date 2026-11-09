@@ -51,7 +51,7 @@ function budgets(w, h) {
     area: a,
     humans: Math.round(Math.min(900, 850 * Math.pow(a, 0.04))),
     buildings: Math.round(Math.min(920, 300 * Math.pow(a, 0.8))),
-    villages: Math.round(36 * Math.pow(a, 0.55)),
+    villages: Math.round(30 * Math.pow(a, 0.55)),
     startVillages: Math.max(1, Math.round(3 * Math.pow(a, 0.7))),
   };
 }
@@ -1485,9 +1485,11 @@ export class Civilization {
     if (room() && pop >= 8 && count('granary') === 0 && v.food > v.foodCap * 0.7) build('granary');
     const crowded = this._crowd();
     // 1 housing (bounded: big towns upgrade instead of sprawling)
-    if (room() && v.housing - pop < 2 + v.tier && v.housing < this._popCap(v) + 6 && (crowded < 0.97 || v.tier >= 1 || v.housing < 16)) {
-      const cand = v.tier >= 1 ? v.buildings.find((b) => b.alive && b.type === 'house' && !b.constructing && !b.upgrading && b.level < Math.min(3, v.tier + 1)) : null;
-      if (!(cand && this.rng.chance(0.5) && upgrade(cand))) build('house');
+    if (room() && v.housing - pop < 2 + v.tier && v.housing < this._popCap(v) + 6) {
+      // a crowded world builds up, not out: cottages become timber houses
+      const full = crowded >= 0.6;
+      const cand = v.tier >= 1 || full ? v.buildings.find((b) => b.alive && b.type === 'house' && !b.constructing && !b.upgrading && b.level < Math.min(3, v.tier + 2)) : null;
+      if (!(cand && (full || this.rng.chance(0.5)) && upgrade(cand)) && (crowded < 0.97 || v.tier >= 1 || v.housing < 16)) build('house');
     }
     // 2 fields (no cost)
     const targetFields = 8 + pop * 1.1;
