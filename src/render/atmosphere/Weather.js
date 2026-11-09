@@ -134,8 +134,9 @@ export class Weather {
   // Combined storminess: the age's storm modifier times the weatherStorms law.
   stormFactor() {
     const g = this.game;
-    const age = this.atm?.ageState;
-    return Math.max(0, (age?.storms ?? g.age?.mods?.storms ?? 1) * (g.laws?.weatherStorms ?? 1));
+    // read the age directly (game time): eased render-side copies would be
+    // stale during fastForward, ff boots and slow frames
+    return Math.max(0, (g.age?.mods?.storms ?? 1) * (g.laws?.weatherStorms ?? 1));
   }
 
   // Fair-weather break after a spell: stormy ages / laws shorten it a lot.
@@ -176,7 +177,7 @@ export class Weather {
       { rain: 0.12, storm: 0.03, snow: 0.38, fog: 0.12 },
     ][season];
     const age = this.atm?.ageState;
-    const temp = age?.temp ?? g.age?.mods?.temperature ?? 0;
+    const temp = g.age?.mods?.temperature ?? age?.temp ?? 0;
     const stormK = sk;
     const hot = Math.max(0, temp) * 2,
       chill = Math.max(0, -temp) * 2;

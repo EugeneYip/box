@@ -256,6 +256,8 @@ export class Atmosphere {
 
   // ---- loop -----------------------------------------------------------------
   tick(step) {
+    // ages also ease in game time, so fast-forward and ff boots see them
+    this.updateAge(Math.min(step, 0.5));
     this.weather.tick(step);
   }
 

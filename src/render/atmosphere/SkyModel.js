@@ -218,7 +218,7 @@ export class SkyModel {
     this.sunLightColor.lerp(this._tmp.setRGB(lumKey, lumKey * 1.01, lumKey * 1.06), oc * 0.7);
 
     const moonUp = smooth(-0.02, 0.15, this.moonDir.y);
-    const moonI = 0.92 * smooth(-0.04, -0.17, s) * moonUp * (1 - 0.7 * oc) * (1 - 0.38 * night);
+    const moonI = 0.92 * smooth(-0.04, -0.17, s) * moonUp * (1 - 0.7 * oc) * (1 - 0.2 * night);
     this.moonVis = moonUp * smooth(-0.02, -0.14, s);
     this.keyIsMoon = moonI > sunI;
     if (this.keyIsMoon) {
@@ -317,9 +317,12 @@ export class SkyModel {
       if (L.hemi.k > 0.001) this.hemiSky.lerp(L.hemi.c, L.hemi.k);
       this.sunLightColor.multiply(L.key);
       this.keyColor.multiply(L.key);
-      this.keyIntensity *= L.keyI;
-      this.hemiIntensity *= L.hemiI;
-      this.exposure *= L.exp;
+      // dark ages keep a readable floor at night: moonlight, sky fill and
+      // exposure darken less once the sun is down
+      const nk = this.night;
+      this.keyIntensity *= this.keyIsMoon ? Math.max(L.keyI, 0.9) : L.keyI;
+      this.hemiIntensity *= L.hemiI + (Math.max(L.hemiI, 0.95) - L.hemiI) * nk;
+      this.exposure *= L.exp + (Math.max(L.exp, 0.9) - L.exp) * nk;
       this.saturation *= L.sat;
       this.contrast += L.con;
       this.midTint.add(L.mid);
