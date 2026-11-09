@@ -268,7 +268,7 @@ export class Labels {
       const dist = cam.distanceTo(s.position);
       const h = Math.max(1.4, dist * 0.032);
       s.scale.set(h * s.userData.aspect, h, 1);
-      cand.push({ s, a: kAk, prio: 3 + (k.villages.length || 0) * 0.01 + (this._focusSet?.has(id) ? 0.5 : 0) });
+      cand.push({ s, a: kAk, prio: 3 + (k.villages.length || 0) * 0.01 + (this._focusSet?.has(id) ? 0.5 : 0), kid: id });
     }
     for (const [id, s] of this.vLabels) {
       const v = civ.villages[id];
@@ -333,6 +333,12 @@ export class Labels {
       }
     }
     const uiOn = this.game.params?.ui !== false;
+    // HUD-safe margins that scale with the screen (phones and tablets in portrait)
+    const mTop = uiOn ? Math.min(90, H * 0.1) : 8,
+      mBot = uiOn ? Math.min(90, H * 0.12) : 8,
+      mRight = uiOn ? Math.min(300, W * 0.18) : 8,
+      mLeft = 8;
+    const world = this.game.world;
     const fovK = H / (2 * Math.tan((cam.fov * Math.PI) / 360));
     const v = this._v || (this._v = new (cam.position.constructor)());
     cand.sort((a, b) => b.prio - a.prio);
@@ -363,20 +369,41 @@ export class Labels {
         if (uiOn) for (const h of this._hud) if (r.l < h.right && r.r > h.left && r.t < h.bottom && r.b > h.top) return true;
         return false;
       };
+      // a realm whose seat lies off screen is not named at the screen edge
+      // (it would sit over someone else's land)
+      if (target > 0 && c.prio >= 3 && (sx < 0 || sx > W || sy < 0 || sy > H)) target = 0;
       if (target > 0 && c.prio >= 3 && v.z <= 1 && v.z >= -1) {
-        // a realm's name is never dropped: clamp it into the safe area and
-        // nudge it up or down until it no longer collides
-        const top = uiOn ? 90 : 8,
-          bot = H - (uiOn ? 90 : 8),
-          right = W - (uiOn ? 300 : 8);
-        let cx = Math.min(right - pw / 2, Math.max(8 + pw / 2, sx)),
+        // a realm's name is never dropped: fit it to the screen, clamp it into
+        // the safe area and nudge it until it no longer collides, staying
+        // over the realm's own land
+        const top = mTop,
+          bot = H - mBot,
+          right = W - mRight;
+        const avail = right - mLeft;
+        if (pw > avail) {
+          const k = avail / pw;
+          sp.scale.x *= k;
+          sp.scale.y *= k;
+          pw = avail;
+          ph *= k;
+        }
+        let cx = Math.min(right - pw / 2, Math.max(mLeft + pw / 2, sx)),
           cy = Math.min(bot - ph / 2, Math.max(top + ph / 2, sy));
+        const v2 = this._v2 || (this._v2 = new (cam.position.constructor)());
+        const overRealm = (x, y) => {
+          if (c.kid == null || !world) return true;
+          v2.set((x / W) * 2 - 1, -((y / H) * 2 - 1), v.z).unproject(cam);
+          const tx = Math.floor(v2.x),
+            tz = Math.floor(v2.z);
+          if (!world.inBounds?.(tx, tz)) return false;
+          return world.owner[tz * world.w + tx] === c.kid || Math.hypot(x - sx, y - sy) < ph * 0.6;
+        };
         let placed = false;
-        for (const dy of [0, -1.1, 1.1, -2.2, 2.2, -3.3, 3.3]) {
+        for (const dy of [0, -1.1, 1.1, -2.2, 2.2]) {
           const yy = cy + dy * ph;
           if (yy - ph / 2 < top || yy + ph / 2 > bot) continue;
           const r = { l: cx - pw / 2, r: cx + pw / 2, t: yy - ph / 2, b: yy + ph / 2 };
-          if (!hits(r)) {
+          if (!hits(r) && overRealm(cx, yy)) {
             rect.l = r.l;
             rect.r = r.r;
             rect.t = r.t;
@@ -399,7 +426,7 @@ export class Labels {
         if (!placed) target = 0;
       } else if (target > 0) {
         // keep clear of the screen edges where the HUD lives
-        if (uiOn && (rect.t < 90 || rect.b > H - 90 || rect.r > W - 300 || rect.l < 8)) target = 0;
+        if (rect.t < mTop || rect.b > H - mBot || rect.r > W - mRight || rect.l < mLeft) target = 0;
         if (hits(rect)) target = 0;
       }
       if (target > 0.02) taken.push(rect);
