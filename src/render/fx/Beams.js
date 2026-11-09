@@ -100,7 +100,7 @@ export class Beams {
     });
     this.mesh = new THREE.Mesh(geo, this.material);
     this.mesh.frustumCulled = false;
-    this.mesh.renderOrder = 14;
+    this.mesh.renderOrder = 23; // after smoke: bolts inside an ash column stay visible
     this.mesh.visible = false;
     this._c = new THREE.Color();
     this._lo = Infinity;
