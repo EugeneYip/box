@@ -37,7 +37,7 @@ export class Earthquake {
           zig = Math.random() < 0.5 ? 1 : -1;
         const head = ang + (dir < 0 ? Math.PI : 0);
         const len = radius * rand(0.75, 1.0) * (f ? 0.7 : 1);
-        let hw0 = rand(1.3, 1.8) * (f ? 0.8 : 1);
+        let hw0 = rand(1.6, 2.1) * (f ? 0.8 : 1);
         while (d < len) {
           const step = rand(1.3, 2.3);
           zig = Math.random() < 0.8 ? -zig : zig;
@@ -46,7 +46,7 @@ export class Earthquake {
             nz = pz + Math.sin(a) * step;
           d += step;
           const taper = Math.pow(Math.max(0, 1 - d / len), 0.6);
-          const hw1 = Math.max(0.45, (0.45 + 1.35 * taper) * rand(0.7, 1.15) * (f ? 0.8 : 1));
+          const hw1 = Math.max(0.45, (0.5 + 1.6 * taper) * rand(0.7, 1.15) * (f ? 0.8 : 1));
           segs.push({ x0: px, z0: pz, x1: nx, z1: nz, t: d / PROPAGATION, done: false, w: 1 - d / len, hw0, hw1 });
           hw0 = hw1;
           px = nx;
