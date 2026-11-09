@@ -71,7 +71,7 @@ def(FLORA.DEAD_TREE, {
 });
 def(FLORA.BUSH, {
   growTime: 40, spread: 0.018, spreadRadius: 2, life: 900, cap: 3,
-  suit: habitat({ GRASS: 1, FOREST: 1, JUNGLE: 1, SAVANNA: 0.7, SWAMP: 0.6, TUNDRA: 0.5, SOIL: 0.55, SAND: 0.2, FARMLAND: 0.2, ASH: 0.3 }),
+  suit: habitat({ GRASS: 1, FOREST: 1, JUNGLE: 1, SAVANNA: 0.7, SWAMP: 0.6, TUNDRA: 0.5, SOIL: 0.55, SAND: 0.2, DESERT: 0.3, FARMLAND: 0.2, ASH: 0.3 }),
 });
 def(FLORA.BERRY_BUSH, {
   growTime: 55, spread: 0.012, life: 900, cap: 3,

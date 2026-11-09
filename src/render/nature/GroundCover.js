@@ -191,6 +191,30 @@ function broadleafTuft(seed) {
   return bb.build();
 }
 
+// Tumbleweed: a loose ball of thin dry twigs.
+function tumbleweed(seed) {
+  const r = mulberry32(seed);
+  const bb = new BladeBuilder();
+  const R = 0.11;
+  const ctr = V(0, R * 0.85, 0);
+  for (let k = 0; k < 22; k++) {
+    const u = r() * 2 - 1,
+      a = r() * TAU;
+    const d = V(Math.sqrt(1 - u * u) * Math.cos(a), u, Math.sqrt(1 - u * u) * Math.sin(a));
+    const s = V(-d.z, 0.3, d.x).normalize().multiplyScalar(0.012);
+    const p0 = ctr.clone().addScaledVector(d, R * 0.2);
+    const p1 = ctr.clone().addScaledVector(d, R * (0.85 + r() * 0.3));
+    const c0 = [0.62, 0.5, 0.34],
+      c1 = [0.86, 0.74, 0.52];
+    const i0 = bb.v(p0.clone().sub(s), c0, 0.2, 0.2, MAT.WOOD, 0, d);
+    const i1 = bb.v(p0.clone().add(s), c0, 0.2, 0.2, MAT.WOOD, 0, d);
+    const i2 = bb.v(p1, c1, 0.4, 0.4, MAT.WOOD, 0, d);
+    bb.t(i0, i1, i2);
+    bb.t(i0, i2, i1);
+  }
+  return bb.build();
+}
+
 function pebbles(seed, n, rMin, rMax) {
   const b = new MeshBuilder(seed);
   for (let k = 0; k < n; k++) {
@@ -234,6 +258,7 @@ export class GroundCover {
       { id: 'fern', geos: [0, 1].map((s) => fernTuft(501 + s)) },
       { id: 'broad', geos: [0, 1].map((s) => broadleafTuft(601 + s)) },
       { id: 'sedge', geos: [grassTuft(701, { blades: 9, hMin: 0.18, hMax: 0.34, spread: 0.07, width: 0.016, curve: 0.2 })] },
+      { id: 'tumble', geos: [tumbleweed(901), tumbleweed(902)], fixedTint: true },
       { id: 'pebble', geos: [pebbles(801, 4, 0.025, 0.06), pebbles(802, 3, 0.035, 0.075), pebbles(803, 6, 0.02, 0.045)], rock: true },
     ];
     this.kindIndex = {};
@@ -448,8 +473,11 @@ export class GroundCover {
             plan = 'rock';
             break;
           case TILE.SAND:
-          case TILE.DESERT:
             n = 1;
+            plan = 'sand';
+            break;
+          case TILE.DESERT:
+            n = 2;
             plan = 'sand';
             break;
           default:
@@ -490,7 +518,8 @@ export class GroundCover {
               if (kind === 'broad') scale *= 1.3;
               break;
             case 'savanna':
-              kind = r3 < 0.7 ? 'grassTall' : 'grass';
+              kind = r3 < 0.62 ? 'grassTall' : r3 < 0.68 ? 'tumble' : 'grass';
+              if (kind === 'tumble') (tt[0] = tt[1] = tt[2] = 1), (scale *= 1.2);
               break;
             case 'tundra':
               kind = r3 < 0.25 ? 'pebble' : 'grassShort';
@@ -521,9 +550,13 @@ export class GroundCover {
               }
               break;
             case 'sand':
-              if (t === TILE.DESERT ? r3 > 0.22 : r3 > 0.16) continue;
+              if (t === TILE.DESERT ? r3 > 0.42 : r3 > 0.16) continue;
               if (t === TILE.SAND && world.isCoastal(tx, ty) && r4 < 0.5) continue;
-              kind = t === TILE.DESERT && r4 < 0.35 ? 'grassShort' : 'pebble';
+              kind = t === TILE.DESERT ? (r4 < 0.5 ? 'grassShort' : r4 < 0.62 ? 'tumble' : 'pebble') : 'pebble';
+              if (kind === 'tumble') {
+                tt[0] = tt[1] = tt[2] = 1;
+                scale *= 1.3;
+              }
               if (kind === 'pebble') {
                 const g = (t === TILE.DESERT ? 0.42 : 0.55) * br;
                 tt[0] = g * 1.12;

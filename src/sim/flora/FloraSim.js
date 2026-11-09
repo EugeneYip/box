@@ -122,6 +122,14 @@ export class FloraSim {
         if (r < 0.06) world.flora[i] = FLORA.BOULDER;
         else if (r < 0.3) world.flora[i] = FLORA.ROCK_SMALL;
         if (world.flora[i]) world.floraGrowth[i] = 1;
+      } else if (!f && (world.type[i] === TILE.DESERT || world.type[i] === TILE.SAVANNA) && world.height[i] >= SEA_LEVEL + 0.3 && world.building[i] < 0 && world.slopeAt(tx, ty) < 1.2) {
+        // arid land: cacti, succulents, dry shrubs and stones around the dunes
+        const r = this.hash(i * 13 + 7);
+        const desert = world.type[i] === TILE.DESERT;
+        if (desert ? r < 0.05 : r < 0.012) world.flora[i] = FLORA.CACTUS;
+        else if (desert ? r < 0.1 : r < 0.07) world.flora[i] = FLORA.BUSH;
+        else if (desert ? r < 0.13 : r < 0.085) world.flora[i] = FLORA.ROCK_SMALL;
+        if (world.flora[i]) world.floraGrowth[i] = 0.7 + this.hash(i * 3) * 0.3;
       } else if (!f && world.type[i] === TILE.GRASS && world.height[i] >= SEA_LEVEL && world.building[i] < 0) {
         const d = flowerDrift(tx, ty);
         if (d > 0.72 && this.hash(i * 7 + 3) < (d - 0.72) * 1.1 && world.slopeAt(tx, ty) < 0.9) {

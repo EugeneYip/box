@@ -459,6 +459,16 @@ export class Vegetation {
     arr[off] = br * (1 + warm + reg);
     arr[off + 1] = br * (1 + reg * 0.3);
     arr[off + 2] = br * (1 - warm * 1.4 - reg);
+    if (f === FLORA.BUSH || f === FLORA.BERRY_BUSH) {
+      const t = this.world.type[ty * this.world.w + tx];
+      if (t === TILE.DESERT || t === TILE.SAVANNA || t === TILE.SAND) {
+        // dry scrub: olive-ochre, varied
+        const d = t === TILE.DESERT ? 1 : 0.65;
+        arr[off] *= 1 + 0.42 * d;
+        arr[off + 1] *= 1 + 0.06 * d;
+        arr[off + 2] *= 1 - 0.55 * d;
+      }
+    }
   }
 
   // Picks LOD / small-prop visibility for a chunk from its camera distance.
