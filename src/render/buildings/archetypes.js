@@ -1840,9 +1840,18 @@ function wonderPlatform(g, K, style) {
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) bannerPole(g, K, sx * 1.85, 0.7, sz * 1.85, 1.5, { s: 1.4 });
 }
 
-function wonder(g, K, style, level = 3) {
-  const L = Math.max(1, Math.min(3, level));
+function wonder(g, K, style, level = 3, variant = 0) {
   wonderPlatform(g, K, style);
+  // each realm's work differs in height and ornament
+  g.push();
+  g.scale(1, [1, 1.12, 0.9][variant % 3], 1);
+  const r = wonderBody(g, K, style, level, variant % 3);
+  g.pop();
+  return r;
+}
+
+function wonderBody(g, K, style, level, variant) {
+  const L = Math.max(1, Math.min(3, level));
   const top = 0.7;
   if (style === 'dune') {
     // Sun Pillar: a colonnaded ziggurat, a fluted obelisk, a golden sun
@@ -1858,11 +1867,21 @@ function wonder(g, K, style, level = 3) {
     if (L === 2) return scaffoldRing(g, K, top + 3.15, 0.75, 4.4), crane(g, K, 0.9, top + 3.15, 0.6, 5), { base: { x: 0, z: 0, w: 4.8, d: 4.8 } };
     g.cyl(0, top + 7.35, 0, 0.7, 0.2, 12, K.stone2, {});
     g.dome(0, top + 7.55, 0, 0.75, 14, 5, GOLD, { sy: 1 });
-    for (let i = 0; i < 10; i++) {
-      const a = (i / 10) * Math.PI * 2;
-      g.beam(Math.cos(a) * 0.6, top + 7.9, Math.sin(a) * 0.6, Math.cos(a) * 1.5, top + 8.0, Math.sin(a) * 1.5, 0.08, GOLD, { glow: 0.5 });
-    }
+    if (variant === 2) {
+      // a ringed golden orb
+      g.cyl(0, top + 7.85, 0, 1.25, 0.1, 20, GOLD, { glow: 0.4 });
+    } else
+      for (let i = 0; i < 10; i++) {
+        const a = (i / 10) * Math.PI * 2;
+        g.beam(Math.cos(a) * 0.6, top + 7.9, Math.sin(a) * 0.6, Math.cos(a) * 1.5, top + 8.0, Math.sin(a) * 1.5, 0.08, GOLD, { glow: 0.5 });
+      }
     g.cone(0, top + 8.25, 0, 0.18, 0.9, 6, GOLD, { glow: 0.6 });
+    if (variant === 1)
+      for (const sx of [-1, 1]) {
+        // twin obelisks guard the stair
+        g.cyl(sx * 1.55, top, 1.55, 0.2, 3.4, 4, K.wall2, { r2: 0.1 });
+        g.cone(sx * 1.55, top + 3.4, 1.55, 0.12, 0.35, 4, GOLD, { glow: 0.4 });
+      }
   } else if (style === 'mire') {
     // Sky Totem: a step pyramid crowned by a great carved pole and a thunderbird
     g.box(0, top, 0, 3.6, 0.8, 3.6, K.stone, { jit: 0.06 });
@@ -1871,10 +1890,12 @@ function wonder(g, K, style, level = 3) {
     g.box(0, top + 1.55, 0, 2.72, 0.1, 2.72, K.trim, {});
     for (let i = 0; i < 6; i++) g.box(0, top + i * 0.27, 1.8 - i * 0.15, 0.9, 0.27, 0.3, K.timber2);
     if (L === 1) return crane(g, K, -0.6, top + 1.6, 0.3, 1.8), { base: { x: 0, z: 0, w: 4.8, d: 4.8 } };
-    const cols = [K.cloth, K.trim, 0x2f7fb8, K.cloth, 0xc0392b, K.trim];
     for (let k = 0; k < 6; k++) {
       const y = top + 1.6 + k * 0.75;
-      g.cyl(0, y, 0, 0.62 - k * 0.04, 0.72, 10, cols[k], { tint: 0.4 });
+      // carved and weathered wood, a thin painted band under each face
+      g.cyl(0, y, 0, 0.62 - k * 0.04, 0.72, 10, k % 2 ? K.timber : K.timber2, { tint: 0.15 });
+      g.cyl(0, y + 0.02, 0, 0.64 - k * 0.04, 0.07, 10, k % 3 === 0 ? 0x9e3c2c : K.trim, {});
+      g.box(0, y + 0.52, 0.57 - k * 0.04, 0.6, 0.08, 0.1, K.timber, {}); // carved brow
       // eyes and a jutting beak on every carved face
       g.box(-0.2, y + 0.42, 0.55 - k * 0.04, 0.14, 0.09, 0.06, 0xf5e6b0, { glow: 0.5 });
       g.box(0.2, y + 0.42, 0.55 - k * 0.04, 0.14, 0.09, 0.06, 0xf5e6b0, { glow: 0.5 });
@@ -1882,11 +1903,19 @@ function wonder(g, K, style, level = 3) {
     }
     if (L === 2) return scaffoldRing(g, K, top + 1.6, 0.8, 4.6), crane(g, K, 1.0, top + 1.6, -0.6, 5.2), { base: { x: 0, z: 0, w: 4.8, d: 4.8 } };
     const wy = top + 6.1;
-    // spread wings: fanned feathers in the realm's colours
+    // spread wings: carved feathers, the outer ones tipped with paint
     for (let i = 0; i < 6; i++) {
       const s = 0.8 + i * 0.32,
-        lift = 0.15 + i * 0.12;
-      for (const sx of [-1, 1]) g.beam(0, wy, 0, sx * s * 1.25, wy + lift + 0.35, -0.1, 0.16 - i * 0.012, i % 2 ? K.cloth : 0x2f7fb8, { tint: 0.5 });
+        lift = (variant === 1 ? 0.35 : 0.15) + i * (variant === 1 ? 0.2 : 0.12);
+      for (const sx of [-1, 1]) g.beam(0, wy, 0, sx * s * 1.25, wy + lift + 0.35, -0.1, 0.16 - i * 0.012, i >= 4 ? K.trim : i % 2 ? K.timber : K.timber2, { tint: 0.2 });
+    }
+    if (variant === 2) {
+      // a sun disc rises behind the thunderbird
+      g.push();
+      g.translate(0, wy + 1.0, -0.3);
+      g.rotateX(Math.PI / 2);
+      g.cyl(0, 0, 0, 0.95, 0.06, 18, GOLD, { glow: 0.3 });
+      g.pop();
     }
     g.cone(0, wy, 0.1, 0.42, 1.0, 8, K.trim, {});
     g.beam(0, wy + 0.7, 0.2, 0, wy + 0.55, 0.85, 0.14, GOLD, { glow: 0.3 });
@@ -1921,8 +1950,19 @@ function wonder(g, K, style, level = 3) {
       g.beam(dx * 0.9, ry + 0.1, dz * 0.9, dx * 1.5, ry + 0.45, dz * 1.5, 0.12, K.timber, {});
       g.cone(dx * 1.55, ry + 0.4, dz * 1.55, 0.09, 0.3, 5, GOLD, {});
     }
-    g.cyl(0, ry + 2.9, 0, 0.04, 0.9, 6, GOLD, {});
-    g.bead(0, ry + 3.8, 0, 0.14, GOLD, { glow: 0.6 });
+    if (variant === 1) g.hip(0, ry + 1.7, 0, 1.1, 1.1, 1.9, 0x5c9a86, { over: 0.08, rows: 3 }); // a second, higher roof
+    if (variant === 2)
+      for (const [dx, dz] of [
+        [1, 1],
+        [1, -1],
+        [-1, 1],
+        [-1, -1],
+      ]) {
+        g.cyl(dx * 1.05, top + 2.8, dz * 1.05, 0.32, 3.2, 8, K.stone, {});
+        g.cone(dx * 1.05, top + 6.0, dz * 1.05, 0.38, 1.1, 8, 0x5c9a86, {});
+      }
+    g.cyl(0, ry + 2.9 + (variant === 1 ? 0.6 : 0), 0, 0.04, 0.9, 6, GOLD, {});
+    g.bead(0, ry + 3.8 + (variant === 1 ? 0.6 : 0), 0, 0.14, GOLD, { glow: 0.6 });
   } else {
     // Great Spire: a buttressed cathedral tower rising in three stages to a needle
     g.box(0, top, 0, 2.5, 2.8, 2.5, K.stone, { jit: 0.06 });
@@ -1948,9 +1988,24 @@ function wonder(g, K, style, level = 3) {
       const a = (i / 8) * Math.PI * 2;
       g.cone(Math.cos(a) * 0.82, sy + 1.6, Math.sin(a) * 0.82, 0.1, 0.55, 5, K.tile, {});
     }
-    g.cone(0, sy + 1.6, 0, 0.84, 4.4, 8, K.tile, { tint: 0.2 });
-    g.cyl(0, sy + 5.95, 0, 0.03, 0.5, 6, GOLD, {});
-    g.bead(0, sy + 6.45, 0, 0.11, GOLD, { glow: 0.6 });
+    if (variant === 2) {
+      // the Bell Minster: an open lantern and a ribbed dome instead of a needle
+      g.cyl(0, sy + 1.6, 0, 0.7, 0.9, 8, K.stone, {});
+      g.dome(0, sy + 2.5, 0, 0.78, 12, 4, K.tile, { ribs: true });
+      g.cone(0, sy + 3.25, 0, 0.12, 1.0, 6, GOLD, {});
+      g.bead(0, sy + 4.3, 0, 0.11, GOLD, { glow: 0.6 });
+    } else {
+      g.cone(0, sy + 1.6, 0, 0.84, 4.4, 8, K.tile, { tint: 0.2 });
+      g.cyl(0, sy + 5.95, 0, 0.03, 0.5, 6, GOLD, {});
+      g.bead(0, sy + 6.45, 0, 0.11, GOLD, { glow: 0.6 });
+    }
+    if (variant === 1)
+      for (const sx of [-1, 1]) {
+        // the Sky Cathedral: twin west towers before the great spire
+        g.box(sx * 1.05, top, 1.6, 0.75, 4.4, 0.75, K.stone, { jit: 0.05 });
+        windowOn(g, K, sx * 1.05, 1.6, 0.75, 0.75, 'F', 0, top + 3.2, { w: 0.18, h: 0.45, cross: false });
+        g.cone(sx * 1.05, top + 4.4, 1.6, 0.5, 2.0, 8, K.tile, { tint: 0.2 });
+      }
   }
   return { base: { x: 0, z: 0, w: 4.8, d: 4.8 } };
 }
@@ -2006,16 +2061,53 @@ function colossus(g, K, style, level = 3) {
   return { base: { x: 0, z: 0, w: 2.8, d: 2.8 } };
 }
 
+// A mastery academy: a colonnaded hall with a dome and a reading court.
+function academy(g, K, style) {
+  const w = 2.6,
+    d = 1.6;
+  g.box(0, 0, 0, w + 0.2, 0.18, d + 0.2, K.stone2, { jit: 0.04 });
+  g.box(0, 0.18, -0.15, w, 1.1, d - 0.4, style === 'dune' ? K.wall : K.wall2, {});
+  for (let i = 0; i < 7; i++) g.cyl(-w / 2 + 0.15 + i * ((w - 0.3) / 6), 0.18, d / 2 - 0.12, 0.07, 1.05, 8, K.stone, {});
+  g.box(0, 1.23, 0.08, w + 0.1, 0.14, d - 0.05, K.stone, {});
+  g.gable(0, 1.37, d / 2 - 0.2, w * 0.5, 0.4, 0.38, K.stone2, {});
+  g.cyl(0, 1.37, -0.2, 0.55, 0.3, 12, K.stone, {});
+  g.dome(0, 1.67, -0.2, 0.58, 14, 5, style === 'frost' ? 0x5c9a86 : style === 'dune' ? 0xd9a830 : K.tile, { ribs: true });
+  g.bead(0, 2.25, -0.2, 0.07, 0xe2b440, { glow: 0.5 });
+  for (const sx of [-1, 1]) windowOn(g, K, sx * 0.8, -0.15, 0.5, d - 0.4, 'F', 0, 0.75, { w: 0.18, h: 0.35, cross: false });
+  for (const sx of [-1, 1]) bannerPole(g, K, sx * (w / 2 + 0.05), 0.18, d / 2, 1.5, { s: 0.8 });
+  return { base: { x: 0, z: 0, w: w + 0.2, d: d + 0.2 } };
+}
+
 // A statue of a hero on a plinth: mastery shows in a realm's streets.
-function statue(g, K, style) {
-  const M = style === 'frost' ? 0x5c9a86 : BRONZE;
+function statue(g, K, style, variant = 0) {
+  const V = variant % 3;
+  // bronze heroes, a marble sage
+  const M = V === 1 ? 0xe8e2d4 : style === 'frost' ? 0x5c9a86 : BRONZE;
   g.box(0, 0, 0, 0.62, 0.42, 0.62, K.stone2, { jit: 0.04 });
   g.box(0, 0.42, 0, 0.5, 0.08, 0.5, K.stone, {});
-  g.box(0, 0.5, 0, 0.22, 0.55, 0.16, M, {});
-  g.box(0, 1.05, 0, 0.3, 0.38, 0.18, M, {});
-  g.bead(0, 1.43, 0, 0.1, M, {});
-  g.box(0.19, 0.8, 0.02, 0.035, 1.0, 0.035, M, {});
-  g.bead(0.19, 1.8, 0.02, 0.05, GOLD, { glow: 0.4 });
+  if (V === 1) {
+    // a robed sage reading
+    g.cyl(0, 0.5, 0, 0.17, 0.75, 8, M, { r2: 0.12 });
+    g.box(0, 1.25, 0, 0.24, 0.2, 0.16, M, {});
+    g.bead(0, 1.42, 0, 0.1, M, {});
+    g.box(0, 1.12, 0.12, 0.2, 0.03, 0.14, 0x6e4a2c, { ry: 0.3 });
+  } else {
+    g.box(0, 0.5, 0, 0.22, 0.55, 0.16, M, {});
+    g.box(0, 1.05, 0, 0.3, 0.38, 0.18, M, {});
+    g.bead(0, 1.43, 0, 0.1, M, {});
+    if (V === 2) {
+      // a warrior behind a round shield, sword raised
+      g.push();
+      g.translate(-0.17, 1.0, 0.08);
+      g.rotateZ(Math.PI / 2);
+      g.cyl(0, 0, 0, 0.17, 0.04, 10, M, {});
+      g.pop();
+      g.beam(0.18, 1.2, 0, 0.3, 1.75, 0.02, 0.04, 0xcfd3d6, {});
+    } else {
+      g.box(0.19, 0.8, 0.02, 0.035, 1.0, 0.035, M, {});
+      g.bead(0.19, 1.8, 0.02, 0.05, GOLD, { glow: 0.4 });
+    }
+  }
   return { base: { x: 0, z: 0, w: 0.62, d: 0.62 } };
 }
 
@@ -2029,9 +2121,10 @@ const BUILDERS = {
   windmill: (g, K, s) => windmill(g, K, s),
   docks: (g, K, s, lv) => (lv >= 2 ? harbour : docks)(g, K, s),
   library: (g, K, s) => library(g, K, s),
-  wonder: (g, K, s, lv) => wonder(g, K, s, lv),
+  wonder: (g, K, s, lv, vr) => wonder(g, K, s, lv, vr),
   colossus: (g, K, s, lv) => colossus(g, K, s, lv),
-  statue: (g, K, s) => statue(g, K, s),
+  statue: (g, K, s, lv, vr) => statue(g, K, s, vr),
+  academy: (g, K, s) => academy(g, K, s),
   observatory: (g, K, s) => observatory(g, K, s),
   aqueduct: (g, K, s) => aqueduct(g, K, s),
   market: (g, K, s) => market(g, K, s),
@@ -2042,12 +2135,12 @@ const BUILDERS = {
   gate: (g, K, s) => gatehouse(g, K, s),
 };
 
-export function buildArchetype(type, style, level, era = 1) {
+export function buildArchetype(type, style, level, era = 1, variant = 0) {
   const K = eraPalette(style, era);
   const g = new GeoBuilder(type.length * 131 + level * 17 + style.length * 7, { roofKind });
   const fn = BUILDERS[type];
   let info = {};
-  if (fn) info = fn(g, K, style, level) || {};
+  if (fn) info = fn(g, K, style, level, variant) || {};
   else g.box(0, 0, 0, 0.8, 0.8, 0.8, K.wall);
   // every home flies a small pennant in its kingdom's colours
   if (type === 'house' && !(style === 'mire' && level >= 3)) bannerPole(g, K, 0.88, 0, 0.88, style === 'mire' ? 1.35 : 1.0, { s: 0.55 });

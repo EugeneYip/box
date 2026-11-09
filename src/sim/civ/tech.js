@@ -142,11 +142,12 @@ export const tech = {
 
   // Called every 2 s.
   _researchTick(dt) {
-    if (!this.law('civTechnology')) return;
+    if (!this.law('civTechnology') && !this.kingdoms.some((k) => k.policy?.technology)) return;
     const g = this.game;
     const speed = this.law('civTechSpeed', 1) * (g.age?.mods?.techRate ?? 1);
     for (const k of this.kingdoms) {
       if (!k.alive || !k.villages.length) continue;
+      if (!this._kLaw(k.id, 'civTechnology')) continue;
       if (!k.techs) this._initTech(k);
       let pop = 0,
         temples = 0,
@@ -197,7 +198,8 @@ export const tech = {
           k.knowledge -= cost;
           k.mastery = (k.mastery || 0) + 1;
           this._history(`📜 ${this._kn(k)} attains Mastery ${k.mastery}`, 'info', this._kingdomPos(k));
-          if (k.mastery % 3 === 0) this._note(`📜 ${this._kn(k)} attains Mastery ${k.mastery}`, 'good', this._kingdomPos(k), 'mastery' + k.id, 1);
+          const unlock = { 2: 'statues of its heroes rise', 3: 'a second great work may begin', 4: 'its halls are gilded', 6: 'scholars found an academy', 8: 'its harbours fill with ships', 10: 'lamps line its grand roads' }[k.mastery];
+          if (unlock || k.mastery % 3 === 0) this._note(`📜 ${this._kn(k)} attains Mastery ${k.mastery}${unlock ? ': ' + unlock : ''}`, 'good', this._kingdomPos(k), 'mastery' + k.id, 1);
           k.researching = null;
         }
         continue;

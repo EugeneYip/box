@@ -45,6 +45,8 @@ export function bannerGeometry(style) {
     col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = trim;
   }
   g.setAttribute('aFlex', new THREE.BufferAttribute(flex, 1));
+  // cloth aspect (width / height) so the emblem stays square on every cut
+  g.setAttribute('aBAsp', new THREE.BufferAttribute(new Float32Array(pos.count).fill(w / h), 1));
   g.setAttribute('color', new THREE.BufferAttribute(col, 3));
   g.computeVertexNormals();
   return g;
@@ -55,8 +57,9 @@ export function bannerMaterial(uniforms) {
   m.onBeforeCompile = (sh) => {
     sh.uniforms.uTime = uniforms.uTime;
     sh.uniforms.uWind = uniforms.uWind;
+    sh.uniforms.uEmblems = uniforms.uEmblems || { value: null };
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute float aFlex;\nuniform float uTime;\nuniform float uWind;')
+      .replace('#include <common>', '#include <common>\nattribute float aFlex;\nattribute float aBAsp;\nattribute vec2 aEmblem;\nvarying vec2 vBUv;\nvarying vec3 vBEm;\nuniform float uTime;\nuniform float uWind;')
       .replace(
         '#include <begin_vertex>',
         `#include <begin_vertex>
@@ -68,6 +71,35 @@ export function bannerMaterial(uniforms) {
              + sin(aFlex * 13.0 - uTime * 9.0 + ph * 2.0) * 0.012 * aFlex;
   transformed.z += wave;
   transformed.y -= aFlex * aFlex * 0.06 * (1.0 - min(1.0, w));
+  vBUv = uv;
+  vBEm = vec3(aEmblem, aBAsp);
+}`,
+      );
+    // field pattern (the realm's colour and a darker shade) and the emblem in cream
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec2 vBUv;\nvarying vec3 vBEm;\nuniform sampler2D uEmblems;')
+      .replace(
+        '#include <color_fragment>',
+        `#include <color_fragment>
+{
+  vec2 u = vBUv;
+  float fld = floor(vBEm.y + 0.5);
+  float alt = 0.0;
+  if (fld > 0.5 && fld < 1.5) alt = step(0.5, u.x);
+  else if (fld > 1.5 && fld < 2.5) alt = step(1.0, u.x + (1.0 - u.y));
+  else if (fld > 2.5 && fld < 3.5) alt = step(abs(u.x - 0.5) * 1.1 + 0.42, 1.0 - u.y);
+  else if (fld > 3.5) alt = abs(step(0.5, u.x) - step(0.5, u.y));
+  diffuseColor.rgb *= mix(1.0, 0.55, alt);
+  float sym = floor(vBEm.x + 0.5);
+  if (sym > -0.5) {
+    float asp = vBEm.z;
+    vec2 e = vec2((u.x - 0.5) * asp, (0.5 - u.y)) / min(0.78, asp * 0.85) + 0.5;
+    if (e.x > 0.0 && e.x < 1.0 && e.y > 0.0 && e.y < 1.0) {
+      vec2 cell = vec2(mod(sym, 4.0), floor(sym / 4.0));
+      float a = texture2D(uEmblems, (cell + e) / 4.0).a;
+      diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.86, 0.81, 0.68), a);
+    }
+  }
 }`,
       );
   };

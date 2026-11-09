@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { buildArchetype, foundation, scaffold, ruin, wallPost, wallArm, lampPost, frameFor, materialPile, proxyGeometry, PAL, WALL_H } from './archetypes.js';
 import { Labels } from './labels.js';
 import { createBuildingMaterial, createPropMaterial } from './material.js';
+import { emblemAtlas, EMBLEM_IDS, FIELD_IDS } from './emblems.js';
 import { bannerGeometry, bannerMaterial, bladesGeometry, boatGeometry, FENCE, scarecrowGeometry, glowTexture, PuffSystem } from './props.js';
 import { TerritoryOverlay } from './TerritoryOverlay.js';
 import { BUILDING_TYPES } from '../../sim/civ/catalog.js';
@@ -74,7 +75,7 @@ export class BuildingRenderer {
     this.group = new THREE.Group();
     this.group.name = 'civ-buildings';
     game.scene.add(this.group);
-    this.uniforms = { uTime: { value: 0 }, uNight: { value: 0 }, uWind: { value: 0.35 } };
+    this.uniforms = { uTime: { value: 0 }, uNight: { value: 0 }, uWind: { value: 0.35 }, uEmblems: { value: emblemAtlas() } };
     this.mat = createBuildingMaterial(this.uniforms);
     this.matClip = createBuildingMaterial(this.uniforms, { clip: true });
     this.propMat = createPropMaterial();
@@ -233,7 +234,7 @@ export class BuildingRenderer {
     else if (kind === 'lamppost') {
       const l = lampPost();
       a = { geo: l.geo, anchors: l.anchors, maxY: 0.8 };
-    } else a = buildArchetype(kind, p1, +p2, p3 == null ? 1 : +p3);
+    } else a = buildArchetype(kind, p1, +p2, p3 == null ? 1 : +p3, p4 == null ? 0 : +p4);
     this.arche.set(key, a);
     return a;
   }
@@ -316,7 +317,7 @@ export class BuildingRenderer {
         continue;
       }
       const lvl = Math.min(b.level || 1, def.levels);
-      const akey = `${b.type}|${b.style}|${lvl}|${b.era ?? 1}`;
+      const akey = `${b.type}|${b.style}|${lvl}|${b.era ?? 1}${b.variant ? '|' + b.variant : ''}`;
       const a = this._arch(akey);
       if (stage === 'found' || stage === 'frame' || stage === 'build') {
         // footings, then a timber frame, then walls rising, then the roof;
@@ -356,7 +357,7 @@ export class BuildingRenderer {
         z = h.z - Math.sin(r) * side + Math.cos(r) * 1.2;
       const gy = world.heightAt(x, z);
       this.staffs.push([x, gy, z, 3.2]);
-      this.banners.push({ x: x + 0.03, y: gy + 3.15, z, s: 2.4, style: h.style, color: civ.kingdomColor(k.id) });
+      this.banners.push({ x: x + 0.03, y: gy + 3.15, z, s: 2.4, style: h.style, color: civ.kingdomColor(k.id), k: k.id });
     }
     // lampposts along town streets
     for (const v of civ.villages) {
@@ -418,7 +419,7 @@ export class BuildingRenderer {
       const key = 'proxy|' + b.style;
       let L = proxies.get(key);
       if (!L) proxies.set(key, (L = { m: [], col: [], bs: [] }));
-      const a = this._arch(def.wall ? `wpost|${b.style}` : `${b.type}|${b.style}|${Math.min(b.level || 1, def.levels)}|${b.era ?? 1}`);
+      const a = this._arch(def.wall ? `wpost|${b.style}` : `${b.type}|${b.style}|${Math.min(b.level || 1, def.levels)}|${b.era ?? 1}${b.variant ? '|' + b.variant : ''}`);
       const hgt = def.wall ? 1.1 : Math.max(0.5, Math.min(def.monument ? 12 : 3, a.maxY)) * (b.constructing ? Math.max(0.2, b.progress) : 1);
       const pm = this._m2.makeRotationY(b.rotation || 0).setPosition(b.x, b.y, b.z).multiply(this._m3.makeScale(def.w * 0.82, hgt, def.h * 0.82));
       for (let i = 0; i < 16; i++) L.m.push(pm.elements[i]);
@@ -497,13 +498,14 @@ export class BuildingRenderer {
     }
     for (const c of an.banners) {
       p.set(c.x, c.y, c.z).applyMatrix4(M);
-      this.banners.push({ x: p.x, y: p.y, z: p.z, s: c.s || 1, style: b.style, color: col.getHex() });
+      this.banners.push({ x: p.x, y: p.y, z: p.z, s: c.s || 1, style: b.style, color: col.getHex(), k: b.kingdom });
     }
     for (const c of an.blades) {
       const bm = new THREE.Matrix4().copy(M).multiply(new THREE.Matrix4().makeTranslation(c.x, c.y, c.z));
       this.blades.push({ m: bm, style: b.style, phase: b.seed * 10 });
     }
-    for (const c of an.boats) {
+    const moreShips = b.type === 'docks' && (this.game.civ?.kingdoms?.[b.kingdom]?.mastery || 0) >= 8;
+    for (const c of moreShips ? [...an.boats, ...an.boats.map((o) => ({ ...o, x: o.x + 0.55, z: o.z + 0.35, ship: true }))] : an.boats) {
       p.set(c.x, c.y, c.z).applyMatrix4(M);
       const tx = Math.floor(p.x),
         tz = Math.floor(p.z);
@@ -713,7 +715,7 @@ export class BuildingRenderer {
       const st = CULTURES[baseCulture(civ.kingdoms[a.kingdom]?.culture)]?.style || 'vale';
       let L = per.get(st);
       if (!L) per.set(st, (L = []));
-      L.push({ x: x + 0.02, y: y + 1.8, z, s: 1.7, style: st, color: civ.kingdomColor(a.kingdom) });
+      L.push({ x: x + 0.02, y: y + 1.8, z, s: 1.7, style: st, color: civ.kingdomColor(a.kingdom), k: a.kingdom });
     }
     const sm = this._grow(this.staffMap, 's', staffs.length);
     for (let i = 0; i < staffs.length; i++) {
@@ -727,8 +729,19 @@ export class BuildingRenderer {
       const L = per.get(st) || [];
       const mesh = this._grow(this.bannerMeshes, st, L.length);
       if (mesh !== mesh0 && !mesh.instanceColor) mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(mesh.instanceMatrix.count * 3), 3);
+      // the realm's emblem and field pattern ride on each flag
+      let ea = mesh.geometry.getAttribute('aEmblem');
+      if (!ea || ea.count < mesh.instanceMatrix.count) {
+        ea = new THREE.InstancedBufferAttribute(new Float32Array(mesh.instanceMatrix.count * 2).fill(-1), 2);
+        ea.setUsage(THREE.DynamicDrawUsage);
+        mesh.geometry.setAttribute('aEmblem', ea);
+      }
       for (let i = 0; i < L.length; i++) {
         const b = L[i];
+        const kb = b.k != null ? civ.kingdoms[b.k] : null;
+        const ban = kb?.banner;
+        ea.setXY(i, ban ? EMBLEM_IDS.indexOf(ban.symbol) : -1, ban ? Math.max(0, FIELD_IDS.indexOf(ban.field)) : 0);
+        if (kb) b.color = kb.color;
         const wob = Math.sin(this.t * 0.7 + b.x * 0.3) * 0.25 * (1 - Math.min(1, wind.strength || 0.3));
         this._q.setFromAxisAngle(this._up, yaw + wob);
         this._m.compose(this._p.set(b.x, b.y, b.z), this._q, this._s.set(b.s, b.s, b.s));
@@ -737,6 +750,7 @@ export class BuildingRenderer {
       }
       mesh.count = L.length;
       mesh.instanceMatrix.needsUpdate = true;
+      ea.needsUpdate = true;
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     }
   }
