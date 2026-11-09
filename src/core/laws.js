@@ -61,7 +61,7 @@ export const LAWS = [
   // ---- Beasts -------------------------------------------------------------
   B('lifePredators', 'beasts', 'Predators', 'Wolves, bears and foxes hunt.', true, 'life'),
   B('beastsHuntPeople', 'beasts', 'Beasts attack people', 'Predators and monsters may attack villagers.', true, 'life'),
-  B('beastsMonsters', 'beasts', 'Wandering monsters', 'Monsters occasionally emerge from the deep wilds.', false, 'life'),
+  B('beastsMonsters', 'beasts', 'Wandering monsters', 'Monsters emerge from the deep wilds in ordinary ages (a Twilight age always brings them).', false, 'life'),
   N('beastsFerocity', 'beasts', 'Ferocity', 'How strong and aggressive beasts are.', 1, 0.5, 3, 0.25, 'life'),
   // ---- Spawning -------------------------------------------------------------
   B('lifeWildlife', 'spawning', 'Wildlife', 'Wild animals breed and migrate in from the wilds.', true, 'life'),
