@@ -13,9 +13,9 @@ const C = (hex) => new THREE.Color(hex); // sRGB hex -> linear working colour
 
 // s = sin(sun elevation)
 const KEYS = [
-  { s: -1.0, zen: '#060f29', hor: '#152447', glow: '#000000', belt: '#000000', halo: '#000000', key: '#000000', keyI: 0, hemiS: '#4c5f86', hemiG: '#1d2230', hemiI: 1.15, exp: 1.85, sky: 1.0 },
+  { s: -1.0, zen: '#060f29', hor: '#152447', glow: '#000000', belt: '#000000', halo: '#000000', key: '#000000', keyI: 0, hemiS: '#4c5f86', hemiG: '#1d2230', hemiI: 1.05, exp: 1.72, sky: 1.0 },
   { s: -0.3, zen: '#071029', hor: '#172649', glow: '#000000', belt: '#000000', halo: '#000000', key: '#000000', keyI: 0, hemiS: '#4c5f86', hemiG: '#1d2230', hemiI: 1.15, exp: 1.85, sky: 1.0 },
-  { s: -0.17, zen: '#0c1a40', hor: '#253563', glow: '#2c2450', belt: '#000000', halo: '#000000', key: '#000000', keyI: 0, hemiS: '#50628a', hemiG: '#1e2232', hemiI: 1.12, exp: 1.8, sky: 1.0 },
+  { s: -0.17, zen: '#0c1a40', hor: '#253563', glow: '#2c2450', belt: '#000000', halo: '#000000', key: '#000000', keyI: 0, hemiS: '#50628a', hemiG: '#1e2232', hemiI: 1.05, exp: 1.68, sky: 1.0 },
   { s: -0.09, zen: '#172a5e', hor: '#5a5288', glow: '#a8483a', belt: '#33294e', halo: '#40202a', key: '#c04848', keyI: 0.0, hemiS: '#4e5f9c', hemiG: '#2a2430', hemiI: 1.1, exp: 1.7, sky: 1.0 },
   { s: -0.035, zen: '#233d7c', hor: '#a8708c', glow: '#ff5e26', belt: '#5a3a5c', halo: '#a04020', key: '#ff6a40', keyI: 0.35, hemiS: '#6a6ea6', hemiG: '#3a2c30', hemiI: 1.05, exp: 1.55, sky: 1.0 },
   { s: 0.0, zen: '#2c4c90', hor: '#d9846c', glow: '#ff7020', belt: '#3c3346', halo: '#ff7a30', key: '#ff7a44', keyI: 1.0, hemiS: '#7e86b4', hemiG: '#4a3830', hemiI: 1.0, exp: 1.4, sky: 1.0 },
@@ -56,7 +56,7 @@ const FOGSKY = { zen: C('#a9b6c2'), hor: C('#d2d7d9') };
 const MOON_KEY = C('#aabde6');
 const MOON_TWILIGHT = C('#8c7ee0');
 const HEAT_HAZE = C('#e9d2a6');
-const SEASON_LIGHT = [C('#fffbf4'), C('#fff6e6'), C('#ffe9d2'), C('#eef3ff')]; // spring..winter
+const SEASON_LIGHT = [C('#fffbf4'), C('#fff6e6'), C('#ffe9d2'), C('#f6f7fb')]; // spring..winter
 
 export class SkyModel {
   constructor() {
@@ -218,7 +218,7 @@ export class SkyModel {
     this.sunLightColor.lerp(this._tmp.setRGB(lumKey, lumKey * 1.01, lumKey * 1.06), oc * 0.7);
 
     const moonUp = smooth(-0.02, 0.15, this.moonDir.y);
-    const moonI = 0.8 * smooth(-0.04, -0.17, s) * moonUp * (1 - 0.7 * oc) * (1 - 0.38 * night);
+    const moonI = 0.92 * smooth(-0.04, -0.17, s) * moonUp * (1 - 0.7 * oc) * (1 - 0.38 * night);
     this.moonVis = moonUp * smooth(-0.02, -0.14, s);
     this.keyIsMoon = moonI > sunI;
     if (this.keyIsMoon) {
@@ -252,7 +252,14 @@ export class SkyModel {
     // overcast skylight is greyer
     const hl = this.hemiSky.r * 0.3 + this.hemiSky.g * 0.59 + this.hemiSky.b * 0.11;
     this.hemiSky.lerp(this._tmp.setRGB(hl * 0.96, hl, hl * 1.07), oc * 0.6);
-    if (w.snow > 0) this.hemiGround.lerp(this._tmp.setRGB(0.55, 0.6, 0.68), w.snow * 0.5);
+    if (w.snow > 0) this.hemiGround.lerp(this._tmp.setRGB(0.6, 0.62, 0.66), w.snow * 0.5);
+    // snow / winter: keep whites white (neutral skylight, no lilac cast)
+    const wint = Math.max(w.snow, winter * 0.7);
+    if (wint > 0.01) {
+      const hl2 = this.hemiSky.r * 0.3 + this.hemiSky.g * 0.59 + this.hemiSky.b * 0.11;
+      this.hemiSky.lerp(this._tmp.setRGB(hl2 * 0.97, hl2, hl2 * 1.04), 0.45 * wint);
+    }
+    this._wint = wint;
 
     this.exposure = n.exp * (1 - 0.18 * storm) * (1 - 0.14 * night * this.night);
 
@@ -279,46 +286,47 @@ export class SkyModel {
     // warm midtone lift through golden hour (not only highlights)
     this.midTint.set(0.04, 0.016, -0.026).multiplyScalar(g * (1 - 0.6 * oc));
     this.shadowTint.multiplyScalar(1 - 0.55 * g);
+    if (this._wint) this.shadowTint.multiplyScalar(1 - 0.6 * this._wint); // winter whites stay neutral
     this.saturation = (1.06 + 0.06 * g) * (1 - 0.3 * nt) * (1 - 0.16 * oc - 0.08 * storm) * (1 - 0.1 * w.fog);
     this.vibrance = 0.16 * (1 - 0.5 * oc);
     this.contrast = 1.06 + 0.04 * g - 0.03 * w.fog + 0.04 * storm;
     if (age) this.applyAge(age);
   }
 
-  // Ages lean the sky and grade toward their character (subtle but clear).
+  // Ages give the sky, fog, key light and grade a strong identity
+  // (AgeLooks.js). Sky colours are scaled to the current daylight so a
+  // daytime look never lights up the night.
   applyAge(age) {
-    const k = age.tintK || 0;
-    if (k > 0.001) {
-      const t = age.tint;
-      this.zenith.lerp(t, 0.2 * k);
-      this.horizon.lerp(t, 0.24 * k);
-      this.groundHaze.lerp(t, 0.2 * k);
-      this.hemiSky.lerp(t, 0.14 * k);
-      this.mistColor.lerp(t, 0.2 * k);
-      const l = t.r * 0.2126 + t.g * 0.7152 + t.b * 0.0722;
-      this.midTint.x += (t.r - l) * 0.07 * k;
-      this.midTint.y += (t.g - l) * 0.07 * k;
-      this.midTint.z += (t.b - l) * 0.07 * k;
-      this.highTint.x += (t.r - l) * 0.04 * k;
-      this.highTint.y += (t.g - l) * 0.04 * k;
-      this.highTint.z += (t.b - l) * 0.04 * k;
-    }
-    const hot = Math.max(0, age.temp || 0) * 2; // 0..1
-    if (hot > 0.001) {
-      // heat haze: a dry, bleached, warm air
-      this.horizon.lerp(HEAT_HAZE, 0.22 * hot);
-      this.groundHaze.lerp(HEAT_HAZE, 0.25 * hot);
-      this.midTint.x += 0.028 * hot;
-      this.midTint.y += 0.01 * hot;
-      this.midTint.z -= 0.022 * hot;
-      this.saturation *= 1 - 0.1 * hot;
-      this.contrast -= 0.03 * hot;
-    }
-    const cold = Math.max(0, -(age.temp || 0)) * 2;
-    if (cold > 0.001) {
-      this.shadowTint.z += 0.02 * cold;
-      this.midTint.z += 0.012 * cold;
-      this.saturation *= 1 - 0.08 * cold;
+    const L = age.look;
+    this.ageHazeD = 0;
+    this.ageVig = 0;
+    if (L) {
+      const dayK = 0.18 + 0.82 * this.daylight;
+      const t = this._tmp;
+      if (L.zen.k > 0.001) this.zenith.lerp(t.copy(L.zen.c).multiplyScalar(dayK), L.zen.k);
+      if (L.hor.k > 0.001) {
+        this.horizon.lerp(t.copy(L.hor.c).multiplyScalar(dayK), L.hor.k);
+        this.glow.multiplyScalar(1 - 0.35 * L.hor.k);
+      }
+      if (L.haze.k > 0.001) {
+        this.groundHaze.lerp(t.copy(L.haze.c).multiplyScalar(dayK), L.haze.k);
+        this.mistColor.lerp(t.copy(L.haze.c).multiplyScalar(dayK), L.haze.k);
+      }
+      if (L.hemi.k > 0.001) this.hemiSky.lerp(L.hemi.c, L.hemi.k);
+      this.sunLightColor.multiply(L.key);
+      this.keyColor.multiply(L.key);
+      this.keyIntensity *= L.keyI;
+      this.hemiIntensity *= L.hemiI;
+      this.exposure *= L.exp;
+      this.saturation *= L.sat;
+      this.contrast += L.con;
+      this.midTint.add(L.mid);
+      this.shadowTint.add(L.shd);
+      this.ageHazeD = L.hazeD;
+      this.ageVig = L.vig;
+      this.ageVigC = L.vigC;
+      this.cloudLit.copy(this.keyColor).multiplyScalar(this.keyIntensity * 0.36);
+      this.cloudShade.copy(this.hemiSky).multiplyScalar(this.hemiIntensity * 0.5);
     }
     const nt = (age.night || 0) * this.night;
     if (nt > 0.001) this.saturation *= 1 - 0.1 * nt;
