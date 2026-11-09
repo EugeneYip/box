@@ -776,12 +776,25 @@ export class Civilization {
 
     // crops ripen (farmers plant and harvest; growth is helped along here)
     const rain = g.env.weather?.type === 'rain' || g.env.weather?.type === 'storm';
-    const seasonGrow = winter ? 0.3 : season < 1 ? 1.15 : season >= 2.5 ? 0.8 : 1;
+    // the fields follow the year: green in spring, golden by autumn, reaped
+    // and fallow under the winter snow (the granaries and root cellars feed
+    // the village while the farmers thresh and mend)
+    const seasonGrow = winter ? 0 : season < 1 ? 1.15 : season >= 2 ? 1.3 : 1;
     const growRate = (dt / 42) * (golden ? 1.3 : 1) * (rain ? 1.25 : 1) * seasonGrow * (mods.fertility ?? 1) * this.techMod(v.kingdom, 'harvest');
+    if (winter) v.food += (v.jobCount.farmer || 0) * 0.6 * dt * (mods.fertility ?? 1);
     for (const p of v.plots) {
       let dirty = false;
       for (const i of p.tiles) {
         if (w.flora[i] !== FLORA.WHEAT) continue;
+        if (winter && w.floraGrowth[i] < 0.98) {
+          // unripe stalks wither: the field lies bare
+          if (this.rng.chance(0.06 * dt)) {
+            w.flora[i] = FLORA.NONE;
+            w.floraGrowth[i] = 0;
+            dirty = true;
+          }
+          continue;
+        }
         const gOld = w.floraGrowth[i];
         if (gOld >= 1) continue;
         const gNew = Math.min(1, gOld + growRate * (0.6 + 0.4 * TILE_INFO[w.type[i]].fertile));

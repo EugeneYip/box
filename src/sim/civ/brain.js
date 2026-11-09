@@ -517,8 +517,11 @@ export const brain = {
     switch (t.act) {
       case 'harvest':
         if (f === FLORA.WHEAT && w.floraGrowth[i] >= 0.98) {
-          // reap and resow in one pass so fields never stand bare for long
-          w.setFlora(tx, ty, FLORA.WHEAT, 0.05);
+          // reap and resow in one pass, except at the year's end: the last
+          // harvest of autumn leaves the field to lie fallow through winter
+          const se = this.game.time.season ?? 1.5;
+          if (se >= 2.7) w.setFlora(tx, ty, FLORA.NONE);
+          else w.setFlora(tx, ty, FLORA.WHEAT, 0.05);
           let y = 5 * (this.game.age?.mods?.fertility ?? 1) * this.techMod(v.kingdom, 'harvest');
           if (v.hasWindmill) y += 2;
           if (this.game.time.total < (this.kingdoms[v.kingdom]?.goldenUntil || 0)) y += 1;
@@ -580,7 +583,7 @@ export const brain = {
           } else continue;
         } else if (f === FLORA.NONE || !FLORA_INFO[f].isTree) {
           const se = this.game.time.season ?? 1.5;
-          if (se > 3.1 && se < 3.9) continue; // no sowing in deep winter
+          if (se >= 2.85 && se < 3.92) continue; // no sowing from late autumn until the thaw
           act = 'plant';
           pri = 1;
         } else {
