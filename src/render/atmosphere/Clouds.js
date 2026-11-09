@@ -244,7 +244,11 @@ export class Clouds {
     this.game = game;
     const W = game.world.w,
       H = game.world.h;
-    this.field = { x0: -W * 0.5, z0: -H * 0.5, sx: W * 2, sz: H * 2 };
+    // A square field centred on the world (twice its longest side): the
+    // published cloudShadow UV uses one scale for both axes, so the field
+    // must be square even for rectangular (e.g. 2:1) worlds.
+    const side = Math.max(W, H) * 2;
+    this.field = { x0: W * 0.5 - side / 2, z0: H * 0.5 - side / 2, sx: side, sz: side };
     this.altitude = 62;
     this.deckAltitude = 40; // storm deck
     const q = game.pipeline?.quality || 'high';
