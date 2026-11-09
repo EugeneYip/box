@@ -124,7 +124,7 @@ transformed = mix(aPivot, transformed, mix(1.0, fLeafK, max(fLeaf, fPetal)));
 #ifndef FLORA_DEPTH
 // canopy over units: leaf clusters pull in and thin out (trunks stay)
 float fOcc = texelFetch(uOcc, fTile, 0).r * uOccStrength * fLeaf;
-transformed = mix(aPivot, transformed, 1.0 - 0.78 * fOcc);
+transformed = mix(aPivot, transformed, 1.0 - 0.6 * fOcc);
 vFOcc = fOcc;
 vFSeason = fSW;
 vFIH = fHash(fOrigin.xz + 17.31);
@@ -237,9 +237,9 @@ if (abs(fMat - 9.0) < 0.5) {
   // mostly on upward faces, on about a third of the trees
   vec3 fFN = normalize(cross(dFdx(vFWorld), dFdy(vFWorld)));
   float bF = fract(sin(dot(floor(fFN * 3.5 + vFIH * 11.0), vec3(12.9898, 78.233, 45.164))) * 43758.5453);
-  float bloom = step(fract(vFIH * 7.13), 0.32) * smoothstep(0.3, 0.8, sw.x) * step(0.42, bF) * smoothstep(-0.3, 0.4, fFN.y);
-  vec3 bc = fract(vFIH * 13.7) < 0.75 ? vec3(0.92, 0.52, 0.66) : vec3(0.95, 0.87, 0.88);
-  diffuseColor.rgb = mix(diffuseColor.rgb, bc * (0.86 + 0.18 * bF), bloom * 0.8);
+  float bloom = step(fract(vFIH * 7.13), 0.32) * smoothstep(0.3, 0.8, sw.x) * step(0.55, bF) * smoothstep(-0.3, 0.4, fFN.y);
+  vec3 bc = fract(vFIH * 13.7) < 0.8 ? vec3(0.84, 0.3, 0.46) : vec3(0.9, 0.74, 0.78);
+  diffuseColor.rgb = mix(diffuseColor.rgb, bc * (0.86 + 0.18 * bF), bloom * 0.85);
   // winter thinning
 }
 if (abs(fMat - 8.0) < 0.5) {
@@ -308,7 +308,7 @@ if (abs(fMat - 11.0) < 0.5) {
   float night = clamp(1.0 - uDaylight, 0.0, 1.0);
   float pulse = 0.8 + 0.2 * sin(uTime * 1.3 + vFIH * 40.0);
   vec3 gc = vFIH < 0.34 ? vec3(0.05, 0.85, 0.6) : vFIH < 0.67 ? vec3(0.55, 0.22, 1.0) : vec3(1.0, 0.55, 0.08);
-  totalEmissiveRadiance += gc * (0.06 + 1.5 * night) * pulse * uFungiGlow;
+  totalEmissiveRadiance += gc * (0.05 + 0.85 * night) * pulse * uFungiGlow;
 }
 float fBack = clamp(-dot(fWN, uSunDir), 0.0, 1.0);
 float fTrans = fLeafM * (1.0 - fChar) * (1.0 - fSnowAmt) * uDaylight * (1.0 - fIsSnow);
@@ -369,10 +369,10 @@ export function createDecalMaterials(shared) {
       uniform float uFungiGlow;
       void main() {
         float d = length(vUv - 0.5) * 2.0;
-        float a = pow(max(0.0, 1.0 - d), 2.0);
+        float a = exp(-d * d * 4.5) * (1.0 - smoothstep(0.75, 1.0, d));
         float night = clamp(1.0 - uDaylight * 1.2, 0.0, 1.0);
         float pulse = 0.8 + 0.2 * sin(uTime * 1.3 + vPh);
-        gl_FragColor = vec4(vCol * a * night * uFungiGlow * pulse * 0.6, 1.0);
+        gl_FragColor = vec4(vCol * a * night * uFungiGlow * pulse * 0.5, 1.0);
       }`,
     transparent: true,
     depthWrite: false,

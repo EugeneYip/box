@@ -374,7 +374,7 @@ export class Vegetation {
         if (aoR || (f === FLORA.MUSHROOM && v === 4)) {
           const ground = world.heightAt(ox, oz);
           if (aoR) aoTmp.push(ox, ground + 0.035, oz, aoR * (0.9 + hash2(tx, ty, 5) * 0.25));
-          if (f === FLORA.MUSHROOM && v === 4) glowTmp.push(ox, ground + 0.05, oz, 2.4);
+          if (f === FLORA.MUSHROOM && v === 4) glowTmp.push(ox, ground + 0.05, oz, 3.2);
         }
         this.tintInstance(tx, ty, f, s.cols, s.n * 3);
         s.n++;
