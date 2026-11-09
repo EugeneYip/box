@@ -357,6 +357,9 @@ export function generateWorld(world, seed = 1, options = {}) {
     world.temperature[i] < 0.3 ? TILE.TUNDRA : biomeFor(world.temperature[i], world.moisture[i], hgt[i], 8),
   );
 
+  // sandstone buttes, pillars and small mesas rise out of the deserts
+  raiseDesertRocks(world, rand, sc);
+
   _t('biomes');
   // ----------------------------------------------------------------- flora
   placeFlora(world, seed, nDetail);
@@ -612,15 +615,20 @@ function terraceMountains(hgt, rangeMask, W, H) {
       const k = 0.8 * smoothstep(0.08, 0.45, m) * smoothstep(2.5, 5, h) * (1 - smoothstep(0.9, 1.9, slope));
       hgt[i] = h + (b + g * step - h) * k;
     }
-  // light relaxation across massifs removes column-to-column grooves
+  // light relaxation of the terraced benches removes column-to-column grooves;
+  // steep faces, gorges and hollows keep their full relief (relaxing them
+  // flattened the northern gorges and basins)
   const tmp = hgt.slice();
   for (let y = 1; y < H - 1; y++)
     for (let x = 1; x < W - 1; x++) {
       const i = y * W + x;
       const m = rangeMask[i];
       if (m <= 0.08) continue;
+      const slope = Math.max(Math.abs(src[i + 1] - src[i - 1]), Math.abs(src[i + W] - src[i - W])) * 0.5;
       const avg = (tmp[i - 1] + tmp[i + 1] + tmp[i - W] + tmp[i + W]) * 0.25;
-      hgt[i] = tmp[i] + (avg - tmp[i]) * 0.35 * Math.min(1, m * 2);
+      const hollow = smoothstep(0.15, 0.6, avg - tmp[i]);
+      const k = 0.35 * Math.min(1, m * 2) * (1 - smoothstep(0.9, 1.9, slope)) * (1 - hollow);
+      hgt[i] = tmp[i] + (avg - tmp[i]) * k;
     }
   void N;
 }
@@ -931,8 +939,11 @@ function carveRivers(world, land, moist, P, sc, rand) {
         if (d2 > R * R) continue;
         const e = Math.max(0, Math.sqrt(d2) - w);
         const ev = Math.max(0, e - 1.1);
-        const t = bed + (0.45 - bed) * smoothstep(0, 1.1, e) + ev * 0.27 + ev * ev * 0.034;
         const j = yy * W + xx;
+        // through high ground the river cuts a narrow gorge with steep walls
+        // instead of levelling a broad valley across the massif
+        const gK = smoothstep(2.8, 6.5, hgt[j]);
+        const t = bed + (0.45 - bed) * smoothstep(0, 1.1, e) + ev * (0.27 + 1.05 * gK) + ev * ev * (0.034 + 0.11 * gK);
         if (t < target[j]) target[j] = t;
       }
   }
@@ -945,6 +956,90 @@ function carveRivers(world, land, moist, P, sc, rand) {
     }
   }
   return keep;
+}
+
+// Desert rock formations: flat-topped mesas and clusters of steep pillars
+// (buttes) with a talus apron, raised on open desert away from water. Their
+// steep sides take the warm, stratified cliff shading in the terrain shader.
+function raiseDesertRocks(world, rand, sc) {
+  const W = world.w,
+    H = world.h;
+  const hgt = world.height,
+    type = world.type;
+  const temp = world.temperature;
+  // open desert, or hot dry savanna (kopjes)
+  const isArid = (i) => type[i] === TILE.DESERT || (type[i] === TILE.SAVANNA && temp[i] > 0.6);
+  // candidate centres: desert tiles deep inside a desert patch, on gentle ground
+  const cand = [];
+  let nDesert = 0;
+  for (let y = 4; y < H - 4; y++)
+    for (let x = 4; x < W - 4; x++) {
+      const i = y * W + x;
+      if (!isArid(i)) continue;
+      nDesert += type[i] === TILE.DESERT ? 1 : 0.35;
+      if ((x + y * 7) % 3) continue; // thin the candidate list
+      const h = hgt[i];
+      if (h < 0.7 || h > 7) continue;
+      let ok = true;
+      for (let k = 0; k < 8 && ok; k++) {
+        const a = (k / 8) * Math.PI * 2;
+        const j = Math.round(y + Math.sin(a) * 2.5) * W + Math.round(x + Math.cos(a) * 2.5);
+        if (!isArid(j) || hgt[j] < 0.5) ok = false;
+      }
+      if (ok && slopeOf(hgt, W, H, x, y) < 0.6) cand.push(i);
+    }
+  if (!cand.length) return;
+  const nSites = Math.min(Math.max(1, Math.round(nDesert / 60)), Math.round(36 * Math.max(1, sc * sc)));
+  const used = [];
+  const raise = (cx, cy, r, top, apron, base) => {
+    const R = Math.ceil(r * 1.9) + 1;
+    const ph = rand() * 6.28,
+      ph2 = rand() * 6.28;
+    const asp = 1 + rand() * 0.5,
+      ang = rand() * Math.PI;
+    const ca = Math.cos(ang),
+      sa = Math.sin(ang);
+    for (let y = cy - R; y <= cy + R; y++)
+      for (let x = cx - R; x <= cx + R; x++) {
+        if (x < 2 || y < 2 || x >= W - 2 || y >= H - 2) continue;
+        const i = y * W + x;
+        if (hgt[i] < SEA_LEVEL + 0.3) continue;
+        const dx = x - cx,
+          dy = y - cy;
+        const rx = (dx * ca + dy * sa) / Math.sqrt(asp),
+          ry = (-dx * sa + dy * ca) * Math.sqrt(asp);
+        const a = Math.atan2(ry, rx);
+        const wob = 1 + 0.16 * Math.sin(a * 3 + ph) + 0.09 * Math.sin(a * 5 + ph2);
+        const dn = Math.hypot(rx, ry) / (r * wob);
+        if (dn > 1.9) continue;
+        // steep walls, flat top, a short talus slope at the foot
+        const wall = 1 - smoothstep(0.78, 1.0, dn);
+        const talus = apron * (1 - smoothstep(1.0, 1.85, dn));
+        const v = top * Math.max(wall, talus * (1 - wall));
+        if (v > 0) hgt[i] = Math.min(MAX_HEIGHT, Math.max(hgt[i], base + v));
+      }
+  };
+  for (let n = 0, tries = 0; n < nSites && tries < nSites * 8; tries++) {
+    const i = cand[Math.floor(rand() * cand.length)];
+    const cx = i % W,
+      cy = (i / W) | 0;
+    if (used.some(([ux, uy]) => (ux - cx) ** 2 + (uy - cy) ** 2 < 100)) continue;
+    used.push([cx, cy]);
+    n++;
+    const base = hgt[i];
+    if (rand() < 0.35) {
+      // small mesa: broad flat top
+      raise(cx, cy, 2.3 + rand() * 2.0, 2.2 + rand() * 1.6, 0.35, base);
+    } else {
+      // a cluster of 1-4 pillars of different heights
+      const k = 1 + Math.floor(rand() * 4);
+      for (let q = 0; q < k; q++) {
+        const ox = q ? Math.round((rand() - 0.5) * 7) : 0,
+          oy = q ? Math.round((rand() - 0.5) * 7) : 0;
+        raise(cx + ox, cy + oy, 1.2 + rand() * 0.6, 3.0 + rand() * 2.8, 0.3, base);
+      }
+    }
+  }
 }
 
 // Replace connected land patches of `t` smaller than minSize tiles (4-connected).

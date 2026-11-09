@@ -196,7 +196,10 @@ vec3 waterIrradianceV(float vis) {
   float up = clamp(uKeyDir.y, 0.0, 1.0);
   // when the sun is low the blue zenith keeps the water column blue-teal
   float lowK = 1.0 - smoothstep(0.15, 0.5, uKeyDir.y);
-  return uKeyCol * KEYN * (0.30 + 0.70 * up) * vis + uAmbCol * 0.55 + uZenCol * 0.85 * lowK;
+  // the column scatters mostly skylight: a low orange key lends brightness, not
+  // its hue (otherwise the golden-hour sea turns brown)
+  vec3 kc = mix(uKeyCol, vec3(dot(uKeyCol, vec3(0.2126, 0.7152, 0.0722))), 0.65 * lowK);
+  return kc * KEYN * (0.30 + 0.70 * up) * vis + uAmbCol * 0.55 + uZenCol * 0.85 * lowK;
 }
 vec3 waterIrradiance() { return waterIrradianceV(1.0); }
 

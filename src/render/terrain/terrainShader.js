@@ -138,24 +138,25 @@ Mat matSand(NS s) {
   return mk(c, mix(0.92, 0.72, cold), 0.18 + 0.10 * s.det.r + cold * pebble * pebFade * 0.3, mix(0.035 + 0.02 * rip * ripFade, 0.035 * pebFade * pebble, cold));
 }
 Mat matDesert(NS s) {
-  // sharp-crested dunes (gentle windward slope, steep shaded lee) with ripples
-  vec2 q = s.p.xz + (s.macro.rg - 0.5) * 18.0;
-  float dph = fract(dot(q, vec2(0.21, 0.13)) * 0.159 + s.meso.r * 0.45);
-  float dune = smoothstep(0.0, 0.8, dph) * (1.0 - smoothstep(0.8, 1.0, dph));
-  float duneFade = 1.0 - smoothstep(0.35, 1.2, s.fw);
+  // wind-shaped dune field: warped crests ~7 units apart, gentle sunlit windward
+  // slopes and short steep lee faces; crest strength varies across the field
+  vec2 q = s.p.xz + (s.macro.rg - 0.5) * 14.0 + (s.meso.gb - 0.5) * 5.0;
+  float dph = fract(dot(q, vec2(0.83, 0.56)) * 0.145 + s.meso.r * 0.35);
+  float field = smoothstep(0.25, 0.65, s.meso.g * 0.7 + s.macro.b * 0.3);
+  float dune = smoothstep(0.0, 0.78, dph) * (1.0 - smoothstep(0.78, 1.0, dph)) * mix(0.3, 1.0, field);
+  float lee = smoothstep(0.78, 0.83, dph) * (1.0 - smoothstep(0.93, 1.0, dph)) * field;
+  float duneFade = 1.0 - smoothstep(0.6, 1.6, s.fw);
   float ripFade = 1.0 - smoothstep(0.05, 0.25, s.fw);
   float rip = sin(dot(s.p.xz + (s.meso.gb - 0.5) * 4.0, vec2(1.9, 2.6)) * 2.2) * 0.5 + 0.5;
-  vec3 c = mix(vec3(0.56, 0.35, 0.16), vec3(0.76, 0.52, 0.27), dune);
+  vec3 c = mix(vec3(0.60, 0.38, 0.18), vec3(0.79, 0.55, 0.30), dune);
+  c *= 1.0 - 0.20 * lee * duneFade;
   c *= 0.90 + 0.16 * s.det.r;
   c *= 1.0 - 0.07 * rip * ripFade;
-  // sandstone outcrops and small mesas: flat tops, dark rims, faint strata
-  float oc = smoothstep(0.30, 0.20, s.cellL.r + (s.det.g - 0.5) * 0.08) * step(0.58, s.cellL.b);
-  float rim = oc * (1.0 - smoothstep(0.20, 0.27, s.cellL.r + (s.det.g - 0.5) * 0.08 - 0.06));
-  vec3 stone = mix(vec3(0.44, 0.25, 0.14), vec3(0.58, 0.36, 0.20), s.det.r) * (0.9 + 0.1 * sin(s.p.y * 9.0 + s.det.b * 3.0));
-  c = mix(c, stone, oc);
-  c *= 1.0 - 0.35 * rim * (1.0 - oc * 0.6);
-  float h = 0.22 + 0.15 * dune + oc * 0.5;
-  return mk(c, 0.95, h, 0.05 + 0.30 * dune * duneFade + 0.03 * rip * ripFade + oc * 0.25);
+  // darker gravel (reg) flats between the dune fields
+  float reg = smoothstep(0.62, 0.80, s.meso.b * 0.6 + s.det.g * 0.4) * (1.0 - field);
+  c = mix(c, vec3(0.44, 0.29, 0.17) * (0.85 + 0.3 * s.micro.r), reg * 0.55);
+  float h = 0.22 + 0.15 * dune;
+  return mk(c, 0.95, h, 0.04 + 1.0 * dune * duneFade + 0.03 * rip * ripFade);
 }
 Mat matGrass(NS s) {
   // three grassland regimes read at overview scale: khaki steppe, bright meadow,
@@ -193,7 +194,7 @@ Mat matGrass(NS s) {
   float speck = smoothstep(0.12, 0.05, s.cellS.r) * step(0.90, s.cellS.a) * nearS;
   c = mix(c, mix(vec3(0.9, 0.85, 0.35), vec3(0.85, 0.55, 0.7), s.cellS.b), speck * 0.5);
   c = seasonal(c, 1.0, s.temp);
-  return mk(c, 0.86, 0.38 + 0.45 * clump, 0.05 + 0.03 * near * stroke);
+  return mk(c, 0.86, 0.38 + 0.45 * (s.det.r * 0.7 + s.meso.g * 0.3), 0.05 + 0.03 * near * stroke);
 }
 Mat matForest(NS s) {
   vec3 c = vec3(0.060, 0.155, 0.040);
@@ -236,7 +237,7 @@ Mat matSavanna(NS s) {
   c *= 1.0 + (s.micro.a - 0.5) * 0.30 * near;
   // greener hollows inside steppe so it reads as dry grassland, not a stain
   c = mix(c, vec3(0.20, 0.27, 0.08) * (0.9 + 0.2 * s.micro.g), smoothstep(0.58, 0.78, s.meso.b * 0.6 + s.moist * 0.4) * 0.45);
-  return mk(c, 0.92, 0.28 + 0.25 * s.det.r + tuft * 0.2 * near, 0.05 + 0.05 * tuft * near);
+  return mk(c, 0.92, 0.28 + 0.25 * s.det.r, 0.05 + 0.05 * tuft * near);
 }
 Mat matSwamp(NS s) {
   vec3 mud = vec3(0.090, 0.085, 0.045);
@@ -290,16 +291,25 @@ Mat matRock(NS s) {
   vec3 warm = vec3(0.330, 0.290, 0.245);
   vec3 cool = vec3(0.255, 0.262, 0.270);
   vec3 c = mix(warm, cool, s.macro.g);
-  // scree: loose stones with dark gaps, so flat rock reads as rocky ground
-  float stone = smoothstep(0.62, 0.25, s.cellS.r);
-  c *= mix(0.62, 1.08 + 0.14 * s.cellS.b, stone);
-  // weathered stone: irregular (noise-warped) cracks, grain and mottling
+  float fineK = 1.0 - smoothstep(0.06, 0.30, s.fw);
+  // broad variance: ochre weathering patches, brighter ridges, stained hollows
+  c *= mix(vec3(1.0), vec3(1.08, 1.01, 0.90), smoothstep(0.5, 0.8, s.meso.g) * 0.8);
+  c *= 0.84 + 0.28 * s.meso.b;
+  // angular blocks (warped cells): joints show only in places (no paving net,
+  // no rounded pebbles), each block a slightly different tone
+  vec4 bk = cz(ROT2 * (s.p.xz + (s.det.rg - 0.5) * 2.2) * (1.0 / 26.0) + 0.29);
+  float crackM = smoothstep(0.38, 0.62, s.meso.r * 0.55 + s.det.b * 0.45);
+  float blockC = (1.0 - smoothstep(0.0, 0.05, bk.g + (s.micro.b - 0.5) * 0.03)) * crackM * fineK;
+  c *= mix(1.0, 0.88 + 0.22 * bk.b, crackM);
+  c *= 1.0 - 0.38 * blockC;
+  // weathered stone: irregular (noise-warped) fissures, grain and mottling
   vec4 cr = cz((s.p.xz + (s.meso.gb - 0.5) * 6.0 + (s.det.rg - 0.5) * 1.5) * (1.0 / 29.0));
   float seam = smoothstep(0.0, 0.06, cr.g + (s.det.b - 0.5) * 0.08);
   c *= 0.88 + 0.16 * cr.b;
   c *= 0.84 + 0.16 * mix(1.0, seam, smoothstep(0.35, 0.65, s.meso.r));
   c *= 0.80 + 0.30 * s.det.r;
-  c *= 0.92 + 0.14 * s.micro.r;
+  c *= 0.90 + 0.18 * s.micro.r;
+  float stone = bk.b * crackM;
   // lichen flecks
   float lich = smoothstep(0.72, 0.86, s.det.g) * (1.0 - smoothstep(0.3, 0.6, 1.0 - s.n.y));
   c = mix(c, vec3(0.30, 0.30, 0.16), lich * 0.5);
@@ -308,7 +318,8 @@ Mat matRock(NS s) {
   float turf = flatK * smoothstep(0.36, 0.60, s.meso.g * 0.55 + s.det.r * 0.30 + s.micro.r * 0.15) * (1.0 - smoothstep(0.1, 0.3, 0.4 - s.temp));
   vec3 turfC = mix(vec3(0.10, 0.20, 0.055), vec3(0.20, 0.22, 0.10), s.det.g) * (0.85 + 0.3 * s.micro.r);
   c = mix(c, turfC, turf * 0.92);
-  return mk(c, 0.80, 0.32 + 0.22 * s.det.r + 0.2 * stone * (1.0 - turf), 0.05 * seam + 0.05 + 0.04 * stone);
+  float hgt = 0.30 + 0.20 * s.det.r + 0.18 * s.meso.b + 0.14 * stone - 0.40 * blockC - 0.25 * (1.0 - seam) + 0.12 * (s.micro.g - 0.5) * fineK;
+  return mk(c, 0.80, mix(clamp(hgt, 0.0, 1.0), 0.32 + 0.22 * s.det.r, turf), mix(0.10, 0.05, turf));
 }
 Mat matLava(NS s) {
   float t = uLTime;
@@ -411,9 +422,11 @@ Mat evalMat(float t, NS s) {
   return mk(c * (0.85 + 0.3 * s.det.r), 0.9, 0.4, 0.04);
 }
 
-// Cliff rock: true triplanar blending (weights from the normal), level strata,
-// gentle chiselled facets. Colour stays coherent: no per-facet patchwork.
-Mat matCliff(NS s, out vec3 facetN) {
+// Cliff rock: true triplanar blending (weights from the normal). Strata with
+// irregular spacing that pinch out along their length (never continuous rings),
+// vertical joints, erosion gullies and runoff streaks, per-bed mineral tints,
+// gritty micro relief and chiselled facets. volc: basalt / scoria on volcanoes.
+Mat matCliff(NS s, float volc, out vec3 facetN) {
   vec3 p = s.p;
   vec3 n = s.n;
   vec3 bw = pow(abs(n), vec3(4.0));
@@ -421,50 +434,98 @@ Mat matCliff(NS s, out vec3 facetN) {
   vec2 uvX = vec2(p.z, p.y);
   vec2 uvZ = vec2(p.x, p.y);
   vec2 uvY = p.xz;
+  float wxz = bw.x / max(bw.x + bw.z, 1e-4);
+  vec2 uvD = bw.x > bw.z ? uvX : uvZ;
   vec4 t, d;
   if (uPower > 0.5) {
     // power saver: dominant vertical projection only (no triplanar blend)
-    vec2 uvD = bw.x > bw.z ? uvX : uvZ;
     t = nz(uvD * 0.085);
     d = nz(uvD * 0.37);
   } else {
     t = nz(uvX * 0.085) * bw.x + nz(uvZ * 0.085) * bw.z + nz(uvY * 0.085) * bw.y;
     d = nz(uvX * 0.37) * bw.x + nz(uvZ * 0.37) * bw.z + nz(uvY * 0.37) * bw.y;
   }
-  // strata: level, crisp (anti-aliased) layers with a shadowed lip under each ledge
-  float sy = p.y * 0.75 + (t.r - 0.5) * 0.32 + (s.macro.r - 0.5) * 0.30;
+  float near = 1.0 - smoothstep(0.25, 0.9, s.fw);
+  float fineK = 1.0 - smoothstep(0.06, 0.30, s.fw);
+
+  // strata: irregular spacing (monotonic warp of height), gently dipping beds
+  float yy = p.y + (s.macro.r - 0.5) * 2.2 + (t.r - 0.5) * 0.45;
+  float sy = yy * 0.75 + 0.30 * sin(yy * 0.29 + 1.3) + 0.17 * sin(yy * 0.71 + 4.1);
   float layer = floor(sy);
-  float aa = clamp(s.fwy * 0.75 * 1.5, 0.02, 0.5);
+  float aa = clamp(s.fwy * 1.4, 0.02, 0.5);
   float lt = smoothstep(1.0 - aa, 1.0, fract(sy));
   float lr = mix(hash12(vec2(layer, 3.7)), hash12(vec2(layer + 1.0, 3.7)), lt);
-  float bandFade = 1.0 - smoothstep(0.25, 0.7, s.fwy * 0.75);
-  lr = mix(0.5, lr, bandFade);
+  float lh = mix(hash12(vec2(layer, 8.3)), hash12(vec2(layer + 1.0, 8.3)), lt);
+  float bandFade = 1.0 - smoothstep(0.25, 0.7, s.fwy * 0.95);
+  // beds pinch out: their contrast comes and goes along each layer
+  float lens = smoothstep(0.30, 0.70, t.g * 0.75 + lh * 0.5 - 0.1);
+  float bandK = bandFade * mix(0.30, 1.0, lens) * (1.0 - 0.8 * volc);
+  lr = mix(0.5, lr, bandK);
   vec3 cA = vec3(0.370, 0.345, 0.310);
   vec3 cB = vec3(0.275, 0.265, 0.252);
   vec3 cC = vec3(0.450, 0.410, 0.350);
   // hot, dry lands: warm sandstone cliffs
-  float hotK = smoothstep(0.62, 0.85, s.temp) * (1.0 - smoothstep(0.45, 0.75, s.moist));
-  cA = mix(cA, vec3(0.52, 0.36, 0.24), hotK);
-  cB = mix(cB, vec3(0.40, 0.26, 0.17), hotK);
-  cC = mix(cC, vec3(0.62, 0.46, 0.30), hotK);
+  // climate, not altitude: a high mesa in a hot land is still warm sandstone
+  float tLat = s.temp + max(s.p.y, 0.0) * (0.55 / 22.0);
+  float hotK = smoothstep(0.50, 0.72, tLat) * (1.0 - 0.7 * smoothstep(0.55, 0.85, s.moist));
+  cA = mix(cA, vec3(0.55, 0.36, 0.22), hotK);
+  cB = mix(cB, vec3(0.42, 0.25, 0.15), hotK);
+  cC = mix(cC, vec3(0.66, 0.47, 0.29), hotK);
   vec3 c = mix(mix(cB, cA, smoothstep(0.15, 0.6, lr)), cC, smoothstep(0.75, 0.97, lr));
-  c *= 0.86 + 0.24 * d.r;
+  // per-bed mineral tint (cool grey, buff, rust) and broad weathering patches
+  vec3 bedT = mix(mix(vec3(0.93, 0.98, 1.05), vec3(1.07, 1.00, 0.90), smoothstep(0.25, 0.5, lh)), vec3(1.10, 0.93, 0.82), smoothstep(0.72, 0.9, lh));
+  c *= mix(vec3(1.0), bedT, bandK * 0.85);
+  c *= mix(vec3(1.0), vec3(1.08, 1.00, 0.90), smoothstep(0.5, 0.8, s.meso.g) * 0.8);
+  c *= mix(vec3(1.0), vec3(0.91, 0.96, 1.04), smoothstep(0.55, 0.85, s.macro.b) * (1.0 - hotK));
+  c *= 0.78 + 0.32 * d.r;
   // ledges: dark lip just above each layer boundary, lit top surface
   float led = smoothstep(0.0, max(0.22, aa * 2.0), fract(sy));
-  c *= mix(1.0, mix(0.72, 1.08, led), bandFade);
+  c *= mix(1.0, mix(0.74, 1.07, led), bandK);
+
+  // vertical joints: cells stretched along the fall line on each vertical plane
+  vec2 jw = (d.gb - 0.5) * 0.9;
+  vec4 jX = cz(vec2((p.z + jw.x) * 0.042, (p.y + jw.y) * 0.0085) + 0.17);
+  vec4 jZ = cz(vec2((p.x + jw.x) * 0.042, (p.y + jw.y) * 0.0085) + 0.61);
+  float jg = mix(jZ.g, jX.g, wxz);
+  // joint width never below ~2 px (edge distance unit = 0.75 world units here)
+  float jW = max(0.15, s.fw * 3.2);
+  float joint = (1.0 - smoothstep(0.0, jW, jg)) * near * mix(0.45, 1.0, smoothstep(0.3, 0.6, d.b)) * (1.0 - smoothstep(0.25, 0.5, jW));
+  // erosion gullies (ridged noise along the fall line) and dark runoff streaks
+  vec4 gX = nz(vec2(p.z * 0.06, p.y * 0.016) + 0.31);
+  vec4 gZ = nz(vec2(p.x * 0.06, p.y * 0.016) + 0.73);
+  vec4 gv = mix(gZ, gX, wxz);
+  float gully = smoothstep(0.55, 0.85, gv.b) * mix(0.7, 1.0, volc);
+  float streak = smoothstep(0.56, 0.80, gv.g) * (1.0 - hotK * 0.5);
+  // fine grit: crisp micro relief so faces never look moulded
+  vec4 e = nz(uvD * 0.45 + 0.43);
+  c *= 0.90 + 0.20 * mix(0.5, e.g, fineK);
+  c *= 1.0 - 0.30 * joint;
+  c *= 1.0 - 0.30 * gully;
+  c = mix(c, c * vec3(0.80, 0.82, 0.87), streak * 0.75);
+
+  // volcanic rock: dark basalt with rusty oxidised patches and scoria pits
+  vec4 sc = cz(uvD * 0.11 + 0.47);
+  {
+    vec3 bas = mix(vec3(0.150, 0.138, 0.130), vec3(0.250, 0.175, 0.135), smoothstep(0.45, 0.8, s.meso.g * 0.6 + d.g * 0.4));
+    float pit = smoothstep(0.32, 0.12, sc.r) * step(0.35, sc.b) * fineK;
+    bas *= (0.80 + 0.40 * d.r) * (1.0 - 0.35 * pit) * (1.0 - 0.35 * joint);
+    c = mix(c, bas, volc);
+  }
+
   // facets: geometric (per-triangle) normal plus nearest-sampled facet cells on
   // both vertical planes, blended by the triplanar weights (no hard plane switch)
   vec4 fX = texelFetch(uCells, ivec2(floor(fract(vec2(p.z * 0.055, p.y * 0.085 + p.x * 0.02)) * 256.0)), 0);
   vec4 fZ = texelFetch(uCells, ivec2(floor(fract(vec2(p.x * 0.055, p.y * 0.085 + p.z * 0.02)) * 256.0)), 0);
-  float wxz = bw.x / max(bw.x + bw.z, 1e-4);
   vec2 ft = mix(fZ.ba, fX.ba, wxz);
   vec3 tA = normalize(cross(n, vec3(0.0, 1.0, 0.0)) + vec3(1e-4, 0.0, 0.0));
   vec3 tB = normalize(cross(tA, n));
-  float near = 1.0 - smoothstep(0.25, 0.9, s.fw);
   vec3 base = normalize(mix(n, s.fn, 0.25 * near));
-  facetN = normalize(base + (tA * (ft.x - 0.5) * 0.32 + tB * (ft.y - 0.5) * 0.24) * near);
-  c *= mix(1.0, 0.93 + 0.14 * ft.x, near);
-  return mk(c, 0.82, 0.55 + 0.25 * lr + 0.2 * t.g, 0.05);
+  facetN = normalize(base + (tA * (ft.x - 0.5) * 0.20 + tB * (ft.y - 0.5) * 0.15) * near);
+  c *= mix(1.0, 0.95 + 0.10 * ft.x, near);
+  // relief for the derivative bump: grooved joints and gullies, ledge steps, grit
+  float hgt = 0.55 + 0.20 * (lr - 0.5) * bandK + 0.16 * (d.r - 0.5) + 0.14 * (e.g - 0.5) * fineK
+            - 0.18 * joint - 0.30 * gully + 0.16 * led * bandK;
+  return mk(c, 0.84 + 0.08 * volc, hgt, 0.13 * near + 0.03 * volc);
 }
 
 // Seabed: rippled sand in the shallows, silt and rock in the deep.
@@ -593,7 +654,7 @@ void terrainSurface() {
   s.fire = clim.a;
 
   // ---- organic tile blending
-  vec2 warp = (s.meso.rg - 0.5) * 1.5 + (s.det.gb - 0.5) * 0.55 + (s.micro.rg - 0.5) * 0.12;
+  vec2 warp = (s.meso.rg - 0.5) * 1.5 + (s.det.gb - 0.5) * 0.55 + (s.micro.rg - 0.5) * 0.05;
   vec2 g = p + warp - 0.5;
   vec2 i0 = floor(g);
   vec2 f = g - i0;
@@ -604,7 +665,7 @@ void terrainSurface() {
   float t3 = tileTypeAt(c + ivec2(1, 1));
   // noise-jittered blend weights: the jitter vanishes at cell borders (weights stay
   // continuous) but bends every boundary inside the cell, so edges never staircase
-  vec2 fj = (s.det.rg - 0.5) * 0.85 + (s.micro.gb - 0.5) * 0.30;
+  vec2 fj = (s.det.rg - 0.5) * 0.95 + (s.micro.gb - 0.5) * 0.10;
   vec2 sf = smoothstep(0.0, 1.0, clamp(f + fj * f * (1.0 - f) * 4.0, 0.0, 1.0));
   vec4 w = vec4((1.0 - sf.x) * (1.0 - sf.y), sf.x * (1.0 - sf.y), (1.0 - sf.x) * sf.y, sf.x * sf.y);
   if (t1 == t0) { w.x += w.y; w.y = 0.0; }
@@ -624,7 +685,9 @@ void terrainSurface() {
 
   vec3 albedo = m0.albedo * b.x + m1.albedo * b.y + m2.albedo * b.z + m3.albedo * b.w;
   float rough = m0.rough * b.x + m1.rough * b.y + m2.rough * b.z + m3.rough * b.w;
-  float H = (m0.h * m0.bump) * b.x + (m1.h * m1.bump) * b.y + (m2.h * m2.bump) * b.z + (m3.h * m3.bump) * b.w;
+  // bump relief uses the smooth bilinear weights: with the sharp height-blend
+  // weights it stepped at every biome border and drew a dark aliased fringe
+  float H = (m0.h * m0.bump) * w.x + (m1.h * m1.bump) * w.y + (m2.h * m2.bump) * w.z + (m3.h * m3.bump) * w.w;
   vec3 emit = m0.emit * b.x + m1.emit * b.y + m2.emit * b.z + m3.emit * b.w;
   vec4 isLava = vec4(equal(vec4(t0, t1, t2, t3), vec4(9.0))) * live;
   vec4 isSnow = vec4(equal(vec4(t0, t1, t2, t3), vec4(7.0))) * live;
@@ -664,7 +727,9 @@ void terrainSurface() {
   albedo = mix(albedo, albedo * vec3(0.72, 0.84, 0.70), lip * 0.8);
   vec3 facetN = nrm;
   if (cliff > 0.001) {
-    Mat cm = matCliff(s, facetN);
+    // ash / lava around: basalt cone rock instead of layered sediment
+    float volc = clamp(dot(vec4(equal(vec4(t0, t1, t2, t3), vec4(10.0))) * live, w) * 1.8 + lavaRaw, 0.0, 1.0);
+    Mat cm = matCliff(s, volc, facetN);
     // snow clings to ledges that face up
     float snowLedge = snowB * smoothstep(0.55, 0.75, facetN.y + (s.det.g - 0.5) * 0.3);
     cm.albedo = mix(cm.albedo, vec3(0.50, 0.53, 0.60), snowLedge);
@@ -677,8 +742,8 @@ void terrainSurface() {
   // ---- seasonal / climate snow: winter, Age of Rime, frost law. Colder ground
   // (higher latitude, higher altitude) whitens first; noisy edges blend in.
   if (uSnowT > -0.15) {
-    float sv = uSnowT - s.temp + (s.det.b - 0.5) * 0.12 + (s.meso.r - 0.5) * 0.10 + (s.micro.g - 0.5) * 0.04;
-    float sn = smoothstep(-0.05, 0.05, sv) * smoothstep(-0.1, 0.35, s.p.y) * (1.0 - lavaRaw);
+    float sv = uSnowT - s.temp + (s.det.b - 0.5) * 0.05 + (s.meso.r - 0.5) * 0.08;
+    float sn = smoothstep(-0.03, 0.03, sv) * smoothstep(-0.1, 0.35, s.p.y) * (1.0 - lavaRaw);
     sn *= mix(1.0, smoothstep(0.55, 0.78, nrm.y), cliff);
     if (sn > 0.001) {
       albedo = mix(albedo, matSnow(s).albedo, sn);
@@ -808,5 +873,5 @@ export function patchTerrainMaterial(material, uniforms) {
       )
       .replace('#include <opaque_fragment>', TERRAIN_FRAGMENT_POST + '\n#include <opaque_fragment>');
   };
-  material.customProgramCacheKey = () => 'worldseed-terrain-v7';
+  material.customProgramCacheKey = () => 'worldseed-terrain-v8';
 }
