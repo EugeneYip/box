@@ -352,6 +352,8 @@ export class FireVisuals {
     const wx = fx.wind.x,
       wz = fx.wind.z;
     const sk = Math.max(budget, 0.45) / Math.sqrt(lod);
+    const cols = this._cols || (this._cols = new Map());
+    cols.clear();
     for (const c of cells.values()) {
       if (!c.vis) continue;
       const cxm = c.x / c.n,
@@ -377,25 +379,58 @@ export class FireVisuals {
           life: (13 + rnd() * 5) * (0.85 + lod * 0.15),
         });
       }
-      // body: the standing column, swelling and leaning with height
-      const H = Math.min(24, 7 + sq * 2.2);
-      e = (1.2 + sq * 0.8) * avg * dt * sk;
+      // columns are built per 16x16-tile block (below), so a big fire
+      // carries a few tall plumes rather than a carpet of short puffs
+      const bk = ((cxm >> 4) << 10) | (czm >> 4);
+      let B = cols.get(bk);
+      if (!B) cols.set(bk, (B = { n: 0, x: 0, z: 0, f: 0, gy: -1e9 }));
+      B.n += c.n;
+      B.x += c.x;
+      B.z += c.z;
+      B.f += c.f;
+      if (gy > B.gy) B.gy = gy;
+    }
+    // ---- standing smoke columns: rise, bend over, stream downwind ----
+    // Each 16-tile block carries one continuous plume: it climbs steeply
+    // over the flames, bends over and streams far downwind at a capped
+    // height, widening and paling as it goes. Laid out along that path with
+    // a golden-ratio sequence (neighbours always overlap), it reads as one
+    // long shaft across the land for as long as the block burns, and stays
+    // inside the god-view frame instead of climbing out of it.
+    const wl = Math.hypot(wx, wz);
+    const dirX = wl > 0.05 ? wx / wl : 0,
+      dirZ = wl > 0.05 ? wz / wl : 0;
+    const windK = THREE.MathUtils.clamp(wl / 0.7, 0.4, 1.6);
+    for (const B of cols.values()) {
+      const sq = Math.sqrt(B.n);
+      const bx = B.x / B.n,
+        bz = B.z / B.n;
+      const avg = B.f / B.n;
+      const Dmax = wl > 0.05 ? (12 + sq * 1.5) * windK : 0;
+      const Hmax = (wl > 0.05 ? 11 + sq * 0.35 : 18 + sq * 0.6) * (1.15 - 0.15 * windK);
+      const spread = 1.0 + sq * 0.18;
+      let e = (4 + sq * 1.2) * Math.max(0.5, avg) * dt * sk;
       while (e > 0) {
         if (e < 1 && rnd() > e) break;
         e -= 1;
-        const u = rnd();
-        const h = 3 + u * H;
-        const L = h * 0.85;
-        const sz = (1.7 + h * 0.16 + sq * 0.22) * Math.pow(lod, 0.75);
-        smokePuff(fx, cxm + wx * L + (rnd() - 0.5) * spread * (0.6 + u), gy + h, czm + wz * L + (rnd() - 0.5) * spread * (0.6 + u), {
+        this._strat = ((this._strat || 0) + 0.6180339) % 1;
+        const u = this._strat;
+        const D = u * Dmax;
+        const h = 2.5 + Hmax * (1 - Math.exp(-3.2 * u));
+        const sz = (1.7 + u * 4.2 + sq * 0.1) * Math.pow(lod, 0.75);
+        const j = spread * (0.5 + u * 1.5);
+        const light = u > 0.3;
+        smokePuff(fx, bx + dirX * D + (rnd() - 0.5) * j, B.gy + h + (rnd() - 0.5) * u * 2, bz + dirZ * D + (rnd() - 0.5) * j, {
           size: sz,
-          grow: 1.8,
-          ramp: ramp(),
-          glow: u < 0.25 ? 0.5 : 0,
-          rise: 0.6 + rnd() * 0.6,
-          drift: 2.6,
-          drag: 0.5,
-          life: (6 + rnd() * 3) * (0.85 + lod * 0.15),
+          grow: 1.6,
+          ramp: raining && rnd() < 0.6 ? RAMP.STEAM : light ? RAMP.SMOKE_LIGHT : RAMP.PLUME,
+          color: light ? 0x9c968e : undefined,
+          alpha: light ? 1.35 : undefined,
+          glow: u < 0.12 ? 0.5 : 0,
+          rise: 0.25 + rnd() * 0.35,
+          drift: 1.8,
+          drag: 0.6,
+          life: (6.5 + rnd() * 3) * (0.85 + lod * 0.15),
         });
       }
     }
