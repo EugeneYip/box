@@ -717,7 +717,19 @@ export const politics = {
     v.conqueredAt = this.game.time.total;
     v.loyalty = cause === 'rebellion' ? 80 : 35;
     if (cause === 'conquest' && v.rebellions) v.loyaltyBoost = Math.max(v.loyaltyBoost || 0, 25); // garrisoned and watched
-    for (const b of v.buildings) b.kingdom = kid;
+    for (const b of v.buildings) {
+      if (b.type === 'wonder' && b.alive) {
+        // the wonder changes hands with its town
+        const from = this.kingdoms[b.kingdom],
+          to = this.kingdoms[kid];
+        if (from && from !== to) from.wonder = from.wonderDone = false;
+        if (to) {
+          to.wonder = true;
+          if (!b.constructing) to.wonderDone = true;
+        }
+      }
+      b.kingdom = kid;
+    }
     for (const u of v.members) {
       u.kingdom = kid;
       if (u.job === 'king') u.job = null;
@@ -787,6 +799,7 @@ export const politics = {
     if (this.law('harmonyUnrest') && v.famineT && now - v.famineT < YEAR * 4) L -= 10;
     L += (this.law('harmonyLoyalty', 1) * (this.game.age?.mods?.harmony ?? 1) - 1) * 35;
     L += this.techAdd(k.id, 'loyalty');
+    if (k.wonderDone) L += 8; // pride in the realm's wonder
     if (this.hasCultureTrait(v.culture, 'Mystic')) L += 5;
     L += (v.loyaltyBoost || 0);
     v.loyaltyBoost = Math.max(0, (v.loyaltyBoost || 0) - 1);
