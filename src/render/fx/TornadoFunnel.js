@@ -131,7 +131,10 @@ void main() {
   float a = atan(vP.y, vP.x);
   // a compact churning cloud: rotating noise only (no spiral arms, which
   // read as concentric grooves from above)
-  vec2 q = vec2(cos(a + uTime * 0.5 * (1.3 - r)), sin(a + uTime * 0.5 * (1.3 - r))) * r * 3.0;
+  // rigid rotation plus a FIXED twist: a radius-dependent spin rate winds
+  // the noise into concentric rings within seconds
+  float ra = a + uTime * 0.45 + r * 1.4;
+  vec2 q = vec2(cos(ra), sin(ra)) * r * 3.0;
   float n = vnoise(q + 3.0) * 0.55 + vnoise(q * 2.3 + 7.0) * 0.3 + vnoise(q * 5.1) * 0.15;
   // soft, lumpy edge and strong light/dark churn: from above it must read
   // as a storm cell over the funnel, not a dark hole in the ground
