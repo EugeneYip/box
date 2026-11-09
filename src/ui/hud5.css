@@ -652,3 +652,132 @@
 .ws-clock__epoch {
   font-variant-numeric: tabular-nums;
 }
+
+/* ---- World Laws: denser, every category in reach */
+.ws-modal.is-xl {
+  width: min(1080px, 100%);
+}
+.ws-lawsx__main {
+  height: clamp(360px, calc(100vh - 236px), 680px);
+}
+.ws-lawsx__top {
+  gap: 10px;
+}
+.ws-lawsx__restore {
+  flex: none;
+}
+.ws-lawrail {
+  gap: 1px;
+  padding-bottom: 6px;
+}
+.ws-lawrail__btn {
+  min-height: 32px;
+  font-size: 12px;
+  padding: 0 8px;
+  gap: 8px;
+}
+.ws-lawrail__ico {
+  width: 18px;
+  height: 18px;
+  font-size: 16px;
+}
+.ws-lawgrid {
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+}
+@media (max-height: 820px) {
+  .ws-lawcard .ws-row__desc {
+    -webkit-line-clamp: 1;
+  }
+  .ws-lawcard {
+    min-height: 62px;
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+  .ws-lawsec__head {
+    padding: 4px 2px 6px;
+  }
+}
+/* touch tablets: category pills wrap so all fourteen show at once */
+@media (min-width: 721px) and (min-height: 501px) {
+  .is-touch .ws-lawsx__main {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .is-touch .ws-lawrail {
+    flex-direction: row;
+    flex-wrap: wrap;
+    overflow: visible;
+    gap: 6px;
+    padding: 0;
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+  .is-touch .ws-lawrail__btn {
+    min-height: 44px;
+    border-radius: 22px;
+    padding: 0 14px 0 10px;
+    background: rgba(0, 0, 0, 0.25);
+    box-shadow: inset 0 0 0 1px var(--ws-line);
+  }
+  .is-touch .ws-lawrail__btn.is-on {
+    color: #1d1608;
+    background: linear-gradient(180deg, var(--ws-gold-hi), var(--ws-gold));
+  }
+  .is-touch .ws-lawrail__name {
+    flex: none;
+  }
+}
+/* phone landscape: no footer (X closes), one-line cards, two columns */
+@media (max-height: 500px) and (min-width: 721px) {
+  .ws-modal.is-xl .ws-modal__foot {
+    display: none;
+  }
+  .ws-lawsx {
+    padding-top: 6px;
+    gap: 6px;
+  }
+  .ws-lawsx__main {
+    height: calc(100vh - 146px);
+    gap: 6px;
+  }
+  .ws-lawsx__count {
+    display: none;
+  }
+  .ws-lawcard {
+    min-height: 54px;
+    gap: 8px;
+    padding: 6px 10px 6px 8px;
+  }
+  .ws-lawcard__ico {
+    width: 32px;
+    height: 32px;
+    font-size: 19px;
+  }
+  .ws-lawcard .ws-row__desc {
+    -webkit-line-clamp: 1;
+  }
+  .ws-lawsec {
+    padding-bottom: 8px;
+  }
+  .ws-lawsec__head {
+    position: static;
+    padding: 2px;
+  }
+  .ws-lawsec__ico {
+    width: 24px;
+    height: 24px;
+    font-size: 15px;
+  }
+  .ws-modal__head .ws-modal__ico {
+    width: 30px;
+    height: 30px;
+  }
+}
+@media (max-width: 720px) {
+  .ws-lawsx__restore {
+    min-height: 44px;
+  }
+  .ws-lawsx__count {
+    display: none;
+  }
+}
