@@ -1,7 +1,9 @@
 import '@fontsource/cinzel/700.css';
+import * as THREE from 'three';
 import './hud2.css';
 import './hud3.css';
 import './hud4.css';
+import './hud5.css';
 import { CATEGORIES, listPowers, getPower } from '../powers/registry.js';
 import { el, safe } from './dom.js';
 import { TopBar, PRESET_NAMES } from './TopBar.js';
@@ -14,8 +16,10 @@ import { TitleScreen } from './TitleScreen.js';
 import { ChroniclePanel } from './Chronicle.js';
 import { Onboarding } from './Onboarding.js';
 import { CameraPad } from './CameraPad.js';
+import { Popover } from './Popover.js';
 import { AgeChip, AgeBanner } from './Ages.js';
 import { loadRegistries } from './depth.js';
+import { lawDef } from '../core/laws.js';
 import { uiIcon } from './icons.js';
 
 const PREF_KEY = 'worldseed.ui.v1';
@@ -61,6 +65,7 @@ export class UI {
     this.hud.append(this.topbar.el, this.feed.el, this.kingdoms.el, this.chronicle.el, this.inspector.el, this.minimap.wrap, this.toolbar.el, this.toastEl);
     root.append(this.modals.layer, this.veil);
     this.onboarding = new Onboarding(this);
+    this.popover = new Popover(this);
     // ages: chip under the clock, banner on change
     this.ageChip = new AgeChip(this);
     this.topbar.centre.insertBefore(this.ageChip.el, this.topbar.pausedEl);
@@ -105,6 +110,27 @@ export class UI {
       if (e.target !== root && game.input) game.input.mouse.inside = false;
     });
     game.events.on('world:regenerated', () => this.onRegenerated());
+    this._lawT = new Map();
+    game.events.on('laws', ({ key, value } = {}) => {
+      if (key == null) {
+        this.toast('World laws restored to their defaults');
+        return safe(() => game.notify('The World Laws are restored to their ancient defaults.', 'info'));
+      }
+      clearTimeout(this._lawT.get(key));
+      this._lawT.set(
+        key,
+        setTimeout(() => {
+          const def = lawDef(key);
+          if (!def) return;
+          const v = game.laws?.[key] ?? value;
+          let text;
+          if (def.type === 'bool') text = v ? `${def.label} allowed again: ${def.description.replace(/\.$/, '').replace(/^./, (c) => c.toLowerCase())}.` : `${def.label} forbidden by World Law.`;
+          else text = +v === 0 ? `${def.label} stilled by World Law.` : `${def.label} set to ×${+(+v).toFixed(2)}.`;
+          this.toast(text);
+          safe(() => game.notify(text, 'info'));
+        }, 650),
+      );
+    });
     this._powerCheckT = 2;
   }
 
@@ -215,29 +241,121 @@ export class UI {
     /* handled by the 'world:regenerated' event */
   }
 
-  // Ease out to frame the whole map; press again to return to the previous view.
+  // Frame the whole map between the top bar and the (folded) dock: solve the
+  // camera distance and target offset from the real FOV and aspect so all four
+  // corners are on screen, at a steeper pitch. Press again to return.
   overview() {
+    const g = this.game;
+    const rig = g.cameraRig;
+    const W = g.world;
+    if (this._overview) return this.exitOverview(true);
+    const prev = { x: rig.goal.x, z: rig.goal.z, dist: rig.goal.dist, yaw: rig.goal.yaw, follow: rig.follow, maxDist: rig.maxDist, dockMin: this.toolbar.el.classList.contains('is-min') };
+    // fold the tray first so the usable band is measured with it folded
+    this.root.classList.add('is-overview');
+    if (!prev.dockMin && !this.toolbar.isDrawer()) this.toolbar.setMin(true);
+    if (this.toolbar.isDrawer()) this.toolbar.toggleDrawer(false);
+    const vw = innerWidth,
+      vh = innerHeight;
+    const topR = this.topbar.el.getBoundingClientRect();
+    const ovR = this.overviewBtn.getBoundingClientRect();
+    const pillBottom = ovR.height && ovR.top < innerHeight * 0.4 ? ovR.bottom : 0;
+    const dockR = this.toolbar.panel.getBoundingClientRect();
+    const top = Math.min(vh * 0.45, Math.max(topR.bottom, pillBottom) + 12);
+    const bottom = Math.max(vh * 0.6, (dockR.top > vh * 0.5 ? dockR.top : vh) - 12);
+    const left = 12,
+      right = vw - 12;
+    const yaw = Math.round(rig.goal.yaw / (Math.PI * 2)) * Math.PI * 2;
+    const bias = THREE.MathUtils.degToRad(8);
+    const pitch = THREE.MathUtils.degToRad(70) + bias;
+    const cam = new THREE.PerspectiveCamera(rig.camera.fov, vw / vh, 1, 1e6);
+    const v = new THREE.Vector3();
+    const cx = W.w / 2;
+    const ty = Math.max(0, W.heightAt(cx, W.h / 2)) * 0.6;
+    const fits = (d, tz) => {
+      const horiz = Math.cos(pitch) * d;
+      cam.position.set(cx + Math.sin(yaw) * horiz, ty + Math.sin(pitch) * d, tz + Math.cos(yaw) * horiz);
+      cam.lookAt(cx, ty, tz);
+      cam.updateMatrixWorld();
+      for (const [x, z] of [
+        [0, 0],
+        [W.w, 0],
+        [0, W.h],
+        [W.w, W.h],
+      ]) {
+        v.set(x, 0, z).project(cam);
+        const sx = (v.x * 0.5 + 0.5) * vw,
+          sy = (-v.y * 0.5 + 0.5) * vh;
+        if (v.z > 1 || sx < left || sx > right || sy < top || sy > bottom) return false;
+      }
+      return true;
+    };
+    let best = null;
+    for (let k = -10; k <= 10; k++) {
+      const tz = W.h / 2 + (k / 40) * W.h;
+      let lo = 5,
+        hi = Math.max(W.w, W.h) * 12;
+      if (!fits(hi, tz)) continue;
+      for (let it = 0; it < 26; it++) {
+        const m = (lo + hi) / 2;
+        if (fits(m, tz)) hi = m;
+        else lo = m;
+      }
+      if (!best || hi < best.d) best = { d: hi, tz };
+    }
+    if (!best) best = { d: rig.maxDist, tz: W.h / 2 };
+    const d = best.d * 1.02;
+    this._overview = { ...prev, dist: prev.dist, target: d };
+    rig.follow = null;
+    // maxDist = d makes the rig's auto-pitch reach its top (70°) exactly at d,
+    // so pitch + bias equals the 78° the fit was solved for
+    rig.maxDist = d;
+    rig.goal.x = cx;
+    rig.goal.z = best.tz;
+    rig.goal.dist = d;
+    rig.goal.yaw = yaw;
+    this._biasGoal = bias;
+    this.syncOverviewBtn();
+    g.audio?.play?.('ui-click', { volume: 0.45 });
+  }
+
+  exitOverview(restoreView) {
     const rig = this.game.cameraRig;
-    const W = this.game.world;
-    if (this._overview) {
-      const p = this._overview;
-      this._overview = null;
+    const p = this._overview;
+    if (!p) return;
+    this._overview = null;
+    rig.maxDist = p.maxDist;
+    if (restoreView) {
       rig.goal.x = p.x;
       rig.goal.z = p.z;
-      rig.goal.dist = p.dist;
+      rig.goal.dist = Math.min(p.dist, p.maxDist);
       rig.goal.yaw = p.yaw;
-      if (p.follow) rig.follow = p.follow;
-    } else {
-      this._overview = { x: rig.goal.x, z: rig.goal.z, dist: rig.goal.dist, yaw: rig.goal.yaw, follow: rig.follow };
-      rig.follow = null;
-      rig.goal.x = W.w / 2;
-      rig.goal.z = W.h / 2 + W.h * 0.04;
-      rig.goal.dist = rig.maxDist;
+      if (p.follow && p.follow.alive !== false) rig.follow = p.follow;
+    } else rig.goal.dist = Math.min(rig.goal.dist, p.maxDist);
+    this._biasGoal = 0;
+    this.root.classList.remove('is-overview');
+    if (!p.dockMin && !this.toolbar.isDrawer()) this.toolbar.setMin(false);
+    this.syncOverviewBtn();
+    this.game.audio?.play?.('ui-click', { volume: 0.4 });
+  }
+
+  syncOverviewBtn() {
+    const on = !!this._overview;
+    this.overviewBtn.querySelector('.ws-overview__txt').textContent = on ? 'Back' : 'Overview';
+    this.overviewBtn.querySelector('.ws-overview__ico').innerHTML = uiIcon(on ? 'collapse' : 'expand');
+    this.overviewBtn.setAttribute('aria-label', on ? 'Back to your view (M)' : 'Overview (M)');
+    this.overviewBtn.dataset.tip = on ? 'Back · M' : 'Overview · M';
+  }
+
+  // per-frame: ease the overview pitch, leave overview when the player dives in
+  updateOverview(dt) {
+    const rig = this.game.cameraRig;
+    const goal = this._biasGoal ?? 0;
+    if (Math.abs((rig.cur.pitchBias || 0) - goal) > 1e-4) {
+      const k = 1 - Math.exp(-dt * 4);
+      rig.cur.pitchBias = (rig.cur.pitchBias || 0) + (goal - (rig.cur.pitchBias || 0)) * k;
+      rig.goal.pitchBias = rig.cur.pitchBias;
     }
-    this.root.classList.toggle('is-overview', !!this._overview);
-    this.overviewBtn.querySelector('.ws-overview__txt').textContent = this._overview ? 'Back' : 'Overview';
-    this.overviewBtn.querySelector('.ws-overview__ico').innerHTML = uiIcon(this._overview ? 'collapse' : 'expand');
-    this.game.audio?.play?.('ui-click', { volume: 0.45 });
+    if (this._overview && rig.goal.dist < this._overview.target * 0.6) this.exitOverview(false);
   }
 
   togglePhoto() {
@@ -397,6 +515,7 @@ export class UI {
     if (this._debugHover && this.game.input) this.game.input.mouse.inside = true;
     if (this.title?.active) safe(() => this.title.update(dt), null, 'title');
     for (const p of this.parts) safe(() => p.update(dt), null, p.constructor.name);
+    safe(() => this.updateOverview(dt), null, 'overview');
     // while a brush stroke is held, side panels fade back so the land is clear
     const painting = !!(this.game.activePower && this.game.input?._pressed);
     this._paintT = painting ? this._paintT + dt : 0;

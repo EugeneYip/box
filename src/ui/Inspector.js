@@ -3,7 +3,7 @@ import { TILE_INFO, FLORA_INFO, SEA_LEVEL, SHALLOW_DEPTH, TILE } from '../world/
 import { powerIcon, uiIcon, tileTint, hasIcon } from './icons.js';
 import { getPower } from '../powers/registry.js';
 import { el, esc, safe, hexCss, fmtNum } from './dom.js';
-import { traitDef, statusDef, modLines, prettyId, eraNames } from './depth.js';
+import { traitDef, statusDef, modLines, prettyId, eraNames, techDef, techList } from './depth.js';
 import { kingdomOf, eraOf, researchOf } from './TechPanel.js';
 import { CULTURES } from '../sim/civ/cultures.js';
 import { YEAR } from '../core/time.js';
@@ -76,7 +76,7 @@ const BUILDING_ICON = [
   [/smith|forge|work/, 'build', '#e0b47a'],
   [/store|warehouse|treasur/, 'gold', '#ffd36a'],
 ];
-const HIDE_STATS = /^(mood)$/i;
+const HIDE_STATS = /^(mood|traits?|level)$/i;
 // key stats first: health, then what the subject is doing / its status
 const STAT_RANK = [/^(health|hp)$/i, /^(doing|activity|status|state)$/i, /^job$/i, /^(hunger|food)$/i, /^energy$/i, /^(population|age)$/i];
 const rankOf = (k) => {
@@ -159,7 +159,16 @@ export class Inspector {
   }
 
   collect(hit) {
-    const list = (safe(() => this.game.inspect(hit), []) || []).filter(Boolean);
+    const g = this.game;
+    const list = (safe(() => g.inspect(hit), []) || []).filter(Boolean);
+    if (!list.some((r) => kindOf(r) === 'kingdom')) {
+      const v = list.map((r) => r.village || (r.building ? g.civ?.villages?.[r.building.village] : null)).find(Boolean);
+      const k = v ? kingdomOf(g, v.kingdom) : null;
+      if (k && k.alive !== false) {
+        const r = safe(() => g.civ._inspectKingdom?.(k, 1), null) || { priority: 1, kind: 'kingdom', kingdom: k, title: k.name, subtitle: 'Kingdom', stats: [] };
+        list.splice(Math.max(1, list.findIndex((x) => kindOf(x) === 'tile')), 0, r);
+      }
+    }
     if (!list.some((r) => kindOf(r) === 'tile')) list.push(this.tileResult(hit));
     return list;
   }
@@ -171,6 +180,7 @@ export class Inspector {
     if (!keepIndex) this.index = 0;
     this.track = this.results[this.index];
     this._deadShown = false;
+    this._scrollTop = 0;
     this.render();
     this.el.classList.add('is-open');
     this.ui.root.classList.add('has-insp');
@@ -187,6 +197,7 @@ export class Inspector {
   focusIndex(i) {
     this.index = i;
     this.track = this.results[i];
+    this._scrollTop = 0;
     this.render();
     this.applySelection();
     this.queuePortrait();
@@ -342,8 +353,15 @@ export class Inspector {
     const u = r.unit;
     const dead = u && u.alive === false;
     const kTint = this.kingdomTint(r);
+    // a building's own era only matters when it differs from its realm's
+    let realmEraName = null;
+    if (k === 'building' || k === 'village') {
+      const kk = (typeof r.kingdom === 'object' && r.kingdom) || kingdomOf(this.game, (r.village || this.game.civ?.villages?.[r.building?.village])?.kingdom);
+      if (kk) realmEraName = `${eraNames()[eraOf(this.game, kk)] || ''} era`.toLowerCase();
+    }
     const stats = (r.stats || [])
       .filter((s) => Array.isArray(s) && s.length >= 2 && !HIDE_STATS.test(String(s[0])))
+      .filter((s) => !(realmEraName && /^built in$/i.test(String(s[0])) && String(s[1]).toLowerCase() === realmEraName))
       .map((s, i) => [s, i])
       .sort((a, b) => rankOf(a[0][0]) - rankOf(b[0][0]) || a[1] - b[1])
       .map(([s]) => s);
@@ -414,6 +432,27 @@ export class Inspector {
       ${cells || depth ? `<div class="ws-insp__scroll">${cells ? `<div class="ws-insp__grid">${cells}</div>` : ''}${depth}</div>` : ''}
       <div class="ws-insp__actions">${actions.join('')}</div>`;
     const sc = this.el.querySelector('.ws-insp__scroll');
+    if (sc && this.isCompact()) {
+      const more = document.createElement('div');
+      more.className = 'ws-insp__more';
+      const cells = [...sc.querySelectorAll('.ws-insp__grid > .ws-cell')];
+      if (cells.length > 4) {
+        const g2 = document.createElement('div');
+        g2.className = 'ws-insp__grid';
+        for (const c of cells.slice(4)) g2.append(c);
+        more.append(g2);
+      }
+      for (const sec of [...sc.querySelectorAll('.ws-dsec')]) if (!/traits|conditions|learning|realm/i.test(sec.querySelector('h5')?.textContent || '')) more.append(sec);
+      if (more.childElementCount) {
+        more.hidden = !this.moreOpen;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'ws-insp__morebtn';
+        btn.dataset.act = 'more';
+        btn.innerHTML = `<span>${this.moreOpen ? 'Fewer details' : 'More details'}</span>${uiIcon(this.moreOpen ? 'chev-up' : 'chev-down')}`;
+        sc.append(btn, more);
+      }
+    }
     if (sc) {
       sc.scrollTop = this._scrollTop || 0;
       const hint = () => {
@@ -430,7 +469,13 @@ export class Inspector {
       if (b.dataset.i != null) return this.focusIndex(+b.dataset.i);
       const act = b.dataset.act;
       if (act === 'close') this.close();
-      else if (act === 'fav' && u) {
+      else if (act === 'more') {
+        this.moreOpen = !this.moreOpen;
+        const m = this.el.querySelector('.ws-insp__more');
+        if (m) m.hidden = !this.moreOpen;
+        b.innerHTML = `<span>${this.moreOpen ? 'Fewer details' : 'More details'}</span>${uiIcon(this.moreOpen ? 'chev-up' : 'chev-down')}`;
+        return;
+      } else if (act === 'fav' && u) {
         u.data = u.data || {};
         u.data.favorite = !u.data.favorite;
         this.render();
@@ -455,7 +500,8 @@ export class Inspector {
         const def = traitDef(g, id) || {};
         const cat = def.category || 'trait';
         const tip = [def.description, modLines(def.mods).map((l) => l.text).join(', ')].filter(Boolean).join(' — ');
-        return this.chip(def.name || prettyId(id), tip, `is-${cat}${def.rarity && def.rarity !== 'common' ? ' is-rare' : ''}`, TRAIT_ICON[cat] || 'sparkle');
+        const rare = cat === 'gift' || def.rarity === 'rare' || (typeof def.rarity === 'number' && def.rarity > 0 && def.rarity <= 0.015);
+        return this.chip(def.name || prettyId(id), tip, `is-${cat}${rare ? ' is-rare' : ''}`, TRAIT_ICON[cat] || 'sparkle');
       })
       .join('');
   }
@@ -464,7 +510,10 @@ export class Inspector {
     let html = '';
     const traits = Array.isArray(u.traits) ? u.traits : [];
     if (traits.length) html += `<section class="ws-dsec"><h5>Traits</h5><div class="ws-chips">${this.traitChips(traits)}</div></section>`;
-    const st = u.statuses instanceof Map ? [...u.statuses.entries()] : u.statuses && typeof u.statuses === 'object' ? Object.entries(u.statuses) : [];
+    const shown = new Set((this.track?.stats || []).map((s) => String(s[0]).toLowerCase()));
+    const st = (u.statuses instanceof Map ? [...u.statuses.entries()] : u.statuses && typeof u.statuses === 'object' ? Object.entries(u.statuses) : []).filter(
+      ([id]) => !((id === 'exhausted' && shown.has('energy')) || (id === 'starving' && shown.has('hunger'))),
+    );
     if (st.length) {
       html += `<section class="ws-dsec"><h5>Conditions</h5><div class="ws-chips">${st
         .map(([id, secs]) => {
@@ -476,16 +525,18 @@ export class Inspector {
     }
     const eq = u.equipment && typeof u.equipment === 'object' ? u.equipment : null;
     if (eq) {
-      html += `<section class="ws-dsec"><h5>Equipment</h5><div class="ws-slots">${['weapon', 'armor', 'tool', 'trinket']
+      const slots = ['weapon', 'armor', 'tool', 'trinket'];
+      const worn = slots.filter((x) => eq[x]);
+      const empty = slots.length - worn.length;
+      html += `<section class="ws-dsec"><h5>Equipment</h5>${worn.length ? '' : '<div class="ws-gearnone">Carries no gear</div>'}<div class="ws-slots">${worn
         .map((slot) => {
           const it = eq[slot];
-          if (!it) return `<div class="ws-slot is-empty"><span class="ws-slot__ico">${uiIcon(SLOT_ICON[slot])}</span><span class="ws-slot__txt"><b>${prettyId(slot)}</b><small>Empty</small></span></div>`;
           const q = String(it.quality || 'common').toLowerCase();
           const mat = it.material ? prettyId(it.material) : '';
           const hist = it.history ? `<em class="ws-slot__hist">${esc(it.history)}</em>` : '';
           return `<div class="ws-slot is-${q}" data-tip="${esc([it.name, mat, prettyId(q), it.power != null ? `power ${it.power}` : ''].filter(Boolean).join(' · '))}"><span class="ws-slot__ico">${uiIcon(SLOT_ICON[it.slot || slot] || 'sparkle')}</span><span class="ws-slot__txt"><b>${esc(it.name || prettyId(it.kind || slot))}</b><small><i class="ws-q"></i>${esc([mat, prettyId(q)].filter(Boolean).join(' · '))}</small>${hist}</span></div>`;
         })
-        .join('')}</div></section>`;
+        .join('')}</div>${worn.length && empty ? `<div class="ws-gearnone">${empty} empty slot${empty > 1 ? 's' : ''}</div>` : ''}</section>`;
     }
     const bio = Array.isArray(u.bio) ? u.bio.slice(-10).reverse() : [];
     if (bio.length) {
@@ -498,38 +549,55 @@ export class Inspector {
   cultureOf(id) {
     if (!id) return null;
     if (typeof id === 'object') return id;
+    const live = safe(() => this.game.civ?.cultureDef?.(id), null);
+    if (live) return live;
     const C = this.game.civ?.cultures;
     const found = C instanceof Map ? C.get(id) : Array.isArray(C) ? C.find((c) => c && (c.id === id || c.name === id)) : C?.[id];
     return found || (CULTURES[id] ? { id, name: CULTURES[id].name, traits: CULTURES[id].traits || [] } : { id, name: prettyId(id), traits: [] });
   }
   realmDepth(r) {
     const g = this.game;
-    const v = r.village || (r.building ? g.civ?.villages?.[r.building.village] : null);
+    const isKingdom = kindOf(r) === 'kingdom';
+    const v = isKingdom ? null : r.village || (r.building ? g.civ?.villages?.[r.building.village] : null);
     const k = (typeof r.kingdom === 'object' && r.kingdom) || (v ? kingdomOf(g, v.kingdom) : null);
     if (!k && !v) return '';
     let html = '';
-    if (k) {
+    if (k && !isKingdom) {
+      const era = eraOf(g, k);
+      html += `<section class="ws-dsec"><h5>Realm</h5><div class="ws-realm__line"><span class="ws-era is-era${era}">${uiIcon(['house', 'build', 'job-soldier', 'chronicle'][era])}<span>Realm · ${esc(eraNames()[era] || '')} era</span></span><span class="ws-realm__of">${esc(String(k.name || ''))}</span></div></section>`;
+    }
+    if (k && isKingdom) {
       const era = eraOf(g, k);
       const res = researchOf(g, k);
-      html += `<section class="ws-dsec"><h5>Learning</h5><div class="ws-realm__era"><span class="ws-era is-era${era}">${uiIcon(['house', 'build', 'job-soldier', 'chronicle'][era])}<span>${esc(eraNames()[era] || '')} Era</span></span>${
-        res ? `<span class="ws-realm__res"><small>Studying ${esc(res.name)}</small>${res.pct != null ? `<span class="ws-meter"><i style="width:${(res.pct * 100).toFixed(1)}%"></i></span>` : ''}</span>` : '<span class="ws-realm__res"><small>No research under way</small></span>'
-      }</div></section>`;
+      const nT = k.techs instanceof Set ? k.techs.size : Array.isArray(k.techs) ? k.techs.length : 0;
+      const tot = techList(g).length;
+      const mastery = k.mastery || 0;
+      html += `<section class="ws-dsec"><h5>Learning</h5><div class="ws-realm__era"><span class="ws-era is-era${era}">${uiIcon(['house', 'build', 'job-soldier', 'chronicle'][era])}<span>${esc(eraNames()[era] || '')} era</span></span>${
+        res ? `<span class="ws-realm__res"><small>Studying ${esc(res.name)}${res.pct != null ? ` · ${Math.round(res.pct * 100)}%` : ''}</small>${res.pct != null ? `<span class="ws-meter"><i style="width:${(res.pct * 100).toFixed(1)}%"></i></span>` : ''}</span>` : `<span class="ws-realm__res"><small>${nT && tot && nT >= tot ? 'Every technology is known' : 'No research under way'}</small></span>`
+      }</div><div class="ws-realm__facts"><span data-tip="Technologies this realm has learned">${uiIcon('chronicle')}${nT}${tot ? ` / ${tot}` : ''} techs</span>${mastery > 0 ? `<span data-tip="Mastery: refinements earned after every technology is known. Each level adds 3% to work, harvests and building.">${uiIcon('crown')}Mastery ${mastery}</span>` : ''}</div></section>`;
     }
     const cult = this.cultureOf(v?.culture ?? k?.culture);
     if (cult) {
       const traits = (cult.traits || []).map((t) => this.chip(typeof t === 'string' ? prettyId(t) : t.name || prettyId(t.id), typeof t === 'object' ? t.description : '', 'is-culture', 'banner')).join('');
-      html += `<section class="ws-dsec"><h5>Culture</h5><div class="ws-chips">${this.chip(cult.name || prettyId(cult.id), cult.language ? `Tongue: ${cult.language}` : '', 'is-culture-name', 'chronicle')}${traits}</div></section>`;
+      // villages list their culture mix as a stat row; here only the traits
+      const hasMix = (r.stats || []).some((s) => /^culture$/i.test(String(s[0])));
+      if (traits || !hasMix) html += `<section class="ws-dsec"><h5>${hasMix ? 'Culture traits' : 'Culture'}</h5><div class="ws-chips">${hasMix ? '' : this.chip(cult.name || prettyId(cult.id), cult.language ? `Tongue: ${cult.language}` : '', 'is-culture-name', 'chronicle')}${traits}</div></section>`;
     }
-    const inv = k?.inventory || null;
-    const src = inv || (v ? { food: v.food, wood: v.wood, stone: v.stone, gold: v.gold } : null);
+    const inv = isKingdom ? k?.inventory || null : null;
+    // food is already a meter in the stats above, so stores list the rest
+    const src = inv || (v ? { wood: v.wood, stone: v.stone, ore: v.ore, gold: v.gold } : null);
     if (src) {
       const cells = Object.entries(INV)
         .filter(([key]) => src[key] != null)
         .map(([key, [icon, label]]) => `<span class="ws-inv" data-tip="${label}">${uiIcon(icon)}<b>${fmtNum(src[key])}</b><small>${label}</small></span>`)
         .join('');
-      if (cells) html += `<section class="ws-dsec"><h5>${inv ? 'Treasury' : 'Stores'}</h5><div class="ws-invgrid">${cells}</div></section>`;
+      if (cells) html += `<section class="ws-dsec"><h5>${inv ? 'Kingdom treasury' : 'Village stores'}</h5><div class="ws-invgrid">${cells}</div></section>`;
+      if (isKingdom && k) {
+        const n = k.techs instanceof Set ? k.techs.size : Array.isArray(k.techs) ? k.techs.length : 0;
+        if (n) html += `<section class="ws-dsec"><h5>Latest discoveries</h5><div class="ws-chips">${[...(k.techs instanceof Set ? k.techs : k.techs || [])].slice(-6).map((id) => this.chip(techDef(g, id)?.name || prettyId(id), techDef(g, id)?.description || '', 'is-tech', 'good')).join('')}</div></section>`;
+      }
     }
-    const ruler = k ? g.units?.byId?.get?.(k.ruler) : null;
+    const ruler = k && isKingdom ? g.units?.byId?.get?.(k.ruler) : null;
     if (ruler && Array.isArray(ruler.traits) && ruler.traits.length) {
       html += `<section class="ws-dsec"><h5>Ruler · ${esc(ruler.name || k.rulerName || '')}</h5><div class="ws-chips">${this.traitChips(ruler.traits)}</div></section>`;
     }
@@ -563,6 +631,10 @@ export class Inspector {
     const x = o?.x ?? o?.cx ?? r?.x ?? this.hit?.x,
       z = o?.z ?? o?.cz ?? r?.z ?? this.hit?.z;
     if (x != null) this.game.focus(x, z, Math.min(this.game.cameraRig.goal.dist, 40));
+  }
+
+  isCompact() {
+    return matchMedia('(max-width: 720px), (max-height: 500px)').matches;
   }
 
   // ---- phone bottom sheet: drag the grip / header between peek and full
@@ -659,7 +731,25 @@ export class Inspector {
     }
     const x = Math.max(16, Math.min(innerWidth - 16, (v.x * 0.5 + 0.5) * innerWidth));
     const sy = Math.max(70, Math.min(innerHeight - 40, (-v.y * 0.5 + 0.5) * innerHeight));
+    // keep the pin out of every HUD panel (top bar, dock, overview, map, ...)
+    const now = performance.now();
+    if (!this._hudRects || now - this._hudT > 500) {
+      this._hudT = now;
+      this._hudRects = [...this.ui.root.querySelectorAll('.ws-brand, .ws-clock, .ws-stats, .ws-agechip, .ws-dock__panel, .ws-brush.is-shown, .ws-overview, .ws-mapwrap:not(.is-off), .ws-insp.is-open, .ws-side.is-open, .ws-campad, .ws-feed__item')]
+        .map((e) => e.getBoundingClientRect())
+        .filter((r) => r.width > 0 && r.height > 0);
+    }
+    const lw0 = pin.firstChild.offsetWidth || 60;
+    const box = { l: x - Math.max(10, lw0 / 2) - 4, r: x + Math.max(10, lw0 / 2) + 4, t: sy - 42, b: sy + 2 };
+    if (this._hudRects.some((r) => box.l < r.right && box.r > r.left && box.t < r.bottom && box.b > r.top)) {
+      pin.classList.remove('is-shown');
+      return;
+    }
     pin.style.transform = `translate(${x.toFixed(1)}px, ${sy.toFixed(1)}px)`;
+    const lab = pin.firstChild;
+    const lw = lab.offsetWidth || 0;
+    const shift = Math.max(8, Math.min(innerWidth - 8 - lw, x - lw / 2)) - (x - lw / 2);
+    lab.style.transform = `translateX(calc(-50% + ${shift.toFixed(0)}px))`;
     pin.classList.add('is-shown');
     // a followed or hidden creature keeps its name tag; otherwise show the marker only
     pin.classList.toggle('has-label', this.game.cameraRig.follow === ref || kind === 'building');

@@ -90,6 +90,8 @@ vec3 seasonal(vec3 c, float k, float temp) {
   float lc = dot(c, LW);
   // hue shift toward the season's colour at this surface's own luminance
   vec3 tgt = uSeasonTint.rgb * (lc / max(dot(uSeasonTint.rgb, LW), 1e-3));
+  // warm seasons (autumn gold) glow a little brighter than the green they replace
+  tgt *= 1.0 + 0.22 * smoothstep(0.0, 0.2, uSeasonTint.r - uSeasonTint.g);
   vec3 t = mix(c, tgt, uSeasonTint.w);
   vec3 dryC = vec3(0.45, 0.34, 0.10) * (lc / 0.33) * 1.05;
   t = mix(t, dryC, uDry * 0.6);
@@ -147,10 +149,15 @@ Mat matDesert(NS s) {
   return mk(c, 0.95, 0.22 + 0.15 * dune, 0.05 + 0.03 * rip * ripFade);
 }
 Mat matGrass(NS s) {
-  vec3 lush = vec3(0.085, 0.340, 0.040);
-  vec3 dry = vec3(0.230, 0.330, 0.060);
+  // three grassland regimes read at overview scale: khaki steppe, bright meadow,
+  // deep lush lowland (moisture plus a broad variety field)
+  vec3 steppe = vec3(0.285, 0.300, 0.100);
+  vec3 meadow = vec3(0.130, 0.380, 0.055);
+  vec3 lush = vec3(0.060, 0.290, 0.050);
   vec3 cold = vec3(0.090, 0.250, 0.100);
-  vec3 c = mix(dry, lush, smoothstep(0.22, 0.72, s.moist));
+  float mv = s.moist + (nz(s.p.xz * (1.0 / 210.0) + 3.7).b - 0.5) * 0.35;
+  vec3 c = mix(steppe, meadow, smoothstep(0.26, 0.46, mv));
+  c = mix(c, lush, smoothstep(0.58, 0.80, mv));
   c = mix(cold, c, smoothstep(0.18, 0.48, s.temp));
   // soft meadow patches (sunny yellow-green / deeper green)
   float patchv = s.macro.r * 0.65 + s.meso.g * 0.35;
@@ -205,8 +212,8 @@ Mat matJungle(NS s) {
   return mk(c, 0.75, 0.5 + 0.35 * v, 0.06);
 }
 Mat matSavanna(NS s) {
-  vec3 gold = vec3(0.560, 0.430, 0.115);
-  vec3 olive = vec3(0.330, 0.320, 0.085);
+  vec3 gold = vec3(0.500, 0.410, 0.130);
+  vec3 olive = vec3(0.320, 0.320, 0.095);
   float v = s.macro.r * 0.5 + s.meso.g * 0.5;
   vec3 c = mix(gold, olive, smoothstep(0.45, 0.85, v + (s.moist - 0.4) * 0.5));
   // bare red soil patches
@@ -250,22 +257,23 @@ Mat matTundra(NS s) {
 Mat matSnow(NS s) {
   // mid-value snow (never paper white): blue-violet hollows, wind ripples
   float drift = s.meso.r * 0.6 + s.det.g * 0.4;
-  vec3 c = mix(vec3(0.34, 0.38, 0.52), vec3(0.52, 0.55, 0.61), smoothstep(0.2, 0.72, drift));
-  c = mix(c, vec3(0.28, 0.31, 0.48), (1.0 - s.ao) * 0.7);
-  // slopes turn blue
-  c = mix(c, c * vec3(0.80, 0.86, 1.05), smoothstep(0.97, 0.78, s.n.y));
+  // clean, soft, bright snow (never paper white), gentle neutral-blue shading
+  vec3 c = mix(vec3(0.58, 0.61, 0.66), vec3(0.67, 0.70, 0.74), smoothstep(0.2, 0.72, drift));
+  c = mix(c, vec3(0.47, 0.52, 0.60), (1.0 - s.ao) * 0.35);
+  // slopes cool slightly
+  c = mix(c, c * vec3(0.92, 0.95, 1.02), smoothstep(0.97, 0.78, s.n.y));
   // broad wind ridges (read at mid zoom): gentle windward face, blue lee shadow
   vec2 wd = vec2(0.917, 0.401);
   vec2 q = s.p.xz + (s.meso.gb - 0.5) * 7.0;
   float rp = fract(dot(q, wd) * 0.19 + s.det.r * 0.5);
   float ridge = smoothstep(0.0, 0.78, rp) * (1.0 - smoothstep(0.78, 1.0, rp));
   float ridgeFade = 1.0 - smoothstep(0.3, 1.0, s.fw);
-  c = mix(c, c * vec3(0.78, 0.84, 1.02), (1.0 - ridge) * 0.55 * ridgeFade);
+  c = mix(c, c * vec3(0.90, 0.93, 1.0), (1.0 - ridge) * 0.25 * ridgeFade);
   float rip = sin(dot(q, wd) * 3.4 + s.det.r * 6.0) * 0.5 + 0.5;
   float ripFade = 1.0 - smoothstep(0.05, 0.3, s.fw);
   c *= 0.96 + 0.05 * s.micro.r;
-  c *= 1.0 - 0.04 * rip * ripFade;
-  return mk(c, 0.62, 0.40 + 0.3 * drift, 0.03 + 0.45 * ridge * ridgeFade + 0.04 * rip * ripFade);
+  c *= 1.0 - 0.02 * rip * ripFade;
+  return mk(c, 0.62, 0.40 + 0.3 * drift, 0.025 + 0.12 * ridge * ridgeFade + 0.015 * rip * ripFade);
 }
 Mat matRock(NS s) {
   vec3 warm = vec3(0.330, 0.290, 0.245);
@@ -392,49 +400,54 @@ Mat evalMat(float t, NS s) {
   return mk(c * (0.85 + 0.3 * s.det.r), 0.9, 0.4, 0.04);
 }
 
-// Cliff rock: faceted strata projected on the dominant vertical plane.
+// Cliff rock: true triplanar blending (weights from the normal), level strata,
+// gentle chiselled facets. Colour stays coherent: no per-facet patchwork.
 Mat matCliff(NS s, out vec3 facetN) {
   vec3 p = s.p;
   vec3 n = s.n;
-  float wx = smoothstep(0.35, 0.65, abs(n.x) / (abs(n.x) + abs(n.z) + 1e-4));
+  vec3 bw = pow(abs(n), vec3(4.0));
+  bw /= (bw.x + bw.y + bw.z + 1e-4);
   vec2 uvX = vec2(p.z, p.y);
   vec2 uvZ = vec2(p.x, p.y);
+  vec2 uvY = p.xz;
   vec4 t, d;
   if (uPower > 0.5) {
-    // power saver: dominant projection only (half the taps, no triplanar blend)
-    vec2 uvD = mix(uvZ, uvX, step(0.5, wx));
+    // power saver: dominant vertical projection only (no triplanar blend)
+    vec2 uvD = bw.x > bw.z ? uvX : uvZ;
     t = nz(uvD * 0.085);
     d = nz(uvD * 0.37);
   } else {
-    t = mix(nz(uvZ * 0.085), nz(uvX * 0.085), wx);
-    d = mix(nz(uvZ * 0.37), nz(uvX * 0.37), wx);
+    t = nz(uvX * 0.085) * bw.x + nz(uvZ * 0.085) * bw.z + nz(uvY * 0.085) * bw.y;
+    d = nz(uvX * 0.37) * bw.x + nz(uvZ * 0.37) * bw.z + nz(uvY * 0.37) * bw.y;
   }
   // strata: level, crisp (anti-aliased) layers with a shadowed lip under each ledge
-  float sy = p.y * 0.75 + (t.r - 0.5) * 0.55 + (s.macro.r - 0.5) * 0.45;
+  float sy = p.y * 0.75 + (t.r - 0.5) * 0.32 + (s.macro.r - 0.5) * 0.30;
   float layer = floor(sy);
   float aa = clamp(s.fwy * 0.75 * 1.5, 0.02, 0.5);
   float lt = smoothstep(1.0 - aa, 1.0, fract(sy));
   float lr = mix(hash12(vec2(layer, 3.7)), hash12(vec2(layer + 1.0, 3.7)), lt);
   float bandFade = 1.0 - smoothstep(0.25, 0.7, s.fwy * 0.75);
   lr = mix(0.5, lr, bandFade);
-  vec3 cA = vec3(0.390, 0.335, 0.275);
-  vec3 cB = vec3(0.215, 0.205, 0.200);
-  vec3 cC = vec3(0.500, 0.420, 0.320);
-  vec3 c = mix(mix(cB, cA, smoothstep(0.15, 0.6, lr)), cC, smoothstep(0.72, 0.95, lr));
-  c *= 0.80 + 0.32 * d.r;
+  vec3 cA = vec3(0.370, 0.345, 0.310);
+  vec3 cB = vec3(0.275, 0.265, 0.252);
+  vec3 cC = vec3(0.450, 0.410, 0.350);
+  vec3 c = mix(mix(cB, cA, smoothstep(0.15, 0.6, lr)), cC, smoothstep(0.75, 0.97, lr));
+  c *= 0.86 + 0.24 * d.r;
   // ledges: dark lip just above each layer boundary, lit top surface
   float led = smoothstep(0.0, max(0.22, aa * 2.0), fract(sy));
-  c *= mix(1.0, mix(0.66, 1.10, led), bandFade);
-  // flat-shaded low-poly facets: geometric (per-triangle) normal plus crisp,
-  // nearest-sampled facet cells on the projected plane
-  vec2 fuv = mix(vec2(p.x * 0.055, p.y * 0.085 + p.z * 0.02), vec2(p.z * 0.055, p.y * 0.085 + p.x * 0.02), step(0.5, wx));
-  vec4 f = texelFetch(uCells, ivec2(floor(fract(fuv) * 256.0)), 0);
+  c *= mix(1.0, mix(0.72, 1.08, led), bandFade);
+  // facets: geometric (per-triangle) normal plus nearest-sampled facet cells on
+  // both vertical planes, blended by the triplanar weights (no hard plane switch)
+  vec4 fX = texelFetch(uCells, ivec2(floor(fract(vec2(p.z * 0.055, p.y * 0.085 + p.x * 0.02)) * 256.0)), 0);
+  vec4 fZ = texelFetch(uCells, ivec2(floor(fract(vec2(p.x * 0.055, p.y * 0.085 + p.z * 0.02)) * 256.0)), 0);
+  float wxz = bw.x / max(bw.x + bw.z, 1e-4);
+  vec2 ft = mix(fZ.ba, fX.ba, wxz);
   vec3 tA = normalize(cross(n, vec3(0.0, 1.0, 0.0)) + vec3(1e-4, 0.0, 0.0));
   vec3 tB = normalize(cross(tA, n));
   float near = 1.0 - smoothstep(0.25, 0.9, s.fw);
-  vec3 base = normalize(mix(n, s.fn, 0.7 * near));
-  facetN = normalize(base + (tA * (f.b - 0.5) * 0.95 + tB * (f.a - 0.5) * 0.75) * near);
-  c *= mix(1.0, 0.78 + 0.44 * f.b, near);
+  vec3 base = normalize(mix(n, s.fn, 0.45 * near));
+  facetN = normalize(base + (tA * (ft.x - 0.5) * 0.55 + tB * (ft.y - 0.5) * 0.40) * near);
+  c *= mix(1.0, 0.93 + 0.14 * ft.x, near);
   return mk(c, 0.82, 0.55 + 0.25 * lr + 0.2 * t.g, 0.05);
 }
 
@@ -482,7 +495,7 @@ vec3 bumpPerturb(vec3 pos, vec3 n, float H) {
 }
 
 // Territory overlay: soft tint + crisp glowing border line.
-void applyOverlay(vec2 p, inout vec3 albedo, inout vec3 emissive) {
+void applyOverlay(vec2 p, inout vec3 albedo, inout vec3 emissive, float snowK) {
   if (uOverlayOn < 0.5) return;
   ivec2 osz = ivec2(uOverlaySize);
   vec2 sc = uOverlaySize / uWorldSize;
@@ -528,9 +541,11 @@ void applyOverlay(vec2 p, inout vec3 albedo, inout vec3 emissive) {
   float la = lum(albedo);
   vec3 tintC = min(col * (la / max(lum(col), 0.03)), vec3(1.0));
   tintC = mix(tintC, col * 0.6, 0.2);
-  albedo = mix(albedo, tintC, min(1.0, aFill * fillAmt * 1.3));
+  // snow composites above the territory tint (borders still read)
+  float onSnow = 1.0 - 0.85 * snowK;
+  albedo = mix(albedo, tintC, min(1.0, aFill * fillAmt * 1.3) * onSnow);
   vec3 lineCol = col * 1.05 + 0.015;
-  albedo = mix(albedo, albedo * (1.0 - 0.35 * a) + col * 0.35 * a, glow * mix(0.3, 0.6, fillK));
+  albedo = mix(albedo, albedo * (1.0 - 0.35 * a) + col * 0.35 * a, glow * mix(0.3, 0.6, fillK) * onSnow);
   float aLine = min(1.0, a * 1.3);
   albedo = mix(albedo, lineCol, line * aLine);
   albedo = mix(albedo, albedo * 0.3 + col * 0.06, edge * aLine * 0.85);
@@ -653,6 +668,15 @@ void terrainSurface() {
     }
   }
 
+  // ---- overview relief: at far zoom a map-style hillshade, slope darkening and a
+  // cool lift on high ground let ranges read through the green (close-ups unchanged)
+  float farR = 1.0 - uDetail;
+  if (farR > 0.0 && s.p.y > 0.0) {
+    float hs = dot(nrm, normalize(vec3(-0.5, 0.8, -0.35)));
+    albedo *= mix(1.0, (0.78 + 0.40 * hs) * mix(0.72, 1.0, smoothstep(0.55, 0.98, nrm.y)), farR * 0.6);
+    albedo = mix(albedo, albedo * vec3(0.96, 1.0, 1.08) * 1.12, smoothstep(6.0, 16.0, s.p.y) * 0.4 * farR);
+  }
+
   // ---- seabed & shore
   float depth = -s.p.y;
   float hb = 0.0;
@@ -706,7 +730,7 @@ void terrainSurface() {
   }
 
   // ---- territory overlay
-  applyOverlay(p, albedo, emit);
+  applyOverlay(p, albedo, emit, clamp(snowB, 0.0, 1.0));
 
   tAlbedo = albedo;
   tRough = clamp(rough, 0.04, 1.0);
@@ -760,5 +784,5 @@ export function patchTerrainMaterial(material, uniforms) {
       )
       .replace('#include <opaque_fragment>', TERRAIN_FRAGMENT_POST + '\n#include <opaque_fragment>');
   };
-  material.customProgramCacheKey = () => 'worldseed-terrain-v6';
+  material.customProgramCacheKey = () => 'worldseed-terrain-v7';
 }

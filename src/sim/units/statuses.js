@@ -12,8 +12,8 @@ export const STATUSES = [
   S('chilled', 'Chilled', 'snowflake', 'Bitter cold slows every step.', { speed: 0.8, work: 0.85 }, 30, 5),
   S('starving', 'Starving', 'bowl', 'Desperate for food; growing weaker.', { speed: 0.85, work: 0.7, damage: 0.85 }, Infinity, 4),
   S('exhausted', 'Exhausted', 'sweat', 'Needs rest badly.', { speed: 0.8, work: 0.75 }, Infinity, 3),
-  S('mourning', 'Mourning', 'tear', 'Grieving a great loss.', { work: 0.85 }, 30, 2),
-  S('inspired', 'Inspired', 'sun', 'Full of hope; works and fights with vigour.', { work: 1.25, damage: 1.1 }, 90, 1),
+  S('mourning', 'Mourning', 'tear', 'Grieving a great loss: slower, listless and slow to anger.', { work: 0.8, speed: 0.9, damage: 0.9, aggression: 0.7 }, 30, 2),
+  S('inspired', 'Inspired', 'sun', 'Full of hope: works faster, fights harder and fears less.', { work: 1.25, damage: 1.15, speed: 1.08, fear: 0.75 }, 90, 1),
   S('blessed', 'Blessed', 'sparkle', 'Touched by the divine: tougher, faster, stronger.', { damage: 1.5, speed: 1.15 }, 40, 1),
   S('sleeping', 'Sleeping', 'zzz', 'Fast asleep.', { work: 0 }, Infinity, 0),
 ];

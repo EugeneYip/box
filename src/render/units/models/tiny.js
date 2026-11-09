@@ -77,6 +77,26 @@ function humanMid(B) {
   box(B, 0.11, 0.12, 0.09, [0, 0.33, -0.11], 'torso', 'stone', { slot: 'back', opt: 2 });
   box(B, 0.11, 0.09, 0.1, [0, 0.32, -0.11], 'torso', 'straw', { slot: 'back', opt: 3 });
   box(B, 0.08, 0.09, 0.07, [0, 0.31, -0.1], 'torso', 'gold', { slot: 'back', opt: 4 });
+  // kingdom tabard (cape slot 2) and royal cape (1)
+  for (const s of [1, -1]) box(B, 0.11, 0.2, 0.01, [0, 0.27, 0.084 * s], 'torso', 'sash', { slot: 'cape', opt: 2 });
+  box(B, 0.18, 0.28, 0.01, [0, 0.25, -0.09], 'torso', 'cloth', { slot: 'cape', opt: 1 });
+  // held tools / weapons, chunky enough to read (tool frame: handle along +Z)
+  const H = [-0.111, 0.205, 0.004];
+  const tool = (opt, tilt, parts) => {
+    for (const [w, h, d, z, y, mat] of parts) B.add(P.box(w, h, d), { pos: [H[0], H[1] + Math.sin(-tilt) * z + Math.cos(tilt) * y, H[2] + Math.cos(tilt) * z + Math.sin(tilt) * y], rot: [tilt, 0, 0], bone: 'tool', slot: 'tool', opt, mat });
+  };
+  tool(1, -0.3, [[0.016, 0.016, 0.42, 0.14, 0, 'wood'], [0.016, 0.085, 0.06, 0.33, -0.03, 'metal']]); // axe
+  tool(2, -0.7, [[0.015, 0.015, 0.6, 0.18, 0, 'wood'], [0.07, 0.06, 0.012, 0.47, -0.03, 'metal']]); // hoe
+  tool(3, -0.35, [[0.016, 0.016, 0.4, 0.14, 0, 'wood'], [0.016, 0.15, 0.02, 0.34, 0, 'metal']]); // pickaxe
+  tool(4, -0.4, [[0.016, 0.016, 0.3, 0.1, 0, 'wood'], [0.05, 0.1, 0.05, 0.26, 0, 'metal']]); // hammer / mace
+  tool(5, -1.3, [[0.014, 0.014, 0.9, 0.12, 0, 'wood'], [0.03, 0.02, 0.09, 0.62, 0, 'metal']]); // spear
+  tool(6, -0.85, [[0.01, 0.01, 0.78, 0.33, 0, 'wood']]); // rod
+  tool(7, -1.05, [[0.014, 0.014, 0.3, 0.1, 0, 'gold'], [0.04, 0.04, 0.04, 0.28, 0, 'gem']]); // scepter
+  tool(8, -0.55, [[0.014, 0.034, 0.34, 0.2, 0, 'metal'], [0.1, 0.018, 0.018, 0.03, 0, 'gold'], [0.016, 0.016, 0.08, -0.03, 0, 'leather']]); // sword
+  tool(9, 0, [[0.012, 0.46, 0.02, 0.06, 0, 'wood']]); // bow
+  // shield on the left arm (offhand slot)
+  box(B, 0.016, 0.2, 0.2, [0.145, 0.27, 0.02], 'armL', 'cloth', { slot: 'offhand', opt: 1 });
+  box(B, 0.02, 0.06, 0.06, [0.155, 0.27, 0.02], 'armL', 'metal', { slot: 'offhand', opt: 1 });
 }
 
 export const MID = { human: humanMid };

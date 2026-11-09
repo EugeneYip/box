@@ -131,7 +131,7 @@ export const politics = {
     k.ruler = u.id;
     k.rulerName = u.name;
     k.council = false;
-    this.game.units.log?.(u, `Crowned ${title} of the ${k.name}`);
+    this._bio(u, `Crowned ${title} of the ${k.name}`);
     // name an heir straight away so the realm never drifts without one
     let heir = null;
     const v = this.villages[u.village];
@@ -259,6 +259,9 @@ export const politics = {
         target -= (A.aggression + B.aggression) * 9;
         target -= r.grievance;
         if (r.ally) target += 30;
+        const ra = g.units.byId.get(A.ruler),
+          rb = g.units.byId.get(B.ruler);
+        if (g.units.traitMod) target += ((ra ? g.units.traitMod(ra, 'diplomacy') : 1) + (rb ? g.units.traitMod(rb, 'diplomacy') : 1) - 2) * 20;
         if (A.parent === B.id || B.parent === A.id) target -= 8; // breakaway grudges
         const ea = this.enemiesOf(A.id),
           eb = this.enemiesOf(B.id);
@@ -300,14 +303,16 @@ export const politics = {
           if (this.warCount(att.id) >= 2) continue;
           const ratio = att.strength / Math.max(1, def.strength);
           const crowd = this._crowd?.() || 0;
-          const hostile = r.opinion < -30 + crowd * 25;
+          const wl = this.law('diploWarlike', 1);
+          if (wl <= 0) continue;
+          const hostile = r.opinion < -30 + crowd * 25 + (wl - 1) * 22;
           const ambitious = att.ambition > 0.55 && ratio > 1.6 && r.opinion < 0;
           // land hunger: a capped world with a weaker neighbour on the border
           const hungry = border > 6 && ratio > 1.3 && now - att.lastWar > YEAR * 8 && r.opinion < 30 && crowd > 0.5;
           if (!hostile && !ambitious && !hungry) continue;
           if (ratio < 0.6) continue;
           let p = 0.03 + att.aggression * 0.08 + (ambitious ? 0.05 : 0) + (hungry ? 0.04 + crowd * 0.05 : 0);
-          p *= this.law('diploWarlike', 1) * (g.age?.mods?.warlike ?? 1);
+          p *= Math.pow(wl, 1.7) * (g.age?.mods?.warlike ?? 1);
           if (this._rulerTrait(att, 'cruel', 'valiant')) p *= 1.6;
           if (this._rulerTrait(att, 'gentle', 'silver-tongued', 'silvertongued')) p *= 0.55;
           if (this.hasCultureTrait(att.culture, 'Martial')) p *= 1.3;
@@ -365,14 +370,16 @@ export const politics = {
     if (!silent) this._note(`⚔ ${this._kn(A)} declares war on ${this._kn(B)} (${why})`, 'war', this._kingdomPos(B));
     const ra = this.game.units.byId.get(A.ruler),
       rb = this.game.units.byId.get(B.ruler);
-    if (ra) this.game.units.log?.(ra, `Declared war on ${this._kn(B)}`);
-    if (rb) this.game.units.log?.(rb, `${this._kn(A)} declared war on us`);
+    if (ra) this._bio(ra, `Declared war on ${this._kn(B)}`);
+    if (rb) this._bio(rb, `${this._kn(A)} declared war on us`);
     const pb = this._kingdomPos(B);
     this._sfx('war-horn', pb?.x ?? 0, pb?.z ?? 0, 0, true);
     // allies of the defender may join
     if (reason !== 'alliance') {
       for (const k of this.kingdoms) {
         if (!k.alive || k.id === a || k.id === b) continue;
+        const joined = this.enemiesOf(a).length - 1;
+        if (joined >= 2 || (B.population || 0) > (A.population || 0) * 1.4) break;
         if (this.allied(k.id, b) && !this.allied(k.id, a) && this.warCount(k.id) < 2 && this.rng.chance(0.7)) {
           const rr = this.rel(k.id, a);
           if (!rr.war) {
@@ -552,12 +559,21 @@ export const politics = {
       u.data.civ.task = null;
     }
     army.bearer = soldiers[0].id;
+    const march = this.techMod(k.id, 'march');
+    if (march !== 1) for (const u of soldiers) u.data.speedMul = march;
     this.armies.push(army);
     return army;
   },
 
   _disbandArmy(a) {
-    for (const u of a.units) if (u.data?.civ) u.data.civ.army = null;
+    const fought = a.state === 'siege' || a.state === 'march';
+    for (const u of a.units) {
+      if (u.data?.civ) u.data.civ.army = null;
+      if (fought && u.alive) {
+        this.game.units.addXP?.(u, 8);
+        u.data.speedMul = null;
+      }
+    }
     a.dead = true;
     a.units.clear();
     const i = this.armies.indexOf(a);
@@ -700,6 +716,7 @@ export const politics = {
     K.villages.push(v.id);
     v.conqueredAt = this.game.time.total;
     v.loyalty = cause === 'rebellion' ? 80 : 35;
+    if (cause === 'conquest' && v.rebellions) v.loyaltyBoost = Math.max(v.loyaltyBoost || 0, 25); // garrisoned and watched
     for (const b of v.buildings) b.kingdom = kid;
     for (const u of v.members) {
       u.kingdom = kid;
@@ -715,7 +732,7 @@ export const politics = {
     if (cause === 'conquest') {
       this._note(`⚑ ${this._kn(K)} conquers ${v.name}`, 'war', { x: v.cx, z: v.cz });
       const rk = this.game.units.byId.get(K.ruler);
-      if (rk) this.game.units.log?.(rk, `Conquered ${v.name}`);
+      if (rk) this._bio(rk, `Conquered ${v.name}`);
       // the conquerors bring their tongue
       this._mixAdd?.(v, K.culture, 0.25);
     }
@@ -835,9 +852,14 @@ export const politics = {
   },
 
   // A village breaks away as a new kingdom (optionally taking neighbours along).
-  rebel(v, silent = false) {
+  rebel(v, silent = false, forced = false) {
     const old = this.kingdoms[v.kingdom];
     if (!old || old.capital === v.id) return null;
+    const now = this.game.time.total;
+    // a crushed rebellion is remembered: the town needs years to rise again
+    if (!forced && now - (v.lastRebel ?? -1e9) < YEAR * 25) return null;
+    v.lastRebel = now;
+    v.rebellions = (v.rebellions || 0) + 1;
     const K = this.createKingdom(v.culture, { baseName: v.name, parent: old.id, x: v.cx, z: v.cz });
     const oldName = old.base || old.name;
     this.transferVillage(v, K.id, 'rebellion');
