@@ -228,7 +228,10 @@ export class Inspector {
         }, null, 'portrait');
       }
       if (url) this.portraits.set(ref, url);
-      if (url && same()) this.render();
+      if (url && same()) {
+        if (this.editing) this.patchPortrait(url);
+        else this.render();
+      }
     }, 90);
   }
   async renderPortrait(ref, kind) {
@@ -434,7 +437,7 @@ export class Inspector {
           <h3 class="ws-insp__title">${esc(r.title || 'Unknown')}${epithet ? ` <span class="ws-insp__epithet">${esc(epithet)}</span>` : ''}</h3>
           ${r.subtitle ? `<div class="ws-insp__sub">${kTint ? `<i class="ws-crest" style="--k:${kTint}"></i>` : ''}<span>${esc(r.subtitle)}</span></div>` : ''}
         </div>
-        ${editable ? `<button class="ws-iconbtn ws-iconbtn--sm ws-insp__edit${editing ? ' is-on' : ''}" type="button" aria-label="${editing ? 'Done editing' : 'Edit'}" data-tip="${editing ? 'Done editing' : 'Edit name, colours and more'}" data-act="${editing ? 'edit-done' : 'edit'}">${uiIcon(editing ? 'good' : 'edit')}</button>` : ''}
+        ${editable ? `<button class="ws-iconbtn ws-iconbtn--sm ws-insp__edit${editing ? ' is-on' : ''}" type="button" aria-label="${editing ? 'Done editing' : 'Edit'}" data-tip="${editing ? 'Done editing' : 'Edit name, colours and more'}" data-act="${editing ? 'edit-done' : 'edit'}">${uiIcon(editing ? 'check' : 'edit')}</button>` : ''}
         ${u ? `<button class="ws-iconbtn ws-iconbtn--sm ws-insp__fav${fav ? ' is-on' : ''}" type="button" aria-label="${fav ? 'Unstar' : 'Star this creature'}" data-tip="${fav ? 'Favourite' : 'Mark as favourite'}" data-act="fav">${uiIcon(fav ? 'star-on' : 'star')}</button>` : ''}
         <button class="ws-iconbtn ws-iconbtn--sm ws-insp__x" type="button" aria-label="Close (Esc)" data-act="close">${uiIcon('close')}</button>
       </header>
@@ -500,8 +503,16 @@ export class Inspector {
         return;
       } else if (act === 'fav' && u) {
         u.data = u.data || {};
-        u.data.favorite = !u.data.favorite;
-        this.render();
+        const on = !u.data.favorite;
+        if (typeof this.game.units?.setFavorite === 'function') safe(() => this.game.units.setFavorite(u, on), null, 'favorite');
+        else u.data.favorite = on;
+        if (this.editing) {
+          // keep the edit card: flip the star in place
+          b.classList.toggle('is-on', !!u.data.favorite);
+          b.innerHTML = uiIcon(u.data.favorite ? 'star-on' : 'star');
+          b.setAttribute('aria-label', u.data.favorite ? 'Unstar' : 'Star this creature');
+          b.dataset.tip = u.data.favorite ? 'Favourite' : 'Mark as favourite';
+        } else this.render();
       } else if (act === 'tech') this.ui.modals.open('tech', { kingdom: +b.dataset.k });
       else if (act === 'follow') this.toggleFollow();
       else if (act === 'focus') this.focusCamera();
@@ -766,6 +777,24 @@ export class Inspector {
     this._sig = '';
     this.render();
   }
+  // portrait arrived while editing: drop it into the header, leave the card alone
+  patchPortrait(url) {
+    const b = this.el.querySelector('.ws-insp__badge');
+    if (!b || b.querySelector('.ws-insp__portrait')) return;
+    const img = document.createElement('img');
+    img.className = 'ws-insp__portrait';
+    img.src = url;
+    img.alt = '';
+    const svg = b.querySelector(':scope > svg');
+    b.classList.add('has-portrait');
+    if (svg) {
+      const glyph = document.createElement('span');
+      glyph.className = 'ws-insp__glyph';
+      svg.replaceWith(img);
+      glyph.append(svg);
+      img.after(glyph);
+    } else b.prepend(img);
+  }
   // after a rename: update the header without touching the edit card
   patchTitle(text) {
     const h = this.el.querySelector('.ws-insp__title');
@@ -777,7 +806,11 @@ export class Inspector {
   refresh() {
     const r = this.track;
     if (!r) return;
-    if (this.editing) return;
+    if (this.editing) {
+      // never rebuild the card under the player; leave edit mode only if the subject is gone
+      if (this.editing.alive === false) this.stopEdit();
+      return;
+    }
     const u = r.unit,
       b = r.building;
     let at = this.hit;

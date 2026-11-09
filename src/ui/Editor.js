@@ -21,7 +21,7 @@ const BANNER_ICON = {
   crown: 'crown',
   anvil: 'build',
   hammer: 'build',
-  ship: 'trade',
+  ship: 'ship',
   moon: 'night',
   sun: 'sun',
   eye: 'curse',

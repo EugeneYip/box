@@ -12,6 +12,14 @@
 .ws-insp.is-editing {
   width: 330px;
 }
+.ws-edit .ws-input {
+  flex: none;
+  width: 100%;
+  box-sizing: border-box;
+}
+.is-touch .ws-edit .ws-input {
+  height: 44px;
+}
 .ws-edit {
   display: flex;
   flex-direction: column;
@@ -81,6 +89,9 @@
   align-items: stretch;
   gap: 6px;
   cursor: default;
+}
+.is-touch .ws-erow {
+  min-height: 44px;
 }
 .ws-erow.is-disabled {
   opacity: 0.5;
@@ -374,7 +385,11 @@
   transition:
     opacity 0.2s,
     transform 0.28s var(--ws-ease);
-  z-index: 6;
+  z-index: 30;
+  background: rgba(12, 14, 22, 0.94);
+  box-shadow:
+    inset 0 0 0 1px rgba(235, 201, 119, 0.32),
+    0 10px 28px rgba(0, 0, 0, 0.45);
 }
 .ws-undo.is-shown {
   opacity: 1;
@@ -409,8 +424,14 @@
   }
 }
 @media (max-width: 720px) {
+  /* a snackbar over the top bar: never covers the sheet being edited */
   .ws-undo {
-    bottom: 96px;
+    top: calc(env(safe-area-inset-top, 0px) + 8px);
+    bottom: auto;
+    transform: translate(-50%, -12px);
+    width: calc(100vw - 20px);
+    justify-content: space-between;
+    box-sizing: border-box;
   }
   .ws-insp.is-editing {
     width: auto;
