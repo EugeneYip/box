@@ -210,8 +210,9 @@ export class UnitRenderer {
     const eq = u._eqVer || 0,
       nt = u.traits ? u.traits.length : 0;
     const kv = this._kver * 16777216 + (u.kingdom >= 0 ? this.game.civ?.kingdomColor?.(u.kingdom) ?? 0 : 0);
-    if (k && k.job === u.job && k.ct === ct && k.kd === u.kingdom && k.ageB === ageB && k.wa === wa && k.rg === rg && k.col === u.color && k.sex === u.sex && k.eq === eq && k.nt === nt && k.kv === kv) return;
-    rs.apK = { job: u.job, ct, kd: u.kingdom, ageB, wa, rg, col: u.color, sex: u.sex, eq, nt, kv };
+    const cb = u.job === 'king' && !!u.combat; // a ruler draws the sheathed blade to fight
+    if (k && k.job === u.job && k.ct === ct && k.kd === u.kingdom && k.ageB === ageB && k.wa === wa && k.rg === rg && k.col === u.color && k.sex === u.sex && k.eq === eq && k.nt === nt && k.kv === kv && k.cb === cb) return;
+    rs.apK = { job: u.job, ct, kd: u.kingdom, ageB, wa, rg, col: u.color, sex: u.sex, eq, nt, kv, cb };
     rs.starborn = !!u.traits?.includes('starborn');
     const id = u.id;
     const r = (k) => h1(id, k);
@@ -322,7 +323,9 @@ export class UnitRenderer {
     const eqp = u.equipment;
     const wpn = eqp?.weapon,
       arm = eqp?.armor;
-    if (wpn && !child && !WORK_JOBS.has(job) && WEAPON_TOOL[wpn.kind] != null) {
+    // a ruler at peace keeps the sceptre in hand and a legendary blade sheathed
+    const sheathe = job === 'king' && wpn?.legendary && !u.combat;
+    if (wpn && !child && !WORK_JOBS.has(job) && !sheathe && WEAPON_TOOL[wpn.kind] != null) {
       tool = WEAPON_TOOL[wpn.kind];
       if (tool === TOOL_OPT.bow) offhand = 0;
     }
@@ -331,9 +334,8 @@ export class UnitRenderer {
     rs.legendary = !!(wpn?.legendary || arm?.legendary);
     rs.starsteel = wpn?.material === 'starsteel' || arm?.material === 'starsteel';
     let back = BACK_OPT[u.carry?.type] || 0;
-    // a ruler (or anyone working) keeps a legendary blade sheathed on the back
-    const lw = u.equipment?.weapon;
-    if (!back && lw?.legendary && (job === 'king' || WORK_JOBS.has(job))) back = 5;
+    // a ruler at peace (or anyone working) keeps a legendary blade on the back
+    if (!back && wpn?.legendary && !child && (sheathe || WORK_JOBS.has(job))) back = 5;
     rs.bladeOnBack = back === 5;
     const kc = this._kingdomColor(u.kingdom);
     const pal = CULTURE_CLOTH[u.data?.culture] || NEUTRAL_CLOTH;
