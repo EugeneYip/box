@@ -390,33 +390,45 @@ export class FireVisuals {
       B.f += c.f;
       if (gy > B.gy) B.gy = gy;
     }
-    // ---- standing smoke columns: tall, continuous, bent downwind ----
-    // Puffs are laid evenly along the whole leaning column (a golden-ratio
-    // sequence, so neighbours always overlap) and only drift slowly, so the
-    // column reads as one continuous shaft for as long as the block burns.
+    // ---- standing smoke columns: rise, bend over, stream downwind ----
+    // Each 16-tile block carries one continuous plume: it climbs steeply
+    // over the flames, bends over and streams far downwind at a capped
+    // height, widening and paling as it goes. Laid out along that path with
+    // a golden-ratio sequence (neighbours always overlap), it reads as one
+    // long shaft across the land for as long as the block burns, and stays
+    // inside the god-view frame instead of climbing out of it.
+    const wl = Math.hypot(wx, wz);
+    const dirX = wl > 0.05 ? wx / wl : 0,
+      dirZ = wl > 0.05 ? wz / wl : 0;
+    const windK = THREE.MathUtils.clamp(wl / 0.7, 0.4, 1.6);
     for (const B of cols.values()) {
       const sq = Math.sqrt(B.n);
       const bx = B.x / B.n,
         bz = B.z / B.n;
       const avg = B.f / B.n;
-      const H = Math.min(30, 11 + sq * 1.7);
+      const Dmax = wl > 0.05 ? (12 + sq * 1.5) * windK : 0;
+      const Hmax = (wl > 0.05 ? 11 + sq * 0.35 : 18 + sq * 0.6) * (1.15 - 0.15 * windK);
       const spread = 1.0 + sq * 0.18;
-      let e = (3 + sq * 1.0) * Math.max(0.5, avg) * dt * sk;
+      let e = (4 + sq * 1.2) * Math.max(0.5, avg) * dt * sk;
       while (e > 0) {
         if (e < 1 && rnd() > e) break;
         e -= 1;
         this._strat = ((this._strat || 0) + 0.6180339) % 1;
         const u = this._strat;
-        const h = 2.5 + u * H;
-        const L = h * 0.85 * (0.85 + 0.3 * u);
-        const sz = (1.6 + h * 0.15 + sq * 0.12) * Math.pow(lod, 0.75);
-        smokePuff(fx, bx + wx * L + (rnd() - 0.5) * spread * (0.5 + u), B.gy + h, bz + wz * L + (rnd() - 0.5) * spread * (0.5 + u), {
+        const D = u * Dmax;
+        const h = 2.5 + Hmax * (1 - Math.exp(-3.2 * u));
+        const sz = (1.7 + u * 4.2 + sq * 0.1) * Math.pow(lod, 0.75);
+        const j = spread * (0.5 + u * 1.5);
+        const light = u > 0.3;
+        smokePuff(fx, bx + dirX * D + (rnd() - 0.5) * j, B.gy + h + (rnd() - 0.5) * u * 2, bz + dirZ * D + (rnd() - 0.5) * j, {
           size: sz,
-          grow: 1.7,
-          ramp: raining && rnd() < 0.6 ? RAMP.STEAM : RAMP.PLUME,
-          glow: u < 0.18 ? 0.5 : 0,
-          rise: 0.5 + rnd() * 0.5,
-          drift: 2.2,
+          grow: 1.6,
+          ramp: raining && rnd() < 0.6 ? RAMP.STEAM : light ? RAMP.SMOKE_LIGHT : RAMP.PLUME,
+          color: light ? 0x9c968e : undefined,
+          alpha: light ? 1.35 : undefined,
+          glow: u < 0.12 ? 0.5 : 0,
+          rise: 0.25 + rnd() * 0.35,
+          drift: 1.8,
           drag: 0.6,
           life: (6.5 + rnd() * 3) * (0.85 + lod * 0.15),
         });
