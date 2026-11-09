@@ -276,6 +276,28 @@ function pineTier(b, y0, h, r, segs, pal, rot, o = {}) {
 }
 const _nUp = V(0, 1, 0);
 
+// Apply a matrix (about `pivot`) to builder verts from `start` on.
+function transformRange(b, start, m, pivot) {
+  const p = V(),
+    n = V(),
+    nm = new THREE.Matrix3().getNormalMatrix(m);
+  for (let k = start; k < b.count; k++) {
+    const q = k * 3;
+    p.set(b.pos[q] - pivot.x, b.pos[q + 1] - pivot.y, b.pos[q + 2] - pivot.z).applyMatrix4(m).add(pivot);
+    b.pos[q] = p.x;
+    b.pos[q + 1] = p.y;
+    b.pos[q + 2] = p.z;
+    n.set(b.nrm[q], b.nrm[q + 1], b.nrm[q + 2]).applyMatrix3(nm).normalize();
+    b.nrm[q] = n.x;
+    b.nrm[q + 1] = n.y;
+    b.nrm[q + 2] = n.z;
+    p.set(b.piv[q] - pivot.x, b.piv[q + 1] - pivot.y, b.piv[q + 2] - pivot.z).applyMatrix4(m).add(pivot);
+    b.piv[q] = p.x;
+    b.piv[q + 1] = p.y;
+    b.piv[q + 2] = p.z;
+  }
+}
+
 // Recompute colours of builder verts [start, end) from their stored normals,
 // optionally blending normals toward radial from `center`.
 function recolorRange(b, start, col, center, blend = 0) {
@@ -326,8 +348,15 @@ function buildPine(b, v, lod, snowy = false) {
     const r = cfg.R * (1 - f * 0.78) * (v === 3 && t % 2 ? 0.82 : 1);
     const h = Math.max(r * 1.35, (span / tiers) * 1.7);
     const rot = b.r(0, TAU);
+    const tierStart = b.count;
     pineTier(b, y0, t === tiers - 1 ? h * 1.25 : h, r, segs, pal, rot, { shade: 0.86 + 0.14 * f, lod });
     if (snowy) snowCap(b, y0, t === tiers - 1 ? h * 1.25 : h, r, segs, rot, lod);
+    if (!lod && t < tiers - 1) {
+      // irregular silhouette: tiers lean and drift off the axis a little
+      const off = r * 0.12;
+      const m = M(b.r(-off, off), 0, b.r(-off, off), b.r(-0.12, 0.12), 0, b.r(-0.12, 0.12));
+      transformRange(b, tierStart, m, V(0, y0, 0));
+    }
   }
   return { bendScale: 0.8, height: cfg.H };
 }
@@ -867,6 +896,8 @@ function buildFlowers(b, v, lod) {
 }
 
 function buildCactus(b, v, lod) {
+  if (v === 1) return buildPricklyPear(b, lod);
+  if (v === 3) return buildAgave(b, lod);
   const pal = P.cactus;
   const ribs = lod ? 6 : 12;
   const ribFn = (i, s, a) => (lod ? 1 : s % 2 === 0 ? 1.1 : 0.9);
@@ -927,6 +958,52 @@ function buildCactus(b, v, lod) {
     }
   }
   return { bendScale: 0.05, height: 0.4 };
+}
+
+// Prickly pear: flat oval pads sprouting from pads, with a few fruits.
+function buildPricklyPear(b, lod) {
+  const pal = { dark: C(0x3f7a4a), mid: C(0x5e9a5a), light: C(0x8cbf72) };
+  const col = (p, n, fc) => mul3(mix3(pal.dark, pal.light, clamp01(0.35 + n.y * 0.35 + p.y * 0.6)), 0.9 + 0.15 * hashV(fc));
+  const pads = [[0, 0.16, 0, 0, 0.18], [0.1, 0.36, 0.03, 0.5, 0.15], [-0.11, 0.34, -0.02, -0.55, 0.14], [0.02, 0.52, 0.06, 0.15, 0.12], [0.2, 0.5, 0.0, 0.9, 0.11]];
+  const n = lod ? 3 : pads.length;
+  for (let k = 0; k < n; k++) {
+    const [x, y, z, tilt, r] = pads[k];
+    const g = blobGeo(b, 1, lod ? 0 : 'd', { lump: 0.08 });
+    b.add(g, { matrix: M(x, y, z, 0, k * 0.9, tilt, r * 0.8, r, r * 0.22), normals: 'blend', blend: 0.6, center: V(x, y, z), color: col, mat: MAT.CACTUS });
+    if (!lod && k > 0) {
+      const f = new THREE.OctahedronGeometry(0.03, 0);
+      b.add(f, { matrix: M(x + Math.sin(tilt) * r * 0.9, y + Math.cos(tilt) * r * 0.95, z), normals: 'blend', blend: 0.7, color: k % 2 ? C(0xd8406a) : C(0xf0b040), mat: MAT.PETAL, leaf: 1, flutter: 0.1 });
+    }
+  }
+  return { bendScale: 0.04, height: 0.6 };
+}
+
+// Agave: a rosette of thick pointed blue-green leaves.
+function buildAgave(b, lod) {
+  const base = C(0x5f8a7c),
+    tip = C(0x9cc0a8),
+    edge = C(0x3e5e52);
+  const n = lod ? 7 : 13;
+  for (let k = 0; k < n; k++) {
+    const a = (k / n) * TAU + (k % 2) * 0.24;
+    const d = V(Math.cos(a), 0, Math.sin(a));
+    const s = V(-d.z, 0, d.x);
+    const inner = k % 2 === 0;
+    const L = inner ? 0.3 : 0.4;
+    const lift = inner ? 0.36 : 0.2;
+    const root = d.clone().multiplyScalar(0.03);
+    const tipP = d.clone().multiplyScalar(L).add(V(0, lift, 0));
+    const w = 0.07;
+    const midL = d.clone().multiplyScalar(L * 0.35).addScaledVector(s, w).add(V(0, lift * 0.4, 0));
+    const midR = d.clone().multiplyScalar(L * 0.35).addScaledVector(s, -w).add(V(0, lift * 0.4, 0));
+    const ridge = d.clone().multiplyScalar(L * 0.35).add(V(0, lift * 0.4 + 0.035, 0));
+    const o = { mat: MAT.CACTUS, flutter: 0, leaf: 0 };
+    b.tri(root, midR, ridge, [edge, base, base], o);
+    b.tri(root, ridge, midL, [edge, base, base], o);
+    b.tri(midR, tipP, ridge, [base, tip, base], o);
+    b.tri(ridge, tipP, midL, [base, tip, base], o);
+  }
+  return { bendScale: 0.03, height: 0.4 };
 }
 
 function flowerHead(b, c, pr, pc, heart) {
