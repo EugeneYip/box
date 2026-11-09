@@ -179,7 +179,8 @@ export class FireVisuals {
         // interior, so a big fire reads as a glowing edge, not a flat carpet
         const tx0 = i % W;
         const edge = tx0 > 0 && tx0 < W - 1 && (world.fire[i + 1] <= 0.01 || world.fire[i - 1] <= 0.01 || world.fire[i + W] <= 0.01 || world.fire[i - W] <= 0.01);
-        A[o + 2] = Math.min(1, f) * (edge ? 1 : 0.45);
+        const ff = fire.fuel0[i] > 0 ? fire.fuel[i] / fire.fuel0[i] : 1;
+        A[o + 2] = Math.min(1, f) * (edge ? 1 : 0.2 + 0.25 * Math.min(1, ff * 2));
         A[o + 3] = 0;
         n++;
       }
@@ -267,17 +268,21 @@ export class FireVisuals {
             break;
           }
       }
+      // fuel left: tiles that have burnt most of their fuel only flicker
+      // low over charred ground, so the tall flames gather on the front
+      const f0 = fire.fuel0[i];
+      const fresh = front || !(f0 > 0) ? 1 : THREE.MathUtils.clamp((fire.fuel[i] / f0 - 0.15) / 0.45, 0.18, 1);
       // flames: strongly varied sizes (0.5x .. 2x), redder ramp
-      let e = (tree ? 2.4 : 1.3) * f * dt * rateK;
+      let e = (tree ? 2.4 : 1.3) * f * dt * rateK * fresh;
       while (e > 0) {
         if (e < 1 && rnd() > e) break;
         e -= 1;
         const jx = (rnd() - 0.5) * 0.85,
           jz = (rnd() - 0.5) * 0.85;
-        const fy = tree ? ground + gr * (0.2 + rnd() * 1.2) : ground + 0.02;
+        const fy = tree ? ground + gr * (0.2 + rnd() * 1.2 * fresh) : ground + 0.02;
         const v = rnd();
         const mul = 0.5 + 1.5 * v * v;
-        const size = (tree ? 0.8 : 0.45) * mul * (0.55 + 0.6 * f) * lod;
+        const size = (tree ? 0.8 : 0.45) * mul * (0.55 + 0.6 * f) * (0.45 + 0.55 * fresh) * lod;
         flame(fx, x + jx, fy, z + jz, size, { bright: 0.9 + f * 0.45, aspect: 1.05 + rnd() * 0.55, ramp: rnd() < 0.4 ? RAMP.FIRE_DEEP : RAMP.FIRE });
       }
       // wide flame sheets rolling along the burning edge: broad, low,
@@ -297,7 +302,7 @@ export class FireVisuals {
         }
       }
       // soft volumetric halo behind the tongues
-      e = (tree ? 2.2 : 1.2) * f * dt * rateK;
+      e = (tree ? 2.2 : 1.2) * f * dt * rateK * fresh;
       if (rnd() < e) {
         const P = fx.P.reset();
         P.x = x + (rnd() - 0.5) * 0.5;
@@ -309,7 +314,7 @@ export class FireVisuals {
         P.tz = fx.wind.z * 0.6;
         P.drag = 1.5;
         P.life = 0.5 + rnd() * 0.4;
-        P.s0 = (tree ? 2.6 : 1.7) * lod * (0.6 + 0.5 * f);
+        P.s0 = (tree ? 2.6 : 1.7) * lod * (0.6 + 0.5 * f) * (0.5 + 0.5 * fresh);
         P.s1 = P.s0 * 1.25;
         P.frame = PF_GLOW;
         P.ramp = RAMP.FIRE;

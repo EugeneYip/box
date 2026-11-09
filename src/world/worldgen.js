@@ -260,7 +260,7 @@ export function generateWorld(world, seed = 1, options = {}) {
   }
   // soften: blur land heights (kills single-tile spikes), keep coastline sign
   blurHeights(hgt, land, W, H, 2);
-  terraceMountains(hgt, rangeMask, N);
+  terraceMountains(hgt, rangeMask, W, H);
 
   _t('elev');
   // ---------------------------------------------------------------- 4. lakes
@@ -587,19 +587,38 @@ function blurHeights(hgt, land, W, H, passes) {
 
 // Soft terracing of mountain cores: flat benches separated by steep risers, so
 // ranges read as stepped, stratified massifs instead of smooth cones.
-function terraceMountains(hgt, rangeMask, N) {
+function terraceMountains(hgt, rangeMask, W, H) {
+  // Terraces only where the ground is gentle enough for a bench; on steep faces
+  // per-tile terracing carved downhill grooves (vertical banding), so those keep
+  // their natural slope and get their ledges from the strata shading instead.
+  const N = W * H;
   const step = 3.0;
-  for (let i = 0; i < N; i++) {
-    const m = rangeMask[i];
-    if (m <= 0.08) continue;
-    const h = hgt[i];
-    if (h < 2.5) continue;
-    const b = Math.floor(h / step) * step;
-    const f = (h - b) / step;
-    const g = smoothstep(0.6, 1.0, f);
-    const k = smoothstep(0.08, 0.45, m) * smoothstep(2.5, 5, h);
-    hgt[i] = h + (b + g * step - h) * k;
-  }
+  const src = hgt.slice();
+  for (let y = 1; y < H - 1; y++)
+    for (let x = 1; x < W - 1; x++) {
+      const i = y * W + x;
+      const m = rangeMask[i];
+      if (m <= 0.08) continue;
+      const h = src[i];
+      if (h < 2.5) continue;
+      const slope = Math.max(Math.abs(src[i + 1] - src[i - 1]), Math.abs(src[i + W] - src[i - W])) * 0.5;
+      const b = Math.floor(h / step) * step;
+      const f = (h - b) / step;
+      const g = smoothstep(0.6, 1.0, f);
+      const k = 0.8 * smoothstep(0.08, 0.45, m) * smoothstep(2.5, 5, h) * (1 - smoothstep(0.9, 1.9, slope));
+      hgt[i] = h + (b + g * step - h) * k;
+    }
+  // light relaxation across massifs removes column-to-column grooves
+  const tmp = hgt.slice();
+  for (let y = 1; y < H - 1; y++)
+    for (let x = 1; x < W - 1; x++) {
+      const i = y * W + x;
+      const m = rangeMask[i];
+      if (m <= 0.08) continue;
+      const avg = (tmp[i - 1] + tmp[i + 1] + tmp[i - W] + tmp[i + W]) * 0.25;
+      hgt[i] = tmp[i] + (avg - tmp[i]) * 0.35 * Math.min(1, m * 2);
+    }
+  void N;
 }
 
 function slopeOf(hgt, W, H, x, y) {

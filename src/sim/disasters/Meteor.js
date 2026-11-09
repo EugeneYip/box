@@ -219,7 +219,7 @@ export class Meteor {
     fx.shockwave(x, z, size * 3.2, { life: 0.8, color: water ? 0xd8f0ff : 0xffe0b0 });
     // big impact flash + a textured shock front drawn over trees (no flat dome)
     glowFlash(fx, x, y + 1, z, size * 3.6, { life: 0.28, bright: 1.9, color: 0xfff0d0, from: 0.5, soft: 0 });
-    fx.decal({ frame: DF.BLAST, x, z, size: size * 1.4, grow: 4.2, life: 0.75, overlay: true, additive: true, surface: 2, color: 0xffe2b0, intensity: 1.8, fadeIn: 0.01, fadeOut: 0.2, grain: 0.3 });
+    fx.decal({ frame: DF.BLAST, x, z, size: size * 1.4, grow: 4.2, life: 0.75, overlay: true, additive: true, surface: 2, color: 0xffe2b0, intensity: 1.8, fadeIn: 0.01, fadeOut: 0.2, grain: 0 });
     fx.decal({ frame: DF.RING, x, z, size: size * 1.2, grow: 5.5, life: 0.9, overlay: true, additive: true, surface: 2, color: 0xfff4dc, intensity: 2.2, fadeIn: 0.01, fadeOut: 0.25, grain: 0 });
     play(g, 'explosion', { x, z }, 1, 0.8);
     if (water) {
