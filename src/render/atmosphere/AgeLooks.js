@@ -16,7 +16,7 @@ const LOOKS = {
   dawn: {},
   bounty: {
     hor: ['#f4d79a', 0.28], haze: ['#f0d8a0', 0.25], key: '#ffe6b8', keyI: 1.05, hemi: ['#d8c9a2', 0.2],
-    sat: 1.14, con: 0.02, mid: [0.035, 0.022, -0.025], hazeD: 0.0006,
+    sat: 1.18, con: 0.02, mid: [0.05, 0.03, -0.035], hazeD: 0.0006,
   },
   embers: {
     zen: ['#7d5f55', 0.55], hor: ['#e09a5e', 0.55], haze: ['#b98a66', 0.55], hemi: ['#c99a72', 0.38], key: '#ffbf7a',
@@ -24,8 +24,8 @@ const LOOKS = {
     vig: 0.12, vigC: '#4a2414',
   },
   rime: {
-    zen: ['#8fb2df', 0.45], hor: ['#d8e6f6', 0.5], haze: ['#cddcf0', 0.5], hemi: ['#b4cdf0', 0.45], key: '#d9e6ff',
-    keyI: 0.78, hemiI: 1.12, sat: 0.78, con: 0.02, mid: [-0.035, 0.0, 0.055], shd: [-0.01, 0.0, 0.05], hazeD: 0.0022,
+    zen: ['#8fb2df', 0.55], hor: ['#d8e6f6', 0.58], haze: ['#cddcf0', 0.58], hemi: ['#b4cdf0', 0.5], key: '#d4e2ff',
+    keyI: 0.74, hemiI: 1.12, sat: 0.7, con: 0.02, mid: [-0.045, 0.0, 0.075], shd: [-0.012, 0.0, 0.06], hazeD: 0.0026,
     vig: 0.05, vigC: '#24344c',
   },
   tempests: {
@@ -38,8 +38,8 @@ const LOOKS = {
     mid: [0.0, 0.008, 0.012], hazeD: -0.0012,
   },
   blight: {
-    zen: ['#8e9468', 0.55], hor: ['#bcb47c', 0.6], haze: ['#a9a873', 0.6], hemi: ['#a8a878', 0.42], key: '#e9e6aa',
-    keyI: 0.85, sat: 0.68, con: 0.03, mid: [0.012, 0.034, -0.045], shd: [0.0, 0.018, -0.02], hazeD: 0.0035,
+    zen: ['#8e9468', 0.62], hor: ['#bcb47c', 0.66], haze: ['#a9a873', 0.66], hemi: ['#a8a878', 0.5], key: '#e6e4a2',
+    keyI: 0.82, sat: 0.6, con: 0.03, mid: [0.02, 0.05, -0.06], shd: [0.0, 0.024, -0.026], hazeD: 0.0042,
     vig: 0.1, vigC: '#2c2c10',
   },
   twilight: {
@@ -49,7 +49,7 @@ const LOOKS = {
   },
   iron: {
     zen: ['#6f8296', 0.4], hor: ['#b6c0ca', 0.4], haze: ['#a2acb6', 0.4], hemi: ['#a4b0bc', 0.3], key: '#eef1f6',
-    keyI: 0.92, sat: 0.74, con: 0.07, mid: [-0.014, 0.0, 0.016], shd: [-0.01, 0.0, 0.02], hazeD: 0.0008,
+    keyI: 0.9, sat: 0.64, con: 0.09, mid: [-0.018, -0.004, 0.022], shd: [-0.012, 0.0, 0.024], hazeD: 0.001,
     vig: 0.08, vigC: '#1c2028',
   },
 };

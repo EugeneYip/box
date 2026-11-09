@@ -247,8 +247,8 @@ export class SkyModel {
     this.hemiIntensity = n.hemiI * 1.3 * (1 + 0.1 * oc - 0.45 * storm - 0.12 * w.rain);
     // golden hour: warmer, ~40% weaker sky fill so the raking sun dominates
     const gk = this.golden * (1 - oc);
-    this.hemiSky.lerp(this._tmp2.setRGB(0.72, 0.56, 0.4), gk * 0.45);
-    this.hemiIntensity *= 1 - 0.4 * gk;
+    this.hemiSky.lerp(this._tmp2.setRGB(0.72, 0.56, 0.4), gk * 0.12);
+    this.hemiIntensity *= 1 - 0.3 * gk;
     // overcast skylight is greyer
     const hl = this.hemiSky.r * 0.3 + this.hemiSky.g * 0.59 + this.hemiSky.b * 0.11;
     this.hemiSky.lerp(this._tmp.setRGB(hl * 0.96, hl, hl * 1.07), oc * 0.6);
@@ -284,8 +284,10 @@ export class SkyModel {
     this.shadowTint.z += nt * 0.012;
     this.highTint.set(0.022 + 0.03 * g, 0.012 + 0.008 * g, -0.012 - 0.03 * g).multiplyScalar((1 - nt * 0.8) * (1 - 0.6 * oc));
     // warm midtone lift through golden hour (not only highlights)
-    this.midTint.set(0.04, 0.016, -0.026).multiplyScalar(g * (1 - 0.6 * oc));
-    this.shadowTint.multiplyScalar(1 - 0.55 * g);
+    this.midTint.set(0.018, 0.008, -0.012).multiplyScalar(g * (1 - 0.6 * oc));
+    // golden hour: the shadow side cools (sky-lit) instead of everything warming
+    this.shadowTint.x -= 0.008 * g;
+    this.shadowTint.z += 0.022 * g * (1 - 0.6 * oc);
     if (this._wint) this.shadowTint.multiplyScalar(1 - 0.6 * this._wint); // winter whites stay neutral
     this.saturation = (1.06 + 0.06 * g) * (1 - 0.3 * nt) * (1 - 0.16 * oc - 0.08 * storm) * (1 - 0.1 * w.fog);
     this.vibrance = 0.16 * (1 - 0.5 * oc);

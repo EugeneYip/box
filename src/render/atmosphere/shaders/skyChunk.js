@@ -24,7 +24,7 @@ vec3 skyBase(vec3 dir) {
   float h = max(y, 0.0);
   // Fast blend just above the horizon, long tail toward the zenith.
   float t = 1.0 - pow(1.0 - h, 3.2);
-  t = mix(t, sqrt(h), 0.35);
+  t = mix(t, pow(h, 0.35), 0.5); // the blue climbs quickly above the horizon
   vec3 col = mix(uHorizon, uZenith, clamp(t, 0.0, 1.0));
 
   vec2 sunH = uSunDir.xz;
