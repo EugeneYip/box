@@ -2012,9 +2012,11 @@ export class Civilization {
       ];
       if (def.housing && b.alive) stats.push(['Houses', `${def.housing[b.level - 1]} people`]);
       if (def.levels > 1) stats.push(['Level', `${b.level} / ${def.levels}`]);
-      stats.push(['Era', ERAS[b.era ?? 0]?.name || 'Hearth']);
+      // the building's own era (the realm's era is shown by the UI separately)
+      stats.push(['Built in', `${ERAS[b.era ?? 0]?.name || 'Hearth'} era`]);
       if (b.type === 'hall' && v) {
-        stats.push(['Population', v.pop], ['Food', `${Math.floor(v.food)} / ${v.foodCap}`], ['Wood · Stone · Gold', `${Math.floor(v.wood)} · ${Math.floor(v.stone)} · ${Math.floor(v.gold)}`]);
+        // wood / stone / gold / ore appear in the UI's "Village stores" section
+        stats.push(['Population', v.pop], ['Food', `${Math.floor(v.food)} / ${v.foodCap}`]);
       }
       return {
         priority: 20,
@@ -2048,12 +2050,10 @@ export class Civilization {
         ['Population', `${v.pop} (${v.children} children)`],
         ['Housing', v.housing],
         ['Food', `${Math.floor(v.food)} / ${v.foodCap}${v.starving ? ' (famine)' : ''}`],
-        ['Wood · Stone · Gold', `${Math.floor(v.wood)} · ${Math.floor(v.stone)} · ${Math.floor(v.gold)}`],
         ['Buildings', v.buildings.filter((b) => b.alive).length],
         ['Fields', `${v.fieldCount} plots`],
         ['Loyalty', `${Math.round(v.loyalty)}%`],
         ['Culture', Object.entries(v.cultureMix || { [v.culture]: 1 }).sort((a, b) => b[1] - a[1]).map(([id, f]) => `${this.cultureName(id)} ${Math.round(f * 100)}%`).join(', ')],
-        ['Ore', Math.floor(v.ore || 0)],
       ],
     };
   }
@@ -2079,12 +2079,9 @@ export class Civilization {
         ['At war with', wars.length ? wars.join(', ') : 'nobody'],
         ['Allies', allies.length ? allies.join(', ') : 'none'],
         ['Founded', `year ${Math.floor(k.founded / YEAR)}`],
-        ['Era', `${ERAS[k.era ?? 0]?.name} · ${k.techs?.size || 0} of ${TECHS.length} techs`],
-        ['Researching', (() => { const r = this.researchLabel(k); return r ? `${r.name} (${Math.floor(Math.min(1, (k.knowledge || 0) / r.cost) * 100)}%)` : '—'; })()],
-        ['Mastery', k.mastery || 0],
-        ['Culture', `${this.cultureName(k.culture)} (${(this.cultureDef(k.culture)?.traits || []).join(', ')})`],
-        ['Arms', k.inventory ? `${k.inventory.weapons} weapons · ${k.inventory.armor} armour · ${k.inventory.tools} tools` : '—'],
-        ['Ruler traits', (this.game.units.byId.get(k.ruler)?.traits || []).join(', ') || '—'],
+        // era, research, culture, arms (treasury) and ruler traits are shown by
+        // the UI in dedicated sections; mastery only once it has been earned
+        ...((k.mastery || 0) > 0 ? [['Mastery', k.mastery]] : []),
       ],
     };
   }
