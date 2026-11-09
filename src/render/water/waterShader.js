@@ -256,8 +256,12 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   float ice = smoothstep(0.18, 0.82, iceF + (fc.b - 0.5) * 0.3 + (fn.g - 0.5) * 0.25) * (1.0 - outK) * step(0.001, depth);
   // seasonal freeze: lakes, rivers and calm shallows at the coldest latitudes
   if (uFreezeT > -0.1) {
+    // coherent: the shelf grows out from the shore as the cold deepens (smooth
+    // fields only, so warm lagoons near the threshold never break out in a rash)
     float calmW = max(1.0 - open, 1.0 - smoothstep(1.2, 3.0, depth));
-    float fz = smoothstep(0.035, -0.035, temp - uFreezeT + (fn.r - 0.5) * 0.07 + (fc.b - 0.5) * 0.03);
+    float coldness = uFreezeT - temp + (mac - 0.5) * 0.03;
+    float shelfW = clamp(coldness * 70.0, 0.0, 40.0);
+    float fz = (1.0 - smoothstep(shelfW, shelfW + 0.7 + 0.5 * fn.r, shoreD + (fn.b - 0.5) * 0.7)) * smoothstep(0.0, 0.008, coldness);
     ice = max(ice, fz * calmW * (1.0 - outK) * step(0.001, depth));
   }
   // fast ice: a shelf welded to cold shores
@@ -269,18 +273,31 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   vec4 fl = texture2D(uCells, WROT2 * (p + (fn.rg - 0.5) * 7.0 + (fc.rg - 0.5) * 1.6) * (1.0 / 38.0) + 0.37);
   float iceW = iceF + (fc.b - 0.5) * 0.3 + (fn.g - 0.5) * 0.25;
   float edgeZone = 1.0 - smoothstep(0.55, 0.95, max(iceW, fastI));
-  float gapW = mix(0.025, 0.11, edgeZone);
+  float gapW = max(mix(0.05, 0.12, edgeZone), fw * 1.4);
   float lead = 1.0 - smoothstep(gapW * 0.45, gapW, fl.g);
   // loose floes and edge shadows only where real ice is near (iceW alone is
   // noise-perturbed and is positive in warm open water)
   float nearIce = max(smoothstep(0.0, 0.05, iceF), fastI);
-  float floeDrift = step(fl.r, 0.42) * step(0.45, fl.b) * smoothstep(0.06, 0.2, iceW) * nearIce * (1.0 - outK) * step(0.001, depth);
+  // margin zone: how much sheet ice lies within ~2-4 tiles (exact fetches, cold water only)
+  float margin = 0.0;
+  if (gCold > 0.4 && iceF < 0.5 && outK < 0.9) {
+    ivec2 mc = ivec2(floor(p));
+    for (int k = 0; k < 8; k++) {
+      float a = float(k) * 0.785 + 0.3;
+      vec2 o = vec2(cos(a), sin(a));
+      margin += isIceAt(mc + ivec2(o * 2.2), isz) * 0.09 + isIceAt(mc + ivec2(o * 4.0), isz) * 0.035;
+    }
+  }
+  float driftK = max(nearIce * smoothstep(0.06, 0.2, iceW), clamp(margin * 1.4, 0.0, 1.0));
+  // floes are whole cells with a gap (polygonal plates), fewer farther out
+  float floeDrift = smoothstep(0.05, 0.08, fl.g) * step(1.0 - 0.35 * driftK, fl.b) * step(0.08, driftK) * (1.0 - outK) * step(0.001, depth);
   // leads open to dark water only at the margin; inside the sheet they are lighter
   // refrozen seams (thin ice) instead of a black crack net
   float openLead = lead * smoothstep(0.15, 0.6, edgeZone);
   float thinLead = lead * (1.0 - smoothstep(0.15, 0.6, edgeZone));
   ice = max(ice * (1.0 - openLead * smoothstep(0.05, 0.4, ice)), floeDrift * (1.0 - lead));
   float iceRim = (1.0 - smoothstep(gapW, gapW * 2.4, fl.g)) * (1.0 - lead);
+  iceRim = max(iceRim, floeDrift * (1.0 - smoothstep(0.08, 0.14, fl.g)));
   // icebergs: rare faceted bergs in cold open water
   vec2 bgUV = p * (1.0 / 150.0) + (fn.gb - 0.5) * 0.012 + 0.53;
   vec4 bg = texture2D(uCells, bgUV);
@@ -321,7 +338,9 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
     iceAlb = mix(iceAlb, vec3(0.20, 0.24, 0.33), smoothstep(0.55, 0.85, fn.b) * 0.5); // blue-violet hollows
     float cracks2 = 1.0 - smoothstep(0.0, 0.05, fc2.g);
     iceAlb *= (1.0 - cracks * 0.30) * (1.0 - cracks2 * 0.14);
-    iceAlb = mix(iceAlb, iceAlb * 0.78 + vec3(0.02, 0.03, 0.04), thinLead);
+    // plates: each a slightly different tone, separated by darker refrozen seams
+    iceAlb *= 0.88 + 0.22 * fl.a;
+    iceAlb = mix(iceAlb, iceAlb * 0.60 + vec3(0.03, 0.05, 0.07), thinLead);
     // thin, darker slush towards the floe edge
     iceAlb = mix(scat * 4.0 + vec3(0.06, 0.08, 0.10), iceAlb, smoothstep(0.0, 0.6, ice));
     // raised rim along every plate and sheet edge (reads as thickness)
@@ -385,5 +404,5 @@ export function patchWaterMaterial(material, uniforms) {
       .replace('#include <fog_fragment>', WATER_FOG)
       .replace('#include <premultiplied_alpha_fragment>', '');
   };
-  material.customProgramCacheKey = () => 'worldseed-water-v5';
+  material.customProgramCacheKey = () => 'worldseed-water-v6';
 }

@@ -742,8 +742,8 @@ void terrainSurface() {
   // ---- seasonal / climate snow: winter, Age of Rime, frost law. Colder ground
   // (higher latitude, higher altitude) whitens first; noisy edges blend in.
   if (uSnowT > -0.15) {
-    float sv = uSnowT - s.temp + (s.det.b - 0.5) * 0.12 + (s.meso.r - 0.5) * 0.10 + (s.micro.g - 0.5) * 0.04;
-    float sn = smoothstep(-0.05, 0.05, sv) * smoothstep(-0.1, 0.35, s.p.y) * (1.0 - lavaRaw);
+    float sv = uSnowT - s.temp + (s.det.b - 0.5) * 0.05 + (s.meso.r - 0.5) * 0.08;
+    float sn = smoothstep(-0.03, 0.03, sv) * smoothstep(-0.1, 0.35, s.p.y) * (1.0 - lavaRaw);
     sn *= mix(1.0, smoothstep(0.55, 0.78, nrm.y), cliff);
     if (sn > 0.001) {
       albedo = mix(albedo, matSnow(s).albedo, sn);
