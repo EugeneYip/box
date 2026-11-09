@@ -384,7 +384,6 @@ export function createDecalMaterials(shared) {
     vertexShader: common + /* glsl */ `
       varying vec3 vCol;
       vec3 fGlowPal(float hue) { return hue < 0.25 ? vec3(0.05, 0.85, 0.6) : hue < 0.75 ? vec3(0.55, 0.22, 1.0) : vec3(1.0, 0.55, 0.08); }
-      ` + GLOW_PAL_JS + /* glsl */ `
       void main() {
         vUv = uv;
         vec3 o = instanceMatrix[3].xyz;
