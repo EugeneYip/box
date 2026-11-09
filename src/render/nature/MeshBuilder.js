@@ -12,7 +12,7 @@ import { mulberry32 } from '../../core/Random.js';
 //                w: material class (MAT.*), drives roughness and tints
 //   aPivot vec3  point a foliage cluster shrinks toward while it is young
 // DLEAF: deciduous foliage (seasonal colour, bare in winter); SHROOM: mushroom caps (may glow).
-export const MAT = { WOOD: 0, LEAF: 1, ROCK: 2, SNOW: 3, GLOSS: 4, PETAL: 5, WHEAT: 6, CACTUS: 7, GRASS: 8, DLEAF: 9, SHROOM: 10 };
+export const MAT = { WOOD: 0, LEAF: 1, ROCK: 2, SNOW: 3, GLOSS: 4, PETAL: 5, WHEAT: 6, CACTUS: 7, GRASS: 8, DLEAF: 9, SHROOM: 10, GLOW: 11 };
 
 const _c = new THREE.Color();
 // sRGB hex -> linear [r,g,b]

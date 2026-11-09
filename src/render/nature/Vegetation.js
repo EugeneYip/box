@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { FLORA, FLORA_INFO, TILE, SEA_LEVEL } from '../../world/constants.js';
 import { hash2 } from '../../core/Random.js';
 import { buildAllModels } from './models.js';
-import { createSharedUniforms, createMaterials } from './floraMaterial.js';
+import { createSharedUniforms, createMaterials, createDecalMaterials } from './floraMaterial.js';
 import { GroundCover } from './GroundCover.js';
 import { InstanceBatcher } from './InstanceBatcher.js';
 import { stageName, isTreeId, isMineral } from '../../sim/flora/species.js';
@@ -92,6 +92,14 @@ export class Vegetation {
     const mats = createMaterials(this.uniforms);
     this.mat = mats.flora;
     this.groundMat = mats.ground;
+    this.decal = createDecalMaterials(this.uniforms);
+    this.decalGroup = new THREE.Group();
+    this.decalGroup.name = 'nature-decals';
+    this.decalGroup.matrixAutoUpdate = false;
+    this.glowGroup = new THREE.Group();
+    this.glowGroup.name = 'nature-fungi-glow';
+    this.glowGroup.matrixAutoUpdate = false;
+    game.scene.add(this.decalGroup, this.glowGroup);
 
     this.builtFlora = new Uint8Array(n);
     this.dispGrowth = new Float32Array(n);
@@ -116,6 +124,8 @@ export class Vegetation {
           x1: Math.min(world.w, (cx + 1) * CHUNK) - 1,
           y1: Math.min(world.h, (cy + 1) * CHUNK) - 1,
           lists: new Map(),
+          ao: { n: 0, mats: new Float32Array(0), cols: new Float32Array(0) },
+          glow: { n: 0, mats: new Float32Array(0), cols: new Float32Array(0) },
           dirty: true,
           lod: 0,
           skip: false,
@@ -130,6 +140,8 @@ export class Vegetation {
     this._leafT = 0;
     this._dirtyQueue = [];
     this.batcher = new InstanceBatcher(this.group, 'flora');
+    this.aoBatcher = new InstanceBatcher(this.decalGroup, 'contact-ao');
+    this.glowBatcher = new InstanceBatcher(this.glowGroup, 'fungi-glow');
     // Shadows are cast by cheap proxies (LOD1 near, shared LOD2 beyond) on a
     // layer only the sun's shadow camera renders; the visible meshes never
     // enter the shadow pass.
@@ -318,6 +330,8 @@ export class Vegetation {
     let minY = Infinity,
       maxY = -Infinity,
       total = 0;
+    const aoTmp = [],
+      glowTmp = [];
     for (let ty = c.y0; ty <= c.y1; ty++) {
       for (let tx = c.x0; tx <= c.x1; tx++) {
         const i = ty * world.w + tx;
@@ -354,6 +368,14 @@ export class Vegetation {
           s.cols = c2;
         }
         const y = this.placeInstance(tx, ty, f, cfg, s.mats, s.n * 16);
+        const ox = s.mats[s.n * 16 + 12],
+          oz = s.mats[s.n * 16 + 14];
+        const aoR = AO_SIZE[f];
+        if (aoR || (f === FLORA.MUSHROOM && v === 4)) {
+          const ground = world.heightAt(ox, oz);
+          if (aoR) aoTmp.push(ox, ground + 0.035, oz, aoR * (0.9 + hash2(tx, ty, 5) * 0.25));
+          if (f === FLORA.MUSHROOM && v === 4) glowTmp.push(ox, ground + 0.05, oz, 2.4);
+        }
         this.tintInstance(tx, ty, f, s.cols, s.n * 3);
         s.n++;
         total++;
@@ -367,6 +389,8 @@ export class Vegetation {
       if (!sc.n) continue;
       c.lists.set(key, { f: sc.f, v: sc.v, n: sc.n, mats: sc.mats.slice(0, sc.n * 16), cols: sc.cols.slice(0, sc.n * 3) });
     }
+    c.ao = decalList(aoTmp);
+    c.glow = decalList(glowTmp);
     this._needCompact = true;
     c.count = total;
     if (total) {
@@ -406,6 +430,12 @@ export class Vegetation {
     } else if (!cfg.snapYaw) {
       // a touch of natural lean
       _e.set((h5 - 0.5) * 0.09, 0, (hash2(tx, ty, 77) - 0.5) * 0.09);
+      if (f === FLORA.ACACIA) {
+        // savanna acacias lean with a regional prevailing wind
+        const wa = 0.6 + Math.sin(tx * 0.02) * 0.5 + Math.cos(ty * 0.017) * 0.4;
+        const lean = 0.13 + 0.07 * h5;
+        _e.set(Math.sin(wa) * lean, 0, -Math.cos(wa) * lean);
+      }
       _q2.setFromEuler(_e);
       _q.premultiply(_q2);
     }
@@ -517,6 +547,21 @@ export class Vegetation {
     }
     B.end();
     S.end();
+    // contact shadows near the camera (skipped in power saver), glow pools
+    const A = this.aoBatcher,
+      G = this.glowBatcher;
+    A.begin();
+    G.begin();
+    const ps = !!this.game.settings?.powerSaver;
+    for (const c of this.chunks) {
+      if (!c.state || c.lod > 1) continue;
+      if (!ps && c.ao.n) A.add(0, c.ao, { geo: this.decal.geo, material: this.decal.ao, depth: null, castShadow: false, label: 'contact-ao' });
+      if (c.glow.n) G.add(0, c.glow, { geo: this.decal.geo, material: this.decal.glow, depth: null, castShadow: false, label: 'fungi-glow' });
+    }
+    A.end();
+    G.end();
+    for (const m of A.meshes()) (m.renderOrder = 1), (m.receiveShadow = false);
+    for (const m of G.meshes()) (m.renderOrder = 2), (m.receiveShadow = false);
   }
 
   // Canopy fade over units. Humanoids (soldiers, kings, the selected and the
@@ -651,6 +696,7 @@ export class Vegetation {
     u.uTempOff.value = g.age?.mods?.temperature ?? 0;
     const glowGoal = g.laws?.fungiGlow === false ? 0 : 1;
     u.uFungiGlow.value += (glowGoal - u.uFungiGlow.value) * Math.min(1, dt * 2);
+    this.glowGroup.visible = u.uFungiGlow.value > 0.01 && (g.env.daylight ?? 1) < 0.8;
     if (g.env.sunDir) u.uSunDir.value.copy(g.env.sunDir);
     if (g.env.sunColor) u.uSunColor.value.copy(g.env.sunColor);
     u.uDaylight.value = g.env.daylight ?? 1;
@@ -765,6 +811,36 @@ export class Vegetation {
     for (const c of this.chunks) inst += c.count;
     return { floraInstances: inst, floraDrawn: this.batcher.drawn, canopyFadeMs: +this.occMs.toFixed(3) };
   }
+}
+
+// contact-shadow blob diameter per species (world units)
+const AO_SIZE = new Float32Array(32);
+AO_SIZE[FLORA.OAK] = 1.9;
+AO_SIZE[FLORA.BIRCH] = 1.3;
+AO_SIZE[FLORA.PINE] = 1.5;
+AO_SIZE[FLORA.SNOW_PINE] = 1.5;
+AO_SIZE[FLORA.PALM] = 1.2;
+AO_SIZE[FLORA.JUNGLE_TREE] = 2.4;
+AO_SIZE[FLORA.ACACIA] = 2.0;
+AO_SIZE[FLORA.SWAMP_TREE] = 2.0;
+AO_SIZE[FLORA.DEAD_TREE] = 0.9;
+AO_SIZE[FLORA.BUSH] = 0.9;
+AO_SIZE[FLORA.BERRY_BUSH] = 0.9;
+AO_SIZE[FLORA.BOULDER] = 1.3;
+AO_SIZE[FLORA.CACTUS] = 0.6;
+
+// Pack [x, y, z, size, ...] into an instance list of flat ground decals.
+const _dm = new THREE.Matrix4();
+function decalList(tmp) {
+  const n = tmp.length / 4;
+  const mats = new Float32Array(n * 16),
+    cols = new Float32Array(n * 3);
+  for (let k = 0; k < n; k++) {
+    const s = tmp[k * 4 + 3];
+    _dm.makeScale(s, 1, s).setPosition(tmp[k * 4], tmp[k * 4 + 1], tmp[k * 4 + 2]);
+    _dm.toArray(mats, k * 16);
+  }
+  return { n, mats, cols };
 }
 
 function dist2(c, t) {

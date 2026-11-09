@@ -307,12 +307,14 @@ function recolorRange(b, start, col, center, blend = 0) {
 }
 
 function buildPine(b, v, lod, snowy = false) {
-  const cfg = [
+  const base = [
     { tiers: 5, R: 0.6, H: 2.7, base: 0.42 },
     { tiers: 6, R: 0.46, H: 3.05, base: 0.45 },
     { tiers: 4, R: 0.74, H: 2.35, base: 0.36 },
     { tiers: 4, R: 0.5, H: 2.2, base: 0.55 },
   ][v];
+  // snow-laden spruce: narrower and taller than lowland pines
+  const cfg = snowy ? { ...base, R: base.R * 0.84, H: base.H * 1.12 } : base;
   const segs = lod ? 5 : v === 1 ? 8 : 9;
   const tiers = lod ? Math.min(3, Math.max(2, cfg.tiers - 2)) : cfg.tiers;
   const pal = v % 2 ? P.pineB : P.pine;
@@ -358,6 +360,7 @@ function snowCap(b, y0, h, r, segs, rot, lod) {
 }
 
 function buildBirch(b, v, lod) {
+  if (v === 2) return buildBirchClump(b, lod);
   const H = [1.55, 1.75, 1.4, 1.6][v];
   const lean = [V(0.05, 0, 0.0), V(-0.04, 0, 0.06), V(0.08, 0, -0.06), V(-0.02, 0, -0.04)][v];
   const segs = lod ? 2 : 7;
@@ -394,6 +397,34 @@ function buildBirch(b, v, lod) {
   }
   foliage(b, blobs.map((bl) => ({ ...bl, d: lod ? 'd' : 1, lump: 0.26 })), pal, { lump: 0.26, freq: 2.0, mat: MAT.DLEAF });
   return { bendScale: 1.25, height: H + 0.4 };
+}
+
+// A clump of three slender birches leaning out from one root, each with a
+// small airy crown: the classic birch grove silhouette.
+function buildBirchClump(b, lod) {
+  const stems = [
+    [V(0.22, 0, 0.06), 1.75],
+    [V(-0.16, 0, 0.18), 1.45],
+    [V(-0.02, 0, -0.24), 1.6],
+  ];
+  const pal = P.birch;
+  const blobs = [];
+  for (const [dir, H] of stems) {
+    const top = V(dir.x * 0.75, H, dir.z * 0.75);
+    const pts = bezier(V(dir.x * 0.08, 0, dir.z * 0.08), V(dir.x * 0.3, H * 0.5, dir.z * 0.3), top, lod ? 2 : 6);
+    const bark = (p, n, fc) => {
+      const h1 = hashV(V(Math.floor(fc.y * 11), Math.floor(fc.x * 40 + fc.z * 40), 7));
+      const dark = h1 < 0.24 || (fc.y < 0.1 && h1 < 0.6);
+      const c = dark ? C(0x2e2a26) : mix3(P.birchBark.base, P.birchBark.top, clamp01(fc.y / H + 0.3));
+      return mul3(c, (0.7 + 0.3 * smooth(0, 0.25, p.y)) * (0.9 + 0.12 * clamp01(n.y * 0.5 + 0.5)));
+    };
+    trunk(b, pts, pts.map((_, i) => 0.05 - (0.026 * i) / (pts.length - 1)), lod ? 4 : 5, null, { color: bark, faceColor: true, yTop: H });
+    blobs.push({ p: V(top.x, H + 0.04, top.z), r: 0.27 });
+    blobs.push({ p: V(top.x * 1.15, H - 0.24, top.z * 1.15), r: 0.22 });
+    if (!lod) blobs.push({ p: V(top.x * 0.9, H + 0.3, top.z * 0.9), r: 0.18 });
+  }
+  foliage(b, blobs.map((bl) => ({ ...bl, d: lod ? 'd' : 1, lump: 0.28 })), pal, { lump: 0.28, freq: 2.0, mat: MAT.DLEAF });
+  return { bendScale: 1.25, height: 2.1 };
 }
 
 function buildPalm(b, v, lod) {
@@ -530,17 +561,17 @@ function buildJungle(b, v, lod) {
   // canopy: broad, layered, flattened
   let blobs = [];
   const layers = v === 1 ? 3 : 2;
-  const rad = [0.62, 0.55, 0.7, 0.6][v];
+  const rad = [0.66, 0.58, 0.74, 0.64][v];
   for (let L = 0; L < layers; L++) {
     const y = H * 0.82 + 0.18 + L * 0.32;
     const n = L === layers - 1 ? (layers === 3 ? 1 : 2) : 4;
     const rr = rad * (L === layers - 1 ? 0.3 : 1);
     for (let k = 0; k < n; k++) {
       const a = (k / n) * TAU + L * 0.7 + v;
-      blobs.push({ p: V(top.x + Math.cos(a) * rr, y + b.r(-0.05, 0.05), top.z + Math.sin(a) * rr), r: L === layers - 1 ? 0.44 : 0.46, sq: 0.62 });
+      blobs.push({ p: V(top.x + Math.cos(a) * rr, y + b.r(-0.05, 0.05), top.z + Math.sin(a) * rr), r: (L === layers - 1 ? 0.5 : 0.52) * b.r(0.92, 1.1), sq: 0.8 });
     }
   }
-  blobs.push({ p: V(top.x + b.r(-0.08, 0.08), H * 0.82 + 0.3 + (layers - 1) * 0.3, top.z + b.r(-0.08, 0.08)), r: 0.5, sq: 0.6 });
+  blobs.push({ p: V(top.x + b.r(-0.08, 0.08), H * 0.82 + 0.36 + (layers - 1) * 0.3, top.z + b.r(-0.08, 0.08)), r: 0.6, sq: 0.82 });
   if (lod) blobs = [{ p: V(top.x, H * 0.82 + 0.25, top.z), r: rad + 0.4, sq: 0.5 }, { p: V(top.x, H * 0.82 + 0.6, top.z), r: 0.45, sq: 0.6 }];
   // limbs to the outer blobs
   if (!lod) {
@@ -643,6 +674,18 @@ function buildWillow(b, v, lod) {
   }
   if (lod) blobs = [{ p: V(top.x, th + 0.42, top.z), r: R + 0.05, sq: 0.55 }];
   if (!lod) for (let k = 1; k < blobs.length; k++) limb(b, top, V(blobs[k].p.x * 0.9 + top.x * 0.1, blobs[k].p.y - 0.1, blobs[k].p.z * 0.9 + top.z * 0.1), 0.055, 0.025, 4, P.willowBark, 1.8);
+  if (!lod) {
+    // gnarled prop roots arching out of the trunk into the mud
+    for (let k = 0; k < 4; k++) {
+      const a = (k / 4) * TAU + v * 0.9 + b.r(-0.3, 0.3);
+      const d = V(Math.cos(a), 0, Math.sin(a));
+      const from = V(pts[1].x * 0.5, th * b.r(0.25, 0.4), pts[1].z * 0.5);
+      const to = V(d.x * b.r(0.36, 0.5), -0.04, d.z * b.r(0.36, 0.5));
+      const mid = from.clone().lerp(to, 0.5).add(V(d.x * 0.1, 0.12, d.z * 0.1));
+      const path = bezier(from, mid, to, 3);
+      b.add(tubeGeo(path, path.map((_, i) => 0.045 - i * 0.008), 4, { capTop: false }), { normals: 'geoblend', blend: 0.7, color: barkColor(P.willowBark, 1.8, { moss: P.moss }), mat: MAT.WOOD });
+    }
+  }
   foliage(b, blobs.map((bl) => ({ ...bl, d: lod ? 'd' : 1 })), pal, { lump: 0.18, aoMin: 0.55, mat: MAT.DLEAF });
   // weeping curtain: an outer ring reaching almost to the ground, an inner ring
   const rings = lod ? [[7, 0.9, 0.8]] : [[[22, 18, 24][v], 0.95, 0.94], [8, 0.6, 0.72]];
@@ -983,14 +1026,33 @@ function buildMushroom(b, v, lod) {
     mushroom(b, 0, 0, 0.13, 0.12, brown, C(0xe8dcc4), 0, { sq: 0.72 });
     mushroom(b, 0.14, 0.06, 0.09, 0.08, mix3(brown, tan, 0.3), C(0xe8dcc4), 0, { sq: 0.72 });
     mushroom(b, -0.08, 0.14, 0.06, 0.06, brown, C(0xe8dcc4), 0, { sq: 0.72 });
-  } else {
+  } else if (v === 3) {
     for (let k = 0; k < 5; k++) {
       const a = (k / 5) * TAU + 0.3;
       const rr = k ? 0.12 : 0;
       mushroom(b, Math.cos(a) * rr, Math.sin(a) * rr, b.r(0.05, 0.1), b.r(0.04, 0.06), mix3(tan, C(0xf4e6c8), b.rng()), C(0xf4ecdc), 0, { sq: 0.55 });
     }
+  } else {
+    // glowcap grove: slender stems under luminous bell caps (built ~2x so it
+    // still reads after the species' small scale); they glow at night
+    const n = lod ? 4 : 8;
+    for (let k = 0; k < n; k++) {
+      const a = (k / n) * TAU + b.r(0, 0.7);
+      const rr = k ? b.r(0.14, 0.42) : 0;
+      glowcap(b, Math.cos(a) * rr, Math.sin(a) * rr, b.r(0.26, 0.58) * (k ? 1 : 1.2), b.r(0.09, 0.15) * (k ? 1 : 1.25));
+    }
   }
   return { bendScale: 0.1, height: 0.3 };
+}
+
+function glowcap(b, x, z, h, r) {
+  const lean = V(b.r(-0.05, 0.05), 0, b.r(-0.05, 0.05));
+  const top = V(x + lean.x, h, z + lean.z);
+  b.add(tubeGeo([V(x, 0, z), V(x + lean.x * 0.5, h * 0.55, z + lean.z * 0.5), top], [r * 0.24, r * 0.2, r * 0.17], 5, { capTop: false }), { normals: 'geo', color: (p) => mul3(C(0xe8f0ea), 0.7 + 0.3 * smooth(0, h, p.y)), mat: MAT.WOOD, leaf: 1, flutter: 0.05, pivot: V(x, 0, z) });
+  const cap = new THREE.SphereGeometry(r, 8, 3, 0, TAU, 0, Math.PI * 0.5);
+  b.add(cap, { matrix: M(top.x, top.y - r * 0.15, top.z, 0, b.r(0, TAU), 0, 1, 0.95, 1), normals: 'geoblend', blend: 0.7, color: (p, n) => mul3(C(0xf2f8f4), 0.75 + 0.25 * clamp01(n.y)), mat: MAT.GLOW, leaf: 1, flutter: 0.05, pivot: V(x, 0, z) });
+  const under = new THREE.CircleGeometry(r * 0.98, 8);
+  b.add(under, { matrix: M(top.x, top.y - r * 0.15, top.z, Math.PI / 2, 0, 0), normals: 'flat', color: C(0xcfe0d6), mat: MAT.GLOW, leaf: 1, flutter: 0.05, pivot: V(x, 0, z) });
 }
 
 // ---------------------------------------------------------------------------
@@ -1199,7 +1261,7 @@ kind(FLORA.BERRY_BUSH, 3, buildBerry, { jitter: 0.26, castShadow: false, far2: t
 kind(FLORA.FLOWERS, 4, buildFlowers, { far: 'skip', castShadow: false, jitter: 0.25, scale: [0.7, 0.9] });
 kind(FLORA.CACTUS, 4, buildCactus, { jitter: 0.24 });
 kind(FLORA.REEDS, 3, buildReeds, { far: 'skip', castShadow: false, jitter: 0.25, scale: [0.7, 0.85] });
-kind(FLORA.MUSHROOM, 4, buildMushroom, { far: 'skip', castShadow: false, jitter: 0.3, scale: [0.46, 0.62] });
+kind(FLORA.MUSHROOM, 5, buildMushroom, { far: 'skip', castShadow: false, jitter: 0.3, scale: [0.46, 0.62] });
 kind(FLORA.ROCK_SMALL, 4, buildStones, { far: 'skip', castShadow: false, jitter: 0.28, tilt: 0.6, scale: [0.9, 1.3], sink: 0.02 });
 kind(FLORA.BOULDER, 4, buildBoulder, { jitter: 0.12, tilt: 0.5, scale: [0.9, 1.15], sink: 0.08 });
 kind(FLORA.STUMP, 3, buildStump, { far: 'skip', castShadow: false, jitter: 0.2, scale: [0.8, 0.95] });
