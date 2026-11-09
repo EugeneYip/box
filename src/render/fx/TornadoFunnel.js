@@ -133,12 +133,13 @@ void main() {
   // read as concentric grooves from above)
   vec2 q = vec2(cos(a + uTime * 0.5 * (1.3 - r)), sin(a + uTime * 0.5 * (1.3 - r))) * r * 3.0;
   float n = vnoise(q + 3.0) * 0.55 + vnoise(q * 2.3 + 7.0) * 0.3 + vnoise(q * 5.1) * 0.15;
-  float arms = n;
-  float dens = 0.75 + 0.5 * n;
-  dens *= 1.0 - smoothstep(0.45, 1.0, r + (n - 0.5) * 0.45);
-  float alpha = clamp(dens * uAlpha, 0.0, 0.95);
+  // soft, lumpy edge and strong light/dark churn: from above it must read
+  // as a storm cell over the funnel, not a dark hole in the ground
+  float dens = 0.55 + 0.6 * n;
+  dens *= 1.0 - smoothstep(0.2, 1.0, r + (n - 0.5) * 0.55);
+  float alpha = clamp(dens * uAlpha, 0.0, 0.9);
   if (alpha < 0.005) discard;
-  float lit = 0.55 + 0.45 * n;
+  float lit = 0.4 + 0.85 * n;
   vec3 col = uColor * (uAmbient * 1.2 + uSunCol * max(uSunDir.y, 0.15) * lit);
   gl_FragColor = vec4(col, 1.0);
 #include <tonemapping_fragment>
@@ -189,15 +190,15 @@ export class TornadoFunnel {
       this.layers.push({ mesh: m, u, r0, r1, base: u.uColor.value.clone() });
     };
     // dark opaque core + lighter churning dust sleeve (radii doubled)
-    mk(THREE.BackSide, 16, 0x221c18, 1.6, 0.32, 2.9, 1.1, 0.95);
-    mk(THREE.FrontSide, 17, 0x221c18, 1.6, 0.32, 2.9, 1.1, 0.95);
-    mk(THREE.BackSide, 18, 0x6a6258, 0.45, 0.55, 3.9, 0.75);
-    mk(THREE.FrontSide, 19, 0x6a6258, 0.45, 0.55, 3.9, 0.75);
+    mk(THREE.BackSide, 16, 0x221c18, 1.6, 0.32, 2.2, 1.1, 0.95);
+    mk(THREE.FrontSide, 17, 0x221c18, 1.6, 0.32, 2.2, 1.1, 0.95);
+    mk(THREE.BackSide, 18, 0x6a6258, 0.45, 0.55, 3.0, 0.75);
+    mk(THREE.FrontSide, 19, 0x6a6258, 0.45, 0.55, 3.0, 0.75);
     // rotating cloud cap (what a top-down camera mostly sees)
     this.capU = {
       uTime: { value: 0 },
       uAlpha: { value: 0 },
-      uColor: { value: new THREE.Color(0x35302c) },
+      uColor: { value: new THREE.Color(0x4e4842) },
       uSunDir: { value: new THREE.Vector3(0, 1, 0) },
       uSunCol: fx.uniforms.uSunCol,
       uAmbient: fx.uniforms.uAmbient,
@@ -238,7 +239,8 @@ export class TornadoFunnel {
       if (opts.tint) u.uColor.value.multiply(opts.tint);
     }
     // cap sits on top of the bent funnel
-    const capR = 2.6 + 2.4 * opts.width;
+    // kept small: at the default pitch a wide cap hides the whole stem
+    const capR = 1.3 + 1.6 * opts.width;
     this.cap.position.set(x + opts.bendX, y + opts.height * 0.97, z + opts.bendZ);
     this.cap.scale.set(capR, 1, capR);
     this.capU.uTime.value = this.fx.time + (opts.seed || 0);

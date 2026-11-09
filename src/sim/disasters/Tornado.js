@@ -184,14 +184,14 @@ export class Tornado {
         C.tw = 0;
         C.life = rand(3, 5);
         C.s0 = rand(1.6, 2.2);
-        C.s1 = rand(3, 4);
+        C.s1 = rand(2.4, 3.2);
         C.rot = Math.random() * 6.28;
         C.spin = 0.3;
         C.frame = PF.SMOKE0 + ((Math.random() * 4) | 0);
-        C.ramp = RAMP.SMOKE_DARK;
+        C.ramp = Math.random() < 0.5 ? RAMP.SMOKE_LIGHT : RAMP.SMOKE_DARK;
         C.lit = 1;
         C.soft = 0;
-        C.a = 0.9;
+        C.a = 0.75;
         fx.pSmoke();
       }
     }
