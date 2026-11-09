@@ -34,35 +34,35 @@ function def(id, o) {
   };
 }
 def(FLORA.OAK, {
-  tree: true, growTime: 110, spread: 0.035, life: 2400, deadAs: FLORA.DEAD_TREE, cap: 11,
+  tree: true, growTime: 110, spread: 0.02, life: 2400, deadAs: FLORA.DEAD_TREE, cap: 11,
   suit: habitat({ GRASS: 1, FOREST: 1, SOIL: 0.7, JUNGLE: 0.45, SAVANNA: 0.35, SWAMP: 0.3, TUNDRA: 0.2, FARMLAND: 0.3, SAND: 0.12, ASH: 0.3 }),
 });
 def(FLORA.BIRCH, {
-  tree: true, growTime: 80, spread: 0.04, life: 1600, deadAs: FLORA.DEAD_TREE, cap: 11,
+  tree: true, growTime: 80, spread: 0.022, life: 1600, deadAs: FLORA.DEAD_TREE, cap: 11,
   suit: habitat({ GRASS: 0.9, FOREST: 1, TUNDRA: 0.6, SOIL: 0.7, SWAMP: 0.35, SAVANNA: 0.25, SNOW: 0.16, FARMLAND: 0.3, ASH: 0.3 }),
 });
 def(FLORA.PINE, {
-  tree: true, growTime: 100, spread: 0.035, life: 2600, deadAs: FLORA.DEAD_TREE, cap: 12,
+  tree: true, growTime: 100, spread: 0.02, life: 2600, deadAs: FLORA.DEAD_TREE, cap: 12,
   suit: habitat({ FOREST: 1, TUNDRA: 1, GRASS: 0.7, SNOW: 0.55, ROCK: 0.3, SOIL: 0.6, SAVANNA: 0.2, SWAMP: 0.25, FARMLAND: 0.25, ASH: 0.3 }),
 });
 def(FLORA.SNOW_PINE, {
-  tree: true, growTime: 120, spread: 0.03, life: 3000, deadAs: FLORA.DEAD_TREE, cap: 11,
+  tree: true, growTime: 120, spread: 0.016, life: 3000, deadAs: FLORA.DEAD_TREE, cap: 11,
   suit: habitat({ SNOW: 1, TUNDRA: 0.9, ROCK: 0.4, ICE: 0.16, FOREST: 0.3, GRASS: 0.2, ASH: 0.25 }),
 });
 def(FLORA.PALM, {
-  tree: true, growTime: 85, spread: 0.03, spreadRadius: 3, life: 2000, deadAs: FLORA.DEAD_TREE, cap: 4,
+  tree: true, growTime: 85, spread: 0.016, spreadRadius: 3, life: 2000, deadAs: FLORA.DEAD_TREE, cap: 4,
   suit: habitat({ SAND: 1, JUNGLE: 0.8, SAVANNA: 0.55, DESERT: 0.4, GRASS: 0.3, SWAMP: 0.25, SOIL: 0.3, ASH: 0.25 }),
 });
 def(FLORA.JUNGLE_TREE, {
-  tree: true, growTime: 120, spread: 0.045, life: 2600, deadAs: FLORA.DEAD_TREE, cap: 13,
+  tree: true, growTime: 120, spread: 0.024, life: 2600, deadAs: FLORA.DEAD_TREE, cap: 13,
   suit: habitat({ JUNGLE: 1, SWAMP: 0.5, FOREST: 0.45, GRASS: 0.3, SAVANNA: 0.2, SOIL: 0.35, ASH: 0.3 }),
 });
 def(FLORA.ACACIA, {
-  tree: true, growTime: 95, spread: 0.025, spreadRadius: 3, life: 2400, deadAs: FLORA.DEAD_TREE, cap: 3,
+  tree: true, growTime: 95, spread: 0.014, spreadRadius: 3, life: 2400, deadAs: FLORA.DEAD_TREE, cap: 3,
   suit: habitat({ SAVANNA: 1, DESERT: 0.3, GRASS: 0.5, SAND: 0.25, SOIL: 0.4, ASH: 0.3 }),
 });
 def(FLORA.SWAMP_TREE, {
-  tree: true, growTime: 100, spread: 0.035, life: 2600, deadAs: FLORA.DEAD_TREE, cap: 8,
+  tree: true, growTime: 100, spread: 0.02, life: 2600, deadAs: FLORA.DEAD_TREE, cap: 8,
   suit: habitat({ SWAMP: 1, FOREST: 0.4, JUNGLE: 0.4, GRASS: 0.3, SOIL: 0.3, ASH: 0.25 }),
 });
 def(FLORA.DEAD_TREE, {
@@ -70,15 +70,15 @@ def(FLORA.DEAD_TREE, {
   suit: habitat({ SAND: 1, GRASS: 1, FOREST: 1, JUNGLE: 1, SAVANNA: 1, SWAMP: 1, TUNDRA: 1, SNOW: 1, ROCK: 1, ASH: 1, SOIL: 1, FARMLAND: 1, DESERT: 1, ROAD: 1, ICE: 1 }),
 });
 def(FLORA.BUSH, {
-  growTime: 40, spread: 0.03, spreadRadius: 2, life: 900, cap: 5,
+  growTime: 40, spread: 0.018, spreadRadius: 2, life: 900, cap: 3,
   suit: habitat({ GRASS: 1, FOREST: 1, JUNGLE: 1, SAVANNA: 0.7, SWAMP: 0.6, TUNDRA: 0.5, SOIL: 0.55, SAND: 0.2, FARMLAND: 0.2, ASH: 0.3 }),
 });
 def(FLORA.BERRY_BUSH, {
-  growTime: 55, spread: 0.02, life: 900, cap: 3,
+  growTime: 55, spread: 0.012, life: 900, cap: 3,
   suit: habitat({ GRASS: 1, FOREST: 0.9, TUNDRA: 0.5, SAVANNA: 0.35, SOIL: 0.5, JUNGLE: 0.5, ASH: 0.3 }),
 });
 def(FLORA.FLOWERS, {
-  growTime: 22, spread: 0.05, spreadRadius: 2, life: 260, cap: 6,
+  growTime: 22, spread: 0.03, spreadRadius: 2, life: 260, cap: 4,
   suit: habitat({ GRASS: 1, FOREST: 0.55, SAVANNA: 0.5, TUNDRA: 0.45, JUNGLE: 0.5, SWAMP: 0.3, SOIL: 0.4, ASH: 0.3 }),
 });
 def(FLORA.CACTUS, {
@@ -123,18 +123,18 @@ export function densityGroup(f) {
 
 // Max trees in a 5x5 neighbourhood by biome (keeps forests from taking over).
 export const TREE_CAP = new Uint8Array(16);
-TREE_CAP[T.FOREST] = 13;
-TREE_CAP[T.JUNGLE] = 15;
-TREE_CAP[T.SWAMP] = 7;
-TREE_CAP[T.GRASS] = 4;
-TREE_CAP[T.TUNDRA] = 7;
-TREE_CAP[T.SNOW] = 6;
-TREE_CAP[T.SAVANNA] = 2;
-TREE_CAP[T.SAND] = 2;
+TREE_CAP[T.FOREST] = 8;
+TREE_CAP[T.JUNGLE] = 9;
+TREE_CAP[T.SWAMP] = 5;
+TREE_CAP[T.GRASS] = 1;
+TREE_CAP[T.TUNDRA] = 2;
+TREE_CAP[T.SNOW] = 2;
+TREE_CAP[T.SAVANNA] = 1;
+TREE_CAP[T.SAND] = 1;
 TREE_CAP[T.DESERT] = 1;
-TREE_CAP[T.SOIL] = 3;
-TREE_CAP[T.ROCK] = 2;
-TREE_CAP[T.ASH] = 2;
+TREE_CAP[T.SOIL] = 1;
+TREE_CAP[T.ROCK] = 1;
+TREE_CAP[T.ASH] = 1;
 
 // Surfaces nothing new may sprout on.
 export const BARREN = new Uint8Array(16);

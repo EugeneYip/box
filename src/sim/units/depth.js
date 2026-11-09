@@ -14,7 +14,8 @@ import { makeItem as buildItem, SLOTS } from './items.js';
 // {weapon, armor, tool, trinket}, xp, level (1-10), title, bio [{t, text}].
 // traitMod(u, key) multiplies trait and status modifiers (1 = neutral).
 export const MAX_LEVEL = 10;
-export const xpForLevel = (l) => 10 * (l - 1) * (l - 1);
+// L2 6, L3 21, L5 73, L7 150, L10 308: long-lived veterans reach L7+, a few heroes per century
+export const xpForLevel = (l) => Math.round(6 * Math.pow(l - 1, 1.8));
 const TITLES = ['the Bold', 'the Steadfast', 'the Fierce', 'the Unbroken', 'Lionheart', 'the Just', 'the Wanderer', 'the Grim', 'the Bright', 'the Iron-willed'];
 const TRAIT_TITLES = { sage: 'the Wise', swift: 'the Swift', mighty: 'the Mighty', cruel: 'the Cruel', gentle: 'the Kind', valiant: 'the Valiant', starborn: 'Starchild', lucky: 'the Lucky', towering: 'the Tall', 'silver-tongued': 'Goldtongue', inventive: 'the Clever' };
 const AUTO = new Set(['sleeping', 'starving', 'exhausted', 'wounded', 'frightened', 'enraged', 'blessed']);
@@ -95,6 +96,7 @@ export function installDepth(Units) {
     u._mFear = this.traitMod(u, 'fear');
     u._mFert = this.traitMod(u, 'fertility');
     u._mSight = this.traitMod(u, 'sight');
+    u._mAggr = this.traitMod(u, 'aggression');
     if (u._baseHp) {
       const ratio = u.maxHp > 0 ? u.hp / u.maxHp : 1;
       u.maxHp = u._baseHp * this.traitMod(u, 'hp') * (u._lvlHp || 1) * (u._blessHp || 1);
@@ -205,19 +207,28 @@ export function installDepth(Units) {
     // parents: given, or (for newborn villagers) the nearest grown couple of the village
     let parents = opts.parents || null;
     if (!parents && def.kind === 'humanoid' && (opts.age ?? 1) < 1) {
-      const mom = this.nearest(u.x, u.z, 6, (o) => o.species === 'human' && o.sex === 'f' && o.age >= 16 && o.village === u.village && o !== u);
-      const dad = this.nearest(u.x, u.z, 6, (o) => o.species === 'human' && o.sex === 'm' && o.age >= 16 && o.village === u.village && o !== u);
+      const mom = this.nearest(u.x, u.z, 2, (o) => o.species === 'human' && o.sex === 'f' && o.age >= 16 && o !== u);
+      const sp = mom?.data?.civ?.spouse;
+      const dad = (sp != null && this.byId.get(sp)) || this.nearest(u.x, u.z, 6, (o) => o.species === 'human' && o.sex === 'm' && o.age >= 16 && o.village === u.village && o !== u);
       parents = [mom, dad].filter(Boolean);
+      for (const p of parents) if (!p._parentLogged) {
+        p._parentLogged = true;
+        this.log(p, `Became a parent`);
+      }
     }
     if (this.law('lifeTraits') && def.kind !== 'monster') {
       if (parents && parents.length && this.law('lifeInheritance')) {
+        const seen = new Map();
         for (const p of parents)
           for (const id of p.traits || []) {
             const t = TRAIT_BY_ID[id];
-            if (t && t.category !== 'scar' && rng.chance(0.45)) this.addTrait(u, id, { silent: true });
+            if (t && t.category !== 'scar') seen.set(id, (seen.get(id) || 0) + 1);
           }
-        if (rng.chance(0.06)) {
-          const id = pickTrait(rng, def.kind === 'humanoid' ? BORN_TRAITS : BORN_TRAITS.filter((t) => ANIMAL_TRAITS.includes(t.id)), u);
+        for (const [id, n] of seen) if (rng.chance(n >= 2 || parents.length === 1 ? 0.65 : 0.32)) this.addTrait(u, id, { silent: true });
+        const pool = def.kind === 'humanoid' ? BORN_TRAITS : BORN_TRAITS.filter((t) => ANIMAL_TRAITS.includes(t.id));
+        // mutation, and most children are born with something of their own
+        if (rng.chance(0.17) || (!u.traits.length && rng.chance(def.kind === 'humanoid' ? 0.3 : 0.15))) {
+          const id = pickTrait(rng, pool, u);
           if (id) this.addTrait(u, id, { silent: true });
         }
       } else if (def.kind === 'humanoid') {
@@ -251,7 +262,18 @@ export function installDepth(Units) {
       const why = cause === 'old age' ? 'of old age' : cause === 'starvation' ? 'of hunger' : cause === 'fire' ? 'in the flames' : cause === 'drowned' ? 'by drowning' : killer ? `at the hands of ${killer.name || 'a ' + killer.def.name.toLowerCase()}` : `(${cause})`;
       this.log(u, `Died ${why}, aged ${age}`);
     }
+    // a widow or widower outlives their spouse
+    const sp = u.data?.civ?.spouse;
+    if (sp != null && u.def.kind === 'humanoid') {
+      const s = this.byId.get(sp);
+      if (s && s.alive) {
+        this.log(s, `Outlived ${u.name}`);
+        this.addStatus(s, 'mourning', 40);
+      }
+    }
     if (killer && killer.alive) {
+      if (killer.def.kind === 'humanoid' && (killer.kills || 0) <= 1) this.log(killer, `First kill: ${u.name || 'a ' + u.def.name.toLowerCase()}`);
+      else if (killer.def.kind === 'humanoid' && u.def.kind === 'animal' && u.def.diet !== 'herbivore' && u.def.mass >= 1) this.log(killer, `Hunted down a ${u.def.name.toLowerCase()}`);
       this.addXP(killer, Math.max(2, u.maxHp * 0.3));
       if (killer.def.kind === 'humanoid') {
         if ((killer.kills || 0) >= 10 && !this.hasTrait(killer, 'veteran')) this.addTrait(killer, 'veteran');
@@ -327,6 +349,22 @@ export function installDepth(Units) {
       const i = Math.min(w.h - 1, Math.max(0, u.z | 0)) * w.w + Math.min(w.w - 1, Math.max(0, u.x | 0));
       if (w.fire[i] > 0.3 && !S.has('burning')) {
         this.addStatus(u, 'burning', 3);
+      }
+    }
+    if (u.def.kind === 'humanoid') {
+      const yr = Math.floor(u.age);
+      if (u._yr == null) u._yr = yr;
+      if (yr > u._yr) {
+        u._yr = yr;
+        if (u.age >= u.def.maturity) this.addXP(u, u.job === 'soldier' ? 2 : 1);
+        if (yr === 50 || yr === 70 || yr === 90) this.log(u, `Turned ${yr}`);
+        const v = g.civ?.villages?.[u.village];
+        if (v?.starving) u._famine = v.name || true;
+        else if (u._famine) {
+          this.log(u, `Survived the famine${typeof u._famine === 'string' ? ' in ' + u._famine : ''}`);
+          this.addXP(u, 6);
+          u._famine = null;
+        }
       }
     }
     if (S.has('burning')) this.damage(u, dt * 4, null, { cause: 'fire' });

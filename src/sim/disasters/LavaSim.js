@@ -198,7 +198,7 @@ export class LavaSim {
         }
       }
       // ---- cooling ----
-      let cool = step * (0.008 + 0.022 / (1 + v * 4)) * (1 + rain * 2.5);
+      let cool = step * (0.006 + 0.016 / (1 + v * 4)) * (1 + rain * 2.5);
       // neighbouring water chills fast
       if (w.isCoastal(x, y)) cool += step * 0.02;
       h -= cool;

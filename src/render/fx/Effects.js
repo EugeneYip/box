@@ -189,9 +189,9 @@ export class Effects {
   }
   shockwave(x, z, radius, o = {}) {
     const y = this.game.world.surfaceAt(x, z);
-    this.decal({ frame: DF.RING, x, z, size: radius * 0.25, grow: 4, life: o.life ?? 0.7, additive: true, surface: 2, color: o.color ?? 0xffe2b0, intensity: o.intensity ?? 1.6, fadeIn: 0.01, fadeOut: 0.15, grain: 0.2 });
-    this.decal({ frame: DF.RING, x, z, size: radius * 0.2, grow: 5, life: (o.life ?? 0.7) * 1.4, color: 0x8a7a68, alpha: 0.35, fadeIn: 0.01, fadeOut: 0.1, grain: 0.6 });
-    if (o.shell !== false) this.shell(x, y, z, radius * 0.7, { life: (o.life ?? 0.7) * 0.6, color: o.color ?? 0xffe8c8, intensity: 0.9, power: 4 });
+    this.decal({ frame: DF.RING, x, z, size: radius * 0.25, grow: 4, life: o.life ?? 0.7, additive: true, surface: 2, color: o.color ?? 0xffe2b0, intensity: o.intensity ?? 1.6, fadeIn: 0.01, fadeOut: 0.15, grain: 0 });
+    this.decal({ frame: DF.RING, x, z, size: radius * 0.2, grow: 5, life: (o.life ?? 0.7) * 1.4, color: 0x8a7a68, alpha: 0.35, fadeIn: 0.01, fadeOut: 0.1, grain: 0 });
+    if (o.shell === true) this.shell(x, y, z, radius * 0.7, { life: (o.life ?? 0.7) * 0.6, color: o.color ?? 0xffe8c8, intensity: 0.9, power: 4 });
     // ground-hugging dust wall
     const n = this.k(Math.min(40, 10 + radius * 3));
     for (let i = 0; i < n; i++) {

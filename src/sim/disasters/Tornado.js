@@ -9,7 +9,7 @@ import { TornadoFunnel } from '../../render/fx/TornadoFunnel.js';
 // damages units and buildings, becomes a waterspout over the sea, and
 // finally ropes out and lifts away.
 
-const CORE = 3.2; // damage radius (tiles)
+const CORE = 2.4; // damage radius (tiles)
 
 export class Tornado {
   constructor(ds, x, z, opts = {}) {
@@ -68,10 +68,10 @@ export class Tornado {
     const y = Math.max(ground, SEA_LEVEL);
     // funnel visuals (lifts off the ground while roping out)
     const lift = this.t > this.life - 3.5 ? (this.t - (this.life - 3.5)) * 1.8 : 0;
-    const bend = 3.2 + Math.sin(this.t * 0.5 + this.seed) * 1.5;
+    const bend = 3.4 + Math.sin(this.t * 0.5 + this.seed) * 1.2;
     this._tint.setRGB(1 - this._water * 0.15, 1 - this._water * 0.05, 1 + this._water * 0.25);
     this.funnel.set(this.x, y - 0.2 + lift, this.z, {
-      height: 20 - lift * 0.5,
+      height: 12 - lift * 0.4,
       width: 0.55 + 0.45 * S,
       bendX: -Math.cos(this.heading) * bend,
       bendZ: -Math.sin(this.heading) * bend,
@@ -87,7 +87,7 @@ export class Tornado {
     while (this._chunks >= 1) {
       this._chunks -= 1;
       const a = Math.random() * Math.PI * 2;
-      const rr = rand(1.8, 3.6);
+      const rr = rand(1.0, 2.2);
       const tang = a + Math.PI / 2;
       const sp = rand(8, 12);
       fx.debris.spawn({
@@ -113,16 +113,16 @@ export class Tornado {
       P.x = this.x;
       P.y = y + 0.05;
       P.z = this.z;
-      P.vx = rand(1.2, 3.2); // radius
+      P.vx = rand(0.7, 1.5); // radius: a tight debris ring at the ground
       P.vy = Math.random() * 6.28;
       P.vz = rand(0.2, 1.4); // rise
-      P.tx = rand(0.8, 1.8); // radius grows
+      P.tx = rand(0.6, 1.2); // radius grows
       P.ty = rand(3.5, 5.5); // angular speed
       P.tz = Math.cos(this.heading) * this.speed * 0.6;
       P.tw = Math.sin(this.heading) * this.speed * 0.6;
       P.life = rand(1.2, 2.2);
-      P.s0 = rand(1.4, 2.4);
-      P.s1 = rand(3.5, 5.5);
+      P.s0 = rand(0.9, 1.5);
+      P.s1 = rand(2.0, 3.0);
       P.rot = Math.random() * 6.28;
       P.spin = rand(-1, 1);
       P.frame = PF.SMOKE0 + ((Math.random() * 4) | 0);
@@ -130,9 +130,10 @@ export class Tornado {
       P.ramp = overSea ? RAMP.SPLASH : RAMP.DUST_THICK;
       if (!overSea) {
         // darker, earthier skirt churned up at the base
-        P.r = 0.85; // ochre dust
-        P.g = 0.62;
+        P.r = 0.5; // dark earthy debris dust
+        P.g = 0.42;
         P.b = 0.3;
+        P.a = 0.85;
       }
       P.lit = 1;
       P.soft = 0.5;
@@ -172,9 +173,9 @@ export class Tornado {
         const C = fx.P.reset();
         C.mode = 4;
         C.x = this.x - Math.cos(this.heading) * bend;
-        C.y = y + 18 + rand(-1, 1.5) - lift * 0.5;
+        C.y = y + 11 + rand(-0.6, 1) - lift * 0.4;
         C.z = this.z - Math.sin(this.heading) * bend;
-        C.vx = rand(2, 5);
+        C.vx = rand(1, 2.6);
         C.vy = Math.random() * 6.28;
         C.vz = rand(-0.2, 0.3);
         C.tx = rand(0.4, 1.2);
@@ -182,15 +183,15 @@ export class Tornado {
         C.tz = 0;
         C.tw = 0;
         C.life = rand(3, 5);
-        C.s0 = rand(3, 4);
-        C.s1 = rand(5, 7);
+        C.s0 = rand(1.6, 2.2);
+        C.s1 = rand(2.4, 3.2);
         C.rot = Math.random() * 6.28;
         C.spin = 0.3;
         C.frame = PF.SMOKE0 + ((Math.random() * 4) | 0);
-        C.ramp = RAMP.SMOKE_DARK;
+        C.ramp = Math.random() < 0.5 ? RAMP.SMOKE_LIGHT : RAMP.SMOKE_DARK;
         C.lit = 1;
         C.soft = 0;
-        C.a = 0.9;
+        C.a = 0.75;
         fx.pSmoke();
       }
     }

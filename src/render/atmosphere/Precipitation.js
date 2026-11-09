@@ -77,24 +77,31 @@ uniform float uPix;
 uniform float uAmount;
 uniform float uTime;
 uniform float uNear;
+uniform vec3 uFall;   // fall direction (world), for the motion streak
 varying float vA;
 varying vec2 vQ;
 void main() {
   vec3 cell = aSeed.xyz * uBox + uOffset;
   float ph = aSeed.w * 40.0;
-  cell.x += sin(uTime * (0.6 + aSeed.w) + ph) * uBox.y * 0.012;
-  cell.z += cos(uTime * (0.5 + aSeed.w * 0.7) + ph * 1.3) * uBox.y * 0.012;
+  cell.x += sin(uTime * (0.6 + aSeed.w) + ph) * uBox.y * 0.008;
+  cell.z += cos(uTime * (0.5 + aSeed.w * 0.7) + ph * 1.3) * uBox.y * 0.008;
   vec3 rel = fract((cell - uCenter) / uBox + 0.5) - 0.5;
   vec3 c = uCenter + rel * uBox;
   float isOn = step(aSeed.w, uAmount);
   vec4 mv = viewMatrix * vec4(c, 1.0);
   float dist = -mv.z;
+  // small, crisp flakes: the on-screen radius stays within ~1-3.5 px at
+  // every zoom (near flakes never balloon into blurry discs)
+  float px = dist * uPix;
   float s = uSize * (0.6 + 0.8 * fract(aSeed.w * 7.31));
-  float minS = dist * uPix * 1.8;
-  float sz = max(s, minS);
-  mv.xy += position.xy * sz;
+  float sz = clamp(s, px * 1.0, px * (2.0 + 1.5 * fract(aSeed.w * 3.7)));
+  // a slight streak along the projected fall direction
+  vec2 fd = (viewMatrix * vec4(uFall, 0.0)).xy;
+  fd = length(fd) > 1e-4 ? normalize(fd) : vec2(0.0, -1.0);
+  vec2 sd = vec2(-fd.y, fd.x);
+  mv.xy += (sd * position.x + fd * position.y * 1.7) * sz;
   vec3 e = smoothstep(vec3(0.5), vec3(0.36), abs(rel));
-  vA = e.x * e.y * e.z * isOn * smoothstep(uNear * 0.4, uNear, dist) * clamp(s / minS, 0.3, 1.0);
+  vA = e.x * e.y * e.z * isOn * smoothstep(uNear * 0.4, uNear, dist);
   vQ = position.xy;
   gl_Position = projectionMatrix * mv;
 }
@@ -106,9 +113,9 @@ varying float vA;
 varying vec2 vQ;
 void main() {
   float r = length(vQ);
-  float a = vA * uOpacity * (1.0 - smoothstep(0.35, 1.0, r));
+  float a = vA * uOpacity * (1.0 - smoothstep(0.55, 1.0, r));
   if (a < 0.003) discard;
-  gl_FragColor = vec4(uColor * (1.0 + 0.25 * (1.0 - r)), a);
+  gl_FragColor = vec4(uColor * (1.0 + 0.15 * (1.0 - r)), a);
 }
 `;
 
@@ -184,7 +191,7 @@ export class Precipitation {
     // billboard corners for snow: remap rain quad (y 0..1) to (-1..1)
     const sg = makeQuadInstances(snowN, 91);
     sg.setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 1, -1, 0, -1, 1, 0, 1, 1, 0], 3));
-    this.snowU = { ...common(), uSize: { value: 0.06 }, uTime: { value: 0 } };
+    this.snowU = { ...common(), uSize: { value: 0.06 }, uTime: { value: 0 }, uFall: { value: new THREE.Vector3(0, -1, 0) } };
     this.snow = new THREE.Mesh(
       sg,
       new THREE.ShaderMaterial({ name: 'Snow', uniforms: this.snowU, vertexShader: SNOW_VERT, fragmentShader: SNOW_FRAG, transparent: true, depthWrite: false, side: THREE.DoubleSide }),
@@ -348,17 +355,18 @@ export class Precipitation {
       this.snowOffset.x += wind.x * drift * dt;
       this.snowOffset.z += wind.z * drift * dt;
       this.snowOffset.y -= fall * dt;
+      u.uFall.value.set(wind.x * drift, -fall, wind.z * drift).normalize();
       u.uBox.value.set(boxW, boxH, boxW);
       wrapOffset(this.snowOffset, u.uBox.value);
       u.uOffset.value.copy(this.snowOffset);
       u.uCenter.value.copy(center);
-      u.uSize.value = 0.06 + D * 0.0026;
+      u.uSize.value = 0.05 + D * 0.0014;
       u.uNear.value = 2 + D * 0.32;
       u.uPix.value = pix;
       u.uTime.value = time;
       u.uAmount.value = 0.1 + 0.9 * snow;
       u.uColor.value.setRGB(0.92, 0.95, 1.0).multiplyScalar(0.35 + 0.75 * ambient).addScalar(flash * 0.6);
-      u.uOpacity.value = 0.42 + 0.2 * snow;
+      u.uOpacity.value = 0.7 + 0.25 * snow;
     }
   }
 }

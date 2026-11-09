@@ -2,6 +2,7 @@ import { el, esc } from './dom.js';
 import { uiIcon } from './icons.js';
 import { emblemSvg } from './TopBar.js';
 import { PRESETS } from './Panels.js';
+import { WORLD_SIZES } from '../core/params.js';
 
 // Title screen over the live world. The camera slowly orbits while the
 // player picks a landmass; choosing one re-seeds the world behind the logo.
@@ -28,6 +29,19 @@ export class TitleScreen {
       ),
     );
     this.seedEl = el('span', { class: 'ws-title__seed', text: String(g.params.seed) });
+    this.sizeBtns = WORLD_SIZES.map((z) =>
+      el(
+        'button',
+        {
+          class: 'ws-chip ws-chip--size' + (z.size === g.world.w ? ' is-on' : ''),
+          type: 'button',
+          'data-size': z.size,
+          'aria-label': `${z.name} world, ${z.size} tiles`,
+          onclick: () => this.chooseSize(z),
+        },
+        z.name,
+      ),
+    );
     this.el = el(
       'div',
       { class: 'ws-title', role: 'dialog', 'aria-label': 'Worldseed' },
@@ -44,6 +58,8 @@ export class TitleScreen {
           { class: 'ws-title__card ws-glass ws-orn' },
           el('div', { class: 'ws-title__label', text: 'Choose your landmass' }),
           el('div', { class: 'ws-chips', role: 'radiogroup' }, ...this.presetBtns),
+          el('div', { class: 'ws-title__label ws-title__label--sub', text: 'World size' }),
+          el('div', { class: 'ws-chips ws-chips--sizes', role: 'radiogroup' }, ...this.sizeBtns),
           el(
             'div',
             { class: 'ws-title__seedrow' },
@@ -77,6 +93,21 @@ export class TitleScreen {
     this.presetBtns.forEach((b) => b.classList.toggle('is-on', b.dataset.id === id));
     if (id === g.params.preset) return;
     this.ui.regenerate(g.params.seed, id, g.params.civs, { quiet: true, after: () => (this.seedEl.textContent = String(g.params.seed)) });
+  }
+
+  chooseSize(z) {
+    const g = this.game;
+    this.sizeBtns.forEach((b) => b.classList.toggle('is-on', +b.dataset.size === z.size));
+    if (z.size === g.world.w) return;
+    const q = new URLSearchParams(location.search);
+    q.set('seed', g.params.seed);
+    q.set('preset', g.params.preset || 'continent');
+    q.set('size', z.size);
+    for (const k of ['cam', 'hour', 'ff', 'title']) q.delete(k);
+    const label = this.ui.veil.querySelector('.ws-veil__label');
+    if (label) label.textContent = `Shaping a ${z.name.toLowerCase()} world`;
+    this.ui.veil.classList.add('is-shown');
+    setTimeout(() => (location.search = q.toString()), 320);
   }
 
   reroll() {

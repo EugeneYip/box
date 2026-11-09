@@ -72,24 +72,25 @@ void main() {
   // twist with height, rotate with time (never multiply time by height:
   // that would make the streak frequency grow without bound)
   float a = vUv.x + vH * 0.9 - uTime * uSpin * 0.8 + 0.05 * sin(vH * 6.0 + uTime * 2.0);
-  float n1 = tnoise(vec2(a * 12.0, vH * 7.0 - uTime * 1.6), 12.0);
-  float n2 = tnoise(vec2(a * 24.0, vH * 15.0 - uTime * 2.8), 24.0);
+  // streaks run along the twist (low frequency in height): horizontal
+  // bands would read as concentric rings from the god-view camera
+  float n1 = tnoise(vec2(a * 10.0, vH * 2.5 - uTime * 1.2), 10.0);
+  float n2 = tnoise(vec2(a * 20.0, vH * 4.5 - uTime * 2.0), 20.0);
   float streak = n1 * 0.65 + n2 * 0.35;
   vec3 V = normalize(cameraPosition - vWorld);
   vec3 N = normalize(vN);
   float facing = abs(dot(N, V));
   float rim = pow(1.0 - facing, 1.6);
   float ends = smoothstep(0.0, 0.04, vH) * (1.0 - smoothstep(0.86, 1.0, vH));
-  float dens = smoothstep(0.28, 0.85, streak) * (0.35 + 0.9 * rim) * uDensity;
-  // internal banding: inclined debris-laden rings spiralling up the vortex
-  float band = smoothstep(0.35, 0.75, 0.5 + 0.5 * sin(vH * 34.0 + a * 6.2831853 * 2.0 - uTime * 3.2));
+  float dens = smoothstep(0.3, 0.85, streak) * (0.35 + 0.9 * rim) * uDensity;
   // the core layer has an opacity floor so the vortex reads as solid mass
-  dens = max(dens, uFloor * (0.8 + 0.25 * streak + 0.15 * band)) * ends;
-  float alpha = clamp(dens * uAlpha, 0.0, 0.98);
+  dens = max(dens, uFloor * (0.9 + 0.1 * streak)) * ends;
+  float alpha = clamp(dens * uAlpha, 0.0, 0.99);
   if (alpha < 0.004) discard;
   float ndl = dot(N, uSunDir) * 0.5 + 0.5;
-  vec3 col = uColor * (uAmbient + uSunCol * ndl) * (0.7 + 0.45 * streak) * mix(0.72, 1.12, band);
-  col *= mix(0.7, 1.0, vH);
+  vec3 col = uColor * (uAmbient + uSunCol * ndl) * (0.75 + 0.4 * streak);
+  // darker toward the silhouette edge for a rounded, solid read
+  col *= mix(0.65, 1.0, vH) * mix(1.0, 0.7, rim);
   float fog = smoothstep(fogNear, fogFar, length(cameraPosition - vWorld));
   col = mix(col, fogColor, fog);
   gl_FragColor = vec4(col, 1.0);
@@ -128,20 +129,20 @@ void main() {
   float r = length(vP);
   if (r > 1.0) discard;
   float a = atan(vP.y, vP.x);
-  // noise-warped logarithmic spiral arms rotating with time (faster near
-  // the eye); the warp breaks up any concentric "record groove" banding
-  vec2 q = vec2(cos(a + uTime * 0.6 * (1.2 - r)), sin(a + uTime * 0.6 * (1.2 - r))) * r * 4.0;
-  float n = vnoise(q + 3.0) * 0.6 + vnoise(q * 2.3) * 0.4;
-  float warp = vnoise(q * 0.9 + 11.0) * 3.0 + vnoise(q * 2.7 - 5.0) * 1.2;
-  float sw = a * 4.0 + log(r + 0.05) * 2.2 + uTime * (1.2 + 1.5 * (1.0 - r)) + warp;
-  float arms = 0.5 + 0.5 * sin(sw);
-  arms = mix(arms, n, 0.35);
-  float dens = mix(0.55, 1.0, arms) * (0.7 + 0.6 * n);
-  dens *= 1.0 - smoothstep(0.55, 1.0, r + (n - 0.5) * 0.3);
-  dens = max(dens, (1.0 - smoothstep(0.0, 0.45, r)) * 0.9);
-  float alpha = clamp(dens * uAlpha, 0.0, 0.96);
+  // a compact churning cloud: rotating noise only (no spiral arms, which
+  // read as concentric grooves from above)
+  // rigid rotation plus a FIXED twist: a radius-dependent spin rate winds
+  // the noise into concentric rings within seconds
+  float ra = a + uTime * 0.45 + r * 1.4;
+  vec2 q = vec2(cos(ra), sin(ra)) * r * 3.0;
+  float n = vnoise(q + 3.0) * 0.55 + vnoise(q * 2.3 + 7.0) * 0.3 + vnoise(q * 5.1) * 0.15;
+  // soft, lumpy edge and strong light/dark churn: from above it must read
+  // as a storm cell over the funnel, not a dark hole in the ground
+  float dens = 0.55 + 0.6 * n;
+  dens *= 1.0 - smoothstep(0.2, 1.0, r + (n - 0.5) * 0.55);
+  float alpha = clamp(dens * uAlpha, 0.0, 0.9);
   if (alpha < 0.005) discard;
-  float lit = 0.55 + 0.45 * arms * n;
+  float lit = 0.4 + 0.85 * n;
   vec3 col = uColor * (uAmbient * 1.2 + uSunCol * max(uSunDir.y, 0.15) * lit);
   gl_FragColor = vec4(col, 1.0);
 #include <tonemapping_fragment>
@@ -192,15 +193,15 @@ export class TornadoFunnel {
       this.layers.push({ mesh: m, u, r0, r1, base: u.uColor.value.clone() });
     };
     // dark opaque core + lighter churning dust sleeve (radii doubled)
-    mk(THREE.BackSide, 16, 0x2a2420, 1.6, 0.6, 6.2, 1.1, 0.88);
-    mk(THREE.FrontSide, 17, 0x2a2420, 1.6, 0.6, 6.2, 1.1, 0.88);
-    mk(THREE.BackSide, 18, 0x847a6c, 0.8, 1.1, 9.0, 0.75);
-    mk(THREE.FrontSide, 19, 0x847a6c, 0.8, 1.1, 9.0, 0.75);
+    mk(THREE.BackSide, 16, 0x221c18, 1.6, 0.32, 2.2, 1.1, 0.95);
+    mk(THREE.FrontSide, 17, 0x221c18, 1.6, 0.32, 2.2, 1.1, 0.95);
+    mk(THREE.BackSide, 18, 0x6a6258, 0.45, 0.55, 3.0, 0.75);
+    mk(THREE.FrontSide, 19, 0x6a6258, 0.45, 0.55, 3.0, 0.75);
     // rotating cloud cap (what a top-down camera mostly sees)
     this.capU = {
       uTime: { value: 0 },
       uAlpha: { value: 0 },
-      uColor: { value: new THREE.Color(0x35302c) },
+      uColor: { value: new THREE.Color(0x4e4842) },
       uSunDir: { value: new THREE.Vector3(0, 1, 0) },
       uSunCol: fx.uniforms.uSunCol,
       uAmbient: fx.uniforms.uAmbient,
@@ -241,7 +242,8 @@ export class TornadoFunnel {
       if (opts.tint) u.uColor.value.multiply(opts.tint);
     }
     // cap sits on top of the bent funnel
-    const capR = 9 + 9 * opts.width;
+    // kept small: at the default pitch a wide cap hides the whole stem
+    const capR = 1.3 + 1.6 * opts.width;
     this.cap.position.set(x + opts.bendX, y + opts.height * 0.97, z + opts.bendZ);
     this.cap.scale.set(capR, 1, capR);
     this.capU.uTime.value = this.fx.time + (opts.seed || 0);

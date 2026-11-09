@@ -620,9 +620,10 @@ export const PRESETS = {
       P.spin = rr(-0.3, 0.3);
       P.frame = PF.SMOKE0 + ((R() * 4) | 0);
       P.ramp = RAMP.MIASMA;
-      P.lit = 0.75;
+      P.lit = 0.5;
       P.bright = 1.3;
-      P.glow = 0.15;
+      P.glow = 0.45;
+      P.frame = R() < 0.5 ? PF.WISP : P.frame;
       P.soft = 0.6;
       if (o.color != null) tint(P, o.color);
       fx.pSmoke();

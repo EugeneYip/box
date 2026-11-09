@@ -307,8 +307,18 @@ export class Labels {
       const sx = (v.x * 0.5 + 0.5) * W,
         sy = (-v.y * 0.5 + 0.5) * H;
       const dist = cam.position.distanceTo(sp.position);
-      const ph = (sp.scale.y / Math.max(0.01, dist)) * fovK;
-      const pw = (sp.scale.x / Math.max(0.01, dist)) * fovK;
+      let ph = (sp.scale.y / Math.max(0.01, dist)) * fovK;
+      let pw = (sp.scale.x / Math.max(0.01, dist)) * fovK;
+      // cap on-screen size: an anchor close to the camera (e.g. a realm centre
+      // just below the view) would otherwise blow its label up across the frame
+      const maxPx = c.prio >= 3 ? 44 : 52;
+      if (ph > maxPx) {
+        const k = maxPx / ph;
+        sp.scale.x *= k;
+        sp.scale.y *= k;
+        ph = maxPx;
+        pw *= k;
+      }
       const rect = { l: sx - pw / 2, r: sx + pw / 2, t: sy - ph / 2, b: sy + ph / 2 };
       const hits = (r) => {
         for (const o of taken) if (r.l < o.r && r.r > o.l && r.t < o.b && r.b > o.t) return true;
@@ -342,6 +352,11 @@ export class Labels {
           // move the sprite to the adjusted screen point at the same depth
           v.set((cx / W) * 2 - 1, -((cy / H) * 2 - 1), v.z).unproject(cam);
           sp.position.copy(v);
+          // the label was sized for its anchor's distance; at the pinned point
+          // (same depth, much less lateral offset) it must shrink to match
+          const k = cam.position.distanceTo(v) / Math.max(0.01, dist);
+          sp.scale.x *= k;
+          sp.scale.y *= k;
         }
         if (!placed) target = 0;
       } else if (target > 0) {

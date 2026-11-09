@@ -110,7 +110,7 @@ export function refreshLandscapeUniforms(game, dt) {
 const SEASON_TINTS = [
   [0.15, 0.44, 0.06, 0.35],
   [0.07, 0.3, 0.045, 0.25],
-  [0.48, 0.3, 0.06, 0.8],
+  [0.54, 0.32, 0.05, 0.9],
   [0.25, 0.27, 0.22, 0.6],
 ];
 const _ease = (t) => t * t * (3 - 2 * t);
@@ -196,7 +196,7 @@ vec3 waterIrradianceV(float vis) {
   float up = clamp(uKeyDir.y, 0.0, 1.0);
   // when the sun is low the blue zenith keeps the water column blue-teal
   float lowK = 1.0 - smoothstep(0.15, 0.5, uKeyDir.y);
-  return uKeyCol * KEYN * (0.30 + 0.70 * up) * vis + uAmbCol * 0.55 + uZenCol * 0.32 * lowK;
+  return uKeyCol * KEYN * (0.30 + 0.70 * up) * vis + uAmbCol * 0.55 + uZenCol * 0.85 * lowK;
 }
 vec3 waterIrradiance() { return waterIrradianceV(1.0); }
 

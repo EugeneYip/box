@@ -33,7 +33,7 @@ export class Volcano {
       top = Math.max(top, w.height[i]);
     });
     this.base = base;
-    this.peak = Math.min(MAX_HEIGHT - 1, Math.max(top + 2.5, base + 6 + radius * 0.75));
+    this.peak = Math.min(MAX_HEIGHT - 1, Math.max(top + 4, base + 9 + radius * 1.05));
     this.crater = 0.17;
     // 2-3 flank gullies the lava rivers will run down
     const ng = Math.random() < 0.5 ? 2 : 3;
@@ -127,7 +127,7 @@ export class Volcano {
       for (const ga of this.gullies) {
         const gx = Math.floor(x + Math.cos(ga) * rr),
           gz = Math.floor(z + Math.sin(ga) * rr);
-        this.ds.lava.pour(gx, gz, rate * vt * 0.55, 1);
+        this.ds.lava.pour(gx, gz, rate * vt * 1.0, 1);
       }
     }
     // fountain
@@ -174,19 +174,19 @@ export class Volcano {
     // ash plume: a narrow charcoal column that shoots up fast and only
     // spreads / drifts once it is high above the cone, so the crater, cone
     // and lava rivers stay readable underneath
-    this._acc.plume += vt * (erupting ? 6 : 2.5) * Math.max(k, erupting ? 1 : 0.15) * fx.budget;
+    this._acc.plume += vt * (erupting ? 8 : 3) * Math.max(k, erupting ? 1 : 0.15) * fx.budget;
     while (this._acc.plume >= 1) {
       this._acc.plume -= 1;
-      const up = rand(9.5, 12.5) * (erupting ? 1 : 0.6);
-      smokePuff(fx, x + rand(-0.35, 0.35), top + rand(1.5, 3), z + rand(-0.35, 0.35), {
-        size: rand(1.0, 1.5) * (erupting ? 1 : 0.8),
-        grow: 2.5,
+      const up = rand(5, 7) * (erupting ? 1 : 0.6);
+      smokePuff(fx, x + rand(-0.5, 0.5), top + rand(1, 2.5), z + rand(-0.5, 0.5), {
+        size: rand(2.0, 2.8) * (erupting ? 1 : 0.8),
+        grow: 2.8,
         ramp: RAMP.SMOKE_BLACK,
         glow: 0.6,
         rise: up,
-        drift: 0.9,
-        drag: 0.11,
-        life: rand(7, 9),
+        drift: 2.8,
+        drag: 0.2,
+        life: rand(10, 13),
       });
     }
     // ash fall downwind
@@ -198,8 +198,8 @@ export class Volcano {
     // volcanic lightning in the plume
     this._acc.bolt -= vt;
     if (erupting && this._acc.bolt <= 0) {
-      this._acc.bolt = rand(1.2, 3.2);
-      const h0 = top + rand(8, 14);
+      this._acc.bolt = rand(0.8, 2.0);
+      const h0 = top + rand(6, 11);
       const ox = x + fx.wind.x * rand(2, 5),
         oz = z + fx.wind.z * rand(2, 5);
       fx.beams.bolt(ox + rand(-3, 3), h0 + rand(2, 5), oz + rand(-3, 3), ox + rand(-4, 4), h0 - rand(3, 6), oz + rand(-4, 4), { width: 0.18, life: 0.35, color: 0xc0d4ff, branches: 2, detail: 5, intensity: 1.8 });
