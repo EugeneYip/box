@@ -529,7 +529,10 @@ export class Clouds {
     this.group.visible = vis > 0.01;
     // high cirrus layer
     const C = this.cirrusU;
-    const cirrusAmt = vis * (0.22 + 0.25 * Math.min(1, weather.cover)) * (1 - 0.8 * weather.storm);
+    // the cirrus deck sits at y = 92: fade it out as the camera climbs to and
+    // past it, or the overview is seen through broad white smears
+    const camAbove = THREE.MathUtils.smoothstep(rig.camera.position.y, 60, 88);
+    const cirrusAmt = vis * (0.22 + 0.25 * Math.min(1, weather.cover)) * (1 - 0.8 * weather.storm) * (1 - camAbove);
     this.cirrus.visible = cirrusAmt > 0.01;
     if (this.cirrus.visible) {
       const t = rig.target;
