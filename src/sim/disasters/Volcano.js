@@ -20,7 +20,7 @@ export class Volcano {
     this.R = radius;
     this.t = 0;
     this.phase = 0; // 0 rise, 1 erupt, 2 wane
-    this.riseT = 3.2;
+    this.riseT = 2.4;
     this.eruptT = 24;
     this.waneT = 9;
     this.seed = (Math.random() * 1e4) | 0;
@@ -60,7 +60,7 @@ export class Volcano {
     });
     this.cx = Math.floor(this.x);
     this.cz = Math.floor(this.z);
-    this._acc = { bomb: 0, plume: 0, fount: 0, rise: 0, ash: 0, bolt: 2 };
+    this._acc = { bomb: 0, plume: 0, fount: 0, rise: 0, ash: 0, bolt: 0.45 };
     this._lastP = 0;
     this._lc = new THREE.Color(1, 0.42, 0.12);
     play(this.game, 'quake', { x, z }, 1, 0.7);
@@ -171,23 +171,40 @@ export class Volcano {
         },
       });
     }
-    // ash plume: a narrow charcoal column that shoots up fast and only
-    // spreads / drifts once it is high above the cone, so the crater, cone
-    // and lava rivers stay readable underneath
-    this._acc.plume += vt * (erupting ? 8 : 3) * Math.max(k, erupting ? 1 : 0.15) * fx.budget;
+    // ash column: a dense charcoal tower several cone-heights tall that
+    // shoots up within ~1.5 s of the blast (so even a quick look catches
+    // it), swells with height and leans downwind. Puffs are seeded along
+    // the whole column and only drift slowly, so its shape stays put. It is
+    // a hero effect: it keeps most of its rate when a big fire elsewhere
+    // squeezes the particle budget.
+    const pb = Math.max(fx.budget, 0.65);
+    const colH = erupting ? Math.min(30, 8 + this.t * 16) : 30;
+    const wx = fx.wind.x,
+      wz = fx.wind.z;
+    const lean = (h) => Math.pow(h, 1.6) * 0.06;
+    this._acc.plume += vt * (erupting ? 50 : 12) * Math.max(k, erupting ? 0.6 : 0.15) * pb;
     while (this._acc.plume >= 1) {
       this._acc.plume -= 1;
-      const up = rand(5, 7) * (erupting ? 1 : 0.6);
-      smokePuff(fx, x + rand(-0.5, 0.5), top + rand(1, 2.5), z + rand(-0.5, 0.5), {
-        size: rand(2.0, 2.8) * (erupting ? 1 : 0.8),
-        grow: 2.8,
+      const u = Math.pow(Math.random(), 0.8);
+      const h = 1 + u * colH;
+      const L = lean(h);
+      const s = (3.2 + h * 0.14) * rand(0.85, 1.15) * (erupting ? 1 : 0.85);
+      smokePuff(fx, x + wx * L + rand(-0.6, 0.6) * (1 + u), top + h, z + wz * L + rand(-0.6, 0.6) * (1 + u), {
+        size: s,
+        grow: 1.7,
         ramp: RAMP.SMOKE_BLACK,
-        glow: 0.6,
-        rise: up,
-        drift: 2.8,
-        drag: 0.2,
-        life: rand(10, 13),
+        glow: u < 0.12 ? 0.4 : 0,
+        rise: rand(0.8, 1.6),
+        drift: 2.0,
+        drag: 0.5,
+        life: rand(7, 10),
       });
+    }
+    // the jet roaring out of the vent at the column's foot
+    this._acc.jet = (this._acc.jet || 0) + vt * (erupting ? 7 : 2) * k * pb;
+    while (this._acc.jet >= 1) {
+      this._acc.jet -= 1;
+      smokePuff(fx, x + rand(-0.5, 0.5), top + rand(0.5, 1.5), z + rand(-0.5, 0.5), { size: rand(1.8, 2.5), grow: 2.4, ramp: RAMP.SMOKE_BLACK, glow: 0.6, rise: rand(6, 8), drift: 1.2, drag: 0.7, life: rand(3.5, 4.5) });
     }
     // ash fall downwind
     this._acc.ash += vt * 6 * k;
@@ -195,20 +212,26 @@ export class Volcano {
       this._acc.ash -= 1;
       fx.emit('ash', { x: x + fx.wind.x * 5, y: top, z: z + fx.wind.z * 5 }, { count: 2, scale: 2 });
     }
-    // volcanic lightning in the plume
+    // volcanic lightning inside the column: frequent, long-lived enough to be
+    // caught in any glance, placed along the wind-bent column (where the ash
+    // is) and lighting the smoke around it
     this._acc.bolt -= vt;
     if (erupting && this._acc.bolt <= 0) {
-      this._acc.bolt = rand(0.8, 2.0);
-      const h0 = top + rand(6, 11);
-      const ox = x + fx.wind.x * rand(2, 5),
-        oz = z + fx.wind.z * rand(2, 5);
-      fx.beams.bolt(ox + rand(-3, 3), h0 + rand(2, 5), oz + rand(-3, 3), ox + rand(-4, 4), h0 - rand(3, 6), oz + rand(-4, 4), { width: 0.18, life: 0.35, color: 0xc0d4ff, branches: 2, detail: 5, intensity: 1.8 });
-      fx.addLight({ x: ox, y: h0, z: oz }, 0xb0c8ff, 3, 0.25);
-      if (Math.random() < 0.5) play(g, 'thunder', { x, z }, 0.4, 1.2);
+      this._acc.bolt = rand(0.35, 0.9);
+      const hb = rand(0.25, 0.65) * colH;
+      const h0 = top + hb;
+      const ox = x + wx * lean(hb),
+        oz = z + wz * lean(hb);
+      const a = Math.random() * Math.PI * 2,
+        len = rand(4, 8);
+      fx.beams.bolt(ox + Math.cos(a) * len * 0.5, h0 + rand(1, 4), oz + Math.sin(a) * len * 0.5, ox - Math.cos(a) * len * 0.5, h0 - rand(2, 5), oz - Math.sin(a) * len * 0.5, { width: 0.26, life: 0.55, color: 0xc8d8ff, branches: 3, detail: 6, intensity: 2.2 });
+      glowFlash(fx, ox, h0, oz, 7, { life: 0.4, bright: 1.1, color: 0x9fb4ff, from: 0.7, soft: 0 });
+      fx.addLight({ x: ox, y: h0, z: oz }, 0xb0c8ff, 4, 0.35);
+      if (Math.random() < 0.4) play(g, 'thunder', { x, z }, 0.4, 1.2);
     }
     // glow + rumble
     const fl = 0.85 + 0.15 * Math.sin(this.t * 17) * Math.sin(this.t * 5.3);
-    fx.lights.request('volcano' + x, x, top + 2.5, z, this._lc, (2.5 + 5 * k) * fl, 44, 0.8);
+    fx.lights.request('volcano' + x, x, top + 2.5, z, this._lc, (2.5 + 5 * k) * fl, 44, 0.35);
     if (Math.random() < vt * 4 * k) glowFlash(fx, x, top + 0.5, z, 3, { life: 0.5, bright: 1.2, ramp: RAMP.LAVA, from: 0.6 });
     fx.shake(x, z, dt * 2.2 * 0.25 * k + (Math.random() < vt * 1.2 * k ? 0.35 : 0));
     hurt(g, x, z, 2.2, 30 * vt * k, 20 * vt * k, 'volcano');

@@ -8,8 +8,37 @@ import { Earthquake } from './Earthquake.js';
 import { Tornado } from './Tornado.js';
 import { Volcano } from './Volcano.js';
 import { Tsunami } from './Tsunami.js';
-import { play, law, ageMod, fireFactor } from './util.js';
+import { play, law, ageMod, fireFactor, rand } from './util.js';
 import { Calamities } from './Calamities.js';
+import { PF, RAMP } from '../../render/fx/Effects.js';
+
+// One puff of the plague fog: low, slow, green-yellow, drifting downwind.
+function miasmaPuff(fx, x, y, z, s, bank = false) {
+  const P = fx.P.reset();
+  P.x = x + rand(-0.5, 0.5) * s;
+  P.y = y + (bank ? rand(0.3, 0.9) : rand(0.2, 0.7));
+  P.z = z + rand(-0.5, 0.5) * s;
+  P.vx = rand(-0.25, 0.25);
+  P.vy = rand(0.05, 0.25);
+  P.vz = rand(-0.25, 0.25);
+  P.tx = fx.wind.x * 0.7;
+  P.ty = bank ? 0.03 : 0.1;
+  P.tz = fx.wind.z * 0.7;
+  P.drag = 0.6;
+  P.life = bank ? rand(6, 8.5) : rand(3.5, 5.5);
+  P.s0 = s * 0.55;
+  P.s1 = s * (bank ? 1.5 : 1.8);
+  P.rot = Math.random() * 6.28;
+  P.spin = rand(-0.2, 0.2);
+  P.frame = Math.random() < 0.35 ? PF.WISP : PF.SMOKE0 + ((Math.random() * 4) | 0);
+  P.ramp = RAMP.MIASMA;
+  P.lit = 0.55;
+  P.bright = 1.25;
+  P.glow = 0.4;
+  P.soft = 0.7;
+  P.a = bank ? 0.9 : 1;
+  fx.pSmoke();
+}
 
 // Disasters & hazards (Effects & Disasters owner).
 //
@@ -95,17 +124,47 @@ export class Disasters {
       if (Math.random() < 0.3) play(g, 'splash', st[0], 0.3, 0.6);
       st.length = 0;
     }
-    // plague miasma around the sick
+    // plague: a low green-yellow fog hanging over the sick and drifting with
+    // the wind: wisps around each sick person plus large banks over every
+    // cluster of them (a sick village sits under a visible pall). It keeps
+    // most of its rate when a big fire squeezes the particle budget.
     const inf = this.plagueSim.infected;
     if (inf.size) {
-      this._plagueFx += dt * Math.min(inf.size, 80) * 3.2;
+      const fx = g.fx;
+      const pb = Math.max(fx.budget, 0.6);
+      const w = g.world;
+      this._plagueFx += dt * Math.min(inf.size, 60) * 3 * pb;
       const arr = this._plagueFx >= 1 ? [...inf] : null;
-      while (this._plagueFx >= 1 && arr.length) {
+      while (this._plagueFx >= 1 && arr && arr.length) {
         this._plagueFx -= 1;
         const u = arr[(Math.random() * arr.length) | 0];
-        g.fx.emit('miasma', { x: u.x, y: u.y + 0.25, z: u.z }, { count: 1, scale: 0.85 });
+        miasmaPuff(fx, u.x, w.heightAt(u.x, u.z), u.z, rand(1.0, 1.6));
       }
-      this._plagueFx = Math.min(this._plagueFx, 2);
+      this._plagueFx = Math.min(this._plagueFx, 3);
+      this._bankT = (this._bankT || 0) - dt;
+      if (this._bankT <= 0) {
+        this._bankT = 0.25;
+        const cells = new Map();
+        for (const u of inf) {
+          const key = ((u.x >> 3) << 12) | (u.z >> 3);
+          let c = cells.get(key);
+          if (!c) cells.set(key, (c = { n: 0, x: 0, z: 0 }));
+          c.n++;
+          c.x += u.x;
+          c.z += u.z;
+        }
+        for (const c of cells.values()) {
+          let e = 0.25 * (2 + Math.sqrt(c.n) * 1.4) * pb;
+          const s = Math.min(1.6, 0.8 + c.n * 0.08);
+          while (e > 0) {
+            if (e < 1 && Math.random() > e) break;
+            e -= 1;
+            const cx = c.x / c.n + rand(-2.5, 2.5),
+              cz = c.z / c.n + rand(-2.5, 2.5);
+            miasmaPuff(fx, cx, w.heightAt(cx, cz), cz, rand(3.0, 4.4) * s, true);
+          }
+        }
+      }
     }
     // sky flash for our own lightning (when atmosphere does not draw it)
     if (this._sky > 0.01) {
@@ -182,8 +241,18 @@ export class Disasters {
   plague(x, z, radius = 3) {
     const g = this.game;
     const n = this.plagueSim.infectArea(x, z, radius);
-    g.fx.emit('miasma', { x, z }, { count: 10, scale: 1.4 + radius * 0.2 });
-    g.fx.emit('miasma', { x, z }, { count: 2, scale: 1.2, duration: 3, rate: 5 });
+    // the curse lands as a rolling green-yellow pall over the whole area
+    const w = g.world;
+    const nb = Math.round(10 + radius * 3);
+    for (let k = 0; k < nb; k++) {
+      const a = Math.random() * Math.PI * 2,
+        r = Math.sqrt(Math.random()) * radius;
+      const px = x + Math.cos(a) * r,
+        pz = z + Math.sin(a) * r;
+      if (!w.inBounds(Math.floor(px), Math.floor(pz))) continue;
+      miasmaPuff(g.fx, px, w.heightAt(px, pz), pz, rand(2.8, 4.2), true);
+    }
+    g.fx.emit('miasma', { x, z }, { count: 6, scale: 1.4 + radius * 0.2 });
     // (no ground stain: the sickness is shown by miasma drifting with the sick)
     play(g, 'magic', { x, z }, 0.6, 0.6);
     return n;

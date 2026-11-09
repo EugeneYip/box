@@ -225,7 +225,7 @@ export class FireVisuals {
     const R2 = R * R;
     const lod = THREE.MathUtils.clamp(dist / 48, 1, 3.4);
     const fx = this.fx;
-    const budget = fx.budget;
+    const budget = fx.fireBudget ?? fx.budget;
     const rateK = budget / (lod * lod);
     const cells = this._cells;
     cells.clear();
@@ -271,7 +271,7 @@ export class FireVisuals {
       // fuel left: tiles that have burnt most of their fuel only flicker
       // low over charred ground, so the tall flames gather on the front
       const f0 = fire.fuel0[i];
-      const fresh = front || !(f0 > 0) ? 1 : THREE.MathUtils.clamp((fire.fuel[i] / f0 - 0.15) / 0.45, 0.18, 1);
+      const fresh = front || !(f0 > 0) ? 1 : THREE.MathUtils.clamp((fire.fuel[i] / f0 - 0.5) / 0.35, 0.15, 1);
       // flames: strongly varied sizes (0.5x .. 2x), redder ramp
       let e = (tree ? 2.4 : 1.3) * f * dt * rateK * fresh;
       while (e > 0) {
@@ -345,25 +345,57 @@ export class FireVisuals {
         if (c.gy == null || ground > c.gy) c.gy = ground;
       }
     }
-    // ---- per-cluster smoke plumes: few, large, opaque, bent downwind ----
+    // ---- per-cluster smoke plumes: tall columns bent downwind ----
+    // Puffs rise from the flames AND are seeded along the whole leaning
+    // column, so a fire shows its smoke column within a couple of seconds
+    // (a column built only from rising puffs needs ~15 s to reach height).
+    const wx = fx.wind.x,
+      wz = fx.wind.z;
+    const sk = Math.max(budget, 0.45) / Math.sqrt(lod);
     for (const c of cells.values()) {
       if (!c.vis) continue;
       const cxm = c.x / c.n,
         czm = c.z / c.n;
       const avg = c.f / c.n;
-      const rate = (0.6 + Math.sqrt(c.n) * 0.6) * avg * dt * budget / Math.sqrt(lod);
-
-      if (rnd() < rate) {
-        const spread = 1.2 + Math.sqrt(c.n) * 0.35;
-        smokePuff(fx, cxm + (rnd() - 0.5) * spread, (c.gy ?? 0) + 3 + rnd() * 1.5, czm + (rnd() - 0.5) * spread, {
-          size: (2.0 + Math.sqrt(c.n) * 0.38) * Math.pow(lod, 0.75),
+      const sq = Math.sqrt(c.n);
+      const gy = c.gy ?? 0;
+      const spread = 1.2 + sq * 0.35;
+      const ramp = () => (raining && rnd() < 0.6 ? RAMP.STEAM : RAMP.PLUME);
+      // feed: puffs leaving the flames
+      let e = (0.6 + sq * 0.6) * avg * dt * sk;
+      while (e > 0) {
+        if (e < 1 && rnd() > e) break;
+        e -= 1;
+        smokePuff(fx, cxm + (rnd() - 0.5) * spread, gy + 3 + rnd() * 1.5, czm + (rnd() - 0.5) * spread, {
+          size: (2.0 + sq * 0.38) * Math.pow(lod, 0.75),
           grow: 3.4,
-          ramp: raining && rnd() < 0.6 ? RAMP.STEAM : RAMP.PLUME,
+          ramp: ramp(),
           glow: 0.7,
           rise: 1.8 + rnd() * 0.8,
-          drift: 4.2, // columns lean hard downwind and read as streaks from above
+          drift: 4.2,
           drag: 0.3,
           life: (13 + rnd() * 5) * (0.85 + lod * 0.15),
+        });
+      }
+      // body: the standing column, swelling and leaning with height
+      const H = Math.min(24, 7 + sq * 2.2);
+      e = (1.2 + sq * 0.8) * avg * dt * sk;
+      while (e > 0) {
+        if (e < 1 && rnd() > e) break;
+        e -= 1;
+        const u = rnd();
+        const h = 3 + u * H;
+        const L = h * 0.85;
+        const sz = (1.7 + h * 0.16 + sq * 0.22) * Math.pow(lod, 0.75);
+        smokePuff(fx, cxm + wx * L + (rnd() - 0.5) * spread * (0.6 + u), gy + h, czm + wz * L + (rnd() - 0.5) * spread * (0.6 + u), {
+          size: sz,
+          grow: 1.8,
+          ramp: ramp(),
+          glow: u < 0.25 ? 0.5 : 0,
+          rise: 0.6 + rnd() * 0.6,
+          drift: 2.6,
+          drag: 0.5,
+          life: (6 + rnd() * 3) * (0.85 + lod * 0.15),
         });
       }
     }

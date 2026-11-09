@@ -77,6 +77,7 @@ export class Effects {
     this.game = game;
     this.time = 0;
     this.budget = 1;
+    this.fireBudget = 1;
     this.saver = false;
     this.tinyOK = true;
     this.P = new ParticleSpec();
@@ -354,6 +355,9 @@ export class Effects {
       // power saver halves the particle budget (effective capacity and rate)
       const fill = Math.max(ls, lg) * (this.saver ? 2 : 1);
       this.budget = THREE.MathUtils.clamp((0.95 - fill) / 0.35, 0.08, 1) * (this.saver ? 0.5 : 1);
+      // wildfire flames back off first (from 35% fill), so a forest fire
+      // can never starve the set pieces (ash columns, plague fog, dust)
+      this.fireBudget = THREE.MathUtils.clamp((0.75 - fill) / 0.4, 0.06, 1) * (this.saver ? 0.5 : 1);
     }
 
     // continuous emitters

@@ -223,7 +223,7 @@ export class FireSim {
       // charring: the ground behind the front turns to ash while the last
       // flames still flicker on it (a dark burnt interior, not an orange
       // carpet), and trees become dead trees halfway through
-      if (fuelFrac < 0.45 && w.type[i] !== TILE.ASH) {
+      if (fuelFrac < 0.62 && w.type[i] !== TILE.ASH) {
         const tf0 = TILE_INFO[w.type[i]]?.flammable ?? 0;
         if (tf0 >= ASH_THRESHOLD || (this.fuel0[i] > 0.6 && tf0 > 0.05)) w.setType(x, y, TILE.ASH);
       }
