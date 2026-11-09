@@ -468,7 +468,8 @@
 }
 
 /* ---- New World: 2:1 size boxes for the World Map */
-.ws-size.is-wide .ws-size__box i {
+.ws-size.is-wide .ws-size__box i,
+.ws-size__box[style*='aspect-ratio'] i {
   height: calc(14px * var(--s));
   border-radius: 3px;
 }

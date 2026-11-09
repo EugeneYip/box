@@ -7,7 +7,6 @@ import { agesPanel } from './Ages.js';
 import { techPanel } from './TechPanel.js';
 import { eraNames, traitDef } from './depth.js';
 import { WORLD_SIZES } from '../core/params.js';
-import { isWide, sizesFor, sizeSwitch, sizeEntry, dimsFor } from './worldSizes.js';
 import { WORLD_PRESET_IDS } from '../world/worldgen.js';
 
 const SIZE_NOTES = {
@@ -154,7 +153,7 @@ export const PRESETS = [
   { id: 'pangaea', name: 'Pangaea', blurb: 'A single vast supercontinent' },
   { id: 'archipelago', name: 'Archipelago', blurb: 'Chains of scattered islands' },
   { id: 'islands', name: 'Islands', blurb: 'A few lonely island realms' },
-  { id: 'earth', name: 'World Map', blurb: 'Our planet, Pacific-centred' },
+  { id: 'earth', name: 'World Map', blurb: 'Our planet, Pacific-centred · best Huge', size: 512 },
 ].filter((p) => WORLD_PRESET_IDS.includes(p.id)); // hide presets the generator cannot build yet
 const LAND = {
   continent:
@@ -424,11 +423,9 @@ export class Modals {
           role: 'radio',
           'aria-checked': p.id === state.preset ? 'true' : 'false',
           onclick: () => {
-            const prev = state.preset;
             state.preset = p.id;
             cards.querySelectorAll('.ws-preset').forEach((x) => x.classList.toggle('is-on', x === c));
-            // the World Map is a 2:1 map with its own sizes (Huge by default)
-            if (isWide(prev) !== isWide(p.id)) buildSizes(sizeSwitch(state.size, prev, p.id));
+            if (p.size && typeof pickSize === 'function') pickSize(p.size);
           },
         },
         el('span', { class: 'ws-preset__thumb', html: presetThumb(p.id) }),
@@ -451,38 +448,28 @@ export class Modals {
     const pickSize = (v) => {
       state.size = v;
       sizeCards.querySelectorAll('.ws-size').forEach((b) => b.classList.toggle('is-on', +b.dataset.size === v));
-      const z = sizesFor(state.preset).find((s) => s.size === v);
-      const d = dimsFor(v, state.preset);
-      sizeNote.textContent = z?.note || SIZE_NOTES[v] || `${d.w} × ${d.h} tiles`;
+      sizeNote.textContent = SIZE_NOTES[v] || `${v} × ${v} tiles`;
     };
-    const buildSizes = (want) => {
-      sizeCards.innerHTML = '';
-      const wide = isWide(state.preset);
-      const list = sizesFor(state.preset);
-      const max = Math.max(...list.map((z) => z.w));
-      for (const z of list) {
-        sizeCards.append(
-          el(
-            'button',
-            { class: 'ws-size' + (wide ? ' is-wide' : ''), type: 'button', role: 'radio', 'data-size': z.size, 'aria-label': `${z.name}, ${z.w} by ${z.h} tiles`, onclick: () => pickSize(z.size) },
-            el('span', { class: 'ws-size__box', style: `--s:${(0.42 + 0.58 * (z.w / max)).toFixed(3)}` }, el('i')),
-            el('b', { text: z.name }),
-            el('small', { text: wide ? `${z.w}×${z.h}` : `${z.size}²` }),
-          ),
-        );
-      }
-      pickSize(sizeEntry(want, state.preset)?.size ?? want);
-    };
-    buildSizes(state.size);
+    for (const z of WORLD_SIZES) {
+      sizeCards.append(
+        el(
+          'button',
+          { class: 'ws-size', type: 'button', role: 'radio', 'data-size': z.size, onclick: () => pickSize(z.size) },
+          el('span', { class: 'ws-size__box', style: `--s:${(0.42 + 0.58 * (z.size / 512)).toFixed(3)}` }, el('i')),
+          el('b', { text: z.name }),
+          el('small', { text: `${z.size}²` }),
+        ),
+      );
+    }
+    pickSize(WORLD_SIZES.some((z) => z.size === state.size) ? state.size : 256);
     const sizes = el('div', { class: 'ws-field' }, el('label', { class: 'ws-field__label', text: 'World size' }), sizeCards, sizeNote);
     this.nwState = state;
     const create = () => {
       const n = parseInt(String(state.seed).replace(/[^0-9]/g, ''), 10);
       const seed = Number.isFinite(n) ? n : hashSeed(state.seed);
       this.close();
-      const dims = dimsFor(state.size, state.preset);
-      if (dims.w !== g.world.w || dims.h !== g.world.h) {
-        // world size and shape are fixed at construction: reload with the new parameters
+      if (state.size !== g.world.w) {
+        // world size is fixed at construction: reload with the new parameters
         const q = new URLSearchParams(location.search);
         q.set('seed', seed);
         q.set('preset', state.preset);
