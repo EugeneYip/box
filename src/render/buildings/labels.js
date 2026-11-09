@@ -217,10 +217,35 @@ export class Labels {
     const z01 = this.game.view?.zoom01 ?? 0;
     const vA = smooth(18, 30, D) * (1 - smooth(120, 190, D)) * (1 - smooth(0.4, 0.55, z01)) * (this.game.view?.far ? 0 : 1);
     const cand = [];
+    // mid-zoom: only the realm in view and its neighbours are named (all of
+    // them at the overview); close in, only the realm in view
+    const mid = 1 - smooth(120, 170, D);
+    if (mid > 0.01 && (this._focusT = (this._focusT || 0) - dt) <= 0) {
+      this._focusT = 0.5;
+      const tx = Math.floor(rig.cur.x),
+        tz = Math.floor(rig.cur.z);
+      let fk = w.inBounds?.(tx, tz) ? w.owner[tz * w.w + tx] : -1;
+      if (!(fk >= 0)) {
+        let bd = Infinity;
+        for (const k of civ.kingdoms) {
+          const cv = k.alive ? civ.villages[k.capital] : null;
+          if (!cv?.alive) continue;
+          const d = Math.hypot(cv.cx - rig.cur.x, cv.cz - rig.cur.z);
+          if (d < bd) (bd = d), (fk = k.id);
+        }
+      }
+      const show = (this._focusSet = this._focusSet || new Set());
+      show.clear();
+      if (fk >= 0) {
+        show.add(fk);
+        if (D > 80) for (const r of civ.relations?.values?.() || []) if ((r.border || 0) > 0 && (r.a === fk || r.b === fk)) show.add(r.a === fk ? r.b : r.a);
+      }
+    }
     for (const [id, s] of this.kLabels) {
       const k = civ.kingdoms[id];
       const v = civ.villages[k?.capital];
-      if (!v || !v.alive || kA < 0.01) {
+      const kAk = mid > 0.01 && this._focusSet?.size && !this._focusSet.has(id) ? kA * (1 - mid) : kA;
+      if (!v || !v.alive || kAk < 0.01) {
         s.visible = false;
         s.userData.fade = 0;
         continue;
@@ -230,7 +255,7 @@ export class Labels {
       const dist = cam.distanceTo(s.position);
       const h = Math.max(1.4, dist * 0.032);
       s.scale.set(h * s.userData.aspect, h, 1);
-      cand.push({ s, a: kA, prio: 3 + (k.villages.length || 0) * 0.01 });
+      cand.push({ s, a: kAk, prio: 3 + (k.villages.length || 0) * 0.01 + (this._focusSet?.has(id) ? 0.5 : 0) });
     }
     for (const [id, s] of this.vLabels) {
       const v = civ.villages[id];
