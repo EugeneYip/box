@@ -1606,6 +1606,9 @@ export class Civilization {
         }
       }
     }
+    // mastery tiers each bring something to see: statues (2), gilded halls (4),
+    // academies (6), busy harbours (8), lamp-lit grand roads (10)
+    if (room() && K && (K.mastery || 0) >= 6 && (K.capital === v.id || v.tier >= 2) && count('academy') === 0 && v.stone > 70) build('academy', () => this._placeOutskirts(v, 'academy', 3, v.buildRadius, null, null));
     // mastery shows in the streets: statues in the capital and the great cities
     if (room() && K && (K.mastery || 0) >= 2 && (K.capital === v.id || v.tier >= 2)) {
       const want = K.capital === v.id ? Math.min(4, Math.floor(K.mastery / 2)) : Math.min(2, Math.floor(K.mastery / 4));
@@ -1792,13 +1795,17 @@ export class Civilization {
   _wonderFx() {
     for (const k of this.kingdoms) if (k.wonderFx) k.wonderFx = null;
     for (const b of this.buildings) {
-      if (!b.alive || !BUILDING_TYPES[b.type]?.monument) continue;
+      if (!b.alive || !(BUILDING_TYPES[b.type]?.monument || (b.type === 'academy' && !b.constructing))) continue;
       const k = this.kingdoms[b.kingdom];
       if (!k?.alive) continue;
       const done = (b.constructing ? 0 : b.upgrading ? b.level - 1 : b.level) / 3;
       if (done <= 0) continue;
       const fx = MONUMENT_FX[b.type === 'colossus' ? 'colossus' : b.style] || MONUMENT_FX.vale;
       const out = k.wonderFx || (k.wonderFx = {});
+      if (b.type === 'academy') {
+        out.research = (out.research || 1) * 1.08;
+        continue;
+      }
       for (const [key, val] of Object.entries(fx.mods)) {
         if (key.endsWith('+')) out[key] = (out[key] || 0) + val * done;
         else out[key] = (out[key] || 1) * (1 + (val - 1) * done);

@@ -504,7 +504,8 @@ export class BuildingRenderer {
       const bm = new THREE.Matrix4().copy(M).multiply(new THREE.Matrix4().makeTranslation(c.x, c.y, c.z));
       this.blades.push({ m: bm, style: b.style, phase: b.seed * 10 });
     }
-    for (const c of an.boats) {
+    const moreShips = b.type === 'docks' && (this.game.civ?.kingdoms?.[b.kingdom]?.mastery || 0) >= 8;
+    for (const c of moreShips ? [...an.boats, ...an.boats.map((o) => ({ ...o, x: o.x + 0.55, z: o.z + 0.35, ship: true }))] : an.boats) {
       p.set(c.x, c.y, c.z).applyMatrix4(M);
       const tx = Math.floor(p.x),
         tz = Math.floor(p.z);

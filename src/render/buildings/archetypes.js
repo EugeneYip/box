@@ -2061,6 +2061,23 @@ function colossus(g, K, style, level = 3) {
   return { base: { x: 0, z: 0, w: 2.8, d: 2.8 } };
 }
 
+// A mastery academy: a colonnaded hall with a dome and a reading court.
+function academy(g, K, style) {
+  const w = 2.6,
+    d = 1.6;
+  g.box(0, 0, 0, w + 0.2, 0.18, d + 0.2, K.stone2, { jit: 0.04 });
+  g.box(0, 0.18, -0.15, w, 1.1, d - 0.4, style === 'dune' ? K.wall : K.wall2, {});
+  for (let i = 0; i < 7; i++) g.cyl(-w / 2 + 0.15 + i * ((w - 0.3) / 6), 0.18, d / 2 - 0.12, 0.07, 1.05, 8, K.stone, {});
+  g.box(0, 1.23, 0.08, w + 0.1, 0.14, d - 0.05, K.stone, {});
+  g.gable(0, 1.37, d / 2 - 0.2, w * 0.5, 0.4, 0.38, K.stone2, {});
+  g.cyl(0, 1.37, -0.2, 0.55, 0.3, 12, K.stone, {});
+  g.dome(0, 1.67, -0.2, 0.58, 14, 5, style === 'frost' ? 0x5c9a86 : style === 'dune' ? 0xd9a830 : K.tile, { ribs: true });
+  g.bead(0, 2.25, -0.2, 0.07, 0xe2b440, { glow: 0.5 });
+  for (const sx of [-1, 1]) windowOn(g, K, sx * 0.8, -0.15, 0.5, d - 0.4, 'F', 0, 0.75, { w: 0.18, h: 0.35, cross: false });
+  for (const sx of [-1, 1]) bannerPole(g, K, sx * (w / 2 + 0.05), 0.18, d / 2, 1.5, { s: 0.8 });
+  return { base: { x: 0, z: 0, w: w + 0.2, d: d + 0.2 } };
+}
+
 // A statue of a hero on a plinth: mastery shows in a realm's streets.
 function statue(g, K, style, variant = 0) {
   const V = variant % 3;
@@ -2107,6 +2124,7 @@ const BUILDERS = {
   wonder: (g, K, s, lv, vr) => wonder(g, K, s, lv, vr),
   colossus: (g, K, s, lv) => colossus(g, K, s, lv),
   statue: (g, K, s, lv, vr) => statue(g, K, s, vr),
+  academy: (g, K, s) => academy(g, K, s),
   observatory: (g, K, s) => observatory(g, K, s),
   aqueduct: (g, K, s) => aqueduct(g, K, s),
   market: (g, K, s) => market(g, K, s),

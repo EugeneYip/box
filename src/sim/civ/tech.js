@@ -198,7 +198,8 @@ export const tech = {
           k.knowledge -= cost;
           k.mastery = (k.mastery || 0) + 1;
           this._history(`📜 ${this._kn(k)} attains Mastery ${k.mastery}`, 'info', this._kingdomPos(k));
-          if (k.mastery % 3 === 0) this._note(`📜 ${this._kn(k)} attains Mastery ${k.mastery}`, 'good', this._kingdomPos(k), 'mastery' + k.id, 1);
+          const unlock = { 2: 'statues of its heroes rise', 3: 'a second great work may begin', 4: 'its halls are gilded', 6: 'scholars found an academy', 8: 'its harbours fill with ships', 10: 'lamps line its grand roads' }[k.mastery];
+          if (unlock || k.mastery % 3 === 0) this._note(`📜 ${this._kn(k)} attains Mastery ${k.mastery}${unlock ? ': ' + unlock : ''}`, 'good', this._kingdomPos(k), 'mastery' + k.id, 1);
           k.researching = null;
         }
         continue;
