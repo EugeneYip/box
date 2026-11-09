@@ -186,7 +186,13 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   vec2 vdir = wp.xz - cameraPosition.xz;
   float al2 = dot(vdir / max(length(vdir), 1e-3), L.xz / max(length(L.xz), 1e-3));
   float pathMask = smoothstep(0.86, 0.99, al2);
-  spec += keyL * pathK * 0.8 * lowSun * lightVis * (1.0 - narrow * 0.7) * (0.1 + 0.9 * pathMask);
+  // mirror condition: the sheen lives only where a gently tilted facet can send
+  // the low sun into the eye (views near the sun's elevation, i.e. toward the
+  // horizon under the sun). Looking steeply down, the sea keeps its blue body.
+  float tiltNeed = acos(clamp(Hs.y, 0.0, 1.0));
+  float mirrorK = 1.0 - smoothstep(0.10, 0.28, tiltNeed);
+  spec *= mix(1.0, 1.0 - smoothstep(0.22, 0.45, tiltNeed), lowSun);
+  spec += keyL * pathK * 0.8 * lowSun * lightVis * (1.0 - narrow * 0.7) * pathMask * mirrorK;
   spec = min(spec, vec3(1.1));
 
   // ---- water body veil (the seabed below is already tinted by the terrain)
