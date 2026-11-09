@@ -276,6 +276,28 @@ function pineTier(b, y0, h, r, segs, pal, rot, o = {}) {
 }
 const _nUp = V(0, 1, 0);
 
+// Apply a matrix (about `pivot`) to builder verts from `start` on.
+function transformRange(b, start, m, pivot) {
+  const p = V(),
+    n = V(),
+    nm = new THREE.Matrix3().getNormalMatrix(m);
+  for (let k = start; k < b.count; k++) {
+    const q = k * 3;
+    p.set(b.pos[q] - pivot.x, b.pos[q + 1] - pivot.y, b.pos[q + 2] - pivot.z).applyMatrix4(m).add(pivot);
+    b.pos[q] = p.x;
+    b.pos[q + 1] = p.y;
+    b.pos[q + 2] = p.z;
+    n.set(b.nrm[q], b.nrm[q + 1], b.nrm[q + 2]).applyMatrix3(nm).normalize();
+    b.nrm[q] = n.x;
+    b.nrm[q + 1] = n.y;
+    b.nrm[q + 2] = n.z;
+    p.set(b.piv[q] - pivot.x, b.piv[q + 1] - pivot.y, b.piv[q + 2] - pivot.z).applyMatrix4(m).add(pivot);
+    b.piv[q] = p.x;
+    b.piv[q + 1] = p.y;
+    b.piv[q + 2] = p.z;
+  }
+}
+
 // Recompute colours of builder verts [start, end) from their stored normals,
 // optionally blending normals toward radial from `center`.
 function recolorRange(b, start, col, center, blend = 0) {
@@ -326,8 +348,15 @@ function buildPine(b, v, lod, snowy = false) {
     const r = cfg.R * (1 - f * 0.78) * (v === 3 && t % 2 ? 0.82 : 1);
     const h = Math.max(r * 1.35, (span / tiers) * 1.7);
     const rot = b.r(0, TAU);
+    const tierStart = b.count;
     pineTier(b, y0, t === tiers - 1 ? h * 1.25 : h, r, segs, pal, rot, { shade: 0.86 + 0.14 * f, lod });
     if (snowy) snowCap(b, y0, t === tiers - 1 ? h * 1.25 : h, r, segs, rot, lod);
+    if (!lod && t < tiers - 1) {
+      // irregular silhouette: tiers lean and drift off the axis a little
+      const off = r * 0.12;
+      const m = M(b.r(-off, off), 0, b.r(-off, off), b.r(-0.12, 0.12), 0, b.r(-0.12, 0.12));
+      transformRange(b, tierStart, m, V(0, y0, 0));
+    }
   }
   return { bendScale: 0.8, height: cfg.H };
 }

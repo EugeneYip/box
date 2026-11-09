@@ -535,7 +535,9 @@ export class Vegetation {
         if (L === 1 && cfg.far2 && cfg.farEarly) L = 2;
         // Distant chunks fold variants together: LOD1 keeps two silhouettes
         // per species, LOD2 is one shared stand-in -> few draw calls.
-        const vv = L === 2 ? 0 : L === 1 ? list.v % 2 : list.v;
+        let vv = L === 2 ? 0 : L === 1 ? list.v % 2 : list.v;
+        // tiny props share two silhouettes even up close (glowcaps keep theirs)
+        if (L === 0 && FOLD_SMALL[list.f] && !(list.f === FLORA.MUSHROOM && list.v === 4)) vv = list.v % 2;
         const lods = model.variants[vv];
         const base = list.f * 8 + vv;
         B.add(base * 4 + L, list, { geo: lods[L], material: this.mat.material, depth: null, castShadow: false, label: FLORA_INFO[list.f].name + (L === 2 ? '' : '-' + vv) + '-L' + L });
@@ -859,6 +861,10 @@ export class Vegetation {
     return { floraInstances: inst, floraDrawn: this.batcher.drawn, canopyFadeMs: +this.occMs.toFixed(3) };
   }
 }
+
+// tiny props whose LOD0 variants fold to two batches
+const FOLD_SMALL = new Uint8Array(32);
+for (const f of [FLORA.FLOWERS, FLORA.ROCK_SMALL, FLORA.REEDS, FLORA.STUMP, FLORA.MUSHROOM, FLORA.BERRY_BUSH]) FOLD_SMALL[f] = 1;
 
 // contact-shadow blob diameter per species (world units)
 const AO_SIZE = new Float32Array(32);
