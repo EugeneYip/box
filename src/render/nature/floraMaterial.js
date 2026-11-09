@@ -218,6 +218,16 @@ varying float vFWSnow;
 varying vec2 vFGlow;
 uniform float uFungiGlow;
 vec3 fGlowPal(float hue) { return hue < 0.25 ? vec3(0.05, 0.85, 0.6) : hue < 0.75 ? vec3(0.55, 0.22, 1.0) : vec3(1.0, 0.55, 0.08); }
+float fVHash(vec3 p) { return fract(sin(dot(p, vec3(12.9898, 78.233, 45.164))) * 43758.5453); }
+float fVNoise(vec3 p) {
+  vec3 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  float a = mix(fVHash(i), fVHash(i + vec3(1.0, 0.0, 0.0)), f.x);
+  float b = mix(fVHash(i + vec3(0.0, 1.0, 0.0)), fVHash(i + vec3(1.0, 1.0, 0.0)), f.x);
+  float c = mix(fVHash(i + vec3(0.0, 0.0, 1.0)), fVHash(i + vec3(1.0, 0.0, 1.0)), f.x);
+  float d = mix(fVHash(i + vec3(0.0, 1.0, 1.0)), fVHash(i + vec3(1.0, 1.0, 1.0)), f.x);
+  return mix(mix(a, b, f.y), mix(c, d, f.y), f.z);
+}
 const float fBayer[16] = float[16](0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
 `;
 
@@ -239,13 +249,14 @@ if (abs(fMat - 9.0) < 0.5) {
   vec3 winter = mix(vec3(0.26, 0.17, 0.09), vec3(0.40, 0.27, 0.13), fCell) * (0.7 + lum);
   diffuseColor.rgb = spring * sw.x + summer * sw.y + autumn * sw.z + winter * sw.w;
   // spring blossom (pink or white) on some trees
-  // blossom gathers on whole canopy facets (soft clusters, not pixel squares),
+  // soft scattered blossom clusters (smooth value noise) within the green,
   // mostly on upward faces, on about a third of the trees
-  vec3 fFN = normalize(cross(dFdx(vFWorld), dFdy(vFWorld)));
-  float bF = fract(sin(dot(floor(fFN * 3.5 + vFIH * 11.0), vec3(12.9898, 78.233, 45.164))) * 43758.5453);
-  float bloom = step(fract(vFIH * 7.13), 0.32) * smoothstep(0.3, 0.8, sw.x) * step(0.55, bF) * smoothstep(-0.3, 0.4, fFN.y);
+  float bn = fVNoise(vFWorld * 11.0 + vFIH * 31.0);
+  float up = smoothstep(-0.4, 0.5, normalize(vFWNormal).y);
+  float bloom = step(fract(vFIH * 7.13), 0.34) * smoothstep(0.3, 0.8, sw.x) * smoothstep(0.6, 0.7, bn) * up;
   vec3 bc = fract(vFIH * 13.7) < 0.8 ? vec3(0.84, 0.3, 0.46) : vec3(0.9, 0.74, 0.78);
-  diffuseColor.rgb = mix(diffuseColor.rgb, bc * (0.86 + 0.18 * bF), bloom * 0.85);
+  bc = mix(bc, vec3(0.95, 0.86, 0.88), smoothstep(0.72, 0.82, bn) * 0.45);
+  diffuseColor.rgb = mix(diffuseColor.rgb, bc, bloom * 0.9);
   // winter thinning
 }
 if (abs(fMat - 8.0) < 0.5) {
