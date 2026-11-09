@@ -7,6 +7,7 @@ import { agesPanel } from './Ages.js';
 import { techPanel } from './TechPanel.js';
 import { eraNames, traitDef } from './depth.js';
 import { WORLD_SIZES } from '../core/params.js';
+import { WORLD_PRESET_IDS } from '../world/worldgen.js';
 
 const SIZE_NOTES = {
   128: 'Quick and intimate. Lightest on phones.',
@@ -152,7 +153,8 @@ export const PRESETS = [
   { id: 'pangaea', name: 'Pangaea', blurb: 'A single vast supercontinent' },
   { id: 'archipelago', name: 'Archipelago', blurb: 'Chains of scattered islands' },
   { id: 'islands', name: 'Islands', blurb: 'A few lonely island realms' },
-];
+  { id: 'earth', name: 'World Map', blurb: 'Our planet, Pacific-centred · best Huge', size: 512 },
+].filter((p) => WORLD_PRESET_IDS.includes(p.id)); // hide presets the generator cannot build yet
 const LAND = {
   continent:
     '<path d="M18 12c6-5 17-6 26-3 8 3 13 2 17 7 4 6 1 12-3 16-5 5-13 4-19 7-7 3-14 1-18-4-5-6-9-15-3-23z"/><path d="M8 38c2-2 5-2 6 0s-1 4-3 4-4-2-3-4zM63 8c2-1 4 0 4 2s-2 3-4 2-1-3 0-4z"/>',
@@ -162,6 +164,9 @@ const LAND = {
     '<path d="M8 33c2-3 6-3 8-1s0 5-3 5-6-1-5-4zM19 25c2-3 6-3 7 0 1 2-1 5-4 4-2 0-4-2-3-4zM29 31c1-2 4-3 6-1 2 1 1 4-1 5-3 1-6-1-5-4zM35 19c2-3 7-3 8 0 1 2-2 5-5 4s-4-2-3-4zM46 25c2-2 5-2 6 0 1 3-2 5-4 5s-3-3-2-5zM52 13c2-3 6-2 7 0 1 3-2 5-4 5s-4-2-3-5zM61 22c2-1 4 0 4 2s-2 3-4 3-2-3 0-5z"/>',
   islands:
     '<path d="M9 15c3-5 10-6 13-2 3 3 1 9-3 10-5 2-12-2-10-8zM42 9c4-3 11-2 13 2s-1 9-6 9-10-6-7-11zM14 34c3-4 9-4 12-1 3 4 0 8-5 8-4 0-9-3-7-7zM46 31c3-3 9-3 12 0 3 4 1 9-4 9-6 1-11-4-8-9z"/>',
+  // Pacific-centred: Asia and Australia on the left, the Americas on the right
+  earth:
+    '<path d="M2 9c4-3 11-3 15 0 2 2 1 5-1 6l-4 3c-2 1-3 4-6 4-3 0-5-3-4-6zM9 24c2-1 4 0 4 2-1 2-3 2-4 1zM10 31c3-2 8-2 10 1 1 2-2 4-5 4-3 0-6-2-5-5zM44 6c5-2 13-1 16 3 2 3-1 6-4 7-2 1-3 3-5 4-2 1-4 0-5-2-2-2-4-4-3-7 0-2 0-4 1-5zM54 25c3 0 5 2 5 5 0 4-2 8-4 11-1 1-3 1-3-1-1-3-2-6-2-9 0-3 2-6 4-6zM66 8c2-1 4 0 4 2-1 3-3 2-4 1z"/>',
 };
 export function presetThumb(id) {
   return `<svg class="ws-thumb" viewBox="0 0 72 48" aria-hidden="true">
@@ -420,6 +425,7 @@ export class Modals {
           onclick: () => {
             state.preset = p.id;
             cards.querySelectorAll('.ws-preset').forEach((x) => x.classList.toggle('is-on', x === c));
+            if (p.size && typeof pickSize === 'function') pickSize(p.size);
           },
         },
         el('span', { class: 'ws-preset__thumb', html: presetThumb(p.id) }),

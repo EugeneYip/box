@@ -26,7 +26,7 @@ import { stageName, isTreeId, isMineral } from '../../sim/flora/species.js';
 // * Ground cover (grass, ferns, pebbles) lives in GroundCover.js.
 export const CHUNK = 32;
 // Distances are from the camera to the nearest point of a chunk.
-const LOD1_DIST = 40; // full detail inside, LOD1 beyond
+const LOD1_DIST = 34; // full detail inside, LOD1 beyond
 const LOD2_DIST = 175; // ultra-cheap shared stand-ins beyond
 const LOD_HYST = 8;
 const SKIP_FAR = 72; // tiny props (mushrooms, stones, reeds, stumps) culled
@@ -464,9 +464,9 @@ export class Vegetation {
       if (t === TILE.DESERT || t === TILE.SAVANNA || t === TILE.SAND) {
         // dry scrub: olive-ochre, varied
         const d = t === TILE.DESERT ? 1 : 0.65;
-        arr[off] *= 1 + 0.42 * d;
-        arr[off + 1] *= 1 + 0.06 * d;
-        arr[off + 2] *= 1 - 0.55 * d;
+        arr[off] *= 1 + 0.62 * d;
+        arr[off + 1] *= 1 - 0.04 * d;
+        arr[off + 2] *= 1 - 0.68 * d;
       }
     }
   }
@@ -569,7 +569,7 @@ export class Vegetation {
     const ps = !!this.game.settings?.powerSaver;
     for (const c of this.chunks) {
       if (!c.state || c.lod > 1) continue;
-      if (!ps && c.ao.n) A.add(0, c.ao, { geo: this.decal.geo, material: this.decal.ao, depth: null, castShadow: false, label: 'contact-ao' });
+      if (!ps && c.ao.n && c.lod === 0) A.add(0, c.ao, { geo: this.decal.geo, material: this.decal.ao, depth: null, castShadow: false, label: 'contact-ao' });
       if (c.glow.n) G.add(0, c.glow, { geo: this.decal.geo, material: this.decal.glow, depth: null, castShadow: false, label: 'fungi-glow' });
     }
     A.end();

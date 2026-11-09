@@ -92,6 +92,20 @@ export class TitleScreen {
     const g = this.game;
     this.presetBtns.forEach((b) => b.classList.toggle('is-on', b.dataset.id === id));
     if (id === g.params.preset) return;
+    const def = PRESETS.find((p) => p.id === id);
+    if (def?.size && g.world.w !== def.size) {
+      // the World Map wants a Huge world: reload with it (keeping the seed)
+      const z = WORLD_SIZES.find((s) => s.size === def.size) || { name: 'Huge', size: def.size };
+      const q = new URLSearchParams(location.search);
+      q.set('preset', id);
+      q.set('seed', g.params.seed);
+      q.set('size', z.size);
+      for (const k of ['cam', 'hour', 'ff', 'title']) q.delete(k);
+      this.ui.veil.querySelector('.ws-veil__label').textContent = 'Shaping the World Map';
+      this.ui.veil.classList.add('is-shown');
+      setTimeout(() => (location.search = q.toString()), 320);
+      return;
+    }
     this.ui.regenerate(g.params.seed, id, g.params.civs, { quiet: true, after: () => (this.seedEl.textContent = String(g.params.seed)) });
   }
 

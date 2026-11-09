@@ -4,6 +4,7 @@ import './hud2.css';
 import './hud3.css';
 import './hud4.css';
 import './hud5.css';
+import './hud6.css';
 import { CATEGORIES, listPowers, getPower } from '../powers/registry.js';
 import { el, safe } from './dom.js';
 import { TopBar, PRESET_NAMES } from './TopBar.js';
@@ -100,6 +101,10 @@ export class UI {
     // input
     addEventListener('keydown', (e) => this.onKeyCapture(e), true);
     addEventListener('keydown', (e) => this.onKey(e));
+    // typing in any field never reaches game hotkeys (Input, power slots, ...)
+    root.addEventListener('keydown', (e) => {
+      if (this.isTyping(e)) e.stopPropagation();
+    });
     // mouse clicks should not leave focus on buttons (Space would re-trigger them)
     root.addEventListener('click', (e) => {
       const b = e.target.closest?.('button');
@@ -200,6 +205,35 @@ export class UI {
   }
   begin() {
     if (this.title?.active) this.title.begin();
+  }
+
+  // A toast with Undo, live for 10 seconds.
+  undoToast(text, undo) {
+    if (!this.undoEl) {
+      this.undoEl = el(
+        'div',
+        { class: 'ws-undo ws-glass', role: 'status' },
+        el('span', { class: 'ws-undo__txt' }),
+        el('button', { class: 'ws-btn ws-btn--sm ws-undo__btn', type: 'button', text: 'Undo' }),
+        el('i', { class: 'ws-undo__bar' }),
+      );
+      this.hud.append(this.undoEl);
+    }
+    const t = this.undoEl;
+    t.querySelector('.ws-undo__txt').textContent = text;
+    const btn = t.querySelector('.ws-undo__btn');
+    btn.onclick = () => {
+      clearTimeout(this._undoT);
+      t.classList.remove('is-shown');
+      safe(() => undo?.(), null, 'undo');
+      this.toast('Undone', 1400);
+    };
+    btn.hidden = !undo;
+    t.classList.remove('is-shown');
+    void t.offsetWidth;
+    t.classList.add('is-shown');
+    clearTimeout(this._undoT);
+    this._undoT = setTimeout(() => t.classList.remove('is-shown'), 10000);
   }
 
   toast(text, ms = 2200) {
@@ -399,7 +433,8 @@ export class UI {
         this.chronicle.toggle(false);
         e.stopPropagation();
       } else if (this.inspector.open) {
-        this.inspector.close();
+        if (this.inspector.editing) this.inspector.stopEdit();
+        else this.inspector.close();
         e.stopPropagation();
       }
       return;

@@ -31,6 +31,10 @@ const PRESETS = {
   islands: { land: 0.33, warp: 0.16, detail: 0.28, mountains: 0.95, shelf: 1.1, lakes: [1, 3], rivers: 0.012, inland: 10, union: 0.8 },
 };
 
+// Preset ids this generator can build; the UI only offers these.
+// (A preset implemented outside PRESETS, such as the World Map, appends its id.)
+export const WORLD_PRESET_IDS = Object.keys(PRESETS);
+
 export function generateWorld(world, seed = 1, options = {}) {
   if (options.preset === 'earth') return generateEarth(world, seed, options, EARTH_HELPERS);
   const presetName = PRESETS[options.preset] ? options.preset : 'continent';

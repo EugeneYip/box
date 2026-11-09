@@ -1007,6 +1007,7 @@ const U = {
   compass: '<circle cx="16" cy="16" r="12"/><path class="ts" d="M16 6.5l3.2 9.5h-6.4z" style="stroke:none"/><path class="s" d="M16 25.5 12.8 16h6.4z" opacity=".55"/>',
   expand: '<path d="M5 12V5h7M27 12V5h-7M5 20v7h7M27 20v7h-7"/>',
   collapse: '<path d="M12 5v7H5M20 5v7h7M12 27v-7H5M20 27v-7h7"/>',
+  edit: '<path class="f" d="M7 21.5 21.5 7l3.5 3.5L10.5 25H7z"/><path d="M7 21.5 21.5 7l3.5 3.5L10.5 25H7zM18.5 10l3.5 3.5M5 28h22"/>',
   star: `<path d="${star(16, 16.6, 12.4, 5.4)}"/>`,
   'star-on': `<path class="s" d="${star(16, 16.6, 12.4, 5.4)}"/>`,
   leaf: '<path class="f" d="M6 26C6 13 13 6 27 5c0 14-7 21-21 21z"/><path d="M6 26C6 13 13 6 27 5c0 14-7 21-21 21zM6 26 19 13"/>',
