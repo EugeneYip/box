@@ -163,6 +163,13 @@ export class Editor {
   build(r) {
     const kind = r.unit ? 'unit' : r.kind === 'kingdom' ? 'kingdom' : 'village';
     const box = el('div', { class: 'ws-edit' });
+    // Escape in any field drops focus (and reverts uncommitted text); a second Escape closes the card
+    box.addEventListener('keydown', (e) => {
+      const t = e.target;
+      if (e.key !== 'Escape' || !t.matches?.('input, select')) return;
+      if (t.dataset.cur != null && t.type === 'text') t.value = t.dataset.cur;
+      t.blur();
+    });
     try {
       if (kind === 'kingdom') this.kingdom(box, r.kingdom);
       else if (kind === 'village') this.village(box, r.village || this.game.civ?.villages?.[r.building?.village]);
@@ -451,12 +458,15 @@ export class Editor {
               disabled: okT ? null : true,
               onclick: () => {
                 const was = has(t.id);
-                const ok = was ? safe(() => U.removeTrait(u, t.id), false) : safe(() => U.addTrait(u, t.id), false);
-                if (ok === false) return;
+                const before = [...(u.traits || [])];
+                // a god's gift ignores the Traits law; opposites replace each other
+                const ok = was ? safe(() => U.removeTrait(u, t.id), false) : safe(() => U.addTrait(u, t.id, { force: true }), false);
+                if (!ok) return;
                 drawTraits();
                 this.applied(was ? `Lost the trait ${t.name}` : `Gained the trait ${t.name}`, () => {
-                  if (was) U.addTrait(u, t.id);
-                  else U.removeTrait(u, t.id);
+                  const now = [...(u.traits || [])];
+                  for (const id of now) if (!before.includes(id)) U.removeTrait(u, id);
+                  for (const id of before) if (!now.includes(id)) U.addTrait(u, id, { force: true, silent: true });
                   drawTraits();
                 });
               },

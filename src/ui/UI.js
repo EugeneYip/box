@@ -420,6 +420,8 @@ export class UI {
       return;
     }
     if (e.code === 'Escape') {
+      // Escape inside an edit field reverts that field (Editor), it does not close the card
+      if (!this.modals.current && this.isTyping(e) && this.inspector.el.contains(e.target)) return;
       if (this.modals.current) {
         this.modals.close();
         e.stopPropagation();
