@@ -97,8 +97,8 @@ export const culture = {
     if (!name) return null;
     const traits = (parent?.traits || BASE_TRAITS[base]).slice();
     const pool = CULTURE_TRAITS.filter((t) => !traits.includes(t));
-    // drift: swap one trait, sometimes gain a third
-    if (traits.length && rng.chance(0.7)) traits[(rng.next() * traits.length) | 0] = pool.splice((rng.next() * pool.length) | 0, 1)[0];
+    // drift: swap one trait (rarely the defining first one), sometimes gain a third
+    if (traits.length && rng.chance(0.7)) traits[traits.length > 1 && rng.chance(0.8) ? 1 + ((rng.next() * (traits.length - 1)) | 0) : 0] = pool.splice((rng.next() * pool.length) | 0, 1)[0];
     if (traits.length < 3 && rng.chance(0.45)) traits.push(pool[(rng.next() * pool.length) | 0]);
     const id = `${base}~${this._cultureSeq++}`;
     const hue = ((BASE_COLOR[base] >> 16) & 255) ^ ((rng.next() * 255) | 0);
@@ -237,7 +237,8 @@ export const culture = {
           break;
         }
       }
-      const i = (rng.next() * c.traits.length) | 0;
+      // the first (defining) trait holds three times in four
+      const i = c.traits.length > 1 && rng.chance(0.75) ? 1 + ((rng.next() * (c.traits.length - 1)) | 0) : (rng.next() * c.traits.length) | 0;
       const old = c.traits[i];
       c.traits[i] = pick;
       c.drifted = now;

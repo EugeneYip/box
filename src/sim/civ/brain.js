@@ -383,7 +383,7 @@ export const brain = {
     const wood = Math.max(4, FLORA_INFO[f].wood || 2) * 2;
     w.setFlora(tx, ty, FLORA.STUMP, 1);
     this._fx('debris', t.cx, t.cz, 0.4);
-    if (this.rng.chance(0.85)) this.regrow.push({ i: t.i, at: this.game.time.total + YEAR * (1.5 + this.rng.next() * 2), flora: f });
+    if (this.rng.chance(0.95)) this.regrow.push({ i: t.i, at: this.game.time.total + YEAR * (1.5 + this.rng.next() * 2), flora: f });
     else this.regrow.push({ i: t.i, at: this.game.time.total + YEAR * 3, flora: FLORA.NONE });
     this._release(t.i, u);
     u.carry = { type: 'wood', amount: Math.min(CARRY_MAX.wood, (u.carry?.amount || 0) + Math.round(wood * (this.game.units.traitMod?.(u, 'work') ?? 1))) };
@@ -522,7 +522,7 @@ export const brain = {
           const se = this.game.time.season ?? 1.5;
           if (se >= 2.7) w.setFlora(tx, ty, FLORA.NONE);
           else w.setFlora(tx, ty, FLORA.WHEAT, 0.05);
-          let y = 5 * (this.game.age?.mods?.fertility ?? 1) * this.techMod(v.kingdom, 'harvest');
+          let y = 5 * (1 + ((this._easedMods?.().fertility ?? this.game.age?.mods?.fertility ?? 1) - 1) * 0.5) * this.techMod(v.kingdom, 'harvest');
           if (v.hasWindmill) y += 2;
           if (this.game.time.total < (this.kingdoms[v.kingdom]?.goldenUntil || 0)) y += 1;
           y *= this.game.units.traitMod?.(u, 'work') ?? 1;

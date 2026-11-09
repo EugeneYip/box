@@ -751,7 +751,7 @@ export class Civilization {
     v.food -= eat;
     // upkeep: firewood for every hearth and timber to keep roofs mended
     const nb = v.buildings.length;
-    v.wood = Math.max(0, v.wood - ((pop * 0.35 + nb * 0.12) / YEAR) * dt);
+    v.wood = Math.max(0, v.wood - ((pop * 0.28 + nb * 0.1) / YEAR) * dt);
     // storage: what does not fit in the stores rots or is carted off
     v.woodCap = 90 + (v.hasWorkshop ? 90 : 0) + (v.hall ? v.hall.level * 40 : 0) + v.tier * 40;
     v.stoneCap = 70 + (v.hasWorkshop ? 80 : 0) + (v.hall ? v.hall.level * 35 : 0) + v.tier * 40;
@@ -793,8 +793,9 @@ export class Civilization {
     // and fallow under the winter snow (the granaries and root cellars feed
     // the village while the farmers thresh and mend)
     const seasonGrow = winter ? 0 : season < 1 ? 1.15 : season >= 2 ? 1.3 : 1;
-    const growRate = (dt / 42) * (golden ? 1.3 : 1) * (rain ? 1.25 : 1) * seasonGrow * (mods.fertility ?? 1) * this.techMod(v.kingdom, 'harvest');
-    if (winter) v.food += (v.jobCount.farmer || 0) * 0.6 * dt * (mods.fertility ?? 1);
+    const fert = 1 + (this._easedMods().fertility - 1) * 0.5;
+    const growRate = (dt / 42) * (golden ? 1.3 : 1) * (rain ? 1.25 : 1) * seasonGrow * fert * this.techMod(v.kingdom, 'harvest');
+    if (winter) v.food += (v.jobCount.farmer || 0) * 0.6 * dt * fert;
     for (const p of v.plots) {
       let dirty = false;
       for (const i of p.tiles) {
@@ -918,12 +919,12 @@ export class Civilization {
         }
       });
       v.trees = mature;
-      const want = 40 + v.tier * 15;
+      const want = 55 + v.tier * 15;
       if (mature + young < want) {
         const species = { vale: [FLORA.OAK, FLORA.BIRCH], dune: [FLORA.PALM, FLORA.ACACIA], frost: [FLORA.PINE, FLORA.PINE], mire: [FLORA.JUNGLE_TREE, FLORA.SWAMP_TREE] }[baseCulture(v.culture)] || [FLORA.OAK];
         if (v.groveAngle == null) v.groveAngle = this.rng.float(0, Math.PI * 2);
         let planted = 0;
-        for (let k = 0; k < 30 && planted < 4; k++) {
+        for (let k = 0; k < 40 && planted < 6; k++) {
           const a = v.groveAngle + this.rng.float(-1.3, 1.3);
           const r = v.buildRadius + 2 + this.rng.next() * 9;
           const x = Math.floor(v.cx + Math.cos(a) * r),
@@ -1035,7 +1036,7 @@ export class Civilization {
             if (!e.armor) needA++;
             else if (old(e.armor)) upA++;
           } else if (u.job && u.job !== 'king' && u.job !== 'child' && !e.tool) needT++;
-          if (!e.trinket && (u.job === 'king' || (u.level || 1) >= 4)) needTr++;
+          if (!e.trinket && this._trinketWorthy(u)) needTr++;
         }
       const stockOf = (slot) => armory.reduce((n, it) => n + (it.slot === slot ? 1 : 0), 0);
       const freshOf = (slot) => armory.reduce((n, it) => n + (it.slot === slot && it.material === topMat ? 1 : 0), 0);
@@ -1070,8 +1071,7 @@ export class Civilization {
         else if (t > 0) slot = 'tool';
         else if (metalOK && Math.min(upW, 10) - freshOf('weapon') > 0) slot = 'weapon';
         else if (metalOK && Math.min(upA, 10) - freshOf('armor') > 0) slot = 'armor';
-        else if (smithy.gold >= 3 && (k.era || 0) >= 1 && needTr - stockOf('trinket') > 0) slot = 'trinket';
-        else if (smithy.gold >= 8 && (k.era >= 2 || this.hasTech(k.id, 'banking')) && stockOf('trinket') < 4) slot = 'trinket';
+        else if (smithy.gold >= 10 && smithy.buildings.some((b) => b.alive && b.type === 'market') && (k.era || 0) >= 1 && Math.min(needTr, 3 + vs.length) - stockOf('trinket') > 0) slot = 'trinket';
         else if (stockOf('weapon') < 3) slot = 'weapon';
         else if (stockOf('armor') < 3) slot = 'armor';
         else break;
@@ -1088,7 +1088,7 @@ export class Civilization {
             mat = 'stone';
           } else if (slot === 'tool' || needW + needA > 0) mat = 'wood';
           else break;
-        } else if (slot === 'trinket') smithy.gold -= 3;
+        } else if (slot === 'trinket') smithy.gold -= 10;
         else if (smithy.stone >= reserve + 3) smithy.stone -= 3;
         else mat = 'wood';
         smithy.wood -= 2;
@@ -1109,7 +1109,7 @@ export class Civilization {
             if (!u.alive || u.age < ADULT_AGE || !armory.length) continue;
             const e = this._gearOf(u);
             const wants = u.job === 'soldier' ? ['weapon', 'armor'] : u.job === 'king' ? ['trinket', 'weapon'] : u.job && u.job !== 'child' ? ['tool'] : [];
-            if ((u.level || 1) >= 4 && u.job !== 'king') wants.push('trinket');
+            if (u.job !== 'king' && this._trinketWorthy(u)) wants.push('trinket');
             for (const slot of wants) {
               const cur = e[slot];
               if (cur && (cur.legendary || bestPow[slot] <= (cur.power || 0) * 1.2)) continue;
@@ -1140,6 +1140,16 @@ export class Civilization {
         soldiers,
       });
     }
+  }
+
+  // Rings and amulets are for the court: the ruler, the heir, the great
+  // veterans and the heroes of the songs.
+  _trinketWorthy(u) {
+    if (u.job === 'king' || u.data?.civ?.royal) return true;
+    const k = this.kingdoms[u.kingdom];
+    if (k && k.heir === u.id) return true;
+    if ((u.level || 1) >= 8) return true;
+    return !!this.game.units.hasTrait?.(u, 'hero');
   }
 
   _gearOf(u) {
@@ -1263,13 +1273,26 @@ export class Civilization {
   }
 
   // Population ceiling of a settlement: its tier, lifted by a fertile age.
-  _popCap(v) {
+  // Age modifiers as felt by the peoples: they drift toward the age's values
+  // over several years, so a new age never snaps the caps shut overnight.
+  _easedMods() {
     const m = this.game.age?.mods || {};
-    return Math.round(TIER_POP[v.tier || 0] * Math.max(1, Math.min(1.35, (m.birth ?? 1) * 0.6 + (m.fertility ?? 1) * 0.4)));
+    const t = this.game.time.total;
+    const e = this._ease || (this._ease = { birth: m.birth ?? 1, fertility: m.fertility ?? 1, t });
+    const dt = Math.max(0, t - e.t);
+    e.t = t;
+    const k = Math.min(1, dt / (YEAR * 6));
+    e.birth += ((m.birth ?? 1) - e.birth) * k;
+    e.fertility += ((m.fertility ?? 1) - e.fertility) * k;
+    return e;
+  }
+  _popCap(v) {
+    const m = this._easedMods();
+    return Math.round(TIER_POP[v.tier || 0] * Math.max(1, Math.min(1.35, m.birth * 0.6 + m.fertility * 0.4)));
   }
   _humanCap() {
-    const b = this.game.age?.mods?.birth ?? 1;
-    return Math.round(this.budget.humans * Math.max(0.85, Math.min(1.25, b)));
+    const b = this._easedMods().birth;
+    return Math.round(this.budget.humans * Math.max(0.9, Math.min(1.25, b)));
   }
 
   _homeFor(v, u) {
