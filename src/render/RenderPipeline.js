@@ -317,14 +317,8 @@ export class RenderPipeline {
       if (p.ao.enabled !== want) p.ao.enabled = want;
     }
     if (p.bloom) {
-      const lv = ps ? 3 : zoom > (this._bloomFar ? 0.56 : 0.62) ? Math.min(4, this.tier.bloomLevels) : this.tier.bloomLevels;
-      this._bloomFar = zoom > 0.59;
-      const mb = p.bloom.mipmapBlurPass;
-      if (mb && mb.levels !== lv && (this._bloomT || 0) <= 0) {
-        mb.levels = lv;
-        this._bloomT = 1.5;
-      }
-      this._bloomT = (this._bloomT || 0) - dt;
+      // (bloom mip levels stay fixed per tier: re-levelling at runtime
+      // rebuilt its materials and recompiled programs on every toggle)
       p.bloom.luminanceMaterial.threshold = P.bloom.threshold;
       p.bloom.luminanceMaterial.smoothing = P.bloom.smoothing;
       p.bloom.intensity = P.bloom.intensity;

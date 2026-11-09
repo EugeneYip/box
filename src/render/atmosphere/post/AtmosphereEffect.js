@@ -109,7 +109,7 @@ void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor)
     water = smoothstep(0.25, -0.35, th);
   }
   hz *= mix(1.0, 0.35, water * down);
-  vec3 hc = mix(hazeColor(dir), mix(uHorizon, uZenith, 0.55), smoothstep(0.08, 0.5, -dir.y));
+  vec3 hc = mix(hazeColor(dir), mix(uHorizon, uZenith, 0.68), smoothstep(0.08, 0.5, -dir.y));
   // Near-horizontal rays (low camera pitch): instead of a flat haze wall the
   // far distance dissolves into a painted sky band: a real gradient (lower
   // rays read higher, bluer sky), the sun's glow, and distant cloud banks.
@@ -120,14 +120,22 @@ void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor)
     vec3 band = skyBase(sd);
     vec2 cp = sd.xz / (ly + 0.06) * 0.9 + uCloudOffset;
     float n = hFbm(cp);
-    float cov = clamp(0.25 + uCover * 0.8, 0.0, 1.0);
+    float cov = clamp(0.32 + uCover * 0.8, 0.0, 1.0);
     float cb = smoothstep(1.02 - cov, 1.25 - cov * 0.6, n) * (1.0 - smoothstep(0.05, 0.3, ly));
     float shade = smoothstep(0.3, 0.9, hFbm(cp * 1.7 + vec2(0.4, 0.2)));
     float sunSide = pow(max(dot(normalize(sd.xz + 1e-4), normalize(uSunDir.xz + 1e-4)) * 0.5 + 0.5, 0.0), 3.0);
-    vec3 cc = mix(uCloudLit * (1.0 + 0.8 * sunSide) + uCloudShade * 0.7, uCloudShade * 0.9, shade * 0.65);
-    band = mix(band, mix(cc, uHorizon, 0.25), cb * 0.85);
+    vec3 litC = uCloudLit * 1.15 + uCloudShade * 0.55;
+    vec3 darkC = uCloudShade * 0.6 + uCloudLit * 0.12;
+    vec3 cc = mix(mix(litC, darkC, sunSide * 0.8), uCloudShade * 0.55, shade * 0.45);
+    cc += uGlow * sunSide * (1.0 - smoothstep(0.0, 0.6, cb)) * 1.2;
+    band = mix(band, cc, cb * 0.9);
+    // over open water the far sea stays a darker, sky-reflecting band, so a
+    // clear horizon line separates sea from sky
+    vec3 seaRefl = skyBase(normalize(vec3(sd.x, 0.05 + ly * 0.8, sd.z))) * 0.58;
+    seaRefl += uHalo * pow(max(dot(normalize(vec3(sd.x, 0.0, sd.z)), normalize(vec3(uSunDir.x, 0.0, uSunDir.z))), 0.0), 40.0) * 0.5;
+    band = mix(band, seaRefl, water);
     hc = mix(hc, band, horiz);
-    hz = min(hz, 0.95);
+    hz = min(hz, mix(0.95, 0.8, water));
   }
   col = mix(col, hc, hz);
 
