@@ -445,8 +445,8 @@ Mat matCliff(NS s, out vec3 facetN) {
   vec3 tA = normalize(cross(n, vec3(0.0, 1.0, 0.0)) + vec3(1e-4, 0.0, 0.0));
   vec3 tB = normalize(cross(tA, n));
   float near = 1.0 - smoothstep(0.25, 0.9, s.fw);
-  vec3 base = normalize(mix(n, s.fn, 0.45 * near));
-  facetN = normalize(base + (tA * (ft.x - 0.5) * 0.55 + tB * (ft.y - 0.5) * 0.40) * near);
+  vec3 base = normalize(mix(n, s.fn, 0.25 * near));
+  facetN = normalize(base + (tA * (ft.x - 0.5) * 0.32 + tB * (ft.y - 0.5) * 0.24) * near);
   c *= mix(1.0, 0.93 + 0.14 * ft.x, near);
   return mk(c, 0.82, 0.55 + 0.25 * lr + 0.2 * t.g, 0.05);
 }
