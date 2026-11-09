@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { drawBanner, bannerDataURL } from './emblems.js';
 
 // Floating map labels: kingdom names over capitals (mid and far zoom), village
 // names (mid zoom), and crossed-swords markers over active battles. Canvas
@@ -19,7 +20,7 @@ function smooth(a, b, x) {
   return t * t * (3 - 2 * t);
 }
 
-function makeLabel(text, color, kind) {
+function makeLabel(text, color, kind, banner = null) {
   const big = kind === 'kingdom';
   const px = big ? 46 : 30;
   const c = document.createElement('canvas');
@@ -28,13 +29,14 @@ function makeLabel(text, color, kind) {
   const tw = Math.ceil(ctx.measureText(text).width);
   const padX = big ? 34 : 18,
     padY = big ? 16 : 10;
-  c.width = tw + padX * 2 + (big ? 30 : 0);
+  const bw = big && banner ? 40 : 0; // the realm's banner before its name
+  c.width = tw + padX * 2 + (big ? 30 : 0) + bw;
   c.height = px + padY * 2 + (big ? 10 : 0);
   const x = c.getContext('2d');
   x.font = `${big ? 800 : 600} ${px}px ${FONT}`;
   x.textAlign = 'center';
   x.textBaseline = 'middle';
-  const cx = c.width / 2,
+  const cx = c.width / 2 + bw / 2,
     cy = c.height / 2 - (big ? 3 : 0);
   if (big) {
     // a heraldic ribbon behind the name
@@ -52,6 +54,7 @@ function makeLabel(text, color, kind) {
     x.fillStyle = hexCss(color);
     x.fillRect(26, cy + h / 2 - 5, c.width - 52, 5);
     x.fillRect(26, cy - h / 2, c.width - 52, 3);
+    if (bw) drawBanner(x, banner, color, 26, cy - h * 0.62, 34, h * 1.24);
   }
   x.lineJoin = 'round';
   x.lineWidth = big ? 7 : 6;
@@ -74,6 +77,7 @@ function makeLabel(text, color, kind) {
   sp.userData.aspect = c.width / c.height;
   sp.userData.text = text;
   sp.userData.color = color;
+  sp.userData.banner = banner ? banner.symbol + '|' + banner.field : '';
   return sp;
 }
 
@@ -131,6 +135,8 @@ export class Labels {
     this.swordTex = swordsTexture();
     this._t = 0;
     this._fontReady = false;
+    // player edits (names, colours, banners) show at once
+    game.events?.on?.('edit', () => (this._syncT = 0));
     try {
       document.fonts?.load?.(`800 46px Cinzel`).then(() => {
         this._fontReady = true;
@@ -153,19 +159,26 @@ export class Labels {
 
   _sync() {
     const civ = this.game.civ;
+    // the inspector and editor draw banners through the civ
+    if (civ && !civ.bannerImage)
+      civ.bannerImage = (kid, size = 64) => {
+        const k = civ.kingdoms[kid];
+        return k ? bannerDataURL(k.banner, k.color, size) : '';
+      };
     const seenK = new Set(),
       seenV = new Set();
     for (const k of civ.kingdoms) {
       if (!k.alive || !k.villages.length) continue;
       seenK.add(k.id);
       let s = this.kLabels.get(k.id);
-      if (s && (s.userData.text !== k.name || s.userData.color !== k.color)) {
+      const bkey = k.banner ? k.banner.symbol + '|' + k.banner.field : '';
+      if (s && (s.userData.text !== k.name || s.userData.color !== k.color || s.userData.banner !== bkey)) {
         this.group.remove(s);
         s.material.map.dispose();
         s = null;
       }
       if (!s) {
-        s = makeLabel(k.name, k.color, 'kingdom');
+        s = makeLabel(k.name, k.color, 'kingdom', k.banner);
         this.kLabels.set(k.id, s);
         this.group.add(s);
       }

@@ -42,6 +42,7 @@ export const politics = {
       lastWar: -999,
     };
     this._initTech(k);
+    k.banner = this._defaultBanner ? this._defaultBanner(k, opts.x, opts.z) : null;
     k.inventory = { food: 0, wood: 0, stone: 0, ore: 0, gold: 0, tools: 0, weapons: 0, armor: 0 };
     // a breakaway realm inherits what its parent knew
     const par = this.kingdoms[opts.parent];
@@ -97,7 +98,9 @@ export const politics = {
           vB = this.villages[B.capital];
         const close = (r?.border || 0) > 0 || r?.war || (vA && vB && Math.hypot(vA.cx - vB.cx, vA.cz - vB.cz) < 70);
         if (!close) continue;
-        const Y = A.founded > B.founded ? A : B;
+        let Y = A.founded > B.founded ? A : B;
+        if (Y.player?.color) Y = Y === A ? B : A;
+        if (Y.player?.color) continue;
         if (now - (Y.recolored ?? -1e9) < YEAR * 15) continue;
         const cap = this.villages[Y.capital];
         const h = this._pickTincture(Y.culture, cap?.cx, cap?.cz, Y.id);
@@ -211,7 +214,7 @@ export const politics = {
       this.crown(k, heir);
       this._note(`${deadName} dies; ${heir.name} rules ${this._kn(k)}`, 'info', { x: heir.x, z: heir.z }, 'succ' + k.id, 20);
       // a contested succession can split a large realm
-      if (k.villages.length >= 3 && this.law('civRebellions') && this.rng.chance(0.3)) {
+      if (k.villages.length >= 3 && this._kLaw(k.id, 'civRebellions') && this.rng.chance(0.3)) {
         let claimant = null;
         for (const vid of k.villages) {
           const v = this.villages[vid];
@@ -319,6 +322,7 @@ export const politics = {
         r.opinion += (target - r.opinion) * 0.12;
         r.opinion = clamp(r.opinion, -100, 100);
         r.grievance = Math.max(0, r.grievance - 0.25);
+        if (this._relLocked?.(r)) continue;
 
         if (r.war) {
           this._considerPeace(A, B, r, now);
@@ -345,7 +349,7 @@ export const politics = {
           if (this.warCount(att.id) >= 2) continue;
           const ratio = att.strength / Math.max(1, def.strength);
           const crowd = this._crowd?.() || 0;
-          const wl = this.law('diploWarlike', 1);
+          const wl = this._kLaw(att.id, 'diploWarlike', 1);
           if (wl <= 0) continue;
           // the law and the age of the world both set how readily crowns go to war
           const wa = wl * (g.age?.mods?.warlike ?? 1);
@@ -426,6 +430,7 @@ export const politics = {
         if (!k.alive || k.id === a || k.id === b) continue;
         const joined = this.enemiesOf(a).length - 1;
         if (joined >= 3 || (B.population || 0) > (A.population || 0) * 2) break;
+        if (this._relLocked?.(this.relations.get(relKey(k.id, a)))) continue;
         if (this.allied(k.id, b) && !this.allied(k.id, a) && this.warCount(k.id) < 2 && this.rng.chance(0.7)) {
           const rr = this.rel(k.id, a);
           if (!rr.war) {
@@ -728,7 +733,7 @@ export const politics = {
       v.razed = true;
       for (const u of [...v.members]) if (u.job !== 'soldier') this._makeRefugee(u, old);
     } else {
-      this.transferVillage(v, K.id, 'conquest');
+      this._transferVillage(v, K.id, 'conquest');
       // garrison
       let n = 0;
       for (const u of [...a.units]) {
@@ -761,7 +766,7 @@ export const politics = {
   },
 
   // Change a village's allegiance (conquest, rebellion, gift).
-  transferVillage(v, kid, cause = 'conquest') {
+  _transferVillage(v, kid, cause = 'conquest') {
     const old = this.kingdoms[v.kingdom];
     const K = this.kingdoms[kid];
     if (!K) return;
@@ -855,7 +860,7 @@ export const politics = {
     v.loyalty = clamp(v.loyalty + (L - v.loyalty) * 0.2, 0, 100);
     if (v.loyalty < 32 && v.pop >= 8) v.unrest = (v.unrest || 0) + 1;
     else v.unrest = Math.max(0, (v.unrest || 0) - 1);
-    if (v.unrest >= 3 && this.law('civRebellions') && this.rng.chance(alive < 3 ? 0.3 : 0.14)) this.rebel(v);
+    if (v.unrest >= 3 && this._kLaw(k.id, 'civRebellions') && this.rng.chance(alive < 3 ? 0.3 : 0.14)) this.rebel(v);
   },
 
   _aliveKingdoms() {
@@ -873,7 +878,7 @@ export const politics = {
     if (now - (this._lastSecession || -999) < YEAR * (alive < 3 ? 3 : 8)) return;
     let bestK = null;
     for (const k of this.kingdoms) if (k.alive && k.villages.length >= 4 && (!bestK || k.villages.length > bestK.villages.length)) bestK = k;
-    if (!bestK) return;
+    if (!bestK || !this._kLaw(bestK.id, 'civRebellions')) return;
     const p = (alive < 3 ? 0.35 : 0.08) + (this._crowd?.() || 0) * 0.15 + (bestK.villages.length - 4) * 0.05;
     if (!this.rng.chance(p)) return;
     const cap = this.villages[bestK.capital];
@@ -926,7 +931,7 @@ export const politics = {
     v.rebellions = (v.rebellions || 0) + 1;
     const K = this.createKingdom(v.culture, { baseName: v.name, parent: old.id, x: v.cx, z: v.cz });
     const oldName = old.base || old.name;
-    this.transferVillage(v, K.id, 'rebellion');
+    this._transferVillage(v, K.id, 'rebellion');
     K.capital = v.id;
     v.unrest = 0;
     // pick a leader
@@ -939,7 +944,7 @@ export const politics = {
       const o = this.villages[vid];
       if (!o?.alive || o.id === old.capital) continue;
       if (Math.hypot(o.cx - v.cx, o.cz - v.cz) < 34 && o.loyalty < 40 && this.rng.chance(0.6)) {
-        this.transferVillage(o, K.id, 'rebellion');
+        this._transferVillage(o, K.id, 'rebellion');
         this._note(`${o.name} joins the rebels`, 'war', { x: o.cx, z: o.cz }, 'joinreb' + K.id, 60);
       }
     }

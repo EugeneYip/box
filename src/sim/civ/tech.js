@@ -142,11 +142,12 @@ export const tech = {
 
   // Called every 2 s.
   _researchTick(dt) {
-    if (!this.law('civTechnology')) return;
+    if (!this.law('civTechnology') && !this.kingdoms.some((k) => k.policy?.technology)) return;
     const g = this.game;
     const speed = this.law('civTechSpeed', 1) * (g.age?.mods?.techRate ?? 1);
     for (const k of this.kingdoms) {
       if (!k.alive || !k.villages.length) continue;
+      if (!this._kLaw(k.id, 'civTechnology')) continue;
       if (!k.techs) this._initTech(k);
       let pop = 0,
         temples = 0,

@@ -5,6 +5,7 @@ import { USE, YEAR, ADULT_AGE, ROT, ROT_DIR, SPIRAL, spiralCount, clamp } from '
 import { planner } from './planner.js';
 import { brain } from './brain.js';
 import { politics, relKey } from './politics.js';
+import { editing } from './editing.js';
 import { tech, ERAS, TECHS, techById } from './tech.js';
 import { culture, TRAIT_INFO } from './culture.js';
 
@@ -433,7 +434,7 @@ export class Civilization {
   // ------------------------------------------------------------------ expansion
   _tryExpand(v) {
     const now = this.game.time.total;
-    if (!this.law('civExpansion')) return false;
+    if (!this._kLaw(v.kingdom, 'civExpansion')) return false;
     if (v.pop < (this._crowd() < 0.3 ? 18 : 24) || v.food < 50 || v.starving) return false;
     const crowd = this._crowd();
     if (now - v.lastExpand < YEAR * (5 + crowd * 10)) return false;
@@ -794,7 +795,7 @@ export class Civilization {
     const humans = g.units.count?.('human') ?? 0;
     const crowd = this._crowd();
     const popCrowd = this._popCrowd || 0;
-    if (pop < v.housing && pop < this._popCap(v) && v.food > pop * 1.2 + 8 && !v.starving && humans < this._humanCap() && this.rng.chance(Math.min(1, (1 - popCrowd * 0.85) * this.law('civGrowth', 1)))) {
+    if (pop < v.housing && pop < this._popCap(v) && v.food > pop * 1.2 + 8 && !v.starving && humans < this._humanCap() && this.rng.chance(Math.min(1, (1 - popCrowd * 0.85) * this._kLaw(v.kingdom, 'civGrowth', 1) * (v.policy?.growth ?? 1)))) {
       let father = false;
       for (const u of v.members) if (u.sex === 'm' && u.age >= 18 && u.age < 60) father = true;
       if (father) {
@@ -802,7 +803,7 @@ export class Civilization {
           if (u.sex !== 'f' || u.age < 18 || u.age > 45) continue;
           const d = u.data.civ;
           if (now - (d.lastBirth ?? -999) < YEAR * 2.5) continue;
-          if (!this.rng.chance(0.022 * dt * (golden ? 1.8 : 1) * this.law('civGrowth', 1) * (mods.birth ?? 1) * this.techMod(v.kingdom, 'birth'))) continue;
+          if (!this.rng.chance(0.022 * dt * (golden ? 1.8 : 1) * this._kLaw(v.kingdom, 'civGrowth', 1) * (v.policy?.growth ?? 1) * (mods.birth ?? 1) * this.techMod(v.kingdom, 'birth'))) continue;
           d.lastBirth = now;
           if (!d.spouse) {
             let mate = null;
@@ -833,7 +834,7 @@ export class Civilization {
     // newcomers drawn to prosperous settlements
     // (a camp short of hands or of a partner calls kin in sooner)
     const small = pop < 10;
-    if ((v.housing - pop >= 3 || (small && v.housing - pop >= 1)) && v.food > pop * 2 + (small ? 6 : 20) && pop < 40 && now - v.lastImmigrant > (small ? 7 : 18) && humans < this._humanCap() * (small ? 0.95 : 0.8) && this.rng.chance((small ? 0.08 : 0.035) * dt * (1 - popCrowd * (small ? 0.5 : 1)) * this.law('civGrowth', 1))) {
+    if ((v.housing - pop >= 3 || (small && v.housing - pop >= 1)) && v.food > pop * 2 + (small ? 6 : 20) && pop < 40 && now - v.lastImmigrant > (small ? 7 : 18) && humans < this._humanCap() * (small ? 0.95 : 0.8) && this.rng.chance((small ? 0.08 : 0.035) * dt * (1 - popCrowd * (small ? 0.5 : 1)) * this._kLaw(v.kingdom, 'civGrowth', 1) * (v.policy?.growth ?? 1))) {
       v.lastImmigrant = now;
       const a = this.rng.float(0, Math.PI * 2);
       const r = v.radius + 3;
@@ -1422,6 +1423,7 @@ export class Civilization {
       }
       return;
     }
+    if (v.policy?.buildings === false) return; // the gods forbid new building here
     let sites = 0;
     for (const b of v.buildings) if (b.alive && (b.constructing || b.upgrading) && !BUILDING_TYPES[b.type].wall) sites++;
     const maxSites = 1 + Math.floor(v.adults / 7);
@@ -1547,9 +1549,10 @@ export class Civilization {
       if (t) upgrade(t);
     }
     // only royal capitals raise curtain walls (each section is a building)
-    const canWall = this.law('civWalls') && (this.hasTech(v.kingdom, 'fortification') || (this.kingdoms[v.kingdom]?.era ?? 0) >= 2 || this.law('civTechnology') === false);
+    const wallPol = v.policy?.walls;
+    const canWall = wallPol === false ? false : wallPol === true ? true : this.law('civWalls') && (this.hasTech(v.kingdom, 'fortification') || (this.kingdoms[v.kingdom]?.era ?? 0) >= 2 || this.law('civTechnology') === false);
     const isCap = this.kingdoms[v.kingdom]?.capital === v.id;
-    if (canWall && !v.wallsPlanned && v.stone >= 50 && ((isCap && v.tier >= 1) || (v.tier >= 2 && (this.hasCultureTrait(v.culture, 'Masons') || crowded < 0.7)))) {
+    if (canWall && !v.wallsPlanned && v.stone >= 50 && (wallPol === true || (isCap && v.tier >= 1) || (v.tier >= 2 && (this.hasCultureTrait(v.culture, 'Masons') || crowded < 0.7)))) {
       // walls draw on a world budget: a ring per city, never a maze of them
       let walls = 0;
       for (const b of this.buildings) if (b.alive && BUILDING_TYPES[b.type].wall) walls++;
@@ -1558,7 +1561,7 @@ export class Civilization {
       if (cap >= 28) this._planWalls(v, cap);
       else v.wallsPlanned = true; // no room: the town relies on its towers
     }
-    if (v.wallsPlanned && v.wallPlan?.length && this.law('civWalls')) this._advanceWalls(v, 3);
+    if (v.wallsPlanned && v.wallPlan?.length && (wallPol ?? this.law('civWalls'))) this._advanceWalls(v, 3);
     if (room() && v.tier >= 1) {
       const cand = v.buildings.find((b) => b.alive && b.type === 'house' && !b.constructing && !b.upgrading && b.level < Math.min(3, v.tier + 1));
       if (cand && v.wood > 40) upgrade(cand);
@@ -2260,7 +2263,10 @@ export class Civilization {
       title: k.name,
       subtitle: `${this.cultureName(k.culture)} realm · banner of ${k.colorName}`,
       color: k.color,
+      banner: k.banner ? { ...k.banner } : null,
+      motto: k.motto || '',
       stats: [
+        ...(k.motto ? [['Motto', `“${k.motto}”`]] : []),
         ['Ruler', this.rulerLabel(k)],
         ['Capital', cap ? cap.name : '—'],
         ['Villages', k.villages.length],
@@ -2307,5 +2313,5 @@ export class Civilization {
   }
 }
 
-Object.assign(Civilization.prototype, planner, brain, politics, tech, culture);
+Object.assign(Civilization.prototype, planner, brain, politics, tech, culture, editing);
 export { ERAS, TECHS, techById, TRAIT_INFO };

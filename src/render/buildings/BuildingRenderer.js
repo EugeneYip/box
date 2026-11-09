@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { buildArchetype, foundation, scaffold, ruin, wallPost, wallArm, lampPost, frameFor, materialPile, proxyGeometry, PAL, WALL_H } from './archetypes.js';
 import { Labels } from './labels.js';
 import { createBuildingMaterial, createPropMaterial } from './material.js';
+import { emblemAtlas, EMBLEM_IDS, FIELD_IDS } from './emblems.js';
 import { bannerGeometry, bannerMaterial, bladesGeometry, boatGeometry, FENCE, scarecrowGeometry, glowTexture, PuffSystem } from './props.js';
 import { TerritoryOverlay } from './TerritoryOverlay.js';
 import { BUILDING_TYPES } from '../../sim/civ/catalog.js';
@@ -74,7 +75,7 @@ export class BuildingRenderer {
     this.group = new THREE.Group();
     this.group.name = 'civ-buildings';
     game.scene.add(this.group);
-    this.uniforms = { uTime: { value: 0 }, uNight: { value: 0 }, uWind: { value: 0.35 } };
+    this.uniforms = { uTime: { value: 0 }, uNight: { value: 0 }, uWind: { value: 0.35 }, uEmblems: { value: emblemAtlas() } };
     this.mat = createBuildingMaterial(this.uniforms);
     this.matClip = createBuildingMaterial(this.uniforms, { clip: true });
     this.propMat = createPropMaterial();
@@ -356,7 +357,7 @@ export class BuildingRenderer {
         z = h.z - Math.sin(r) * side + Math.cos(r) * 1.2;
       const gy = world.heightAt(x, z);
       this.staffs.push([x, gy, z, 3.2]);
-      this.banners.push({ x: x + 0.03, y: gy + 3.15, z, s: 2.4, style: h.style, color: civ.kingdomColor(k.id) });
+      this.banners.push({ x: x + 0.03, y: gy + 3.15, z, s: 2.4, style: h.style, color: civ.kingdomColor(k.id), k: k.id });
     }
     // lampposts along town streets
     for (const v of civ.villages) {
@@ -497,7 +498,7 @@ export class BuildingRenderer {
     }
     for (const c of an.banners) {
       p.set(c.x, c.y, c.z).applyMatrix4(M);
-      this.banners.push({ x: p.x, y: p.y, z: p.z, s: c.s || 1, style: b.style, color: col.getHex() });
+      this.banners.push({ x: p.x, y: p.y, z: p.z, s: c.s || 1, style: b.style, color: col.getHex(), k: b.kingdom });
     }
     for (const c of an.blades) {
       const bm = new THREE.Matrix4().copy(M).multiply(new THREE.Matrix4().makeTranslation(c.x, c.y, c.z));
@@ -713,7 +714,7 @@ export class BuildingRenderer {
       const st = CULTURES[baseCulture(civ.kingdoms[a.kingdom]?.culture)]?.style || 'vale';
       let L = per.get(st);
       if (!L) per.set(st, (L = []));
-      L.push({ x: x + 0.02, y: y + 1.8, z, s: 1.7, style: st, color: civ.kingdomColor(a.kingdom) });
+      L.push({ x: x + 0.02, y: y + 1.8, z, s: 1.7, style: st, color: civ.kingdomColor(a.kingdom), k: a.kingdom });
     }
     const sm = this._grow(this.staffMap, 's', staffs.length);
     for (let i = 0; i < staffs.length; i++) {
@@ -727,8 +728,19 @@ export class BuildingRenderer {
       const L = per.get(st) || [];
       const mesh = this._grow(this.bannerMeshes, st, L.length);
       if (mesh !== mesh0 && !mesh.instanceColor) mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(mesh.instanceMatrix.count * 3), 3);
+      // the realm's emblem and field pattern ride on each flag
+      let ea = mesh.geometry.getAttribute('aEmblem');
+      if (!ea || ea.count < mesh.instanceMatrix.count) {
+        ea = new THREE.InstancedBufferAttribute(new Float32Array(mesh.instanceMatrix.count * 2).fill(-1), 2);
+        ea.setUsage(THREE.DynamicDrawUsage);
+        mesh.geometry.setAttribute('aEmblem', ea);
+      }
       for (let i = 0; i < L.length; i++) {
         const b = L[i];
+        const kb = b.k != null ? civ.kingdoms[b.k] : null;
+        const ban = kb?.banner;
+        ea.setXY(i, ban ? EMBLEM_IDS.indexOf(ban.symbol) : -1, ban ? Math.max(0, FIELD_IDS.indexOf(ban.field)) : 0);
+        if (kb) b.color = kb.color;
         const wob = Math.sin(this.t * 0.7 + b.x * 0.3) * 0.25 * (1 - Math.min(1, wind.strength || 0.3));
         this._q.setFromAxisAngle(this._up, yaw + wob);
         this._m.compose(this._p.set(b.x, b.y, b.z), this._q, this._s.set(b.s, b.s, b.s));
@@ -737,6 +749,7 @@ export class BuildingRenderer {
       }
       mesh.count = L.length;
       mesh.instanceMatrix.needsUpdate = true;
+      ea.needsUpdate = true;
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     }
   }
