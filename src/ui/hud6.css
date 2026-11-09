@@ -240,6 +240,9 @@
 .ws-insp__badge.has-banner {
   background: radial-gradient(circle at 50% 40%, rgba(255, 240, 210, 0.08), transparent 70%);
 }
+.ws-insp__badge.has-banner .ws-insp__glyph {
+  display: none;
+}
 .ws-insp__badge.has-banner .ws-insp__portrait {
   object-fit: contain;
   padding: 4px 8px;

@@ -800,6 +800,8 @@ export class Inspector {
   }
   // after a rename: update the header without touching the edit card
   patchTitle(text) {
+    // a village edited from one of its buildings keeps the building's title
+    if (kindOf(this.track) === 'building') return;
     const h = this.el.querySelector('.ws-insp__title');
     if (h && h.firstChild) h.firstChild.textContent = text;
     this.pin.querySelector('.ws-pin__label').textContent = text;

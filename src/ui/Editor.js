@@ -332,7 +332,7 @@ export class Editor {
       }
       return ok;
     });
-    box.append(this.section('Name', nameIn, fn(civ, 'renameVillage') ? null : this.missing()));
+    box.append(this.section(this.insp.track?.building ? 'Village name' : 'Name', nameIn, fn(civ, 'renameVillage') ? null : this.missing()));
     const okT = fn(civ, 'transferVillage');
     const realmOpts = () => {
       const own = civ.kingdoms?.[v.kingdom];
@@ -345,7 +345,8 @@ export class Editor {
       if (!safe(() => civ.transferVillage(id, to), false)) return false;
       allegiance.refill(realmOpts(), v.kingdom);
       this.applied(to == null ? `${v.name} is freed: ${civ.kingdomName?.(v.kingdom) || 'a new realm'}` : `${v.name} joins ${civ.kingdomName?.(to) || 'the realm'}`, () => {
-        safe(() => civ.transferVillage(id, prev), false, 'undo transfer');
+        // the old realm may have fallen with its last village: then it rises again as a free realm
+        if (!safe(() => civ.transferVillage(id, prev), false, 'undo transfer') && civ.kingdoms?.[prev]?.alive === false) safe(() => civ.transferVillage(id, null), false, 'undo transfer');
         allegiance.refill(realmOpts(), v.kingdom);
       });
       return true;
