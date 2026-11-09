@@ -225,7 +225,7 @@ export class FireVisuals {
     const R2 = R * R;
     const lod = THREE.MathUtils.clamp(dist / 48, 1, 3.4);
     const fx = this.fx;
-    const budget = fx.budget;
+    const budget = fx.fireBudget ?? fx.budget;
     const rateK = budget / (lod * lod);
     const cells = this._cells;
     cells.clear();
@@ -351,7 +351,8 @@ export class FireVisuals {
       const cxm = c.x / c.n,
         czm = c.z / c.n;
       const avg = c.f / c.n;
-      const rate = (0.6 + Math.sqrt(c.n) * 0.6) * avg * dt * budget / Math.sqrt(lod);
+      // the smoke columns keep a floor: they are what reads from far away
+      const rate = (0.6 + Math.sqrt(c.n) * 0.6) * avg * dt * Math.max(budget, 0.45) / Math.sqrt(lod);
 
       if (rnd() < rate) {
         const spread = 1.2 + Math.sqrt(c.n) * 0.35;
