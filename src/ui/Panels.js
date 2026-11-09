@@ -36,6 +36,114 @@ const LAW_ICON = {
   sky: 'sun',
   calamity: 'disaster',
 };
+// a per-law icon from its key / label
+const LAW_KEY_ICON = [
+  [/rebel|unrest|secession|breakaway/, 'rebellion'],
+  [/war|army|armies|soldier|conquest/, 'declare-war'],
+  [/peace|diplomacy|allian|treaty/, 'make-peace'],
+  [/migrat|wander/, 'migrate'],
+  [/loyal|harmony/, 'alliance'],
+  [/tech|research|knowledge|learn/, 'chronicle'],
+  [/expansion|settler|colon/, 'found-village'],
+  [/growth|birth|fertil/, 'fertility'],
+  [/build|construct/, 'build'],
+  [/trade|gold|market|tax/, 'gold'],
+  [/hunger|famine|food/, 'plant-wheat'],
+  [/aging|old age|lifespan/, 'time-skip'],
+  [/trait|inherit|mutation/, 'sparkle'],
+  [/equip|item|forge|smith/, 'sword'],
+  [/experience|xp|level|hero|fame/, 'crown'],
+  [/predator|wolf|hunt/, 'spawn-wolf'],
+  [/monster|beast|wyrm|golem/, 'spawn-dragon'],
+  [/wildlife|animal|herd|breed/, 'spawn-deer'],
+  [/fish|sea life/, 'spawn-fish'],
+  [/bird/, 'spawn-bird'],
+  [/fung|mushroom/, 'plant-mushroom'],
+  [/tree|forest|wood/, 'plant-tree'],
+  [/flower|grass|plant|crop|bush|meadow/, 'plant-flowers'],
+  [/frost|snow|ice|freeze|cold/, 'weather-snow'],
+  [/desert|dry|drought|sand/, 'paint-desert'],
+  [/swamp|marsh|wet/, 'paint-swamp'],
+  [/lightning/, 'lightning'],
+  [/lava|volcan|erupt/, 'lava'],
+  [/plague|contag|sick|disease/, 'plague'],
+  [/fire|burn|flame/, 'fire'],
+  [/quake|calamit|disaster|meteor|tornado/, 'earthquake'],
+  [/season/, 'clear-flora'],
+  [/day|night|sun|time/, 'day'],
+  [/weather|rain|storm|cloud/, 'weather-rain'],
+  [/age/, 'eclipse'],
+  [/chronicle|event|minor|notice/, 'chronicle'],
+  [/biome|land|soil|terrain|erosion/, 'paint-grass'],
+];
+// explicit icons: distinct within every category
+const LAW_ICON_BY_KEY = {
+  civRebellions: 'rebellion',
+  harmonySecession: 'banner',
+  harmonyMigration: 'migrate',
+  harmonyUnrest: 'bad',
+  harmonyLoyalty: 'crown',
+  civWars: 'declare-war',
+  civDiplomacy: 'alliance',
+  diploPeace: 'make-peace',
+  diploCultureFriction: 'trade',
+  diploWarlike: 'sword',
+  civExpansion: 'found-village',
+  civNewKingdoms: 'found-kingdom',
+  civGrowth: 'fertility',
+  civTechnology: 'chronicle',
+  civTechSpeed: 'time-skip',
+  civRoads: 'road',
+  civWalls: 'shield',
+  lifeHunger: 'plant-wheat',
+  lifeAging: 'time-skip',
+  lifeLifespan: 'heal',
+  lifeTraits: 'sparkle',
+  lifeInheritance: 'spawn-human',
+  lifeExperience: 'crown',
+  lifeEquipment: 'sword',
+  lifePredators: 'spawn-wolf',
+  beastsHuntPeople: 'spawn-bear',
+  beastsMonsters: 'spawn-dragon',
+  beastsFerocity: 'war',
+  lifeWildlife: 'spawn-deer',
+  spawnWanderers: 'migrate',
+  spawnAmbient: 'spawn-fish',
+  spawnRate: 'bloom',
+  treesSpread: 'plant-forest',
+  treesGrowSpeed: 'grow',
+  treesDensity: 'plant-pine',
+  natureGrowth: 'plant-grass',
+  plantsSpread: 'plant-flowers',
+  plantsCrops: 'plant-wheat',
+  fungiSpread: 'plant-mushroom',
+  fungiGlow: 'sparkle',
+  natureRegrowth: 'bloom',
+  biomeShift: 'paint-grass',
+  biomeFrost: 'paint-snow',
+  skyDayNight: 'night',
+  skyDaySpeed: 'day',
+  weatherSeasons: 'clear-flora',
+  weatherSeasonLength: 'time-skip',
+  skyWeather: 'weather-rain',
+  weatherStorms: 'weather-storm',
+  calamityNatural: 'earthquake',
+  calamityFrequency: 'meteor-shower',
+  calamityPlague: 'plague',
+  calamityLightning: 'lightning',
+  natureFireSpread: 'fire',
+  natureLavaFlow: 'lava',
+  ageCycle: 'eclipse',
+  ageLength: 'time-skip',
+  ageIntensity: 'sun',
+  miscRuins: 'raze',
+  miscMinorEvents: 'chronicle',
+};
+const lawIcon = (def) => {
+  if (LAW_ICON_BY_KEY[def.key]) return LAW_ICON_BY_KEY[def.key];
+  const hay = `${def.key} ${def.label}`.toLowerCase();
+  return (LAW_KEY_ICON.find(([re]) => re.test(hay)) || [null, LAW_ICON[def.category] || 'settings'])[1];
+};
 const fmtLaw = (def, v) => (def.type === 'bool' ? (v ? 'On' : 'Off') : `×${(+v).toFixed(2).replace(/0$/, '').replace(/\.0$/, '')}`);
 
 // ---------------------------------------------------------------- shared bits
@@ -362,7 +470,7 @@ export class Modals {
         q.set('civs', state.civs);
         q.set('size', state.size);
         q.set('title', '0');
-        q.delete('cam');
+        for (const k of ['cam', 'hour', 'ff']) q.delete(k);
         this.ui.veil.classList.add('is-shown');
         setTimeout(() => (location.search = q.toString()), 300);
         return;
@@ -441,6 +549,8 @@ export class Modals {
       rail.append(b);
       const sec = el('section', { class: 'ws-lawsec', 'data-cat': c.id }, el('header', { class: 'ws-lawsec__head' }, el('span', { class: 'ws-lawsec__ico', html: uiIcon(LAW_ICON[c.id] || 'settings') }), el('div', null, el('h4', { class: 'ws-lawsec__name', text: c.name }), c.blurb ? el('p', { class: 'ws-lawsec__blurb', text: c.blurb }) : null)));
       sections.set(c.id, sec);
+      const grid = el('div', { class: 'ws-lawgrid' });
+      sec.append(grid);
       for (const def of defs) {
         const v = g.laws?.[def.key] ?? def.default;
         let control;
@@ -451,7 +561,7 @@ export class Modals {
           control = el('span', { class: 'ws-switch' }, input, el('span', { class: 'ws-switch__track' }, el('span', { class: 'ws-switch__knob' })));
           ctl.set(def.key, (nv) => (input.checked = !!nv));
         } else {
-          const out = el('output', { class: 'ws-row__val', text: fmtLaw(def, v) });
+          const out = el('output', { class: 'ws-row__val ws-lawcard__val', text: fmtLaw(def, v) });
           const r = el('input', { type: 'range', class: 'ws-range', min: def.min, max: def.max, step: def.step || 0.25, value: v, 'aria-label': def.label });
           const paint = () => r.style.setProperty('--p', ((r.value - def.min) / (def.max - def.min)) * 100 + '%');
           paint();
@@ -467,9 +577,16 @@ export class Modals {
             out.textContent = fmtLaw(def, nv);
           });
         }
-        const row = el(def.type === 'bool' ? 'label' : 'div', { class: 'ws-law' + (isChanged(def) ? ' is-changed' : ''), 'data-key': def.key }, el('span', { class: 'ws-law__txt' }, el('span', { class: 'ws-row__label', text: def.label }), el('span', { class: 'ws-row__desc', text: def.description })), control);
+        const onState = def.type === 'bool' ? !!v : +v > 0;
+        const row = el(
+          def.type === 'bool' ? 'label' : 'div',
+          { class: `ws-law ws-lawcard is-${def.type}${onState ? ' is-on' : ' is-off'}${isChanged(def) ? ' is-changed' : ''}`, 'data-key': def.key },
+          el('span', { class: 'ws-lawcard__ico', html: uiIcon(lawIcon(def)) }),
+          el('span', { class: 'ws-law__txt' }, el('span', { class: 'ws-row__label', text: def.label }), el('span', { class: 'ws-row__desc', text: def.description })),
+          control,
+        );
         rows.push({ row, def, sec, hay: `${def.label} ${def.description} ${c.name} ${def.key}`.toLowerCase() });
-        sec.append(row);
+        grid.append(row);
       }
       list.append(sec);
     }
@@ -509,26 +626,33 @@ export class Modals {
       for (const k of keys) {
         const def = lawDef(k);
         if (!def) continue;
-        ctl.get(k)?.(g.laws?.[k] ?? def.default);
-        list.querySelector(`[data-key="${k}"]`)?.classList.toggle('is-changed', isChanged(def));
+        const val = g.laws?.[k] ?? def.default;
+        ctl.get(k)?.(val);
+        const card = list.querySelector(`[data-key="${k}"]`);
+        if (card) {
+          card.classList.toggle('is-changed', isChanged(def));
+          const on = def.type === 'bool' ? !!val : +val > 0;
+          card.classList.toggle('is-on', on);
+          card.classList.toggle('is-off', !on);
+        }
       }
       syncCounts();
     });
     const body = el(
       'div',
       { class: 'ws-lawsx' },
-      el('div', { class: 'ws-lawsx__top' }, el('label', { class: 'ws-lawsx__searchbox' }, el('span', { html: uiIcon('inspect') }), search), countEl),
+      el(
+        'div',
+        { class: 'ws-lawsx__top' },
+        el('label', { class: 'ws-lawsx__searchbox' }, el('span', { html: uiIcon('inspect') }), search),
+        countEl,
+        el('button', { class: 'ws-btn ws-btn--sm ws-btn--ghost ws-lawsx__restore', type: 'button', text: 'Restore defaults', onclick: () => g.resetLaws?.() }),
+      ),
       el('div', { class: 'ws-lawsx__main' }, rail, list),
     );
     const foot = [
       back ? el('button', { class: 'ws-btn ws-btn--ghost', type: 'button', html: `${uiIcon('chev-left')}<span>Back</span>`, onclick: () => ((this.reopenNW = back === 'newworld'), this.open(back)) }) : null,
       el('span', { class: 'ws-foot__grow' }),
-      el('button', {
-        class: 'ws-btn ws-btn--ghost',
-        type: 'button',
-        text: 'Restore defaults',
-        onclick: () => g.resetLaws?.(),
-      }),
       el('button', { class: 'ws-btn ws-btn--gold', type: 'button', text: 'Done', onclick: () => (back ? ((this.reopenNW = back === 'newworld'), this.open(back)) : this.close()) }),
     ];
     return { title: 'World Laws', icon: 'trade', body, foot, wide: 'xl' };

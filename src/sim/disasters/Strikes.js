@@ -117,8 +117,8 @@ export class Smite {
       return true;
     }
     // afterglow
-    if (this.t < 1.6) {
-      const k = 1 - (this.t - 0.75) / 0.85;
+    if (this.t < 2.9) {
+      const k = Math.max(0, 1 - (this.t - 0.75) / 2.15);
       fx.lights.request('smite' + x, x, y + 3, z, this._c, 6 * k * k, 22);
       if (Math.random() < 0.6) fx.emit('sparkle', { x, y, z }, { scale: 1.6, count: 2, color: 0xfff0c0 });
       return true;
@@ -135,9 +135,9 @@ export class Smite {
     const top = y + 70;
     // narrower, flickering core inside a restrained glow so the impact
     // beside the beam stays readable (the pillar still reads from far zoom)
-    fx.beams.segment(x, top, z, x, y, z, { color: gold, width: r * 0.95, life: 0.95, intensity: 0.75, flicker: 0.35, taper: 1.1 });
-    fx.beams.segment(x, top, z, x, y, z, { color: white, width: r * 0.32, life: 0.8, intensity: 1.35, flicker: 0.6, taper: 1.2 });
-    fx.beams.segment(x, top, z, x, y, z, { color: gold, width: r * 2.4, life: 1.0, intensity: 0.12, flicker: 0.1, taper: 1.3 });
+    fx.beams.segment(x, top, z, x, y, z, { color: gold, width: r * 0.95, life: 2.2, intensity: 0.75, flicker: 0.35, taper: 1.1 });
+    fx.beams.segment(x, top, z, x, y, z, { color: white, width: r * 0.32, life: 1.8, intensity: 1.35, flicker: 0.6, taper: 1.2 });
+    fx.beams.segment(x, top, z, x, y, z, { color: gold, width: r * 2.4, life: 2.4, intensity: 0.12, flicker: 0.1, taper: 1.3 });
     fx.screenFlash(0xffe6b0, 0.45);
     fx.addLight({ x, y: y + 4, z }, 0xffd890, 8, 1.1);
     fx.hitStop(0.06);
@@ -183,7 +183,11 @@ export class Smite {
       fx.debris.spawn({ x: x + Math.cos(a) * r * 0.4, y: y + 0.4, z: z + Math.sin(a) * r * 0.4, vx: Math.cos(a) * v, vy: rand(4, 9), vz: Math.sin(a) * v, size: rand(0.2, 0.42), color: 0x5a5048, heat: rand(0.4, 0.9), cool: 0.3, trail: TRAIL.DUST, life: rand(6, 10) });
     }
     // ground ring that stays visible beside the beam, bigger scorch
-    fx.decal({ frame: DF.BLAST, x, z, size: r * 5.2, life: 90, color: 0x1e160e, alpha: 0.8, fadeIn: 0.001, fadeOut: 0.8 });
+    fx.decal({ frame: DF.BLAST, x, z, size: r * 5.2, life: 150, color: 0x120c08, alpha: 0.95, lift: 0.12, fadeIn: 0.001, fadeOut: 0.85 });
+    // the scorched ground itself (charred tiles that Nature slowly regrows)
+    g.world.forEachInRadius(x, z, r * 1.3, (tx, ty, d, i) => {
+      if (g.world.height[i] >= 0 && d < 0.9 + Math.random() * 0.2) g.world.setType(tx, ty, 10);
+    });
     fx.decal({ frame: DF.SCORCH1, x, z, size: r * 6.5, life: 70, color: 0x3a2c20, alpha: 0.45, fadeIn: 0.001, fadeOut: 0.8 });
     fx.decal({ frame: DF.RING, x, z, size: r * 1.2, grow: 3.4, life: 2.2, additive: true, surface: 2, color: 0xffc860, intensity: 2.4, fadeIn: 0.01, fadeOut: 0.35, grain: 0 });
     fx.decal({ frame: DF.RUNE, x, z, size: r * 3.2, life: 6, additive: true, color: 0xffb040, intensity: 2.4, cool: 0.6, fadeIn: 0.005, fadeOut: 0.3, grain: 0, spin: 0.6 });

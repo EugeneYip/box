@@ -67,7 +67,7 @@ export class Earthquake {
     this.t += vt;
     const env = this.envelope();
     // sustain a heavy rolling shake (CameraRig decays at ~2.2/s) plus jolts
-    fx.shake(this.x, this.z, env * dt * 2.2 * (1.4 + this.r * 0.04) + (Math.random() < vt * 1.6 ? 0.7 * env : 0));
+    fx.shake(this.x, this.z, env * dt * 2.2 * (1.4 + this.r * 0.04) + (Math.random() < vt * 1.8 ? 0.9 * env : 0));
     // ---- rupture propagation ----
     for (const f of this.faults) {
       for (const s of f.segs) {
@@ -153,7 +153,7 @@ export class Earthquake {
     const y = w.heightAt(x, z);
     w.setFlora(tx, ty, Math.random() < 0.5 ? FLORA.STUMP : FLORA.NONE);
     const a = Math.random() * Math.PI * 2;
-    g.fx.debris.spawn({ x, y: y + 0.6, z, vx: Math.cos(a) * 1.5, vy: 1.5, vz: Math.sin(a) * 1.5, size: rand(0.6, 0.9), color: 0x6a4a30, wood: true, spin: 2.5, life: rand(5, 8) });
+    g.fx.debris.spawn({ x, y: y + 0.6, z, vx: Math.cos(a) * 1.5, vy: 1.5, vz: Math.sin(a) * 1.5, size: rand(0.6, 0.9), color: 0x6a4a30, wood: true, spin: 2.5, life: rand(26, 36) }); // the fallen trunk stays a while
     g.fx.emit('leaves', { x, y, z }, { count: 6, color: fl === FLORA.PINE || fl === FLORA.SNOW_PINE ? 0x2f6b3a : 0x4f9a3a });
   }
 
@@ -175,7 +175,7 @@ export class Earthquake {
       // hard-edged near-black void hugging the carved trench (lifted so it
       // sits above the chasm floor and walls rather than being buried)
       const rot = Math.atan2(dz, dx);
-      fx.decal({ frame: DF.CRACKLINE, x: mx, z: mz, size: L * 4.4, rot, life: 170, color: 0x000000, alpha: 1, overlay: true, lift: 0.1, fadeIn: 0.0005, fadeOut: 0.9, grain: 0 });
+      fx.decal({ frame: DF.CRACKLINE, x: mx, z: mz, size: L * 3.4, rot, life: 170, color: 0x000000, alpha: 1, overlay: true, lift: 0.1, fadeIn: 0.0005, fadeOut: 0.9, grain: 0 });
       fx.decal({ frame: DF.CRACKLINE, x: mx, z: mz, size: L * 3.4, rot, life: 160, color: 0x020101, alpha: 1, lift: 0.2, fadeIn: 0.0005, fadeOut: 0.88, grain: 0 });
       // sunlit lips: a faint warm highlight just outside both edges
       for (const sd of [1, -1])
@@ -186,12 +186,12 @@ export class Earthquake {
         fx.decal({ frame: DF.STAIN, x: mx + nx * sd * 2.0, z: mz + nz * sd * 2.0, size: rand(2.4, 3.2), life: 150, color: 0x4e3620, alpha: 0.7, fadeIn: 0.001, fadeOut: 0.88, grain: 0.8 });
       if (Math.random() < 0.5) fx.decal({ frame: DF.CRACK1, x: mx + nx * rand(-1.5, 1.5), z: mz + nz * rand(-1.5, 1.5), size: rand(2.4, 4) * k, life: 140, color: 0x060403, alpha: 0.95, fadeIn: 0.001, fadeOut: 0.88 });
       // thick dust walls erupting along both lips of the rupture
-      for (let j = 0; j < fx.k(3); j++) {
+      for (let j = 0; j < fx.k(8); j++) {
         const f = Math.random();
         const sd = Math.random() < 0.5 ? 1 : -1;
         const px = s.x0 + dx * f + nx * sd * 1.2,
           pz = s.z0 + dz * f + nz * sd * 1.2;
-        dustPuff(fx, px, w.heightAt(px, pz), pz, rand(1.0, 1.8) * k, { out: rand(0.4, 1.2), up: 2.6, life: rand(1.2, 2.0), drag: 1.2, ang: Math.atan2(nz * sd, nx * sd), ramp: RAMP.DUST_THICK });
+        dustPuff(fx, px, w.heightAt(px, pz), pz, rand(1.6, 2.6) * k, { out: rand(0.3, 1.0), up: 3.2, life: rand(1.5, 2.4), drag: 1.2, ang: Math.atan2(nz * sd, nx * sd), ramp: RAMP.DUST_THICK });
       }
       if (Math.random() < 0.9) {
         const f = Math.random();
@@ -218,11 +218,12 @@ export class Earthquake {
       const ad = Math.abs(side);
       const jag = hash2(tx, ty, this.seed);
       let want = 0; // desired total change from the original height
-      if (side > 0.7 && side < 4.2) want -= thr * k * 1.5 * (1 - smooth((side - 2.8) / 1.4));
-      if (ad < 1.3) {
-        const depth = (1.6 + 1.0 * jag) * Math.max(0.75, k) * (1 - (ad / 1.3) ** 4);
+      if (side > 0.7 && side < 4.2) want -= thr * k * 2.4 * (1 - smooth((side - 2.8) / 1.4));
+      if (ad < 1.7) {
+        // steep, almost vertical walls so the sunlit rock faces show
+        const depth = (2.6 + 1.2 * jag) * Math.max(0.8, k) * (ad < 1.15 ? 1 : 1 - (ad - 1.15) / 0.55);
         want -= depth;
-      } else if (ad < 2.1) want += (0.15 + 0.4 * jag) * k * (1 - (ad - 1.3) / 0.8);
+      } else if (ad < 2.5) want += (0.2 + 0.45 * jag) * k * (1 - (ad - 1.7) / 0.8);
       const cur = prev ? prev.want : 0;
       const next = Math.abs(want) > Math.abs(cur) ? want : cur;
       if (next === cur) return;
@@ -230,7 +231,7 @@ export class Earthquake {
       w.height[i] = Math.max(floor, Math.max(MIN_HEIGHT, h0 + next));
       carved.set(i, { h0, want: next });
       w.markDirty('height', tx, ty);
-      if (ad < 1.3) {
+      if (ad < 1.7) {
         if (w.type[i] !== TILE.ROCK) {
           w.type[i] = TILE.ROCK;
           w.markDirty('type', tx, ty);
@@ -245,7 +246,7 @@ export class Earthquake {
           w.type[i] = TILE.SOIL;
           w.markDirty('type', tx, ty);
         }
-        if (!w.flora[i] && jag > 0.82) w.setFlora(tx, ty, FLORA.ROCK_SMALL, 1);
+        if (!w.flora[i] && jag > 0.55) w.setFlora(tx, ty, jag > 0.93 ? FLORA.BOULDER : FLORA.ROCK_SMALL, 1);
       }
     });
     hurt(g, mx, mz, 2, 18 * k, 45 * k, 'earthquake');

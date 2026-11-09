@@ -139,7 +139,7 @@ uniform float uAmt;
 varying vec2 vW;
 ${NOISE}
 void main() {
-  float n = cFbm(vW / 46.0 + uOff);
+  float n = cFbm(vW / 32.0 + uOff);
   float a = smoothstep(0.38, 0.72, n) * uAmt;
   gl_FragColor = vec4(a, a, a, a);
 }
@@ -175,10 +175,10 @@ uniform float uTime;
 varying vec3 vW;
 ${NOISE}
 // cloud-top height field: the large shapes match the storm shadow field
-float deckBase(vec2 xz) { return cFbm(xz / 46.0 + uOff); }
+float deckBase(vec2 xz) { return cFbm(xz / 32.0 + uOff); }
 void main() {
   vec2 xz = vW.xz;
-  vec2 p = xz / 46.0 + uOff;
+  vec2 p = xz / 32.0 + uOff;
   float base = cFbm(p);
   float radial = 1.0 - smoothstep(uRadius * 0.55, uRadius, distance(xz, uCenter.xz));
   if (base < 0.3 || radial <= 0.0) discard;
@@ -203,6 +203,40 @@ void main() {
 }
 `;
 
+
+// high, thin cirrus / altostratus streaks: a second, faster layer above the
+// cumulus (wind-stretched fbm), only seen from map zoom
+const CIRRUS_VERT = /* glsl */ `
+varying vec3 vW;
+void main() {
+  vec4 wp = modelMatrix * vec4(position, 1.0);
+  vW = wp.xyz;
+  gl_Position = projectionMatrix * viewMatrix * wp;
+}
+`;
+const CIRRUS_FRAG = /* glsl */ `
+uniform vec2 uOff;
+uniform vec2 uWind;
+uniform float uAmt;
+uniform vec3 uCol;
+uniform vec3 uCenter;
+uniform float uRadius;
+varying vec3 vW;
+${NOISE}
+void main() {
+  vec2 w = normalize(uWind + 1e-4);
+  vec2 q = vec2(dot(vW.xz, w), dot(vW.xz, vec2(-w.y, w.x)));
+  vec2 p = vec2(q.x / 160.0, q.y / 38.0) + uOff;   // stretched along the wind
+  float n = cFbm(p);
+  float n2 = cFbm(p * vec2(1.0, 3.5) + 4.1);
+  float d = smoothstep(0.52, 0.85, n * 0.7 + n2 * 0.4);
+  float radial = 1.0 - smoothstep(uRadius * 0.5, uRadius, distance(vW.xz, uCenter.xz));
+  float a = d * uAmt * radial;
+  if (a < 0.003) discard;
+  gl_FragColor = vec4(uCol * (0.9 + 0.2 * n2), a);
+}
+`;
+
 export class Clouds {
   constructor(atmosphere) {
     this.atm = atmosphere;
@@ -215,7 +249,7 @@ export class Clouds {
     this.deckAltitude = 40; // storm deck
     const q = game.pipeline?.quality || 'high';
     const area = Math.min(4, (W * H) / (256 * 256)); // field grows with the map
-    const count = Math.round((q === 'low' ? 18 : q === 'medium' ? 26 : 34) * Math.max(0.6, area));
+    const count = Math.round((q === 'low' ? 24 : q === 'medium' ? 36 : 50) * Math.max(0.6, area));
     const rnd = mulberry32(9137);
     this.clouds = [];
     let puffTotal = 0;
@@ -300,6 +334,21 @@ export class Clouds {
     this.group = new THREE.Group();
     this.group.name = 'clouds';
     this.group.add(this.mesh);
+    this.cirrusU = {
+      uOff: { value: new THREE.Vector2() },
+      uWind: { value: new THREE.Vector2(1, 0) },
+      uAmt: { value: 0 },
+      uCol: { value: new THREE.Color(1, 1, 1) },
+      uCenter: { value: new THREE.Vector3() },
+      uRadius: { value: 300 },
+    };
+    this.cirrus = new THREE.Mesh(
+      new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2),
+      new THREE.ShaderMaterial({ name: 'Cirrus', uniforms: this.cirrusU, vertexShader: CIRRUS_VERT, fragmentShader: CIRRUS_FRAG, transparent: true, depthWrite: false, side: THREE.DoubleSide }),
+    );
+    this.cirrus.frustumCulled = false;
+    this.cirrus.renderOrder = 10;
+    game.scene.add(this.cirrus);
     game.scene.add(this.group);
 
     // ---- storm scud layer --------------------------------------------------
@@ -478,6 +527,25 @@ export class Clouds {
     u.uOpacity.value = vis * (0.82 + 0.18 * weather.overcast) * (1 - 0.35 * weather.storm);
     u.uNearFade.value = 40 + camDist * 0.28;
     this.group.visible = vis > 0.01;
+    // high cirrus layer
+    const C = this.cirrusU;
+    // the cirrus deck sits at y = 92: fade it out as the camera climbs to and
+    // past it, or the overview is seen through broad white smears
+    const camAbove = THREE.MathUtils.smoothstep(rig.camera.position.y, 60, 88);
+    const cirrusAmt = vis * (0.22 + 0.25 * Math.min(1, weather.cover)) * (1 - 0.8 * weather.storm) * (1 - camAbove);
+    this.cirrus.visible = cirrusAmt > 0.01;
+    if (this.cirrus.visible) {
+      const t = rig.target;
+      const size = (f.sx + f.sz) * 1.2;
+      this.cirrus.position.set(t.x, 92, t.z);
+      this.cirrus.scale.set(size, 1, size);
+      C.uCenter.value.set(t.x, 92, t.z);
+      C.uRadius.value = size * 0.5;
+      C.uAmt.value = cirrusAmt;
+      C.uWind.value.set(wind.x, wind.z);
+      C.uOff.value.x -= (dt * (2 + 6 * wind.strength)) / 160;
+      C.uCol.value.copy(model.cloudLit).multiplyScalar(0.9).add(this._c.copy(model.cloudShade).multiplyScalar(0.8));
+    }
 
     // ---- storm scud layer ------------------------------------------------
     const storm = Math.max(weather.storm, weather.rain * 0.35);
@@ -497,15 +565,15 @@ export class Clouds {
       S.uTime.value = game.time.realTime;
       S.uSunDir.value.copy(u.uSunDir.value);
       // tops lit by the dim storm sun + skylight, slate undersides
-      S.uTop.value.copy(model.cloudShade).multiplyScalar(0.85).add(this._c.copy(model.cloudLit).multiplyScalar(0.55));
-      S.uUnder.value.copy(model.cloudShade).multiplyScalar(0.2);
+      S.uTop.value.copy(model.cloudShade).multiplyScalar(0.42).add(this._c.copy(model.cloudLit).multiplyScalar(0.28));
+      S.uUnder.value.copy(model.cloudShade).multiplyScalar(0.1);
       S.uFlash.value.setRGB(0.75, 0.8, 1.05).multiplyScalar(flash * 0.4);
     }
     this.stormShadow.visible = weather.storm > 0.02 || weather.overcast > 0.6;
     const SS = this.stormShadowU;
     SS.uAmt.value = Math.min(1, weather.storm * 0.9 + Math.max(0, weather.overcast - 0.6));
-    SS.uOff.value.x -= (wind.x * (2.5 + 9 * wind.strength) * dt) / 46;
-    SS.uOff.value.y -= (wind.z * (2.5 + 9 * wind.strength) * dt) / 46;
+    SS.uOff.value.x -= (wind.x * (2.5 + 9 * wind.strength) * dt) / 32;
+    SS.uOff.value.y -= (wind.z * (2.5 + 9 * wind.strength) * dt) / 32;
 
     // cloud shadow parameters: project along the sun to the ground
     const sd = model.sunDir;
@@ -515,7 +583,7 @@ export class Clouds {
     P.x = -f.x0 + (sd.x / sy) * alt;
     P.y = -f.z0 + (sd.z / sy) * alt;
     P.z = 1 / f.sx;
-    P.w = (0.45 + 0.4 * weather.storm) * THREE.MathUtils.smoothstep(sd.y, 0.04, 0.3) * (model.keyIsMoon ? 0 : 1);
+    P.w = (0.6 + 0.25 * weather.storm) * THREE.MathUtils.smoothstep(sd.y, 0.04, 0.3) * (model.keyIsMoon ? 0 : 1);
   }
 
   renderShadow(renderer) {

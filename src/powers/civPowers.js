@@ -152,10 +152,10 @@ registerPower({
       if (k.villages.length <= 1) return g.notify(`${v.name} is the heart of its realm; there is no one to rebel against.`, 'info', { x: v.cx, z: v.cz });
       // the capital topples its ruler instead: the realm splits around the largest town
       const other = k.villages.map((id) => civ.villages[id]).filter((o) => o && o.alive && o.id !== v.id).sort((p, q) => q.pop - p.pop)[0];
-      if (other) civ.rebel(other);
+      if (other) civ.rebel(other, false, true);
       return;
     }
-    civ.rebel(v);
+    civ.rebel(v, false, true);
     g.fx?.burst?.('magic', { x: v.cx, z: v.cz }, 10, { scale: 1.5, color: 0xff4040 });
     g.cameraRig?.addShake?.(0.2);
   },

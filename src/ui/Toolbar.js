@@ -270,6 +270,14 @@ export class Toolbar {
     g.selectPower(next);
     g.audio?.play?.(next ? 'ui-click' : 'ui-click', { volume: 0.6 });
     if (next && this.isDrawer()) setTimeout(() => this.toggleDrawer(false), 140);
+    if (next && this.ui.root.classList.contains('is-touch')) {
+      clearTimeout(this._touchTip);
+      setTimeout(() => {
+        if (this.game.activePower !== next) return;
+        this.showTip(next, null);
+        this._touchTip = setTimeout(() => this.hideTip(), 2600);
+      }, 220);
+    }
   }
 
   pickSlot(i) {

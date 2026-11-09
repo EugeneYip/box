@@ -87,7 +87,7 @@ export function techPanel(ui, kingdomId) {
         col.append(
           el(
             'div',
-            { class: 'ws-techcard' + (got ? ' is-learned' : now ? ' is-now' : ready ? ' is-ready' : ' is-locked'), title: t.description || '' },
+            { class: 'ws-techcard' + (got ? ' is-learned' : now ? ' is-now' : ready ? ' is-ready' : ' is-locked'), 'data-tip': [t.description, got ? 'Learned' : now ? 'Being studied now' : ready ? 'Ready to study' : reqs.length ? `Needs ${reqs.join(', ')}` : ''].filter(Boolean).join(' · ') },
             el('span', { class: 'ws-techcard__state', html: uiIcon(got ? 'good' : now ? 'sparkle' : ready ? 'chev-right' : 'shield') }),
             el('span', { class: 'ws-techcard__txt' }, el('b', { text: t.name || prettyId(t.id) }), reqs.length ? el('small', { text: `Needs ${reqs.join(', ')}` }) : t.description ? el('small', { text: t.description }) : null),
             now && res.pct != null ? el('span', { class: 'ws-meter' }, el('i', { style: `width:${(res.pct * 100).toFixed(1)}%` })) : null,

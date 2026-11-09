@@ -13,7 +13,7 @@ import { MATERIALS, WEAPON_TOOL } from '../../sim/units/items.js';
 import { STATUS_BY_ID } from '../../sim/units/statuses.js';
 const HAT_TINT = [null, 0xe6c870, 0xc4ccd6, 0xf2c14e, 0x5d5a3a, 0x5b3a26, null, 0xf0c030];
 const SHADOW_RANGE = 60; // creatures farther than this from the camera target cast no shadow-map shadow
-const LOD_HI = 70, LOD_LO = 22; // on-screen height (px) thresholds for hi / lo / tiny models
+const LOD_HI = 52, LOD_LO = 22; // on-screen height (px) thresholds for hi / lo / tiny models
 
 // Creature renderer (Life module). Every species is one instanced, shader-rigged
 // model (see RigMaterial.js): one draw call per species plus its shadow pass.
@@ -328,6 +328,7 @@ export class UnitRenderer {
     const civvies = jitter(lin(pal[Math.floor(r(9) * pal.length)]), r(12));
     const cloth = u.color != null ? lin(u.color) : kc && UNIFORMED.has(job) ? kc : civvies;
     const kslot = u.kingdom >= 0 ? 1 + (u.kingdom % 15) : 0;
+    if (kslot && !child && cape === 0) cape = 2; // kingdom tabard: sides read at a glance
     let sec = Math.floor(r(10) * 8);
     if (job === 'soldier') sec = r(10) < 0.5 ? 1 : 7;
     if (job === 'king') sec = 5;
@@ -342,7 +343,8 @@ export class UnitRenderer {
     };
     rs.dot = bright(kc || [0.85, 0.8, 0.7]);
     // tiny LOD: the head-top block shows the hat colour (or the hair)
-    rs.apTiny = HAT_TINT[hat] != null ? { ...rs.ap, c: lin(HAT_TINT[hat]) } : rs.ap;
+    rs.apTiny = { ...rs.ap, b: kc && !child ? kc : rs.ap.b, c: HAT_TINT[hat] != null ? lin(HAT_TINT[hat]) : rs.ap.c };
+    rs.apMid = HAT_TINT[hat] != null ? { ...rs.ap, c: lin(HAT_TINT[hat]) } : rs.ap;
   }
 
   _initRS(u, rm) {
@@ -585,7 +587,8 @@ export class UnitRenderer {
         if (rs.starborn) glow = Math.max(glow, 0.12 + 0.1 * Math.sin(now * 1.7 + rs.seed * 11));
         const pm = this.pick(rm, pxH, rs);
         const near = (ix - camT.x) ** 2 + (iz - camT.z) ** 2 < SHADOW_RANGE * SHADOW_RANGE;
-        pm.write(this._m, Ps, pm.tiny && rs.apTiny ? rs.apTiny : rs.ap, Math.min(1, flash), lod, glow, near);
+        const apUse = pm.tiny ? (pm.mesh.name.endsWith(':mid') ? rs.apMid : rs.apTiny) || rs.ap : rs.ap;
+        pm.write(this._m, Ps, apUse, Math.min(1, flash), lod, glow, near);
         // skywyrm fire breath
         if (md.rig === 'wyrm' && u.data?.breath > simNow) {
           this._m2.makeRotationX(0.42).setPosition(0, -0.02, 0.97);
@@ -636,6 +639,18 @@ export class UnitRenderer {
           } else this.ripple(ix, iz, (md.radius + 0.25) * scale * 1.6);
         }
       }
+      // ---- the selected or followed creature shows its conditions at any zoom
+      if ((g.selected?.ref === u || g.cameraRig.follow === u) && u.statuses && u.statuses.size) {
+        const ids = [];
+        for (const id of u.statuses.keys()) if (STATUS_ICON[id] != null) ids.push(id);
+        ids.sort((a, b) => (STATUS_BY_ID[b]?.priority ?? 0) - (STATUS_BY_ID[a]?.priority ?? 0));
+        const esz2 = 0.34 * Math.max(1, dCam / 18);
+        const top2 = y + rs.sY * scale + md.height * scale + 0.15;
+        for (let k = 0; k < Math.min(3, ids.length); k++) {
+          const off = (k - (Math.min(3, ids.length) - 1) / 2) * esz2 * 1.1;
+          ov.emotes.add(ix + this._camRight.x * off, top2 + esz2 * 0.6, iz + this._camRight.z * off, esz2, STATUS_ICON[ids[k]], 1, 0);
+        }
+      }
       // ---- emotes (only when close enough to read)
       if (dCam < 55 && lod > 0.3) {
         const ea = 1 - smoothstep(38, 55, dCam);
@@ -655,7 +670,7 @@ export class UnitRenderer {
           ov.emotes.add(ix, top + 0.05, iz, esz * (0.9 + 0.12 * Math.sin(now * 8)), EMOTE.anger, ea, 0);
         }
         // status conditions: a small icon beside the head when close or selected
-        if (u.statuses && u.statuses.size && (dCam < 28 || g.selected?.ref === u)) {
+        if (u.statuses && u.statuses.size && dCam < 34 && !(g.selected?.ref === u || g.cameraRig.follow === u)) {
           let best = null,
             bp = -1;
           for (const id of u.statuses.keys()) {
@@ -666,8 +681,8 @@ export class UnitRenderer {
             }
           }
           if (best) {
-            const side = esz * 0.85;
-            ov.emotes.add(ix + this._camRight.x * side, top - esz * 0.15, iz + this._camRight.z * side, esz * 0.7, STATUS_ICON[best], Math.max(ea, g.selected?.ref === u ? 1 : 0) * 0.95, 0);
+            const side = esz * 1.05;
+            ov.emotes.add(ix + this._camRight.x * side, top - esz * 0.1, iz + this._camRight.z * side, esz * 1.4, STATUS_ICON[best], ea * 0.95, 0);
           }
         }
       }
@@ -783,6 +798,9 @@ export class UnitRenderer {
       this._m.compose(this._p.set(c.x, y + lift * scale, c.z), this._q, this._s.set(scale, scale, scale));
       const flash = Math.max(0, 1 - td / 0.3);
       const pxH = (md.height * scale * this._ppu) / Math.max(0.1, this.game.cameraRig.camera.position.distanceTo(this._sph.center));
+      // a creature that died before it was ever drawn has no appearance yet
+      if (!rs.ap) this._appearance(u, rs);
+      if (!rs.ap) continue;
       this.pick(rm, pxH).write(this._m, P, rs.ap, flash, Math.max(0.001, fade), 0);
       if (def.habitat === 'land' && !u.swimming) {
         w.normalAt(c.x, c.z, this._n);

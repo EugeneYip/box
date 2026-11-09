@@ -124,7 +124,7 @@ export class Meteor {
     // ---- trail: emit along the segment travelled this frame ----
     const seg = this.pos.distanceTo(this.prev);
     const r = this.radius;
-    const n = Math.min(24, Math.ceil(seg / (0.35 + r * 0.25)));
+    const n = Math.min(40, Math.ceil(seg / (0.2 + r * 0.14)));
     const dx = -this.dir.x,
       dy = -this.dir.y,
       dz = -this.dir.z;
@@ -155,8 +155,15 @@ export class Meteor {
       P.soft = 0;
       fx.pGlow();
       // long dark smoke trail that lingers across the sky
-      if (Math.random() < 0.8)
-        smokePuff(fx, px, py, pz, { size: 0.7 + r * 0.9, ramp: RAMP.SMOKE_BLACK, glow: 1.2, rise: 0.25, drift: 1.0, life: rand(4.5, 7), vx: dx * 0.6, vy: dy * 0.2, vz: dz * 0.6 });
+      if (Math.random() < 0.9)
+        smokePuff(fx, px, py, pz, { size: 0.9 + r * 1.0, ramp: RAMP.SMOKE_DARK, glow: 1.4, alpha: 0.85, rise: 0.25, drift: 1.0, life: rand(4.5, 7), vx: dx * 0.6, vy: dy * 0.2, vz: dz * 0.6 });
+    }
+    // continuous fiery ribbon along the path travelled this frame (no gaps
+    // at any frame rate): a wide orange sheath and a narrow white-hot core
+    if (seg > 0.01) {
+      const rc = this._rib || (this._rib = { o: new THREE.Color(0xff6a1c), c: new THREE.Color(0xffd890) });
+      fx.beams.segment(this.prev.x, this.prev.y, this.prev.z, this.pos.x, this.pos.y, this.pos.z, { color: rc.o, width: r * 2.4, life: 0.75, intensity: 0.85, flicker: 0, taper: 1 });
+      fx.beams.segment(this.prev.x, this.prev.y, this.prev.z, this.pos.x, this.pos.y, this.pos.z, { color: rc.c, width: r * 0.8, life: 0.35, intensity: 1.0, flicker: 0, taper: 1 });
     }
     // hot rock core inside a velocity-stretched plasma sheath
     const vel = seg / Math.max(vt, 1e-3);
@@ -210,7 +217,10 @@ export class Meteor {
     fx.hitStop(0.08);
     fx.shake(x, z, 1.9 + s * 0.4);
     fx.shockwave(x, z, size * 3.2, { life: 0.8, color: water ? 0xd8f0ff : 0xffe0b0 });
-    fx.shell(x, y, z, size * 1.7, { life: 0.32, color: 0xfff0d8, intensity: 1.1, power: 4, squash: 0.6 });
+    // big impact flash + a textured shock front drawn over trees (no flat dome)
+    glowFlash(fx, x, y + 1, z, size * 3.6, { life: 0.28, bright: 1.9, color: 0xfff0d0, from: 0.5, soft: 0 });
+    fx.decal({ frame: DF.BLAST, x, z, size: size * 1.4, grow: 4.2, life: 0.75, overlay: true, additive: true, surface: 2, color: 0xffe2b0, intensity: 1.8, fadeIn: 0.01, fadeOut: 0.2, grain: 0.3 });
+    fx.decal({ frame: DF.RING, x, z, size: size * 1.2, grow: 5.5, life: 0.9, overlay: true, additive: true, surface: 2, color: 0xfff4dc, intensity: 2.2, fadeIn: 0.01, fadeOut: 0.25, grain: 0 });
     play(g, 'explosion', { x, z }, 1, 0.8);
     if (water) {
       for (let k = 0; k < 4; k++) fx.emit('splash', { x: x + rand(-1, 1) * s, y: SEA_LEVEL, z: z + rand(-1, 1) * s }, { scale: 2.2 * s + 1 });
@@ -244,7 +254,7 @@ export class Meteor {
       return;
     }
     // ---- land impact ----
-    fx.emit('explosion', { x, y, z }, { scale: 0.8 + s * 1.1 });
+    fx.emit('explosion', { x, y, z }, { scale: 1.0 + s * 1.3 });
     const R = size;
     carveCrater(g, x, z, R, R * 0.55, { ignite: 0.65, rim: R * 0.22 });
     // lighter soot so the carved bowl keeps its shading, plus an ejecta blanket
