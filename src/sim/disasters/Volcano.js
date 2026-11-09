@@ -20,7 +20,7 @@ export class Volcano {
     this.R = radius;
     this.t = 0;
     this.phase = 0; // 0 rise, 1 erupt, 2 wane
-    this.riseT = 2.4;
+    this.riseT = 1.8;
     this.eruptT = 24;
     this.waneT = 9;
     this.seed = (Math.random() * 1e4) | 0;
@@ -97,6 +97,13 @@ export class Volcano {
         w.markDirty('flora', this.cx - r, this.cz - r, this.cx + r, this.cz + r);
       }
       fx.shake(x, z, dt * 2.2 * 0.6 + 0.02);
+      // the summit already vents dark ash while it rises
+      this._acc.vent = (this._acc.vent || 0) + vt * 14 * p * Math.max(fx.budget, 0.65);
+      while (this._acc.vent >= 1) {
+        this._acc.vent -= 1;
+        const sy = w.heightAt(x, z) + 0.6;
+        smokePuff(fx, x + rand(-0.6, 0.6), sy + rand(0.3, 1.5), z + rand(-0.6, 0.6), { size: rand(1.8, 2.6), grow: 2.6, ramp: RAMP.SMOKE_BLACK, glow: 0.3, rise: rand(3.5, 5), drift: 1.6, drag: 0.45, life: rand(4.5, 6) });
+      }
       this._acc.rise += vt * 26 * fx.budget;
       while (this._acc.rise >= 1) {
         this._acc.rise -= 1;
@@ -178,7 +185,7 @@ export class Volcano {
     // a hero effect: it keeps most of its rate when a big fire elsewhere
     // squeezes the particle budget.
     const pb = Math.max(fx.budget, 0.65);
-    const colH = erupting ? Math.min(30, 8 + this.t * 16) : 30;
+    const colH = erupting ? Math.min(30, 14 + this.t * 12) : 30;
     const wx = fx.wind.x,
       wz = fx.wind.z;
     const lean = (h) => Math.pow(h, 1.6) * 0.06;
@@ -258,6 +265,13 @@ export class Volcano {
     fx.shake(x, z, 1.4);
     fx.decal({ frame: DF.GLOW, x, z, size: 5, life: this.eruptT + this.waneT, additive: true, color: 0xff7a24, intensity: 1.3, fadeIn: 0.03, fadeOut: 0.7 });
     for (let k = 0; k < 10; k++) smokePuff(fx, x + rand(-0.5, 0.5), top + rand(1, 3), z + rand(-0.5, 0.5), { size: rand(1.2, 1.8), grow: 3.2, ramp: RAMP.SMOKE_BLACK, glow: 0.8, rise: rand(8, 11), drift: 1.4, drag: 0.16, life: rand(7, 9) });
+    // the blast throws up a ready-made ash column (the steady column then
+    // keeps it fed), so the tower stands from the very first moment
+    for (let k = 0; k < fx.k(40); k++) {
+      const h = 1 + Math.random() * 16;
+      const L = Math.pow(h, 1.6) * 0.06;
+      smokePuff(fx, x + fx.wind.x * L + rand(-0.8, 0.8), top + h, z + fx.wind.z * L + rand(-0.8, 0.8), { size: (3.2 + h * 0.14) * rand(0.85, 1.15), grow: 1.8, ramp: RAMP.SMOKE_BLACK, glow: 0, rise: rand(1.5, 3), drift: 2, drag: 0.5, life: rand(6, 9), delay: Math.random() * 0.4 });
+    }
     play(g, 'explosion', { x, z }, 1, 0.6);
   }
 }
