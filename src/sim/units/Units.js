@@ -5,6 +5,7 @@ import { BRAINS, BRAIN_TICKS } from './brains.js';
 import { makeName, makeMonsterName } from './names.js';
 import { VillageHerds } from './herds.js';
 import { installDepth } from './depth.js';
+import { installEditing } from './edit.js';
 
 // Core creature simulation (owned by the Life module; the Civilization module
 // programs humanoid behaviour through registerBrain / unit.job).
@@ -471,6 +472,10 @@ export class Units {
 
   kill(u, cause = 'unknown', killer = null) {
     if (!u || !u.alive) return;
+    if (u.flags?.immortal && cause !== 'divine' && cause !== 'removed') {
+      u.hp = Math.max(1, u.hp);
+      return;
+    }
     const g = this.game;
     u.alive = false;
     u.hp = 0;
@@ -510,6 +515,7 @@ export class Units {
     const arm = u.equipment?.armor;
     if (arm && source) amount *= 1 - arm.power / (arm.power + 20);
     u.hp -= amount;
+    if (u.flags?.immortal && u.hp < 1) u.hp = 1;
     u.lastHurt = now;
     if (source && source.alive) u.data.attacker = source.id;
     if (opts.knock) {
@@ -1078,6 +1084,7 @@ export class Units {
   // ---- combat ---------------------------------------------------------------
   engage(a, t, opts = {}) {
     if (!a || !t || !a.alive || !t.alive || a === t) return false;
+    if (a.flags?.pacifist) return false;
     const now = this.game.time.total;
     if (this.attackDamage(a) <= 0) return false;
     if (a.combat && a.combat.target === t.id) return true;
@@ -1349,6 +1356,10 @@ export class Units {
     const now = this.game.time.total;
     if (u.combat && u.combat.target === src.id) return;
     const def = u.def;
+    if (u.flags?.pacifist) {
+      this.flee(u, src.x, src.z, 6);
+      return;
+    }
     const canFight = this.attackDamage(u) > 0;
     let outmatched = def.flees && !(u.mad > now) && (src.def.mass > def.mass * 0.6 || !canFight);
     const aggr = u._mAggr || 1;
@@ -1702,7 +1713,7 @@ export class Units {
       u.pz = u.z;
       u.py = u.y;
       u.ph = u.heading;
-      u.age += yearDt;
+      if (!u.flags?.frozenAge) u.age += yearDt;
       u.attackCd -= dt;
       u.stateTime += dt;
       // ---- needs
@@ -1725,10 +1736,10 @@ export class Units {
         u.hp -= dt * def.hp * 0.025;
         if (u.hp <= 0) {
           this.kill(u, 'starvation');
-          continue;
+          if (!u.alive) continue;
         }
       }
-      if (u.age > u.lifespan * lifeLaw && this.law('lifeAging')) {
+      if (u.age > u.lifespan * lifeLaw && this.law('lifeAging') && !u.flags?.immortal) {
         this.kill(u, 'old age');
         continue;
       }
@@ -2122,5 +2133,6 @@ export class Units {
 }
 
 installDepth(Units);
+installEditing(Units);
 
 export { FLORA, FLORA_INFO };

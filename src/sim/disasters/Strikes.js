@@ -121,7 +121,7 @@ export class Smite {
     if (this.t < 3.4) {
       const k = Math.max(0, 1 - (this.t - 0.15) / 3.2);
       fx.lights.request('smite' + x, x, y + 3, z, this._c, 6 * k * k, 22);
-      if (Math.random() < 0.6) fx.emit('sparkle', { x, y, z }, { scale: 1.6, count: 2, color: 0xfff0c0 });
+      if (Math.random() < 0.6) fx.emit('sparkle', { x, y, z }, { scale: 0.9, count: 2, color: 0xfff0c0 });
       return true;
     }
     return false;
@@ -146,39 +146,15 @@ export class Smite {
     fx.hitStop(0.06);
     fx.shake(x, z, 1.3);
     fx.shockwave(x, z, r * 5, { color: 0xffd890, life: 0.8, intensity: 1.6 });
-    glowFlash(fx, x, y + 0.5, z, r * 2.6, { life: 0.3, bright: 2, color: 0xfff2d0 });
-    // impact crown + ring at 3-4x the beam radius, drawn OVER trees so the
-    // hit stays readable beside the pillar
-    fx.decal({ frame: DF.BLAST, x, z, size: r * 2.2, grow: 3.4, life: 1.1, overlay: true, additive: true, surface: 2, color: 0xffd27a, intensity: 2.6, fadeIn: 0.01, fadeOut: 0.3, grain: 0 });
-    fx.decal({ frame: DF.RING, x, z, size: r * 1.6, grow: 4.6, life: 0.9, overlay: true, additive: true, surface: 2, color: 0xfff0c0, intensity: 3, fadeIn: 0.01, fadeOut: 0.25, grain: 0 });
-    fx.decal({ frame: DF.GLOW, x, z, size: r * 6.5, life: 0.5, overlay: true, additive: true, surface: 2, color: 0xffe0a0, intensity: 2.2, fadeIn: 0.01, fadeOut: 0.1, grain: 0 });
-    // crown splash: golden sparks sprayed low and outward around the base
-    sparks(fx, x, y + 0.3, z, fx.k(46), { speed: 12, ramp: RAMP.GOLD, bright: 2.2, size: 1.8, gravity: 10, stretch: 0.08 });
-    for (let k = 0; k < fx.k(24); k++) {
-      const a = (k / 24) * Math.PI * 2 + Math.random() * 0.3;
-      const P = fx.P.reset();
-      P.x = x + Math.cos(a) * r * 0.5;
-      P.y = y + 1.4;
-      P.z = z + Math.sin(a) * r * 0.5;
-      P.vx = Math.cos(a) * rand(8, 12);
-      P.vy = rand(3, 6);
-      P.vz = Math.sin(a) * rand(8, 12);
-      P.drag = 1.2;
-      P.ty = -8;
-      P.life = rand(0.6, 0.9);
-      P.s0 = r * 1.5;
-      P.s1 = r * 0.6;
-      P.mode = 1;
-      P.aspect = 1;
-      P.stretch = 0.12;
-      P.frame = PF.FLAME0 + (k & 3);
-      P.ramp = RAMP.GOLD;
-      P.bright = 1.6;
-      P.add = 1;
-      P.soft = 0.1;
-      fx.pGlow();
-    }
-    fx.emit('sparkle', { x, y, z }, { scale: 2.6, count: 18, color: 0xfff0c0 });
+    // volumetric impact flash (no flat star decals): a white-hot core and a
+    // wide soft golden sphere of light, flares climbing the beam, sparks
+    // sprayed low and thrown up, and one brief shock ring
+    glowFlash(fx, x, y + 0.8, z, r * 3.4, { life: 0.35, bright: 2.2, color: 0xfff6e0, from: 0.5, soft: 0 });
+    glowFlash(fx, x, y + 2.2, z, r * 6.2, { life: 0.55, bright: 0.9, color: 0xffd890, from: 0.4, soft: 0 });
+    for (let k = 1; k <= 3; k++) glowFlash(fx, x, y + 2 + k * 2.6, z, r * (2.6 - k * 0.45), { life: 0.3 + k * 0.08, bright: 1.3, color: 0xfff0c8, from: 0.6, soft: 0, delay: k * 0.03 });
+    fx.decal({ frame: DF.RING, x, z, size: r * 1.6, grow: 4.6, life: 0.6, overlay: true, additive: true, surface: 2, color: 0xfff0c0, intensity: 2.2, fadeIn: 0.01, fadeOut: 0.2, grain: 0 });
+    sparks(fx, x, y + 0.3, z, fx.k(46), { speed: 12, ramp: RAMP.GOLD, bright: 2.2, size: 1.4, gravity: 10, stretch: 0.08 });
+    sparks(fx, x, y + 0.6, z, fx.k(26), { speed: 9, up: true, ramp: RAMP.GOLD, bright: 2.0, size: 1.2, gravity: 12, stretch: 0.07 });
     // outward debris
     for (let k = 0; k < 26; k++) {
       const a = (k / 26) * Math.PI * 2 + rand(-0.15, 0.15),

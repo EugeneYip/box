@@ -4,6 +4,7 @@ import './hud2.css';
 import './hud3.css';
 import './hud4.css';
 import './hud5.css';
+import './hud6.css';
 import { CATEGORIES, listPowers, getPower } from '../powers/registry.js';
 import { el, safe } from './dom.js';
 import { TopBar, PRESET_NAMES } from './TopBar.js';
@@ -100,6 +101,10 @@ export class UI {
     // input
     addEventListener('keydown', (e) => this.onKeyCapture(e), true);
     addEventListener('keydown', (e) => this.onKey(e));
+    // typing in any field never reaches game hotkeys (Input, power slots, ...)
+    root.addEventListener('keydown', (e) => {
+      if (this.isTyping(e)) e.stopPropagation();
+    });
     // mouse clicks should not leave focus on buttons (Space would re-trigger them)
     root.addEventListener('click', (e) => {
       const b = e.target.closest?.('button');
@@ -202,6 +207,35 @@ export class UI {
     if (this.title?.active) this.title.begin();
   }
 
+  // A toast with Undo, live for 10 seconds.
+  undoToast(text, undo) {
+    if (!this.undoEl) {
+      this.undoEl = el(
+        'div',
+        { class: 'ws-undo ws-glass', role: 'status' },
+        el('span', { class: 'ws-undo__txt' }),
+        el('button', { class: 'ws-btn ws-btn--sm ws-undo__btn', type: 'button', text: 'Undo' }),
+        el('i', { class: 'ws-undo__bar' }),
+      );
+      this.hud.append(this.undoEl);
+    }
+    const t = this.undoEl;
+    t.querySelector('.ws-undo__txt').textContent = text;
+    const btn = t.querySelector('.ws-undo__btn');
+    btn.onclick = () => {
+      clearTimeout(this._undoT);
+      t.classList.remove('is-shown');
+      safe(() => undo?.(), null, 'undo');
+      this.toast('Undone', 1400);
+    };
+    btn.hidden = !undo;
+    t.classList.remove('is-shown');
+    void t.offsetWidth;
+    t.classList.add('is-shown');
+    clearTimeout(this._undoT);
+    this._undoT = setTimeout(() => t.classList.remove('is-shown'), 10000);
+  }
+
   toast(text, ms = 2200) {
     const t = this.toastEl;
     t.textContent = text;
@@ -265,7 +299,7 @@ export class UI {
     const left = 12,
       right = vw - 12;
     const yaw = Math.round(rig.goal.yaw / (Math.PI * 2)) * Math.PI * 2;
-    const bias = THREE.MathUtils.degToRad(8);
+    const bias = THREE.MathUtils.degToRad(innerHeight <= 500 ? 15 : 8);
     const pitch = THREE.MathUtils.degToRad(70) + bias;
     const cam = new THREE.PerspectiveCamera(rig.camera.fov, vw / vh, 1, 1e6);
     const v = new THREE.Vector3();
@@ -399,7 +433,8 @@ export class UI {
         this.chronicle.toggle(false);
         e.stopPropagation();
       } else if (this.inspector.open) {
-        this.inspector.close();
+        if (this.inspector.editing) this.inspector.stopEdit();
+        else this.inspector.close();
         e.stopPropagation();
       }
       return;
@@ -513,7 +548,14 @@ export class UI {
   update(dt) {
     if (!this.enabled) return;
     if (this._debugHover && this.game.input) this.game.input.mouse.inside = true;
-    if (this.title?.active) safe(() => this.title.update(dt), null, 'title');
+    if (this.title?.active) {
+      safe(() => this.title.update(dt), null, 'title');
+      // kingdom / village name sprites would draw over the logo and card
+      safe(() => {
+        const L = this.game.buildings?.labels;
+        for (const m of [L?.kLabels, L?.vLabels, L?.battles, L?.markers]) if (m?.values) for (const s of m.values()) if (s) s.visible = false;
+      }, null, 'title labels');
+    }
     for (const p of this.parts) safe(() => p.update(dt), null, p.constructor.name);
     safe(() => this.updateOverview(dt), null, 'overview');
     // while a brush stroke is held, side panels fade back so the land is clear

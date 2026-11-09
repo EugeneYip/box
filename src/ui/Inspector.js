@@ -6,6 +6,7 @@ import { el, esc, safe, hexCss, fmtNum } from './dom.js';
 import { traitDef, statusDef, modLines, prettyId, eraNames, techDef, techList } from './depth.js';
 import { kingdomOf, eraOf, researchOf } from './TechPanel.js';
 import { CULTURES } from '../sim/civ/cultures.js';
+import { Editor } from './Editor.js';
 import { YEAR } from '../core/time.js';
 
 const TRAIT_ICON = { body: 'heart', mind: 'sparkle', spirit: 'fire', gift: 'good', scar: 'shield', trait: 'sparkle' };
@@ -116,8 +117,12 @@ export class Inspector {
     this._v = new THREE.Vector3();
     this.expanded = false;
     this.portraits = new WeakMap();
+    this.editor = new Editor(this);
+    this.editing = null;
     this.game.events.on('inspect', (hit) => (hit ? this.show(hit) : this.close()));
     this.bindSheet();
+    this.el.addEventListener('pointerdown', () => (this._ptr = true));
+    for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) this.el.addEventListener(ev, () => (this._ptr = false));
   }
 
   get open() {
@@ -181,6 +186,7 @@ export class Inspector {
     this.track = this.results[this.index];
     this._deadShown = false;
     this._scrollTop = 0;
+    this.editing = null;
     this.render();
     this.el.classList.add('is-open');
     this.ui.root.classList.add('has-insp');
@@ -277,6 +283,7 @@ export class Inspector {
 
   close() {
     if (!this.open) return;
+    this.editing = null;
     this.el.classList.remove('is-open');
     this.ui.root.classList.remove('has-insp');
     const rig = this.game.cameraRig;
@@ -384,8 +391,8 @@ export class Inspector {
         const hp = /health|hp/.test(lower);
         const shown = m != null && /\(\s*[\d.]+%\s*\)\s*$/.test(String(v)) ? String(v).replace(/\s*\(\s*[\d.]+%\s*\)\s*$/, '') : v;
         if (m != null)
-          return `<div class="ws-cell ws-cell--meter"><span class="ws-cell__k">${esc(key)}</span><span class="ws-cell__v">${esc(shown)}</span><span class="ws-meter ${bad ? 'is-bad' : hp ? 'is-hp' : ''}"><i style="width:${(m * 100).toFixed(1)}%"></i></span></div>`;
-        return `<div class="ws-cell${wideOf[ci] ? ' ws-cell--wide' : ''}"><span class="ws-cell__k">${esc(key)}</span><span class="ws-cell__v">${esc(v)}</span></div>`;
+          return `<div class="ws-cell ws-cell--meter" data-k="${esc(key)}"><span class="ws-cell__k">${esc(key)}</span><span class="ws-cell__v">${esc(shown)}</span><span class="ws-meter ${bad ? 'is-bad' : hp ? 'is-hp' : ''}"><i style="width:${(m * 100).toFixed(1)}%"></i></span></div>`;
+        return `<div class="ws-cell${wideOf[ci] ? ' ws-cell--wide' : ''}" data-k="${esc(key)}"><span class="ws-cell__k">${esc(key)}</span><span class="ws-cell__v">${esc(v)}</span></div>`;
       })
       .join('');
     const seenTitles = new Set([r.title]);
@@ -408,6 +415,8 @@ export class Inspector {
     const kindLabel = k === 'tile' && r.tile?.water ? 'Waters' : u && ic.label ? ic.label : KIND_LABEL[k] || 'Detail';
     const pref = u || r.building;
     const portrait = pref ? this.portraits.get(pref) : null;
+    const editable = !!(u ? u.alive !== false : k === 'kingdom' || k === 'village' || (k === 'building' && (r.village || this.game.civ?.villages?.[r.building?.village])));
+    const editing = !!this.editing && editable && this.editTarget(r) === this.editing;
     const depth = safe(() => (u ? this.unitDepth(u) : k === 'village' || k === 'kingdom' || k === 'building' ? this.realmDepth(r) : ''), '', 'inspector depth') || '';
     const level = u && Number.isFinite(u.level) ? u.level : null;
     const epithet = u ? u.title || u.data?.title || null : null;
@@ -425,12 +434,18 @@ export class Inspector {
           <h3 class="ws-insp__title">${esc(r.title || 'Unknown')}${epithet ? ` <span class="ws-insp__epithet">${esc(epithet)}</span>` : ''}</h3>
           ${r.subtitle ? `<div class="ws-insp__sub">${kTint ? `<i class="ws-crest" style="--k:${kTint}"></i>` : ''}<span>${esc(r.subtitle)}</span></div>` : ''}
         </div>
+        ${editable ? `<button class="ws-iconbtn ws-iconbtn--sm ws-insp__edit${editing ? ' is-on' : ''}" type="button" aria-label="${editing ? 'Done editing' : 'Edit'}" data-tip="${editing ? 'Done editing' : 'Edit name, colours and more'}" data-act="${editing ? 'edit-done' : 'edit'}">${uiIcon(editing ? 'good' : 'edit')}</button>` : ''}
         ${u ? `<button class="ws-iconbtn ws-iconbtn--sm ws-insp__fav${fav ? ' is-on' : ''}" type="button" aria-label="${fav ? 'Unstar' : 'Star this creature'}" data-tip="${fav ? 'Favourite' : 'Mark as favourite'}" data-act="fav">${uiIcon(fav ? 'star-on' : 'star')}</button>` : ''}
         <button class="ws-iconbtn ws-iconbtn--sm ws-insp__x" type="button" aria-label="Close (Esc)" data-act="close">${uiIcon('close')}</button>
       </header>
       ${chips ? `<div class="ws-insp__also" aria-label="Also here">${chips}</div>` : ''}
-      ${cells || depth ? `<div class="ws-insp__scroll">${cells ? `<div class="ws-insp__grid">${cells}</div>` : ''}${depth}</div>` : ''}
-      <div class="ws-insp__actions">${actions.join('')}</div>`;
+      ${editing ? '<div class="ws-insp__scroll ws-insp__editwrap"></div>' : `${cells || depth ? `<div class="ws-insp__scroll">${cells ? `<div class="ws-insp__grid">${cells}</div>` : ''}${depth}</div>` : ''}
+      <div class="ws-insp__actions">${actions.join('')}</div>`}`;
+    if (editing) {
+      this.el.querySelector('.ws-insp__also')?.remove();
+      this.el.querySelector('.ws-insp__editwrap').append(this.editor.build(r));
+      this.el.classList.add('is-editing');
+    } else this.el.classList.remove('is-editing');
     const sc = this.el.querySelector('.ws-insp__scroll');
     if (sc && this.isCompact()) {
       const more = document.createElement('div');
@@ -469,7 +484,15 @@ export class Inspector {
       if (b.dataset.i != null) return this.focusIndex(+b.dataset.i);
       const act = b.dataset.act;
       if (act === 'close') this.close();
-      else if (act === 'more') {
+      else if (act === 'edit') {
+        this.editing = this.editTarget(this.track);
+        if (this.isCompact()) this.setExpanded(true);
+        this.render();
+        return;
+      } else if (act === 'edit-done') {
+        this.stopEdit();
+        return;
+      } else if (act === 'more') {
         this.moreOpen = !this.moreOpen;
         const m = this.el.querySelector('.ws-insp__more');
         if (m) m.hidden = !this.moreOpen;
@@ -485,6 +508,7 @@ export class Inspector {
       this.game.audio?.play?.('ui-click', { volume: 0.45 });
     };
     this._sig = this.signature();
+    this._vsig = this.valueSignature();
     this.pin.querySelector('.ws-pin__label').textContent = r.title || '';
     this.pin.style.setProperty('--tint', ic.tint);
   }
@@ -519,7 +543,7 @@ export class Inspector {
         .map(([id, secs]) => {
           const def = statusDef(g, id) || {};
           const left = Number.isFinite(secs) ? (secs >= YEAR ? `${Math.ceil(secs / YEAR)}y` : `${Math.ceil(secs)}s`) : '';
-          return `<span class="ws-tchip is-status" data-tip="${esc(def.description || '')}">${uiIcon(STATUS_ICON[id] || 'info')}<span>${esc(def.name || prettyId(id))}</span>${left ? `<small>${left}</small>` : ''}</span>`;
+          return `<span class="ws-tchip is-status" data-st="${esc(id)}" data-tip="${esc(def.description || '')}">${uiIcon(STATUS_ICON[id] || 'info')}<span>${esc(def.name || prettyId(id))}</span>${left ? `<small>${left}</small>` : ''}</span>`;
         })
         .join('')}</div></section>`;
     }
@@ -610,7 +634,44 @@ export class Inspector {
     const st = u?.statuses instanceof Map ? [...u.statuses.keys()] : u?.statuses ? Object.keys(u.statuses) : null;
     const eq = u?.equipment ? Object.values(u.equipment).map((i) => i?.name || i?.id || 0) : null;
     const k = typeof r?.kingdom === 'object' ? r.kingdom : null;
-    return r ? JSON.stringify([r.title, r.subtitle, r.stats, u?.alive, this.game.cameraRig.follow === u, this.results.length, u?.job, u?.traits, st, eq, u?.level, u?.bio?.length, u?.data?.favorite, k?.era, k?.researching, k?.techs?.size]) : '';
+    const keys = (r?.stats || []).map((s) => s?.[0]);
+    return r ? JSON.stringify([r.title, r.subtitle, keys, u?.alive, this.game.cameraRig.follow === u, this.results.map((o) => o.title), u?.job, u?.traits, st, eq, u?.level, u?.bio?.length, u?.data?.favorite, k?.era, k?.researching, k?.techs?.size, !!(u || r.building) && !!this.portraits.get(u || r.building), this.isCompact()]) : '';
+  }
+  valueSignature() {
+    const r = this.track;
+    const u = r?.unit;
+    const st = u?.statuses instanceof Map ? [...u.statuses.values()].map((v) => Math.ceil(v)) : null;
+    return r ? JSON.stringify([r.stats, st]) : '';
+  }
+  // Update live values in place (no innerHTML rewrite: taps and popovers survive).
+  patchValues() {
+    const r = this.track;
+    if (!r) return;
+    for (const s of r.stats || []) {
+      if (!Array.isArray(s) || s.length < 2) continue;
+      const cell = this.el.querySelector(`.ws-cell[data-k="${CSS.escape(String(s[0]))}"]`);
+      if (!cell) continue;
+      let v = s[1];
+      if (typeof v === 'string' && /^[a-z]/.test(v)) v = v[0].toUpperCase() + v.slice(1);
+      const m = this.meter(v);
+      const shown = m != null && /\(\s*[\d.]+%\s*\)\s*$/.test(String(v)) ? String(v).replace(/\s*\(\s*[\d.]+%\s*\)\s*$/, '') : String(v);
+      const ve = cell.querySelector('.ws-cell__v');
+      if (ve && ve.textContent !== shown) ve.textContent = shown;
+      const bar = cell.querySelector('.ws-meter i');
+      if (bar && m != null) bar.style.width = (m * 100).toFixed(1) + '%';
+    }
+    const u = r.unit;
+    if (u?.statuses instanceof Map)
+      for (const [id, secs] of u.statuses) {
+        const sm = this.el.querySelector(`.ws-tchip[data-st="${CSS.escape(id)}"] small`);
+        if (sm && Number.isFinite(secs)) sm.textContent = secs >= YEAR ? `${Math.ceil(secs / YEAR)}y` : `${Math.ceil(secs)}s`;
+      }
+    this._vsig = this.valueSignature();
+  }
+  // No structural re-render while a finger/pointer is down in the panel or a popover is open on it.
+  frozen() {
+    const pop = this.ui.popover;
+    return !!this._ptr || !!(pop?.target && pop.el.classList.contains('is-shown') && this.el.contains(pop.target));
   }
 
   toggleFollow() {
@@ -684,10 +745,30 @@ export class Inspector {
     this.game.focus(o.x + Math.sin(rig.goal.yaw) * d, o.z + Math.cos(rig.goal.yaw) * d);
   }
 
+  editTarget(r) {
+    if (!r) return null;
+    if (r.unit) return r.unit;
+    if (kindOf(r) === 'kingdom') return typeof r.kingdom === 'object' ? r.kingdom : null;
+    return r.village || this.game.civ?.villages?.[r.building?.village] || null;
+  }
+  stopEdit() {
+    if (!this.editing) return;
+    this.editing = null;
+    this._sig = '';
+    this.render();
+  }
+  // after a rename: update the header without touching the edit card
+  patchTitle(text) {
+    const h = this.el.querySelector('.ws-insp__title');
+    if (h && h.firstChild) h.firstChild.textContent = text;
+    this.pin.querySelector('.ws-pin__label').textContent = text;
+  }
+
   // Re-query the tracked entity so stats stay live.
   refresh() {
     const r = this.track;
     if (!r) return;
+    if (this.editing) return;
     const u = r.unit,
       b = r.building;
     let at = this.hit;
@@ -710,7 +791,13 @@ export class Inspector {
     this.index = idx;
     this.track = list[idx];
     if (u) this.hit = at;
-    if (this.signature() !== this._sig) this.render();
+    if (this.signature() !== this._sig) {
+      if (this.frozen()) this._pending = true;
+      else {
+        this._pending = false;
+        this.render();
+      }
+    } else if (this.valueSignature() !== this._vsig) this.patchValues();
   }
 
   // Screen-space pin over the selection: visible through canopy and hills.

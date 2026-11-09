@@ -124,6 +124,10 @@ export class UnitRenderer {
     this._rim = new THREE.Color();
     this._kc = new Map();
     game.events.on('unit:death', ({ unit }) => this._onDeath(unit));
+    this._kver = 0;
+    game.events.on('edit', (e) => {
+      if (e && e.kind === 'kingdom') this._kver++;
+    });
     game.events.on('world:regenerated', () => {
       this.corpses.length = 0;
       this.ripples.length = 0;
@@ -205,8 +209,9 @@ export class UnitRenderer {
     const k = rs.apK;
     const eq = u._eqVer || 0,
       nt = u.traits ? u.traits.length : 0;
-    if (k && k.job === u.job && k.ct === ct && k.kd === u.kingdom && k.ageB === ageB && k.wa === wa && k.rg === rg && k.col === u.color && k.sex === u.sex && k.eq === eq && k.nt === nt) return;
-    rs.apK = { job: u.job, ct, kd: u.kingdom, ageB, wa, rg, col: u.color, sex: u.sex, eq, nt };
+    const kv = this._kver;
+    if (k && k.job === u.job && k.ct === ct && k.kd === u.kingdom && k.ageB === ageB && k.wa === wa && k.rg === rg && k.col === u.color && k.sex === u.sex && k.eq === eq && k.nt === nt && k.kv === kv) return;
+    rs.apK = { job: u.job, ct, kd: u.kingdom, ageB, wa, rg, col: u.color, sex: u.sex, eq, nt, kv };
     rs.starborn = !!u.traits?.includes('starborn');
     const id = u.id;
     const r = (k) => h1(id, k);
@@ -651,6 +656,10 @@ export class UnitRenderer {
         const gy = Math.max(ground, SEA_LEVEL);
         const altK = Math.max(0, 1 - (y - gy) / 14);
         ov.ground.add(ix, gy, iz, md.radius * 1.3 * scale * (1.4 - altK * 0.4), 0, 1, 0, DECAL.shadow, 0.02, 0.02, 0.05, 0.38 * altK);
+      }
+      if (u.flags?.immortal && lod > 0.05 && hab !== 'air') {
+        const gy = Math.max(ground, SEA_LEVEL);
+        ov.ground.add(ix, gy, iz, (md.radius * 1.2 + 0.18) * scale, 0, 1, 0, DECAL.ring, 1.0, 0.85, 0.4, 0.45 + 0.1 * Math.sin(now * 2 + rs.seed * 5));
       }
       // fighters stand on a ring of their kingdom's colour: sides read in battle
       if (u.combat && def.kind === 'humanoid' && u.kingdom >= 0 && hab === 'land') {

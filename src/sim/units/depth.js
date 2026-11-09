@@ -165,7 +165,7 @@ export function installDepth(Units) {
       const now = g.time.total;
       const cap = Math.max(3, Math.round(3 * this.popScale));
       const realmFull = s.kingdom != null && s.kingdom >= 0 && (L.realm.get(s.kingdom) || 0) >= 2;
-      if (L.count >= cap || realmFull || now - (this._lastLegend ?? -1e9) < 450) {
+      if (!s.divine && (L.count >= cap || realmFull || now - (this._lastLegend ?? -1e9) < 450)) {
         s.quality = 'masterwork';
         if (s.material === 'starsteel') s.material = 'steel';
       } else {

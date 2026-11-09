@@ -244,7 +244,11 @@ export class Clouds {
     this.game = game;
     const W = game.world.w,
       H = game.world.h;
-    this.field = { x0: -W * 0.5, z0: -H * 0.5, sx: W * 2, sz: H * 2 };
+    // A square field centred on the world (twice its longest side): the
+    // published cloudShadow UV uses one scale for both axes, so the field
+    // must be square even for rectangular (e.g. 2:1) worlds.
+    const side = Math.max(W, H) * 2;
+    this.field = { x0: W * 0.5 - side / 2, z0: H * 0.5 - side / 2, sx: side, sz: side };
     this.altitude = 62;
     this.deckAltitude = 40; // storm deck
     const q = game.pipeline?.quality || 'high';
@@ -529,7 +533,7 @@ export class Clouds {
     const z01 = game.view?.zoom01 ?? 0.5;
     const vis = THREE.MathUtils.smoothstep(camDist, 70, 150) * (1 - 0.72 * THREE.MathUtils.smoothstep(z01, 0.8, 1.0));
     u.uOpacity.value = vis * (0.82 + 0.18 * weather.overcast) * (1 - 0.35 * weather.storm);
-    u.uNearFade.value = 40 + camDist * 0.28;
+    u.uNearFade.value = 70 + camDist * 0.45; // never a wash right under the lens
     this.group.visible = vis > 0.01;
     // high cirrus layer
     const C = this.cirrusU;
