@@ -608,15 +608,20 @@ function terraceMountains(hgt, rangeMask, W, H) {
       const k = 0.8 * smoothstep(0.08, 0.45, m) * smoothstep(2.5, 5, h) * (1 - smoothstep(0.9, 1.9, slope));
       hgt[i] = h + (b + g * step - h) * k;
     }
-  // light relaxation across massifs removes column-to-column grooves
+  // light relaxation of the terraced benches removes column-to-column grooves;
+  // steep faces, gorges and hollows keep their full relief (relaxing them
+  // flattened the northern gorges and basins)
   const tmp = hgt.slice();
   for (let y = 1; y < H - 1; y++)
     for (let x = 1; x < W - 1; x++) {
       const i = y * W + x;
       const m = rangeMask[i];
       if (m <= 0.08) continue;
+      const slope = Math.max(Math.abs(src[i + 1] - src[i - 1]), Math.abs(src[i + W] - src[i - W])) * 0.5;
       const avg = (tmp[i - 1] + tmp[i + 1] + tmp[i - W] + tmp[i + W]) * 0.25;
-      hgt[i] = tmp[i] + (avg - tmp[i]) * 0.35 * Math.min(1, m * 2);
+      const hollow = smoothstep(0.15, 0.6, avg - tmp[i]);
+      const k = 0.35 * Math.min(1, m * 2) * (1 - smoothstep(0.9, 1.9, slope)) * (1 - hollow);
+      hgt[i] = tmp[i] + (avg - tmp[i]) * k;
     }
   void N;
 }
@@ -927,8 +932,11 @@ function carveRivers(world, land, moist, P, sc, rand) {
         if (d2 > R * R) continue;
         const e = Math.max(0, Math.sqrt(d2) - w);
         const ev = Math.max(0, e - 1.1);
-        const t = bed + (0.45 - bed) * smoothstep(0, 1.1, e) + ev * 0.27 + ev * ev * 0.034;
         const j = yy * W + xx;
+        // through high ground the river cuts a narrow gorge with steep walls
+        // instead of levelling a broad valley across the massif
+        const gK = smoothstep(2.8, 6.5, hgt[j]);
+        const t = bed + (0.45 - bed) * smoothstep(0, 1.1, e) + ev * (0.27 + 1.05 * gK) + ev * ev * (0.034 + 0.11 * gK);
         if (t < target[j]) target[j] = t;
       }
   }
