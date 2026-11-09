@@ -1800,6 +1800,48 @@ function harbour(g, K, style) {
   return info;
 }
 
+// A kingdom's wonder: a stepped stone platform crowned by a great work in the
+// culture's idiom, gilded at the top so it catches the eye at any zoom.
+function wonder(g, K, style) {
+  const c = style === 'dune' ? K.wall : K.stone;
+  g.box(0, -0.4, 0, 2.9, 0.62, 2.9, c, { jit: 0.08 });
+  g.box(0, 0.22, 0, 2.3, 0.4, 2.3, K.stone2, { jit: 0.08 });
+  for (let i = 0; i < 5; i++) g.box(0, -0.4 + i * 0.12, 1.45 + 0.12 - i * 0.12, 0.8, 0.12, 0.14, K.stone2);
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) bannerPole(g, K, sx * 1.25, 0.62, sz * 1.25, 1.1, { s: 1.1 });
+  const gold = 0xe2b440;
+  if (style === 'dune') {
+    // Sun Pillar: a fluted column under a golden sun disc
+    g.cyl(0, 0.62, 0, 0.42, 2.6, 12, K.wall2, { r2: 0.34, stripes: K.wall });
+    g.cyl(0, 3.2, 0, 0.55, 0.12, 12, K.stone2, {});
+    g.dome(0, 3.32, 0, 0.45, 12, 5, gold, { sy: 1.0 });
+    g.box(0, 3.75, 0, 0.08, 0.5, 0.08, gold, { glow: 0.6 });
+  } else if (style === 'mire') {
+    // Sky Totem: stacked carved spirits under a sweeping crest
+    for (let k = 0; k < 6; k++) g.cyl(0, 0.62 + k * 0.48, 0, 0.42 - k * 0.03, 0.46, 8, k % 2 ? K.trim : K.cloth, { tint: k % 2 ? 0 : 0.8 });
+    g.beam(-0.9, 3.3, 0, 0.9, 3.3, 0, 0.12, K.timber, { tint: 0.6 });
+    g.cone(0, 3.5, 0, 0.3, 0.7, 8, gold, { glow: 0.4 });
+  } else if (style === 'frost') {
+    // Rune Tower: a tall square stone tower with a copper spire and rune glow
+    g.box(0, 0.62, 0, 0.9, 2.6, 0.9, c, { jit: 0.1 });
+    for (const f of ['F', 'B', 'L', 'R']) {
+      const p = face(0, 0, 0.9, 0.9, f, 0);
+      g.box(p.x + p.nx * 0.01, 1.4, p.z + p.nz * 0.01, 0.12, 1.1, 0.02, 0x7fd8ff, { ry: p.ry, glow: 1 });
+    }
+    g.hip(0, 3.22, 0, 0.95, 0.95, 1.4, 0x5c9a86, { over: 0.06, rows: 3 });
+    g.bead(0, 4.6, 0, 0.09, gold, { glow: 0.5 });
+  } else {
+    // Great Spire: a tiered tower rising to a needle spire
+    g.box(0, 0.62, 0, 1.1, 1.3, 1.1, c, { jit: 0.08 });
+    crenels(g, K, 0, 1.92, 0, 1.1, 1.1, c, 0.18, 0.1);
+    g.box(0, 1.92, 0, 0.75, 1.1, 0.75, K.wall, {});
+    for (const f of ['F', 'B', 'L', 'R']) windowOn(g, K, 0, 0, 0.75, 0.75, f, 0, 2.35, { w: 0.14, h: 0.32, cross: false });
+    g.hip(0, 3.02, 0, 0.8, 0.8, 1.6, K.tile, { over: 0.06, tint: 0.2, rows: 4 });
+    g.cyl(0, 4.55, 0, 0.03, 0.5, 6, gold, {});
+    g.bead(0, 5.0, 0, 0.08, gold, { glow: 0.5 });
+  }
+  return { base: { x: 0, z: 0, w: 2.9, d: 2.9 } };
+}
+
 // ---------------------------------------------------------------- entry point
 const BUILDERS = {
   house: (g, K, s, lv) => (s === 'vale' ? valeHouse : s === 'dune' ? duneHouse : s === 'frost' ? frostHouse : mireHouse)(g, K, lv),
@@ -1810,6 +1852,7 @@ const BUILDERS = {
   windmill: (g, K, s) => windmill(g, K, s),
   docks: (g, K, s, lv) => (lv >= 2 ? harbour : docks)(g, K, s),
   library: (g, K, s) => library(g, K, s),
+  wonder: (g, K, s) => wonder(g, K, s),
   observatory: (g, K, s) => observatory(g, K, s),
   aqueduct: (g, K, s) => aqueduct(g, K, s),
   market: (g, K, s) => market(g, K, s),
