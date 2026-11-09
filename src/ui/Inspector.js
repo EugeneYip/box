@@ -7,6 +7,7 @@ import { traitDef, statusDef, modLines, prettyId, eraNames, techDef, techList } 
 import { kingdomOf, eraOf, researchOf } from './TechPanel.js';
 import { CULTURES } from '../sim/civ/cultures.js';
 import { Editor } from './Editor.js';
+import { bannerURL } from './banner.js';
 import { YEAR } from '../core/time.js';
 
 const TRAIT_ICON = { body: 'heart', mind: 'sparkle', spirit: 'fire', gift: 'good', scar: 'shield', trait: 'sparkle' };
@@ -417,7 +418,9 @@ export class Inspector {
     actions.push(`<button class="ws-btn ws-btn--sm ws-btn--ghost" type="button" data-act="focus">${uiIcon('focus')}<span>Focus</span></button>`);
     const kindLabel = k === 'tile' && r.tile?.water ? 'Waters' : u && ic.label ? ic.label : KIND_LABEL[k] || 'Detail';
     const pref = u || r.building;
-    const portrait = pref ? this.portraits.get(pref) : null;
+    // a realm shows its banner (the same drawing as its flags) in place of a portrait
+    const kObj = !pref && kindOf(r) === 'kingdom' && typeof r.kingdom === 'object' ? r.kingdom : null;
+    const portrait = pref ? this.portraits.get(pref) : kObj?.banner ? bannerURL(kObj.banner, kObj.color, 72) : null;
     const editable = !!(u ? u.alive !== false : k === 'kingdom' || k === 'village' || (k === 'building' && (r.village || this.game.civ?.villages?.[r.building?.village])));
     const editing = !!this.editing && editable && this.editTarget(r) === this.editing;
     const depth = safe(() => (u ? this.unitDepth(u) : k === 'village' || k === 'kingdom' || k === 'building' ? this.realmDepth(r) : ''), '', 'inspector depth') || '';
@@ -431,7 +434,7 @@ export class Inspector {
     this.el.innerHTML = `
       <div class="ws-insp__grab" data-act="sheet" aria-hidden="true"><i></i></div>
       <header class="ws-insp__head">
-        <span class="ws-insp__badge${portrait ? ' has-portrait' : ''}">${level != null ? `<i class="ws-lvl" title="Level ${level}">${level}</i>` : ''}${portrait ? `<img class="ws-insp__portrait" src="${portrait}" alt=""><span class="ws-insp__glyph">${ic.svg}</span>` : ic.svg}${kTint ? `<i class="ws-insp__kdot" style="--k:${kTint}"></i>` : ''}</span>
+        <span class="ws-insp__badge${portrait ? ' has-portrait' : ''}${kObj?.banner ? ' has-banner' : ''}">${level != null ? `<i class="ws-lvl" title="Level ${level}">${level}</i>` : ''}${portrait ? `<img class="ws-insp__portrait" src="${portrait}" alt=""><span class="ws-insp__glyph">${ic.svg}</span>` : ic.svg}${kTint ? `<i class="ws-insp__kdot" style="--k:${kTint}"></i>` : ''}</span>
         <div class="ws-insp__titles">
           <div class="ws-insp__kind">${esc(kindLabel)}${dead ? ' <em class="ws-insp__dead">Fallen</em>' : ''}</div>
           <h3 class="ws-insp__title">${esc(r.title || 'Unknown')}${epithet ? ` <span class="ws-insp__epithet">${esc(epithet)}</span>` : ''}</h3>

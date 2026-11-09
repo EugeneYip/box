@@ -1,6 +1,7 @@
 import { el, esc, safe, hexCss } from './dom.js';
 import { uiIcon } from './icons.js';
 import { REG, prettyId } from './depth.js';
+import { bannerURL, emblemFace, EMBLEM_IDS, FIELD_IDS } from './banner.js';
 
 // Editing card for kingdoms, villages and creatures (docs/EDITING.md).
 // Built once when editing starts and patched in place afterwards, so it never
@@ -8,76 +9,7 @@ import { REG, prettyId } from './depth.js';
 // the owning module's API and offers a 10 s Undo from a toast. Controls whose
 // API is missing are disabled.
 
-const BANNER_ICON = {
-  tower: 'found-kingdom',
-  wheat: 'plant-wheat',
-  wolf: 'spawn-wolf',
-  star: 'sparkle',
-  wave: 'ocean',
-  oak: 'plant-tree',
-  tree: 'plant-tree',
-  flame: 'fire',
-  fire: 'fire',
-  crown: 'crown',
-  anvil: 'build',
-  hammer: 'build',
-  ship: 'ship',
-  moon: 'night',
-  sun: 'sun',
-  eye: 'curse',
-  sword: 'sword',
-  swords: 'declare-war',
-  shield: 'shield',
-  bear: 'spawn-bear',
-  stag: 'spawn-deer',
-  deer: 'spawn-deer',
-  fish: 'spawn-fish',
-  bird: 'spawn-bird',
-  eagle: 'spawn-bird',
-  mountain: 'mountain',
-  key: 'gold',
-  rose: 'plant-flowers',
-  flower: 'plant-flowers',
-  serpent: 'spawn-snake',
-  dragon: 'spawn-dragon',
-  horse: 'spawn-horse',
-  castle: 'found-kingdom',
-};
-const DEFAULT_SYMBOLS = ['tower', 'wheat', 'wolf', 'star', 'wave', 'oak', 'flame', 'crown', 'anvil', 'ship', 'moon', 'eye'];
-const DEFAULT_FIELDS = ['plain', 'pale', 'bend', 'chevron', 'quartered'];
 const fn = (o, name) => typeof o?.[name] === 'function';
-const lighten = (hex, t) => {
-  const n = typeof hex === 'number' ? hex : parseInt(String(hex).replace('#', ''), 16) || 0;
-  const m = (c) => Math.round(c + (255 - c) * t);
-  return `rgb(${m((n >> 16) & 255)},${m((n >> 8) & 255)},${m(n & 255)})`;
-};
-
-// A small heraldic preview: field pattern in the kingdom colour plus emblem.
-export function bannerSvg(color, field = 'plain', symbol = null, size = 64) {
-  const c = hexCss(color);
-  const light = lighten(color, 0.55);
-  const pat = {
-    plain: '',
-    pale: `<rect x="16" y="0" width="16" height="44" fill="${light}"/>`,
-    'per pale': `<rect x="16" y="0" width="16" height="44" fill="${light}"/>`,
-    bend: `<path d="M0 0h10L32 34v10h-10L0 10z" fill="${light}"/>`,
-    'per bend': `<path d="M32 0v44L0 0z" fill="${light}"/>`,
-    chevron: `<path d="M0 30 16 14l16 16v8L16 22 0 38z" fill="${light}"/>`,
-    quartered: `<rect x="16" y="0" width="16" height="22" fill="${light}"/><rect x="0" y="22" width="16" height="22" fill="${light}"/>`,
-    cross: `<rect x="13" y="0" width="6" height="44" fill="${light}"/><rect x="0" y="16" width="32" height="6" fill="${light}"/>`,
-  }[field] ?? '';
-  const icon = symbol ? BANNER_ICON[symbol] : null;
-  return `<svg class="ws-banner" viewBox="0 0 32 44" width="${size * 0.73}" height="${size}" aria-hidden="true">
-    <defs><clipPath id="bn-${field}-${String(symbol)}"><path d="M2 2h28v26c0 7-6 12-14 14C8 40 2 35 2 28z"/></clipPath></defs>
-    <g clip-path="url(#bn-${field}-${String(symbol)})"><rect width="32" height="44" fill="${c}"/>${pat}</g>
-    <path d="M2 2h28v26c0 7-6 12-14 14C8 40 2 35 2 28z" fill="none" stroke="rgba(255,240,200,.75)" stroke-width="1.4"/>
-    ${icon ? `<g transform="translate(7 9) scale(.56)" style="color:#fffaf0;--tint:#fffaf0">${uiIconInner(icon)}</g>` : symbol ? `<text x="16" y="25" text-anchor="middle" font-size="12" fill="#fffaf0" font-family="Cinzel" font-weight="700">${esc(String(symbol)[0].toUpperCase())}</text>` : ''}
-  </svg>`;
-}
-function uiIconInner(name) {
-  const s = uiIcon(name);
-  return s.replace(/^<svg[^>]*>/, '').replace(/<\/svg>$/, '');
-}
 
 export class Editor {
   constructor(inspector) {
@@ -155,8 +87,41 @@ export class Editor {
       if (String(o.value) === String(value)) op.selected = true;
       s.append(op);
     }
-    s.addEventListener('change', () => onChange(s.value));
-    return el('label', { class: 'ws-erow ws-erow--stack' + (ok ? '' : ' is-disabled') }, el('span', { class: 'ws-erow__txt' }, el('b', { text: label })), s);
+    let cur = s.value;
+    s.addEventListener('change', () => {
+      if (onChange(s.value) === false) s.value = cur;
+      else cur = s.value;
+    });
+    const row = el('label', { class: 'ws-erow ws-erow--stack' + (ok ? '' : ' is-disabled') }, el('span', { class: 'ws-erow__txt' }, el('b', { text: label })), s);
+    row.refill = (list, val) => {
+      s.innerHTML = '';
+      for (const o of list) s.append(el('option', { value: String(o.value), text: o.label }));
+      s.value = String(val ?? 'null');
+      cur = s.value;
+    };
+    return row;
+  }
+  // "Make capital": a one-way decree (the old seat comes back with Undo)
+  capitalRow(v, ok) {
+    const civ = this.game.civ || {};
+    const btn = el('button', { class: 'ws-btn ws-btn--sm', type: 'button' });
+    const paint = () => {
+      const isCap = civ.kingdoms?.[v.kingdom]?.capital === v.id;
+      btn.textContent = isCap ? 'The capital' : 'Make capital';
+      btn.disabled = !ok || isCap || v.kingdom == null;
+    };
+    btn.addEventListener('click', () => {
+      const k = civ.kingdoms?.[v.kingdom];
+      const prev = k?.capital;
+      if (!safe(() => civ.setVillagePolicy(v.id, 'capital', true), false)) return;
+      paint();
+      this.applied(`${v.name} becomes the capital`, () => {
+        if (prev != null && prev !== v.id) safe(() => civ.setVillagePolicy(prev, 'capital', true), false, 'undo capital');
+        paint();
+      });
+    });
+    paint();
+    return el('div', { class: 'ws-erow' + (ok ? '' : ' is-disabled') }, el('span', { class: 'ws-erow__txt' }, el('b', { text: 'Capital' }), el('small', { text: 'Seat of its kingdom' })), btn);
   }
 
   // ---------------------------------------------------------------- entry
@@ -203,11 +168,15 @@ export class Editor {
     box.append(this.section('Name', nameIn, fn(civ, 'renameKingdom') ? null : this.missing()));
 
     // colour
-    const preview = el('span', { class: 'ws-ebanner' });
+    const preview = el('span', { class: 'ws-ebanner' }, el('img', { class: 'ws-ebanner__img', alt: '' }));
     const drawBanner = () => {
-      const b = k.banner || {};
-      preview.innerHTML = bannerSvg(k.color, b.field || 'plain', b.symbol || null, 72);
+      preview.firstChild.src = bannerURL(k.banner || null, k.color, 96);
+      const hb = this.insp.el.querySelector('.ws-insp__badge.has-banner .ws-insp__portrait');
+      if (hb) hb.src = bannerURL(k.banner, k.color, 72);
+      // field buttons show the realm's own colours
+      fieldGrid?.querySelectorAll('img').forEach((im) => (im.src = bannerURL({ symbol: null, field: im.dataset.f }, k.color, 36)));
     };
+    let fieldGrid = null;
     drawBanner();
     const sw = el('div', { class: 'ws-swatches' });
     const okColor = fn(civ, 'setKingdomColor');
@@ -236,10 +205,10 @@ export class Editor {
 
     // banner
     const okBanner = fn(civ, 'setKingdomBanner');
-    const symbols = (Array.isArray(civ.BANNER_SYMBOLS) && civ.BANNER_SYMBOLS.length ? civ.BANNER_SYMBOLS : DEFAULT_SYMBOLS).map((s) => (typeof s === 'string' ? s : s.id));
-    const fields = (Array.isArray(civ.BANNER_FIELDS) && civ.BANNER_FIELDS.length ? civ.BANNER_FIELDS : DEFAULT_FIELDS).map((s) => (typeof s === 'string' ? s : s.id));
+    const symbols = (Array.isArray(civ.BANNER_SYMBOLS) && civ.BANNER_SYMBOLS.length ? civ.BANNER_SYMBOLS : EMBLEM_IDS).map((s) => (typeof s === 'string' ? s : s.id));
+    const fields = (Array.isArray(civ.BANNER_FIELDS) && civ.BANNER_FIELDS.length ? civ.BANNER_FIELDS : FIELD_IDS).map((s) => (typeof s === 'string' ? s : s.id));
     const symGrid = el('div', { class: 'ws-egrid ws-egrid--sym' });
-    const fieldGrid = el('div', { class: 'ws-egrid ws-egrid--field' });
+    fieldGrid = el('div', { class: 'ws-egrid ws-egrid--field' });
     const setBanner = (patch) => {
       const prev = { ...(k.banner || {}) };
       const next = { symbol: prev.symbol ?? symbols[0], field: prev.field ?? fields[0], ...patch };
@@ -257,9 +226,9 @@ export class Editor {
       fieldGrid.querySelectorAll('button').forEach((b) => b.classList.toggle('is-on', b.dataset.v === (k.banner?.field ?? '')));
     };
     for (const s of symbols)
-      symGrid.append(el('button', { class: 'ws-ebtn', type: 'button', 'data-v': s, 'data-tip': prettyId(s), 'aria-label': prettyId(s), disabled: okBanner ? null : true, html: BANNER_ICON[s] ? uiIcon(BANNER_ICON[s]) : `<b>${esc(s[0].toUpperCase())}</b>`, onclick: () => setBanner({ symbol: s }) }));
+      symGrid.append(el('button', { class: 'ws-ebtn', type: 'button', 'data-v': s, 'data-tip': prettyId(s), 'aria-label': prettyId(s), disabled: okBanner ? null : true, html: emblemFace(s), onclick: () => setBanner({ symbol: s }) }));
     for (const f of fields)
-      fieldGrid.append(el('button', { class: 'ws-ebtn ws-ebtn--field', type: 'button', 'data-v': f, 'data-tip': prettyId(f), 'aria-label': prettyId(f), disabled: okBanner ? null : true, html: bannerSvg(0x8a8478, f, null, 30), onclick: () => setBanner({ field: f }) }));
+      fieldGrid.append(el('button', { class: 'ws-ebtn ws-ebtn--field', type: 'button', 'data-v': f, 'data-tip': prettyId(f), 'aria-label': prettyId(f), disabled: okBanner ? null : true, html: `<img alt="" data-f="${esc(f)}" src="${bannerURL({ symbol: null, field: f }, k.color, 36)}">`, onclick: () => setBanner({ field: f }) }));
     markBanner();
     box.append(this.section('Banner', el('div', { class: 'ws-ebannerrow' }, preview, el('div', { class: 'ws-ebannerpick' }, symGrid, fieldGrid)), okBanner ? null : this.missing()));
 
@@ -365,19 +334,23 @@ export class Editor {
     });
     box.append(this.section('Name', nameIn, fn(civ, 'renameVillage') ? null : this.missing()));
     const okT = fn(civ, 'transferVillage');
-    const opts = [{ value: 'null', label: 'An independent realm' }, ...(civ.kingdoms || []).filter((k) => k && k.alive !== false).map((k) => ({ value: k.id, label: k.name }))];
-    box.append(
-      this.section(
-        'Allegiance',
-        this.select('Belongs to', opts, v.kingdom ?? 'null', okT, (val) => {
-          const prev = v.kingdom;
-          const to = val === 'null' ? null : +val;
-          if (!safe(() => civ.transferVillage(id, to), false)) return;
-          this.applied(to == null ? `${v.name} declares independence` : `${v.name} joins the ${civ.kingdomName?.(to) || 'realm'}`, () => civ.transferVillage(id, prev ?? null));
-        }),
-        okT ? null : this.missing(),
-      ),
-    );
+    const realmOpts = () => {
+      const own = civ.kingdoms?.[v.kingdom];
+      const alone = !!own && own.alive !== false && (own.villages?.length ?? 0) <= 1;
+      return [...(civ.kingdoms || []).filter((k) => k && k.alive !== false).map((k) => ({ value: k.id, label: k.name })), ...(alone ? [] : [{ value: 'null', label: 'A new free realm' }])];
+    };
+    const allegiance = this.select('Belongs to', realmOpts(), v.kingdom ?? 'null', okT, (val) => {
+      const prev = v.kingdom;
+      const to = val === 'null' ? null : +val;
+      if (!safe(() => civ.transferVillage(id, to), false)) return false;
+      allegiance.refill(realmOpts(), v.kingdom);
+      this.applied(to == null ? `${v.name} is freed: ${civ.kingdomName?.(v.kingdom) || 'a new realm'}` : `${v.name} joins ${civ.kingdomName?.(to) || 'the realm'}`, () => {
+        safe(() => civ.transferVillage(id, prev), false, 'undo transfer');
+        allegiance.refill(realmOpts(), v.kingdom);
+      });
+      return true;
+    });
+    box.append(this.section('Allegiance', allegiance, okT ? null : this.missing()));
     const okP = fn(civ, 'setVillagePolicy');
     const pol = safe(() => civ.villagePolicies?.(id), null) || {};
     const setPol = (key, val, prev, label) => {
@@ -391,7 +364,7 @@ export class Editor {
         this.toggle('Walls', pol.walls ?? true, okP, (val) => setPol('walls', val, !val, val ? 'Walls may be raised' : 'No walls')),
         this.slider('Growth', pol.growth ?? 1, 0.25, 3, 0.25, okP, (val, prev) => setPol('growth', val, prev, `Growth ×${val}`)),
         this.toggle('New buildings', pol.buildings ?? true, okP, (val) => setPol('buildings', val, !val, val ? 'Building allowed' : 'Building halted')),
-        this.toggle('Capital', pol.capital ?? false, okP, (val) => setPol('capital', val, !val, val ? `${v.name} becomes the capital` : 'Capital unchanged'), 'Seat of its kingdom'),
+        this.capitalRow(v, okP),
         okP ? null : this.missing(),
       ),
     );
