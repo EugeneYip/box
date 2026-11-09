@@ -77,6 +77,7 @@ function humanMid(B) {
   box(B, 0.11, 0.12, 0.09, [0, 0.33, -0.11], 'torso', 'stone', { slot: 'back', opt: 2 });
   box(B, 0.11, 0.09, 0.1, [0, 0.32, -0.11], 'torso', 'straw', { slot: 'back', opt: 3 });
   box(B, 0.08, 0.09, 0.07, [0, 0.31, -0.1], 'torso', 'gold', { slot: 'back', opt: 4 });
+  B.add(P.box(0.035, 0.42, 0.015), { pos: [0, 0.31, -0.1], rot: [0, 0, 0.55], bone: 'torso', mat: 'metal', slot: 'back', opt: 5 });
   // kingdom tabard (cape slot 2) and royal cape (1)
   for (const s of [1, -1]) box(B, 0.11, 0.2, 0.01, [0, 0.27, 0.084 * s], 'torso', 'sash', { slot: 'cape', opt: 2 });
   B.add(P.lathe([[0.122, 0.336], [0.088, 0.383], [0.05, 0.398]], 7), { scl: [1, 1, 0.86], bone: 'torso', mat: 'sash', slot: 'cape', opt: 2 });

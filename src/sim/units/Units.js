@@ -5,6 +5,7 @@ import { BRAINS, BRAIN_TICKS } from './brains.js';
 import { makeName, makeMonsterName } from './names.js';
 import { VillageHerds } from './herds.js';
 import { installDepth } from './depth.js';
+import { installEditing } from './edit.js';
 
 // Core creature simulation (owned by the Life module; the Civilization module
 // programs humanoid behaviour through registerBrain / unit.job).
@@ -471,6 +472,10 @@ export class Units {
 
   kill(u, cause = 'unknown', killer = null) {
     if (!u || !u.alive) return;
+    if (u.flags?.immortal && cause !== 'divine' && cause !== 'removed') {
+      u.hp = Math.max(1, u.hp);
+      return;
+    }
     const g = this.game;
     u.alive = false;
     u.hp = 0;
@@ -510,6 +515,7 @@ export class Units {
     const arm = u.equipment?.armor;
     if (arm && source) amount *= 1 - arm.power / (arm.power + 20);
     u.hp -= amount;
+    if (u.flags?.immortal && u.hp < 1) u.hp = 1;
     u.lastHurt = now;
     if (source && source.alive) u.data.attacker = source.id;
     if (opts.knock) {
@@ -1078,6 +1084,7 @@ export class Units {
   // ---- combat ---------------------------------------------------------------
   engage(a, t, opts = {}) {
     if (!a || !t || !a.alive || !t.alive || a === t) return false;
+    if (a.flags?.pacifist) return false;
     const now = this.game.time.total;
     if (this.attackDamage(a) <= 0) return false;
     if (a.combat && a.combat.target === t.id) return true;
@@ -1349,6 +1356,10 @@ export class Units {
     const now = this.game.time.total;
     if (u.combat && u.combat.target === src.id) return;
     const def = u.def;
+    if (u.flags?.pacifist) {
+      this.flee(u, src.x, src.z, 6);
+      return;
+    }
     const canFight = this.attackDamage(u) > 0;
     let outmatched = def.flees && !(u.mad > now) && (src.def.mass > def.mass * 0.6 || !canFight);
     const aggr = u._mAggr || 1;
@@ -1702,7 +1713,7 @@ export class Units {
       u.pz = u.z;
       u.py = u.y;
       u.ph = u.heading;
-      u.age += yearDt;
+      if (!u.flags?.frozenAge) u.age += yearDt;
       u.attackCd -= dt;
       u.stateTime += dt;
       // ---- needs
@@ -1725,10 +1736,10 @@ export class Units {
         u.hp -= dt * def.hp * 0.025;
         if (u.hp <= 0) {
           this.kill(u, 'starvation');
-          continue;
+          if (!u.alive) continue;
         }
       }
-      if (u.age > u.lifespan * lifeLaw && this.law('lifeAging')) {
+      if (u.age > u.lifespan * lifeLaw && this.law('lifeAging') && !u.flags?.immortal) {
         this.kill(u, 'old age');
         continue;
       }
@@ -1964,10 +1975,14 @@ export class Units {
     const ageM = g.age?.mods?.monsters ?? 1;
     // the law covers ordinary ages; a monstrous age (Twilight) always brings them
     if (!this.law('beastsMonsters') && ageM <= 1.001) return;
-    const rate = (this.law('beastsMonsters') ? ageM : ageM - 1) * (typeof g.laws?.spawnRate === 'number' ? Math.max(0.1, g.laws.spawnRate) : 1);
+    const spawnRate = typeof g.laws?.spawnRate === 'number' ? Math.max(0.1, g.laws.spawnRate) : 1;
     let monsters = 0;
     for (const sp of ['golem', 'serpent', 'skywyrm']) monsters += this.count(sp);
-    if (monsters >= Math.round(3 * this.popScale * Math.max(1, ageM * 0.8)) || !g.rng.chance(0.045 * rate)) return;
+    // ordinary ages (law on): a rare wanderer; a monstrous age: about (mod - 1)
+    // monsters per game minute across a medium map (this check runs every 15 s)
+    const perMin = ageM > 1.001 ? (ageM - 1) * this.popScale : 0.18 * ageM;
+    const cap = Math.round((ageM > 1.001 ? 4 + 2 * (ageM - 1) : 3) * this.popScale);
+    if (monsters >= cap || !g.rng.chance(Math.min(0.9, (perMin / 4) * spawnRate))) return;
     const w = g.world;
     const roll = g.rng.next();
     const species = roll < 0.5 ? 'golem' : roll < 0.8 ? 'serpent' : 'skywyrm';
@@ -2122,5 +2137,6 @@ export class Units {
 }
 
 installDepth(Units);
+installEditing(Units);
 
 export { FLORA, FLORA_INFO };
