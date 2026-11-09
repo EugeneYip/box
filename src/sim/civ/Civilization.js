@@ -223,7 +223,15 @@ export class Civilization {
     const k = this.kingdoms[u.kingdom];
     if (k) {
       if (cause === 'killed') k.warLosses++;
-      if (k.alive && k.ruler === u.id) this._succession(k, u.name || 'The ruler');
+      if (k.alive && k.ruler === u.id) {
+        this._lastRulerId = u.id;
+        // keep a short record of how reigns end (inspect / tuning)
+        const rs = this.reignEnds || (this.reignEnds = []);
+        rs.push({ cause, age: Math.floor(u.age), reign: Math.round((this.game.time.total - (u.data.civ?.crownedAt ?? this.game.time.total)) / YEAR) });
+        if (rs.length > 40) rs.shift();
+        this._succession(k, u.name || 'The ruler');
+        this._lastRulerId = null;
+      }
     }
   }
 
@@ -800,6 +808,11 @@ export class Civilization {
           const child = this.spawnHuman(v, u.x + this.rng.float(-0.3, 0.3), u.z + this.rng.float(-0.3, 0.3), { age: 0, home: home ? home.id : -1, culture: u.data.culture });
           if (child) {
             child.job = 'child';
+            // remember the family, so grief stays within it
+            if (child.data.civ) {
+              child.data.civ.mother = u.id;
+              if (d.spouse != null) child.data.civ.father = d.spouse;
+            }
             this._fx('heal', child.x, child.z, 0.6);
           }
           break;
@@ -808,7 +821,9 @@ export class Civilization {
     }
 
     // newcomers drawn to prosperous settlements
-    if (v.housing - pop >= 3 && v.food > pop * 2 + 20 && pop < 40 && now - v.lastImmigrant > 18 && humans < this._humanCap() * 0.8 && this.rng.chance(0.035 * dt * (1 - popCrowd) * this.law('civGrowth', 1))) {
+    // (a camp short of hands or of a partner calls kin in sooner)
+    const small = pop < 10;
+    if ((v.housing - pop >= 3 || (small && v.housing - pop >= 1)) && v.food > pop * 2 + (small ? 6 : 20) && pop < 40 && now - v.lastImmigrant > (small ? 7 : 18) && humans < this._humanCap() * (small ? 0.95 : 0.8) && this.rng.chance((small ? 0.08 : 0.035) * dt * (1 - popCrowd * (small ? 0.5 : 1)) * this.law('civGrowth', 1))) {
       v.lastImmigrant = now;
       const a = this.rng.float(0, Math.PI * 2);
       const r = v.radius + 3;
@@ -917,7 +932,7 @@ export class Civilization {
     if (this._crowdT === t) return this._crowdV;
     const humans = this.game.units.count?.('human') ?? 0;
     let blds = 0;
-    for (const b of this.buildings) if (b.alive) blds += BUILDING_TYPES[b.type].wall ? 0.35 : 1;
+    for (const b of this.buildings) if (b.alive && !BUILDING_TYPES[b.type].wall) blds++; // walls are capped separately
     this._crowdT = t;
     const hc = this._humanCap();
     this._popCrowd = clamp((humans - hc * 0.55) / (hc * 0.45), 0, 1);
@@ -1124,13 +1139,32 @@ export class Civilization {
     if (!k || !k.alive) return false;
     const armory = k.armory || (k.armory = []);
     if (item.legendary && !item.history) item.history = `recovered at ${v ? v.name : 'the field'}`;
+    if (item.legendary) {
+      // a realm keeps a few legends in its armoury; the rest are enshrined as
+      // relics and leave circulation (named once in the chronicle, never again)
+      let legends = 0;
+      for (const it of armory) if (it.legendary) legends++;
+      if (legends >= 3) {
+        const relics = k.relics || (k.relics = []);
+        if (!relics.includes(item.name)) relics.push(item.name);
+        if (relics.length > 12) relics.shift();
+        if (!item.chronicled) {
+          item.chronicled = true;
+          this._history(`${item.name} is enshrined as a relic of ${this._kn(k)}`, 'info', v ? { x: v.cx, z: v.cz } : null);
+        }
+        return true;
+      }
+    }
     armory.push(item);
     if (armory.length > 90) {
       // the realm keeps its best and its legends
       armory.sort((a, b) => (b.legendary ? 99 : b.power || 0) - (a.legendary ? 99 : a.power || 0));
       armory.length = 90;
     }
-    if (item.legendary) this._history(`${item.name} is laid in the armoury of ${this._kn(k)}`, 'info', v ? { x: v.cx, z: v.cz } : null);
+    if (item.legendary && !item.chronicled) {
+      item.chronicled = true;
+      this._history(`${item.name} is laid in the armoury of ${this._kn(k)}`, 'info', v ? { x: v.cx, z: v.cz } : null);
+    }
     return true;
   }
 
@@ -1263,13 +1297,15 @@ export class Civilization {
     const stoneFull = v.stone > 60 + v.tier * 120;
     const ctr = (t) => this.hasCultureTrait(v.culture, t);
     give('farmer', v.fieldCount ? Math.max(1, Math.min(Math.ceil(v.fieldCount / (foodFull ? 14 : ctr('Pastoral') ? 7 : 9)), n * 0.5)) : 0);
-    give('fisher', v.docks ? Math.min(v.docks * 2, 1 + n * 0.15) : foodLow && n >= 5 && v.coastal ? 1 : 0);
+    give('fisher', v.docks ? Math.min(v.docks * (ctr('Seafaring') ? 3 : 2), 1 + n * (ctr('Seafaring') ? 0.25 : 0.15)) : foodLow && n >= 5 && v.coastal ? 1 : 0);
     const drafting = this.game.time.total - (v.draft ?? -99) < 45;
-    if (atWar) give('soldier', Math.max(3, n * (drafting ? 0.45 : 0.3)) + (v.hasBarracks ? 3 : 0));
+    // a people's ways show in its trades: martial folk keep many under arms
+    const lean = ctr('Martial') ? 1.8 : ctr('Pastoral') || ctr('Scholarly') ? 0.65 : 1;
+    if (atWar) give('soldier', Math.max(3, n * Math.min(0.55, (drafting ? 0.32 : 0.2) * lean)) + (v.hasBarracks ? 3 : 0));
     give('builder', sites ? Math.min(Math.max(1, Math.ceil(sites * 1.1)), 1 + Math.floor(n / 6)) : repairs ? 1 : 0);
     give('woodcutter', woodFull ? (n >= 6 ? 1 : 0) : v.wood < 40 + v.tier * 30 ? 1 + Math.floor(n / 8) : n >= 4 ? 1 + Math.floor(n / 16) : 0);
-    if (!atWar && n >= 6) give('soldier', Math.max(1, n * (ctr('Martial') ? 0.14 : 0.09)) + (v.hasBarracks ? 2 : 0));
-    if (v.hasRock !== false || v.quarry >= 0) give('miner', stoneFull ? 0 : v.stone < 30 + v.tier * 50 ? 1 + Math.floor(n / 9) : 1);
+    if (!atWar && n >= 6) give('soldier', Math.max(1, n * 0.1 * lean) + (v.hasBarracks ? 2 : 0));
+    if (v.hasRock !== false || v.quarry >= 0) give('miner', stoneFull ? 0 : v.stone < 30 + v.tier * 50 ? 1 + Math.floor(n / (ctr('Masons') ? 6 : 9)) : ctr('Masons') ? 2 : 1);
     // the rest go where they are most useful; anyone left over keeps the town lively
     let guard = 0;
     while (left > 0 && guard++ < 200) {
@@ -1422,7 +1458,7 @@ export class Civilization {
     if (room() && pop >= 8 && count('granary') === 0 && v.food > v.foodCap * 0.7) build('granary');
     const crowded = this._crowd();
     // 1 housing (bounded: big towns upgrade instead of sprawling)
-    if (room() && v.housing - pop < 2 + v.tier && v.housing < this._popCap(v) + 6 && (crowded < 0.97 || v.tier >= 1)) {
+    if (room() && v.housing - pop < 2 + v.tier && v.housing < this._popCap(v) + 6 && (crowded < 0.97 || v.tier >= 1 || v.housing < 16)) {
       const cand = v.tier >= 1 ? v.buildings.find((b) => b.alive && b.type === 'house' && !b.constructing && !b.upgrading && b.level < Math.min(3, v.tier + 1)) : null;
       if (!(cand && this.rng.chance(0.5) && upgrade(cand))) build('house');
     }
@@ -1471,13 +1507,21 @@ export class Civilization {
     // only royal capitals raise curtain walls (each section is a building)
     const canWall = this.law('civWalls') && (this.hasTech(v.kingdom, 'fortification') || (this.kingdoms[v.kingdom]?.era ?? 0) >= 2 || this.law('civTechnology') === false);
     const isCap = this.kingdoms[v.kingdom]?.capital === v.id;
-    if (canWall && !v.wallsPlanned && v.stone >= 50 && ((isCap && v.tier >= 1) || (v.tier >= 2 && (this.hasCultureTrait(v.culture, 'Masons') || crowded < 0.7)))) this._planWalls(v);
+    if (canWall && !v.wallsPlanned && v.stone >= 50 && ((isCap && v.tier >= 1) || (v.tier >= 2 && (this.hasCultureTrait(v.culture, 'Masons') || crowded < 0.7)))) {
+      // walls draw on a world budget: a ring per city, never a maze of them
+      let walls = 0;
+      for (const b of this.buildings) if (b.alive && BUILDING_TYPES[b.type].wall) walls++;
+      const room = Math.round(this.budget.buildings * 0.8) - walls;
+      const cap = Math.min(room, isCap ? 72 : 52);
+      if (cap >= 28) this._planWalls(v, cap);
+      else v.wallsPlanned = true; // no room: the town relies on its towers
+    }
     if (v.wallsPlanned && v.wallPlan?.length && this.law('civWalls')) this._advanceWalls(v, 3);
     if (room() && v.tier >= 1) {
       const cand = v.buildings.find((b) => b.alive && b.type === 'house' && !b.constructing && !b.upgrading && b.level < Math.min(3, v.tier + 1));
       if (cand && v.wood > 40) upgrade(cand);
     }
-    if (room() && v.wood > 45 && v.housing < pop + 6 && v.housing < this._popCap(v) && crowded < 0.6) build('house');
+    if (room() && v.wood > (pop < 12 ? 14 : 45) && v.housing < pop + 6 && v.housing < this._popCap(v) && (crowded < 0.6 || v.housing < 16)) build('house');
     // keep a few streets in hand for growth
     if (actions === 0 && this.rng.chance(0.25)) this._extendRoads(v);
     this._tryExpand(v);

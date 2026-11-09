@@ -148,20 +148,51 @@ export function cultureForSite(world, tx, ty, radius = 6) {
   return best;
 }
 
-// Heraldic palette: nine tinctures spread around the colour wheel so
-// neighbouring realms never share a hue family. Rich, slightly muted, never neon,
-// no white and no near-black.
+// Heraldic palette: tinctures spread through hue AND lightness, so that with a
+// dozen realms on the map neighbours can still be told apart at a glance.
+// Rich, slightly muted, never neon, no white and no near-black.
 export const HERALDRY = [
-  { name: 'Crimson', color: 0xb8262e }, // 357deg
-  { name: 'Burnt Orange', color: 0xc8601c }, // 25deg
-  { name: 'Ochre', color: 0xc99a1e }, // 43deg
-  { name: 'Olive', color: 0x7f9126 }, // 72deg
-  { name: 'Deep Green', color: 0x2c8040 }, // 135deg
-  { name: 'Teal', color: 0x1c8f8a }, // 177deg
-  { name: 'Royal Blue', color: 0x2d52b0 }, // 223deg
-  { name: 'Violet', color: 0x7040aa }, // 268deg
-  { name: 'Plum', color: 0xa8357c }, // 323deg
+  { name: 'Crimson', color: 0xb8262e },
+  { name: 'Burnt Orange', color: 0xc8601c },
+  { name: 'Ochre', color: 0xc99a1e },
+  { name: 'Olive', color: 0x7f9126 },
+  { name: 'Deep Green', color: 0x2c8040 },
+  { name: 'Teal', color: 0x1c8f8a },
+  { name: 'Royal Blue', color: 0x2d52b0 },
+  { name: 'Violet', color: 0x7040aa },
+  { name: 'Plum', color: 0xa8357c },
+  { name: 'Sky', color: 0x5aa2d8 },
+  { name: 'Maroon', color: 0x6e1c2c },
+  { name: 'Navy', color: 0x1f2e72 },
+  { name: 'Rose', color: 0xdb7a96 },
+  { name: 'Slate', color: 0x5d7488 },
+  { name: 'Lavender', color: 0xa892dc },
+  { name: 'Copper', color: 0x8c5426 },
 ];
+
+// Perceptual colour (OKLab) and distance, for telling tinctures apart.
+const _lab = new Map();
+export function oklab(hex) {
+  let c = _lab.get(hex);
+  if (c) return c;
+  const lin = (v) => (v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4));
+  const r = lin(((hex >> 16) & 255) / 255),
+    g = lin(((hex >> 8) & 255) / 255),
+    b = lin((hex & 255) / 255);
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b),
+    m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b),
+    s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+  c = [0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s, 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s, 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s];
+  _lab.set(hex, c);
+  return c;
+}
+export function colorDist(a, b) {
+  if (a === b) return 0;
+  const x = oklab(a),
+    y = oklab(b);
+  // lightness counts a little less than hue and chroma on banners and borders
+  return Math.hypot((x[0] - y[0]) * 0.8, x[1] - y[1], x[2] - y[2]);
+}
 
 export function hueOf(hex) {
   const r = ((hex >> 16) & 255) / 255,
@@ -183,5 +214,5 @@ export const HERALDRY_AVOID = {
   vale: ['Deep Green', 'Olive'], // meadows and forests are green
   mire: ['Deep Green', 'Olive', 'Teal'], // swamp and jungle greens
   frost: [], // every tincture reads against snow
-  dune: ['Ochre', 'Burnt Orange'], // sand and savanna are yellow-orange
+  dune: ['Ochre', 'Burnt Orange', 'Copper'], // sand and savanna are yellow-orange
 };

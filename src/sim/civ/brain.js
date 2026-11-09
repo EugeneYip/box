@@ -1251,10 +1251,12 @@ export const brain = {
     if (!b || !b.alive || b.kingdom === u.kingdom) {
       b = null;
       let bd = Infinity;
+      const breach = (d.breachUntil || 0) > now;
       for (const o of tv.buildings) {
         if (!o.alive || o.kingdom === u.kingdom) continue;
         let s = Math.hypot(o.x - u.x, o.z - u.z);
-        if (o.type === 'hall') s -= 60;
+        if (breach) s -= BUILDING_TYPES[o.type].wall ? 40 : 0; // no way in: batter the wall
+        else if (o.type === 'hall') s -= 60;
         if (s < bd) {
           bd = s;
           b = o;
@@ -1268,6 +1270,7 @@ export const brain = {
       const r = this._go(u, t.x, t.z, 0.6, true);
       if (r === FAIL) {
         d.task = null;
+        d.breachUntil = now + 25;
         return;
       }
       if (r !== ARRIVED) return;
@@ -1281,7 +1284,7 @@ export const brain = {
       t.t = 1.3;
       let ring = 0;
       if (b.type === 'hall') for (const o of army.units) if (Math.hypot(o.x - b.x, o.z - b.z) < Math.max(b.w, b.h) * 0.5 + 1.6) ring++;
-      const mult = b.type === 'hall' ? 1 + Math.min(4, ring) * 0.6 : 1;
+      const mult = b.type === 'hall' ? 1 + Math.min(4, ring) * 0.6 : BUILDING_TYPES[b.type].wall ? 1.6 : 1;
       this.damageBuilding(b, (6 + this.rng.next() * 4) * mult, 'siege');
       b.besieged = this.game.time.total;
       if (this.rng.chance(0.14)) b.burning = Math.max(b.burning, 0.45);

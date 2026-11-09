@@ -1,4 +1,4 @@
-import { CULTURES, HERALDRY, HERALDRY_AVOID, hueOf, baseCulture, placeName, kingdomName as makeKingdomName, rulerTitle } from './cultures.js';
+import { CULTURES, HERALDRY, HERALDRY_AVOID, colorDist, baseCulture, placeName, kingdomName as makeKingdomName, rulerTitle } from './cultures.js';
 import { BUILDING_TYPES } from './catalog.js';
 import { YEAR, ADULT_AGE, clamp } from './util.js';
 
@@ -12,34 +12,7 @@ export const politics = {
   createKingdom(culture, opts = {}) {
     const rng = this.rng;
     const id = this.kingdoms.length;
-    const used = new Set(this.kingdoms.filter((k) => k.alive).map((k) => k.color));
-    // the tincture farthest in hue from every living realm (neighbours count double)
-    const avoid = new Set(HERALDRY_AVOID[baseCulture(culture)] || []);
-    const others = this.kingdoms.filter((k) => k.alive && k.villages.length);
-    const near = (k) => {
-      if (opts.x == null) return 1;
-      const v = this.villages[k.capital];
-      return v && Math.hypot(v.cx - opts.x, v.cz - opts.z) < 90 ? 2.2 : 1;
-    };
-    let her = null,
-      bs = -Infinity;
-    for (const h of HERALDRY) {
-      if (avoid.has(h.name)) continue;
-      const hh = hueOf(h.color);
-      let score = 360;
-      for (const k of others) {
-        let dh = Math.abs(hueOf(k.color) - hh);
-        if (dh > 180) dh = 360 - dh;
-        if (k.color === h.color) dh = 0;
-        // neighbours must differ most; distant realms may repeat a tincture
-        score = Math.min(score, near(k) > 1 ? dh : dh + 75);
-      }
-      score += rng.next() * 6;
-      if (score > bs) {
-        bs = score;
-        her = h;
-      }
-    }
+    let her = this._pickTincture(culture, opts.x, opts.z, -1);
     if (opts.color != null) her = HERALDRY.find((h) => h.color === opts.color) || her;
     if (!her) her = HERALDRY[id % HERALDRY.length];
     const base = opts.baseName || placeName(culture, rng, this.usedNames);
@@ -79,6 +52,62 @@ export const politics = {
     this.kingdoms.push(k);
     this.colorVersion++;
     return k;
+  },
+
+  // The tincture that stands out most from the living realms: neighbours (by
+  // border or by distance) must differ most, far realms may share a colour.
+  _pickTincture(culture, x, z, selfId = -1) {
+    const avoid = new Set(HERALDRY_AVOID[baseCulture(culture)] || []);
+    const others = this.kingdoms.filter((k) => k.alive && k.villages.length && k.id !== selfId);
+    const nearW = (k) => {
+      if (selfId >= 0 && (this.relations.get(relKey(k.id, selfId))?.border || 0) > 0) return 0;
+      if (x == null) return 0.12;
+      const v = this.villages[k.capital];
+      if (!v) return 0.3;
+      const d = Math.hypot(v.cx - x, v.cz - z);
+      return d < 70 ? 0 : d < 130 ? 0.08 : 0.25; // a far realm may repeat a tincture
+    };
+    let her = null,
+      bs = -Infinity;
+    for (const h of HERALDRY) {
+      if (avoid.has(h.name)) continue;
+      let score = 1;
+      for (const k of others) score = Math.min(score, colorDist(k.color, h.color) + nearW(k));
+      score += this.rng.next() * 0.01;
+      if (score > bs) {
+        bs = score;
+        her = h;
+      }
+    }
+    return her;
+  },
+
+  // Neighbours whose colours read as one (after a conquest or a rising moved
+  // the borders) re-dye the younger realm's banners.
+  _recolorClashes() {
+    const now = this.game.time.total;
+    const alive = this.kingdoms.filter((k) => k.alive && k.villages.length);
+    for (let i = 0; i < alive.length; i++)
+      for (let j = i + 1; j < alive.length; j++) {
+        const A = alive[i],
+          B = alive[j];
+        if (colorDist(A.color, B.color) > 0.13) continue;
+        const r = this.relations.get(relKey(A.id, B.id));
+        const vA = this.villages[A.capital],
+          vB = this.villages[B.capital];
+        const close = (r?.border || 0) > 0 || r?.war || (vA && vB && Math.hypot(vA.cx - vB.cx, vA.cz - vB.cz) < 70);
+        if (!close) continue;
+        const Y = A.founded > B.founded ? A : B;
+        if (now - (Y.recolored ?? -1e9) < YEAR * 15) continue;
+        const cap = this.villages[Y.capital];
+        const h = this._pickTincture(Y.culture, cap?.cx, cap?.cz, Y.id);
+        if (!h || h.color === Y.color) continue;
+        Y.color = h.color;
+        Y.colorName = h.name;
+        Y.recolored = now;
+        this.colorVersion++;
+        this.version++;
+      }
   },
 
   rel(a, b) {
@@ -128,6 +157,7 @@ export const politics = {
     u.maxHp = Math.max(u.maxHp, 150);
     u.hp = Math.max(u.hp, 150);
     u.data.civ.royal = true;
+    u.data.civ.crownedAt = this.game.time.total;
     k.ruler = u.id;
     k.rulerName = u.name;
     k.council = false;
@@ -164,7 +194,18 @@ export const politics = {
         for (const u of v.members) if (u.alive && (!heir || u.age > heir.age)) heir = u;
       }
     }
-    if (cap) for (const m of cap.members) this.game.units.addStatus?.(m, 'mourning', 30);
+    // the family and the court mourn (the spouse is Life's to grieve), not the realm
+    const deadId = this._lastRulerId;
+    if (cap && this.game.units.addStatus) {
+      const hall = cap.hall;
+      for (const m of cap.members) {
+        if (!m.alive) continue;
+        const c = m.data?.civ;
+        const kin = deadId != null && c && (c.mother === deadId || c.father === deadId);
+        const court = m.id === k.heir || (hall && m.job === 'soldier' && Math.hypot(m.x - hall.x, m.z - hall.z) < 6);
+        if (kin || court) this.game.units.addStatus(m, 'mourning', kin ? 14 : 8);
+      }
+    }
     if (heir) {
       if (heir.village !== k.capital && cap && cap.alive) this._moveMember(heir, cap);
       this.crown(k, heir);
@@ -219,6 +260,7 @@ export const politics = {
 
   // ---------------------------------------------------------------- diplomacy
   _diplomacy() {
+    this._recolorClashes();
     this._secession();
     const g = this.game;
     const rng = this.rng;
@@ -305,10 +347,12 @@ export const politics = {
           const crowd = this._crowd?.() || 0;
           const wl = this.law('diploWarlike', 1);
           if (wl <= 0) continue;
-          const hostile = r.opinion < -30 + crowd * 25 + (wl - 1) * 22;
-          const ambitious = att.ambition > 0.55 && ratio > 1.6 && r.opinion < 0;
-          // land hunger: a capped world with a weaker neighbour on the border
-          const hungry = border > 6 && ratio > 1.3 && now - att.lastWar > YEAR * 8 && r.opinion < 30 && crowd > 0.5;
+          // the law and the age of the world both set how readily crowns go to war
+          const wa = wl * (g.age?.mods?.warlike ?? 1);
+          const hostile = r.opinion < -30 + crowd * 25 + (wa - 1) * 22;
+          const ambitious = att.ambition > 0.55 && ratio > 1.6 / Math.sqrt(wa) && r.opinion < 0;
+          // land hunger: a crowded world with a weaker neighbour on the border
+          const hungry = border > 6 && ratio > 1.3 / Math.sqrt(wa) && now - att.lastWar > YEAR * 8 / wa && r.opinion < 30 + (wa - 1) * 15 && crowd > 0.5 / wa;
           if (!hostile && !ambitious && !hungry) continue;
           if (ratio < 0.6) continue;
           let p = 0.03 + att.aggression * 0.08 + (ambitious ? 0.05 : 0) + (hungry ? 0.04 + crowd * 0.05 : 0);
@@ -379,7 +423,7 @@ export const politics = {
       for (const k of this.kingdoms) {
         if (!k.alive || k.id === a || k.id === b) continue;
         const joined = this.enemiesOf(a).length - 1;
-        if (joined >= 2 || (B.population || 0) > (A.population || 0) * 1.4) break;
+        if (joined >= 3 || (B.population || 0) > (A.population || 0) * 2) break;
         if (this.allied(k.id, b) && !this.allied(k.id, a) && this.warCount(k.id) < 2 && this.rng.chance(0.7)) {
           const rr = this.rel(k.id, a);
           if (!rr.war) {
@@ -530,7 +574,8 @@ export const politics = {
       for (let i = keep; i < own.length; i++) soldiers.push(own[i]);
     }
     k.lastArmy = this.game.time.total;
-    if (soldiers.length > 18) soldiers.length = 18;
+    const cap = Math.min(32, Math.max(18, Math.round(soldiers.length * 0.8)));
+    if (soldiers.length > cap) soldiers.length = cap;
     if (soldiers.length < 8) {
       // not enough men under arms yet: draft more soldiers in the home village
       home.draft = this.game.time.total;
@@ -637,14 +682,16 @@ export const politics = {
         a.state = 'siege';
         a.t = now;
       }
-      if (now - a.t > 240) this._disbandArmy(a);
+      if (now - a.t > 260) this._disbandArmy(a);
     } else if (a.state === 'siege') {
       // capture once the hall is broken and defenders are gone
       const hall = target.hall;
       const defenders = this.game.units.query(target.cx, target.cz, target.radius * 0.8, (o) => o.kingdom === target.kingdom && o.job === 'soldier' && o.species === 'human');
       const hallDown = !hall || !hall.alive || hall.hp < hall.maxHp * 0.35;
-      if (hallDown && defenders.length === 0) this._capture(a, target);
-      else if (now - a.t > 200) this._disbandArmy(a);
+      let near = 0;
+      if (hallDown && defenders.length) for (const u of a.units) if (Math.hypot(u.x - target.cx, u.z - target.cz) < target.radius) near++;
+      if (hallDown && (defenders.length === 0 || near >= defenders.length * 3)) this._capture(a, target);
+      else if (now - a.t > 260) this._disbandArmy(a);
     }
   },
 
@@ -716,7 +763,7 @@ export const politics = {
     K.villages.push(v.id);
     v.conqueredAt = this.game.time.total;
     v.loyalty = cause === 'rebellion' ? 80 : 35;
-    if (cause === 'conquest' && v.rebellions) v.loyaltyBoost = Math.max(v.loyaltyBoost || 0, 25); // garrisoned and watched
+    if (cause === 'conquest' && (v.rebellions || 0) >= 2) v.loyaltyBoost = Math.max(v.loyaltyBoost || 0, 12); // a restless town is garrisoned and watched
     for (const b of v.buildings) {
       if (b.type === 'wonder' && b.alive) {
         // the wonder changes hands with its town
@@ -869,8 +916,10 @@ export const politics = {
     const old = this.kingdoms[v.kingdom];
     if (!old || old.capital === v.id) return null;
     const now = this.game.time.total;
-    // a crushed rebellion is remembered: the town needs years to rise again
-    if (!forced && now - (v.lastRebel ?? -1e9) < YEAR * 25) return null;
+    // a crushed rebellion is remembered: the town needs years to rise again,
+    // longer after every rising, though deep grievance shortens the wait
+    const wait = YEAR * Math.min(30, 8 + 5 * (v.rebellions || 0)) * (v.loyalty < 12 ? 0.5 : 1);
+    if (!forced && now - (v.lastRebel ?? -1e9) < wait) return null;
     v.lastRebel = now;
     v.rebellions = (v.rebellions || 0) + 1;
     const K = this.createKingdom(v.culture, { baseName: v.name, parent: old.id, x: v.cx, z: v.cz });
