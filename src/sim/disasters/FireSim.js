@@ -220,7 +220,13 @@ export class FireSim {
       } else f -= dtEff * 0.6;
       if (rain > 0) f -= dtEff * 0.32 * rain;
       if (wet > 0.05) f -= dtEff * 0.4 * wet;
-      // charring: trees become dead trees halfway through
+      // charring: the ground behind the front turns to ash while the last
+      // flames still flicker on it (a dark burnt interior, not an orange
+      // carpet), and trees become dead trees halfway through
+      if (fuelFrac < 0.45 && w.type[i] !== TILE.ASH) {
+        const tf0 = TILE_INFO[w.type[i]]?.flammable ?? 0;
+        if (tf0 >= ASH_THRESHOLD || (this.fuel0[i] > 0.6 && tf0 > 0.05)) w.setType(x, y, TILE.ASH);
+      }
       const fl = w.flora[i];
       if (fl && FLORA_INFO[fl].isTree && fl !== FLORA.DEAD_TREE && fuelFrac < 0.55) {
         w.setFlora(i % W, y, FLORA.DEAD_TREE, Math.max(0.6, w.floraGrowth[i]));
