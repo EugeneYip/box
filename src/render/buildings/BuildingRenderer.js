@@ -234,7 +234,7 @@ export class BuildingRenderer {
     else if (kind === 'lamppost') {
       const l = lampPost();
       a = { geo: l.geo, anchors: l.anchors, maxY: 0.8 };
-    } else a = buildArchetype(kind, p1, +p2, p3 == null ? 1 : +p3);
+    } else a = buildArchetype(kind, p1, +p2, p3 == null ? 1 : +p3, p4 == null ? 0 : +p4);
     this.arche.set(key, a);
     return a;
   }
@@ -317,7 +317,7 @@ export class BuildingRenderer {
         continue;
       }
       const lvl = Math.min(b.level || 1, def.levels);
-      const akey = `${b.type}|${b.style}|${lvl}|${b.era ?? 1}`;
+      const akey = `${b.type}|${b.style}|${lvl}|${b.era ?? 1}${b.variant ? '|' + b.variant : ''}`;
       const a = this._arch(akey);
       if (stage === 'found' || stage === 'frame' || stage === 'build') {
         // footings, then a timber frame, then walls rising, then the roof;
@@ -419,7 +419,7 @@ export class BuildingRenderer {
       const key = 'proxy|' + b.style;
       let L = proxies.get(key);
       if (!L) proxies.set(key, (L = { m: [], col: [], bs: [] }));
-      const a = this._arch(def.wall ? `wpost|${b.style}` : `${b.type}|${b.style}|${Math.min(b.level || 1, def.levels)}|${b.era ?? 1}`);
+      const a = this._arch(def.wall ? `wpost|${b.style}` : `${b.type}|${b.style}|${Math.min(b.level || 1, def.levels)}|${b.era ?? 1}${b.variant ? '|' + b.variant : ''}`);
       const hgt = def.wall ? 1.1 : Math.max(0.5, Math.min(def.monument ? 12 : 3, a.maxY)) * (b.constructing ? Math.max(0.2, b.progress) : 1);
       const pm = this._m2.makeRotationY(b.rotation || 0).setPosition(b.x, b.y, b.z).multiply(this._m3.makeScale(def.w * 0.82, hgt, def.h * 0.82));
       for (let i = 0; i < 16; i++) L.m.push(pm.elements[i]);

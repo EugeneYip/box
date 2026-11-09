@@ -58,6 +58,7 @@ export const BUILDING_LABEL = {
 
 export function buildingLabel(b) {
   const def = BUILDING_TYPES[b.type];
+  if (def?.monument && b.title) return (b.level || 1) >= 3 ? b.title : `${b.title} (stage ${b.level || 1} of 3)`;
   const per = BUILDING_LABEL[b.style]?.[b.type];
   const lv = Math.max(1, Math.min(b.level || 1, def?.levels || 1));
   return per?.[lv - 1] || def?.names?.[lv - 1] || b.type;

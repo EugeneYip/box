@@ -45,6 +45,19 @@ const MONUMENT_FX = {
   colossus: { mods: { 'loyalty+': 6, research: 1.1, march: 1.05 }, text: 'the people stand taller beneath it' },
 };
 
+// Each realm raises its own design (see archetypes wonder/statue variants).
+const MONUMENT_TITLES = {
+  wonder: {
+    vale: ['Great Spire', 'Sky Cathedral', 'Bell Minster'],
+    dune: ['Sun Pillar', 'Obelisk Court', 'Orb of Dawn'],
+    frost: ['Rune Tower', 'Storm Hall', 'Four-Spired Hold'],
+    mire: ['Sky Totem', 'Thunder Pole', 'Sun-Bird Mast'],
+  },
+};
+function monumentTitle(type, style, variant) {
+  return MONUMENT_TITLES[type]?.[style]?.[variant % 3] || null;
+}
+
 function budgets(w, h) {
   const a = (w * h) / (256 * 256);
   return {
@@ -1513,7 +1526,29 @@ export class Civilization {
     if (K && sites <= maxSites) {
       const mine = v.buildings.find((b) => b.alive && BUILDING_TYPES[b.type].monument);
       if (mine) {
-        if (!mine.constructing && !mine.upgrading && mine.level < 3 && this._poolForWonder(K, v, costOf(mine.type, mine.level + 1, v.culture))) upgrade(mine);
+        // stalled works: after a dozen idle years the realm sends masons and
+        // stone (a work well begun), or gives the footings up
+        const prog = mine.constructing ? mine.progress : mine.upgrading ? mine.upgradeProgress || 0 : -1;
+        if (prog >= 0) {
+          if (mine.lastProg == null || prog > mine.lastProg + 0.004) {
+            mine.lastProg = prog;
+            mine.progT = now;
+          } else if (now - (mine.progT ?? now) > YEAR * 12) {
+            mine.progT = now;
+            if (mine.constructing && mine.progress < 0.3) {
+              this._note(`🏚 The works on the ${buildingLabel({ ...mine, level: 3 })} at ${v.name} are given up`, 'info', { x: mine.x, z: mine.z }, 'monquit' + mine.id, 1);
+              v.stone += 40;
+              v.wood += 20;
+              this.destroyBuilding(mine, 'cancelled');
+            } else {
+              if (mine.constructing) mine.progress = Math.min(0.99, mine.progress + 0.2);
+              else mine.upgradeProgress = Math.min(0.99, (mine.upgradeProgress || 0) + 0.25);
+              mine.lastProg = null;
+              this._note(`🏗 Masons from across ${this._kn(K)} take up the stalled works at ${v.name}`, 'info', { x: mine.x, z: mine.z }, 'monfund' + mine.id, 30);
+            }
+          }
+        }
+        if (mine.alive && !mine.constructing && !mine.upgrading && mine.level < 3 && this._poolForWonder(K, v, costOf(mine.type, mine.level + 1, v.culture))) upgrade(mine);
       } else if ((K.era || 0) >= 3 && (this.hasTech(kid, 'engineering') || (K.mastery || 0) >= 2) && (K.capital === v.id || v.tier >= 2)) {
         let have = 0,
           world = 0,
@@ -1528,12 +1563,20 @@ export class Civilization {
           }
         const slots = Math.min(3, 1 + Math.floor((K.mastery || 0) / 3));
         const type = have % 2 === 0 ? 'wonder' : 'colossus';
-        if (have < slots && world < 14 && (K.capital === v.id || capHas) && this._poolForWonder(K, v, costOf(type, 1, v.culture))) {
+        // great works stand apart: none within a long walk of another
+        let crowdedWorks = false;
+        for (const b of this.buildings) if (b.alive && BUILDING_TYPES[b.type].monument && Math.hypot(b.x - v.cx, b.z - v.cz) < 30) crowdedWorks = true;
+        if (!crowdedWorks && have < slots && world < 14 && (K.capital === v.id || capHas) && this._poolForWonder(K, v, costOf(type, 1, v.culture))) {
           const def = BUILDING_TYPES[type];
           const place = () => this._placeOutskirts(v, type, 4, v.buildRadius, null, null) || this._placeOutskirts(v, type, v.buildRadius, v.buildRadius + 10, null, null);
           if (build(type, place)) {
             K.wonder = true;
             const b = v.buildings[v.buildings.length - 1];
+            if (b && b.type === type) {
+              // a realm's own design: variant and name drawn from its line
+              b.variant = (K.id * 5 + have * 3 + this.rng.int(0, 2)) % 3;
+              b.title = monumentTitle(type, b.style, b.variant);
+            }
             this._note(`🏛 ${v.name} lays the footings of a great work: the ${buildingLabel({ type, style: b?.style || v.culture, level: 3 })} of ${this._kn(K)}`, 'good', { x: v.cx, z: v.cz }, 'wonder' + kid + '-' + have, 1);
             void def;
           }
@@ -1543,7 +1586,10 @@ export class Civilization {
     // mastery shows in the streets: statues in the capital and the great cities
     if (room() && K && (K.mastery || 0) >= 2 && (K.capital === v.id || v.tier >= 2)) {
       const want = K.capital === v.id ? Math.min(4, Math.floor(K.mastery / 2)) : Math.min(2, Math.floor(K.mastery / 4));
-      if (count('statue') < want && v.stone > 40) build('statue', () => this.placeAlongRoad(v, 'statue', this._bias(v, 'well')));
+      if (count('statue') < want && v.stone > 40 && build('statue', () => this.placeAlongRoad(v, 'statue', this._bias(v, 'well')))) {
+        const s = v.buildings[v.buildings.length - 1];
+        if (s?.type === 'statue') s.variant = this.rng.int(0, 2);
+      }
     }
     if (room() && this.hasTech(kid, 'sailing')) {
       const dk = v.buildings.find((b) => b.alive && b.type === 'docks' && b.level < 2 && !b.constructing);
@@ -1780,7 +1826,10 @@ export class Civilization {
         this.use[i] = USE.RUIN;
       }
     const v = this.villages[b.village];
-    if (BUILDING_TYPES[b.type]?.monument) {
+    if (BUILDING_TYPES[b.type]?.monument && cause === 'cancelled') {
+      b.ruinT -= YEAR * 10; // only footings: cleared on the next sweep
+      this._wonderFx();
+    } else if (BUILDING_TYPES[b.type]?.monument) {
       // a fallen monument may be raised again
       if (v) this._note(`🏚 The ${buildingLabel({ ...b, level: 3 })} of ${v.name} has fallen`, 'bad', { x: b.x, z: b.z }, 'wonderfell' + b.id, 1);
       this._wonderFx();
