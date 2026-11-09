@@ -266,6 +266,17 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   }
   // fast ice: a shelf welded to cold shores
   float fastI = smoothstep(0.72, 0.92, gCold) * (1.0 - smoothstep(1.3 + 0.9 * fn.r, 2.4 + 0.9 * fn.r, shoreD)) * (1.0 - outK) * step(0.001, depth);
+  // cold rivers: not two parallel shelves with a median; ice reaches across in
+  // places, the open lead wanders, narrows, widens and closes, edges are ragged
+  float rivIce = (1.0 - smoothstep(2.5, 6.0, wide)) * smoothstep(0.72, 0.92, gCold) * (1.0 - outK) * step(0.001, depth);
+  if (rivIce > 0.0) {
+    vec4 rl = texture2D(uNoise, p * (1.0 / 31.0) + 0.57);
+    float leadFrac = clamp((rl.r - 0.47) * 1.8 + (fn.g - 0.5) * 0.6, 0.0, 0.75);
+    float halfW = max(wide, 0.6);
+    float rag = ((fc.g - 0.5) * 0.35 + (fn.b - 0.5) * 0.5 + (fcl.r - 0.5) * 0.15) * (0.6 + 0.35 * halfW);
+    float rlead = smoothstep(halfW * (1.0 - leadFrac) - 0.12, halfW * (1.0 - leadFrac) + 0.12, shoreD + rag);
+    fastI = mix(fastI, 1.0 - rlead, rivIce);
+  }
   ice = max(ice, fastI);
   // floes: the sheet breaks into plates with dark leads, wider toward the margin;
   // a few loose floes drift just beyond the edge
