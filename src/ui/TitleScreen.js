@@ -2,7 +2,7 @@ import { el, esc } from './dom.js';
 import { uiIcon } from './icons.js';
 import { emblemSvg } from './TopBar.js';
 import { PRESETS } from './Panels.js';
-import { WORLD_SIZES } from '../core/params.js';
+import { isWide, sizesFor, sizeSwitch, dimsFor } from './worldSizes.js';
 
 // Title screen over the live world. The camera slowly orbits while the
 // player picks a landmass; choosing one re-seeds the world behind the logo.
@@ -29,14 +29,15 @@ export class TitleScreen {
       ),
     );
     this.seedEl = el('span', { class: 'ws-title__seed', text: String(g.params.seed) });
-    this.sizeBtns = WORLD_SIZES.map((z) =>
+    // sizes of the current preset's family (the World Map has its own 2:1 sizes)
+    this.sizeBtns = sizesFor(g.params.preset).map((z) =>
       el(
         'button',
         {
-          class: 'ws-chip ws-chip--size' + (z.size === g.world.w ? ' is-on' : ''),
+          class: 'ws-chip ws-chip--size' + (z.w === g.world.w && z.h === g.world.h ? ' is-on' : ''),
           type: 'button',
           'data-size': z.size,
-          'aria-label': `${z.name} world, ${z.size} tiles`,
+          'aria-label': `${z.name} world, ${z.w} by ${z.h} tiles`,
           onclick: () => this.chooseSize(z),
         },
         z.name,
@@ -92,16 +93,17 @@ export class TitleScreen {
     const g = this.game;
     this.presetBtns.forEach((b) => b.classList.toggle('is-on', b.dataset.id === id));
     if (id === g.params.preset) return;
-    const def = PRESETS.find((p) => p.id === id);
-    if (def?.size && g.world.w !== def.size) {
-      // the World Map wants a Huge world: reload with it (keeping the seed)
-      const z = WORLD_SIZES.find((s) => s.size === def.size) || { name: 'Huge', size: def.size };
+    const from = g.params.preset || 'continent';
+    if (isWide(id) !== isWide(from)) {
+      // the World Map is a 2:1 world (Huge by default): reload into its shape, keeping the seed
+      const size = sizeSwitch(g.params.size ?? g.world.w, from, id);
       const q = new URLSearchParams(location.search);
       q.set('preset', id);
       q.set('seed', g.params.seed);
-      q.set('size', z.size);
+      q.set('size', size);
       for (const k of ['cam', 'hour', 'ff', 'title']) q.delete(k);
-      this.ui.veil.querySelector('.ws-veil__label').textContent = 'Shaping the World Map';
+      const label = this.ui.veil.querySelector('.ws-veil__label');
+      if (label) label.textContent = isWide(id) ? 'Shaping the World Map' : 'Shaping the world';
       this.ui.veil.classList.add('is-shown');
       setTimeout(() => (location.search = q.toString()), 320);
       return;
@@ -112,7 +114,8 @@ export class TitleScreen {
   chooseSize(z) {
     const g = this.game;
     this.sizeBtns.forEach((b) => b.classList.toggle('is-on', +b.dataset.size === z.size));
-    if (z.size === g.world.w) return;
+    const d = dimsFor(z.size, g.params.preset);
+    if (d.w === g.world.w && d.h === g.world.h) return;
     const q = new URLSearchParams(location.search);
     q.set('seed', g.params.seed);
     q.set('preset', g.params.preset || 'continent');
