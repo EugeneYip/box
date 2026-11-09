@@ -822,7 +822,8 @@ export class Civilization {
     const humans = g.units.count?.('human') ?? 0;
     const crowd = this._crowd();
     const popCrowd = this._popCrowd || 0;
-    if (pop < v.housing && pop < this._popCap(v) && v.food > pop * 1.2 + 8 && !v.starving && humans < this._humanCap() && this.rng.chance(Math.min(1, (1 - popCrowd * 0.85) * this._kLaw(v.kingdom, 'civGrowth', 1) * (v.policy?.growth ?? 1)))) {
+    const fullWorld = humans > this._humanCap() * 0.85;
+    if (pop < v.housing && pop < this._popCap(v) && !(fullWorld && pop > 45) && v.food > pop * 1.2 + 8 && !v.starving && humans < this._humanCap() && this.rng.chance(Math.min(1, (1 - popCrowd * 0.85) * this._kLaw(v.kingdom, 'civGrowth', 1) * (v.policy?.growth ?? 1)))) {
       let father = false;
       for (const u of v.members) if (u.sex === 'm' && u.age >= 18 && u.age < 60) father = true;
       if (father) {
@@ -858,6 +859,26 @@ export class Civilization {
       }
     }
 
+    // in a full world, young families leave the crowded cities of the realm
+    // for its hamlets (people move; the total stays within the budget)
+    if (pop < 18 && v.housing - pop >= 2 && v.food > pop + 10 && fullWorld && now - (v.lastSettlers || 0) > YEAR * 4 && this.rng.chance(0.05 * dt)) {
+      v.lastSettlers = now;
+      let src = null;
+      for (const vid of this.kingdoms[v.kingdom]?.villages || []) {
+        const o = this.villages[vid];
+        if (o?.alive && o !== v && o.pop > 40 && o.landId === v.landId && (!src || o.pop > src.pop)) src = o;
+      }
+      if (src) {
+        let moved = 0;
+        for (const u of [...src.members]) {
+          if (moved >= 3) break;
+          if (!u.alive || u.age < ADULT_AGE || u.age > 40 || u.job === 'king' || u.job === 'soldier' || u.data?.civ?.army) continue;
+          this._moveMember(u, v);
+          moved++;
+        }
+        if (moved) this._history(`Families from ${src.name} settle in ${v.name}`, 'info', { x: v.cx, z: v.cz });
+      }
+    }
     // newcomers drawn to prosperous settlements
     // (a camp short of hands or of a partner calls kin in sooner)
     const small = pop < 10;

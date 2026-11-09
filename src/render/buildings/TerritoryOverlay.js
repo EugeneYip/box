@@ -73,7 +73,7 @@ export class TerritoryOverlay {
     // meet), lighter close in so the land itself reads; the terrain shader
     // already keeps snow above the tint
     const D = this.game.cameraRig?.cur?.dist ?? 100;
-    const a = D < 55 ? 92 : D < 130 ? 104 : 118;
+    const a = D < 55 ? 72 : D < 130 ? 84 : 104;
     if (a !== this._alpha) {
       this._alpha = a;
       this.markAll();
