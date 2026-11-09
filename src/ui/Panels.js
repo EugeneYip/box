@@ -580,7 +580,7 @@ export class Modals {
         const onState = def.type === 'bool' ? !!v : +v > 0;
         const row = el(
           def.type === 'bool' ? 'label' : 'div',
-          { class: `ws-law ws-lawcard is-${def.type}${onState ? ' is-on' : ' is-off'}${isChanged(def) ? ' is-changed' : ''}`, 'data-key': def.key },
+          { class: `ws-law ws-lawcard is-${def.type}${onState ? ' is-on' : ' is-off'}${isChanged(def) ? ' is-changed' : ''}`, 'data-key': def.key, 'data-tip': `${def.label}: ${def.description}` },
           el('span', { class: 'ws-lawcard__ico', html: uiIcon(lawIcon(def)) }),
           el('span', { class: 'ws-law__txt' }, el('span', { class: 'ws-row__label', text: def.label }), el('span', { class: 'ws-row__desc', text: def.description })),
           control,
