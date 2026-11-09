@@ -76,6 +76,7 @@ export const tech = {
       const e = techById[id]?.effects;
       if (e && typeof e[key] === 'number') m *= e[key];
     }
+    if (k.wonderFx?.[key]) m *= k.wonderFx[key];
     return m;
   },
   techAdd(kid, key) {
@@ -86,6 +87,7 @@ export const tech = {
       const e = techById[id]?.effects;
       if (e && typeof e[key] === 'number') a += e[key];
     }
+    if (k.wonderFx?.[key + '+']) a += k.wonderFx[key + '+'];
     return a;
   },
   // Best weapon/armour material the kingdom can forge.
@@ -186,7 +188,6 @@ export const tech = {
         rate *= 1 + Math.max(-0.3, Math.min(0.6, wit * 0.15));
       }
       if (g.time.total < k.goldenUntil) rate *= 1.3;
-      if (k.wonderDone) rate *= 1.15; // a wonder draws scholars from afar
       k.knowledge += rate * speed * dt;
       if (!k.researching || k.techs.has(k.researching)) k.researching = this._chooseResearch(k) || 'mastery';
       if (k.researching === 'mastery') {

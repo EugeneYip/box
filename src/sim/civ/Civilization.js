@@ -35,6 +35,15 @@ import { culture, TRAIT_INFO } from './culture.js';
 // 900 people and 900 buildings.
 const VILLAGE_MAX_POP = 64; // legacy reference size (a town)
 const TIER_POP = [40, 70, 115]; // village, town, city
+// What each finished monument gives its realm (techMod / techAdd keys).
+const MONUMENT_FX = {
+  vale: { mods: { 'loyalty+': 12, build: 1.15 }, text: 'its provinces hold fast to the crown' },
+  dune: { mods: { gold: 1.5, 'loyalty+': 4 }, text: 'caravans come from every road' },
+  frost: { mods: { research: 1.35 }, text: 'scholars gather to read its runes' },
+  mire: { mods: { harvest: 1.15, birth: 1.15 }, text: 'the fields and the families flourish' },
+  colossus: { mods: { 'loyalty+': 6, research: 1.1, march: 1.05 }, text: 'the people stand taller beneath it' },
+};
+
 function budgets(w, h) {
   const a = (w * h) / (256 * 256);
   return {
@@ -640,6 +649,7 @@ export class Civilization {
     if ((T.tech = (T.tech || 0) + step) >= 2) {
       this._researchTick(T.tech);
       this._inventoryTick(T.tech);
+      this._wonderFx();
       T.tech = 0;
     }
     if ((T.cult = (T.cult || 0) + step) >= 5) {
@@ -836,7 +846,9 @@ export class Civilization {
     }
 
     // a kingdom's new era spreads through its towns building by building
-    const era = this.kingdoms[v.kingdom]?.era ?? 0;
+    const K0 = this.kingdoms[v.kingdom];
+    // a realm of masters gilds its capital and cities (render era 4)
+    const era = Math.min(4, (K0?.era ?? 0) + ((K0?.mastery || 0) >= 4 && (K0.capital === v.id || v.tier >= 1) ? 1 : 0));
     if (this.rng.chance(0.06 * dt)) {
       const old = v.buildings.find((b) => b.alive && !b.constructing && (b.era ?? 0) < era);
       if (old) {
@@ -1480,11 +1492,41 @@ export class Civilization {
     if (room() && pop >= 30 && this.hasTech(kid, 'astronomy') && count('observatory') === 0) build('observatory', () => this._placeOutskirts(v, 'observatory', 4, v.buildRadius, null, null));
     if (room() && pop >= 34 && this.hasTech(kid, 'architecture') && count('aqueduct') === 0) build('aqueduct', () => this._placeOutskirts(v, 'aqueduct', 5, v.buildRadius + 3, null, null));
     const K = this.kingdoms[kid];
-    if (sites <= maxSites && K && K.capital === v.id && (K.era || 0) >= 3 && (this.hasTech(kid, 'engineering') || (K.mastery || 0) >= 2) && count('wonder') === 0 && !K.wonder && this._poolForWonder(K, v)) {
-      if (build('wonder', () => this._placeOutskirts(v, 'wonder', 4, v.buildRadius, null, null) || this._placeOutskirts(v, 'wonder', v.buildRadius, v.buildRadius + 9, null, null))) {
-        K.wonder = true;
-        this._note(`🏛 ${this._kn(K)} begins a great wonder at ${v.name}`, 'good', { x: v.cx, z: v.cz }, 'wonder' + kid, 1);
+    // monuments: the realm's great works rise stage by stage; masters raise more
+    if (K && sites <= maxSites) {
+      const mine = v.buildings.find((b) => b.alive && BUILDING_TYPES[b.type].monument);
+      if (mine) {
+        if (!mine.constructing && !mine.upgrading && mine.level < 3 && this._poolForWonder(K, v, costOf(mine.type, mine.level + 1, v.culture))) upgrade(mine);
+      } else if ((K.era || 0) >= 3 && (this.hasTech(kid, 'engineering') || (K.mastery || 0) >= 2) && (K.capital === v.id || v.tier >= 2)) {
+        let have = 0,
+          world = 0,
+          capHas = false;
+        for (const b of this.buildings)
+          if (b.alive && BUILDING_TYPES[b.type].monument) {
+            world++;
+            if (b.kingdom === kid) {
+              have++;
+              if (b.village === K.capital) capHas = true;
+            }
+          }
+        const slots = Math.min(3, 1 + Math.floor((K.mastery || 0) / 3));
+        const type = have % 2 === 0 ? 'wonder' : 'colossus';
+        if (have < slots && world < 14 && (K.capital === v.id || capHas) && this._poolForWonder(K, v, costOf(type, 1, v.culture))) {
+          const def = BUILDING_TYPES[type];
+          const place = () => this._placeOutskirts(v, type, 4, v.buildRadius, null, null) || this._placeOutskirts(v, type, v.buildRadius, v.buildRadius + 10, null, null);
+          if (build(type, place)) {
+            K.wonder = true;
+            const b = v.buildings[v.buildings.length - 1];
+            this._note(`🏛 ${v.name} lays the footings of a great work: the ${buildingLabel({ type, style: b?.style || v.culture, level: 3 })} of ${this._kn(K)}`, 'good', { x: v.cx, z: v.cz }, 'wonder' + kid + '-' + have, 1);
+            void def;
+          }
+        }
       }
+    }
+    // mastery shows in the streets: statues in the capital and the great cities
+    if (room() && K && (K.mastery || 0) >= 2 && (K.capital === v.id || v.tier >= 2)) {
+      const want = K.capital === v.id ? Math.min(4, Math.floor(K.mastery / 2)) : Math.min(2, Math.floor(K.mastery / 4));
+      if (count('statue') < want && v.stone > 40) build('statue', () => this.placeAlongRoad(v, 'statue', this._bias(v, 'well')));
     }
     if (room() && this.hasTech(kid, 'sailing')) {
       const dk = v.buildings.find((b) => b.alive && b.type === 'docks' && b.level < 2 && !b.constructing);
@@ -1529,8 +1571,7 @@ export class Civilization {
 
   // A wonder is the whole realm's work: its provinces send stone, timber and
   // coin to the capital until the first course can be laid.
-  _poolForWonder(K, v) {
-    const cost = costOf('wonder', 1, v.culture);
+  _poolForWonder(K, v, cost = costOf('wonder', 1, v.culture)) {
     let ok = true;
     for (const r in cost) {
       let have = 0;
@@ -1624,8 +1665,7 @@ export class Civilization {
     this.version++;
     const v = this.villages[b.village];
     if (v) this._updateVillageDerived(v);
-    if (b.type === 'wonder' && this.kingdoms[b.kingdom]) this.kingdoms[b.kingdom].wonderDone = true;
-    if (b.type === 'wonder' && v) this._note(`🏛 The ${buildingLabel(b)} of ${v.name} stands complete, glory of the ${this.kingdoms[b.kingdom]?.name}`, 'good', { x: b.x, z: b.z }, 'wonderdone' + b.id, 1);
+    if (BUILDING_TYPES[b.type].monument && v) this._monumentStage(b, v);
     if (b.type === 'temple' && v) this._note(`${v.name} completes its ${buildingLabel(b).toLowerCase()}.`, 'info', { x: b.x, z: b.z }, 'temple' + v.id, 600);
     this._fx('sparkle', b.x, b.z, 0.8);
   }
@@ -1643,7 +1683,40 @@ export class Civilization {
     if (v) this._updateVillageDerived(v);
     this._sfx('bell', b.x, b.z, 1.5);
     if (b.type === 'hall' && v) this._note(`${v.name} raises a ${buildingLabel(b).toLowerCase()}.`, 'good', { x: b.x, z: b.z });
+    if (def.monument && v) this._monumentStage(b, v);
     this._fx('sparkle', b.x, b.z, 1);
+  }
+
+  // A stage of a monument is finished: the chronicle marks it, and the last
+  // stage brings the realm its gift.
+  _monumentStage(b, v) {
+    const K = this.kingdoms[b.kingdom];
+    const name = buildingLabel({ ...b, level: 3 });
+    if (b.level >= 3) {
+      const fx = MONUMENT_FX[b.type === 'colossus' ? 'colossus' : b.style] || MONUMENT_FX.vale;
+      this._note(`🏛 The ${name} of ${v.name} stands complete, glory of the ${K?.name || 'realm'}: ${fx.text}`, 'good', { x: b.x, z: b.z }, 'wonderdone' + b.id, 1);
+      this._fx('magic', b.x, b.z, 2);
+      this._sfx('bell', b.x, b.z, 0, true);
+    } else this._note(`🏗 The ${name} of ${v.name} rises: stage ${b.level} of 3 stands`, 'info', { x: b.x, z: b.z }, 'monlvl' + b.id + b.level, 1);
+    this._wonderFx();
+  }
+
+  // Each realm's gifts from its finished monuments (partial stages give part).
+  _wonderFx() {
+    for (const k of this.kingdoms) if (k.wonderFx) k.wonderFx = null;
+    for (const b of this.buildings) {
+      if (!b.alive || !BUILDING_TYPES[b.type]?.monument) continue;
+      const k = this.kingdoms[b.kingdom];
+      if (!k?.alive) continue;
+      const done = (b.constructing ? 0 : b.upgrading ? b.level - 1 : b.level) / 3;
+      if (done <= 0) continue;
+      const fx = MONUMENT_FX[b.type === 'colossus' ? 'colossus' : b.style] || MONUMENT_FX.vale;
+      const out = k.wonderFx || (k.wonderFx = {});
+      for (const [key, val] of Object.entries(fx.mods)) {
+        if (key.endsWith('+')) out[key] = (out[key] || 0) + val * done;
+        else out[key] = (out[key] || 1) * (1 + (val - 1) * done);
+      }
+    }
   }
 
   // ------------------------------------------------------------------ damage
@@ -1689,11 +1762,10 @@ export class Civilization {
         this.use[i] = USE.RUIN;
       }
     const v = this.villages[b.village];
-    if (b.type === 'wonder') {
-      // a fallen wonder may be raised again
-      const K = this.kingdoms[b.kingdom];
-      if (K) K.wonder = K.wonderDone = false;
-      if (v) this._note(`🏚 The ${buildingLabel(b)} of ${v.name} has fallen`, 'bad', { x: b.x, z: b.z }, 'wonderfell' + b.id, 1);
+    if (BUILDING_TYPES[b.type]?.monument) {
+      // a fallen monument may be raised again
+      if (v) this._note(`🏚 The ${buildingLabel({ ...b, level: 3 })} of ${v.name} has fallen`, 'bad', { x: b.x, z: b.z }, 'wonderfell' + b.id, 1);
+      this._wonderFx();
     }
     if (v) {
       v.buildings = v.buildings.filter((o) => o !== b);
@@ -2131,7 +2203,7 @@ export class Civilization {
       if (def.housing && b.alive) stats.push(['Houses', `${def.housing[b.level - 1]} people`]);
       if (def.levels > 1) stats.push(['Level', `${b.level} / ${def.levels}`]);
       // the building's own era (the realm's era is shown by the UI separately)
-      stats.push(['Built in', `${ERAS[b.era ?? 0]?.name || 'Hearth'} era`]);
+      stats.push(['Built in', (b.era ?? 0) >= 4 ? 'Age of mastery (gilded)' : `${ERAS[b.era ?? 0]?.name || 'Hearth'} era`]);
       if (b.type === 'hall' && v) {
         // wood / stone / gold / ore appear in the UI's "Village stores" section
         stats.push(['Population', v.pop], ['Food', `${Math.floor(v.food)} / ${v.foodCap}`]);

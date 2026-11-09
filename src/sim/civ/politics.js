@@ -1,5 +1,5 @@
 import { CULTURES, HERALDRY, HERALDRY_AVOID, colorDist, baseCulture, placeName, kingdomName as makeKingdomName, rulerTitle } from './cultures.js';
-import { BUILDING_TYPES } from './catalog.js';
+import { BUILDING_TYPES, buildingLabel } from './catalog.js';
 import { YEAR, ADULT_AGE, clamp } from './util.js';
 
 // Kingdoms, rulers, diplomacy (opinion, alliances, war), armies, conquest,
@@ -765,15 +765,9 @@ export const politics = {
     v.loyalty = cause === 'rebellion' ? 80 : 35;
     if (cause === 'conquest' && (v.rebellions || 0) >= 2) v.loyaltyBoost = Math.max(v.loyaltyBoost || 0, 12); // a restless town is garrisoned and watched
     for (const b of v.buildings) {
-      if (b.type === 'wonder' && b.alive) {
-        // the wonder changes hands with its town
-        const from = this.kingdoms[b.kingdom],
-          to = this.kingdoms[kid];
-        if (from && from !== to) from.wonder = from.wonderDone = false;
-        if (to) {
-          to.wonder = true;
-          if (!b.constructing) to.wonderDone = true;
-        }
+      if (BUILDING_TYPES[b.type]?.monument && b.alive && old && K && old !== K && cause === 'conquest') {
+        // a monument changes hands with its town: a moment for the chronicle
+        this._note(`🏛 ${this._kn(K)} takes the ${buildingLabel(b)} of ${v.name}`, 'war', { x: b.x, z: b.z }, 'montaken' + b.id, 60);
       }
       b.kingdom = kid;
     }
@@ -846,7 +840,6 @@ export const politics = {
     if (this.law('harmonyUnrest') && v.famineT && now - v.famineT < YEAR * 4) L -= 10;
     L += (this.law('harmonyLoyalty', 1) * (this.game.age?.mods?.harmony ?? 1) - 1) * 35;
     L += this.techAdd(k.id, 'loyalty');
-    if (k.wonderDone) L += 8; // pride in the realm's wonder
     if (this.hasCultureTrait(v.culture, 'Mystic')) L += 5;
     L += (v.loyaltyBoost || 0);
     v.loyaltyBoost = Math.max(0, (v.loyaltyBoost || 0) - 1);
