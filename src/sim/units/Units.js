@@ -1107,7 +1107,13 @@ export class Units {
   }
   disengage(u) {
     if (!u.combat) return;
-    if (u.alive && u.combat.struck) this.addXP(u, u.combat.hunt ? 2 : 3);
+    if (u.alive && u.combat.struck) {
+      this.addXP(u, u.combat.hunt ? 2 : 3);
+      if (!u.combat.hunt && u.def.kind === 'humanoid') {
+        u._battles = (u._battles || 0) + 1;
+        if (u._battles >= 25 && (u.kills || 0) >= 8) this.tryHero(u, `Hailed as a hero after ${u._battles} battles`);
+      }
+    }
     u.combat = null;
     u._pounce = false;
     u.target = null;
