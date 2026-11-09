@@ -29,18 +29,26 @@ export class Earthquake {
       const thr = rand(0.3, 0.7) * (radius / 14) ** 0.5;
       const segs = [];
       for (const dir of [1, -1]) {
+        // a zigzag rift: each leg kinks left/right of the fault's heading,
+        // and the rift is widest near the epicentre, tapering to hairline tips
         let px = x,
           pz = z,
-          a = ang + (dir < 0 ? Math.PI : 0),
-          d = 0;
+          d = 0,
+          zig = Math.random() < 0.5 ? 1 : -1;
+        const head = ang + (dir < 0 ? Math.PI : 0);
         const len = radius * rand(0.75, 1.0) * (f ? 0.7 : 1);
+        let hw0 = rand(1.3, 1.8) * (f ? 0.8 : 1);
         while (d < len) {
-          const step = 1.6;
-          a += rand(-0.35, 0.35);
+          const step = rand(1.3, 2.3);
+          zig = Math.random() < 0.8 ? -zig : zig;
+          const a = head + zig * rand(0.35, 0.8) + rand(-0.1, 0.1);
           const nx = px + Math.cos(a) * step,
             nz = pz + Math.sin(a) * step;
           d += step;
-          segs.push({ x0: px, z0: pz, x1: nx, z1: nz, t: d / PROPAGATION, done: false, w: 1 - d / len });
+          const taper = Math.pow(Math.max(0, 1 - d / len), 0.6);
+          const hw1 = Math.max(0.45, (0.45 + 1.35 * taper) * rand(0.7, 1.15) * (f ? 0.8 : 1));
+          segs.push({ x0: px, z0: pz, x1: nx, z1: nz, t: d / PROPAGATION, done: false, w: 1 - d / len, hw0, hw1 });
+          hw0 = hw1;
           px = nx;
           pz = nz;
         }
@@ -171,27 +179,27 @@ export class Earthquake {
     const [mtx, mty] = w.tileOf(mx, mz);
     const onLand = w.isLand(mtx, mty);
     const k = 0.5 + 0.5 * s.w;
+    const hwm = (s.hw0 + s.hw1) / 2;
     if (onLand) {
-      // hard-edged near-black void hugging the carved trench (lifted so it
-      // sits above the chasm floor and walls rather than being buried)
+      // a thin near-black core along the deepest part of this leg (kept to
+      // the leg's own length so zigzags never overshoot onto the grass)
       const rot = Math.atan2(dz, dx);
-      fx.decal({ frame: DF.CRACKLINE, x: mx, z: mz, size: L * 4.6, rot, life: 170, color: 0x000000, alpha: 1, overlay: true, lift: 0.1, fadeIn: 0.0005, fadeOut: 0.9, grain: 0 });
-      fx.decal({ frame: DF.CRACKLINE, x: mx, z: mz, size: L * 4.6, rot, life: 160, color: 0x020101, alpha: 1, lift: 0.2, fadeIn: 0.0005, fadeOut: 0.88, grain: 0 });
+      fx.decal({ frame: DF.CRACKLINE, x: mx, z: mz, size: L * 1.25 + hwm * 0.6, rot, life: 170, color: 0x000000, alpha: 0.9, overlay: true, lift: 0.1, fadeIn: 0.0005, fadeOut: 0.9, grain: 0 });
       // sunlit lips: a faint warm highlight just outside both edges
       for (const sd of [1, -1])
-        fx.decal({ frame: DF.CRACKLINE, x: mx + nx * sd * 2.2, z: mz + nz * sd * 2.2, size: L * 1.3, rot, life: 150, additive: true, color: 0xe8d6b0, intensity: 0.3, lift: 0.25, fadeIn: 0.002, fadeOut: 0.85, grain: 0.3 });
-      fx.decal({ frame: DF.SOFTDARK, x: mx, z: mz, size: L * 2.8, life: 120, color: 0x1e1610, alpha: 0.55, fadeIn: 0.001, fadeOut: 0.85, grain: 0.7 });
+        fx.decal({ frame: DF.CRACKLINE, x: mx + nx * sd * (hwm + 0.45), z: mz + nz * sd * (hwm + 0.45), size: L * 1.2, rot, life: 150, additive: true, color: 0xe8d6b0, intensity: 0.28, lift: 0.25, fadeIn: 0.002, fadeOut: 0.85, grain: 0.3 });
+      fx.decal({ frame: DF.SOFTDARK, x: mx, z: mz, size: L * 1.2 + hwm * 1.6, life: 120, color: 0x1e1610, alpha: 0.5, fadeIn: 0.001, fadeOut: 0.85, grain: 0.7 });
       // soil spilled along both lips
       for (const sd of [1, -1])
-        fx.decal({ frame: DF.STAIN, x: mx + nx * sd * 2.7, z: mz + nz * sd * 2.7, size: rand(2.4, 3.2), life: 150, color: 0x4e3620, alpha: 0.7, fadeIn: 0.001, fadeOut: 0.88, grain: 0.8 });
-      if (Math.random() < 0.5) fx.decal({ frame: DF.CRACK1, x: mx + nx * rand(-1.5, 1.5), z: mz + nz * rand(-1.5, 1.5), size: rand(2.4, 4) * k, life: 140, color: 0x060403, alpha: 0.95, fadeIn: 0.001, fadeOut: 0.88 });
+        if (Math.random() < 0.7) fx.decal({ frame: DF.STAIN, x: mx + nx * sd * (hwm + 1.1), z: mz + nz * sd * (hwm + 1.1), size: rand(2.0, 3.0), life: 150, color: 0x4e3620, alpha: 0.65, fadeIn: 0.001, fadeOut: 0.88, grain: 0.8 });
+      if (Math.random() < 0.5) fx.decal({ frame: DF.CRACK1, x: mx + nx * rand(-1.5, 1.5) * (hwm + 1), z: mz + nz * rand(-1.5, 1.5) * (hwm + 1), size: rand(2.0, 3.4) * k, life: 140, color: 0x060403, alpha: 0.9, fadeIn: 0.001, fadeOut: 0.88 });
       // thick dust walls erupting along both lips of the rupture
       for (let j = 0; j < fx.k(8); j++) {
         const f = Math.random();
         const sd = Math.random() < 0.5 ? 1 : -1;
-        const px = s.x0 + dx * f + nx * sd * 1.2,
-          pz = s.z0 + dz * f + nz * sd * 1.2;
-        dustPuff(fx, px, w.heightAt(px, pz), pz, rand(1.6, 2.6) * k, { out: rand(0.3, 1.0), up: 3.2, life: rand(1.5, 2.4), drag: 1.2, ang: Math.atan2(nz * sd, nx * sd), ramp: RAMP.DUST_THICK });
+        const px = s.x0 + dx * f + nx * sd * hwm * 0.8,
+          pz = s.z0 + dz * f + nz * sd * hwm * 0.8;
+        dustPuff(fx, px, w.heightAt(px, pz), pz, rand(1.4, 2.4) * k, { out: rand(0.3, 1.0), up: 3.2, life: rand(1.5, 2.4), drag: 1.2, ang: Math.atan2(nz * sd, nx * sd), ramp: RAMP.DUST_THICK });
       }
       if (Math.random() < 0.9) {
         const f = Math.random();
@@ -201,33 +209,41 @@ export class Earthquake {
           fx.debris.spawn({ x: px, y: w.heightAt(px, pz) + 0.2, z: pz, vx: nx * rand(-2, 2), vy: rand(2.5, 5), vz: nz * rand(-2, 2), size: rand(0.15, 0.35), color: 0x6e6258, life: rand(6, 10) });
       }
     }
-    // Chasm: the rupture splits open into a flat-floored trench about three
-    // tiles wide and 2-3 units deep (wide enough that the god-view camera
-    // sees down to its dark floor past the near wall), between steep lit
-    // rock walls and jagged raised lips; the ground on one side drops as an
-    // offset block (a scarp).
-    // Each tile's total change is tracked so overlapping segments never
-    // carve the same tile twice.
+    // Chasm: each leg of the zigzag rift is carved as a capsule (rounded at
+    // its joints, so legs meet without square corners) whose half-width
+    // runs from hw0 to hw1 (wide near the epicentre, hairline at the tips).
+    // Edges are broken by per-tile noise; inside, a dark floor between steep
+    // lit rock walls; outside, jagged raised lips; one side drops as an
+    // offset block (a scarp), fading out toward the tips.
+    // Each tile's total change is tracked so overlapping legs never carve
+    // the same tile twice.
     const carved = (this._carved ||= new Map());
-    w.forEachInRadius(mx, mz, 5.2, (tx, ty, dn, i) => {
-      const px = tx + 0.5 - mx,
-        pz = ty + 0.5 - mz;
-      const along = (px * dx + pz * dz) / L;
-      if (Math.abs(along) > L * 0.75) return;
+    const ux = dx / L,
+      uz = dz / L;
+    const taperK = Math.max(0.35, s.w);
+    w.forEachInRadius(mx, mz, L / 2 + Math.max(s.hw0, s.hw1) + 3.6, (tx, ty, dn, i) => {
+      const px = tx + 0.5 - s.x0,
+        pz = ty + 0.5 - s.z0;
+      const along = px * ux + pz * uz;
+      const tt = Math.max(0, Math.min(1, along / L));
+      const cxp = px - ux * tt * L,
+        czp = pz - uz * tt * L;
+      const ad = Math.hypot(cxp, czp);
+      const side = px * nx + pz * nz;
       const prev = carved.get(i);
       const h0 = prev ? prev.h0 : w.height[i];
       if (h0 < SEA_LEVEL - 0.3) return;
-      const side = px * nx + pz * nz;
-      const ad = Math.abs(side);
       const jag = hash2(tx, ty, this.seed);
+      const jag2 = hash2(tx * 3 + 1, ty * 3 + 7, this.seed + 11);
+      // broken edges: the rim wanders by up to about half a tile
+      const hw = (s.hw0 + (s.hw1 - s.hw0) * tt) * (0.8 + 0.4 * jag2) + (jag - 0.5) * 0.5;
       let want = 0; // desired total change from the original height
-      if (side > 1.0 && side < 4.8) want -= thr * k * 2.4 * (1 - smooth((side - 3.4) / 1.4));
-      if (ad < 2.2) {
-        // flat floor, then steep, almost vertical walls so the sunlit rock
-        // faces show
-        const depth = (2.0 + 0.9 * jag) * Math.max(0.8, k) * (ad < 1.6 ? 1 : 1 - (ad - 1.6) / 0.6);
+      const inSpan = along > -0.5 && along < L + 0.5;
+      if (inSpan && side > hw && side < hw + 3.6) want -= thr * k * 2.2 * taperK * (1 - smooth((side - hw - 2.2) / 1.4));
+      if (ad < hw) {
+        const depth = (1.9 + 0.9 * jag) * Math.max(0.8, k) * (0.5 + 0.5 * taperK) * (ad < hw * 0.65 ? 1 : 1 - (ad - hw * 0.65) / (hw * 0.35 + 0.01));
         want -= depth;
-      } else if (ad < 3.0) want += (0.2 + 0.45 * jag) * k * (1 - (ad - 2.2) / 0.8);
+      } else if (ad < hw + 0.9) want += (0.15 + 0.5 * jag) * k * (1 - (ad - hw) / 0.9);
       const cur = prev ? prev.want : 0;
       const next = Math.abs(want) > Math.abs(cur) ? want : cur;
       if (next === cur) return;
@@ -235,20 +251,20 @@ export class Earthquake {
       w.height[i] = Math.max(floor, Math.max(MIN_HEIGHT, h0 + next));
       carved.set(i, { h0, want: next });
       w.markDirty('height', tx, ty);
-      if (ad < 2.2) {
+      if (ad < hw) {
         // dark scorched floor (the shadowed depths) between rock walls
-        const tt = ad < 1.6 ? TILE.ASH : TILE.ROCK;
-        if (w.type[i] !== tt) {
-          w.type[i] = tt;
+        const ty2 = ad < hw * 0.65 ? TILE.ASH : TILE.ROCK;
+        if (w.type[i] !== ty2) {
+          w.type[i] = ty2;
           w.markDirty('type', tx, ty);
         }
         const fl = w.flora[i];
         if (fl && FLORA_INFO[fl].isTree) this._topple(tx, ty, fl);
         else if (fl && fl !== FLORA.BOULDER) w.setFlora(tx, ty, FLORA.NONE);
-      } else if (ad < 3.0) {
-        // churned soil spilled over both lips
+      } else if (ad < hw + 0.9) {
+        // churned soil and broken rock spilled over both lips
         const t = w.type[i];
-        if (t === TILE.GRASS || t === TILE.FOREST || t === TILE.SAVANNA || t === TILE.JUNGLE || t === TILE.TUNDRA || t === TILE.FARMLAND) {
+        if (jag2 > 0.25 && (t === TILE.GRASS || t === TILE.FOREST || t === TILE.SAVANNA || t === TILE.JUNGLE || t === TILE.TUNDRA || t === TILE.FARMLAND)) {
           w.type[i] = TILE.SOIL;
           w.markDirty('type', tx, ty);
         }
