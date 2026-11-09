@@ -488,8 +488,8 @@ Mat matCliff(NS s, float volc, out vec3 facetN) {
   vec4 jZ = cz(vec2((p.x + jw.x) * 0.042, (p.y + jw.y) * 0.0085) + 0.61);
   float jg = mix(jZ.g, jX.g, wxz);
   // joint width never below ~2 px (edge distance unit = 0.75 world units here)
-  float jW = max(0.10, s.fw * 2.6);
-  float joint = (1.0 - smoothstep(jW * 0.35, jW, jg)) * near * mix(0.55, 1.0, smoothstep(0.3, 0.6, d.b)) * (1.0 - smoothstep(0.2, 0.45, jW));
+  float jW = max(0.15, s.fw * 3.2);
+  float joint = (1.0 - smoothstep(0.0, jW, jg)) * near * mix(0.45, 1.0, smoothstep(0.3, 0.6, d.b)) * (1.0 - smoothstep(0.25, 0.5, jW));
   // erosion gullies (ridged noise along the fall line) and dark runoff streaks
   vec4 gX = nz(vec2(p.z * 0.06, p.y * 0.016) + 0.31);
   vec4 gZ = nz(vec2(p.x * 0.06, p.y * 0.016) + 0.73);
@@ -499,7 +499,7 @@ Mat matCliff(NS s, float volc, out vec3 facetN) {
   // fine grit: crisp micro relief so faces never look moulded
   vec4 e = nz(uvD * 0.45 + 0.43);
   c *= 0.90 + 0.20 * mix(0.5, e.g, fineK);
-  c *= 1.0 - 0.50 * joint;
+  c *= 1.0 - 0.30 * joint;
   c *= 1.0 - 0.30 * gully;
   c = mix(c, c * vec3(0.80, 0.82, 0.87), streak * 0.75);
 
@@ -524,7 +524,7 @@ Mat matCliff(NS s, float volc, out vec3 facetN) {
   c *= mix(1.0, 0.95 + 0.10 * ft.x, near);
   // relief for the derivative bump: grooved joints and gullies, ledge steps, grit
   float hgt = 0.55 + 0.20 * (lr - 0.5) * bandK + 0.16 * (d.r - 0.5) + 0.14 * (e.g - 0.5) * fineK
-            - 0.55 * joint - 0.35 * gully + 0.16 * led * bandK;
+            - 0.18 * joint - 0.30 * gully + 0.16 * led * bandK;
   return mk(c, 0.84 + 0.08 * volc, hgt, 0.13 * near + 0.03 * volc);
 }
 
