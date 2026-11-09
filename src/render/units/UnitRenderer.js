@@ -72,6 +72,8 @@ const UNIFORMED = new Set(['soldier', 'guard', 'king', 'queen']);
 const WORK_JOBS = new Set(['farmer', 'woodcutter', 'miner', 'builder', 'fisher']);
 // status -> emote icon (shown above creatures when close or selected)
 const STATUS_ICON = { burning: EMOTE.burning, sick: EMOTE.sick, wounded: EMOTE.wounded, enraged: EMOTE.anger, frightened: EMOTE.alert, chilled: EMOTE.chilled, starving: EMOTE.starving, exhausted: EMOTE.exhausted, mourning: EMOTE.mourning, inspired: EMOTE.inspired, blessed: EMOTE.sparkle };
+// shown above everyone nearby; the rest only on the selected / followed creature
+const ALARM = new Set(['burning', 'sick', 'wounded', 'enraged']);
 // Brighten a linear colour for far-zoom dots so it reads against terrain.
 function bright(c) {
   const m = Math.max(c[0], c[1], c[2], 1e-3);
@@ -322,6 +324,7 @@ export class UnitRenderer {
     if (arm && !child) armor = 1;
     const metalIdx = (wpn && MATERIALS[wpn.material]?.index) || (arm && MATERIALS[arm.material]?.index) || 0;
     rs.legendary = !!(wpn?.legendary || arm?.legendary);
+    rs.starsteel = wpn?.material === 'starsteel' || arm?.material === 'starsteel';
     const back = BACK_OPT[u.carry?.type] || 0;
     const kc = this._kingdomColor(u.kingdom);
     const pal = CULTURE_CLOTH[u.data?.culture] || NEUTRAL_CLOTH;
@@ -456,6 +459,8 @@ export class UnitRenderer {
     const dotsOnly = !!(g.view?.far || (g.view?.zoom01 ?? 0) > 0.82);
     this.dotsOnly = dotsOnly;
     const camT = g.cameraRig.target;
+    // held weapons and tools grow as the camera pulls back so they read at play zoom
+    const weaponGrow = 0.9 * smoothstep(7, 30, g.cameraRig.cur?.dist ?? 20);
     const frame = g.frame | 0;
     const ov = this.overlays;
     ov.begin();
@@ -558,6 +563,7 @@ export class UnitRenderer {
           rs.sPitch += (rs.rootPitch - rs.sPitch) * k;
           rs.sRoll += (rs.rootRoll - rs.sRoll) * k;
         }
+        if (md.rig === 'humanoid' && md.id === 'human') Ps[15] = weaponGrow;
         // spine phases must not be smoothed (they grow without bound)
         if (md.rig === 'serpent' || md.rig === 'wyrm') Ps[0] = P[0];
         // terrain tilt for four-legged creatures
@@ -589,6 +595,32 @@ export class UnitRenderer {
         const near = (ix - camT.x) ** 2 + (iz - camT.z) ** 2 < SHADOW_RANGE * SHADOW_RANGE;
         const apUse = pm.tiny ? (pm.mesh.name.endsWith(':mid') ? rs.apMid : rs.apTiny) || rs.ap : rs.ap;
         pm.write(this._m, Ps, apUse, Math.min(1, flash), lod, glow, near);
+        // legendary light at the blade; starsteel and Starborn sparkle
+        if ((rs.legendary || rs.starborn) && md.id === 'human') {
+          const ch = Math.cos(heading),
+            sh = Math.sin(heading);
+          const wg = 1 + weaponGrow;
+          const lx = -0.11 * scale,
+            lz = (0.12 + 0.22 * wg) * scale;
+          const bx = ix + lx * ch + lz * sh,
+            bz = iz - lx * sh + lz * ch;
+          const by = y + rs.sY * scale + (0.3 + 0.06 * wg) * scale;
+          if (rs.legendary) {
+            const gs = Math.max(0.35 * scale, 18 / ppu) * (0.92 + 0.12 * Math.sin(now * 3 + rs.seed * 9));
+            ov.emotes.add(bx, by, bz, gs, EMOTE.glow, 0.85, 0);
+          }
+          if (rs.starborn || rs.starsteel) {
+            for (let k = 0; k < 3; k++) {
+              const t = (now * 0.6 + k / 3 + rs.seed) % 1;
+              const a = (k / 3) * Math.PI * 2 + now * 1.3;
+              const r = 0.18 * scale;
+              const cx = rs.starborn ? ix : bx,
+                cz = rs.starborn ? iz : bz;
+              const cy = rs.starborn ? y + rs.sY * scale + (0.1 + t * 0.55) * scale : by;
+              ov.emotes.add(cx + Math.cos(a) * r, cy, cz + Math.sin(a) * r, Math.max(0.09 * scale, 7 / ppu) * Math.sin(t * Math.PI), EMOTE.star, 0.9, now * 2 + k);
+            }
+          }
+        }
         // skywyrm fire breath
         if (md.rig === 'wyrm' && u.data?.breath > simNow) {
           this._m2.makeRotationX(0.42).setPosition(0, -0.02, 0.97);
@@ -620,6 +652,11 @@ export class UnitRenderer {
         const altK = Math.max(0, 1 - (y - gy) / 14);
         ov.ground.add(ix, gy, iz, md.radius * 1.3 * scale * (1.4 - altK * 0.4), 0, 1, 0, DECAL.shadow, 0.02, 0.02, 0.05, 0.38 * altK);
       }
+      // fighters stand on a ring of their kingdom's colour: sides read in battle
+      if (u.combat && def.kind === 'humanoid' && u.kingdom >= 0 && hab === 'land') {
+        const kc = this._kingdomColor(u.kingdom);
+        if (kc) ov.ground.add(ix, ground, iz, (md.radius * 1.5 + 0.2) * scale, 0, 1, 0, DECAL.ring, Math.min(1, kc[0] * 1.6 + 0.1), Math.min(1, kc[1] * 1.6 + 0.1), Math.min(1, kc[2] * 1.6 + 0.1), 0.85);
+      }
       if (lod < 0.999) {
         const dsz = Math.max(0.3, 6 / ppu) * (def.kind === 'humanoid' ? 1 : 0.8);
         const c = rs.dot || [0.8, 0.8, 0.8];
@@ -644,7 +681,7 @@ export class UnitRenderer {
         const ids = [];
         for (const id of u.statuses.keys()) if (STATUS_ICON[id] != null) ids.push(id);
         ids.sort((a, b) => (STATUS_BY_ID[b]?.priority ?? 0) - (STATUS_BY_ID[a]?.priority ?? 0));
-        const esz2 = 0.34 * Math.max(1, dCam / 18);
+        const esz2 = Math.max(md.height * scale * 0.3, 16 / ppu);
         const top2 = y + rs.sY * scale + md.height * scale + 0.15;
         for (let k = 0; k < Math.min(3, ids.length); k++) {
           const off = (k - (Math.min(3, ids.length) - 1) / 2) * esz2 * 1.1;
@@ -675,14 +712,14 @@ export class UnitRenderer {
             bp = -1;
           for (const id of u.statuses.keys()) {
             const pr = STATUS_BY_ID[id]?.priority ?? 0;
-            if (STATUS_ICON[id] != null && pr > bp) {
+            if (ALARM.has(id) && pr > bp) {
               bp = pr;
               best = id;
             }
           }
           if (best) {
-            const side = esz * 1.05;
-            ov.emotes.add(ix + this._camRight.x * side, top - esz * 0.1, iz + this._camRight.z * side, esz * 1.4, STATUS_ICON[best], ea * 0.95, 0);
+            const hs = Math.max(md.height * scale * 0.3, 14 / ppu);
+            ov.emotes.add(ix + this._camRight.x * hs * 0.9, top - hs * 0.2, iz + this._camRight.z * hs * 0.9, hs, STATUS_ICON[best], ea * 0.95, 0);
           }
         }
       }

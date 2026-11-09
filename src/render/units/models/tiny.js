@@ -79,6 +79,7 @@ function humanMid(B) {
   box(B, 0.08, 0.09, 0.07, [0, 0.31, -0.1], 'torso', 'gold', { slot: 'back', opt: 4 });
   // kingdom tabard (cape slot 2) and royal cape (1)
   for (const s of [1, -1]) box(B, 0.11, 0.2, 0.01, [0, 0.27, 0.084 * s], 'torso', 'sash', { slot: 'cape', opt: 2 });
+  B.add(P.lathe([[0.122, 0.336], [0.088, 0.383], [0.05, 0.398]], 7), { scl: [1, 1, 0.86], bone: 'torso', mat: 'sash', slot: 'cape', opt: 2 });
   box(B, 0.18, 0.28, 0.01, [0, 0.25, -0.09], 'torso', 'cloth', { slot: 'cape', opt: 1 });
   // held tools / weapons, chunky enough to read (tool frame: handle along +Z)
   const H = [-0.111, 0.205, 0.004];
