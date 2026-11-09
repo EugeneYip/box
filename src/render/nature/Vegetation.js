@@ -464,9 +464,9 @@ export class Vegetation {
       if (t === TILE.DESERT || t === TILE.SAVANNA || t === TILE.SAND) {
         // dry scrub: olive-ochre, varied
         const d = t === TILE.DESERT ? 1 : 0.65;
-        arr[off] *= 1 + 0.42 * d;
-        arr[off + 1] *= 1 + 0.06 * d;
-        arr[off + 2] *= 1 - 0.55 * d;
+        arr[off] *= 1 + 0.62 * d;
+        arr[off + 1] *= 1 - 0.04 * d;
+        arr[off + 2] *= 1 - 0.68 * d;
       }
     }
   }

@@ -141,15 +141,20 @@ export class FloraSim {
     world.markDirty('flora', 0, 0, world.w - 1, world.h - 1);
   }
 
+  // Live census (throttled): 'trees' are past the sapling stage, so saplings
+  // (from seeds, powers or forestry) only count once they actually grow.
   recount() {
     const world = this.game.world;
-    const c = { trees: 0, plants: 0 };
+    const c = { trees: 0, saplings: 0, plants: 0 };
     for (let i = 0; i < world.size; i++) {
       const f = world.flora[i];
-      if (isTreeId(f)) c.trees++;
-      else if (isLiving(f)) c.plants++;
+      if (isTreeId(f)) {
+        if (world.floraGrowth[i] >= 0.25) c.trees++;
+        else c.saplings++;
+      } else if (isLiving(f)) c.plants++;
     }
     this.counts = c;
+    this._countT = typeof performance !== 'undefined' ? performance.now() : 0;
   }
 
   reset() {
@@ -204,7 +209,6 @@ export class FloraSim {
       const i = this._cursor;
       if (++this._cursor >= n) {
         this._cursor = 0;
-        this.counts = this._countAcc;
         this._countAcc = { trees: 0, plants: 0 };
       }
       const last = this.lastVisit[i];
@@ -574,7 +578,9 @@ export class FloraSim {
   }
 
   stats() {
-    return { trees: this.counts.trees, plants: this.counts.plants };
+    const now = typeof performance !== 'undefined' ? performance.now() : 0;
+    if (!(now - (this._countT || 0) < 1000)) this.recount();
+    return { trees: this.counts.trees, saplings: this.counts.saplings, plants: this.counts.plants };
   }
 
   inspect() {
