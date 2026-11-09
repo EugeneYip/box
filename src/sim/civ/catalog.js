@@ -33,7 +33,10 @@ export const BUILDING_TYPES = {
   well: { names: ['Well'], w: 1, h: 1, levels: 1, hp: [60], buildTime: [8], cost: [{ stone: 6 }] },
   windmill: { names: ['Windmill'], w: 2, h: 2, levels: 1, hp: [140], buildTime: [26], cost: [{ wood: 22, stone: 10 }] },
   docks: { names: ['Docks', 'Harbour'], w: 2, h: 2, levels: 2, hp: [110, 200], buildTime: [20, 30], cost: [{ wood: 18 }, { wood: 30, stone: 16 }], coastal: true, tech: [null, 'sailing'] },
-  wonder: { names: ['Wonder'], w: 3, h: 3, levels: 1, hp: [900], buildTime: [120], cost: [{ wood: 60, stone: 120, gold: 20 }], banner: true },
+  // monuments rise in three stages, each a construction of its own
+  wonder: { names: ['Wonder Footings', 'Rising Wonder', 'Wonder'], w: 5, h: 5, levels: 3, hp: [700, 1100, 1600], buildTime: [70, 90, 110], cost: [{ wood: 50, stone: 80, gold: 10 }, { wood: 40, stone: 110, gold: 20 }, { wood: 30, stone: 140, gold: 40 }], banner: true, monument: true },
+  colossus: { names: ['Colossus Pedestal', 'Rising Colossus', 'Colossus'], w: 3, h: 3, levels: 3, hp: [500, 800, 1200], buildTime: [60, 80, 100], cost: [{ wood: 30, stone: 70, gold: 10 }, { wood: 20, stone: 90, gold: 20 }, { wood: 10, stone: 110, gold: 40 }], banner: true, monument: true },
+  statue: { names: ['Statue'], w: 1, h: 1, levels: 1, hp: [120], buildTime: [14], cost: [{ stone: 16, gold: 4 }] },
   library: { names: ['Library'], w: 2, h: 2, levels: 1, hp: [160], buildTime: [30], cost: [{ wood: 18, stone: 24 }], tech: ['writing'] },
   observatory: { names: ['Observatory'], w: 2, h: 2, levels: 1, hp: [200], buildTime: [40], cost: [{ wood: 10, stone: 40, gold: 2 }], tech: ['astronomy'] },
   aqueduct: { names: ['Aqueduct'], w: 3, h: 1, levels: 1, hp: [260], buildTime: [36], cost: [{ stone: 44 }], tech: ['architecture'] },
@@ -47,10 +50,10 @@ export const BUILDING_TYPES = {
 };
 
 export const BUILDING_LABEL = {
-  vale: { wonder: ['Great Spire'], hall: ['Longhall', 'Town Hall', 'Castle Keep'], house: ['Thatched Cottage', 'Timber House', 'Manor House'], temple: ['Wayside Chapel', 'Stone Chapel'] },
-  dune: { wonder: ['Sun Pillar'], hall: ['Clay Palace', 'Domed Palace', 'Sun Citadel'], house: ['Mudbrick Hut', 'Terrace House', 'Courtyard Villa'], temple: ['Sun Shrine', 'Great Dome'], granary: ['Grain Domes'] },
-  frost: { wonder: ['Rune Tower'], hall: ['Mead Hall', 'Jarl Hall', 'Stone Hold'], house: ['Turf Hut', 'Stave House', 'Longhouse'], temple: ['Rune Shrine', 'Stave Temple'] },
-  mire: { wonder: ['Sky Totem'], hall: ['Council Lodge', 'Great Lodge', 'Canopy Palace'], house: ['Stilt Hut', 'Stilt House', 'Elder Lodge'], temple: ['Spirit Shrine', 'Step Temple'], granary: ['Rice Barn'] },
+  vale: { wonder: ['Great Spire Footings', 'Rising Spire', 'Great Spire'], colossus: ['Founder Pedestal', 'Rising Founder', 'Colossus of the Founder'], statue: ['Hero Statue'], hall: ['Longhall', 'Town Hall', 'Castle Keep'], house: ['Thatched Cottage', 'Timber House', 'Manor House'], temple: ['Wayside Chapel', 'Stone Chapel'] },
+  dune: { wonder: ['Sun Terrace', 'Rising Pillar', 'Sun Pillar'], colossus: ['Sun Pedestal', 'Rising Sun King', 'Sun King Colossus'], statue: ['Sun Idol'], hall: ['Clay Palace', 'Domed Palace', 'Sun Citadel'], house: ['Mudbrick Hut', 'Terrace House', 'Courtyard Villa'], temple: ['Sun Shrine', 'Great Dome'], granary: ['Grain Domes'] },
+  frost: { wonder: ['Rune Ring', 'Rising Rune Tower', 'Rune Tower'], colossus: ['Jarl Pedestal', 'Rising Jarl', 'Colossus of the Jarl'], statue: ['Hero Stone'], hall: ['Mead Hall', 'Jarl Hall', 'Stone Hold'], house: ['Turf Hut', 'Stave House', 'Longhouse'], temple: ['Rune Shrine', 'Stave Temple'] },
+  mire: { wonder: ['Totem Mound', 'Rising Totem', 'Sky Totem'], colossus: ['Spirit Mound', 'Rising Spirit', 'Spirit Colossus'], statue: ['Ancestor Post'], hall: ['Council Lodge', 'Great Lodge', 'Canopy Palace'], house: ['Stilt Hut', 'Stilt House', 'Elder Lodge'], temple: ['Spirit Shrine', 'Step Temple'], granary: ['Rice Barn'] },
 };
 
 export function buildingLabel(b) {

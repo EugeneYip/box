@@ -790,7 +790,21 @@ export const planner = {
   },
 
   // ---------------------------------------------------------------- walls
-  _planWalls(v) {
+  _planWalls(v, maxLen = 72) {
+    for (let s = 1; s > 0.35; s -= 0.12) {
+      const plan = this._wallRing(v, s);
+      if (plan.length <= maxLen) {
+        v.wallPlan = plan;
+        v.wallsPlanned = true;
+        return plan.length;
+      }
+    }
+    v.wallPlan = [];
+    v.wallsPlanned = true;
+    return 0;
+  },
+
+  _wallRing(v, scale = 1) {
     const w = this.world;
     const W = w.w;
     const cx = v.cx,
@@ -812,7 +826,7 @@ export const planner = {
     }
     // smooth & cap
     const r2 = new Float32Array(K);
-    for (let k = 0; k < K; k++) r2[k] = Math.min(24, Math.max(rad[k], (rad[(k + K - 1) % K] + rad[k] * 2 + rad[(k + 1) % K]) / 4));
+    for (let k = 0; k < K; k++) r2[k] = Math.max(6, Math.min(24, Math.max(rad[k], (rad[(k + K - 1) % K] + rad[k] * 2 + rad[(k + 1) % K]) / 4)) * scale);
     const pts = [];
     for (let k = 0; k < K; k++) {
       const a = (k / K) * Math.PI * 2;
@@ -885,8 +899,7 @@ export const planner = {
       n++;
       plan.push({ i, x, y, type });
     }
-    v.wallPlan = plan;
-    v.wallsPlanned = true;
+    return plan;
   },
 
   // Build the next few wall sections of a planned ring.
@@ -909,6 +922,7 @@ export const planner = {
         const ew = this._roadNeighbourAt(p.x - 1, p.y) || this._roadNeighbourAt(p.x + 1, p.y);
         this.use[i] = USE.FREE;
         const b = this.addBuilding(v, 'gate', p.x, p.y, ew ? 1 : 0, { noFlatten: true });
+        if (w.building[i] === b.id) w.building[i] = -1; // an open gate: the road runs through
         b.y = w.height[i];
         b.groundMin = this._groundMin(b);
       } else {

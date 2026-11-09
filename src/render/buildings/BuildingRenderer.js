@@ -362,11 +362,13 @@ export class BuildingRenderer {
     for (const v of civ.villages) {
       if (!v.alive || v.tier < 1) continue;
       col.setHex(civ.kingdomColor(v.kingdom));
+      // a realm of masters lights more of its streets
+      const lampP = 0.11 + Math.min(0.12, (civ.kingdoms[v.kingdom]?.mastery || 0) * 0.015);
       for (const i of v.roadTiles) {
         if (civ.use?.[i] !== 2) continue;
         const tx = i % world.w,
           ty = (i / world.w) | 0;
-        if (hash2(tx, ty, 91) > 0.11) continue;
+        if (hash2(tx, ty, 91) > lampP) continue;
         if (Math.hypot(tx + 0.5 - v.cx, ty + 0.5 - v.cz) > v.radius * 0.8) continue;
         // stand on the road edge next to a building or plot
         let ox = 0,
@@ -417,7 +419,7 @@ export class BuildingRenderer {
       let L = proxies.get(key);
       if (!L) proxies.set(key, (L = { m: [], col: [], bs: [] }));
       const a = this._arch(def.wall ? `wpost|${b.style}` : `${b.type}|${b.style}|${Math.min(b.level || 1, def.levels)}|${b.era ?? 1}`);
-      const hgt = def.wall ? 1.1 : Math.max(0.5, Math.min(3, a.maxY)) * (b.constructing ? Math.max(0.2, b.progress) : 1);
+      const hgt = def.wall ? 1.1 : Math.max(0.5, Math.min(def.monument ? 12 : 3, a.maxY)) * (b.constructing ? Math.max(0.2, b.progress) : 1);
       const pm = this._m2.makeRotationY(b.rotation || 0).setPosition(b.x, b.y, b.z).multiply(this._m3.makeScale(def.w * 0.82, hgt, def.h * 0.82));
       for (let i = 0; i < 16; i++) L.m.push(pm.elements[i]);
       col.setHex(civ.kingdomColor(b.kingdom));

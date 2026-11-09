@@ -76,6 +76,7 @@ export const tech = {
       const e = techById[id]?.effects;
       if (e && typeof e[key] === 'number') m *= e[key];
     }
+    if (k.wonderFx?.[key]) m *= k.wonderFx[key];
     return m;
   },
   techAdd(kid, key) {
@@ -86,6 +87,7 @@ export const tech = {
       const e = techById[id]?.effects;
       if (e && typeof e[key] === 'number') a += e[key];
     }
+    if (k.wonderFx?.[key + '+']) a += k.wonderFx[key + '+'];
     return a;
   },
   // Best weapon/armour material the kingdom can forge.
