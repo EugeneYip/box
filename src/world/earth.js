@@ -363,7 +363,13 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
   }
   // mountain ranges: ridged crests, several summits along each range
   const rng = new Float32Array(N);
-  for (const f of RANGES) {
+  // ranges keep at least ~2 tiles of half-width on any map size, so narrow
+  // ones (Taiwan, the Cascades) are not single-tile spikes the blur flattens
+  const minRangeW = 2.2 / tpd,
+    minConeW = 1.8 / tpd;
+  for (const f0 of RANGES) {
+    const mw = f0.cone ? minConeW : minRangeW;
+    const f = { ...f0, w: Math.max(f0.w ?? 1, mw), pts: f0.pts.map((p) => (p.length > 3 ? [p[0], p[1], p[2], Math.max(p[3], mw)] : p)) };
     stamp(f, 1.25, 0, (i, d, h, w) => {
       if (!land[i]) return;
       const u = U(i),
@@ -669,6 +675,8 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
     if (m >= 0.2) return TILE.SAVANNA;
     return TILE.DESERT;
   };
+  const beachW = Math.max(1.05, 1.25 * scale768);
+  const slopeK = Math.min(1, Math.sqrt(scale768)); // coarser tiles are steeper per tile
   for (let y = 0; y < H; y++) {
     const lat = latY[y];
     for (let x = 0; x < W; x++) {
@@ -690,16 +698,16 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
       }
       const t = temp[i],
         m = moist[i];
-      const slope = H_.slopeOf(hgt, W, H, x, y);
+      const slope = H_.slopeOf(hgt, W, H, x, y) * slopeK;
       const snowLine = 7.5 + 10 * clamp01(baseT[i]) + bn * 1.2;
       const rockLine = snowLine - 3.2 + bn * 0.6;
-      const dOc = dOcean[i] / Math.max(0.7, scale768);
+      const dOcT = dOcean[i]; // tiles to the open sea
       let tt;
       if (icecap[i] || h > snowLine || t < 0.11 + bn * 0.02) tt = TILE.SNOW;
       else if ((h > rockLine && slope > 0.6 + bn * 0.2) || slope > 2.2 + bn * 0.4) tt = TILE.ROCK;
       else if (h > rockLine) tt = t > 0.2 ? TILE.TUNDRA : TILE.SNOW; // alpine meadow, high plateaus
-      else if (dOc <= 1.25 + bn * 0.7 && h < 0.9 + bn * 0.3 && slope < 0.7 && t > 0.3) tt = TILE.SAND;
-      else if (dOc <= 1.2 && slope >= 0.85) tt = TILE.ROCK;
+      else if (dOcT <= beachW + bn * 0.6 && h < 0.9 + bn * 0.3 && slope < 0.7 && t > 0.3) tt = TILE.SAND;
+      else if (dOcT <= 1.5 && slope >= 0.85) tt = TILE.ROCK;
       else if (wetland[i] && h < 3.2 && t > 0.24 && m > 0.35) tt = TILE.SWAMP;
       else if (m > 0.86 && h < 1.2 && dWater[i] < 3 && t > 0.3) tt = TILE.SWAMP;
       else tt = biome(t + bn * 0.02 + (hash2(x, y, seed) - 0.5) * 0.01, m - bn * 0.04);
@@ -712,6 +720,12 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
 
   // ------------------------------------------------------------------ flora
   H_.placeFlora(world, seed, nDetail);
+  // the ice sheets stay bare (a few stones near the coast at most)
+  for (let i = 0; i < N; i++)
+    if (icecap[i] && world.flora[i] && (dLand[i] > 2 || hash2(i % W, (i / W) | 0, seed + 5) > 0.15)) {
+      world.flora[i] = 0;
+      world.floraGrowth[i] = 0;
+    }
   _t('flora');
 
   world.meta = { preset: 'earth', lon0: EARTH_LON0, projection: 'plate-carree', spreadStarts: true };

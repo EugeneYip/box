@@ -33,7 +33,7 @@ const PRESETS = {
 
 // Preset ids this generator can build; the UI only offers these.
 // (A preset implemented outside PRESETS, such as the World Map, appends its id.)
-export const WORLD_PRESET_IDS = Object.keys(PRESETS);
+export const WORLD_PRESET_IDS = [...Object.keys(PRESETS), 'earth'];
 
 export function generateWorld(world, seed = 1, options = {}) {
   if (options.preset === 'earth') return generateEarth(world, seed, options, EARTH_HELPERS);

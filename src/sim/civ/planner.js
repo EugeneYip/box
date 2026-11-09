@@ -189,6 +189,7 @@ export const planner = {
         bs = -Infinity;
       for (const c of cands) {
         if (chosen.some((o) => (o.tx - c.tx) ** 2 + (o.ty - c.ty) ** 2 < minD * minD)) continue;
+        if (w.meta?.spreadStarts && c.culture === 'frost') continue; // World Map: no starts on the ice sheets
         let s = c.s;
         const uses = usedCultures.get(c.culture) || 0;
         s *= uses === 0 ? 1.25 : 1 / (1 + uses * 0.25);
@@ -199,8 +200,11 @@ export const planner = {
           let md = Infinity;
           for (const o of chosen) md = Math.min(md, Math.hypot(o.tx - c.tx, o.ty - c.ty));
           s *= 1 + Math.min(md, 110) / 400;
-          // rivals should share a continent so they can meet, trade and fight
-          if (c.land === chosen[0].land && (landSize.get(c.land) || 0) > 2500) s *= 1.6;
+          // rivals should share a continent so they can meet, trade and fight;
+          // on the World Map (world.meta.spreadStarts) they settle every continent
+          if (w.meta?.spreadStarts) {
+            if (!chosen.some((o) => o.land === c.land) && (landSize.get(c.land) || 0) > 1500) s *= 1.5;
+          } else if (c.land === chosen[0].land && (landSize.get(c.land) || 0) > 2500) s *= 1.6;
         }
         if (s > bs) {
           bs = s;
