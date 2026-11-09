@@ -126,9 +126,9 @@ export class FloraSim {
         // arid land: cacti, succulents, dry shrubs and stones around the dunes
         const r = this.hash(i * 13 + 7);
         const desert = world.type[i] === TILE.DESERT;
-        if (desert ? r < 0.05 : r < 0.012) world.flora[i] = FLORA.CACTUS;
-        else if (desert ? r < 0.1 : r < 0.07) world.flora[i] = FLORA.BUSH;
-        else if (desert ? r < 0.13 : r < 0.085) world.flora[i] = FLORA.ROCK_SMALL;
+        if (desert ? r < 0.09 : r < 0.018) world.flora[i] = FLORA.CACTUS;
+        else if (desert ? r < 0.17 : r < 0.085) world.flora[i] = FLORA.BUSH;
+        else if (desert ? r < 0.21 : r < 0.1) world.flora[i] = FLORA.ROCK_SMALL;
         if (world.flora[i]) world.floraGrowth[i] = 0.7 + this.hash(i * 3) * 0.3;
       } else if (!f && world.type[i] === TILE.GRASS && world.height[i] >= SEA_LEVEL && world.building[i] < 0) {
         const d = flowerDrift(tx, ty);
@@ -243,7 +243,7 @@ export class FloraSim {
       this.stress[i] = 0;
       // spontaneous undergrowth on fertile empty ground (rare)
       if (world.height[i] >= SEA_LEVEL && !BARREN[t] && world.building[i] < 0 && world.fire[i] <= 0) {
-        const p = t === TILE.FOREST ? 0.0016 : t === TILE.JUNGLE ? 0.002 : t === TILE.GRASS ? 0.0009 : t === TILE.SWAMP ? 0.0012 : 0;
+        const p = t === TILE.FOREST ? 0.0016 : t === TILE.JUNGLE ? 0.002 : t === TILE.GRASS ? 0.0009 : t === TILE.SWAMP ? 0.0012 : t === TILE.DESERT ? 0.0008 : t === TILE.SAVANNA ? 0.0006 : 0;
         const spring = this._season === 0 ? 2.5 : this._season === 3 ? 0.2 : 1;
         if (p && this._grow !== false && this.rng() < p * spring * this._fert * (1 + this.boost[i] * 10)) {
           const u = pickUndergrowth(t, this.rng());

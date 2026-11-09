@@ -324,7 +324,8 @@ if (fFire > 0.002) {
 if (abs(fMat - 11.0) < 0.5) {
   float night = clamp(1.0 - uDaylight, 0.0, 1.0);
   float pulse = 0.8 + 0.2 * sin(uTime * 1.3 + vFIH * 40.0);
-  totalEmissiveRadiance += fGlowPal(vFGlow.y) * (0.05 + 0.85 * night) * pulse * uFungiGlow;
+  float gDist = smoothstep(22.0, 70.0, distance(vFWorld, cameraPosition));
+  totalEmissiveRadiance += fGlowPal(vFGlow.y) * (0.05 + 0.85 * night) * pulse * uFungiGlow * mix(1.0, 0.3, gDist);
 }
 // light from nearby glowcap groves falls on trunks, caps, bushes and grass
 if (vFGlow.x > 0.01 && uFungiGlow > 0.001) {
@@ -383,6 +384,7 @@ export function createDecalMaterials(shared) {
     uniforms: { uTime: shared.uTime, uDaylight: shared.uDaylight, uFungiGlow: shared.uFungiGlow, uHeightTex: shared.uHeightTex, uHasHeight: shared.uHasHeight, uOcc: shared.uOcc, uWorldSize: shared.uWorldSize },
     vertexShader: common + /* glsl */ `
       varying vec3 vCol;
+      varying float vNear;
       vec3 fGlowPal(float hue) { return hue < 0.25 ? vec3(0.05, 0.85, 0.6) : hue < 0.75 ? vec3(0.55, 0.22, 1.0) : vec3(1.0, 0.55, 0.08); }
       void main() {
         vUv = uv;
@@ -391,6 +393,8 @@ export function createDecalMaterials(shared) {
         wp.y = groundAt(wp.xz, o.y) + 0.06;
         ivec2 t = clamp(ivec2(floor(o.xz)), ivec2(0), ivec2(uWorldSize) - 1);
         vCol = fGlowPal(texelFetch(uOcc, t, 0).a);
+        // pools shrink to faint glints with distance (no bokeh blobs at mid zoom)
+        vNear = 1.0 - smoothstep(24.0, 60.0, distance(o, cameraPosition));
         vPh = fHash(o.xz) * 40.0;
         gl_Position = projectionMatrix * viewMatrix * wp;
       }`,
@@ -398,6 +402,7 @@ export function createDecalMaterials(shared) {
       varying vec2 vUv;
       varying vec3 vCol;
       varying float vPh;
+      varying float vNear;
       uniform float uTime;
       uniform float uDaylight;
       uniform float uFungiGlow;
@@ -406,7 +411,7 @@ export function createDecalMaterials(shared) {
         float a = exp(-d * d * 5.0) * (1.0 - smoothstep(0.55, 0.95, d));
         float night = clamp(1.0 - uDaylight * 1.2, 0.0, 1.0);
         float pulse = 0.8 + 0.2 * sin(uTime * 1.3 + vPh);
-        gl_FragColor = vec4(vCol * a * night * uFungiGlow * pulse * 0.5, 1.0);
+        gl_FragColor = vec4(vCol * a * night * uFungiGlow * pulse * 0.5 * vNear, 1.0);
       }`,
     transparent: true,
     depthWrite: false,
@@ -440,7 +445,7 @@ export function createDecalMaterials(shared) {
       void main() {
         float d = length(vUv - 0.5) * 2.0;
         float a = smoothstep(1.0, 0.1, d);
-        float k = 0.18 + 0.28 * clamp(uDaylight, 0.0, 1.0);
+        float k = 0.2 + 0.36 * clamp(uDaylight, 0.0, 1.0);
         gl_FragColor = vec4(vec3(1.0 - k * a), 1.0);
       }`,
     transparent: true,

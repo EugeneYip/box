@@ -349,7 +349,9 @@ function buildPine(b, v, lod, snowy = false) {
     const h = Math.max(r * 1.35, (span / tiers) * 1.7);
     const rot = b.r(0, TAU);
     const tierStart = b.count;
-    pineTier(b, y0, t === tiers - 1 ? h * 1.25 : h, r, segs, pal, rot, { shade: 0.86 + 0.14 * f, lod });
+    // close up, tiers are fans of drooping branches; the leader and LOD1 stay conical
+    if (!lod && t < tiers - 1) pineBranches(b, y0, h, r, v === 1 ? 7 : 8, pal, rot, { shade: 0.86 + 0.14 * f });
+    else pineTier(b, y0, t === tiers - 1 ? h * 1.25 : h, r, segs, pal, rot, { shade: 0.86 + 0.14 * f, lod });
     if (snowy) snowCap(b, y0, t === tiers - 1 ? h * 1.25 : h, r, segs, rot, lod);
     if (!lod && t < tiers - 1) {
       // irregular silhouette: tiers lean and drift off the axis a little
@@ -361,6 +363,36 @@ function buildPine(b, v, lod, snowy = false) {
   return { bendScale: 0.8, height: cfg.H };
 }
 
+// A conifer tier as a whorl of drooping branches: each branch arches out of
+// the trunk, sags toward a sunlit tip and carries a raised midrib, leaving
+// gaps between branches so the silhouette is layered and ragged.
+function pineBranches(b, y0, h, r, n, pal, rot, o = {}) {
+  const shade = o.shade ?? 1;
+  const piv = V(0, y0 + h * 0.3, 0);
+  for (let k = 0; k < n; k++) {
+    const a = rot + (k / n) * TAU + b.r(-0.18, 0.18);
+    const d = V(Math.cos(a), 0, Math.sin(a));
+    const s = V(-d.z, 0, d.x);
+    const len = r * b.r(0.88, 1.12);
+    const base = V(0, y0 + h * 0.5, 0);
+    const mid = d.clone().multiplyScalar(len * 0.52).add(V(0, y0 + h * 0.22, 0));
+    const tip = d.clone().multiplyScalar(len).add(V(0, y0 - len * b.r(0.12, 0.24), 0));
+    const w = len * b.r(0.3, 0.38);
+    const L = mid.clone().addScaledVector(s, w),
+      R = mid.clone().addScaledVector(s, -w);
+    const C = mid.clone().add(V(0, len * 0.09, 0));
+    const cB = mul3(pal.dark, 0.8 * shade),
+      cM = mul3(mix3(pal.dark, pal.mid, 0.6), shade),
+      cE = mul3(pal.mid, shade),
+      cT = mul3(mix3(pal.light, pal.hi || pal.light, 0.3), shade * (0.95 + 0.1 * b.rng()));
+    const opt = { leaf: 1, flutter: 0.45, mat: MAT.LEAF, pivot: piv };
+    b.tri(base, R, C, [cB, cE, cM], opt);
+    b.tri(base, C, L, [cB, cM, cE], opt);
+    b.tri(C, R, tip, [cM, cE, cT], opt);
+    b.tri(L, C, tip, [cE, cM, cT], opt);
+  }
+}
+
 // Snow lying in irregular clumps on a pine tier: a handful of flattened,
 // lumpy drifts tilted to the cone, sized and spaced at random so the tree
 // reads as snow-laden rather than striped. The top tier gets a cap.
@@ -369,13 +401,13 @@ function snowCap(b, y0, h, r, segs, rot, lod) {
   const col = (p, n) => mul3(mix3(pal.dark, pal.light, clamp01(n.y * 0.85 + 0.2)), 0.95 + 0.08 * hashV(p));
   const piv = V(0, y0 + h * 0.5, 0);
   const slope = Math.atan2(h, r);
-  const clumps = lod ? 3 : 5 + Math.floor(b.rng() * 3);
+  const clumps = lod ? 1 : 4 + Math.floor(b.rng() * 3);
   for (let k = 0; k < clumps; k++) {
     const a = rot + (k / clumps) * TAU + b.r(-0.5, 0.5);
     const rho = r * b.r(0.25, 0.75);
     const ySurf = y0 + h * (1 - rho / r) * 0.92 + 0.03;
     const size = r * b.r(0.3, 0.46) * (1 - rho / r * 0.3);
-    const g = blobGeo(b, size, lod ? 0 : 'd', { lump: 0.35, squash: 0.45, freq: 2.4 });
+    const g = blobGeo(b, size, 0, { lump: 0.35, squash: 0.45, freq: 2.4 });
     // tilt the drift so it lies along the cone surface
     const tilt = new THREE.Matrix4().makeRotationZ(-slope * 0.75);
     const place = new THREE.Matrix4().makeTranslation(Math.cos(a) * rho, ySurf, Math.sin(a) * rho);
@@ -383,7 +415,7 @@ function snowCap(b, y0, h, r, segs, rot, lod) {
     b.add(g, { matrix: mat4, normals: 'blend', blend: 0.55, color: col, mat: MAT.SNOW, leaf: 1, flutter: 0.25, pivot: piv });
   }
   if (y0 + h > 0) {
-    const cap = blobGeo(b, r * 0.42, lod ? 0 : 'd', { lump: 0.3, squash: 0.6, freq: 2.0 });
+    const cap = blobGeo(b, r * 0.42, 0, { lump: 0.3, squash: 0.6, freq: 2.0 });
     b.add(cap, { matrix: M(0, y0 + h * 0.86, 0, 0, b.r(0, TAU), 0), normals: 'blend', blend: 0.6, color: col, mat: MAT.SNOW, leaf: 1, flutter: 0.25, pivot: piv });
   }
 }
@@ -448,8 +480,8 @@ function buildBirchClump(b, lod) {
       return mul3(c, (0.7 + 0.3 * smooth(0, 0.25, p.y)) * (0.9 + 0.12 * clamp01(n.y * 0.5 + 0.5)));
     };
     trunk(b, pts, pts.map((_, i) => 0.05 - (0.026 * i) / (pts.length - 1)), lod ? 4 : 5, null, { color: bark, faceColor: true, yTop: H });
-    blobs.push({ p: V(top.x, H + 0.04, top.z), r: 0.27 });
-    blobs.push({ p: V(top.x * 1.15, H - 0.24, top.z * 1.15), r: 0.22 });
+    blobs.push({ p: V(top.x, H + (lod ? -0.06 : 0.04), top.z), r: lod ? 0.33 : 0.27, sq: lod ? 1.3 : 1 });
+    if (!lod) blobs.push({ p: V(top.x * 1.15, H - 0.24, top.z * 1.15), r: 0.22 });
     if (!lod) blobs.push({ p: V(top.x * 0.9, H + 0.3, top.z * 0.9), r: 0.18 });
   }
   foliage(b, blobs.map((bl) => ({ ...bl, d: lod ? 'd' : 1, lump: 0.28 })), pal, { lump: 0.28, freq: 2.0, mat: MAT.DLEAF });
@@ -1336,7 +1368,7 @@ kind(FLORA.DEAD_TREE, 4, buildDead);
 kind(FLORA.BUSH, 4, buildBush, { jitter: 0.28, castShadow: false, far2: true, farEarly: true, smallLod: true, scale: [0.68, 0.9] });
 kind(FLORA.BERRY_BUSH, 3, buildBerry, { jitter: 0.26, castShadow: false, far2: true, farEarly: true, smallLod: true, scale: [0.7, 0.88] });
 kind(FLORA.FLOWERS, 4, buildFlowers, { far: 'skip', castShadow: false, jitter: 0.25, scale: [0.7, 0.9] });
-kind(FLORA.CACTUS, 4, buildCactus, { jitter: 0.24 });
+kind(FLORA.CACTUS, 4, buildCactus, { jitter: 0.24, scale: [1.05, 1.4] });
 kind(FLORA.REEDS, 3, buildReeds, { far: 'skip', castShadow: false, jitter: 0.25, scale: [0.7, 0.85] });
 kind(FLORA.MUSHROOM, 5, buildMushroom, { far: 'skip', castShadow: false, jitter: 0.3, scale: [0.46, 0.62] });
 kind(FLORA.ROCK_SMALL, 4, buildStones, { far: 'skip', castShadow: false, jitter: 0.28, tilt: 0.6, scale: [0.9, 1.3], sink: 0.02 });
