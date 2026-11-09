@@ -415,13 +415,53 @@ export class Atmosphere {
     if (!this._warmed && this.game.frame >= 3 && this.game.scene.environment) {
       this._warmed = true;
       try {
-        const cam = this.game.cameraRig.camera;
-        const parallel = renderer.extensions.has('KHR_parallel_shader_compile');
-        if (parallel && renderer.compileAsync) renderer.compileAsync(this.game.scene, cam).catch(() => {});
-        else renderer.compile(this.game.scene, cam);
+        this.compileScene(renderer);
       } catch (err) {
         console.warn('[atmosphere] program warm-up skipped', err);
       }
+    }
+    // Also warm the power-saver (or full-quality) variants: renderers switch
+    // lights and materials when the saver toggles, which otherwise compiles
+    // a few dozen programs at the moment the player flips it.
+    if (this._warmed && !this._warmedPS && this.game.frame >= 6) {
+      this._warmedPS = true;
+      const g = this.game;
+      const s = g.settings;
+      const was = !!s.powerSaver;
+      const step = () => {
+        for (const sys of g.visualSystems || []) {
+          if (sys === this) continue;
+          try {
+            sys.update?.(0);
+          } catch (e) {
+            /* best effort */
+          }
+        }
+      };
+      try {
+        s.powerSaver = !was;
+        step();
+        this.compileScene(renderer);
+      } catch (err) {
+        console.warn('[atmosphere] power-saver warm-up skipped', err);
+      } finally {
+        s.powerSaver = was;
+        step();
+      }
+    }
+  }
+
+  // Compile every material for the main pass. The scene is drawn into the
+  // composer's HDR buffer (linear output), so compile with that target bound:
+  // compiling for the canvas would build sRGB-output variants nobody uses.
+  compileScene(renderer) {
+    const prev = renderer.getRenderTarget();
+    const rt = this.game.pipeline?.composer?.inputBuffer || null;
+    renderer.setRenderTarget(rt);
+    try {
+      renderer.compile(this.game.scene, this.game.cameraRig.camera);
+    } finally {
+      renderer.setRenderTarget(prev);
     }
   }
 
