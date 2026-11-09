@@ -6,6 +6,7 @@ import { el, esc, safe, hexCss, fmtNum } from './dom.js';
 import { traitDef, statusDef, modLines, prettyId, eraNames, techDef, techList } from './depth.js';
 import { kingdomOf, eraOf, researchOf } from './TechPanel.js';
 import { CULTURES } from '../sim/civ/cultures.js';
+import { Editor } from './Editor.js';
 import { YEAR } from '../core/time.js';
 
 const TRAIT_ICON = { body: 'heart', mind: 'sparkle', spirit: 'fire', gift: 'good', scar: 'shield', trait: 'sparkle' };
@@ -116,6 +117,8 @@ export class Inspector {
     this._v = new THREE.Vector3();
     this.expanded = false;
     this.portraits = new WeakMap();
+    this.editor = new Editor(this);
+    this.editing = null;
     this.game.events.on('inspect', (hit) => (hit ? this.show(hit) : this.close()));
     this.bindSheet();
     this.el.addEventListener('pointerdown', () => (this._ptr = true));
@@ -183,6 +186,7 @@ export class Inspector {
     this.track = this.results[this.index];
     this._deadShown = false;
     this._scrollTop = 0;
+    this.editing = null;
     this.render();
     this.el.classList.add('is-open');
     this.ui.root.classList.add('has-insp');
@@ -279,6 +283,7 @@ export class Inspector {
 
   close() {
     if (!this.open) return;
+    this.editing = null;
     this.el.classList.remove('is-open');
     this.ui.root.classList.remove('has-insp');
     const rig = this.game.cameraRig;
@@ -410,6 +415,8 @@ export class Inspector {
     const kindLabel = k === 'tile' && r.tile?.water ? 'Waters' : u && ic.label ? ic.label : KIND_LABEL[k] || 'Detail';
     const pref = u || r.building;
     const portrait = pref ? this.portraits.get(pref) : null;
+    const editable = !!(u ? u.alive !== false : k === 'kingdom' || k === 'village' || (k === 'building' && (r.village || this.game.civ?.villages?.[r.building?.village])));
+    const editing = !!this.editing && editable && this.editTarget(r) === this.editing;
     const depth = safe(() => (u ? this.unitDepth(u) : k === 'village' || k === 'kingdom' || k === 'building' ? this.realmDepth(r) : ''), '', 'inspector depth') || '';
     const level = u && Number.isFinite(u.level) ? u.level : null;
     const epithet = u ? u.title || u.data?.title || null : null;
@@ -427,12 +434,18 @@ export class Inspector {
           <h3 class="ws-insp__title">${esc(r.title || 'Unknown')}${epithet ? ` <span class="ws-insp__epithet">${esc(epithet)}</span>` : ''}</h3>
           ${r.subtitle ? `<div class="ws-insp__sub">${kTint ? `<i class="ws-crest" style="--k:${kTint}"></i>` : ''}<span>${esc(r.subtitle)}</span></div>` : ''}
         </div>
+        ${editable ? `<button class="ws-iconbtn ws-iconbtn--sm ws-insp__edit${editing ? ' is-on' : ''}" type="button" aria-label="${editing ? 'Done editing' : 'Edit'}" data-tip="${editing ? 'Done editing' : 'Edit name, colours and more'}" data-act="${editing ? 'edit-done' : 'edit'}">${uiIcon(editing ? 'good' : 'edit')}</button>` : ''}
         ${u ? `<button class="ws-iconbtn ws-iconbtn--sm ws-insp__fav${fav ? ' is-on' : ''}" type="button" aria-label="${fav ? 'Unstar' : 'Star this creature'}" data-tip="${fav ? 'Favourite' : 'Mark as favourite'}" data-act="fav">${uiIcon(fav ? 'star-on' : 'star')}</button>` : ''}
         <button class="ws-iconbtn ws-iconbtn--sm ws-insp__x" type="button" aria-label="Close (Esc)" data-act="close">${uiIcon('close')}</button>
       </header>
       ${chips ? `<div class="ws-insp__also" aria-label="Also here">${chips}</div>` : ''}
-      ${cells || depth ? `<div class="ws-insp__scroll">${cells ? `<div class="ws-insp__grid">${cells}</div>` : ''}${depth}</div>` : ''}
-      <div class="ws-insp__actions">${actions.join('')}</div>`;
+      ${editing ? '<div class="ws-insp__scroll ws-insp__editwrap"></div>' : `${cells || depth ? `<div class="ws-insp__scroll">${cells ? `<div class="ws-insp__grid">${cells}</div>` : ''}${depth}</div>` : ''}
+      <div class="ws-insp__actions">${actions.join('')}</div>`}`;
+    if (editing) {
+      this.el.querySelector('.ws-insp__also')?.remove();
+      this.el.querySelector('.ws-insp__editwrap').append(this.editor.build(r));
+      this.el.classList.add('is-editing');
+    } else this.el.classList.remove('is-editing');
     const sc = this.el.querySelector('.ws-insp__scroll');
     if (sc && this.isCompact()) {
       const more = document.createElement('div');
@@ -471,7 +484,15 @@ export class Inspector {
       if (b.dataset.i != null) return this.focusIndex(+b.dataset.i);
       const act = b.dataset.act;
       if (act === 'close') this.close();
-      else if (act === 'more') {
+      else if (act === 'edit') {
+        this.editing = this.editTarget(this.track);
+        if (this.isCompact()) this.setExpanded(true);
+        this.render();
+        return;
+      } else if (act === 'edit-done') {
+        this.stopEdit();
+        return;
+      } else if (act === 'more') {
         this.moreOpen = !this.moreOpen;
         const m = this.el.querySelector('.ws-insp__more');
         if (m) m.hidden = !this.moreOpen;
@@ -724,10 +745,30 @@ export class Inspector {
     this.game.focus(o.x + Math.sin(rig.goal.yaw) * d, o.z + Math.cos(rig.goal.yaw) * d);
   }
 
+  editTarget(r) {
+    if (!r) return null;
+    if (r.unit) return r.unit;
+    if (kindOf(r) === 'kingdom') return typeof r.kingdom === 'object' ? r.kingdom : null;
+    return r.village || this.game.civ?.villages?.[r.building?.village] || null;
+  }
+  stopEdit() {
+    if (!this.editing) return;
+    this.editing = null;
+    this._sig = '';
+    this.render();
+  }
+  // after a rename: update the header without touching the edit card
+  patchTitle(text) {
+    const h = this.el.querySelector('.ws-insp__title');
+    if (h && h.firstChild) h.firstChild.textContent = text;
+    this.pin.querySelector('.ws-pin__label').textContent = text;
+  }
+
   // Re-query the tracked entity so stats stay live.
   refresh() {
     const r = this.track;
     if (!r) return;
+    if (this.editing) return;
     const u = r.unit,
       b = r.building;
     let at = this.hit;

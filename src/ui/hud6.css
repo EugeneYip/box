@@ -1,0 +1,423 @@
+/* ==========================================================================
+   Worldseed UI, round 10: editing card (kingdom / village / creature),
+   undo toast. Loaded last.
+   ========================================================================== */
+.ws-insp__edit.is-on {
+  color: #1d1608;
+  background: linear-gradient(180deg, var(--ws-gold-hi), var(--ws-gold));
+}
+.ws-insp.is-editing .ws-insp__actions {
+  display: none;
+}
+.ws-insp.is-editing {
+  width: 330px;
+}
+.ws-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-bottom: 8px;
+}
+.ws-esec {
+  padding: 10px 0 8px;
+  border-bottom: 1px solid rgba(255, 244, 222, 0.06);
+}
+.ws-esec:last-child {
+  border-bottom: 0;
+}
+.ws-esec > h5 {
+  margin: 0 0 8px;
+  font: 700 9.5px var(--ws-font);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ws-gold);
+}
+.ws-emissing {
+  margin-top: 6px;
+  font-size: 11px;
+  font-style: italic;
+  color: var(--ws-ink-3);
+}
+.ws-ename.is-bad {
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 120, 100, 0.7),
+    0 0 0 3px rgba(255, 120, 100, 0.15);
+}
+.ws-input[disabled],
+.ws-select[disabled],
+.ws-edit button[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.ws-select {
+  width: 100%;
+  height: 38px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 10px;
+  font: 600 13px var(--ws-font);
+  color: var(--ws-ink);
+  background: rgba(0, 0, 0, 0.32);
+  box-shadow: inset 0 0 0 1px rgba(255, 240, 210, 0.14);
+  outline: none;
+}
+.ws-select option {
+  color: #111;
+}
+.is-touch .ws-select {
+  height: 44px;
+}
+.ws-erow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 40px;
+  padding: 4px 0;
+  cursor: pointer;
+}
+.ws-erow--stack {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  cursor: default;
+}
+.ws-erow.is-disabled {
+  opacity: 0.5;
+}
+.ws-erow__txt {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.ws-erow__txt b {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.ws-erow__txt small {
+  font-size: 11px;
+  color: var(--ws-ink-3);
+}
+.ws-erow .ws-row__ctl .ws-range {
+  flex: 1;
+  width: auto;
+}
+/* colour swatches */
+.ws-swatches {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+}
+.ws-swatch {
+  position: relative;
+  aspect-ratio: 1;
+  min-height: 32px;
+  border-radius: 10px;
+  background: var(--c);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.25),
+    0 2px 6px rgba(0, 0, 0, 0.35);
+  transition: transform 0.15s var(--ws-ease);
+}
+.ws-swatch:hover {
+  transform: translateY(-1px) scale(1.05);
+}
+.ws-swatch.is-on {
+  box-shadow:
+    0 0 0 2px #10131c,
+    0 0 0 4px var(--ws-gold-hi),
+    0 0 12px var(--c);
+}
+.ws-swatch--custom {
+  display: grid;
+  place-items: center;
+  background: conic-gradient(#ff6a6a, #ffd36a, #8fe3a0, #7fc8ff, #c7a6ff, #ff6a6a);
+  color: #10131c;
+  font-size: 16px;
+  cursor: pointer;
+}
+.ws-swatch--custom span {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.85);
+}
+.ws-colorpick {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+}
+.is-touch .ws-swatch {
+  min-height: 44px;
+}
+/* banner editor */
+.ws-ebannerrow {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.ws-ebanner {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 64px;
+  padding: 6px 0;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.25);
+  box-shadow: inset 0 0 0 1px var(--ws-line);
+}
+.ws-ebanner .ws-banner {
+  filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.5));
+}
+.ws-ebannerpick {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.ws-egrid {
+  display: grid;
+  gap: 4px;
+}
+.ws-egrid--sym {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+.ws-egrid--field {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+.ws-ebtn {
+  display: grid;
+  place-items: center;
+  min-height: 32px;
+  border-radius: 8px;
+  font-size: 18px;
+  color: var(--ws-ink-2);
+  --tint: #ebc977;
+  background: rgba(255, 247, 230, 0.05);
+  box-shadow: inset 0 0 0 1px var(--ws-line);
+}
+.ws-ebtn:hover {
+  color: var(--ws-ink);
+}
+.ws-ebtn.is-on {
+  color: var(--ws-gold-hi);
+  background: rgba(235, 201, 119, 0.16);
+  box-shadow: inset 0 0 0 1.5px var(--ws-gold);
+}
+.ws-ebtn--field .ws-banner {
+  width: 18px;
+  height: 25px;
+}
+.is-touch .ws-ebtn {
+  min-height: 44px;
+}
+/* diplomacy rows */
+.ws-edip {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ws-edip__row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ws-edip__name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.ws-edip__name i {
+  width: 10px;
+  height: 12px;
+  background: var(--k);
+  clip-path: polygon(0 0, 100% 0, 100% 62%, 50% 100%, 0 62%);
+}
+.ws-pills--dip .ws-pill {
+  height: 30px;
+}
+.ws-pills--dip .ws-pill.is-war.is-on {
+  color: #fff;
+  background: linear-gradient(180deg, #ff8a7a, #c4473a);
+}
+.ws-pills--dip .ws-pill.is-alliance.is-on {
+  color: #102016;
+  background: linear-gradient(180deg, #b9f0c4, #6fc887);
+}
+.is-touch .ws-pills--dip .ws-pill {
+  height: 44px;
+}
+/* trait picker */
+.ws-pills--cats {
+  margin: 8px 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.ws-pills--cats .ws-pill {
+  flex: none;
+  height: 28px;
+  padding: 0 10px;
+}
+.is-touch .ws-pills--cats .ws-pill {
+  height: 44px;
+}
+.ws-etraits {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 260px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.ws-etrait {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 9px;
+  text-align: left;
+  --tint: #c9b88a;
+  background: rgba(0, 0, 0, 0.2);
+  box-shadow: inset 0 0 0 1px var(--ws-line);
+}
+.ws-etrait.is-body {
+  --tint: #ff9f86;
+}
+.ws-etrait.is-mind {
+  --tint: #9fc8ff;
+}
+.ws-etrait.is-spirit {
+  --tint: #ffbf6a;
+}
+.ws-etrait.is-gift {
+  --tint: #c7a6ff;
+}
+.ws-etrait.is-scar {
+  --tint: #c9b0a0;
+}
+.ws-etrait.is-on {
+  background: color-mix(in srgb, var(--tint) 14%, rgba(0, 0, 0, 0.2));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tint) 55%, transparent);
+}
+.ws-etrait__mark {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  flex: none;
+  margin-top: 1px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--tint);
+  background: color-mix(in srgb, var(--tint) 14%, transparent);
+}
+.ws-etrait__txt {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.ws-etrait__txt b {
+  font-size: 12px;
+}
+.ws-etrait__txt small {
+  font-size: 10.5px;
+  line-height: 1.35;
+  color: var(--ws-ink-3);
+}
+.is-touch .ws-etrait {
+  min-height: 44px;
+}
+/* item giver */
+.ws-egive {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.ws-egive label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.ws-egive small {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ws-ink-3);
+}
+
+/* ---- undo toast */
+.ws-undo {
+  position: absolute;
+  left: 50%;
+  bottom: 190px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: calc(100vw - 24px);
+  padding: 6px 6px 6px 16px;
+  border-radius: 14px;
+  overflow: hidden;
+  transform: translate(-50%, 12px);
+  opacity: 0;
+  pointer-events: none !important;
+  transition:
+    opacity 0.2s,
+    transform 0.28s var(--ws-ease);
+  z-index: 6;
+}
+.ws-undo.is-shown {
+  opacity: 1;
+  transform: translate(-50%, 0);
+  pointer-events: auto !important;
+}
+.ws-undo__txt {
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ws-undo__btn {
+  color: var(--ws-gold-hi);
+}
+.ws-undo__bar {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  width: 100%;
+  background: var(--ws-gold);
+  transform-origin: 0 50%;
+}
+.ws-undo.is-shown .ws-undo__bar {
+  animation: ws-undo-count 10s linear forwards;
+}
+@keyframes ws-undo-count {
+  to {
+    transform: scaleX(0);
+  }
+}
+@media (max-width: 720px) {
+  .ws-undo {
+    bottom: 96px;
+  }
+  .ws-insp.is-editing {
+    width: auto;
+  }
+}
+@media (max-height: 500px) and (min-width: 721px) {
+  .ws-undo {
+    bottom: 76px;
+  }
+}
