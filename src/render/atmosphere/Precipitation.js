@@ -94,12 +94,12 @@ void main() {
   // every zoom (near flakes never balloon into blurry discs)
   float px = dist * uPix;
   float s = uSize * (0.6 + 0.8 * fract(aSeed.w * 7.31));
-  float sz = clamp(s, px * 1.0, px * (2.0 + 1.5 * fract(aSeed.w * 3.7)));
+  float sz = clamp(s, px * 0.75, px * (1.3 + 0.9 * fract(aSeed.w * 3.7)));
   // a slight streak along the projected fall direction
   vec2 fd = (viewMatrix * vec4(uFall, 0.0)).xy;
   fd = length(fd) > 1e-4 ? normalize(fd) : vec2(0.0, -1.0);
   vec2 sd = vec2(-fd.y, fd.x);
-  mv.xy += (sd * position.x + fd * position.y * 1.7) * sz;
+  mv.xy += (sd * position.x * 0.8 + fd * position.y * 3.2) * sz; // thin streaks along the fall
   vec3 e = smoothstep(vec3(0.5), vec3(0.36), abs(rel));
   vA = e.x * e.y * e.z * isOn * smoothstep(uNear * 0.4, uNear, dist);
   vQ = position.xy;
@@ -366,7 +366,7 @@ export class Precipitation {
       u.uTime.value = time;
       u.uAmount.value = 0.1 + 0.9 * snow;
       u.uColor.value.setRGB(0.92, 0.95, 1.0).multiplyScalar(0.35 + 0.75 * ambient).addScalar(flash * 0.6);
-      u.uOpacity.value = 0.7 + 0.25 * snow;
+      u.uOpacity.value = (0.75 + 0.25 * snow) * (1 - 0.6 * THREE.MathUtils.smoothstep(game.view?.zoom01 ?? 0.5, 0.75, 1.0));
     }
   }
 }

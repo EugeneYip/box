@@ -258,7 +258,10 @@ export class Clouds {
         x: this.field.x0 + rnd() * this.field.sx,
         z: this.field.z0 + rnd() * this.field.sz,
         y: 56 + rnd() * 12,
-        size: 8 + Math.pow(rnd(), 1.6) * 14,
+        size: (() => {
+          const k = rnd();
+          return k < 0.55 ? 4 + rnd() * 4.5 : k < 0.88 ? 8.5 + rnd() * 6 : 15 + rnd() * 10;
+        })(),
         rank: (i + rnd() * 0.8) / count, // presence threshold vs cover
         seed: rnd(),
         puffs: [],
@@ -266,7 +269,7 @@ export class Clouds {
         stretch: 1.2 + rnd() * 0.9,
         rot: rnd() * Math.PI,
       };
-      const n = 6 + Math.floor(rnd() * 5 + c.size / 5);
+      const n = c.size < 8.5 ? 3 + Math.floor(rnd() * 3) : 6 + Math.floor(rnd() * 4 + c.size / 6);
       for (let p = 0; p < n; p++) {
         const t = n === 1 ? 0 : p / (n - 1) - 0.5;
         const centrality = 1 - Math.abs(t) * 1.5;
@@ -278,7 +281,7 @@ export class Clouds {
           r,
         });
       }
-      const crowns = 1 + Math.floor(rnd() * 3);
+      const crowns = c.size < 8.5 ? (rnd() < 0.4 ? 1 : 0) : 1 + Math.floor(rnd() * 3);
       for (let k = 0; k < crowns; k++) {
         const r = c.size * (0.26 + 0.14 * rnd());
         c.puffs.push({ ox: (rnd() - 0.5) * c.size * 0.6, oz: (rnd() - 0.5) * c.size * 0.3, oy: c.size * (0.3 + 0.18 * rnd()), r });
@@ -523,7 +526,8 @@ export class Clouds {
     // In storms the low structured deck carries the drama; the high puffs
     // keep their normal zoom fade so they never become a milky veil right
     // under the lens at mid zoom.
-    const vis = THREE.MathUtils.smoothstep(camDist, 80, 165);
+    const z01 = game.view?.zoom01 ?? 0.5;
+    const vis = THREE.MathUtils.smoothstep(camDist, 70, 150) * (1 - 0.72 * THREE.MathUtils.smoothstep(z01, 0.8, 1.0));
     u.uOpacity.value = vis * (0.82 + 0.18 * weather.overcast) * (1 - 0.35 * weather.storm);
     u.uNearFade.value = 40 + camDist * 0.28;
     this.group.visible = vis > 0.01;
