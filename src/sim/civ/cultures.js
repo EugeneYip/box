@@ -168,6 +168,16 @@ export const HERALDRY = [
   { name: 'Slate', color: 0x5d7488 },
   { name: 'Lavender', color: 0xa892dc },
   { name: 'Copper', color: 0x8c5426 },
+  { name: 'Forest', color: 0x1f5a35 },
+  { name: 'Jade', color: 0x4fae7c },
+  { name: 'Indigo', color: 0x47308c },
+  { name: 'Wine', color: 0x8c2252 },
+  { name: 'Ice', color: 0x86c9d4 },
+  { name: 'Coral', color: 0xe48a6a },
+  { name: 'Moss', color: 0x5f6b24 },
+  { name: 'Deep Teal', color: 0x145a5e },
+  { name: 'Saffron', color: 0xe0a628 },
+  { name: 'Cerulean', color: 0x2f7fc4 },
 ];
 
 // Perceptual colour (OKLab) and distance, for telling tinctures apart.
@@ -190,8 +200,9 @@ export function colorDist(a, b) {
   if (a === b) return 0;
   const x = oklab(a),
     y = oklab(b);
-  // lightness counts a little less than hue and chroma on banners and borders
-  return Math.hypot((x[0] - y[0]) * 0.8, x[1] - y[1], x[2] - y[2]);
+  // on small tabards and thin borders hue and chroma carry; lightness alone
+  // (sky blue against royal blue) does not
+  return Math.hypot((x[0] - y[0]) * 0.45, (x[1] - y[1]) * 1.1, (x[2] - y[2]) * 1.1);
 }
 
 export function hueOf(hex) {
@@ -211,8 +222,8 @@ export function hueOf(hex) {
 
 // Colours that would vanish against a culture's homeland biome.
 export const HERALDRY_AVOID = {
-  vale: ['Deep Green', 'Olive'], // meadows and forests are green
-  mire: ['Deep Green', 'Olive', 'Teal'], // swamp and jungle greens
-  frost: [], // every tincture reads against snow
-  dune: ['Ochre', 'Burnt Orange', 'Copper'], // sand and savanna are yellow-orange
+  vale: ['Deep Green', 'Olive', 'Forest', 'Moss', 'Jade'], // meadows and forests are green
+  mire: ['Deep Green', 'Olive', 'Teal', 'Forest', 'Moss', 'Jade', 'Deep Teal'], // swamp and jungle greens
+  frost: ['Ice'], // pale ice vanishes on snow
+  dune: ['Ochre', 'Burnt Orange', 'Copper', 'Saffron'], // sand and savanna are yellow-orange
 };

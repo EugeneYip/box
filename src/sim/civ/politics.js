@@ -70,8 +70,11 @@ export const politics = {
     };
     let her = null,
       bs = -Infinity;
+    const taken = new Set(others.map((k) => k.color));
+    const anyFree = HERALDRY.some((h) => !avoid.has(h.name) && !taken.has(h.color));
     for (const h of HERALDRY) {
       if (avoid.has(h.name)) continue;
+      if (anyFree && taken.has(h.color)) continue; // a free tincture always comes first
       let score = 1;
       for (const k of others) score = Math.min(score, colorDist(k.color, h.color) + nearW(k));
       score += this.rng.next() * 0.01;
@@ -92,16 +95,17 @@ export const politics = {
       for (let j = i + 1; j < alive.length; j++) {
         const A = alive[i],
           B = alive[j];
-        if (colorDist(A.color, B.color) > 0.13) continue;
+        const same = A.color === B.color;
+        if (!same && colorDist(A.color, B.color) > 0.15) continue;
         const r = this.relations.get(relKey(A.id, B.id));
         const vA = this.villages[A.capital],
           vB = this.villages[B.capital];
-        const close = (r?.border || 0) > 0 || r?.war || (vA && vB && Math.hypot(vA.cx - vB.cx, vA.cz - vB.cz) < 70);
-        if (!close) continue;
+        const close = (r?.border || 0) > 0 || r?.war || (vA && vB && Math.hypot(vA.cx - vB.cx, vA.cz - vB.cz) < 90);
+        if (!close && !same) continue;
         let Y = A.founded > B.founded ? A : B;
         if (Y.player?.color) Y = Y === A ? B : A;
         if (Y.player?.color) continue;
-        if (now - (Y.recolored ?? -1e9) < YEAR * 15) continue;
+        if (now - (Y.recolored ?? -1e9) < YEAR * (same ? 2 : 15)) continue;
         const cap = this.villages[Y.capital];
         const h = this._pickTincture(Y.culture, cap?.cx, cap?.cz, Y.id);
         if (!h || h.color === Y.color) continue;
