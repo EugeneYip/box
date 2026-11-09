@@ -69,9 +69,13 @@ export class TerritoryOverlay {
       this._hook();
     }
     const civ = this.game.civ;
-    const winter = (this.game.time?.season ?? 1.5) >= 3;
-    if (winter !== this._winter) {
-      this._winter = winter;
+    // one strength for every owned texel (so borders appear only where realms
+    // meet), lighter close in so the land itself reads; the terrain shader
+    // already keeps snow above the tint
+    const D = this.game.cameraRig?.cur?.dist ?? 100;
+    const a = D < 55 ? 92 : D < 130 ? 104 : 118;
+    if (a !== this._alpha) {
+      this._alpha = a;
       this.markAll();
     }
     if (civ && civ.colorVersion !== this._colorVer) {
@@ -107,11 +111,7 @@ export class TerritoryOverlay {
         this.data[k] = rgb[0];
         this.data[k + 1] = rgb[1];
         this.data[k + 2] = rgb[2];
-        // full strength, but gentle over snow and ice and through the winter
-        const ty2 = w.type[i];
-        let a = ty2 === 7 || ty2 === 15 ? 140 : ty2 === 6 ? 200 : 255;
-        if (this._winter) a = Math.round(a * 0.62);
-        this.data[k + 3] = a;
+        this.data[k + 3] = this._alpha ?? 104;
       }
     this.tex.needsUpdate = true;
   }
