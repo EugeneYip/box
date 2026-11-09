@@ -68,6 +68,8 @@ export class Minimap {
       el('span', { class: 'ws-map__north', text: 'N' }),
       el('span', { class: 'ws-map__vignette' }),
     );
+    // the frame keeps the world's aspect (2:1 for the World Map)
+    if (this.w !== this.h) this.frame.style.aspectRatio = `${this.w} / ${this.h}`;
     this.el = el('div', { class: 'ws-map ws-glass ws-orn' }, this.frame, this.collapseBtn, this.compass);
     this.wrap = el('div', { class: 'ws-mapwrap' }, this.el, this.openBtn);
 

@@ -9,7 +9,9 @@ export class CameraRig {
     const world = game.world;
     this.camera = new THREE.PerspectiveCamera(38, innerWidth / innerHeight, 0.5, 2000);
     this.minDist = 7;
-    this.maxDist = Math.max(world.w, world.h) * 1.15;
+    // a wide (2:1) map is framed by its width on a landscape screen; squares
+    // are unchanged (the height wins)
+    this.maxDist = Math.max(world.w * 0.8, world.h) * 1.15;
     this.target = new THREE.Vector3(world.w / 2, 0, world.h / 2);
     this.goal = { x: world.w / 2, z: world.h / 2, dist: this.maxDist * 0.55, yaw: 0, pitchBias: 0 };
     this.cur = { ...this.goal };

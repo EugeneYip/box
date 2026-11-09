@@ -26,7 +26,7 @@ import '../powers/index.js';
 import { loadLaws, saveLaws, defaultLaws, lawDef } from './laws.js';
 import { Ages } from './ages.js';
 import { SEASON, SEASONS } from './time.js';
-import { IS_TOUCH } from './params.js';
+import { IS_TOUCH, worldDims, sizeForPreset } from './params.js';
 
 export const TICK = 1 / 15; // fixed simulation step (game seconds)
 export const YEAR_SECONDS = 30; // game seconds per in-world year
@@ -40,7 +40,9 @@ export class Game {
     this.container = container;
     this.events = new Events();
     this.rng = new Random(params.seed);
-    this.world = new World(params.size, params.size, this.events);
+    // square worlds are size x size; the World Map preset is a 2:1 rectangle
+    const dims = worldDims(params.size, params.preset);
+    this.world = new World(dims.w, dims.h, this.events);
     generateWorld(this.world, params.seed, { preset: params.preset });
 
     this.scene = new THREE.Scene();
@@ -75,8 +77,9 @@ export class Game {
     // systems run: dist (camera distance), zoom01 (0 closest .. 1 farthest),
     // far (true when the whole map is roughly in view), worldScale (map
     // size relative to the 256 baseline). Renderers use it to drop detail
-    // when the player is looking at a large area.
-    this.view = { dist: 100, zoom01: 0.5, far: false, worldScale: params.size / 256 };
+    // when the player is looking at a large area. A 2:1 map counts as the
+    // square that needs the same camera distance to frame (see CameraRig).
+    this.view = { dist: 100, zoom01: 0.5, far: false, worldScale: Math.max(dims.w * 0.8, dims.h) / 256 };
     // World Ages (src/core/ages.js): game.age is always defined.
     this.ages = new Ages(this);
     // Shared environment state. Written by the atmosphere module, read by all.
@@ -230,6 +233,10 @@ export class Game {
   }
 
   regenerate(seed = Math.floor(Math.random() * 1e9), preset = this.params.preset, civs = this.params.civs) {
+    // The world's dimensions are fixed at construction: a preset that needs a
+    // different shape (the 2:1 World Map vs. square maps) reloads the page.
+    const want = worldDims(sizeForPreset(this.params.size, this.params.preset, preset), preset);
+    if (want.w !== this.world.w || want.h !== this.world.h) return this._reloadWorld(seed, preset, civs, want.size);
     this.params.seed = seed;
     this.params.preset = preset;
     this.rng = new Random(seed);
@@ -240,6 +247,22 @@ export class Game {
     this.events.emit('world:regenerated', {});
     this.civ.seedInitial?.(civs);
     this.units.seedInitial?.();
+  }
+
+  _reloadWorld(seed, preset, civs, size) {
+    const q = new URLSearchParams(location.search);
+    q.set('seed', seed);
+    q.set('preset', preset);
+    q.set('size', size);
+    // the default of three starting villages scales with the map; keep it implicit
+    if (civs != null && civs !== 3) q.set('civs', civs);
+    else q.delete('civs');
+    for (const k of ['cam', 'hour', 'ff']) q.delete(k);
+    // from the title screen, come back to it; otherwise straight into the world
+    if (this.ui?.title?.active) q.delete('title');
+    else q.set('title', '0');
+    this._reloading = true;
+    location.search = q.toString();
   }
 
   // ---- loop -------------------------------------------------------------
