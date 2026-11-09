@@ -23,7 +23,7 @@ export const humanModel = {
     { name: 'armR', parent: 1, pivot: [-0.1, 0.372, 0], ch: [7, 13, 8, -1] },
     { name: 'legL', parent: -1, pivot: [0.042, 0.19, 0], ch: [9, -1, -1, -1] },
     { name: 'legR', parent: -1, pivot: [-0.042, 0.19, 0], ch: [10, -1, -1, -1] },
-    { name: 'tool', parent: 4, pivot: HAND_R, ch: [14, -1, -1, -1] },
+    { name: 'tool', parent: 4, pivot: HAND_R, ch: [14, -1, -1, 15] },
   ],
   slots: ['hair', 'hat', 'beard', 'tool', 'offhand', 'back', 'cape', 'outfit', 'armor'],
   // secondary palette (index in iCol2.a): trousers / hoods / sashes
@@ -37,7 +37,7 @@ export const humanModel = {
     boot: { color: 0x3f2a1e, rough: 0.55 },
     wood: { color: 0x9a6a3c, noise: 'fur', rough: 0.8 },
     darkwood: { color: 0x6a4428, noise: 'fur', rough: 0.8 },
-    metal: { src: 'M', color: 0xc4ccd6, rough: 0.3, metal: 0.85 },
+    metal: { src: 'M', color: 0xc4ccd6, rough: 0.32, metal: 0.3, emissive: 0.1 },
     gold: { color: 0xf2c14e, rough: 0.28, metal: 1 },
     eye: { color: 0x1a120e, rough: 0.2 },
     straw: { color: 0xe6c870, noise: 'cloth', rough: 0.9 },
@@ -252,6 +252,8 @@ export const humanModel = {
         B.add(P.slab([[-0.052, 0.375], [0.052, 0.375], [0.06, 0.2], [0.0, 0.17], [-0.06, 0.2]], 0.008), { pos: [0, 0, 0.083 * s], rot: [0.06 * s, 0, 0] });
       }
       B.add(P.torus(0.062, 0.009, 4, 14), { pos: [0, 0.385, 0], rot: [Math.PI / 2, 0, 0], scl: [1.15, 0.95, 1], mat: 'sash' });
+      // shoulder mantle: the kingdom colour reads from above too
+      B.add(P.lathe([[0.122, 0.336], [0.112, 0.36], [0.088, 0.383], [0.05, 0.398]], 14), { scl: [1, 1, 0.86], mat: 'sash' });
     });
     // ---- royal cape
     B.with({ bone: 'torso', slot: 'cape', opt: 1 }, () => {

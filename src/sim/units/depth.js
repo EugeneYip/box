@@ -133,8 +133,69 @@ export function installDepth(Units) {
   };
 
   // ---- equipment ---------------------------------------------------------
+  // Living legends: counted from equipment, refreshed every 20 s.
+  P._legends = function () {
+    const now = this.game.time.total;
+    let c = this._legendCache;
+    if (c && now - c.t < 20) return c;
+    c = { t: now, names: new Set(), count: 0, realm: new Map(), heroes: 0 };
+    for (const u of this.list) {
+      if (u.traits && u.traits.includes('hero')) c.heroes++;
+      const e = u.equipment;
+      if (!e) continue;
+      for (const slot of SLOTS) {
+        const it = e[slot];
+        if (it && it.legendary) {
+          c.count++;
+          c.names.add(it.name);
+          c.realm.set(u.kingdom, (c.realm.get(u.kingdom) || 0) + 1);
+        }
+      }
+    }
+    this._legendCache = c;
+    return c;
+  };
+  // Legends stay rare: a handful per century world-wide, at most two per realm
+  // at once, and every living legend has a unique name.
   P.makeItem = function (spec = {}) {
-    return buildItem({ year: yearOf(this.game), ...spec }, () => this.game.rng.next());
+    const g = this.game;
+    const s = { year: yearOf(g), ...spec };
+    if (s.quality === 'legendary') {
+      const L = this._legends();
+      const now = g.time.total;
+      const cap = Math.max(3, Math.round(3 * this.popScale));
+      const realmFull = s.kingdom != null && s.kingdom >= 0 && (L.realm.get(s.kingdom) || 0) >= 2;
+      if (L.count >= cap || realmFull || now - (this._lastLegend ?? -1e9) < 450) {
+        s.quality = 'masterwork';
+        if (s.material === 'starsteel') s.material = 'steel';
+      } else {
+        this._lastLegend = now;
+        s.taken = L.names;
+      }
+    }
+    const it = buildItem(s, () => g.rng.next());
+    if (it.legendary) {
+      const L = this._legends();
+      L.names.add(it.name);
+      L.count++;
+      if (s.kingdom != null) L.realm.set(s.kingdom, (L.realm.get(s.kingdom) || 0) + 1);
+    }
+    return it;
+  };
+  P.heroCap = function () {
+    return Math.max(3, Math.round(2 + 2 * this.popScale));
+  };
+  // Hero: a deed worthy of song (respecting a cap on living heroes).
+  P.tryHero = function (u, deed) {
+    if (!u || !u.alive || u.def.kind !== 'humanoid' || this.hasTrait(u, 'hero')) return false;
+    const L = this._legends();
+    if (L.heroes >= this.heroCap()) return false;
+    if (this.addTrait(u, 'hero')) {
+      L.heroes++;
+      if (deed) this.log(u, deed);
+      return true;
+    }
+    return false;
   };
   P.equip = function (u, item) {
     if (!u || !item || !SLOTS.includes(item.slot)) return null;
@@ -142,7 +203,7 @@ export function installDepth(Units) {
     const old = u.equipment[item.slot];
     u.equipment[item.slot] = item;
     u._eqVer = (u._eqVer || 0) + 1;
-    if (item.legendary && u._depthReady) this.log(u, `Took up ${item.name}, ${item.history || 'a legendary relic'}`);
+    if (item.legendary) this._legendCache = null;
     return old || null;
   };
   P.itemPower = function (u) {
@@ -155,6 +216,8 @@ export function installDepth(Units) {
   P.log = function (u, text) {
     if (!u || !text) return;
     if (!u.bio) u.bio = [];
+    // a life story never repeats the same line
+    for (let i = u.bio.length - 1; i >= 0; i--) if (u.bio[i].text === text) return;
     u.bio.push({ t: this.game.time.total, text });
     if (u.bio.length > 24) u.bio.splice(0, u.bio.length - 24);
   };
@@ -178,13 +241,16 @@ export function installDepth(Units) {
         if (u.level === 7) this.log(u, `Became known as ${u.name || u.def.name} ${this.levelTitle(u)}`);
         else if (u.level >= 3) this.log(u, `Reached level ${u.level}`);
       }
-      if (u.level >= MAX_LEVEL) this.addTrait(u, 'hero', { force: true });
+      if (u.level >= 9) this.tryHero(u, 'Hailed as a hero of the realm');
       // great deeds turn up great weapons
       if (u.level >= 8 && u.def.kind === 'humanoid' && !u.equipment?.weapon?.legendary && this.law('lifeEquipment') && this.game.rng.chance(0.35)) {
         const v = this.game.civ?.villages?.[u.village];
         const kinds = ['sword', 'axe', 'spear', 'mace'];
-        const it = this.makeItem({ slot: 'weapon', kind: kinds[u.id % kinds.length], material: this.game.rng.chance(0.3) ? 'starsteel' : 'steel', quality: 'legendary', origin: v?.name });
-        this.equip(u, it);
+        const it = this.makeItem({ slot: 'weapon', kind: kinds[u.id % kinds.length], material: this.game.rng.chance(0.3) ? 'starsteel' : 'steel', quality: 'legendary', origin: v?.name, kingdom: u.kingdom });
+        if (it.legendary) {
+          this.equip(u, it);
+          this.log(u, `Found the legendary ${it.name}`);
+        } else if (!u.equipment?.weapon || (u.equipment.weapon.power || 0) < it.power) this.equip(u, it);
       }
     }
   };
@@ -247,6 +313,12 @@ export function installDepth(Units) {
     }
     this._refreshMods(u);
     u.hp = u.maxHp;
+    if (def.kind === 'humanoid' && u.name && u.kingdom >= 0) {
+      // namesakes in one realm get a numeral (Aldric, Aldric II, ...)
+      let n = 0;
+      for (const o of this.list) if (o.alive && o.kingdom === u.kingdom && o.species === 'human' && o.name && (o.name === u.name || o.name.startsWith(u.name + ' '))) n++;
+      if (n > 0) u.name = `${u.name} ${['II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'][Math.min(8, n - 1)]}`;
+    }
     if (def.kind === 'humanoid') {
       const vname = g.civ?.villages?.[u.village]?.name;
       const names = parents && parents.length ? ` to ${parents.map((p) => p.name).join(' and ')}` : '';
@@ -278,7 +350,10 @@ export function installDepth(Units) {
       if (killer.def.kind === 'humanoid') {
         if ((killer.kills || 0) >= 10 && !this.hasTrait(killer, 'veteran')) this.addTrait(killer, 'veteran');
         if (u.def.kind === 'humanoid' && u.kingdom >= 0 && u.kingdom === killer.kingdom && !(killer.mad > g.time.total)) this.addTrait(killer, 'kinslayer');
-        if (u.def.kind === 'monster') this.log(killer, `Slew ${u.name || 'a ' + u.def.name}`);
+        if (u.def.kind === 'monster') {
+          this.log(killer, `Slew ${u.name || 'a ' + u.def.name}`);
+          this.tryHero(killer, `Hailed as a hero for slaying ${u.name || 'a monster'}`);
+        }
       }
     }
     // gear: a killer takes legendary relics; otherwise it goes to the village stores

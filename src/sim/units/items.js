@@ -23,8 +23,8 @@ const KIND_NAME = { sword: 'Sword', axe: 'Axe', spear: 'Spear', bow: 'Bow', mace
 const DEFAULT_KIND = { weapon: 'sword', armor: 'mail', tool: 'hammer', trinket: 'charm' };
 
 // Legendary names: original two-part compounds.
-const LA = ['Dawn', 'Ember', 'Frost', 'Storm', 'Star', 'Thorn', 'Ash', 'Gloam', 'Iron', 'Sun', 'Moon', 'Wyrm', 'Oath', 'Rime', 'Hollow', 'Bright', 'Grief', 'Wild'];
-const LB = { weapon: ['brand', 'fang', 'reaver', 'song', 'bite', 'edge', 'call', 'wrath', 'cleaver', 'thorn'], armor: ['ward', 'mantle', 'shell', 'aegis', 'hide', 'bulwark'], tool: ['maker', 'wright', 'delver', 'hand'], trinket: ['heart', 'eye', 'tear', 'seal', 'charm'] };
+const LA = ['Dawn', 'Ember', 'Frost', 'Storm', 'Star', 'Thorn', 'Ash', 'Gloam', 'Iron', 'Sun', 'Moon', 'Wyrm', 'Oath', 'Rime', 'Hollow', 'Bright', 'Grief', 'Wild', 'Dusk', 'Gale', 'Brine', 'Cinder', 'Hearth', 'Raven', 'Silver', 'Thunder', 'Vale', 'Wraith', 'Elder', 'Night', 'Kestrel', 'Morrow', 'Sorrow', 'Glimmer', 'Barrow', 'Tide'];
+const LB = { weapon: ['brand', 'fang', 'reaver', 'song', 'bite', 'edge', 'call', 'wrath', 'cleaver', 'thorn', 'sunder', 'spite', 'claw', 'warden', 'howl', 'fall', 'mourn', 'breaker'], armor: ['ward', 'mantle', 'shell', 'aegis', 'hide', 'bulwark', 'veil', 'carapace', 'bastion', 'shroud'], tool: ['maker', 'wright', 'delver', 'hand', 'shaper', 'mender'], trinket: ['heart', 'eye', 'tear', 'seal', 'charm', 'star', 'locket', 'knot'] };
 
 let nextId = 1;
 function pick(a, r) {
@@ -43,6 +43,7 @@ export function makeItem(spec = {}, rng = Math.random) {
   if (quality === 'legendary') {
     item.legendary = true;
     item.name = spec.name || pick(LA, rng()) + pick(LB[slot], rng());
+    if (spec.taken) for (let k = 0; k < 40 && spec.taken.has(item.name); k++) item.name = pick(LA, rng()) + pick(LB[slot], rng());
     const where = spec.origin ? `forged in ${spec.origin}` : 'of unknown make';
     item.history = `${where}${spec.year != null ? `, Year ${spec.year}` : ''}`;
   } else {

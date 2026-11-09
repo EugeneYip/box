@@ -137,7 +137,7 @@ export function makeRigMaterial(model, opts = {}) {
     uRimCol: { value: new THREE.Color(1, 0.95, 0.85) },
     uBump: { value: model.bump ?? 1 },
     uKing: { value: Array.from({ length: 16 }, () => new THREE.Color(0.5, 0.5, 0.5)) },
-    uMetal: { value: [0xc4ccd6, 0x9a6a3c, 0x9a968f, 0xc8894a, 0x8a8f98, 0xd6dde6, 0x9fd8ff, 0xf2c14e].map((h) => new THREE.Color(h).convertSRGBToLinear()) },
+    uMetal: { value: [0xdfe6ee, 0xa8743f, 0xb0aca4, 0xe6a25a, 0xb9c1cc, 0xf0f5fa, 0xbfefff, 0xffd66a].map((h) => new THREE.Color(h).convertSRGBToLinear()) },
     uOutline: { value: 0 },
   };
   const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8, metalness: 0 });

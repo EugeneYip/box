@@ -6,7 +6,7 @@ import * as THREE from 'three';
 //   - emotes: camera-facing status icons (heart, zzz, !, anger, sparkle, ...)
 //   - projectiles (arrows) and the skywyrm's fire-breath plume
 export const DECAL = { shadow: 0, ring: 1, select: 2, dot: 3, glow: 4 };
-export const EMOTE = { heart: 0, zzz: 1, alert: 2, anger: 3, sparkle: 4, note: 5, chat: 6, skull: 7, burning: 8, sick: 9, chilled: 10, starving: 11, wounded: 12, mourning: 13, inspired: 14, exhausted: 15 };
+export const EMOTE = { heart: 0, zzz: 1, alert: 2, anger: 3, sparkle: 4, note: 5, chat: 6, skull: 7, burning: 8, sick: 9, chilled: 10, starving: 11, wounded: 12, mourning: 13, inspired: 14, exhausted: 15, glow: 16, star: 17 };
 
 const decalVert = /* glsl */ `
 attribute vec4 iA; // x y z size
@@ -141,7 +141,7 @@ function drawAtlas() {
   const S = 128;
   const cv = document.createElement('canvas');
   cv.width = S * 8;
-  cv.height = S * 2;
+  cv.height = S * 3;
   const g = cv.getContext('2d');
   const cell = (i, fn) => {
     g.save();
@@ -365,6 +365,32 @@ function drawAtlas() {
     g.bezierCurveTo(-20, -2, 0, -18, 10, -48);
     outline('#9fd4ff', 'rgba(20,40,70,0.9)', 9);
   });
+  // ---- legendary light and starsteel sparkle
+  cell(EMOTE.glow, () => {
+    const gr = g.createRadialGradient(0, 0, 0, 0, 0, 62);
+    gr.addColorStop(0, 'rgba(255,250,215,1)');
+    gr.addColorStop(0.25, 'rgba(255,214,120,0.85)');
+    gr.addColorStop(0.6, 'rgba(255,170,60,0.3)');
+    gr.addColorStop(1, 'rgba(255,150,40,0)');
+    g.fillStyle = gr;
+    g.fillRect(-64, -64, 128, 128);
+  });
+  cell(EMOTE.star, () => {
+    const gr = g.createRadialGradient(0, 0, 0, 0, 0, 30);
+    gr.addColorStop(0, 'rgba(235,250,255,1)');
+    gr.addColorStop(1, 'rgba(160,220,255,0)');
+    g.fillStyle = gr;
+    g.fillRect(-32, -32, 64, 64);
+    g.beginPath();
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      const r = i % 2 ? 7 : 56;
+      g.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+    }
+    g.closePath();
+    g.fillStyle = 'rgba(240,252,255,0.95)';
+    g.fill();
+  });
   const tex = new THREE.CanvasTexture(cv);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 4;
@@ -383,8 +409,8 @@ void main() {
   mv.xy += q * iA.w;
   float icon = iB.x;
   vec2 cell = vec2(mod(icon, 8.0), floor(icon / 8.0));
-  vUv = (cell + position.xy + 0.5) / vec2(8.0, 2.0);
-  vUv.y = 1.0 - ((cell.y + 0.5 - position.y) / 2.0);
+  vUv = (cell + position.xy + 0.5) / vec2(8.0, 3.0);
+  vUv.y = 1.0 - ((cell.y + 0.5 - position.y) / 3.0);
   vAlpha = iB.y;
   gl_Position = projectionMatrix * mv;
 }`;

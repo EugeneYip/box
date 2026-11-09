@@ -28,8 +28,9 @@ export const golemModel = {
     stone: { src: 'A', noise: 'stone', rough: 0.95 },
     dark: { src: 'B', noise: 'stone', rough: 0.95 },
     moss: { src: 'C', noise: 'wool', rough: 1.0 },
-    glow: { color: 0x7ff6e4, emissive: 2.6, rough: 0.2 },
-    crystal: { color: 0x7ff6e4, emissive: 1.4, rough: 0.1, metal: 0.2 },
+    glow: { color: 0x7ff6e4, emissive: 3.4, rough: 0.2 },
+    crystal: { color: 0x7ff6e4, emissive: 2.4, rough: 0.1, metal: 0.2 },
+    rune: { color: 0x6fe8ff, emissive: 2.2, rough: 0.3 },
     petal: { color: 0xf2a6c8, rough: 0.7 },
     petal2: { color: 0xf8e070, rough: 0.7 },
     grass: { color: 0x6aa84a, rough: 0.9 },
@@ -46,6 +47,9 @@ export const golemModel = {
       rock(0.44, { pos: [0, 0.98, 0], scl: [1.12, 1.0, 0.86], rot: [0.15, 0.3, 0.05], mat: 'stone' });
       rock(0.3, { pos: [0.02, 1.18, -0.1], scl: [1.3, 0.8, 1], rot: [0.5, 0.1, 0.2], mat: 'stone' });
       B.add(P.octa(0.1), { pos: [0, 1.0, 0.36], scl: [0.85, 1.3, 0.6], mat: 'crystal', flat: true });
+      // glowing rune cracks across the chest and back
+      for (const [x, y, z, rz, l] of [[-0.18, 1.08, 0.33, 0.6, 0.18], [0.2, 0.9, 0.33, -0.5, 0.16], [0.05, 1.22, 0.28, 1.4, 0.14], [-0.1, 0.82, 0.32, -1.2, 0.12], [0.0, 1.05, -0.36, 0.3, 0.22], [0.16, 0.92, -0.33, -0.9, 0.14]])
+        B.add(P.box(0.022, l, 0.02), { pos: [x, y, z], rot: [0, 0, rz], mat: 'rune' });
       for (const [x, y, z, r] of [[0.13, 0.86, 0.33, 0.035], [-0.16, 1.1, 0.31, 0.03], [0.2, 1.14, 0.27, 0.028]]) B.add(P.octa(r), { pos: [x, y, z], rot: [x * 9, y, z], mat: 'crystal', flat: true });
       // moss cap and shoulders
       B.add(P.sphere(1, 10, 6), { pos: [0, 1.3, -0.08], scl: [0.3, 0.09, 0.3], mat: 'moss' });
@@ -72,6 +76,7 @@ export const golemModel = {
         rock(0.14, { pos: [0.5 * s, 0.9, 0], scl: [1, 1.55, 1], rot: [0.1, s * 0.7, 0.1], mat: 'dark' });
         rock(0.15, { pos: [0.52 * s, 0.62, 0.02], scl: [1, 1.45, 1], rot: [0.3, s * 0.2, 0.2], mat: 'stone' });
         B.add(P.sphere(1, 8, 5), { pos: [0.55 * s, 0.68, 0.05], scl: [0.08, 0.12, 0.1], mat: 'moss' });
+        B.add(P.box(0.02, 0.2, 0.02), { pos: [0.58 * s, 0.9, 0.1], rot: [0.2, 0, 0.3 * s], mat: 'rune' });
         rock(0.19, { pos: [0.53 * s, 0.36, 0.04], scl: [1.05, 0.95, 1.1], rot: [0.6, s * 0.4, 0], mat: 'dark' });
       });
     }
