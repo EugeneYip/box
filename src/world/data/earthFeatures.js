@@ -10,14 +10,15 @@
 // ever shown to the player.
 
 // ---------------------------------------------------------------- mountains
-// Ridged crests; h is the top of the range (typical crests reach ~85% of it).
+// Ridged crests; h is the top of the range (typical crests reach ~85% of it;
+// the generator caps every summit at 22, so h above that just widens the top).
 // Single-point entries are isolated massifs and volcanoes (cone profile).
 export const RANGES = [
   // ---- High Asia
   // Himalaya
-  { w: 1.9, pts: [[73.0, 35.3, 15], [75.0, 34.2, 17], [77.0, 32.8, 18.5], [79.0, 31.0, 20], [81.0, 30.0, 20.5], [83.0, 29.0, 21], [85.0, 28.3, 21.5], [87.0, 28.0, 22], [89.0, 27.9, 21], [91.0, 27.9, 20], [93.0, 28.1, 19], [95.0, 28.7, 17]] },
+  { w: 2.3, pts: [[73.0, 35.3, 17], [75.0, 34.2, 19.5], [77.0, 32.8, 21], [79.0, 31.0, 23], [81.0, 30.0, 23.5], [83.0, 29.0, 24], [85.0, 28.3, 24.5], [87.0, 28.0, 25], [89.0, 27.9, 24], [91.0, 27.9, 23], [93.0, 28.1, 22], [95.0, 28.7, 19.5]] },
   // Karakoram
-  { w: 1.2, pts: [[73.5, 36.6, 19], [75.5, 35.9, 21.5], [77.0, 35.4, 21], [78.3, 34.8, 18]] },
+  { w: 1.2, pts: [[73.5, 36.6, 21], [75.5, 35.9, 24], [77.0, 35.4, 23.5], [78.3, 34.8, 20]] },
   // Hindu Kush and the central Afghan highlands
   { w: 1.3, pts: [[63.0, 34.4, 9], [66.0, 34.6, 11.5], [68.5, 35.0, 13.5], [70.5, 35.7, 16], [72.8, 36.6, 17]] },
   // Pamir and Pamir-Alai
@@ -227,7 +228,7 @@ export const RANGES = [
 // part; `edge` (degrees) is the width of the falloff around it.
 export const PLATEAUS = [
   // Tibetan Plateau
-  { edge: 1.6, pts: [[78.5, 34.0, 12.5, 3.3], [82.0, 33.0, 12.8, 3.5], [86.0, 32.4, 13, 4.0], [90.0, 32.4, 12.8, 4.3], [94.0, 32.6, 12.5, 4.2], [97.5, 32.2, 11.5, 3.5]] },
+  { edge: 1.6, pts: [[78.5, 34.0, 11.6, 3.3], [82.0, 33.0, 11.8, 3.5], [86.0, 32.4, 12, 4.0], [90.0, 32.4, 11.8, 4.3], [94.0, 32.6, 11.6, 4.2], [97.5, 32.2, 10.8, 3.5]] },
   { edge: 1.0, pts: [[72.5, 38.3, 12, 1.2], [74.5, 38.0, 12, 1.2]] },
   // Mongolian, Iranian, Afghan, Anatolian and Armenian plateaus
   { edge: 2.5, pts: [[88.0, 48.0, 5.5, 3], [95.0, 47.5, 5.5, 4], [102.0, 46.5, 5.5, 4.5], [110.0, 45.0, 4.5, 4], [117.0, 45.0, 4, 3.5]] },
