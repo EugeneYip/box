@@ -245,6 +245,11 @@ export const humanModel = {
       B.add(P.sphere(1, 10, 8), { pos: [0, 0.3, -0.105], scl: [0.048, 0.056, 0.04], mat: 'leather', opt: 4 });
       B.add(P.cyl(0.018, 0.026, 0.02, 8), { pos: [0, 0.358, -0.105], mat: 'leather', opt: 4 });
       for (const [x, y, z] of [[0.012, 0.372, -0.1], [-0.01, 0.378, -0.11], [0.0, 0.384, -0.098]]) B.add(P.cyl(0.011, 0.011, 0.004, 8), { pos: [x, y, z], rot: [0.5, 0, 0.3], mat: 'gold', opt: 4, minor: true });
+      // 5 sheathed blade across the back (rulers' legendary weapons)
+      B.add(P.box(0.03, 0.42, 0.012), { pos: [0, 0.31, -0.105], rot: [0, 0, 0.55], mat: 'metal', opt: 5 });
+      B.add(P.box(0.11, 0.022, 0.022), { pos: [0.085, 0.47, -0.105], rot: [0, 0, 0.55], mat: 'gold', opt: 5 });
+      B.add(P.box(0.022, 0.08, 0.022), { pos: [0.11, 0.51, -0.105], rot: [0, 0, 0.55], mat: 'leather', opt: 5 });
+      B.add(P.torus(0.055, 0.008, 4, 12), { pos: [0, 0.31, -0.095], rot: [0, 0, 0], scl: [1.3, 1, 1], mat: 'leather', opt: 5 });
     });
     // ---- kingdom tabard (every adult of a kingdom): front and back panels
     B.with({ bone: 'torso', slot: 'cape', opt: 2, mat: 'sash' }, () => {

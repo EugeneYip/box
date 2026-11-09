@@ -209,9 +209,10 @@ export class UnitRenderer {
     const k = rs.apK;
     const eq = u._eqVer || 0,
       nt = u.traits ? u.traits.length : 0;
-    const kv = this._kver;
-    if (k && k.job === u.job && k.ct === ct && k.kd === u.kingdom && k.ageB === ageB && k.wa === wa && k.rg === rg && k.col === u.color && k.sex === u.sex && k.eq === eq && k.nt === nt && k.kv === kv) return;
-    rs.apK = { job: u.job, ct, kd: u.kingdom, ageB, wa, rg, col: u.color, sex: u.sex, eq, nt, kv };
+    const kv = this._kver * 16777216 + (u.kingdom >= 0 ? this.game.civ?.kingdomColor?.(u.kingdom) ?? 0 : 0);
+    const cb = u.job === 'king' && !!u.combat; // a ruler draws the sheathed blade to fight
+    if (k && k.job === u.job && k.ct === ct && k.kd === u.kingdom && k.ageB === ageB && k.wa === wa && k.rg === rg && k.col === u.color && k.sex === u.sex && k.eq === eq && k.nt === nt && k.kv === kv && k.cb === cb) return;
+    rs.apK = { job: u.job, ct, kd: u.kingdom, ageB, wa, rg, col: u.color, sex: u.sex, eq, nt, kv, cb };
     rs.starborn = !!u.traits?.includes('starborn');
     const id = u.id;
     const r = (k) => h1(id, k);
@@ -322,7 +323,9 @@ export class UnitRenderer {
     const eqp = u.equipment;
     const wpn = eqp?.weapon,
       arm = eqp?.armor;
-    if (wpn && !child && !WORK_JOBS.has(job) && WEAPON_TOOL[wpn.kind] != null) {
+    // a ruler at peace keeps the sceptre in hand and a legendary blade sheathed
+    const sheathe = job === 'king' && wpn?.legendary && !u.combat;
+    if (wpn && !child && !WORK_JOBS.has(job) && !sheathe && WEAPON_TOOL[wpn.kind] != null) {
       tool = WEAPON_TOOL[wpn.kind];
       if (tool === TOOL_OPT.bow) offhand = 0;
     }
@@ -330,11 +333,17 @@ export class UnitRenderer {
     const metalIdx = (wpn && MATERIALS[wpn.material]?.index) || (arm && MATERIALS[arm.material]?.index) || 0;
     rs.legendary = !!(wpn?.legendary || arm?.legendary);
     rs.starsteel = wpn?.material === 'starsteel' || arm?.material === 'starsteel';
-    const back = BACK_OPT[u.carry?.type] || 0;
+    let back = BACK_OPT[u.carry?.type] || 0;
+    // a ruler at peace (or anyone working) keeps a legendary blade on the back
+    if (!back && wpn?.legendary && !child && (sheathe || WORK_JOBS.has(job))) back = 5;
+    rs.bladeOnBack = back === 5;
     const kc = this._kingdomColor(u.kingdom);
     const pal = CULTURE_CLOTH[u.data?.culture] || NEUTRAL_CLOTH;
     const civvies = jitter(lin(pal[Math.floor(r(9) * pal.length)]), r(12));
-    const cloth = u.color != null ? lin(u.color) : kc && UNIFORMED.has(job) ? kc : civvies;
+    // every grown member of a realm wears its colour (a little lighter or darker
+    // per person); culture lives on in trousers, hats and trim
+    const shade = 0.82 + r(13) * 0.32;
+    const cloth = u.color != null ? lin(u.color) : kc && (!child || UNIFORMED.has(job)) ? (UNIFORMED.has(job) ? kc : kc.map((c) => Math.min(1, c * shade))) : civvies;
     const kslot = u.kingdom >= 0 ? 1 + (u.kingdom % 15) : 0;
     if (kslot && !child && cape === 0) cape = 2; // kingdom tabard: sides read at a glance
     let sec = Math.floor(r(10) * 8);
@@ -605,14 +614,17 @@ export class UnitRenderer {
           const ch = Math.cos(heading),
             sh = Math.sin(heading);
           const wg = 1 + weaponGrow;
-          const lx = -0.11 * scale,
-            lz = (0.12 + 0.22 * wg) * scale;
+          const onBack = rs.bladeOnBack;
+          const lx = onBack ? 0.0 : -0.11 * scale,
+            lz = onBack ? -0.13 * scale : (0.12 + 0.22 * wg) * scale;
           const bx = ix + lx * ch + lz * sh,
             bz = iz - lx * sh + lz * ch;
-          const by = y + rs.sY * scale + (0.3 + 0.06 * wg) * scale;
+          const by = y + rs.sY * scale + (onBack ? 0.42 : 0.3 + 0.06 * wg) * scale;
           if (rs.legendary) {
-            const gs = Math.max(0.35 * scale, 18 / ppu) * (0.92 + 0.12 * Math.sin(now * 3 + rs.seed * 9));
-            ov.emotes.add(bx, by, bz, gs, EMOTE.glow, 0.85, 0);
+            const pulse = 0.9 + 0.15 * Math.sin(now * 3 + rs.seed * 9);
+            const gs = Math.max(0.6 * scale, 30 / ppu) * pulse;
+            ov.emotes.add(bx, by, bz, gs, EMOTE.glow, 0.75, 0);
+            ov.emotes.add(bx, by, bz, gs * 0.45, EMOTE.glow, 1, 0);
           }
           if (rs.starborn || rs.starsteel) {
             for (let k = 0; k < 3; k++) {

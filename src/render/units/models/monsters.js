@@ -11,8 +11,9 @@ export const golemModel = {
   height: 1.75,
   radius: 1.2,
   aoHeight: 0.4,
-  aoMin: 0.6,
+  aoMin: 0.75,
   bump: 1.4,
+  rim: 0.32,
   bones: [
     { name: 'pelvis', parent: -1, pivot: [0, 0.58, 0] },
     { name: 'torso', parent: -1, pivot: [0, 0.6, 0], ch: [0, 1, 2, 11] },
@@ -25,12 +26,12 @@ export const golemModel = {
   ],
   slots: [],
   materials: {
-    stone: { src: 'A', noise: 'stone', rough: 0.95 },
-    dark: { src: 'B', noise: 'stone', rough: 0.95 },
+    stone: { src: 'A', noise: 'stone', rough: 0.8, emissive: 0.1 },
+    dark: { src: 'B', noise: 'stone', rough: 0.8, emissive: 0.08 },
     moss: { src: 'C', noise: 'wool', rough: 1.0 },
-    glow: { color: 0x7ff6e4, emissive: 3.4, rough: 0.2 },
-    crystal: { color: 0x7ff6e4, emissive: 2.4, rough: 0.1, metal: 0.2 },
-    rune: { color: 0x6fe8ff, emissive: 2.2, rough: 0.3 },
+    glow: { color: 0x4fe6d0, emissive: 1.8, rough: 0.2 },
+    crystal: { color: 0x3fd8c8, emissive: 1.5, rough: 0.1, metal: 0.2 },
+    rune: { color: 0x2fc8e0, emissive: 1.3, rough: 0.3 },
     petal: { color: 0xf2a6c8, rough: 0.7 },
     petal2: { color: 0xf8e070, rough: 0.7 },
     grass: { color: 0x6aa84a, rough: 0.9 },
@@ -49,7 +50,7 @@ export const golemModel = {
       B.add(P.octa(0.1), { pos: [0, 1.0, 0.36], scl: [0.85, 1.3, 0.6], mat: 'crystal', flat: true });
       // glowing rune cracks across the chest and back
       for (const [x, y, z, rz, l] of [[-0.18, 1.08, 0.33, 0.6, 0.18], [0.2, 0.9, 0.33, -0.5, 0.16], [0.05, 1.22, 0.28, 1.4, 0.14], [-0.1, 0.82, 0.32, -1.2, 0.12], [0.0, 1.05, -0.36, 0.3, 0.22], [0.16, 0.92, -0.33, -0.9, 0.14]])
-        B.add(P.box(0.022, l, 0.02), { pos: [x, y, z], rot: [0, 0, rz], mat: 'rune' });
+        B.add(P.box(0.045, l * 1.3, 0.03), { pos: [x, y, z], rot: [0, 0, rz], mat: 'rune' });
       for (const [x, y, z, r] of [[0.13, 0.86, 0.33, 0.035], [-0.16, 1.1, 0.31, 0.03], [0.2, 1.14, 0.27, 0.028]]) B.add(P.octa(r), { pos: [x, y, z], rot: [x * 9, y, z], mat: 'crystal', flat: true });
       // moss cap and shoulders
       B.add(P.sphere(1, 10, 6), { pos: [0, 1.3, -0.08], scl: [0.3, 0.09, 0.3], mat: 'moss' });
@@ -66,7 +67,7 @@ export const golemModel = {
     B.with({ bone: 'head' }, () => {
       rock(0.18, { pos: [0, 1.4, 0.14], scl: [1.1, 0.85, 1], rot: [0.3, 0.2, 0], mat: 'dark' });
       rock(0.1, { pos: [0, 1.5, 0.22], scl: [1.8, 0.5, 0.7], rot: [0, 0, 0.1], mat: 'stone' });
-      for (const s of [1, -1]) B.add(P.sphere(0.03, 8, 6), { pos: [0.07 * s, 1.41, 0.29], scl: [1.2, 0.8, 0.6], mat: 'glow' });
+      for (const s of [1, -1]) B.add(P.sphere(0.042, 8, 6), { pos: [0.07 * s, 1.41, 0.29], scl: [1.2, 0.8, 0.6], mat: 'glow' });
     });
     for (const s of [1, -1]) {
       const arm = s > 0 ? 'armL' : 'armR';
@@ -76,7 +77,7 @@ export const golemModel = {
         rock(0.14, { pos: [0.5 * s, 0.9, 0], scl: [1, 1.55, 1], rot: [0.1, s * 0.7, 0.1], mat: 'dark' });
         rock(0.15, { pos: [0.52 * s, 0.62, 0.02], scl: [1, 1.45, 1], rot: [0.3, s * 0.2, 0.2], mat: 'stone' });
         B.add(P.sphere(1, 8, 5), { pos: [0.55 * s, 0.68, 0.05], scl: [0.08, 0.12, 0.1], mat: 'moss' });
-        B.add(P.box(0.02, 0.2, 0.02), { pos: [0.58 * s, 0.9, 0.1], rot: [0.2, 0, 0.3 * s], mat: 'rune' });
+        B.add(P.box(0.04, 0.26, 0.03), { pos: [0.58 * s, 0.9, 0.1], rot: [0.2, 0, 0.3 * s], mat: 'rune' });
         rock(0.19, { pos: [0.53 * s, 0.36, 0.04], scl: [1.05, 0.95, 1.1], rot: [0.6, s * 0.4, 0], mat: 'dark' });
       });
     }
