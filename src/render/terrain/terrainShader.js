@@ -586,7 +586,10 @@ void terrainSurface() {
   float t1 = tileTypeAt(c + ivec2(1, 0));
   float t2 = tileTypeAt(c + ivec2(0, 1));
   float t3 = tileTypeAt(c + ivec2(1, 1));
-  vec2 sf = smoothstep(0.0, 1.0, f);
+  // noise-jittered blend weights: the jitter vanishes at cell borders (weights stay
+  // continuous) but bends every boundary inside the cell, so edges never staircase
+  vec2 fj = (s.det.rg - 0.5) * 0.85 + (s.micro.gb - 0.5) * 0.30;
+  vec2 sf = smoothstep(0.0, 1.0, clamp(f + fj * f * (1.0 - f) * 4.0, 0.0, 1.0));
   vec4 w = vec4((1.0 - sf.x) * (1.0 - sf.y), sf.x * (1.0 - sf.y), (1.0 - sf.x) * sf.y, sf.x * sf.y);
   if (t1 == t0) { w.x += w.y; w.y = 0.0; }
   if (t2 == t0) { w.x += w.z; w.z = 0.0; } else if (t2 == t1) { w.y += w.z; w.z = 0.0; }
