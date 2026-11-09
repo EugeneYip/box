@@ -182,18 +182,18 @@ export class Volcano {
     const wx = fx.wind.x,
       wz = fx.wind.z;
     const lean = (h) => Math.pow(h, 1.6) * 0.06;
-    this._acc.plume += vt * (erupting ? 24 : 7) * Math.max(k, erupting ? 1 : 0.15) * pb;
+    this._acc.plume += vt * (erupting ? 50 : 12) * Math.max(k, erupting ? 0.6 : 0.15) * pb;
     while (this._acc.plume >= 1) {
       this._acc.plume -= 1;
       const u = Math.pow(Math.random(), 0.8);
       const h = 1 + u * colH;
       const L = lean(h);
-      const s = (2.6 + h * 0.11) * rand(0.85, 1.15) * (erupting ? 1 : 0.85);
+      const s = (3.2 + h * 0.14) * rand(0.85, 1.15) * (erupting ? 1 : 0.85);
       smokePuff(fx, x + wx * L + rand(-0.6, 0.6) * (1 + u), top + h, z + wz * L + rand(-0.6, 0.6) * (1 + u), {
         size: s,
         grow: 1.7,
         ramp: RAMP.SMOKE_BLACK,
-        glow: u < 0.2 ? 0.45 : 0.1,
+        glow: u < 0.12 ? 0.4 : 0,
         rise: rand(0.8, 1.6),
         drift: 2.0,
         drag: 0.5,
@@ -218,7 +218,7 @@ export class Volcano {
     this._acc.bolt -= vt;
     if (erupting && this._acc.bolt <= 0) {
       this._acc.bolt = rand(0.35, 0.9);
-      const hb = rand(0.3, 0.9) * colH;
+      const hb = rand(0.25, 0.65) * colH;
       const h0 = top + hb;
       const ox = x + wx * lean(hb),
         oz = z + wz * lean(hb);
@@ -231,7 +231,7 @@ export class Volcano {
     }
     // glow + rumble
     const fl = 0.85 + 0.15 * Math.sin(this.t * 17) * Math.sin(this.t * 5.3);
-    fx.lights.request('volcano' + x, x, top + 2.5, z, this._lc, (2.5 + 5 * k) * fl, 44, 0.8);
+    fx.lights.request('volcano' + x, x, top + 2.5, z, this._lc, (2.5 + 5 * k) * fl, 44, 0.35);
     if (Math.random() < vt * 4 * k) glowFlash(fx, x, top + 0.5, z, 3, { life: 0.5, bright: 1.2, ramp: RAMP.LAVA, from: 0.6 });
     fx.shake(x, z, dt * 2.2 * 0.25 * k + (Math.random() < vt * 1.2 * k ? 0.35 : 0));
     hurt(g, x, z, 2.2, 30 * vt * k, 20 * vt * k, 'volcano');
