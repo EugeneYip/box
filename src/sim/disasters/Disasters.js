@@ -98,12 +98,12 @@ export class Disasters {
     // plague miasma around the sick
     const inf = this.plagueSim.infected;
     if (inf.size) {
-      this._plagueFx += dt * Math.min(inf.size, 120) * 1.4;
+      this._plagueFx += dt * Math.min(inf.size, 80) * 3.2;
       const arr = this._plagueFx >= 1 ? [...inf] : null;
       while (this._plagueFx >= 1 && arr.length) {
         this._plagueFx -= 1;
         const u = arr[(Math.random() * arr.length) | 0];
-        g.fx.emit('miasma', { x: u.x, y: u.y + 0.2, z: u.z }, { count: 1, scale: 0.55 });
+        g.fx.emit('miasma', { x: u.x, y: u.y + 0.25, z: u.z }, { count: 1, scale: 0.85 });
       }
       this._plagueFx = Math.min(this._plagueFx, 2);
     }
@@ -184,7 +184,7 @@ export class Disasters {
     const n = this.plagueSim.infectArea(x, z, radius);
     g.fx.emit('miasma', { x, z }, { count: 10, scale: 1.4 + radius * 0.2 });
     g.fx.emit('miasma', { x, z }, { count: 2, scale: 1.2, duration: 3, rate: 5 });
-    g.fx.decal({ frame: 10, x, z, size: radius * 2.4, life: 40, color: 0x3e5a1e, alpha: 0.5, fadeIn: 0.05, fadeOut: 0.6 });
+    // (no ground stain: the sickness is shown by miasma drifting with the sick)
     play(g, 'magic', { x, z }, 0.6, 0.6);
     return n;
   }
