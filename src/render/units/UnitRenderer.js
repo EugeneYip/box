@@ -798,6 +798,9 @@ export class UnitRenderer {
       this._m.compose(this._p.set(c.x, y + lift * scale, c.z), this._q, this._s.set(scale, scale, scale));
       const flash = Math.max(0, 1 - td / 0.3);
       const pxH = (md.height * scale * this._ppu) / Math.max(0.1, this.game.cameraRig.camera.position.distanceTo(this._sph.center));
+      // a creature that died before it was ever drawn has no appearance yet
+      if (!rs.ap) this._appearance(u, rs);
+      if (!rs.ap) continue;
       this.pick(rm, pxH).write(this._m, P, rs.ap, flash, Math.max(0.001, fade), 0);
       if (def.habitat === 'land' && !u.swimming) {
         w.normalAt(c.x, c.z, this._n);

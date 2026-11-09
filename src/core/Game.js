@@ -303,9 +303,27 @@ export class Game {
     v.zoom01 = Math.min(1, Math.max(0, (rig.cur.dist - rig.minDist) / Math.max(1, rig.maxDist - rig.minDist)));
     v.far = v.zoom01 > 0.62;
     this.world.flushDirty();
-    for (const s of this.visualSystems) s.update?.(dt);
+    // Each visual system is isolated: one failing renderer must not stop the
+    // frame (the rest of the world, the HUD and the camera keep running).
+    for (const s of this.visualSystems) {
+      try {
+        s.update?.(dt);
+      } catch (err) {
+        this._systemError(s, err);
+      }
+    }
     this.pipeline.render(dt);
     this.frame++;
+  }
+
+  _systemError(s, err) {
+    const name = s?.constructor?.name || 'system';
+    const now = performance.now();
+    this._sysErrAt = this._sysErrAt || {};
+    if (now - (this._sysErrAt[name] || -1e9) < 5000) return; // log at most every 5 s per system
+    this._sysErrAt[name] = now;
+    console.error(`[${name}]`, err);
+    window.__error = String(err && err.stack ? err.stack : err);
   }
 
   start() {
