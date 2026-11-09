@@ -175,15 +175,15 @@ export class Earthquake {
       // hard-edged near-black void hugging the carved trench (lifted so it
       // sits above the chasm floor and walls rather than being buried)
       const rot = Math.atan2(dz, dx);
-      fx.decal({ frame: DF.CRACKLINE, x: mx, z: mz, size: L * 3.4, rot, life: 170, color: 0x000000, alpha: 1, overlay: true, lift: 0.1, fadeIn: 0.0005, fadeOut: 0.9, grain: 0 });
-      fx.decal({ frame: DF.CRACKLINE, x: mx, z: mz, size: L * 3.4, rot, life: 160, color: 0x020101, alpha: 1, lift: 0.2, fadeIn: 0.0005, fadeOut: 0.88, grain: 0 });
+      fx.decal({ frame: DF.CRACKLINE, x: mx, z: mz, size: L * 4.6, rot, life: 170, color: 0x000000, alpha: 1, overlay: true, lift: 0.1, fadeIn: 0.0005, fadeOut: 0.9, grain: 0 });
+      fx.decal({ frame: DF.CRACKLINE, x: mx, z: mz, size: L * 4.6, rot, life: 160, color: 0x020101, alpha: 1, lift: 0.2, fadeIn: 0.0005, fadeOut: 0.88, grain: 0 });
       // sunlit lips: a faint warm highlight just outside both edges
       for (const sd of [1, -1])
-        fx.decal({ frame: DF.CRACKLINE, x: mx + nx * sd * 1.55, z: mz + nz * sd * 1.55, size: L * 1.3, rot, life: 150, additive: true, color: 0xe8d6b0, intensity: 0.3, lift: 0.25, fadeIn: 0.002, fadeOut: 0.85, grain: 0.3 });
-      fx.decal({ frame: DF.SOFTDARK, x: mx, z: mz, size: L * 2.2, life: 120, color: 0x1e1610, alpha: 0.55, fadeIn: 0.001, fadeOut: 0.85, grain: 0.7 });
+        fx.decal({ frame: DF.CRACKLINE, x: mx + nx * sd * 2.2, z: mz + nz * sd * 2.2, size: L * 1.3, rot, life: 150, additive: true, color: 0xe8d6b0, intensity: 0.3, lift: 0.25, fadeIn: 0.002, fadeOut: 0.85, grain: 0.3 });
+      fx.decal({ frame: DF.SOFTDARK, x: mx, z: mz, size: L * 2.8, life: 120, color: 0x1e1610, alpha: 0.55, fadeIn: 0.001, fadeOut: 0.85, grain: 0.7 });
       // soil spilled along both lips
       for (const sd of [1, -1])
-        fx.decal({ frame: DF.STAIN, x: mx + nx * sd * 2.0, z: mz + nz * sd * 2.0, size: rand(2.4, 3.2), life: 150, color: 0x4e3620, alpha: 0.7, fadeIn: 0.001, fadeOut: 0.88, grain: 0.8 });
+        fx.decal({ frame: DF.STAIN, x: mx + nx * sd * 2.7, z: mz + nz * sd * 2.7, size: rand(2.4, 3.2), life: 150, color: 0x4e3620, alpha: 0.7, fadeIn: 0.001, fadeOut: 0.88, grain: 0.8 });
       if (Math.random() < 0.5) fx.decal({ frame: DF.CRACK1, x: mx + nx * rand(-1.5, 1.5), z: mz + nz * rand(-1.5, 1.5), size: rand(2.4, 4) * k, life: 140, color: 0x060403, alpha: 0.95, fadeIn: 0.001, fadeOut: 0.88 });
       // thick dust walls erupting along both lips of the rupture
       for (let j = 0; j < fx.k(8); j++) {
@@ -201,12 +201,15 @@ export class Earthquake {
           fx.debris.spawn({ x: px, y: w.heightAt(px, pz) + 0.2, z: pz, vx: nx * rand(-2, 2), vy: rand(2.5, 5), vz: nz * rand(-2, 2), size: rand(0.15, 0.35), color: 0x6e6258, life: rand(6, 10) });
       }
     }
-    // Chasm: the rupture splits open 1.5-2.5 units deep with jagged raised
-    // lips; the ground on one side drops as an offset block (a scarp).
+    // Chasm: the rupture splits open into a flat-floored trench about three
+    // tiles wide and 2-3 units deep (wide enough that the god-view camera
+    // sees down to its dark floor past the near wall), between steep lit
+    // rock walls and jagged raised lips; the ground on one side drops as an
+    // offset block (a scarp).
     // Each tile's total change is tracked so overlapping segments never
     // carve the same tile twice.
     const carved = (this._carved ||= new Map());
-    w.forEachInRadius(mx, mz, 4.6, (tx, ty, dn, i) => {
+    w.forEachInRadius(mx, mz, 5.2, (tx, ty, dn, i) => {
       const px = tx + 0.5 - mx,
         pz = ty + 0.5 - mz;
       const along = (px * dx + pz * dz) / L;
@@ -218,12 +221,13 @@ export class Earthquake {
       const ad = Math.abs(side);
       const jag = hash2(tx, ty, this.seed);
       let want = 0; // desired total change from the original height
-      if (side > 0.7 && side < 4.2) want -= thr * k * 2.4 * (1 - smooth((side - 2.8) / 1.4));
-      if (ad < 1.7) {
-        // steep, almost vertical walls so the sunlit rock faces show
-        const depth = (2.6 + 1.2 * jag) * Math.max(0.8, k) * (ad < 1.15 ? 1 : 1 - (ad - 1.15) / 0.55);
+      if (side > 1.0 && side < 4.8) want -= thr * k * 2.4 * (1 - smooth((side - 3.4) / 1.4));
+      if (ad < 2.2) {
+        // flat floor, then steep, almost vertical walls so the sunlit rock
+        // faces show
+        const depth = (2.0 + 0.9 * jag) * Math.max(0.8, k) * (ad < 1.6 ? 1 : 1 - (ad - 1.6) / 0.6);
         want -= depth;
-      } else if (ad < 2.5) want += (0.2 + 0.45 * jag) * k * (1 - (ad - 1.7) / 0.8);
+      } else if (ad < 3.0) want += (0.2 + 0.45 * jag) * k * (1 - (ad - 2.2) / 0.8);
       const cur = prev ? prev.want : 0;
       const next = Math.abs(want) > Math.abs(cur) ? want : cur;
       if (next === cur) return;
@@ -231,15 +235,17 @@ export class Earthquake {
       w.height[i] = Math.max(floor, Math.max(MIN_HEIGHT, h0 + next));
       carved.set(i, { h0, want: next });
       w.markDirty('height', tx, ty);
-      if (ad < 1.7) {
-        if (w.type[i] !== TILE.ROCK) {
-          w.type[i] = TILE.ROCK;
+      if (ad < 2.2) {
+        // dark scorched floor (the shadowed depths) between rock walls
+        const tt = ad < 1.6 ? TILE.ASH : TILE.ROCK;
+        if (w.type[i] !== tt) {
+          w.type[i] = tt;
           w.markDirty('type', tx, ty);
         }
         const fl = w.flora[i];
         if (fl && FLORA_INFO[fl].isTree) this._topple(tx, ty, fl);
         else if (fl && fl !== FLORA.BOULDER) w.setFlora(tx, ty, FLORA.NONE);
-      } else if (ad < 2.4) {
+      } else if (ad < 3.0) {
         // churned soil spilled over both lips
         const t = w.type[i];
         if (t === TILE.GRASS || t === TILE.FOREST || t === TILE.SAVANNA || t === TILE.JUNGLE || t === TILE.TUNDRA || t === TILE.FARMLAND) {
