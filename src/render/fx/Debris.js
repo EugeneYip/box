@@ -57,7 +57,11 @@ export function heatMaterial(color, roughness) {
           float h = clamp(vHeat, 0.0, 1.0);
           float veins = 0.55 + 0.45 * sin(vLocalPos.x * 23.0 + vLocalPos.y * 17.0) * sin(vLocalPos.z * 19.0 - vLocalPos.y * 11.0);
           vec3 hot = mix(vec3(0.9, 0.12, 0.01), vec3(1.0, 0.55, 0.12), h) * (h * h) * (3.0 + 4.0 * veins);
-          totalEmissiveRadiance += hot + vec3(1.0, 0.85, 0.5) * pow(h, 5.0) * 4.0;
+          vec3 e = hot + vec3(1.0, 0.85, 0.5) * pow(h, 5.0) * 4.0;
+          // soft-clamp the peak: a white-hot speck far above the bloom
+          // threshold rings with a halo in the bloom chain
+          e /= 1.0 + max(e.r, max(e.g, e.b)) * 0.35;
+          totalEmissiveRadiance += e;
           diffuseColor.rgb *= 1.0 - 0.7 * h;
         }`,
       );

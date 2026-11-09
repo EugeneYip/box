@@ -205,7 +205,9 @@ export class Weather {
     }
     const intensity = 0.55 + this.rng() * 0.45;
     const dur = type === 'storm' ? (45 + this.rng() * 50) * Math.min(1.8, 0.8 + 0.25 * stormK) : season === 0 && type === 'rain' ? 35 + this.rng() * 45 : 60 + this.rng() * 100;
-    this.set(type, intensity, null);
+    // auto spells carry their own duration, so they end by themselves even
+    // when the skyWeather law is switched off mid-spell (then it stays clear)
+    this.set(type, intensity, dur);
     this.nextAuto = g.time.total + dur;
   }
 

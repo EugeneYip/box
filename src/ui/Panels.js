@@ -7,6 +7,7 @@ import { agesPanel } from './Ages.js';
 import { techPanel } from './TechPanel.js';
 import { eraNames, traitDef } from './depth.js';
 import { WORLD_SIZES } from '../core/params.js';
+import { WORLD_PRESET_IDS } from '../world/worldgen.js';
 
 const SIZE_NOTES = {
   128: 'Quick and intimate. Lightest on phones.',
@@ -153,7 +154,7 @@ export const PRESETS = [
   { id: 'archipelago', name: 'Archipelago', blurb: 'Chains of scattered islands' },
   { id: 'islands', name: 'Islands', blurb: 'A few lonely island realms' },
   { id: 'earth', name: 'World Map', blurb: 'Our planet, Pacific-centred · best Huge', size: 512 },
-];
+].filter((p) => WORLD_PRESET_IDS.includes(p.id)); // hide presets the generator cannot build yet
 const LAND = {
   continent:
     '<path d="M18 12c6-5 17-6 26-3 8 3 13 2 17 7 4 6 1 12-3 16-5 5-13 4-19 7-7 3-14 1-18-4-5-6-9-15-3-23z"/><path d="M8 38c2-2 5-2 6 0s-1 4-3 4-4-2-3-4zM63 8c2-1 4 0 4 2s-2 3-4 2-1-3 0-4z"/>',

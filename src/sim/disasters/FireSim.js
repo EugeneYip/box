@@ -1,5 +1,5 @@
 import { TILE, TILE_INFO, FLORA, FLORA_INFO, SEA_LEVEL, DIRS8 } from '../../world/constants.js';
-import { law, fireFactor, regionName, yearLabel } from './util.js';
+import { law, fireFactor, regionName, yearLabel, withAge } from './util.js';
 
 // Wildfire simulation on world.fire (0 = not burning, (0..1] intensity).
 //
@@ -57,6 +57,8 @@ export class FireSim {
     this._external = null;
     this._scan = null;
     this._burned?.clear();
+    this.natural = 0;
+    this._natNote = null;
     this.version++;
   }
 
@@ -152,9 +154,52 @@ export class FireSim {
     }
   }
 
+  // Natural wildfires: dry lightning and heat start fires by themselves,
+  // far more often in a hot, fire-prone age (Embers: about one a minute on
+  // a medium map) than in a temperate one (one every quarter hour or so),
+  // and almost never in a cold one. Runs on game time (works when fast-
+  // forwarding), gated by the calamityLightning law, and held back while a
+  // large fire is already burning, so it never runs away across the map.
+  _natural(step) {
+    const g = this.game;
+    const w = g.world;
+    if (g.time.total < 20 || !law(g, 'calamityLightning', true)) return;
+    const wt = g.env?.weather?.type;
+    if (wt === 'rain' || wt === 'storm' || wt === 'snow') return;
+    const area = (w.w * w.h) / 65536;
+    const cap = 900 * area;
+    if (this.count >= cap) return;
+    const season = g.time.seasonName;
+    const sf = season === 'Summer' ? 1.35 : season === 'Winter' ? 0.35 : 1;
+    const rate = (1 / 900) * area * Math.pow(fireFactor(g), 2.6) * sf * (1 - this.count / cap);
+    if (this.rng.next() >= rate * step) return;
+    for (let k = 0; k < 24; k++) {
+      const tx = 2 + Math.floor(this.rng.next() * (w.w - 4)),
+        ty = 2 + Math.floor(this.rng.next() * (w.h - 4));
+      const i = ty * w.w + tx;
+      if (w.height[i] < SEA_LEVEL || this.inList[i] || w.building[i] >= 0) continue;
+      if (w.wetness && w.wetness[i] > 0.25) continue;
+      if (this.flammability(i) < 0.5) continue;
+      this.natural = (this.natural || 0) + 1;
+      try {
+        // a dry-lightning strike (bolt, scorch) that sets the spot alight
+        if (g.disasters?.lightning) g.disasters.lightning(tx + 0.5, ty + 0.5, { natural: true, ignite: true });
+        else this.ignite(tx, ty, 1);
+        if (g.time.total - (this._natNote ?? -1e9) > 45) {
+          this._natNote = g.time.total;
+          g.notify?.(withAge(g, 'wildfire', `Dry lightning sparks a wildfire in ${regionName(g, tx + 0.5, ty + 0.5)}.`), 'disaster', { x: tx + 0.5, z: ty + 0.5 });
+        }
+      } catch (err) {
+        this.ignite(tx, ty, 1);
+      }
+      return;
+    }
+  }
+
   tick(step) {
     const g = this.game;
     const w = g.world;
+    this._natural(step);
     // adopt fires started by other modules through world.setFire(); the
     // dirty rect (which also covers our own changes) is swept in row slices
     // so a huge fire on a big map stays within the tick budget
@@ -196,8 +241,11 @@ export class FireSim {
 
     const spreadOn = law(g, "natureFireSpread", true);
     // World Age: fireRisk scales spread; a cold age slows fire, a hot one quickens it
-    const ageF = fireFactor(g);
     const n = this.count;
+    // a very large fire spreads more slowly (it has burnt its easy fuel and
+    // made its own weather), so even a fire age never burns the whole map
+    const capS = 1400 * (w.w * w.h) / 65536;
+    const ageF = fireFactor(g) * (n > capS ? Math.max(0.35, capS / n) : 1);
     const todo = Math.min(n, BUDGET);
     const dtEff = step * (n / Math.max(1, todo));
     let changed = false;

@@ -127,14 +127,14 @@ function meadowTuft(seed) {
 function fernTuft(seed) {
   const r = mulberry32(seed);
   const bb = new BladeBuilder();
-  const fronds = 6 + Math.floor(r() * 3);
+  const fronds = 5;
   for (let k = 0; k < fronds; k++) {
     const a = (k / fronds) * TAU + r() * 0.5;
     const d = V(Math.cos(a), 0, Math.sin(a));
     const s = V(-d.z, 0, d.x);
     const L = 0.17 + r() * 0.09;
     const rise = 0.07 + r() * 0.05;
-    const segs = 5;
+    const segs = 3;
     let prevL = null,
       prevR = null,
       prevC = bb.v(V(0, -0.01, 0), G_BASE, 0, 0);
