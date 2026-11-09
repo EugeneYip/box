@@ -3,7 +3,7 @@ import { TILE_INFO, FLORA_INFO, SEA_LEVEL, SHALLOW_DEPTH, TILE } from '../world/
 import { powerIcon, uiIcon, tileTint, hasIcon } from './icons.js';
 import { getPower } from '../powers/registry.js';
 import { el, esc, safe, hexCss, fmtNum } from './dom.js';
-import { traitDef, statusDef, modLines, prettyId, eraNames, techDef } from './depth.js';
+import { traitDef, statusDef, modLines, prettyId, eraNames, techDef, techList } from './depth.js';
 import { kingdomOf, eraOf, researchOf } from './TechPanel.js';
 import { CULTURES } from '../sim/civ/cultures.js';
 import { YEAR } from '../core/time.js';
@@ -353,8 +353,15 @@ export class Inspector {
     const u = r.unit;
     const dead = u && u.alive === false;
     const kTint = this.kingdomTint(r);
+    // a building's own era only matters when it differs from its realm's
+    let realmEraName = null;
+    if (k === 'building' || k === 'village') {
+      const kk = (typeof r.kingdom === 'object' && r.kingdom) || kingdomOf(this.game, (r.village || this.game.civ?.villages?.[r.building?.village])?.kingdom);
+      if (kk) realmEraName = `${eraNames()[eraOf(this.game, kk)] || ''} era`.toLowerCase();
+    }
     const stats = (r.stats || [])
       .filter((s) => Array.isArray(s) && s.length >= 2 && !HIDE_STATS.test(String(s[0])))
+      .filter((s) => !(realmEraName && /^built in$/i.test(String(s[0])) && String(s[1]).toLowerCase() === realmEraName))
       .map((s, i) => [s, i])
       .sort((a, b) => rankOf(a[0][0]) - rankOf(b[0][0]) || a[1] - b[1])
       .map(([s]) => s);
@@ -530,22 +537,28 @@ export class Inspector {
     let html = '';
     if (k && !isKingdom) {
       const era = eraOf(g, k);
-      html += `<section class="ws-dsec"><h5>Realm</h5><div class="ws-realm__era"><span class="ws-era is-era${era}">${uiIcon(['house', 'build', 'job-soldier', 'chronicle'][era])}<span>${esc(eraNames()[era] || '')} Era</span></span><span class="ws-realm__res"><small>Part of the ${esc(String(k.name || '').replace(/^the\s+/i, ''))} — see its entry above for learning and treasury</small></span></div></section>`;
+      html += `<section class="ws-dsec"><h5>Realm</h5><div class="ws-realm__line"><span class="ws-era is-era${era}">${uiIcon(['house', 'build', 'job-soldier', 'chronicle'][era])}<span>Realm · ${esc(eraNames()[era] || '')} era</span></span><span class="ws-realm__of">${esc(String(k.name || ''))}</span></div></section>`;
     }
     if (k && isKingdom) {
       const era = eraOf(g, k);
       const res = researchOf(g, k);
-      html += `<section class="ws-dsec"><h5>Learning</h5><div class="ws-realm__era"><span class="ws-era is-era${era}">${uiIcon(['house', 'build', 'job-soldier', 'chronicle'][era])}<span>${esc(eraNames()[era] || '')} Era</span></span>${
-        res ? `<span class="ws-realm__res"><small>Studying ${esc(res.name)}</small>${res.pct != null ? `<span class="ws-meter"><i style="width:${(res.pct * 100).toFixed(1)}%"></i></span>` : ''}</span>` : '<span class="ws-realm__res"><small>No research under way</small></span>'
-      }</div></section>`;
+      const nT = k.techs instanceof Set ? k.techs.size : Array.isArray(k.techs) ? k.techs.length : 0;
+      const tot = techList(g).length;
+      const mastery = k.mastery || 0;
+      html += `<section class="ws-dsec"><h5>Learning</h5><div class="ws-realm__era"><span class="ws-era is-era${era}">${uiIcon(['house', 'build', 'job-soldier', 'chronicle'][era])}<span>${esc(eraNames()[era] || '')} era</span></span>${
+        res ? `<span class="ws-realm__res"><small>Studying ${esc(res.name)}${res.pct != null ? ` · ${Math.round(res.pct * 100)}%` : ''}</small>${res.pct != null ? `<span class="ws-meter"><i style="width:${(res.pct * 100).toFixed(1)}%"></i></span>` : ''}</span>` : `<span class="ws-realm__res"><small>${nT && tot && nT >= tot ? 'Every technology is known' : 'No research under way'}</small></span>`
+      }</div><div class="ws-realm__facts"><span data-tip="Technologies this realm has learned">${uiIcon('chronicle')}${nT}${tot ? ` / ${tot}` : ''} techs</span>${mastery > 0 ? `<span data-tip="Mastery: refinements earned after every technology is known. Each level adds 3% to work, harvests and building.">${uiIcon('crown')}Mastery ${mastery}</span>` : ''}</div></section>`;
     }
     const cult = this.cultureOf(v?.culture ?? k?.culture);
     if (cult) {
       const traits = (cult.traits || []).map((t) => this.chip(typeof t === 'string' ? prettyId(t) : t.name || prettyId(t.id), typeof t === 'object' ? t.description : '', 'is-culture', 'banner')).join('');
-      html += `<section class="ws-dsec"><h5>Culture</h5><div class="ws-chips">${this.chip(cult.name || prettyId(cult.id), cult.language ? `Tongue: ${cult.language}` : '', 'is-culture-name', 'chronicle')}${traits}</div></section>`;
+      // villages list their culture mix as a stat row; here only the traits
+      const hasMix = (r.stats || []).some((s) => /^culture$/i.test(String(s[0])));
+      if (traits || !hasMix) html += `<section class="ws-dsec"><h5>${hasMix ? 'Culture traits' : 'Culture'}</h5><div class="ws-chips">${hasMix ? '' : this.chip(cult.name || prettyId(cult.id), cult.language ? `Tongue: ${cult.language}` : '', 'is-culture-name', 'chronicle')}${traits}</div></section>`;
     }
     const inv = isKingdom ? k?.inventory || null : null;
-    const src = inv || (v ? { food: v.food, wood: v.wood, stone: v.stone, gold: v.gold, ore: v.ore } : null);
+    // food is already a meter in the stats above, so stores list the rest
+    const src = inv || (v ? { wood: v.wood, stone: v.stone, ore: v.ore, gold: v.gold } : null);
     if (src) {
       const cells = Object.entries(INV)
         .filter(([key]) => src[key] != null)
@@ -554,7 +567,7 @@ export class Inspector {
       if (cells) html += `<section class="ws-dsec"><h5>${inv ? 'Kingdom treasury' : 'Village stores'}</h5><div class="ws-invgrid">${cells}</div></section>`;
       if (isKingdom && k) {
         const n = k.techs instanceof Set ? k.techs.size : Array.isArray(k.techs) ? k.techs.length : 0;
-        if (n) html += `<section class="ws-dsec"><h5>Knows ${n} technolog${n === 1 ? 'y' : 'ies'}</h5><div class="ws-chips">${[...(k.techs instanceof Set ? k.techs : k.techs || [])].slice(-8).map((id) => this.chip(techDef(g, id)?.name || prettyId(id), techDef(g, id)?.description || '', 'is-tech', 'good')).join('')}</div></section>`;
+        if (n) html += `<section class="ws-dsec"><h5>Latest discoveries</h5><div class="ws-chips">${[...(k.techs instanceof Set ? k.techs : k.techs || [])].slice(-6).map((id) => this.chip(techDef(g, id)?.name || prettyId(id), techDef(g, id)?.description || '', 'is-tech', 'good')).join('')}</div></section>`;
       }
     }
     const ruler = k && isKingdom ? g.units?.byId?.get?.(k.ruler) : null;

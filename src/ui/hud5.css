@@ -506,3 +506,38 @@
   height: 24px;
   margin-top: -10px;
 }
+
+/* ---- realm line wraps instead of truncating; compact learning facts */
+.ws-realm__line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+.ws-realm__of {
+  font-size: 12px;
+  color: var(--ws-ink-2);
+  line-height: 1.3;
+}
+.ws-realm__facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-top: 8px;
+  font-size: 11.5px;
+  color: var(--ws-ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.ws-realm__facts > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  --tint: #ebc977;
+}
+.ws-realm__facts .ico {
+  font-size: 13px;
+  color: var(--ws-gold);
+}
+.ws-dsec .ws-chips {
+  justify-content: flex-start;
+}
