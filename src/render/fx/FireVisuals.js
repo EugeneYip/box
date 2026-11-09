@@ -352,6 +352,8 @@ export class FireVisuals {
     const wx = fx.wind.x,
       wz = fx.wind.z;
     const sk = Math.max(budget, 0.45) / Math.sqrt(lod);
+    const cols = this._cols || (this._cols = new Map());
+    cols.clear();
     for (const c of cells.values()) {
       if (!c.vis) continue;
       const cxm = c.x / c.n,
@@ -377,25 +379,46 @@ export class FireVisuals {
           life: (13 + rnd() * 5) * (0.85 + lod * 0.15),
         });
       }
-      // body: the standing column, swelling and leaning with height
-      const H = Math.min(24, 7 + sq * 2.2);
-      e = (1.2 + sq * 0.8) * avg * dt * sk;
+      // columns are built per 16x16-tile block (below), so a big fire
+      // carries a few tall plumes rather than a carpet of short puffs
+      const bk = ((cxm >> 4) << 10) | (czm >> 4);
+      let B = cols.get(bk);
+      if (!B) cols.set(bk, (B = { n: 0, x: 0, z: 0, f: 0, gy: -1e9 }));
+      B.n += c.n;
+      B.x += c.x;
+      B.z += c.z;
+      B.f += c.f;
+      if (gy > B.gy) B.gy = gy;
+    }
+    // ---- standing smoke columns: tall, continuous, bent downwind ----
+    // Puffs are laid evenly along the whole leaning column (a golden-ratio
+    // sequence, so neighbours always overlap) and only drift slowly, so the
+    // column reads as one continuous shaft for as long as the block burns.
+    for (const B of cols.values()) {
+      const sq = Math.sqrt(B.n);
+      const bx = B.x / B.n,
+        bz = B.z / B.n;
+      const avg = B.f / B.n;
+      const H = Math.min(30, 11 + sq * 1.7);
+      const spread = 1.0 + sq * 0.18;
+      let e = (3 + sq * 1.0) * Math.max(0.5, avg) * dt * sk;
       while (e > 0) {
         if (e < 1 && rnd() > e) break;
         e -= 1;
-        const u = rnd();
-        const h = 3 + u * H;
-        const L = h * 0.85;
-        const sz = (1.7 + h * 0.16 + sq * 0.22) * Math.pow(lod, 0.75);
-        smokePuff(fx, cxm + wx * L + (rnd() - 0.5) * spread * (0.6 + u), gy + h, czm + wz * L + (rnd() - 0.5) * spread * (0.6 + u), {
+        this._strat = ((this._strat || 0) + 0.6180339) % 1;
+        const u = this._strat;
+        const h = 2.5 + u * H;
+        const L = h * 0.85 * (0.85 + 0.3 * u);
+        const sz = (1.6 + h * 0.15 + sq * 0.12) * Math.pow(lod, 0.75);
+        smokePuff(fx, bx + wx * L + (rnd() - 0.5) * spread * (0.5 + u), B.gy + h, bz + wz * L + (rnd() - 0.5) * spread * (0.5 + u), {
           size: sz,
-          grow: 1.8,
-          ramp: ramp(),
-          glow: u < 0.25 ? 0.5 : 0,
-          rise: 0.6 + rnd() * 0.6,
-          drift: 2.6,
-          drag: 0.5,
-          life: (6 + rnd() * 3) * (0.85 + lod * 0.15),
+          grow: 1.7,
+          ramp: raining && rnd() < 0.6 ? RAMP.STEAM : RAMP.PLUME,
+          glow: u < 0.18 ? 0.5 : 0,
+          rise: 0.5 + rnd() * 0.5,
+          drift: 2.2,
+          drag: 0.6,
+          life: (6.5 + rnd() * 3) * (0.85 + lod * 0.15),
         });
       }
     }
