@@ -692,8 +692,13 @@ void terrainSurface() {
   float farR = 1.0 - uDetail;
   if (farR > 0.0 && s.p.y > 0.0) {
     float hs = dot(nrm, normalize(vec3(-0.5, 0.8, -0.35)));
-    albedo *= mix(1.0, (0.78 + 0.40 * hs) * mix(0.72, 1.0, smoothstep(0.55, 0.98, nrm.y)), farR * 0.6);
-    albedo = mix(albedo, albedo * vec3(0.96, 1.0, 1.08) * 1.12, smoothstep(6.0, 16.0, s.p.y) * 0.4 * farR);
+    albedo *= mix(1.0, (0.76 + 0.44 * hs) * mix(0.68, 1.0, smoothstep(0.55, 0.98, nrm.y)), farR * 0.85);
+    albedo = mix(albedo, albedo * vec3(0.96, 1.0, 1.08) * 1.14, smoothstep(6.0, 16.0, s.p.y) * 0.5 * farR);
+    // biome distinctiveness at map scale: deep blue-green forests, brighter meadows
+    float forestB = dot(vec4(equal(vec4(t0, t1, t2, t3), vec4(2.0))) * live, b) + 0.6 * dot(vec4(equal(vec4(t0, t1, t2, t3), vec4(3.0))) * live, b);
+    float grassB = dot(vec4(equal(vec4(t0, t1, t2, t3), vec4(1.0))) * live, b);
+    albedo = mix(albedo, albedo * vec3(0.72, 0.85, 0.92), forestB * farR * 0.6 * (1.0 - snowB));
+    albedo = mix(albedo, albedo * vec3(1.06, 1.08, 1.0), grassB * farR * 0.5 * (1.0 - snowB));
   }
 
   // ---- seabed & shore
