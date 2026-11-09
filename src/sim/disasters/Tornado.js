@@ -68,10 +68,10 @@ export class Tornado {
     const y = Math.max(ground, SEA_LEVEL);
     // funnel visuals (lifts off the ground while roping out)
     const lift = this.t > this.life - 3.5 ? (this.t - (this.life - 3.5)) * 1.8 : 0;
-    const bend = 3.4 + Math.sin(this.t * 0.5 + this.seed) * 1.2;
+    const bend = 4.4 + Math.sin(this.t * 0.5 + this.seed) * 1.5;
     this._tint.setRGB(1 - this._water * 0.15, 1 - this._water * 0.05, 1 + this._water * 0.25);
     this.funnel.set(this.x, y - 0.2 + lift, this.z, {
-      height: 12 - lift * 0.4,
+      height: 19 - lift * 0.4, // tall and thin: reads as a funnel at a 50-60 degree pitch
       width: 0.55 + 0.45 * S,
       bendX: -Math.cos(this.heading) * bend,
       bendZ: -Math.sin(this.heading) * bend,
@@ -92,7 +92,7 @@ export class Tornado {
       const sp = rand(8, 12);
       fx.debris.spawn({
         x: this.x + Math.cos(a) * rr,
-        y: y + rand(1, 6),
+        y: y + rand(1, 9),
         z: this.z + Math.sin(a) * rr,
         vx: Math.cos(tang) * sp - Math.cos(a) * 2 + Math.cos(this.heading) * this.speed,
         vy: rand(3, 7),
@@ -113,16 +113,16 @@ export class Tornado {
       P.x = this.x;
       P.y = y + 0.05;
       P.z = this.z;
-      P.vx = rand(0.7, 1.5); // radius: a tight debris ring at the ground
+      P.vx = rand(0.6, 1.3); // radius: a tight debris ring at the ground
       P.vy = Math.random() * 6.28;
-      P.vz = rand(0.2, 1.4); // rise
+      P.vz = rand(0.15, 0.8); // rise (kept low so the stem stays visible)
       P.tx = rand(0.6, 1.2); // radius grows
       P.ty = rand(3.5, 5.5); // angular speed
       P.tz = Math.cos(this.heading) * this.speed * 0.6;
       P.tw = Math.sin(this.heading) * this.speed * 0.6;
-      P.life = rand(1.2, 2.2);
-      P.s0 = rand(0.9, 1.5);
-      P.s1 = rand(2.0, 3.0);
+      P.life = rand(1.0, 1.8);
+      P.s0 = rand(0.7, 1.1);
+      P.s1 = rand(1.4, 2.1);
       P.rot = Math.random() * 6.28;
       P.spin = rand(-1, 1);
       P.frame = PF.SMOKE0 + ((Math.random() * 4) | 0);
@@ -173,7 +173,7 @@ export class Tornado {
         const C = fx.P.reset();
         C.mode = 4;
         C.x = this.x - Math.cos(this.heading) * bend;
-        C.y = y + 11 + rand(-0.6, 1) - lift * 0.4;
+        C.y = y + 18 + rand(-0.6, 1) - lift * 0.4;
         C.z = this.z - Math.sin(this.heading) * bend;
         C.vx = rand(1, 2.6);
         C.vy = Math.random() * 6.28;
