@@ -533,6 +533,14 @@ export class Inspector {
     const g = this.game;
     let html = '';
     const traits = Array.isArray(u.traits) ? u.traits : [];
+    // divine blessings set from the editor (units.setUnitFlag)
+    const fl = u.flags || {};
+    const bless = [
+      fl.immortal && this.chip('Immortal', 'Blessed by the gods: no death from age, hunger or wounds', 'is-blessing', 'sparkle'),
+      fl.pacifist && this.chip('Pacifist', 'Sworn to peace: never starts a fight', 'is-blessing', 'peace'),
+      fl.frozenAge && this.chip('Ageless', 'Time no longer touches them', 'is-blessing', 'night'),
+    ].filter(Boolean);
+    if (bless.length) html += `<section class="ws-dsec"><h5>Blessings</h5><div class="ws-chips">${bless.join('')}</div></section>`;
     if (traits.length) html += `<section class="ws-dsec"><h5>Traits</h5><div class="ws-chips">${this.traitChips(traits)}</div></section>`;
     const shown = new Set((this.track?.stats || []).map((s) => String(s[0]).toLowerCase()));
     const st = (u.statuses instanceof Map ? [...u.statuses.entries()] : u.statuses && typeof u.statuses === 'object' ? Object.entries(u.statuses) : []).filter(
@@ -586,6 +594,7 @@ export class Inspector {
     const k = (typeof r.kingdom === 'object' && r.kingdom) || (v ? kingdomOf(g, v.kingdom) : null);
     if (!k && !v) return '';
     let html = '';
+    if (isKingdom && k.motto && !(r.stats || []).some((s) => /motto/i.test(String(s[0])))) html += `<p class="ws-motto">“${esc(String(k.motto))}”</p>`;
     if (k && !isKingdom) {
       const era = eraOf(g, k);
       html += `<section class="ws-dsec"><h5>Realm</h5><div class="ws-realm__line"><span class="ws-era is-era${era}">${uiIcon(['house', 'build', 'job-soldier', 'chronicle'][era])}<span>Realm · ${esc(eraNames()[era] || '')} era</span></span><span class="ws-realm__of">${esc(String(k.name || ''))}</span></div></section>`;
@@ -635,7 +644,7 @@ export class Inspector {
     const eq = u?.equipment ? Object.values(u.equipment).map((i) => i?.name || i?.id || 0) : null;
     const k = typeof r?.kingdom === 'object' ? r.kingdom : null;
     const keys = (r?.stats || []).map((s) => s?.[0]);
-    return r ? JSON.stringify([r.title, r.subtitle, keys, u?.alive, this.game.cameraRig.follow === u, this.results.map((o) => o.title), u?.job, u?.traits, st, eq, u?.level, u?.bio?.length, u?.data?.favorite, k?.era, k?.researching, k?.techs?.size, !!(u || r.building) && !!this.portraits.get(u || r.building), this.isCompact()]) : '';
+    return r ? JSON.stringify([r.title, r.subtitle, keys, u?.alive, this.game.cameraRig.follow === u, this.results.map((o) => o.title), u?.job, u?.traits, st, eq, u?.level, u?.bio?.length, u?.data?.favorite, u?.flags, u?.name, k ? [k.motto, k.color, k.name, k.banner?.symbol, k.banner?.field] : null, k?.era, k?.researching, k?.techs?.size, !!(u || r.building) && !!this.portraits.get(u || r.building), this.isCompact()]) : '';
   }
   valueSignature() {
     const r = this.track;

@@ -544,10 +544,20 @@ export class Editor {
           const spec = { slot: st.slot, material: st.material, quality: st.quality, ...(st.kind ? { kind: st.kind } : {}) };
           if (!safe(() => U.giveItem(u, spec), false)) return;
           const it = u.equipment?.[st.slot];
-          this.applied(`Gave ${it?.name || prettyId(st.slot)}`, () => {
-            if (prev && fn(U, 'equip')) U.equip(u, prev);
-            else if (prev) U.giveItem(u, { slot: prev.slot, kind: prev.kind, material: prev.material, quality: prev.quality });
-            else if (u.equipment) u.equipment[st.slot] = null;
+          const slot = st.slot;
+          this.applied(`Gave ${it?.name || prettyId(slot)}`, () => {
+            if (prev) {
+              // the replaced item went to the armoury: take it back out
+              for (const k of g.civ?.kingdoms || []) {
+                const i = k?.armory?.indexOf?.(prev) ?? -1;
+                if (i >= 0) k.armory.splice(i, 1);
+              }
+              if (fn(U, 'equip')) U.equip(u, prev);
+            } else if (u.equipment && u.equipment[slot] === it) {
+              u.equipment[slot] = null;
+              u._eqVer = (u._eqVer || 0) + 1;
+              if (it?.legendary) U._legendCache = null;
+            }
           });
         },
       },
