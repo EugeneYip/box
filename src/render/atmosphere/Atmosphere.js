@@ -6,6 +6,7 @@ import { Precipitation } from './Precipitation.js';
 import { Lightning } from './Lightning.js';
 import { Weather, WEATHER_TYPES } from './Weather.js';
 import { ShadowCache } from './ShadowCache.js';
+import { AgeLook } from './AgeLooks.js';
 import { noise1, smoothstep, mulberry32, approach } from './util.js';
 
 // Atmosphere: sun / moon / sky lighting, camera-fitted stable shadows, the
@@ -79,6 +80,12 @@ export class Atmosphere {
     this.flashLight = new THREE.DirectionalLight(0xcfe0ff, 0);
     scene.add(this.flashLight);
     scene.add(this.flashLight.target);
+    // lightning impact pool light (always present, intensity 0 at rest, so
+    // the light count never changes and no material recompiles)
+    this.strikeLight = new THREE.PointLight(0xd2d6ff, 0, 40, 2);
+    this.strikeLight.castShadow = false;
+    scene.add(this.strikeLight);
+    this._strikeGlow = 0;
 
     // ---- sky, clouds, precipitation, lightning --------------------------
     this.sky = new SkyDome(this);
@@ -133,6 +140,8 @@ export class Atmosphere {
     };
 
     this.ageState = { storms: 1, lightning: 1, temp: 0, night: 0, tintK: 0, tint: new THREE.Color(1, 1, 1) };
+    this.ageLook = new AgeLook();
+    this.ageState.look = this.ageLook.cur;
     this._ageTint = new THREE.Color(1, 1, 1);
     this._ageSnap = true; // the first frame starts in the current age
     this.weather.atm = this;
@@ -203,6 +212,8 @@ export class Atmosphere {
   }
 
   _boltFlash(bolt, sound) {
+    this.strikeLight.position.set(bolt.x, bolt.y + 2.5, bolt.z);
+    this._strikeBolt = bolt;
     const rig = this.game.cameraRig;
     this.flashLight.position.set(bolt.x + 10, bolt.y + 80, bolt.z + 6);
     this.flashLight.target.position.set(bolt.x, bolt.y, bolt.z);
@@ -234,6 +245,8 @@ export class Atmosphere {
     this._ageSnap = false;
     for (const key of ['storms', 'lightning', 'temp', 'night', 'tintK']) S[key] += (tgt[key] - S[key]) * k;
     if (tgt.tintK) S.tint.lerp(this._ageTint, S.tintK > 0.02 ? k : 1);
+    this.ageLook.setTarget(this.game.age, this.game.laws?.ageIntensity ?? 1);
+    this.ageLook.ease(k);
   }
 
   // Tooling helper: jump straight to the current age (no easing).
@@ -327,6 +340,13 @@ export class Atmosphere {
     this.hemi.groundColor.copy(M.hemiGround);
     this.hemi.intensity = M.hemiIntensity * (1 + flash * 0.6);
     this.flashLight.intensity = flash * 3.2;
+    {
+      const b = this._strikeBolt;
+      const br = b && b.age < b.life ? this.lightning.brightness(b) : 0;
+      const D = rig.cur.dist;
+      this.strikeLight.distance = 22 + D * 0.18;
+      this.strikeLight.intensity = br * (260 + D * 9);
+    }
     this.fitShadow(camera, M.keyDir);
     game.scene.environmentIntensity = (0.62 + 0.12 * mix.overcast + 0.1 * W.wetness) * (1 - 0.35 * mix.storm);
 
@@ -560,11 +580,12 @@ export class Atmosphere {
     P.lightDir.copy(M.keyDir);
     P.lightColor.copy(M.keyColor).multiplyScalar(M.keyIntensity);
     P.flash.set(0.5, 0.58, 0.8).multiplyScalar(flash * 0.04);
-    P.vignette.set(0.3 + 0.1 * M.night + 0.1 * W.storm, 0.42, 1.02, 0);
-    P.vignetteColor.setRGB(0.28, 0.22, 0.34).lerp(this._c1 || (this._c1 = new THREE.Color(0.1, 0.14, 0.3)), M.night * 0.6);
+    P.vignette.set(0.3 + 0.1 * M.night + 0.1 * W.storm + (M.ageVig || 0), 0.42, 1.02, 0);
+    P.vignetteColor.setRGB(0.27, 0.24, 0.3).lerp(this._c1 || (this._c1 = new THREE.Color(0.1, 0.14, 0.3)), M.night * 0.6);
+    if (M.ageVig > 0.001 && M.ageVigC) P.vignetteColor.lerp(M.ageVigC, Math.min(1, M.ageVig * 4));
 
     // haze starts around the focus distance; thicker in rain / fog
-    const hazeDensity = 0.0026 + 0.001 * W.overcast + 0.012 * W.fog + 0.0008 * W.rain + 0.0012 * W.snow + 0.0022 * Math.max(0, this.ageState.temp) * 2;
+    const hazeDensity = Math.max(0.0008, 0.0026 + 0.001 * W.overcast + 0.012 * W.fog + 0.0008 * W.rain + 0.0012 * W.snow + (M.ageHazeD || 0));
     P.haze.set(dist * 0.9 + 8, hazeDensity / Math.max(1, game.view?.worldScale || 1), 0.022, 1);
     // ground mist: dawn wisps, thick in fog weather, a little in snow / rain
     const mistAmt = Math.max(W.fog, this.weather.morningMist);

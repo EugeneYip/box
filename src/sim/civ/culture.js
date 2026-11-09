@@ -75,8 +75,13 @@ export const culture = {
     const parent = this.cultureDef(v.culture);
     const base = parent?.base || baseCulture(v.culture);
     const rng = this.rng;
-    const root = v.name.replace(/[^A-Za-z]/g, '').slice(0, Math.max(3, Math.min(6, v.name.length - 2)));
-    const name = root.charAt(0).toUpperCase() + root.slice(1).toLowerCase() + SUFFIX[base][(rng.next() * SUFFIX[base].length) | 0];
+    // the colony's own first syllable (whole), plus a people-ending
+    const pre = (CULTURES[base].syl.place[0] || []).filter((p) => v.name.startsWith(p)).sort((a, b) => b.length - a.length)[0] || CULTURES[base].syl.place[0][(rng.next() * CULTURES[base].syl.place[0].length) | 0];
+    let suf = SUFFIX[base][(rng.next() * SUFFIX[base].length) | 0];
+    const last = pre[pre.length - 1].toLowerCase();
+    if ('aeiou'.includes(last) && 'aeiou'.includes(suf[0])) suf = suf.slice(1);
+    const name = pre + suf;
+    if (this.cultures.some((c) => c.name === name)) return null;
     const traits = (parent?.traits || BASE_TRAITS[base]).slice();
     const pool = CULTURE_TRAITS.filter((t) => !traits.includes(t));
     // drift: swap one trait, sometimes gain a third
@@ -117,6 +122,7 @@ export const culture = {
       const far = origin ? Math.hypot(origin.x - v.cx, origin.z - v.cz) : 0;
       if (far > 40 && v.pop >= 10 && now - v.founded > YEAR * 10 && this.rng.chance(0.02)) {
         const c = this._newCulture(v);
+        if (!c) continue;
         c.origin = { x: v.cx, z: v.cz };
         v.culture = c.id;
         v.cultureMix = { [c.id]: 0.7, ...Object.fromEntries(Object.entries(v.cultureMix).map(([a, b]) => [a, b * 0.3])) };

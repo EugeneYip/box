@@ -39,6 +39,36 @@ const SWEEP = 4; // seconds per full sweep of a 256x256 map
 // Larger maps keep the same tiles-per-tick budget (same ms per tick) and
 // simply sweep more slowly; rates are per game second so behaviour matches.
 const TICK_BUDGET_MS = 0.8; // never spend more than this per simulation tick
+// biome chain for climate shifts (-1 = end of chain)
+const COLDER = new Int8Array(16).fill(-1);
+const WARMER = new Int8Array(16).fill(-1);
+COLDER[TILE.TUNDRA] = TILE.SNOW;
+COLDER[TILE.GRASS] = TILE.TUNDRA;
+COLDER[TILE.FOREST] = TILE.TUNDRA;
+COLDER[TILE.SWAMP] = TILE.TUNDRA;
+COLDER[TILE.SAVANNA] = TILE.GRASS;
+COLDER[TILE.DESERT] = TILE.SAVANNA;
+COLDER[TILE.JUNGLE] = TILE.FOREST;
+COLDER[TILE.ROCK] = TILE.SNOW;
+WARMER[TILE.SNOW] = TILE.TUNDRA;
+WARMER[TILE.TUNDRA] = TILE.GRASS;
+WARMER[TILE.GRASS] = TILE.SAVANNA;
+WARMER[TILE.SAVANNA] = TILE.DESERT;
+const SHIFTABLE = new Uint8Array(16);
+for (const t of [TILE.GRASS, TILE.FOREST, TILE.SAVANNA, TILE.DESERT, TILE.TUNDRA, TILE.SNOW, TILE.JUNGLE, TILE.SWAMP]) SHIFTABLE[t] = 1;
+// surfaces that are not a biome of their own: they heal back to the native one
+const TRANSIENT = new Uint8Array(16);
+for (const t of [TILE.ASH, TILE.LAVA, TILE.FARMLAND, TILE.ROAD, TILE.SOIL]) TRANSIENT[t] = 1;
+// chance per sweep visit that cleared land of a biome is reseeded by a tree
+const REFOREST = new Float32Array(16);
+REFOREST[TILE.FOREST] = 0.02;
+REFOREST[TILE.JUNGLE] = 0.02;
+REFOREST[TILE.SWAMP] = 0.01;
+REFOREST[TILE.TUNDRA] = 0.006;
+REFOREST[TILE.GRASS] = 0.0015;
+REFOREST[TILE.SOIL] = 0.002;
+REFOREST[TILE.SAVANNA] = 0.002;
+REFOREST[TILE.SNOW] = 0.002;
 
 export class FloraSim {
   constructor(game) {
@@ -47,6 +77,15 @@ export class FloraSim {
     this.stress = new Float32Array(n); // 0 healthy .. 1 dead (read by the renderer)
     this.age = new Float32Array(n); // seconds since the plant matured / tile burnt
     this.boost = new Float32Array(n); // growth multiplier bonus from the bloom power (decays)
+    // game time of each tile's last visit: dt is exact even when the per-tick
+    // time budget truncates a sweep (coarse 8x/16x steps on a busy CPU)
+    this.lastVisit = new Float32Array(n);
+    this._gameT = 0;
+    this.budgetMs = TICK_BUDGET_MS;
+    this.captureNative();
+    // biome edits by anyone else (painting, terrain, civ) become the new native
+    // biome, except transient surfaces (fire, lava, farming) which heal back
+    game.events?.on?.('world:type', (r) => this.adoptTypes(r));
     this.rng = mulberry32((game.params?.seed ?? 1) * 31 + 7);
     this._cursor = 0;
     this._acc = 0;
@@ -110,6 +149,9 @@ export class FloraSim {
     this.stress.fill(0);
     this.age.fill(0);
     this.boost.fill(0);
+    this.lastVisit.fill(0);
+    this._gameT = 0;
+    this.captureNative();
     this.rng = mulberry32((this.game.params?.seed ?? 1) * 31 + 7);
     this._countAcc = { trees: 0, plants: 0 };
     this.settle();
@@ -123,7 +165,8 @@ export class FloraSim {
     this._acc += (n * step) / sweep;
     let count = Math.floor(this._acc);
     this._acc -= count;
-    const dt = sweep;
+    this._gameT += step;
+    const dt = sweep; // nominal; visits use their exact elapsed time
     // World Laws, read each tick so a toggle applies on the next one
     const laws = this.game.laws || {};
     const mods = this.game.age?.mods || {};
@@ -146,7 +189,7 @@ export class FloraSim {
     const t0 = performance.now();
     let k = 0;
     while (count-- > 0) {
-      if ((++k & 255) === 0 && performance.now() - t0 > TICK_BUDGET_MS) {
+      if ((++k & 255) === 0 && performance.now() - t0 > this.budgetMs) {
         this._acc = Math.min(this._acc + count + 1, (n * step * 4) / sweep);
         break;
       }
@@ -156,7 +199,10 @@ export class FloraSim {
         this.counts = this._countAcc;
         this._countAcc = { trees: 0, plants: 0 };
       }
-      this.visit(i, dt);
+      const last = this.lastVisit[i];
+      this.lastVisit[i] = this._gameT;
+      const dti = last > 0 ? Math.min(240, Math.max(0, this._gameT - last)) : dt;
+      this.visit(i, dti);
     }
   }
 
@@ -176,8 +222,9 @@ export class FloraSim {
         this.age[i] += dt * (1 + this.boost[i] * 6);
         const need = 55 + this.hash(i) * 70;
         if (this.age[i] > need && world.height[i] >= SEA_LEVEL) {
-          const nb = naturalBiome(world, i, this._tOff);
-          world.setType(tx, ty, nb === TILE.SAND && world.height[i] > SEA_LEVEL + 0.7 ? TILE.GRASS : nb);
+          const nat = this.native[i];
+          const nb = TRANSIENT[nat] ? naturalBiome(world, i, this._tOff) : nat;
+          this.setTypeSelf(tx, ty, nb === TILE.SAND && world.height[i] > SEA_LEVEL + 0.7 ? TILE.GRASS : nb);
           this.age[i] = 0;
         }
       }
@@ -193,6 +240,23 @@ export class FloraSim {
         if (p && this._grow !== false && this.rng() < p * spring * this._fert * (1 + this.boost[i] * 10)) {
           const u = pickUndergrowth(t, this.rng());
           if (u && this.lawAllows(u) && this.canSeed(u, tx, ty)) world.setFlora(tx, ty, u, 0.04);
+        }
+        // natural reforestation: cleared, unowned land is reseeded from afar
+        // in proportion to how far below its natural tree cover it has fallen
+        if (this._treesSpread && this._grow !== false && t !== TILE.FARMLAND) {
+          const base = REFOREST[t] || 0;
+          if (base && world.owner[i] < 0 && this.rng() < base * this._fert * this._treeSpeed * (dt / SWEEP)) {
+            const cap = Math.max(1, Math.round((TREE_CAP[t] || 1) * (this._density ?? 1)));
+            const local = this.localCount(tx, ty, 1);
+            if (local < cap * 0.5 && !this.nearBuilding(tx, ty)) {
+              const tree = pickTree(t, world.temperature[i] + this._tOff, this.rng());
+              if (tree && this.canSeed(tree, tx, ty)) world.setFlora(tx, ty, tree, 0.03);
+            }
+          }
+        }
+        // bare unowned soil greens over again
+        if (t === TILE.SOIL && this._regrow !== false && world.owner[i] < 0 && this.rng() < 0.02 * (dt / SWEEP) && !this.nearBuilding(tx, ty)) {
+          this.setTypeSelf(tx, ty, TRANSIENT[this.native[i]] || this.native[i] === TILE.SOIL ? TILE.GRASS : this.native[i]);
         }
         // fungi creep through damp woodland and swamp (more in autumn and fungal ages)
         if (this._fungiSpread && this._grow !== false && (t === TILE.FOREST || t === TILE.SWAMP || t === TILE.JUNGLE) && world.moisture[i] > 0.5) {
@@ -296,6 +360,17 @@ export class FloraSim {
     }
   }
 
+  nearBuilding(tx, ty) {
+    const world = this.game.world;
+    for (let dy = -1; dy <= 1; dy++)
+      for (let dx = -1; dx <= 1; dx++) {
+        const x = tx + dx,
+          y = ty + dy;
+        if (x >= 0 && y >= 0 && x < world.w && y < world.h && world.building[y * world.w + x] >= 0) return true;
+      }
+    return false;
+  }
+
   // Which spreading laws allow a species to appear by itself.
   lawAllows(f) {
     if (isTreeId(f)) return this._treesSpread !== false;
@@ -304,34 +379,90 @@ export class FloraSim {
     return true;
   }
 
-  // Living biomes: a budgeted handful of tiles per tick drift toward the
-  // biome their climate (plus the age's temperature) calls for, one step at a
-  // time and only along an existing front; dense woodland creeps into moist
-  // grassland. Slow by design: fronts move a tile every few minutes.
+  // ---- living biomes -------------------------------------------------------
+  // Snapshot of the world's own biome map; climate shifts are measured from it.
+  captureNative() {
+    const world = this.game.world;
+    this.native = world.type.slice();
+    this.expect = world.type.slice();
+    // mean temperature of each native biome -> boundaries between neighbours
+    const sum = new Float64Array(16),
+      cnt = new Float64Array(16);
+    for (let i = 0; i < world.size; i++) {
+      if (world.height[i] < SEA_LEVEL) continue;
+      sum[world.type[i]] += world.temperature[i];
+      cnt[world.type[i]]++;
+    }
+    this.meanT = new Float32Array(16);
+    for (let t = 0; t < 16; t++) this.meanT[t] = cnt[t] ? sum[t] / cnt[t] : NaN;
+    const fill = (t, v) => Number.isNaN(this.meanT[t]) && (this.meanT[t] = v);
+    fill(TILE.SNOW, 0.1), fill(TILE.TUNDRA, 0.25), fill(TILE.GRASS, 0.5), fill(TILE.FOREST, 0.5);
+    fill(TILE.SAVANNA, 0.7), fill(TILE.DESERT, 0.85), fill(TILE.JUNGLE, 0.82), fill(TILE.SWAMP, 0.55);
+  }
+  adoptTypes(r) {
+    const world = this.game.world;
+    if (!this.native) return;
+    for (let ty = r.y0; ty <= r.y1; ty++)
+      for (let tx = r.x0; tx <= r.x1; tx++) {
+        const i = ty * world.w + tx;
+        const t = world.type[i];
+        if (t === this.expect[i]) continue;
+        this.expect[i] = t;
+        if (!TRANSIENT[t]) this.native[i] = t;
+      }
+  }
+  setTypeSelf(tx, ty, t) {
+    const world = this.game.world;
+    world.setType(tx, ty, t);
+    this.expect[ty * world.w + tx] = t;
+  }
+  boundary(a, b) {
+    return (this.meanT[a] + this.meanT[b]) * 0.5;
+  }
+
+  // A budgeted handful of tiles per tick: in a cold or hot age, biomes step
+  // one link along the climate chain (snow - tundra - meadow/forest -
+  // savanna - desert) where the age's temperature crosses the boundary
+  // learned from the native map, only along an existing front. Otherwise land
+  // drifts back to its native biome, and in fertile ages woodland creeps into
+  // moist meadow. Slow by design: fronts move a tile every few minutes.
   shiftBiomes(dt, step) {
     const world = this.game.world;
     const W = world.w,
       H = world.h;
-    const tries = Math.max(1, Math.round(600 * step)); // ~40 tiles per 1/15 s tick
-    const NATURAL = this._natural || (this._natural = new Set([TILE.GRASS, TILE.FOREST, TILE.SAVANNA, TILE.DESERT, TILE.TUNDRA, TILE.SNOW, TILE.JUNGLE, TILE.SWAMP]));
+    const tries = Math.max(1, Math.round(600 * step));
+    const tOff = this._tOff || 0;
     for (let k = 0; k < tries; k++) {
       const tx = 1 + Math.floor(this.rng() * (W - 2)),
         ty = 1 + Math.floor(this.rng() * (H - 2));
       const i = ty * W + tx;
       const t = world.type[i];
       if (world.height[i] < SEA_LEVEL + 0.2 || world.building[i] >= 0 || world.fire[i] > 0) continue;
-      const rockSnow = t === TILE.ROCK;
-      if (!NATURAL.has(t) && !rockSnow) continue;
-      let target = naturalBiome(world, i, this._tOff);
-      if (rockSnow && target !== TILE.SNOW) continue;
-      if (t === TILE.SNOW && target === TILE.ROCK) target = TILE.ROCK;
-      else if (target === TILE.ROCK || target === TILE.SAND) continue;
-      // woodland advance into moist meadow
-      if (t === TILE.GRASS && world.moisture[i] > 0.48 && this.countAround(tx, ty, TILE.FOREST) >= 3 && this.treesAround(tx, ty) >= 3) target = TILE.FOREST;
+      if (!SHIFTABLE[t] && t !== TILE.ROCK) continue;
+      const nat = this.native[i];
+      const effT = world.temperature[i] + tOff;
+      let target = t;
+      if (tOff < -0.05) {
+        const c = COLDER[t];
+        if (c >= 0 && effT < this.boundary(c, t) - 0.02) target = c;
+      } else if (tOff > 0.05) {
+        const wm = t === TILE.GRASS || t === TILE.SAVANNA ? (world.moisture[i] < 0.4 ? WARMER[t] : -1) : WARMER[t];
+        if (wm >= 0 && effT > this.boundary(t, wm) + 0.02) target = wm;
+      }
+      if (target === t && t !== nat && SHIFTABLE[nat]) {
+        // the age has passed (or the land was cleared): drift back to native
+        const c = COLDER[nat],
+          wm = WARMER[nat];
+        const tooCold = c >= 0 && effT < this.boundary(c, nat) - 0.02;
+        const tooHot = wm >= 0 && effT > this.boundary(nat, wm) + 0.02 && tOff > 0.05;
+        if (!(tOff < -0.05 && tooCold) && !tooHot) target = nat;
+      }
+      if (target === t && t === TILE.GRASS && (this._fert ?? 1) > 1.2 && world.moisture[i] > 0.55 && this.countAround(tx, ty, TILE.FOREST) >= 4 && this.treesAround(tx, ty) >= 3) target = TILE.FOREST;
       if (target === t) continue;
-      if (target !== TILE.FOREST && this.countAround(tx, ty, target) < 1) continue;
+      if (t === TILE.ROCK && target !== TILE.SNOW) continue;
+      if (target !== nat && this.countAround(tx, ty, target) < 1) continue;
       if (this.rng() > 0.35) continue;
-      world.setType(tx, ty, target);
+      this.setTypeSelf(tx, ty, target);
     }
   }
   countAround(tx, ty, type) {

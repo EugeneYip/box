@@ -141,7 +141,10 @@ registerPower({
       if (f && !isMineral(f) && f !== FLORA.STUMP && f !== FLORA.DEAD_TREE && w.floraGrowth[i] < 1) {
         w.floraGrowth[i] = Math.min(1, w.floraGrowth[i] + dt * 1.6 * k);
       }
-      if (w.type[i] === TILE.ASH && w.fire[i] <= 0 && Math.random() < 0.3 * k) w.setType(tx, ty, naturalBiome(w, i));
+      if (w.type[i] === TILE.ASH && w.fire[i] <= 0 && Math.random() < 0.3 * k) {
+        const nat = g.flora?.native?.[i];
+        w.setType(tx, ty, nat != null && nat !== TILE.ASH && nat !== TILE.LAVA && nat !== TILE.SOIL && nat !== TILE.FARMLAND && nat !== TILE.ROAD ? nat : naturalBiome(w, i));
+      }
       if (!f && plantable(w, tx, ty, i) && Math.random() < 0.01 * k) {
         const u = pickUndergrowth(w.type[i], Math.random());
         if (u && suitAt(w, u, tx, ty, i) >= 0.5) w.setFlora(tx, ty, u, 0.1);

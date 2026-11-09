@@ -26,6 +26,21 @@ uniform vec3 uWorld;       // world w, h, has-height-texture
 uniform float uWet;
 uniform vec3 uLightDir;
 uniform vec3 uLightCol;
+uniform vec2 uCloudOffset;
+uniform float uCover;
+uniform vec3 uCloudLit;
+uniform vec3 uCloudShade;
+float hHash(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * .1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+float hNoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hHash(i), hHash(i + vec2(1, 0)), u.x), mix(hHash(i + vec2(0, 1)), hHash(i + vec2(1, 1)), u.x), u.y);
+}
+float hFbm(vec2 p) {
+  float s = 0.0, a = 0.5;
+  for (int i = 0; i < 4; i++) { s += a * hNoise(p); p = mat2(0.8, -0.6, 0.6, 0.8) * p * 2.03 + 11.7; a *= 0.5; }
+  return s / 0.9375;
+}
 ${SKY_UNIFORMS_GLSL}
 ${SKY_FUNCS_GLSL}
 
@@ -95,6 +110,25 @@ void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor)
   }
   hz *= mix(1.0, 0.35, water * down);
   vec3 hc = mix(hazeColor(dir), mix(uHorizon, uZenith, 0.55), smoothstep(0.08, 0.5, -dir.y));
+  // Near-horizontal rays (low camera pitch): instead of a flat haze wall the
+  // far distance dissolves into a painted sky band: a real gradient (lower
+  // rays read higher, bluer sky), the sun's glow, and distant cloud banks.
+  float horiz = 1.0 - smoothstep(0.02, 0.16, -dir.y);
+  if (horiz > 0.001 && hz > 0.02) {
+    float ly = 0.012 + max(0.0, -dir.y) * 1.6;
+    vec3 sd = normalize(vec3(dir.x, ly, dir.z));
+    vec3 band = skyBase(sd);
+    vec2 cp = sd.xz / (ly + 0.06) * 0.9 + uCloudOffset;
+    float n = hFbm(cp);
+    float cov = clamp(0.25 + uCover * 0.8, 0.0, 1.0);
+    float cb = smoothstep(1.02 - cov, 1.25 - cov * 0.6, n) * (1.0 - smoothstep(0.05, 0.3, ly));
+    float shade = smoothstep(0.3, 0.9, hFbm(cp * 1.7 + vec2(0.4, 0.2)));
+    float sunSide = pow(max(dot(normalize(sd.xz + 1e-4), normalize(uSunDir.xz + 1e-4)) * 0.5 + 0.5, 0.0), 3.0);
+    vec3 cc = mix(uCloudLit * (1.0 + 0.8 * sunSide) + uCloudShade * 0.7, uCloudShade * 0.9, shade * 0.65);
+    band = mix(band, mix(cc, uHorizon, 0.25), cb * 0.85);
+    hc = mix(hc, band, horiz);
+    hz = min(hz, 0.95);
+  }
   col = mix(col, hc, hz);
 
   outputColor = vec4(col, inputColor.a);
@@ -119,6 +153,10 @@ export class AtmosphereEffect extends Effect {
         ['uWet', u(0)],
         ['uLightDir', u(new THREE.Vector3(0, 1, 0))],
         ['uLightCol', u(new THREE.Color())],
+        ['uCloudOffset', u(new THREE.Vector2())],
+        ['uCover', u(0.4)],
+        ['uCloudLit', u(new THREE.Color())],
+        ['uCloudShade', u(new THREE.Color())],
         ['uSunDir', u(new THREE.Vector3(0, 1, 0))],
         ['uMoonDir', u(new THREE.Vector3(0, 1, 0))],
         ['uZenith', u(new THREE.Color())],
@@ -137,7 +175,8 @@ export class AtmosphereEffect extends Effect {
     U.get('uInvProj').value.copy(camera.projectionMatrixInverse);
     U.get('uCamWorld').value.copy(camera.matrixWorld);
     U.get('uCamPos').value.setFromMatrixPosition(camera.matrixWorld);
-    for (const k of ['uSunDir', 'uMoonDir', 'uZenith', 'uHorizon', 'uGlow', 'uBelt', 'uHalo', 'uGroundHaze']) U.get(k).value.copy(sky[k].value);
+    for (const k of ['uSunDir', 'uMoonDir', 'uZenith', 'uHorizon', 'uGlow', 'uBelt', 'uHalo', 'uGroundHaze', 'uCloudOffset', 'uCloudLit', 'uCloudShade']) U.get(k).value.copy(sky[k].value);
+    U.get('uCover').value = sky.uCover.value;
     U.get('uGlowWidth').value = sky.uGlowWidth.value;
     if (params) {
       U.get('uHaze').value.copy(params.haze);

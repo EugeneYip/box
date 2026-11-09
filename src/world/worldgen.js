@@ -348,6 +348,10 @@ export function generateWorld(world, seed = 1, options = {}) {
   }
   // tidy isolated single-tile specks (keeps biome blobs clean)
   despeckleTypes(type, hgt, W, H);
+  // tiny snow islands (a tile or two of snow inside a forest) read as glitches
+  dissolveSmallPatches(type, hgt, W, H, TILE.SNOW, Math.round(12 * Math.max(1, sc)), (i) =>
+    world.temperature[i] < 0.3 ? TILE.TUNDRA : biomeFor(world.temperature[i], world.moisture[i], hgt[i], 8),
+  );
 
   _t('biomes');
   // ----------------------------------------------------------------- flora
@@ -801,26 +805,108 @@ function carveRivers(world, land, moist, P, sc, rand) {
     const d = down[i];
     keep[i] = d >= 0 && river[d] ? keep[d] : len[i] >= minLen ? 1 : 0;
   }
-  // ---- carve channels and valleys (downstream tiles first is irrelevant: min)
+  // ---- smooth, meandering centrelines. The drainage tree runs in D8 steps
+  // (45/90 degree jogs); relax each river point toward its main up- and
+  // downstream neighbours, then push it sideways by a meander that grows with
+  // the river, then relax once more. Channels are carved along the segments
+  // between successive points, so they stay connected all the way to the sea.
+  const riv = [];
+  for (let k = 0; k < oc; k++) if (keep[order[k]]) riv.push(order[k]); // mouth-first order
+  const px = new Float32Array(N),
+    pz = new Float32Array(N);
+  const mainUp = new Int32Array(N).fill(-1);
+  const sAlong = new Float32Array(N);
+  const phase = new Float32Array(N);
+  for (const i of riv) {
+    px[i] = (i % W) + 0.5;
+    pz[i] = ((i / W) | 0) + 0.5;
+    const d = down[i];
+    if (d >= 0 && keep[d] && (mainUp[d] < 0 || acc[i] > acc[mainUp[d]])) mainUp[d] = i;
+  }
+  for (const i of riv) {
+    const d = down[i];
+    if (d >= 0 && keep[d]) {
+      const step = Math.abs(i - d) === 1 || Math.abs(i - d) === W ? 1 : 1.414;
+      sAlong[i] = sAlong[d] + step;
+      phase[i] = phase[d];
+    } else {
+      sAlong[i] = 0;
+      phase[i] = rand() * 100;
+    }
+  }
+  const nx = new Float32Array(N),
+    nz = new Float32Array(N);
+  const relax = (passes) => {
+    for (let pass = 0; pass < passes; pass++) {
+      for (const i of riv) {
+        const u = mainUp[i] >= 0 ? mainUp[i] : i;
+        const d = down[i];
+        const dx = d >= 0 && keep[d] ? px[d] : d >= 0 ? (d % W) + 0.5 : px[i];
+        const dz = d >= 0 && keep[d] ? pz[d] : d >= 0 ? ((d / W) | 0) + 0.5 : pz[i];
+        nx[i] = px[u] * 0.25 + px[i] * 0.5 + dx * 0.25;
+        nz[i] = pz[u] * 0.25 + pz[i] * 0.5 + dz * 0.25;
+      }
+      for (const i of riv) {
+        px[i] = nx[i];
+        pz[i] = nz[i];
+      }
+    }
+  };
+  relax(3);
+  const sizeOf = (i) => Math.min(1, Math.log2(acc[i] / T + 1) / 3.2);
+  for (const i of riv) {
+    const u = mainUp[i] >= 0 ? mainUp[i] : i;
+    const d = down[i] >= 0 && keep[down[i]] ? down[i] : i;
+    let tx = px[d] - px[u],
+      tz = pz[d] - pz[u];
+    const tl = Math.hypot(tx, tz) || 1;
+    tx /= tl;
+    tz /= tl;
+    const sa = sAlong[i],
+      ph = phase[i];
+    const amp = (0.45 + 1.1 * sizeOf(i)) * smoothstep(1, 6, sa);
+    const off = (Math.sin(sa * 0.27 + ph) + 0.55 * Math.sin(sa * 0.113 + ph * 1.7)) * amp;
+    nx[i] = px[i] - tz * off;
+    nz[i] = pz[i] + tx * off;
+  }
+  for (const i of riv) {
+    px[i] = nx[i];
+    pz[i] = nz[i];
+  }
+  relax(1);
+
+  // ---- carve channels and valleys along the segments (min of all profiles)
   const target = new Float32Array(N).fill(1e9);
-  for (let k = 0; k < oc; k++) {
-    const i = order[k];
-    if (!keep[i]) continue;
-    const size = Math.min(1, Math.log2(acc[i] / T + 1) / 3.2);
-    const w = 0.12 + 0.62 * size;
+  for (const i of riv) {
+    const d = down[i];
+    if (d < 0) continue;
+    const ax = px[i],
+      az = pz[i];
+    const bx = keep[d] ? px[d] : (d % W) + 0.5,
+      bz = keep[d] ? pz[d] : ((d / W) | 0) + 0.5;
+    const size = sizeOf(i);
+    // width follows the flow and breathes gently along the river
+    const breathe = 0.5 + 0.5 * Math.sin(sAlong[i] * 0.17 + phase[i] * 3.1) * Math.sin(sAlong[i] * 0.071 + phase[i]);
+    const w = (0.14 + 0.78 * size) * (0.75 + 0.5 * breathe);
     const bed = -(0.30 + 0.45 * size);
-    const R = Math.ceil(w + 15);
-    const x = i % W,
-      y = (i / W) | 0;
-    for (let yy = y - R; yy <= y + R; yy++)
-      for (let xx = x - R; xx <= x + R; xx++) {
-        if (xx < 1 || yy < 1 || xx >= W - 1 || yy >= H - 1) continue;
-        const ddx = xx - x,
-          ddy = yy - y;
-        const d2 = ddx * ddx + ddy * ddy;
+    const R = w + 15;
+    const vx = bx - ax,
+      vz = bz - az;
+    const L2 = vx * vx + vz * vz;
+    const x0 = Math.max(1, Math.floor(Math.min(ax, bx) - R)),
+      x1 = Math.min(W - 2, Math.ceil(Math.max(ax, bx) + R));
+    const y0 = Math.max(1, Math.floor(Math.min(az, bz) - R)),
+      y1 = Math.min(H - 2, Math.ceil(Math.max(az, bz) + R));
+    for (let yy = y0; yy <= y1; yy++)
+      for (let xx = x0; xx <= x1; xx++) {
+        const qx = xx + 0.5 - ax,
+          qz = yy + 0.5 - az;
+        const tt = L2 > 1e-6 ? Math.max(0, Math.min(1, (qx * vx + qz * vz) / L2)) : 0;
+        const ex = qx - vx * tt,
+          ez = qz - vz * tt;
+        const d2 = ex * ex + ez * ez;
         if (d2 > R * R) continue;
-        const d = Math.sqrt(d2);
-        const e = Math.max(0, d - w);
+        const e = Math.max(0, Math.sqrt(d2) - w);
         const ev = Math.max(0, e - 1.1);
         const t = bed + (0.45 - bed) * smoothstep(0, 1.1, e) + ev * 0.27 + ev * ev * 0.034;
         const j = yy * W + xx;
@@ -836,6 +922,36 @@ function carveRivers(world, land, moist, P, sc, rand) {
     }
   }
   return keep;
+}
+
+// Replace connected land patches of `t` smaller than minSize tiles (4-connected).
+function dissolveSmallPatches(type, hgt, W, H, t, minSize, replacement) {
+  const N = W * H;
+  const seen = new Uint8Array(N);
+  const stack = new Int32Array(N);
+  const comp = new Int32Array(N);
+  for (let s0 = 0; s0 < N; s0++) {
+    if (seen[s0] || type[s0] !== t || hgt[s0] < SEA_LEVEL) continue;
+    let sp = 0,
+      cn = 0;
+    stack[sp++] = s0;
+    seen[s0] = 1;
+    while (sp) {
+      const i = stack[--sp];
+      comp[cn++] = i;
+      const x = i % W,
+        y = (i / W) | 0;
+      const nb = [x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, y > 0 ? i - W : -1, y < H - 1 ? i + W : -1];
+      for (let q = 0; q < 4; q++) {
+        const j = nb[q];
+        if (j >= 0 && !seen[j] && type[j] === t && hgt[j] >= SEA_LEVEL) {
+          seen[j] = 1;
+          stack[sp++] = j;
+        }
+      }
+    }
+    if (cn < minSize) for (let k = 0; k < cn; k++) type[comp[k]] = replacement(comp[k]);
+  }
 }
 
 function despeckleTypes(type, hgt, W, H) {

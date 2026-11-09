@@ -1,0 +1,783 @@
+/* ==========================================================================
+   Worldseed UI, round 7: touch targets, landscape-phone bar, popover,
+   overview, inspector polish, law cards, title sizes, season progress.
+   Loaded last.
+   ========================================================================== */
+
+/* ---- 44 px touch targets everywhere on touch devices */
+.is-touch .ws-nav .ws-iconbtn,
+.is-touch .ws-speed__pause,
+.is-touch .ws-iconbtn--sm,
+.is-touch .ws-dock__min,
+.is-touch .ws-king__tech,
+.is-touch .ws-map__compass,
+.is-touch .ws-map__btn {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+}
+.is-touch .ws-tab {
+  height: 44px;
+  min-width: 44px;
+  justify-content: center;
+}
+.is-touch .ws-btn,
+.is-touch .ws-btn--sm {
+  min-height: 44px;
+}
+.is-touch .ws-lawrail__btn,
+.is-touch .ws-cpill,
+.is-touch .ws-pill,
+.is-touch .ws-chip,
+.is-touch .ws-chip2,
+.is-touch .ws-lawtab,
+.is-touch .ws-stat,
+.is-touch .ws-agechip {
+  min-height: 44px;
+}
+.is-touch .ws-tchip {
+  min-height: 34px;
+}
+.is-touch .ws-brand,
+.is-touch .ws-clock,
+.is-touch .ws-stats {
+  height: 54px;
+}
+/* one speed button on touch: tap to cycle */
+.is-touch .ws-seg {
+  display: none;
+}
+.is-touch .ws-speed__cycle {
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: center;
+  white-space: nowrap;
+  line-height: 44px;
+  min-width: 56px;
+  height: 44px;
+  padding: 0 10px;
+  border-radius: 12px;
+  font-weight: 700;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ws-gold-hi);
+  background: rgba(0, 0, 0, 0.3);
+  box-shadow: inset 0 0 0 1px rgba(251, 229, 173, 0.45);
+}
+.is-touch .ws-speed__cycle small {
+  font-size: 10px;
+  margin-left: 1px;
+}
+.is-touch .ws-brush .ws-iconbtn--sm {
+  width: 44px;
+  height: 44px;
+}
+.is-touch .ws-brush {
+  height: 56px;
+  border-radius: 28px;
+}
+
+/* ---- short landscape phones: emblem menu, single speed button, 3 stats */
+@media (max-height: 500px) and (min-width: 721px) {
+  .ws-brand {
+    padding: 0 4px;
+  }
+  .ws-brand > .ws-sep,
+  .ws-brand .ws-nav,
+  .ws-brand__txt {
+    display: none !important;
+  }
+  .ws-brand__id {
+    width: 46px;
+    height: 46px;
+    padding: 0;
+    justify-content: center;
+  }
+  .ws-brand__id::after {
+    content: '';
+    position: absolute;
+    right: 3px;
+    bottom: 5px;
+    width: 6px;
+    height: 6px;
+    border-right: 2px solid var(--ws-gold-hi);
+    border-bottom: 2px solid var(--ws-gold-hi);
+    transform: rotate(45deg);
+  }
+  .ws-seg {
+    display: none;
+  }
+  .ws-speed__cycle {
+    display: inline-flex;
+    align-items: baseline;
+    justify-content: center;
+    line-height: 44px;
+    min-width: 56px;
+    height: 44px;
+    padding: 0 10px;
+    border-radius: 12px;
+    font-weight: 700;
+    font-size: 14px;
+    color: var(--ws-gold-hi);
+    background: rgba(0, 0, 0, 0.3);
+    box-shadow: inset 0 0 0 1px rgba(251, 229, 173, 0.45);
+  }
+  .ws-stats .ws-stat:nth-child(n + 4) {
+    display: none;
+  }
+  .ws-clock > .ws-sep {
+    display: none;
+  }
+}
+.ws-menu {
+  position: absolute;
+  left: 8px;
+  top: 60px;
+  display: flex;
+  flex-direction: column;
+  min-width: 210px;
+  max-height: calc(100vh - 70px);
+  overflow-y: auto;
+  padding: 6px;
+  border-radius: 14px;
+  opacity: 0;
+  transform: translateY(-6px);
+  pointer-events: none !important;
+  transition:
+    opacity 0.18s,
+    transform 0.22s var(--ws-ease);
+}
+.ws-menu.is-open {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto !important;
+}
+.ws-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 0 12px 0 8px;
+  border-radius: 10px;
+  font-weight: 600;
+  font-size: 13.5px;
+  text-align: left;
+}
+.ws-menu__item:active,
+.ws-menu__item:hover {
+  background: var(--ws-well-2);
+}
+.ws-menu__ico {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  font-size: 20px;
+  --tint: #ebc977;
+  color: var(--ws-gold-hi);
+}
+
+.ws-brand__id {
+  position: relative;
+}
+
+/* ---- shared popover */
+.ws-pop {
+  position: absolute;
+  left: 0;
+  top: 0;
+  max-width: 280px;
+  padding: 8px 11px;
+  border-radius: 10px;
+  font: 500 12px/1.45 var(--ws-font);
+  color: var(--ws-ink);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  background: rgba(10, 12, 19, 0.96);
+  box-shadow:
+    0 0 0 1px rgba(235, 201, 119, 0.3),
+    0 10px 26px rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+  z-index: 60;
+}
+.ws-pop.is-shown {
+  opacity: 1;
+}
+/* inside scrolling panels the floating popover replaces the CSS tooltip */
+.ws-insp [data-tip]::after,
+.ws-tech [data-tip]::after,
+.ws-side [data-tip]::after,
+.ws-modal [data-tip]::after,
+.ws-chron__list [data-tip]::after {
+  display: none !important;
+}
+.is-touch .ws-tchip,
+.is-touch .ws-slot,
+.is-touch .ws-inv,
+.is-touch .ws-techcard {
+  cursor: pointer;
+}
+
+/* ---- inspector polish */
+.ws-gearnone {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--ws-ink-3);
+  font-style: italic;
+}
+.ws-tchip.is-tech {
+  --tint: #ebc977;
+}
+.ws-root:not(.has-minimap) .ws-insp {
+  max-height: calc(100vh - 64px - var(--ws-edge) * 3 - 72px);
+}
+@media (max-height: 500px) and (min-width: 721px) {
+  /* phone landscape: a full-height side sheet on the right */
+  .ws-insp,
+  .ws-root:not(.has-minimap) .ws-insp {
+    top: 6px;
+    bottom: 6px;
+    right: 6px;
+    width: 330px;
+    max-height: none;
+    z-index: 4;
+    padding: 10px 12px;
+  }
+  .ws-insp__badge {
+    width: 42px;
+    height: 42px;
+    font-size: 28px;
+  }
+  .ws-insp__title {
+    font-size: 15px;
+  }
+  .ws-insp__scroll {
+    flex: 1 1 auto;
+  }
+}
+
+/* ---- kingdom names wrap instead of truncating */
+.ws-king__line .ws-king__name {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  line-height: 1.2;
+}
+.ws-king__line {
+  align-items: flex-start;
+}
+
+/* ---- overview: fold panels away, button above the minimap when it is on */
+.is-overview .ws-feed,
+.is-overview .ws-side,
+.is-overview .ws-insp,
+.is-overview .ws-coach {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+.is-overview .ws-side *,
+.is-overview .ws-insp * {
+  pointer-events: none !important;
+}
+.has-minimap .ws-overview {
+  right: var(--ws-edge);
+  bottom: calc(var(--ws-edge) * 2 + var(--ws-map) + 22px);
+}
+
+/* ---- clock: season on the time line, with a thin progress bar */
+.ws-clock__day {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.ws-clock__day::before {
+  display: none;
+}
+.ws-clock__sep {
+  color: var(--ws-ink-3);
+}
+.ws-clock__day .ws-season__name {
+  display: inline !important;
+  font-size: 11.5px;
+}
+.ws-seasonbar {
+  display: block;
+  height: 2px;
+  margin-top: 2px;
+  border-radius: 2px;
+  background: rgba(255, 247, 230, 0.12);
+  overflow: hidden;
+}
+.ws-seasonbar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  transition: width 0.4s linear;
+}
+
+/* ---- World Laws as a card grid */
+.ws-lawgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(232px, 1fr));
+  gap: 8px;
+}
+.ws-lawcard {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 72px;
+  padding: 10px 12px 10px 10px;
+  border-radius: 14px;
+  --st: #8fe3a0;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--st) 9%, transparent), rgba(0, 0, 0, 0.22));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--st) 28%, transparent);
+  transition:
+    box-shadow 0.2s,
+    background 0.2s;
+}
+.ws-lawcard.is-off {
+  --st: #8a8478;
+  background: rgba(0, 0, 0, 0.26);
+}
+.ws-lawcard.is-number {
+  --st: #ebc977;
+  grid-template-columns: auto minmax(0, 1fr);
+}
+.ws-lawcard.is-number .ws-row__ctl {
+  grid-column: 1 / -1;
+}
+.ws-lawcard.is-number.is-off {
+  --st: #8a8478;
+}
+.ws-lawcard.is-changed {
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--st) 45%, transparent),
+    inset 3px 0 0 #ffb36a;
+}
+.ws-lawcard__ico {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  font-size: 22px;
+  --tint: var(--st);
+  color: color-mix(in srgb, var(--st) 70%, #fff 30%);
+  background: radial-gradient(circle at 50% 30%, color-mix(in srgb, var(--st) 28%, transparent), rgba(0, 0, 0, 0.25));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--st) 45%, transparent);
+  transition:
+    color 0.2s,
+    background 0.2s;
+}
+.ws-lawcard.is-off .ws-lawcard__ico {
+  opacity: 0.6;
+}
+.ws-lawcard .ws-row__desc {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.ws-lawcard .ws-row__ctl .ws-range {
+  flex: 1;
+  width: auto;
+}
+.ws-lawcard__val {
+  color: color-mix(in srgb, var(--st) 75%, #fff 25%);
+}
+.ws-lawsec {
+  padding-bottom: 16px;
+}
+/* the rail shows that it scrolls */
+.ws-lawrail {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(235, 201, 119, 0.45) rgba(255, 247, 230, 0.05);
+  -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 26px), transparent);
+  mask-image: linear-gradient(180deg, #000 calc(100% - 26px), transparent);
+  padding-bottom: 18px;
+}
+.ws-lawrail::-webkit-scrollbar {
+  width: 5px;
+}
+.ws-lawrail::-webkit-scrollbar-thumb {
+  background: rgba(235, 201, 119, 0.45);
+  border-radius: 3px;
+}
+@media (max-width: 720px), (max-height: 500px) {
+  .ws-lawsx__main {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .ws-lawrail {
+    flex-direction: row;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0 0 6px;
+    gap: 6px;
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 30px), transparent);
+    mask-image: linear-gradient(90deg, #000 calc(100% - 30px), transparent);
+  }
+  .ws-lawrail::-webkit-scrollbar {
+    height: 4px;
+  }
+  .ws-lawrail__btn {
+    border-radius: 22px;
+    background: rgba(0, 0, 0, 0.25);
+    box-shadow: inset 0 0 0 1px var(--ws-line);
+  }
+  .ws-lawgrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-height: 500px) and (min-width: 721px) {
+  .ws-modal.is-xl {
+    width: calc(100vw - 16px);
+    max-width: none;
+  }
+  .ws-lawsx__main {
+    height: calc(100vh - 196px);
+  }
+  .ws-lawgrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .ws-lawsec__blurb {
+    display: none;
+  }
+  .ws-modal__head {
+    padding: 10px 14px 8px;
+  }
+  .ws-modal__foot {
+    padding: 8px 14px 10px;
+  }
+}
+
+/* ---- title: world size chips */
+.ws-title__label--sub {
+  margin-top: 2px;
+}
+.ws-chips--sizes .ws-chip {
+  padding: 0 12px;
+}
+
+/* phones: the brand rail sizes to its buttons; the rows above it are 52 + 48 */
+@media (max-width: 720px) {
+  .is-touch .ws-brand {
+    height: auto;
+  }
+  .is-touch .ws-clock {
+    height: 52px;
+  }
+  .is-touch .ws-stats {
+    height: 48px;
+  }
+  .ws-brand {
+    top: 112px;
+  }
+  .ws-feed,
+  .ws-mapwrap {
+    top: 122px;
+  }
+  .ws-campad {
+    top: calc(122px + 56px);
+  }
+  .ws-mapwrap:not(.is-collapsed) ~ .ws-campad {
+    top: calc(122px + 176px);
+  }
+}
+/* touch tablets: the wordmark gives way so six 44 px nav buttons fit */
+@media (max-width: 1366px) and (min-width: 721px) {
+  .is-touch .ws-brand__txt {
+    display: none;
+  }
+  .is-touch .ws-brand__id {
+    padding: 0 4px;
+  }
+}
+
+/* sliders: a 44 px touch hit area, bigger thumb, same slim track */
+.is-touch .ws-range {
+  height: 44px;
+}
+.is-touch .ws-range::-webkit-slider-thumb {
+  width: 24px;
+  height: 24px;
+  margin-top: -10px;
+}
+
+/* ---- realm line wraps instead of truncating; compact learning facts */
+.ws-realm__line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+.ws-realm__of {
+  font-size: 12px;
+  color: var(--ws-ink-2);
+  line-height: 1.3;
+}
+.ws-realm__facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-top: 8px;
+  font-size: 11.5px;
+  color: var(--ws-ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.ws-realm__facts > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  --tint: #ebc977;
+}
+.ws-realm__facts .ico {
+  font-size: 13px;
+  color: var(--ws-gold);
+}
+.ws-dsec .ws-chips {
+  justify-content: flex-start;
+}
+
+/* ---- compact inspector (phones): More details fold */
+.ws-insp__morebtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 44px;
+  margin-top: 10px;
+  border-radius: 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ws-gold-hi);
+  background: rgba(235, 201, 119, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(235, 201, 119, 0.3);
+}
+.ws-insp__morebtn .ico {
+  font-size: 15px;
+}
+.ws-insp__more[hidden] {
+  display: none;
+}
+.ws-insp__more .ws-insp__grid {
+  margin-top: 10px;
+}
+@media (max-width: 720px) {
+  /* a taller, opaque sheet; the rail and camera pad step aside under it */
+  .ws-insp {
+    height: 58vh;
+    background: linear-gradient(180deg, rgba(27, 31, 45, 0.98), rgba(12, 14, 22, 0.99));
+  }
+  .ws-insp.is-expanded {
+    height: min(82vh, 720px);
+  }
+  .has-insp .ws-brand,
+  .has-insp .ws-campad,
+  .has-insp .ws-feed {
+    opacity: 0;
+    pointer-events: none !important;
+  }
+  .has-insp .ws-brand *,
+  .has-insp .ws-campad * {
+    pointer-events: none !important;
+  }
+}
+@media (max-height: 500px) and (min-width: 721px) {
+  /* phone landscape: right sheet below the top bar, never over the stats */
+  .ws-insp,
+  .ws-root:not(.has-minimap) .ws-insp {
+    top: 58px;
+    bottom: 6px;
+    background: linear-gradient(180deg, rgba(27, 31, 45, 0.98), rgba(12, 14, 22, 0.99));
+  }
+}
+
+/* ---- overview on touch: fold the rail and camera pad, offer a Back pill */
+.is-touch.is-overview .ws-campad {
+  opacity: 0;
+  pointer-events: none !important;
+}
+.is-touch.is-overview .ws-campad * {
+  pointer-events: none !important;
+}
+.is-touch.is-overview .ws-overview {
+  display: inline-flex;
+  left: 50%;
+  right: auto;
+  bottom: auto;
+  top: 74px;
+  min-height: 44px;
+  transform: translateX(-50%);
+}
+.is-touch.is-overview .ws-overview:hover {
+  transform: translateX(-50%) translateY(-1px);
+}
+@media (max-width: 1000px) and (min-width: 721px) and (min-height: 501px) {
+  .is-touch.is-overview .ws-overview {
+    top: 138px;
+  }
+}
+@media (max-width: 720px) {
+  .is-overview .ws-brand {
+    opacity: 0;
+    pointer-events: none !important;
+  }
+  .is-touch.is-overview .ws-overview {
+    top: 128px;
+  }
+}
+@media (max-height: 500px) and (min-width: 721px) {
+  .is-touch.is-overview .ws-overview {
+    top: 58px;
+  }
+}
+
+/* ---- touch tablets: side panels end above the camera pad; 44 px search */
+@media (min-width: 721px) and (min-height: 501px) {
+  .is-touch .ws-side {
+    max-height: calc(100vh - var(--ws-edge) * 2 - 64px - 350px);
+  }
+}
+.is-touch .ws-lawsx__search,
+.is-touch .ws-input {
+  height: 44px;
+}
+
+/* ---- season epoch */
+.ws-clock__epoch {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- World Laws: denser, every category in reach */
+.ws-modal.is-xl {
+  width: min(1080px, 100%);
+}
+.ws-lawsx__main {
+  height: clamp(360px, calc(100vh - 236px), 680px);
+}
+.ws-lawsx__top {
+  gap: 10px;
+}
+.ws-lawsx__restore {
+  flex: none;
+}
+.ws-lawrail {
+  gap: 1px;
+  padding-bottom: 6px;
+}
+.ws-lawrail__btn {
+  min-height: 32px;
+  font-size: 12px;
+  padding: 0 8px;
+  gap: 8px;
+}
+.ws-lawrail__ico {
+  width: 18px;
+  height: 18px;
+  font-size: 16px;
+}
+.ws-lawgrid {
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+}
+@media (max-height: 820px) {
+  .ws-lawcard .ws-row__desc {
+    -webkit-line-clamp: 1;
+  }
+  .ws-lawcard {
+    min-height: 62px;
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+  .ws-lawsec__head {
+    padding: 4px 2px 6px;
+  }
+}
+/* touch tablets: category pills wrap so all fourteen show at once */
+@media (min-width: 721px) and (min-height: 501px) {
+  .is-touch .ws-lawsx__main {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .is-touch .ws-lawrail {
+    flex-direction: row;
+    flex-wrap: wrap;
+    overflow: visible;
+    gap: 6px;
+    padding: 0;
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+  .is-touch .ws-lawrail__btn {
+    min-height: 44px;
+    border-radius: 22px;
+    padding: 0 14px 0 10px;
+    background: rgba(0, 0, 0, 0.25);
+    box-shadow: inset 0 0 0 1px var(--ws-line);
+  }
+  .is-touch .ws-lawrail__btn.is-on {
+    color: #1d1608;
+    background: linear-gradient(180deg, var(--ws-gold-hi), var(--ws-gold));
+  }
+  .is-touch .ws-lawrail__name {
+    flex: none;
+  }
+}
+/* phone landscape: no footer (X closes), one-line cards, two columns */
+@media (max-height: 500px) and (min-width: 721px) {
+  .ws-modal.is-xl .ws-modal__foot {
+    display: none;
+  }
+  .ws-lawsx {
+    padding-top: 6px;
+    gap: 6px;
+  }
+  .ws-lawsx__main {
+    height: calc(100vh - 146px);
+    gap: 6px;
+  }
+  .ws-lawsx__count {
+    display: none;
+  }
+  .ws-lawcard {
+    min-height: 54px;
+    gap: 8px;
+    padding: 6px 10px 6px 8px;
+  }
+  .ws-lawcard__ico {
+    width: 32px;
+    height: 32px;
+    font-size: 19px;
+  }
+  .ws-lawcard .ws-row__desc {
+    -webkit-line-clamp: 1;
+  }
+  .ws-lawsec {
+    padding-bottom: 8px;
+  }
+  .ws-lawsec__head {
+    position: static;
+    padding: 2px;
+  }
+  .ws-lawsec__ico {
+    width: 24px;
+    height: 24px;
+    font-size: 15px;
+  }
+  .ws-modal__head .ws-modal__ico {
+    width: 30px;
+    height: 30px;
+  }
+}
+@media (max-width: 720px) {
+  .ws-lawsx__restore {
+    min-height: 44px;
+  }
+  .ws-lawsx__count {
+    display: none;
+  }
+}
