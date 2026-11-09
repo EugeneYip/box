@@ -403,6 +403,8 @@ export const politics = {
     r.war = true;
     r.ally = false;
     r.warSince = this.game.time.total;
+    r.sieged = false;
+    r.conquests = 0;
     r.reason = reason;
     r.attacker = a;
     r.losses = [0, 0];
@@ -431,6 +433,8 @@ export const politics = {
             rr.ally = false;
             rr.warSince = this.game.time.total;
             rr.reason = 'alliance';
+            rr.sieged = false;
+            rr.conquests = 0;
             rr.attacker = k.id;
             rr.losses = [0, 0];
             rr.startPop = [k.population || 1, A.population || 1];
@@ -467,14 +471,16 @@ export const politics = {
     const wearyA = killedA / Math.max(8, r.startPop[r.a === A.id ? 0 : 1]);
     const wearyB = killedB / Math.max(8, r.startPop[r.a === A.id ? 1 : 0]);
     const weary = Math.max(wearyA, wearyB);
-    if (weary > 0.22 && dur > YEAR * 2) return this.makePeace(A.id, B.id);
-    if (dur < YEAR * 3) return;
+    // a war runs its campaign: no talks until an army has laid siege, or years pass
+    const campaign = r.sieged || dur > YEAR * 7;
+    if (weary > 0.3 && dur > YEAR * 3 && campaign) return this.makePeace(A.id, B.id);
+    if (dur < YEAR * 4 || !campaign) return;
     // without diplomacy, wars end only in exhaustion
     if (!this.law('civDiplomacy')) return;
     const lossA = r.startPop[r.a === A.id ? 0 : 1] - A.population;
     const lossB = r.startPop[r.a === A.id ? 1 : 0] - B.population;
     const popWeary = Math.max(lossA / Math.max(1, r.startPop[0]), lossB / Math.max(1, r.startPop[1]));
-    let p = 0.02 + Math.max(0, popWeary) * 0.25 + weary * 0.5 + Math.max(0, dur - YEAR * 8) / (YEAR * 100);
+    let p = 0.007 + Math.max(0, popWeary) * 0.2 + weary * 0.4 + Math.max(0, dur - YEAR * 10) / (YEAR * 120) + (r.conquests || 0) * 0.03; // a victor with new towns is sated
     if (!this._reachable(A, B)) p += 0.08;
     if (this._rulerTrait(A, 'gentle', 'silver-tongued', 'silvertongued') || this._rulerTrait(B, 'gentle', 'silver-tongued', 'silvertongued')) p *= 1.8;
     if (this._rulerTrait(A, 'cruel') || this._rulerTrait(B, 'cruel')) p *= 0.6;
@@ -681,6 +687,8 @@ export const politics = {
       if (Math.hypot(c.x - target.cx, c.z - target.cz) < target.radius * 0.7) {
         a.state = 'siege';
         a.t = now;
+        const rr = this.relations.get(relKey(a.kingdom, target.kingdom));
+        if (rr) rr.sieged = true;
       }
       if (now - a.t > 260) this._disbandArmy(a);
     } else if (a.state === 'siege') {
@@ -713,6 +721,7 @@ export const politics = {
     const raze = K.culture !== old.culture && K.aggression > 0.7 && this.rng.chance(0.35) && v.id !== old.capital;
     const r = this.rel(K.id, old.id);
     r.grievance = Math.min(80, r.grievance + 25);
+    r.conquests = (r.conquests || 0) + 1;
     if (raze) {
       this._note(`🔥 ${this._kn(K)} burns ${v.name}`, 'disaster', { x: v.cx, z: v.cz });
       for (const b of v.buildings) if (b.alive) b.burning = Math.max(b.burning, 0.7 + this.rng.next() * 0.3);
