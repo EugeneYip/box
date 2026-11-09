@@ -36,6 +36,8 @@ export function createSharedUniforms(stateTexture, w, h) {
     uSeason: { value: 1.5 },
     uTempOff: { value: 0 },
     uFungiGlow: { value: 1 },
+    uHeightTex: { value: null },
+    uHasHeight: { value: 0 },
   };
 }
 
@@ -62,6 +64,7 @@ varying float vFOcc;
 varying vec4 vFSeason;
 varying float vFIH;
 varying float vFWSnow;
+varying vec2 vFGlow;
 #endif
 float fHash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
 // Season weights (spring, summer, autumn, winter) for a continuous season t in [0,4).
@@ -129,6 +132,7 @@ vFOcc = fOcc;
 vFSeason = fSW;
 vFIH = fHash(fOrigin.xz + 17.31);
 vFWSnow = fSW.w * smoothstep(0.5, 0.3, fTemp);
+vFGlow = texelFetch(uOcc, fTile, 0).ba;
 #endif
 // winter: deciduous leaf clusters pull in to sparse tufts on bare boughs
 transformed = mix(aPivot, transformed, 1.0 - 0.74 * fSW.w * fDec);
@@ -173,6 +177,7 @@ vFOcc = 0.0;
 float fGTemp = texelFetch(uOcc, fTile, 0).g + uTempOff;
 vFSeason = fSeasonFor(fOrigin, fGTemp);
 vFIH = 0.95;
+vFGlow = texelFetch(uOcc, fTile, 0).ba;
 vFWSnow = vFSeason.w * smoothstep(0.48, 0.3, fGTemp);
 vFInfo = vec3(aInfo.z, aInfo.w, fK);
 vFWorld = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;
@@ -210,7 +215,9 @@ varying float vFOcc;
 varying vec4 vFSeason;
 varying float vFIH;
 varying float vFWSnow;
+varying vec2 vFGlow;
 uniform float uFungiGlow;
+vec3 fGlowPal(float hue) { return hue < 0.25 ? vec3(0.05, 0.85, 0.6) : hue < 0.75 ? vec3(0.55, 0.22, 1.0) : vec3(1.0, 0.55, 0.08); }
 const float fBayer[16] = float[16](0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
 `;
 
@@ -218,8 +225,7 @@ const FRAG_COLOR = /* glsl */ `
 float fLeafM = vFInfo.x;
 float fMat = vFInfo.y;
 if (abs(fMat - 11.0) < 0.5) {
-  vec3 gcd = vFIH < 0.34 ? vec3(0.4, 0.95, 0.8) : vFIH < 0.67 ? vec3(0.8, 0.62, 1.0) : vec3(1.0, 0.8, 0.45);
-  diffuseColor.rgb *= gcd;
+  diffuseColor.rgb *= mix(vec3(1.0), fGlowPal(vFGlow.y), 0.45);
 }
 float fCell = fract(sin(dot(floor(vFWorld * 6.0), vec3(12.9898, 78.233, 45.164))) * 43758.5453);
 if (abs(fMat - 9.0) < 0.5) {
@@ -307,8 +313,12 @@ if (fFire > 0.002) {
 if (abs(fMat - 11.0) < 0.5) {
   float night = clamp(1.0 - uDaylight, 0.0, 1.0);
   float pulse = 0.8 + 0.2 * sin(uTime * 1.3 + vFIH * 40.0);
-  vec3 gc = vFIH < 0.34 ? vec3(0.05, 0.85, 0.6) : vFIH < 0.67 ? vec3(0.55, 0.22, 1.0) : vec3(1.0, 0.55, 0.08);
-  totalEmissiveRadiance += gc * (0.05 + 0.85 * night) * pulse * uFungiGlow;
+  totalEmissiveRadiance += fGlowPal(vFGlow.y) * (0.05 + 0.85 * night) * pulse * uFungiGlow;
+}
+// light from nearby glowcap groves falls on trunks, caps, bushes and grass
+if (vFGlow.x > 0.01 && uFungiGlow > 0.001) {
+  float night = clamp(1.0 - uDaylight * 1.2, 0.0, 1.0);
+  totalEmissiveRadiance += fGlowPal(vFGlow.y) * vFGlow.x * night * uFungiGlow * (0.06 + 0.9 * diffuseColor.rgb);
 }
 float fBack = clamp(-dot(fWN, uSunDir), 0.0, 1.0);
 float fTrans = fLeafM * (1.0 - fChar) * (1.0 - fSnowAmt) * uDaylight * (1.0 - fIsSnow);
@@ -344,22 +354,36 @@ function patch(shader, shared, kind, depth) {
 // Ground decals: soft additive glow pools under glowcap groves (night only)
 // and a multiplicative contact-shadow blob under trees.
 export function createDecalMaterials(shared) {
-  const vert = /* glsl */ `
+  // Each decal is a small grid that follows the terrain (sampled from
+  // game.terrain.heightTexture) so it hugs slopes instead of clipping.
+  const common = /* glsl */ `
+    uniform sampler2D uHeightTex;
+    uniform float uHasHeight;
+    uniform sampler2D uOcc;
+    uniform vec2 uWorldSize;
     varying vec2 vUv;
-    varying vec3 vCol;
     varying float vPh;
     float fHash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
-    void main() {
-      vUv = uv;
-      vec3 o = instanceMatrix[3].xyz;
-      float h = fHash(o.xz + 17.31);
-      vCol = h < 0.34 ? vec3(0.05, 0.85, 0.6) : h < 0.67 ? vec3(0.55, 0.22, 1.0) : vec3(1.0, 0.55, 0.08);
-      vPh = h * 40.0;
-      gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0);
+    float groundAt(vec2 xz, float fallback) {
+      if (uHasHeight < 0.5) return fallback;
+      return texture2D(uHeightTex, xz / uWorldSize).r;
     }`;
   const glow = new THREE.ShaderMaterial({
-    uniforms: { uTime: shared.uTime, uDaylight: shared.uDaylight, uFungiGlow: shared.uFungiGlow },
-    vertexShader: vert,
+    uniforms: { uTime: shared.uTime, uDaylight: shared.uDaylight, uFungiGlow: shared.uFungiGlow, uHeightTex: shared.uHeightTex, uHasHeight: shared.uHasHeight, uOcc: shared.uOcc, uWorldSize: shared.uWorldSize },
+    vertexShader: common + /* glsl */ `
+      varying vec3 vCol;
+      vec3 fGlowPal(float hue) { return hue < 0.25 ? vec3(0.05, 0.85, 0.6) : hue < 0.75 ? vec3(0.55, 0.22, 1.0) : vec3(1.0, 0.55, 0.08); }
+      ` + GLOW_PAL_JS + /* glsl */ `
+      void main() {
+        vUv = uv;
+        vec3 o = instanceMatrix[3].xyz;
+        vec4 wp = instanceMatrix * vec4(position, 1.0);
+        wp.y = groundAt(wp.xz, o.y) + 0.06;
+        ivec2 t = clamp(ivec2(floor(o.xz)), ivec2(0), ivec2(uWorldSize) - 1);
+        vCol = fGlowPal(texelFetch(uOcc, t, 0).a);
+        vPh = fHash(o.xz) * 40.0;
+        gl_Position = projectionMatrix * viewMatrix * wp;
+      }`,
     fragmentShader: /* glsl */ `
       varying vec2 vUv;
       varying vec3 vCol;
@@ -369,7 +393,7 @@ export function createDecalMaterials(shared) {
       uniform float uFungiGlow;
       void main() {
         float d = length(vUv - 0.5) * 2.0;
-        float a = exp(-d * d * 4.5) * (1.0 - smoothstep(0.75, 1.0, d));
+        float a = exp(-d * d * 5.0) * (1.0 - smoothstep(0.55, 0.95, d));
         float night = clamp(1.0 - uDaylight * 1.2, 0.0, 1.0);
         float pulse = 0.8 + 0.2 * sin(uTime * 1.3 + vPh);
         gl_FragColor = vec4(vCol * a * night * uFungiGlow * pulse * 0.5, 1.0);
@@ -379,15 +403,35 @@ export function createDecalMaterials(shared) {
     blending: THREE.AdditiveBlending,
   });
   glow.name = 'nature-fungi-glow';
+  // Contact shadow: a soft blob at the trunk stretched away from the sun so
+  // trees read as casting a shadow even when the sun's shadow map is faint.
   const ao = new THREE.ShaderMaterial({
-    uniforms: {},
-    vertexShader: vert,
+    uniforms: { uSunDir: shared.uSunDir, uDaylight: shared.uDaylight, uHeightTex: shared.uHeightTex, uHasHeight: shared.uHasHeight, uOcc: shared.uOcc, uWorldSize: shared.uWorldSize },
+    vertexShader: common + /* glsl */ `
+      uniform vec3 uSunDir;
+      varying float vLen;
+      void main() {
+        vUv = uv;
+        vec3 o = instanceMatrix[3].xyz;
+        float size = length(instanceMatrix[0].xyz);
+        vec2 dir = -normalize(uSunDir.xz + vec2(1e-4));
+        float len = clamp(0.55 / max(uSunDir.y, 0.25), 0.4, 1.8);
+        vec2 local = position.xz * size;
+        local += dir * dot(local, dir) * (len * 0.55);
+        vec2 xz = o.xz + local + dir * size * len * 0.22;
+        vec4 wp = vec4(xz.x, groundAt(xz, o.y) + 0.035, xz.y, 1.0);
+        vLen = len;
+        vPh = 0.0;
+        gl_Position = projectionMatrix * viewMatrix * wp;
+      }`,
     fragmentShader: /* glsl */ `
       varying vec2 vUv;
+      uniform float uDaylight;
       void main() {
         float d = length(vUv - 0.5) * 2.0;
-        float a = smoothstep(1.0, 0.15, d);
-        gl_FragColor = vec4(vec3(1.0 - 0.36 * a), 1.0);
+        float a = smoothstep(1.0, 0.1, d);
+        float k = 0.18 + 0.28 * clamp(uDaylight, 0.0, 1.0);
+        gl_FragColor = vec4(vec3(1.0 - k * a), 1.0);
       }`,
     transparent: true,
     depthWrite: false,
@@ -400,7 +444,7 @@ export function createDecalMaterials(shared) {
     polygonOffsetUnits: -2,
   });
   ao.name = 'nature-contact-ao';
-  const geo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+  const geo = new THREE.PlaneGeometry(1, 1, 6, 6).rotateX(-Math.PI / 2);
   return { glow, ao, geo };
 }
 

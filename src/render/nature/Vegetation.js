@@ -75,8 +75,9 @@ export class Vegetation {
     this.uniforms = createSharedUniforms(this.stateTex, world.w, world.h);
     // Canopy-over-units occupancy (one texel per tile, eased 0..1)
     // R: canopy-over-units occupancy, G: tile temperature (seasons by climate)
-    this.occData = new Uint8Array(n * 2);
-    this.occTex = new THREE.DataTexture(this.occData, world.w, world.h, THREE.RGFormat, THREE.UnsignedByteType);
+    this.occData = new Uint8Array(n * 4);
+    this.occTex = new THREE.DataTexture(this.occData, world.w, world.h, THREE.RGBAFormat, THREE.UnsignedByteType);
+    this.glowSrc = new Uint8Array(n); // 0 none, 1..3 glowcap grove hue
     this.writeTemperature();
     this.occTex.minFilter = this.occTex.magFilter = THREE.NearestFilter;
     this.occTex.generateMipmaps = false;
@@ -374,7 +375,7 @@ export class Vegetation {
         if (aoR || (f === FLORA.MUSHROOM && v === 4)) {
           const ground = world.heightAt(ox, oz);
           if (aoR) aoTmp.push(ox, ground + 0.035, oz, aoR * (0.9 + hash2(tx, ty, 5) * 0.25));
-          if (f === FLORA.MUSHROOM && v === 4) glowTmp.push(ox, ground + 0.05, oz, 3.2);
+          if (f === FLORA.MUSHROOM && v === 4) glowTmp.push(ox, ground + 0.05, oz, 3.4);
         }
         this.tintInstance(tx, ty, f, s.cols, s.n * 3);
         s.n++;
@@ -391,6 +392,7 @@ export class Vegetation {
     }
     c.ao = decalList(aoTmp);
     c.glow = decalList(glowTmp);
+    this.updateGlowLight(c);
     this._needCompact = true;
     c.count = total;
     if (total) {
@@ -653,16 +655,59 @@ export class Vegetation {
       c += (t - c) * (t > c ? kO : kC);
       if (Math.abs(t - c) < 0.01) c = t;
       this.occCur[i] = c;
-      this.occData[i * 2] = Math.round(c * 255);
+      this.occData[i * 4] = Math.round(c * 255);
       if (c !== t) A[w++] = i;
       else this.occFlag[i] = 0;
     }
     A.length = w;
     this.occTex.needsUpdate = true;
   }
+  // Per-tile glow light around glowcap groves (B = strength, A = hue), so
+  // caps, pools and the trunks and plants nearby share one colour.
+  updateGlowLight(c) {
+    const world = this.world;
+    const W = world.w,
+      H = world.h;
+    const src = this.glowSrc;
+    let changed = false;
+    for (let ty = c.y0; ty <= c.y1; ty++)
+      for (let tx = c.x0; tx <= c.x1; tx++) {
+        const i = ty * W + tx;
+        const g = world.flora[i] === FLORA.MUSHROOM && this.variantOf(tx, ty, FLORA.MUSHROOM) === 4 ? 1 + Math.floor(hash2(tx, ty, 991) * 3) : 0;
+        if (g !== src[i]) (src[i] = g), (changed = true);
+      }
+    if (!changed && !c._glowInit) return;
+    c._glowInit = false;
+    const R = 3;
+    const x0 = Math.max(0, c.x0 - R),
+      x1 = Math.min(W - 1, c.x1 + R),
+      y0 = Math.max(0, c.y0 - R),
+      y1 = Math.min(H - 1, c.y1 + R);
+    const d = this.occData;
+    for (let ty = y0; ty <= y1; ty++)
+      for (let tx = x0; tx <= x1; tx++) {
+        let best = 0,
+          hue = 0;
+        for (let dy = -R; dy <= R; dy++)
+          for (let dx = -R; dx <= R; dx++) {
+            const x = tx + dx,
+              y = ty + dy;
+            if (x < 0 || y < 0 || x >= W || y >= H) continue;
+            const g = src[y * W + x];
+            if (!g) continue;
+            const k = Math.max(0, 1 - Math.hypot(dx, dy) / 3.4);
+            if (k * k > best) (best = k * k), (hue = g - 1);
+          }
+        const o = (ty * W + tx) * 4;
+        d[o + 2] = Math.round(best * 255);
+        d[o + 3] = Math.round((hue / 2) * 255);
+      }
+    this.occTex.needsUpdate = true;
+  }
+
   writeTemperature() {
     const t = this.world.temperature;
-    for (let i = 0; i < this.world.size; i++) this.occData[i * 2 + 1] = Math.round(Math.min(1, Math.max(0, t[i])) * 255);
+    for (let i = 0; i < this.world.size; i++) this.occData[i * 4 + 1] = Math.round(Math.min(1, Math.max(0, t[i])) * 255);
     if (this.occTex) this.occTex.needsUpdate = true;
   }
   occEnqueue(i) {
@@ -694,6 +739,8 @@ export class Vegetation {
     u.uFlutter.value = g.settings?.powerSaver ? 0 : 1;
     u.uSeason.value = g.time?.season ?? 1.5;
     u.uTempOff.value = g.age?.mods?.temperature ?? 0;
+    const ht = g.terrain?.heightTexture;
+    if (ht && u.uHeightTex.value !== ht) (u.uHeightTex.value = ht), (u.uHasHeight.value = 1);
     const glowGoal = g.laws?.fungiGlow === false ? 0 : 1;
     u.uFungiGlow.value += (glowGoal - u.uFungiGlow.value) * Math.min(1, dt * 2);
     this.glowGroup.visible = u.uFungiGlow.value > 0.01 && (g.env.daylight ?? 1) < 0.8;
