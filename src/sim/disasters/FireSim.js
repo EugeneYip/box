@@ -59,6 +59,7 @@ export class FireSim {
     this._burned?.clear();
     this.natural = 0;
     this._natNote = null;
+    this._recent = 0;
     this.version++;
   }
 
@@ -155,8 +156,8 @@ export class FireSim {
   }
 
   // Natural wildfires: dry lightning and heat start fires by themselves,
-  // far more often in a hot, fire-prone age (Embers: about one a minute on
-  // a medium map) than in a temperate one (one every quarter hour or so),
+  // far more often in a hot, fire-prone age (Embers: one every half minute or
+  // so on a medium map) than in a temperate one (one in ten minutes),
   // and almost never in a cold one. Runs on game time (works when fast-
   // forwarding), gated by the calamityLightning law, and held back while a
   // large fire is already burning, so it never runs away across the map.
@@ -167,11 +168,11 @@ export class FireSim {
     const wt = g.env?.weather?.type;
     if (wt === 'rain' || wt === 'storm' || wt === 'snow') return;
     const area = (w.w * w.h) / 65536;
-    const cap = 900 * area;
-    if (this.count >= cap) return;
+    const cap = 600 * area;
+    if (this.count >= cap || (this._recent || 0) > 2800 * area) return;
     const season = g.time.seasonName;
     const sf = season === 'Summer' ? 1.35 : season === 'Winter' ? 0.35 : 1;
-    const rate = (1 / 900) * area * Math.pow(fireFactor(g), 2.6) * sf * (1 - this.count / cap);
+    const rate = (1 / 600) * area * Math.pow(fireFactor(g), 2.6) * sf * (1 - this.count / cap);
     if (this.rng.next() >= rate * step) return;
     for (let k = 0; k < 24; k++) {
       const tx = 2 + Math.floor(this.rng.next() * (w.w - 4)),
@@ -200,6 +201,7 @@ export class FireSim {
     const g = this.game;
     const w = g.world;
     this._natural(step);
+    this._recent = (this._recent || 0) * Math.exp(-step / 60);
     // adopt fires started by other modules through world.setFire(); the
     // dirty rect (which also covers our own changes) is swept in row slices
     // so a huge fire on a big map stays within the tick budget
@@ -244,8 +246,14 @@ export class FireSim {
     const n = this.count;
     // a very large fire spreads more slowly (it has burnt its easy fuel and
     // made its own weather), so even a fire age never burns the whole map
-    const capS = 1400 * (w.w * w.h) / 65536;
-    const ageF = fireFactor(g) * (n > capS ? Math.max(0.35, capS / n) : 1);
+    // (the age's fire factor acts on spread more gently than on ignition:
+    // a fire age means many more fires that run faster, not one inferno)
+    // and once a great deal of land has burnt in the last minute or so the
+    // country left is patchy and fire breaks hold: spread slows further
+    const area = (w.w * w.h) / 65536;
+    const capS = 450 * area;
+    const capB = 1400 * area;
+    const ageF = Math.pow(fireFactor(g), 0.25) * (n > capS ? Math.max(0.3, capS / n) : 1) * (this._recent > capB ? Math.max(0.2, capB / this._recent) : 1);
     const todo = Math.min(n, BUDGET);
     const dtEff = step * (n / Math.max(1, todo));
     let changed = false;
@@ -363,6 +371,7 @@ export class FireSim {
 
   _burnOut(i, x, y, fuelFrac) {
     const g = this.game;
+    this._recent = (this._recent || 0) + 1;
     const w = g.world;
     w.fire[i] = 0;
     this.fuel[i] = 0;
