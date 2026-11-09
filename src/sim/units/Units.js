@@ -1975,10 +1975,14 @@ export class Units {
     const ageM = g.age?.mods?.monsters ?? 1;
     // the law covers ordinary ages; a monstrous age (Twilight) always brings them
     if (!this.law('beastsMonsters') && ageM <= 1.001) return;
-    const rate = (this.law('beastsMonsters') ? ageM : ageM - 1) * (typeof g.laws?.spawnRate === 'number' ? Math.max(0.1, g.laws.spawnRate) : 1);
+    const spawnRate = typeof g.laws?.spawnRate === 'number' ? Math.max(0.1, g.laws.spawnRate) : 1;
     let monsters = 0;
     for (const sp of ['golem', 'serpent', 'skywyrm']) monsters += this.count(sp);
-    if (monsters >= Math.round(3 * this.popScale * Math.max(1, ageM * 0.8)) || !g.rng.chance(0.045 * rate)) return;
+    // ordinary ages (law on): a rare wanderer; a monstrous age: about (mod - 1)
+    // monsters per game minute across a medium map (this check runs every 15 s)
+    const perMin = ageM > 1.001 ? (ageM - 1) * this.popScale : 0.18 * ageM;
+    const cap = Math.round((ageM > 1.001 ? 4 + 2 * (ageM - 1) : 3) * this.popScale);
+    if (monsters >= cap || !g.rng.chance(Math.min(0.9, (perMin / 4) * spawnRate))) return;
     const w = g.world;
     const roll = g.rng.next();
     const species = roll < 0.5 ? 'golem' : roll < 0.8 ? 'serpent' : 'skywyrm';
