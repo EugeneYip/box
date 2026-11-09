@@ -65,7 +65,15 @@ export class Popover {
       },
       true,
     );
-    addEventListener('scroll', () => this.hide(), true);
+    // only a scroll that moves the target hides it (not unrelated panels)
+    addEventListener(
+      'scroll',
+      (e) => {
+        const t = this.target;
+        if (t && (e.target === document || e.target === window || e.target?.contains?.(t))) this.hide();
+      },
+      true,
+    );
   }
 
   show(t, ms = 0) {

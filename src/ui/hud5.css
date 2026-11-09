@@ -891,3 +891,9 @@
     display: none;
   }
 }
+
+@media (max-height: 500px) and (min-width: 721px) {
+  .is-touch.is-overview .ws-overview {
+    top: 68px;
+  }
+}
