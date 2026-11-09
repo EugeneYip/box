@@ -142,12 +142,18 @@ void main() {
     float h = max(y, 0.0);
     vec2 p = dir.xz / (h + 0.09) * 1.1 + uCloudOffset;
     float n = fbm(p * 0.9);
-    float cov = clamp(uCover * 0.75 + uOvercast * 0.35, 0.0, 1.0);
+    float cov = clamp(uCover * 0.8 + uOvercast * 0.35 + 0.12, 0.0, 1.0);
     float c = smoothstep(1.0 - cov * 0.95 - 0.05, 1.12 - cov * 0.55, n);
     c *= smoothstep(-0.01, 0.06, y) * (1.0 - smoothstep(0.25, 0.6, y));
     float shade = smoothstep(0.35, 0.95, fbm(p * 0.9 + vec2(0.35, 0.2)));
     float sunSide = pow(max(dot(normalize(dir.xz + 1e-4), normalize(uSunDir.xz + 1e-4)) * 0.5 + 0.5, 0.0), 3.0);
-    vec3 cc = mix(uCloudLit * (1.0 + sunSide * 0.6) + uCloudShade * 0.6, uCloudShade, shade * 0.7);
+    // toward the sun the bank reads as a dark silhouette with a golden rim,
+    // away from it as sunlit cumulus
+    vec3 litC = uCloudLit * 1.15 + uCloudShade * 0.55;
+    vec3 darkC = uCloudShade * 0.6 + uCloudLit * 0.12;
+    vec3 cc = mix(litC, darkC, sunSide * 0.8);
+    cc = mix(cc, uCloudShade * 0.55, shade * 0.45);
+    cc += uGlow * sunSide * (1.0 - smoothstep(0.0, 0.5, c)) * 1.4;
     cc = mix(cc, uHorizon, smoothstep(0.08, 0.0, y) * 0.6); // aerial fade
     cc *= mix(1.0, 0.55, uStorm);
     col = mix(col, cc, c * 0.85);
@@ -157,7 +163,7 @@ void main() {
   if (uSunVis > 0.001) {
     float mu = dot(dir, uSunDir);
     float ang = acos(clamp(mu, -1.0, 1.0));
-    float R = 0.021;
+    float R = 0.028;
     float aa = fwidth(ang) * 1.5 + 1e-5;
     float disc = 1.0 - smoothstep(R - aa, R + aa, ang);
     float limb = 0.75 + 0.25 * sqrt(max(0.0, 1.0 - (ang / R) * (ang / R)));
