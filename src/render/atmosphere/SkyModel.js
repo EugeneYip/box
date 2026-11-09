@@ -211,7 +211,7 @@ export class SkyModel {
     let sunI = n.keyI;
     // overcast / storm / fog block direct sun
     // storms leave ~20% sun so racing cloud shadows can sweep the land
-    const block = Math.min(0.92, Math.pow(oc, 0.75) * (0.9 - 0.2 * storm) + w.fog * 0.45);
+    const block = Math.min(0.92, Math.pow(oc, 0.75) * (0.9 - 0.12 * storm) + w.fog * 0.45);
     sunI *= 1 - block;
     // desaturate the key under clouds
     const lumKey = this.sunLightColor.r * 0.3 + this.sunLightColor.g * 0.59 + this.sunLightColor.b * 0.11;
@@ -244,7 +244,7 @@ export class SkyModel {
 
     this.hemiSky.copy(this._k.hemiS);
     this.hemiGround.copy(this._k.hemiG);
-    this.hemiIntensity = n.hemiI * 1.3 * (1 + 0.1 * oc - 0.45 * storm - 0.12 * w.rain);
+    this.hemiIntensity = n.hemiI * 1.3 * (1 + 0.1 * oc - 0.55 * storm - 0.12 * w.rain);
     // golden hour: warmer, ~40% weaker sky fill so the raking sun dominates
     const gk = this.golden * (1 - oc);
     this.hemiSky.lerp(this._tmp2.setRGB(0.72, 0.56, 0.4), gk * 0.12);
@@ -261,7 +261,7 @@ export class SkyModel {
     }
     this._wint = wint;
 
-    this.exposure = n.exp * (1 - 0.18 * storm) * (1 - 0.14 * night * this.night);
+    this.exposure = n.exp * (1 - 0.3 * storm) * (1 - 0.14 * night * this.night);
 
     // ---- visible discs -----------------------------------------------
     this.sunVis = smooth(-0.03, 0.02, s) * (1 - smooth(0.25, 0.75, oc + w.fog * 0.6));
