@@ -49,7 +49,10 @@ vec2 waveSlope(vec2 p, float t, float fw, float calm) {
   float f1 = 1.0 - smoothstep(0.15, 0.40, fw);
   float f2 = 1.0 - smoothstep(0.08, 0.30, fw);
   float f3 = 1.0 - smoothstep(0.05, 0.25, fw);
-  float f0 = 1.0 - smoothstep(0.30, 0.50, fw); // long swell reads as stripes from afar: drop it
+  // long swell reads as regular diagonal stripes from afar: it fades out well
+  // before map zoom and its strength wanders, so it never bands the ocean
+  float swK = 0.35 + 0.9 * smoothstep(0.30, 0.75, texture2D(uNoise, p * (1.0 / 140.0) + 0.21).g);
+  float f0 = (1.0 - smoothstep(0.12, 0.26, fw)) * swK;
   g += swell(p, vec2(0.83, 0.56), 0.33, 0.20, 0.85, t) * f0;
   g += swell(p, vec2(-0.45, 0.89), 0.47, 0.13, 1.05, t) * f0;
   g += swell(p, vec2(0.97, -0.24), 0.71, 0.08, 1.35, t) * f1;
