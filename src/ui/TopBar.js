@@ -78,7 +78,7 @@ export class TopBar {
       { class: 'ws-brand ws-glass' },
       el(
         'button',
-        { class: 'ws-brand__id', type: 'button', 'aria-label': 'Worldseed menu', 'data-tip': 'New world · G', onclick: () => ui.modals.toggle('newworld') },
+        { class: 'ws-brand__id', type: 'button', 'aria-label': 'Worldseed menu', 'data-tip': 'New world · G', onclick: () => (this.menuMode() ? this.toggleMenu() : ui.modals.toggle('newworld')) },
         el('span', { class: 'ws-brand__emblem', html: emblemSvg('', 'brand') }),
         el('span', { class: 'ws-brand__txt' }, el('span', { class: 'ws-brand__name', text: 'Worldseed' }), this.worldLine),
       ),
@@ -147,7 +147,12 @@ export class TopBar {
     this.clock = el(
       'div',
       { class: 'ws-clock ws-glass' },
-      el('div', { class: 'ws-clock__time', 'data-tip': 'Year, season and time of day' }, this.dialEl, el('span', { class: 'ws-clock__txt' }, this.yearEl, this.dayEl)),
+      (this.timeBox = el(
+        'div',
+        { class: 'ws-clock__time', 'data-tip': 'Year, season and time of day' },
+        this.dialEl,
+        el('span', { class: 'ws-clock__txt' }, this.yearEl, this.dayEl, el('span', { class: 'ws-seasonbar' }, (this.seasonBar = el('i')))),
+      )),
       el('span', { class: 'ws-sep' }),
       el('div', { class: 'ws-speed' }, this.pauseBtn, this.seg, this.cycleBtn, this.effEl, (this.leafEl = el('span', { class: 'ws-leaf', 'data-tip': 'Power saver on · 30 fps', html: uiIcon('leaf') }))),
     );
@@ -189,6 +194,35 @@ export class TopBar {
     leaf();
     g.events.on('world:regenerated', () => this.refreshWorld());
     addEventListener('resize', () => this.syncSpeed());
+  }
+
+  // Short landscape phones: the nav lives in a menu under the emblem.
+  menuMode() {
+    return matchMedia('(max-height: 500px) and (min-width: 721px)').matches;
+  }
+  toggleMenu(open = !this.menu?.classList.contains('is-open')) {
+    const ui = this.ui;
+    if (!this.menu) {
+      const item = (icon, label, fn) =>
+        el('button', { class: 'ws-menu__item', type: 'button', onclick: () => (this.toggleMenu(false), fn()) }, el('span', { class: 'ws-menu__ico', html: uiIcon(icon) }), el('span', { text: label }));
+      this.menu = el(
+        'div',
+        { class: 'ws-menu ws-glass', role: 'menu' },
+        item('new-world', 'New world', () => ui.modals.open('newworld')),
+        item('kingdoms', 'Kingdoms', () => ui.kingdoms.toggle(true)),
+        item('chronicle', 'Chronicle', () => ui.chronicle.toggle(true)),
+        item('trade', 'World laws', () => ui.modals.open('laws')),
+        item('eclipse', 'World ages', () => ui.modals.open('ages')),
+        item('settings', 'Settings', () => ui.modals.open('settings')),
+        item('help', 'Controls', () => ui.modals.open('help')),
+      );
+      ui.layer.append(this.menu);
+      addEventListener('pointerdown', (e) => {
+        if (this.menu.classList.contains('is-open') && !this.menu.contains(e.target) && !this.brand.contains(e.target)) this.toggleMenu(false);
+      });
+    }
+    this.menu.classList.toggle('is-open', open);
+    this.game.audio?.play?.('ui-open', { volume: 0.4 });
   }
 
   navBtn(icon, label, key, fn) {
@@ -260,14 +294,22 @@ export class TopBar {
       const hh = Math.floor(t.hour);
       const mm = Math.floor((t.hour - hh) * 60);
       const season = t.seasonName || seasonOf(t.year);
-      const year = `Year ${Math.floor(t.year) + 1} · ${season}`;
-      const day = `${String(hh).padStart(2, '0')}:${String(Math.floor(mm / 5) * 5).padStart(2, '0')}`;
-      if (this._yearTxt !== year) {
-        this._yearTxt = year;
-        this.yearEl.innerHTML = `<span>Year ${Math.floor(t.year) + 1}</span><i class="ws-season" style="--season:${SEASON_TINT[season]}">${uiIcon(SEASON_GLYPH[season] || 'sun')}</i><span class="ws-season__name">${season}</span>`;
+      const year = `Year ${Math.floor(t.year) + 1}`;
+      const time = `${String(hh).padStart(2, '0')}:${String(Math.floor(mm / 5) * 5).padStart(2, '0')}`;
+      if (this.yearEl.textContent !== year) this.yearEl.textContent = year;
+      const len = t.seasonYears || this.game.laws?.weatherSeasonLength || 1;
+      const frac = (((t.season ?? 0) % 1) + 1) % 1;
+      const k = Math.min(len, Math.floor(frac * len) + 1);
+      const key = `${season}|${time}|${k}`;
+      if (this._dayKey !== key) {
+        this._dayKey = key;
+        this.dayEl.innerHTML = `<i class="ws-season" style="--season:${SEASON_TINT[season]}">${uiIcon(SEASON_GLYPH[season] || 'sun')}</i><span class="ws-season__name">${season}</span><span class="ws-clock__sep">·</span><span>${time}</span>`;
         this.dayEl.style.setProperty('--season', SEASON_TINT[season]);
+        const fixed = this.game.laws?.weatherSeasons === false;
+        this.timeBox.dataset.tip = fixed ? 'Seasons are paused by World Law' : `${season} · year ${k} of ${len}${len >= 6 ? ' · seasons here are long' : ''}`;
       }
-      if (this.dayEl.textContent !== day) this.dayEl.textContent = day;
+      this.seasonBar.style.width = `${(frac * 100).toFixed(1)}%`;
+      this.seasonBar.style.background = SEASON_TINT[season];
     }
     // effective speed: game seconds advanced per real second
     const E = this._eff;
