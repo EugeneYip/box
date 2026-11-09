@@ -459,7 +459,7 @@ export function createDecalMaterials(shared) {
     polygonOffsetUnits: -2,
   });
   ao.name = 'nature-contact-ao';
-  const geo = new THREE.PlaneGeometry(1, 1, 3, 3).rotateX(-Math.PI / 2);
+  const geo = new THREE.PlaneGeometry(1, 1, 2, 2).rotateX(-Math.PI / 2);
   return { glow, ao, geo };
 }
 

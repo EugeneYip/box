@@ -217,7 +217,8 @@ function buildOak(b, v, lod) {
     }
     if (v === 3) limb(b, V(0.02, 0.8, 0), V(-0.42, 1.25, 0.1), 0.04, 0.012, 4, P.oakBark, 2, { bend: 0.06 });
   }
-  foliage(b, blobs.map((bl) => ({ ...bl, d })), pal, { lump: 0.22, mat: MAT.DLEAF });
+  // main lobe at full detail; side lobes as rounder 36-tri dodecahedra
+  foliage(b, blobs.map((bl, k) => ({ ...bl, d: lod || k > 1 ? 'd' : d })), pal, { lump: 0.22, mat: MAT.DLEAF });
   return { bendScale: 1, height: 2.2 };
 }
 
@@ -837,7 +838,8 @@ function buildBush(b, v, lod) {
     [V(0, 0.24, 0), 0.26, V(0.2, 0.17, 0.12), 0.2, V(-0.2, 0.18, 0.05), 0.2, V(0.0, 0.16, -0.2), 0.19],
   ][v];
   let blobs = [];
-  for (let k = 0; k < cfg.length; k += 2) blobs.push({ p: cfg[k], r: cfg[k + 1], sq: 0.86, d: lod ? 'd' : 1, fb: 0.3 });
+  // shrub lobes: one smooth main lobe, rounder dodecahedra for the rest
+  for (let k = 0; k < cfg.length; k += 2) blobs.push({ p: cfg[k], r: cfg[k + 1], sq: 0.86, d: lod || k > 0 ? 'd' : 1, fb: 0.3 });
   if (lod) blobs = blobs.slice(0, 2);
   foliage(b, blobs, pal, { lump: 0.24, freq: 2.2, aoMin: 0.45, flutter: 0.6, mat: MAT.DLEAF });
   // flowering shrub: tiny blossoms
@@ -868,7 +870,7 @@ function buildBerry(b, v, lod) {
     { p: V(0, 0.25, 0), r: 0.29, sq: 0.88, fb: 0.3 },
     { p: V(0.22, 0.18, 0.06), r: 0.2, sq: 0.88, fb: 0.3 },
     { p: V(-0.18, 0.18, 0.12), r: 0.2, sq: 0.88, fb: 0.3 },
-  ].map((bl) => ({ ...bl, d: lod ? 'd' : 1 }));
+  ].map((bl, k) => ({ ...bl, d: lod || k > 0 ? 'd' : 1 }));
   foliage(b, lod ? blobs.slice(0, 2) : blobs, P.berryLeaf, { lump: 0.25, freq: 2.4, aoMin: 0.45, flutter: 0.5, mat: MAT.DLEAF });
   blossoms(b, blobs, berry, lod ? 3 : 14, lod ? 0.06 : 0.04, MAT.GLOSS);
   return { bendScale: 0.3, height: 0.6 };
@@ -1144,7 +1146,7 @@ function buildMushroom(b, v, lod) {
   } else {
     // glowcap grove: slender stems under luminous bell caps (built ~2x so it
     // still reads after the species' small scale); they glow at night
-    const n = lod ? 4 : 8;
+    const n = lod ? 3 : 5;
     for (let k = 0; k < n; k++) {
       const a = (k / n) * TAU + b.r(0, 0.7);
       const rr = k ? b.r(0.14, 0.42) : 0;
@@ -1157,10 +1159,10 @@ function buildMushroom(b, v, lod) {
 function glowcap(b, x, z, h, r) {
   const lean = V(b.r(-0.05, 0.05), 0, b.r(-0.05, 0.05));
   const top = V(x + lean.x, h, z + lean.z);
-  b.add(tubeGeo([V(x, 0, z), V(x + lean.x * 0.5, h * 0.55, z + lean.z * 0.5), top], [r * 0.24, r * 0.2, r * 0.17], 5, { capTop: false }), { normals: 'geo', color: (p) => mul3(C(0xe8f0ea), 0.7 + 0.3 * smooth(0, h, p.y)), mat: MAT.WOOD, leaf: 1, flutter: 0.05, pivot: V(x, 0, z) });
-  const cap = new THREE.SphereGeometry(r, 8, 3, 0, TAU, 0, Math.PI * 0.5);
+  b.add(tubeGeo([V(x, 0, z), V(x + lean.x * 0.5, h * 0.55, z + lean.z * 0.5), top], [r * 0.24, r * 0.2, r * 0.17], 4, { capTop: false }), { normals: 'geo', color: (p) => mul3(C(0xe8f0ea), 0.7 + 0.3 * smooth(0, h, p.y)), mat: MAT.WOOD, leaf: 1, flutter: 0.05, pivot: V(x, 0, z) });
+  const cap = new THREE.SphereGeometry(r, 7, 2, 0, TAU, 0, Math.PI * 0.5);
   b.add(cap, { matrix: M(top.x, top.y - r * 0.15, top.z, 0, b.r(0, TAU), 0, 1, 0.95, 1), normals: 'geoblend', blend: 0.7, color: (p, n) => mul3(C(0xf2f8f4), 0.75 + 0.25 * clamp01(n.y)), mat: MAT.GLOW, leaf: 1, flutter: 0.05, pivot: V(x, 0, z) });
-  const under = new THREE.CircleGeometry(r * 0.98, 8);
+  const under = new THREE.CircleGeometry(r * 0.98, 7);
   b.add(under, { matrix: M(top.x, top.y - r * 0.15, top.z, Math.PI / 2, 0, 0), normals: 'flat', color: C(0xcfe0d6), mat: MAT.GLOW, leaf: 1, flutter: 0.05, pivot: V(x, 0, z) });
 }
 
