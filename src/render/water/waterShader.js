@@ -277,6 +277,8 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   if (rivIce > 0.0) {
     vec4 rl = texture2D(uNoise, p * (1.0 / 31.0) + 0.57);
     float leadFrac = clamp((rl.r - 0.47) * 1.8 + (fn.g - 0.5) * 0.6, 0.0, 0.75);
+    // ice bridges close the lead every 10-20 units along the river
+    leadFrac *= smoothstep(0.30, 0.46, fn.r);
     float halfW = max(wide, 0.6);
     float rag = ((fc.g - 0.5) * 0.35 + (fn.b - 0.5) * 0.5 + (fcl.r - 0.5) * 0.15) * (0.6 + 0.35 * halfW);
     float rlead = smoothstep(halfW * (1.0 - leadFrac) - 0.12, halfW * (1.0 - leadFrac) + 0.12, shoreD + rag);
