@@ -257,8 +257,10 @@ export class UI {
     const vw = innerWidth,
       vh = innerHeight;
     const topR = this.topbar.el.getBoundingClientRect();
+    const ovR = this.overviewBtn.getBoundingClientRect();
+    const pillBottom = ovR.height && ovR.top < innerHeight * 0.4 ? ovR.bottom : 0;
     const dockR = this.toolbar.panel.getBoundingClientRect();
-    const top = Math.min(vh * 0.4, topR.bottom + 12);
+    const top = Math.min(vh * 0.45, Math.max(topR.bottom, pillBottom) + 12);
     const bottom = Math.max(vh * 0.6, (dockR.top > vh * 0.5 ? dockR.top : vh) - 12);
     const left = 12,
       right = vw - 12;

@@ -303,10 +303,13 @@ export class TopBar {
       const key = `${season}|${time}|${k}`;
       if (this._dayKey !== key) {
         this._dayKey = key;
-        this.dayEl.innerHTML = `<i class="ws-season" style="--season:${SEASON_TINT[season]}">${uiIcon(SEASON_GLYPH[season] || 'sun')}</i><span class="ws-season__name">${season}</span><span class="ws-clock__sep">·</span><span>${time}</span>`;
-        this.dayEl.style.setProperty('--season', SEASON_TINT[season]);
         const fixed = this.game.laws?.weatherSeasons === false;
-        this.timeBox.dataset.tip = fixed ? 'Seasons are paused by World Law' : `${season} · year ${k} of ${len}${len >= 6 ? ' · seasons here are long' : ''}`;
+        const epoch = !fixed && len >= 1.5;
+        this.dayEl.innerHTML = `<i class="ws-season" style="--season:${SEASON_TINT[season]}">${uiIcon(SEASON_GLYPH[season] || 'sun')}</i><span class="ws-season__name">${season}</span><span class="ws-clock__sep">·</span><span class="ws-clock__epoch">${epoch ? `${k} / ${Math.round(len)} yrs` : time}</span>`;
+        this.dayEl.style.setProperty('--season', SEASON_TINT[season]);
+        this.timeBox.dataset.tip = fixed
+          ? `Seasons are paused by World Law · ${time}`
+          : `${season}: year ${k} of ${Math.round(len)}. The Season length law sets how many years each season lasts (now ${Math.round(len)}). Time of day ${time}.`;
       }
       this.seasonBar.style.width = `${(frac * 100).toFixed(1)}%`;
       this.seasonBar.style.background = SEASON_TINT[season];

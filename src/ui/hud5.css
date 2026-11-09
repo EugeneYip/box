@@ -541,3 +541,114 @@
 .ws-dsec .ws-chips {
   justify-content: flex-start;
 }
+
+/* ---- compact inspector (phones): More details fold */
+.ws-insp__morebtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 44px;
+  margin-top: 10px;
+  border-radius: 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ws-gold-hi);
+  background: rgba(235, 201, 119, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(235, 201, 119, 0.3);
+}
+.ws-insp__morebtn .ico {
+  font-size: 15px;
+}
+.ws-insp__more[hidden] {
+  display: none;
+}
+.ws-insp__more .ws-insp__grid {
+  margin-top: 10px;
+}
+@media (max-width: 720px) {
+  /* a taller, opaque sheet; the rail and camera pad step aside under it */
+  .ws-insp {
+    height: 58vh;
+    background: linear-gradient(180deg, rgba(27, 31, 45, 0.98), rgba(12, 14, 22, 0.99));
+  }
+  .ws-insp.is-expanded {
+    height: min(82vh, 720px);
+  }
+  .has-insp .ws-brand,
+  .has-insp .ws-campad,
+  .has-insp .ws-feed {
+    opacity: 0;
+    pointer-events: none !important;
+  }
+  .has-insp .ws-brand *,
+  .has-insp .ws-campad * {
+    pointer-events: none !important;
+  }
+}
+@media (max-height: 500px) and (min-width: 721px) {
+  /* phone landscape: right sheet below the top bar, never over the stats */
+  .ws-insp,
+  .ws-root:not(.has-minimap) .ws-insp {
+    top: 58px;
+    bottom: 6px;
+    background: linear-gradient(180deg, rgba(27, 31, 45, 0.98), rgba(12, 14, 22, 0.99));
+  }
+}
+
+/* ---- overview on touch: fold the rail and camera pad, offer a Back pill */
+.is-touch.is-overview .ws-campad {
+  opacity: 0;
+  pointer-events: none !important;
+}
+.is-touch.is-overview .ws-campad * {
+  pointer-events: none !important;
+}
+.is-touch.is-overview .ws-overview {
+  display: inline-flex;
+  left: 50%;
+  right: auto;
+  bottom: auto;
+  top: 74px;
+  min-height: 44px;
+  transform: translateX(-50%);
+}
+.is-touch.is-overview .ws-overview:hover {
+  transform: translateX(-50%) translateY(-1px);
+}
+@media (max-width: 1000px) and (min-width: 721px) and (min-height: 501px) {
+  .is-touch.is-overview .ws-overview {
+    top: 138px;
+  }
+}
+@media (max-width: 720px) {
+  .is-overview .ws-brand {
+    opacity: 0;
+    pointer-events: none !important;
+  }
+  .is-touch.is-overview .ws-overview {
+    top: 128px;
+  }
+}
+@media (max-height: 500px) and (min-width: 721px) {
+  .is-touch.is-overview .ws-overview {
+    top: 58px;
+  }
+}
+
+/* ---- touch tablets: side panels end above the camera pad; 44 px search */
+@media (min-width: 721px) and (min-height: 501px) {
+  .is-touch .ws-side {
+    max-height: calc(100vh - var(--ws-edge) * 2 - 64px - 350px);
+  }
+}
+.is-touch .ws-lawsx__search,
+.is-touch .ws-input {
+  height: 44px;
+}
+
+/* ---- season epoch */
+.ws-clock__epoch {
+  font-variant-numeric: tabular-nums;
+}

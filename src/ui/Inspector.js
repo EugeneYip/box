@@ -432,6 +432,27 @@ export class Inspector {
       ${cells || depth ? `<div class="ws-insp__scroll">${cells ? `<div class="ws-insp__grid">${cells}</div>` : ''}${depth}</div>` : ''}
       <div class="ws-insp__actions">${actions.join('')}</div>`;
     const sc = this.el.querySelector('.ws-insp__scroll');
+    if (sc && this.isCompact()) {
+      const more = document.createElement('div');
+      more.className = 'ws-insp__more';
+      const cells = [...sc.querySelectorAll('.ws-insp__grid > .ws-cell')];
+      if (cells.length > 4) {
+        const g2 = document.createElement('div');
+        g2.className = 'ws-insp__grid';
+        for (const c of cells.slice(4)) g2.append(c);
+        more.append(g2);
+      }
+      for (const sec of [...sc.querySelectorAll('.ws-dsec')]) if (!/traits|conditions|learning|realm/i.test(sec.querySelector('h5')?.textContent || '')) more.append(sec);
+      if (more.childElementCount) {
+        more.hidden = !this.moreOpen;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'ws-insp__morebtn';
+        btn.dataset.act = 'more';
+        btn.innerHTML = `<span>${this.moreOpen ? 'Fewer details' : 'More details'}</span>${uiIcon(this.moreOpen ? 'chev-up' : 'chev-down')}`;
+        sc.append(btn, more);
+      }
+    }
     if (sc) {
       sc.scrollTop = this._scrollTop || 0;
       const hint = () => {
@@ -448,7 +469,13 @@ export class Inspector {
       if (b.dataset.i != null) return this.focusIndex(+b.dataset.i);
       const act = b.dataset.act;
       if (act === 'close') this.close();
-      else if (act === 'fav' && u) {
+      else if (act === 'more') {
+        this.moreOpen = !this.moreOpen;
+        const m = this.el.querySelector('.ws-insp__more');
+        if (m) m.hidden = !this.moreOpen;
+        b.innerHTML = `<span>${this.moreOpen ? 'Fewer details' : 'More details'}</span>${uiIcon(this.moreOpen ? 'chev-up' : 'chev-down')}`;
+        return;
+      } else if (act === 'fav' && u) {
         u.data = u.data || {};
         u.data.favorite = !u.data.favorite;
         this.render();
@@ -606,6 +633,10 @@ export class Inspector {
     if (x != null) this.game.focus(x, z, Math.min(this.game.cameraRig.goal.dist, 40));
   }
 
+  isCompact() {
+    return matchMedia('(max-width: 720px), (max-height: 500px)').matches;
+  }
+
   // ---- phone bottom sheet: drag the grip / header between peek and full
   bindSheet() {
     let start = null;
@@ -700,6 +731,20 @@ export class Inspector {
     }
     const x = Math.max(16, Math.min(innerWidth - 16, (v.x * 0.5 + 0.5) * innerWidth));
     const sy = Math.max(70, Math.min(innerHeight - 40, (-v.y * 0.5 + 0.5) * innerHeight));
+    // keep the pin out of every HUD panel (top bar, dock, overview, map, ...)
+    const now = performance.now();
+    if (!this._hudRects || now - this._hudT > 500) {
+      this._hudT = now;
+      this._hudRects = [...this.ui.root.querySelectorAll('.ws-brand, .ws-clock, .ws-stats, .ws-agechip, .ws-dock__panel, .ws-brush.is-shown, .ws-overview, .ws-mapwrap:not(.is-off), .ws-insp.is-open, .ws-side.is-open, .ws-campad, .ws-feed__item')]
+        .map((e) => e.getBoundingClientRect())
+        .filter((r) => r.width > 0 && r.height > 0);
+    }
+    const lw0 = pin.firstChild.offsetWidth || 60;
+    const box = { l: x - Math.max(10, lw0 / 2) - 4, r: x + Math.max(10, lw0 / 2) + 4, t: sy - 42, b: sy + 2 };
+    if (this._hudRects.some((r) => box.l < r.right && box.r > r.left && box.t < r.bottom && box.b > r.top)) {
+      pin.classList.remove('is-shown');
+      return;
+    }
     pin.style.transform = `translate(${x.toFixed(1)}px, ${sy.toFixed(1)}px)`;
     const lab = pin.firstChild;
     const lw = lab.offsetWidth || 0;
