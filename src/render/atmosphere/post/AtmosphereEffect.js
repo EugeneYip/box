@@ -92,7 +92,8 @@ void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor)
   }
 
   // ---- aerial haze ---------------------------------------------------------
-  float hz = 1.0 - exp(-max(dist - uHaze.x, 0.0) * uHaze.y);
+  float past = max(dist - uHaze.x, 0.0);
+  float hz = (1.0 - exp(-past * uHaze.y)) * smoothstep(0.0, 150.0, past);
   hz *= mix(1.0, exp(-max(wp.y, 0.0) * uHaze.z), 0.7);
   // Looking down at the map the haze stays a light veil (land and sea stay
   // readable) and takes the sky's colour; only near-horizontal rays may fog
@@ -131,11 +132,17 @@ void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor)
     band = mix(band, cc, cb * 0.9);
     // over open water the far sea stays a darker, sky-reflecting band, so a
     // clear horizon line separates sea from sky
-    vec3 seaRefl = skyBase(normalize(vec3(sd.x, 0.05 + ly * 0.8, sd.z))) * 0.58;
-    seaRefl += uHalo * pow(max(dot(normalize(vec3(sd.x, 0.0, sd.z)), normalize(vec3(uSunDir.x, 0.0, uSunDir.z))), 0.0), 40.0) * 0.5;
+    vec3 seaRefl = skyBase(normalize(vec3(sd.x, 0.05 + ly * 0.8, sd.z))) * 0.5;
+    // sun glitter path: a narrow warm column on the sea below the sun
+    float azs = max(dot(normalize(vec3(dir.x, 0.0, dir.z)), normalize(vec3(uSunDir.x, 0.0, uSunDir.z))), 0.0);
+    float sunUp = smoothstep(-0.02, 0.06, uSunDir.y) * (1.0 - smoothstep(0.35, 0.7, uSunDir.y));
+    float path = pow(azs, 700.0) * 1.6 + pow(azs, 90.0) * 0.35;
+    seaRefl += (uHalo + uGlow * 0.6) * path * sunUp * (1.0 - smoothstep(0.0, 0.2, -dir.y));
+    // the far sea melts into the sky through a thin haze gradient at the horizon
+    seaRefl = mix(seaRefl, band, 1.0 - smoothstep(0.0, 0.035, -dir.y));
     band = mix(band, seaRefl, water);
     hc = mix(hc, band, horiz);
-    hz = min(hz, mix(0.95, 0.8, water));
+    hz = min(hz, mix(0.95, 0.62, water));
   }
   col = mix(col, hc, hz);
 

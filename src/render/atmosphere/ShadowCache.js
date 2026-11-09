@@ -180,7 +180,7 @@ export class ShadowCache {
       // Zoomed far out units are a few pixels tall: their shadows are
       // skipped (and the clean static map is kept as is).
       const root = this.dynamicRoot();
-      const near = this.game.cameraRig.cur.dist < 55 && !this.game.settings?.powerSaver;
+      const near = this.game.cameraRig.cur.dist < 40 && !this.game.settings?.powerSaver;
       if (root && root.visible && near) {
         const list = this.dynScene.children;
         list.length = 0;
