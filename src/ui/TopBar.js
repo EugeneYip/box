@@ -296,7 +296,11 @@ export class TopBar {
       const season = t.seasonName || seasonOf(t.year);
       const year = `Year ${Math.floor(t.year) + 1}`;
       const time = `${String(hh).padStart(2, '0')}:${String(Math.floor(mm / 5) * 5).padStart(2, '0')}`;
-      if (this.yearEl.textContent !== year) this.yearEl.textContent = year;
+      const yKey = `${year}|${time}`;
+      if (this._yKey !== yKey) {
+        this._yKey = yKey;
+        this.yearEl.innerHTML = `<span>${year}</span><span class="ws-clock__tod">${time}</span>`;
+      }
       const len = t.seasonYears || this.game.laws?.weatherSeasonLength || 1;
       const frac = (((t.season ?? 0) % 1) + 1) % 1;
       const k = Math.min(len, Math.floor(frac * len) + 1);

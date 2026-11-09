@@ -781,3 +781,119 @@
     display: none;
   }
 }
+
+/* ==========================================================================
+   Round 9
+   ========================================================================== */
+/* 1. law descriptions: two lines in the three-column layout on short laptops */
+@media (max-height: 820px) and (min-height: 501px) {
+  .ws-lawcard .ws-row__desc {
+    -webkit-line-clamp: 2;
+  }
+}
+
+/* 3. minimap on: Overview becomes a small button inside the map frame */
+.has-minimap .ws-overview {
+  right: calc(var(--ws-edge) + var(--ws-map) - 50px);
+  bottom: calc(var(--ws-edge) + 14px);
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  justify-content: center;
+  border-radius: 12px;
+}
+.has-minimap .ws-overview__txt {
+  display: none;
+}
+.is-touch.has-minimap .ws-overview {
+  width: 44px;
+  height: 44px;
+}
+/* tablet portrait: the Back pill sits below the age chip */
+@media (max-width: 1000px) and (min-width: 721px) and (min-height: 501px) {
+  .is-touch.is-overview .ws-overview {
+    top: 162px;
+  }
+}
+
+/* 5. time of day beside the year */
+.ws-clock__year {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.ws-clock__tod {
+  font: 600 11px var(--ws-font);
+  letter-spacing: 0.02em;
+  color: var(--ws-ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 6. overview on drawer layouts: the dock handle folds away */
+@media (max-width: 720px), (max-height: 500px) {
+  .is-overview .ws-dock {
+    opacity: 0;
+    pointer-events: none !important;
+    transform: translateY(20px);
+  }
+  .is-overview .ws-dock * {
+    pointer-events: none !important;
+  }
+}
+@media (max-height: 500px) and (min-width: 721px) {
+  .is-overview .ws-dock {
+    transform: translate(-50%, 20px);
+  }
+}
+
+/* 7. narrow inspectors: one item card per row, names wrap */
+.ws-slots {
+  grid-template-columns: minmax(0, 1fr);
+}
+.ws-slot__txt b {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+/* 8. phone landscape laws: search and category rail share one row */
+@media (max-height: 500px) and (min-width: 721px) {
+  .ws-lawsx {
+    display: grid;
+    grid-template-columns: 200px minmax(0, 1fr) auto;
+    grid-template-areas:
+      'search rail restore'
+      'list list list';
+    align-items: center;
+    column-gap: 8px;
+    row-gap: 6px;
+  }
+  .ws-lawsx__top,
+  .ws-lawsx__main {
+    display: contents;
+  }
+  .ws-lawsx__searchbox {
+    grid-area: search;
+  }
+  .ws-lawrail {
+    grid-area: rail;
+    padding: 0;
+  }
+  .ws-lawsx__restore {
+    grid-area: restore;
+  }
+  .ws-lawlist {
+    grid-area: list;
+    height: calc(100vh - 128px);
+    align-self: stretch;
+  }
+  .ws-lawsx__count {
+    display: none;
+  }
+}
+
+@media (max-height: 500px) and (min-width: 721px) {
+  .is-touch.is-overview .ws-overview {
+    top: 68px;
+  }
+}

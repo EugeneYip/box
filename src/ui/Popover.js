@@ -46,8 +46,11 @@ export class Popover {
     root.addEventListener('pointerup', (e) => {
       cancel();
       if (e.pointerType !== 'touch' || !this._tap) return;
-      const t = this._tap;
+      let t = this._tap;
       this._tap = null;
+      // the panel may have re-rendered under the finger: find the element again
+      if (!t.isConnected) t = document.elementFromPoint(e.clientX, e.clientY)?.closest?.('[data-tip]');
+      if (!t) return;
       if (this.target === t && this.el.classList.contains('is-shown')) this.hide();
       else this.show(t, 3200);
     });
@@ -62,12 +65,22 @@ export class Popover {
       },
       true,
     );
-    addEventListener('scroll', () => this.hide(), true);
+    // only a scroll that moves the target hides it (not unrelated panels)
+    addEventListener(
+      'scroll',
+      (e) => {
+        const t = this.target;
+        if (t && (e.target === document || e.target === window || e.target?.contains?.(t))) this.hide();
+      },
+      true,
+    );
   }
 
   show(t, ms = 0) {
     const text = t?.dataset?.tip;
-    if (!text) return;
+    if (!text || !t.isConnected) return;
+    const rr = t.getBoundingClientRect();
+    if (!rr.width && !rr.height) return; // never pin to a detached or hidden element
     this.target = t;
     this.el.textContent = text;
     this.el.classList.add('is-shown');

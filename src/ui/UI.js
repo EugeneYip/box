@@ -265,7 +265,7 @@ export class UI {
     const left = 12,
       right = vw - 12;
     const yaw = Math.round(rig.goal.yaw / (Math.PI * 2)) * Math.PI * 2;
-    const bias = THREE.MathUtils.degToRad(8);
+    const bias = THREE.MathUtils.degToRad(innerHeight <= 500 ? 15 : 8);
     const pitch = THREE.MathUtils.degToRad(70) + bias;
     const cam = new THREE.PerspectiveCamera(rig.camera.fov, vw / vh, 1, 1e6);
     const v = new THREE.Vector3();
@@ -513,7 +513,14 @@ export class UI {
   update(dt) {
     if (!this.enabled) return;
     if (this._debugHover && this.game.input) this.game.input.mouse.inside = true;
-    if (this.title?.active) safe(() => this.title.update(dt), null, 'title');
+    if (this.title?.active) {
+      safe(() => this.title.update(dt), null, 'title');
+      // kingdom / village name sprites would draw over the logo and card
+      safe(() => {
+        const L = this.game.buildings?.labels;
+        for (const m of [L?.kLabels, L?.vLabels, L?.battles, L?.markers]) if (m?.values) for (const s of m.values()) if (s) s.visible = false;
+      }, null, 'title labels');
+    }
     for (const p of this.parts) safe(() => p.update(dt), null, p.constructor.name);
     safe(() => this.updateOverview(dt), null, 'overview');
     // while a brush stroke is held, side panels fade back so the land is clear
