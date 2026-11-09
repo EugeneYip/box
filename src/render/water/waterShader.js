@@ -206,10 +206,12 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   veil = mix(veil, 1.0, outK);
   // rivers and narrow channels: a clear teal body of their own
   // rivers keep their teal under overcast skies: a soft light floor (scaled at night)
-  vec3 irrR = max(waterIrradianceV(lightVis), vec3(0.55, 0.62, 0.66) * (0.25 + 0.75 * uDay));
+  vec3 irrR = max(waterIrradianceV(lightVis), vec3(0.44, 0.66, 0.64) * (0.25 + 0.75 * uDay));
   // overcast: dim key light -> rivers must not mirror the grey sky into a pale ribbon
   float overcastK = 1.0 - smoothstep(0.25, 0.8, lum(uKeyCol * KEYN));
-  vec3 rivTeal = mix(vec3(0.020, 0.130, 0.130), vec3(0.030, 0.075, 0.080), gCold) * irrR;
+  vec3 rivTeal = mix(vec3(0.020, 0.130, 0.130), vec3(0.030, 0.075, 0.080), gCold);
+  // grey storm light and the storm grade desaturate: the river body gets richer
+  rivTeal = mix(rivTeal, vec3(0.014, 0.200, 0.180), overcastK * (1.0 - gCold)) * irrR;
   scat = mix(scat, rivTeal, narrow);
   veil = max(veil, 0.64 * narrow);
   float crest = smoothstep(0.10, 0.30, length(sl)) * open * 0.25;
@@ -322,7 +324,7 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   float iceNear = max(smoothstep(0.0, 0.35, iceW) * nearIce, smoothstep(0.16, 0.11, bg.r) * step(0.84, bg.b) * smoothstep(0.55, 0.8, gCold));
 
   // ---- compose (premultiplied)
-  vec3 refl = sky * F * mix(1.0, 0.4, max(narrow, narrowW) * overcastK);
+  vec3 refl = sky * F * mix(1.0, 0.22, max(narrow, narrowW) * overcastK);
   float a = 1.0 - (1.0 - veil) * (1.0 - F);
   vec3 col = scat * veil * (1.0 - F) + refl + scat * crest;
   col += waterShallowColorV(lightVis) * 1.6 * wash * (1.0 - outK);
@@ -330,7 +332,7 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   // river streaks: lighter, sky-tinted bands moving downstream
   // flow streaks: rivers, plus steep enclosed water (gorge lakes, rapids)
   float flowK = max(narrow, (1.0 - outK) * smoothstep(1.5, 4.0, dl) * (1.0 - smoothstep(4.0, 9.0, wide)) * 0.75);
-  col += flowK * streak * (waterShallowColorV(lightVis) * 0.9 + sky * 0.05);
+  col += flowK * streak * (mix(waterShallowColorV(lightVis), rivTeal * 1.6, overcastK * narrow) * 0.9 + sky * 0.05 * (1.0 - overcastK * 0.8));
   // from afar, rivers read as bright teal ribbons with a sky sheen, not dark roads
   float farR = smoothstep(60.0, 220.0, uCamDist);
   col += narrow * farR * (rivTeal * 1.3 + sky * 0.14 * (1.0 - overcastK * 0.7));
