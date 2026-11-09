@@ -141,7 +141,7 @@ export class Volcano {
     this._acc.fount += vt * 20 * k * fx.budget;
     while (this._acc.fount >= 1) {
       this._acc.fount -= 1;
-      sparks(fx, x + rand(-0.5, 0.5), top, z + rand(-0.5, 0.5), 1, { speed: rand(6, 11), up: true, ramp: RAMP.LAVA, gravity: 15, size: 2.2, life: 1.6, bright: 1.9, stretch: 0.05 });
+      sparks(fx, x + rand(-0.5, 0.5), top, z + rand(-0.5, 0.5), 1, { speed: rand(6, 11), up: true, ramp: RAMP.LAVA, gravity: 15, size: 1.8, life: 1.6, bright: 1.35, stretch: 0.05 });
       if (Math.random() < 0.06) fx.emit('fireball', { x, y: top + 0.5, z }, { scale: 1.1, count: 1 });
     }
     // lava bombs
