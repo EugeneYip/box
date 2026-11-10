@@ -62,7 +62,7 @@ const STAT_DEFS = [
   { key: 'animals', label: 'Animals', icon: 'paw', tint: '#ffab94' },
   { key: 'trees', label: 'Trees', icon: 'tree', tint: '#6fdca4' },
 ];
-export const PRESET_NAMES = { continent: 'Continent', pangaea: 'Pangaea', archipelago: 'Archipelago', islands: 'Islands' };
+export const PRESET_NAMES = { continent: 'Continent', pangaea: 'Pangaea', archipelago: 'Archipelago', islands: 'Islands', earth: 'World Map' };
 
 export class TopBar {
   constructor(ui) {

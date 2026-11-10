@@ -214,3 +214,97 @@
     transform: translateY(-1px);
   }
 }
+
+/* touch tablets: the folded dock also steps aside in Overview (the Back pill returns) */
+.is-touch.is-overview .ws-dock {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none !important;
+  transition:
+    opacity 0.25s,
+    visibility 0s 0.25s;
+}
+
+/* ---- New World with five landmasses: one balanced row (3 + 2 on phones) */
+.ws-presets {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+.ws-preset {
+  padding: 6px 6px 8px;
+}
+.ws-preset__blurb {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+@media (max-width: 720px) {
+  .ws-presets {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+  .ws-preset {
+    grid-column: span 2;
+  }
+  .ws-preset:nth-child(n + 4) {
+    grid-column: span 3;
+  }
+  .ws-preset__blurb {
+    display: none;
+  }
+}
+.ws-civauto {
+  flex: none;
+  height: 26px;
+  padding: 0 9px;
+  border-radius: 13px;
+  font: 700 10px var(--ws-font);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ws-ink-3);
+  background: rgba(255, 247, 230, 0.05);
+  box-shadow: inset 0 0 0 1px var(--ws-line);
+}
+.ws-civauto.is-on {
+  color: var(--ws-gold-hi);
+  box-shadow: inset 0 0 0 1px rgba(235, 201, 119, 0.45);
+}
+.ws-civauto:not([disabled]):hover {
+  color: var(--ws-ink);
+}
+.is-touch .ws-civauto {
+  height: 44px;
+  padding: 0 14px;
+  border-radius: 22px;
+}
+.ws-size__note.is-warn {
+  color: #ffc98a;
+}
+.ws-size.is-slow small::after {
+  content: ' · slow';
+  color: #ffc98a;
+}
+
+/* ---- title card: five landmass chips on one row, keyboard hint in the flow */
+.ws-title__card {
+  width: min(540px, calc(100vw - 32px));
+}
+.ws-title__card .ws-chips {
+  gap: 6px;
+}
+.ws-title__hint {
+  margin-top: -4px;
+  font-size: 11.5px;
+  color: var(--ws-ink-3);
+  letter-spacing: 0.06em;
+}
+.ws-title__hint .ws-key {
+  margin: 0 4px;
+}
+.is-touch .ws-title__hint {
+  display: none;
+}
+.ws-chip.is-armed {
+  color: #ffc98a;
+  box-shadow: inset 0 0 0 1.5px #ffc98a;
+}

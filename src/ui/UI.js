@@ -250,7 +250,7 @@ export class UI {
   regenerate(seed, preset, civs, { quiet = false, after = null } = {}) {
     const g = this.game;
     const label = this.veil.querySelector('.ws-veil__label');
-    label.textContent = `Seeding ${/^[aeiou]/i.test(PRESET_NAMES[preset] || '') ? 'an' : 'a'} ${PRESET_NAMES[preset] || 'new'} world`;
+    label.textContent = preset === 'earth' ? 'Shaping the World Map' : `Seeding ${/^[aeiou]/i.test(PRESET_NAMES[preset] || '') ? 'an' : 'a'} ${PRESET_NAMES[preset] || 'new'} world`;
     this.veil.classList.add('is-shown');
     setTimeout(() => {
       requestAnimationFrame(() => {
@@ -258,7 +258,7 @@ export class UI {
         this._regenN = (this._regenN || 0) + 1; // new land: the overview frame is measured again
         g.params.civs = civs;
         after?.();
-        if (!quiet) setTimeout(() => g.notify(`A new ${(PRESET_NAMES[preset] || 'world').toLowerCase()} rises from the deep. Seed ${seed}.`, 'good'), 400);
+        if (!quiet) setTimeout(() => g.notify(preset === 'earth' ? `The World Map rises from the deep. Seed ${seed}.` : `A new ${(PRESET_NAMES[preset] || 'world').toLowerCase()} rises from the deep. Seed ${seed}.`, 'good'), 400);
         setTimeout(() => this.veil.classList.remove('is-shown'), 120);
       });
     }, 360);
@@ -299,9 +299,9 @@ export class UI {
     const pillBottom = ovR.height && ovR.top < innerHeight * 0.4 ? ovR.bottom : 0;
     const dockR = this.toolbar.panel.getBoundingClientRect();
     const top = Math.min(vh * 0.45, Math.max(topR.bottom, pillBottom) + 12);
-    // on drawer layouts (phones, short landscape) the dock handle folds away during
-    // Overview (hud5.css), so the map may use the full height
-    const dockGone = matchMedia('(max-width: 720px), (max-height: 500px)').matches;
+    // on drawer layouts (phones, short landscape) and touch tablets the dock folds
+    // away during Overview (hud5.css, hud7.css), so the map may use the full height
+    const dockGone = matchMedia('(max-width: 720px), (max-height: 500px)').matches || this.root.classList.contains('is-touch');
     const bottom = dockGone ? vh - 10 : Math.max(vh * 0.6, (dockR.top > vh * 0.5 ? dockR.top : vh) - 12);
     const left = 12,
       right = vw - 12;
