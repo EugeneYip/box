@@ -17,6 +17,8 @@ import { UnitRenderer } from '../render/units/UnitRenderer.js';
 import { Civilization } from '../sim/civ/Civilization.js';
 import { BuildingRenderer } from '../render/buildings/BuildingRenderer.js';
 import { Disasters } from '../sim/disasters/Disasters.js';
+import { Fleet } from '../sim/fleet/Fleet.js';
+import { FleetRenderer } from '../render/fleet/FleetRenderer.js';
 import { Effects } from '../render/fx/Effects.js';
 import { AudioSystem } from '../audio/Audio.js';
 import { UI } from '../ui/UI.js';
@@ -112,11 +114,13 @@ export class Game {
     this.civ = new Civilization(this);
     this.buildings = new BuildingRenderer(this);
     this.disasters = new Disasters(this);
+    this.fleet = new Fleet(this);
+    this.fleetRenderer = new FleetRenderer(this);
     this.brushCursor = new BrushCursor(this);
     this.input = new Input(this);
     this.ui = new UI(this);
 
-    this.simSystems = [this.atmosphere, this.flora, this.units, this.civ, this.disasters];
+    this.simSystems = [this.atmosphere, this.flora, this.units, this.civ, this.disasters, this.fleet];
     this.visualSystems = [
       this.atmosphere,
       this.terrain,
@@ -124,6 +128,7 @@ export class Game {
       this.vegetation,
       this.unitRenderer,
       this.buildings,
+      this.fleetRenderer,
       this.fx,
       this.brushCursor,
       this.audio,

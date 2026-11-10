@@ -18,6 +18,31 @@ export class Feed {
     this.el.addEventListener('pointerenter', () => (this.hover = true));
     this.el.addEventListener('pointerleave', () => (this.hover = false));
     this.game.events.on('notify', (n) => this.push(n));
+    // Civ writes some lines only to its history (renames, relics, families on the
+    // move). Route them here too, unless the same line also arrives as a
+    // notification (Civ's _note sends both, synchronously, so one microtask is enough).
+    const pend = new Map();
+    this.game.events.on('notify', (n) => n?.text && pend.delete(n.text));
+    this.game.events.on('civ:history', (h) => {
+      if (!h?.text) return;
+      pend.set(h.text, h);
+      if (this._histQ) return;
+      this._histQ = true;
+      queueMicrotask(() => {
+        this._histQ = false;
+        const list = [...pend.values()];
+        pend.clear();
+        for (const e of list) this.pushHistory(e);
+      });
+    });
+  }
+
+  // A history-only line: renames and other decrees show in the feed; the rest
+  // (relics, families settling) go quietly into the chronicle.
+  pushHistory(h) {
+    const n = { text: h.text, kind: h.kind || 'info', x: h.x, z: h.z, time: h.t };
+    if (/shall now be known as|by divine|by the gods/i.test(h.text)) this.push(n);
+    else this.ui.chronicle?.add?.({ ...n, minor: true });
   }
 
   push(n) {

@@ -1,0 +1,618 @@
+import * as THREE from 'three';
+import { vehicleModel, debrisGeometry, stoneGeometry } from './models.js';
+import { createVehicleMaterial, createVehicleDepthMaterial, createWakeMaterial } from './materials.js';
+import { bannerGeometry, bannerMaterial, glowTexture } from '../buildings/props.js';
+import { emblemAtlas, EMBLEM_IDS, FIELD_IDS } from '../buildings/emblems.js';
+import { ALL_KINDS, KINDS } from '../../sim/fleet/kinds.js';
+
+// Draws game.fleet: one instanced batch per vehicle kind (sails, oars, wheels
+// and legs animate in the vertex shader), realm flags with their emblems,
+// wakes and bow waves, floating wreckage, catapult stones, faint trade lanes
+// at mid zoom, and a dot per vehicle when the camera is far.
+// Cheaper paths in power saver and at far zoom (see update()).
+
+const TICK = 1 / 15;
+const DETAIL_DIST = 175; // beyond this camera distance vehicles draw as dots
+const FLAG_DIST = 115;
+const WAKE_DIST = 165;
+const BEAM = { fishing: 0.36, cog: 0.35, transport: 0.37, galley: 0.19, explorer: 0.27, carrack: 0.31 };
+
+function lerpAngle(a, b, t) {
+  let d = b - a;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return a + d * t;
+}
+
+export class FleetRenderer {
+  constructor(game) {
+    this.game = game;
+    this.group = new THREE.Group();
+    this.group.name = 'fleet';
+    game.scene.add(this.group);
+    this.t = 0;
+    this.uniforms = { uTime: { value: 0 }, uNight: { value: 0 }, uLight: { value: 1 }, uWind: { value: 0.35 }, uEmblems: { value: emblemAtlas() } };
+    this.mat = createVehicleMaterial(this.uniforms);
+    this.depthMat = createVehicleDepthMaterial(this.uniforms);
+    this.batches = new Map();
+    for (const kind of ALL_KINDS) this.batches.set(kind, { kind, model: null, mesh: null, cap: 0 });
+    this._m = new THREE.Matrix4();
+    this._m2 = new THREE.Matrix4();
+    this._q = new THREE.Quaternion();
+    this._e = new THREE.Euler(0, 0, 0, 'YZX');
+    this._p = new THREE.Vector3();
+    this._s = new THREE.Vector3(1, 1, 1);
+    this._c = new THREE.Color();
+    this._v = new THREE.Vector3();
+    this._up = new THREE.Vector3(0, 1, 0);
+    this._kcol = new Map();
+    this._fxT = 0;
+    this._laneT = 0;
+    this._initProps();
+  }
+
+  reset() {
+    this._laneT = 0;
+  }
+
+  _initProps() {
+    // flags
+    this.flagMat = bannerMaterial(this.uniforms);
+    this.flags = this._inst(bannerGeometry('vale'), this.flagMat, 32);
+    this.flags.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(32 * 3), 3);
+    this._flagAttr(32);
+    // wakes
+    const wg = new THREE.PlaneGeometry(3.9, 2.8, 1, 1).rotateX(-Math.PI / 2).translate(-1.25, 0, 0);
+    this.wakeMat = createWakeMaterial(this.uniforms);
+    this.wakes = this._inst(wg, this.wakeMat, 32);
+    this.wakes.renderOrder = -4; // just after the water sheet
+    this._wakeAttr(32);
+    // far-zoom dots: realm colour with a dark rim
+    const dg = new THREE.CircleGeometry(1, 10).rotateX(-Math.PI / 2);
+    const col = new Float32Array(dg.attributes.position.count * 3);
+    for (let i = 0; i < dg.attributes.position.count; i++) {
+      const r = Math.hypot(dg.attributes.position.getX(i), dg.attributes.position.getZ(i));
+      const k = r > 0.9 ? 0.18 : 1;
+      col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = k;
+    }
+    dg.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    this.dotMat = new THREE.MeshBasicMaterial({ vertexColors: true, depthTest: false, depthWrite: false, transparent: true, opacity: 0.95 });
+    this.dots = this._inst(dg, this.dotMat, 64);
+    this.dots.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(64 * 3), 3);
+    this.dots.renderOrder = 7;
+    // soft contact shadows under land vehicles
+    const bg = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+    this.blobMat = new THREE.MeshBasicMaterial({ map: this._blobTexture(), color: 0x000000, transparent: true, opacity: 0.42, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
+    this.blobs = this._inst(bg, this.blobMat, 32);
+    this.blobs.renderOrder = 2;
+    // wreckage and catapult stones
+    this.propMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 });
+    this.debris = this._inst(debrisGeometry(), this.propMat, 64);
+    this.stoneMat = new THREE.MeshStandardMaterial({ color: 0x8c857a, roughness: 0.95, flatShading: true });
+    this.stones = this._inst(stoneGeometry(), this.stoneMat, 16);
+    // trade lanes (dashed, faint, mid zoom)
+    const MAXV = 6000;
+    const lg = new THREE.BufferGeometry();
+    lg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(MAXV * 3), 3).setUsage(THREE.DynamicDrawUsage));
+    lg.setAttribute('color', new THREE.BufferAttribute(new Float32Array(MAXV * 3), 3).setUsage(THREE.DynamicDrawUsage));
+    lg.setAttribute('aDist', new THREE.BufferAttribute(new Float32Array(MAXV), 1).setUsage(THREE.DynamicDrawUsage));
+    lg.setDrawRange(0, 0);
+    this.laneMat = new THREE.ShaderMaterial({
+      uniforms: { uTime: this.uniforms.uTime, uAlpha: { value: 0.5 } },
+      transparent: true,
+      depthWrite: false,
+      vertexColors: true,
+      vertexShader: `attribute float aDist; varying float vD; varying vec3 vC; void main() { vD = aDist; vC = color; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+      fragmentShader: `uniform float uTime; uniform float uAlpha; varying float vD; varying vec3 vC; void main() { float d = fract(vD * 0.7 - uTime * 0.25); if (d > 0.55) discard; gl_FragColor = vec4(vC, uAlpha); }`,
+    });
+    this.lanes = new THREE.LineSegments(lg, this.laneMat);
+    this.lanes.frustumCulled = false;
+    this.lanes.renderOrder = -3;
+    this.lanes.visible = false;
+    this.group.add(this.lanes);
+    this._laneMax = MAXV;
+  }
+
+  _blobTexture() {
+    const c = document.createElement('canvas');
+    c.width = c.height = 64;
+    const x = c.getContext('2d');
+    const g = x.createRadialGradient(32, 32, 2, 32, 32, 31);
+    g.addColorStop(0, 'rgba(255,255,255,1)');
+    g.addColorStop(0.6, 'rgba(255,255,255,0.55)');
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    x.fillStyle = g;
+    x.fillRect(0, 0, 64, 64);
+    const t = new THREE.CanvasTexture(c);
+    void glowTexture;
+    return t;
+  }
+
+  _inst(geo, mat, cap) {
+    const m = new THREE.InstancedMesh(geo, mat, cap);
+    m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    m.frustumCulled = false;
+    m.castShadow = false;
+    m.receiveShadow = false;
+    m.count = 0;
+    m.visible = false;
+    this.group.add(m);
+    return m;
+  }
+
+  _flagAttr(cap) {
+    const ea = new THREE.InstancedBufferAttribute(new Float32Array(cap * 2).fill(-1), 2);
+    ea.setUsage(THREE.DynamicDrawUsage);
+    this.flags.geometry.setAttribute('aEmblem', ea);
+  }
+  _wakeAttr(cap) {
+    const a = new THREE.InstancedBufferAttribute(new Float32Array(cap * 4), 4);
+    a.setUsage(THREE.DynamicDrawUsage);
+    this.wakes.geometry.setAttribute('iWake', a);
+  }
+  // grow an instanced prop mesh, keeping its extra attributes
+  _growProp(name, n, extra) {
+    const m = this[name];
+    if (m.instanceMatrix.count >= n) return m;
+    const cap = Math.ceil(n * 1.5);
+    const nm = new THREE.InstancedMesh(m.geometry, m.material, cap);
+    nm.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    nm.frustumCulled = false;
+    nm.renderOrder = m.renderOrder;
+    nm.castShadow = m.castShadow;
+    nm.receiveShadow = m.receiveShadow;
+    if (m.instanceColor) nm.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(cap * 3), 3);
+    this.group.remove(m);
+    m.dispose();
+    this.group.add(nm);
+    this[name] = nm;
+    extra?.(cap);
+    return nm;
+  }
+
+  // one batch per vehicle kind, with per-instance colour, animation and state
+  _batch(kind, n) {
+    const b = this.batches.get(kind);
+    if (b.mesh && b.cap >= n) return b;
+    if (!b.model) b.model = vehicleModel(kind);
+    const cap = Math.max(8, Math.ceil(n * 1.5));
+    const geo = new THREE.BufferGeometry();
+    for (const k of Object.keys(b.model.geo.attributes)) geo.setAttribute(k, b.model.geo.attributes[k]);
+    geo.boundingSphere = b.model.geo.boundingSphere;
+    b.iColor = new THREE.InstancedBufferAttribute(new Float32Array(cap * 3), 3).setUsage(THREE.DynamicDrawUsage);
+    b.iAnim = new THREE.InstancedBufferAttribute(new Float32Array(cap * 4), 4).setUsage(THREE.DynamicDrawUsage);
+    b.iState = new THREE.InstancedBufferAttribute(new Float32Array(cap * 4), 4).setUsage(THREE.DynamicDrawUsage);
+    geo.setAttribute('iColor', b.iColor);
+    geo.setAttribute('iAnim', b.iAnim);
+    geo.setAttribute('iState', b.iState);
+    const mesh = new THREE.InstancedMesh(geo, this.mat, cap);
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    mesh.frustumCulled = false;
+    mesh.castShadow = false; // the static shadow cache would leave ghosts behind moving ships
+    mesh.receiveShadow = true;
+    mesh.customDepthMaterial = this.depthMat;
+    mesh.count = 0;
+    mesh.name = 'fleet-' + kind;
+    if (b.mesh) {
+      this.group.remove(b.mesh);
+      b.mesh.geometry.dispose();
+      b.mesh.dispose();
+    }
+    b.mesh = mesh;
+    b.cap = cap;
+    this.group.add(mesh);
+    return b;
+  }
+
+  _kingdomColor(kid) {
+    const hex = this.game.civ?.kingdomColor?.(kid) ?? 0xd8c8a8;
+    let c = this._kcol.get(hex);
+    if (!c) {
+      c = new THREE.Color(hex);
+      this._kcol.set(hex, c);
+    }
+    return c;
+  }
+
+  // ------------------------------------------------------------------ frame
+  update(dt) {
+    const g = this.game;
+    const F = g.fleet;
+    if (!F) return;
+    this.t += dt;
+    const U = this.uniforms;
+    U.uTime.value = this.t;
+    const day = g.env?.daylight ?? 1;
+    const night = 1 - THREE.MathUtils.smoothstep(day, 0.12, 0.62);
+    U.uNight.value += (night - U.uNight.value) * Math.min(1, dt * 3);
+    U.uLight.value = 0.25 + 0.75 * Math.min(1, day * 1.4);
+    U.uWind.value = g.env?.wind?.strength ?? 0.35;
+    const rig = g.cameraRig;
+    const dist = rig?.cur?.dist ?? 80;
+    const cx = rig?.cur?.x ?? 0,
+      cz = rig?.cur?.z ?? 0;
+    const ps = !!g.settings?.powerSaver;
+    const far = !!g.view?.far || dist > DETAIL_DIST;
+    const viewR = dist * 1.7 + 24;
+    const alpha = g.paused ? 1 : Math.min(1, Math.max(0, (g._acc || 0) / (g.simStep || TICK)));
+    const list = F.list;
+    // ---- detailed vehicles
+    const per = new Map();
+    let visible = 0;
+    if (!far) {
+      for (const v of list) {
+        if (!v.alive) continue;
+        if (Math.abs(v.x - cx) > viewR || Math.abs(v.z - cz) > viewR) continue;
+        let L = per.get(v.kind);
+        if (!L) per.set(v.kind, (L = []));
+        L.push(v);
+        visible++;
+      }
+    }
+    const flagsOn = !far && dist < (ps ? FLAG_DIST * 0.7 : FLAG_DIST);
+    const wakesOn = !far && dist < (ps ? WAKE_DIST * 0.55 : WAKE_DIST);
+    const flagList = [];
+    const wakeList = [];
+    const blobList = [];
+    const st = F.storm?.() ?? 0;
+    const wind = g.env?.wind || { x: 1, z: 0, strength: 0.3 };
+    const W = g.world;
+    for (const [kind, b] of this.batches) {
+      const L = per.get(kind) || [];
+      let n = L.length;
+      if (kind === 'caravan') n *= 4;
+      if (!n) {
+        if (b.mesh) {
+          b.mesh.count = 0;
+          b.mesh.visible = false;
+        }
+        continue;
+      }
+      this._batch(kind, n);
+      const mesh = b.mesh;
+      const iC = b.iColor.array,
+        iA = b.iAnim.array,
+        iS = b.iState.array;
+      let k = 0;
+      for (const v of L) {
+        const def = v.def;
+        const x = v.px + (v.x - v.px) * alpha,
+          z = v.pz + (v.z - v.pz) * alpha;
+        const h = lerpAngle(v.ph ?? v.heading, v.heading, alpha);
+        const kc = this._kingdomColor(v.kingdom);
+        const dmg = Math.min(1, Math.max(0, 1 - v.hp / v.maxHp - 0.12) / 0.88);
+        const a = v.anim;
+        if (v.cls === 'sea') {
+          const ph = this.t + v.seed * 20;
+          const rough = 1 + st * 2.5;
+          let y = Math.sin(ph * 1.5) * 0.025 * rough;
+          let roll = Math.sin(ph * 1.1) * 0.03 * rough + (v.heading - (v.ph ?? v.heading)) * 1.5;
+          let pitch = Math.sin(ph * 0.9 + 1) * 0.02 * rough;
+          if (v.sink > 0) {
+            const s = v.sink;
+            y -= s * s * (def.length * 0.35 + 0.8);
+            roll += s * 0.9 * (v.seed > 0.5 ? 1 : -1);
+            pitch += s * 0.45 * (v.seed > 0.3 ? 1 : -1);
+          }
+          v.y = 0;
+          this._e.set(roll, -h, pitch, 'YZX');
+          this._q.setFromEuler(this._e);
+          this._m.compose(this._p.set(x, y, z), this._q, this._s.set(1, 1, 1));
+          mesh.setMatrixAt(k, this._m);
+          iC[k * 3] = kc.r;
+          iC[k * 3 + 1] = kc.g;
+          iC[k * 3 + 2] = kc.b;
+          // which side the wind fills the fore-and-aft sails from
+          const tack = Math.sign(Math.sin(h) * wind.x - Math.cos(h) * wind.z) || 1;
+          iA[k * 4] = a.row;
+          iA[k * 4 + 1] = tack;
+          iA[k * 4 + 2] = 0;
+          iA[k * 4 + 3] = a.fill * (1 - a.furl);
+          iS[k * 4] = dmg;
+          iS[k * 4 + 1] = v.burning;
+          iS[k * 4 + 2] = a.furl;
+          iS[k * 4 + 3] = a.oar;
+          k++;
+          if (flagsOn && b.model.flags.length && v.sink < 0.4) for (const f of b.model.flags) flagList.push({ f, m: this._m.clone(), v, h });
+          if (wakesOn && v.speed > 0.06 && v.sink < 0.3 && (v.state === 'sail' || v.state === 'patrol' || v.speed > 0.3)) wakeList.push({ x, z, h, v, beam: BEAM[kind] || 0.3 });
+        } else {
+          // land: sit on the ground, tilt with the slope
+          const y = W.heightAt(x, z);
+          v.y = y;
+          const c = Math.cos(h),
+            s = Math.sin(h);
+          const hl = def.length * 0.35;
+          const pitch = Math.atan2(W.heightAt(x + c * hl, z + s * hl) - W.heightAt(x - c * hl, z - s * hl), hl * 2);
+          const roll = -Math.atan2(W.heightAt(x - s * 0.3, z + c * 0.3) - W.heightAt(x + s * 0.3, z - c * 0.3), 0.6) * 0.6;
+          const put = (px, pz, ph, variant, py) => {
+            this._e.set(roll, -ph, pitch, 'YZX');
+            this._q.setFromEuler(this._e);
+            this._m.compose(this._p.set(px, py ?? y, pz), this._q, this._s.set(1, 1, 1));
+            mesh.setMatrixAt(k, this._m);
+            iC[k * 3] = kc.r;
+            iC[k * 3 + 1] = kc.g;
+            iC[k * 3 + 2] = kc.b;
+            iA[k * 4] = a.walk + variant * 1.3;
+            iA[k * 4 + 1] = a.wheel;
+            iA[k * 4 + 2] = kind === 'catapult' ? Math.pow(a.arm, 0.35) * 2.0 : kind === 'ram' ? Math.sin(a.ram * Math.PI) * 0.28 : 0;
+            iA[k * 4 + 3] = 0;
+            iS[k * 4] = dmg;
+            iS[k * 4 + 1] = v.burning || 0;
+            iS[k * 4 + 2] = 0;
+            iS[k * 4 + 3] = kind === 'oxcart' ? a.cargoType : variant;
+            k++;
+            blobList.push(px, pz, def.length * (kind === 'caravan' ? 0.9 : 1.1), ph);
+          };
+          if (kind === 'caravan') {
+            const camel = a.cargoType === 2 ? 2 : 0;
+            const T = v.trail;
+            for (let i = 0; i < 4; i++) {
+              const back = i * 0.72;
+              const p = trailPoint(T, x, z, h, back);
+              put(p.x, p.z, p.h, camel + (i === 0 ? 1 : 0), W.heightAt(p.x, p.z));
+            }
+          } else put(x, z, h, 0);
+        }
+      }
+      mesh.count = k;
+      mesh.visible = k > 0;
+      mesh.instanceMatrix.needsUpdate = true;
+      b.iColor.needsUpdate = true;
+      b.iAnim.needsUpdate = true;
+      b.iState.needsUpdate = true;
+    }
+    this._flags(flagList, flagsOn, wind);
+    this._wakes(wakeList, wakesOn);
+    this._blobs(blobList, !far);
+    this._dots(list, far, dist, cx, cz, viewR);
+    this._debris(F, !far, alpha);
+    this._stones(F, alpha);
+    this._lanes(F, dt, dist, far);
+    this._effects(F, dt, far, dist, cx, cz);
+    this.visibleCount = visible;
+  }
+
+  _flags(L, on, wind) {
+    let n = 0;
+    if (on && L.length) {
+      const mesh = this._growProp('flags', L.length, (cap) => this._flagAttr(cap));
+      const civ = this.game.civ;
+      const ea = mesh.geometry.getAttribute('aEmblem');
+      for (const { f, m, v, h } of L) {
+        this._p.set(f.x, f.y, f.z).applyMatrix4(m);
+        // stream with the apparent wind (true wind minus the ship's way)
+        const ax = (wind.x || 0) * (0.6 + (wind.strength ?? 0.3)) - Math.cos(h) * v.speed * 0.6,
+          az = (wind.z || 0) * (0.6 + (wind.strength ?? 0.3)) - Math.sin(h) * v.speed * 0.6;
+        const yaw = Math.atan2(az, ax);
+        this._q.setFromAxisAngle(this._up, -yaw);
+        const s = f.s * 1.05;
+        this._m2.compose(this._p, this._q, this._s.set(s, s, s));
+        mesh.setMatrixAt(n, this._m2);
+        const kb = civ?.kingdoms?.[v.kingdom];
+        mesh.setColorAt(n, this._c.setHex(kb?.color ?? 0xd8c8a8));
+        const ban = kb?.banner;
+        ea.setXY(n, ban ? EMBLEM_IDS.indexOf(ban.symbol) : -1, ban ? Math.max(0, FIELD_IDS.indexOf(ban.field)) : 0);
+        n++;
+      }
+      ea.needsUpdate = true;
+      mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    }
+    this.flags.count = n;
+    this.flags.visible = n > 0;
+  }
+
+  _wakes(L, on) {
+    let n = 0;
+    if (on && L.length) {
+      const mesh = this._growProp('wakes', L.length, (cap) => this._wakeAttr(cap));
+      const wa = mesh.geometry.getAttribute('iWake');
+      for (const { x, z, h, v, beam } of L) {
+        const len = v.def.length;
+        this._q.setFromAxisAngle(this._up, -h);
+        this._m.compose(this._p.set(x, 0.015, z), this._q, this._s.set(len, 1, len));
+        mesh.setMatrixAt(n, this._m);
+        wa.setXYZW(n, Math.min(1, v.speed / v.def.speed) * (v.kind === 'fishing' ? 0.6 : 1), beam, v.seed * 10, v.anim.oar * (v.kind === 'galley' ? 1 : 0.5));
+        n++;
+      }
+      wa.needsUpdate = true;
+      mesh.instanceMatrix.needsUpdate = true;
+    }
+    this.wakes.count = n;
+    this.wakes.visible = n > 0;
+  }
+
+  _blobs(L, on) {
+    const cnt = L.length / 4;
+    let n = 0;
+    if (on && cnt) {
+      const mesh = this._growProp('blobs', cnt);
+      const W = this.game.world;
+      for (let i = 0; i < L.length; i += 4) {
+        const x = L[i],
+          z = L[i + 1],
+          s = L[i + 2];
+        this._q.setFromAxisAngle(this._up, -L[i + 3]);
+        this._m.compose(this._p.set(x, W.heightAt(x, z) + 0.04, z), this._q, this._s.set(s, 1, s * 0.6));
+        mesh.setMatrixAt(n++, this._m);
+      }
+      mesh.instanceMatrix.needsUpdate = true;
+    }
+    this.blobs.count = n;
+    this.blobs.visible = n > 0;
+  }
+
+  _dots(list, far, dist, cx, cz, viewR) {
+    let n = 0;
+    if (far && list.length) {
+      const mesh = this._growProp('dots', list.length);
+      const W = this.game.world;
+      const R = viewR * 1.4;
+      const base = Math.max(0.5, dist * 0.0068);
+      for (const v of list) {
+        if (!v.alive || v.state === 'sinking') continue;
+        if (Math.abs(v.x - cx) > R || Math.abs(v.z - cz) > R) continue;
+        const s = base * (v.cls === 'sea' ? (v.def.length > 2.3 ? 1.35 : v.kind === 'fishing' ? 0.7 : 1.1) : 0.75);
+        const y = v.cls === 'sea' ? 0.3 : W.heightAt(v.x, v.z) + 0.4;
+        this._m.compose(this._p.set(v.x, y, v.z), this._q.identity(), this._s.set(s, 1, s));
+        mesh.setMatrixAt(n, this._m);
+        const c = this._kingdomColor(v.kingdom);
+        this._c.copy(c).multiplyScalar(1.25);
+        mesh.setColorAt(n, this._c);
+        n++;
+      }
+      mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    }
+    this.dots.count = n;
+    this.dots.visible = n > 0;
+  }
+
+  _debris(F, on, alpha) {
+    let n = 0;
+    const L = F.debris;
+    if (on && L.length) {
+      const mesh = this._growProp('debris', L.length);
+      for (const d of L) {
+        const sinkAt = d.life - 8;
+        const y = 0.01 + Math.sin(this.t * 1.3 + d.seed * 20) * 0.015 - (d.age > sinkAt ? (d.age - sinkAt) * 0.04 : 0);
+        this._e.set(Math.sin(this.t + d.seed * 9) * 0.08, d.rot, Math.sin(this.t * 0.8 + d.seed * 5) * 0.06, 'YZX');
+        this._q.setFromEuler(this._e);
+        this._m.compose(this._p.set(d.x, y, d.z), this._q, this._s.set(d.size, d.size, d.size));
+        mesh.setMatrixAt(n++, this._m);
+      }
+      mesh.instanceMatrix.needsUpdate = true;
+    }
+    this.debris.count = n;
+    this.debris.visible = n > 0;
+    void alpha;
+  }
+
+  _stones(F, alpha) {
+    let n = 0;
+    const L = F.stones;
+    if (L.length) {
+      const mesh = this._growProp('stones', L.length);
+      const step = this.game.simStep || TICK;
+      for (const s of L) {
+        const u = Math.min(1, (s.t + alpha * step) / s.dur);
+        const x = s.x0 + (s.x1 - s.x0) * u,
+          z = s.z0 + (s.z1 - s.z0) * u;
+        const y = s.y0 + (s.y1 - s.y0) * u + 4 * s.peak * u * (1 - u);
+        this._q.setFromAxisAngle(this._up, u * 9);
+        this._m.compose(this._p.set(x, y, z), this._q, this._s.set(1, 1, 1));
+        mesh.setMatrixAt(n++, this._m);
+      }
+      mesh.instanceMatrix.needsUpdate = true;
+    }
+    this.stones.count = n;
+    this.stones.visible = n > 0;
+  }
+
+  // Faint dashed trade lanes at mid zoom (rebuilt twice a second).
+  _lanes(F, dt, dist, far) {
+    const z01 = this.game.view?.zoom01 ?? 0.5;
+    const on = !far && z01 > 0.12 && dist > 45 && !this.game.settings?.powerSaver;
+    this.lanes.visible = on;
+    if (!on) return;
+    this.laneMat.uniforms.uAlpha.value = Math.min(0.55, (dist - 45) / 60) * 0.85;
+    if ((this._laneT -= dt) > 0) return;
+    this._laneT = 0.5;
+    const geo = this.lanes.geometry;
+    const P = geo.attributes.position.array,
+      C = geo.attributes.color.array,
+      D = geo.attributes.aDist.array;
+    let n = 0;
+    for (const lane of F.lanes()) {
+      const v = F.get(lane.id);
+      const p = lane.path;
+      const c = this._kingdomColor(lane.kingdom);
+      let acc = 0;
+      let px = v ? v.x : p[0],
+        pz = v ? v.z : p[1];
+      for (let i = Math.max(0, (v?.pi ?? 0)); i < p.length; i += 2) {
+        if (n + 2 > this._laneMax) break;
+        const x = p[i],
+          z = p[i + 1];
+        const L = Math.hypot(x - px, z - pz);
+        P[n * 3] = px;
+        P[n * 3 + 1] = 0.05;
+        P[n * 3 + 2] = pz;
+        P[n * 3 + 3] = x;
+        P[n * 3 + 4] = 0.05;
+        P[n * 3 + 5] = z;
+        for (let q = 0; q < 2; q++) {
+          C[(n + q) * 3] = c.r * 1.3 + 0.2;
+          C[(n + q) * 3 + 1] = c.g * 1.3 + 0.2;
+          C[(n + q) * 3 + 2] = c.b * 1.3 + 0.2;
+        }
+        D[n] = acc;
+        D[n + 1] = acc + L;
+        acc += L;
+        n += 2;
+        px = x;
+        pz = z;
+      }
+    }
+    geo.setDrawRange(0, n);
+    geo.attributes.position.needsUpdate = true;
+    geo.attributes.color.needsUpdate = true;
+    geo.attributes.aDist.needsUpdate = true;
+  }
+
+  // Smoke and flames over burning ships, spray in a storm.
+  _effects(F, dt, far, dist, cx, cz) {
+    const fx = this.game.fx;
+    if (!fx?.emit || far || dist > 120) return;
+    if ((this._fxT -= dt) > 0) return;
+    this._fxT = this.game.settings?.powerSaver ? 0.5 : 0.25;
+    const R = dist * 1.1 + 12;
+    let budget = 6;
+    for (const v of F.list) {
+      if (!v.alive || budget <= 0) continue;
+      if (Math.abs(v.x - cx) > R || Math.abs(v.z - cz) > R) continue;
+      if (v.burning > 0.15 || (v.sink > 0 && v.sink < 0.5)) {
+        fx.emit('smoke', { x: v.x, y: (v.y || 0) + 0.6, z: v.z }, { scale: 0.6 + v.def.length * 0.2 });
+        if (v.burning > 0.3) fx.emit('fire', { x: v.x + (Math.random() - 0.5) * 0.5, y: (v.y || 0) + 0.4, z: v.z }, { scale: 0.5 });
+        budget--;
+      }
+      if (v.sink > 0 && v.sink < 0.25) {
+        fx.emit('splash', { x: v.x, y: 0, z: v.z }, { scale: 0.5 });
+        budget--;
+      }
+    }
+  }
+
+  // fleet draw calls (for the performance overlay and tests)
+  drawStats() {
+    let draws = 0;
+    this.group.traverse((o) => {
+      if (!o.visible) return;
+      if (o.isInstancedMesh && o.count === 0) return;
+      if (o.isMesh || o.isLineSegments) draws++;
+    });
+    return { draws, vehicles: this.visibleCount || 0 };
+  }
+}
+
+// A point `back` tiles behind the head along a trail of recent positions.
+function trailPoint(T, x, z, h, back) {
+  if (back <= 0 || !T || T.length < 4) return { x: x - Math.cos(h) * back, z: z - Math.sin(h) * back, h };
+  let px = x,
+    pz = z,
+    rem = back;
+  for (let i = T.length - 2; i >= 0; i -= 2) {
+    const qx = T[i],
+      qz = T[i + 1];
+    const L = Math.hypot(px - qx, pz - qz);
+    if (L >= rem && L > 1e-4) {
+      const t = rem / L;
+      return { x: px + (qx - px) * t, z: pz + (qz - pz) * t, h: Math.atan2(pz - qz, px - qx) };
+    }
+    rem -= L;
+    px = qx;
+    pz = qz;
+  }
+  return { x: px - Math.cos(h) * rem, z: pz - Math.sin(h) * rem, h };
+}
+export { KINDS };

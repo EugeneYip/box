@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { craneGeometry } from './archetypes.js';
 import { buildArchetype, foundation, scaffold, ruin, wallPost, wallArm, lampPost, frameFor, materialPile, proxyGeometry, PAL, WALL_H } from './archetypes.js';
 import { Labels } from './labels.js';
 import { createBuildingMaterial, createPropMaterial } from './material.js';
@@ -230,6 +231,7 @@ export class BuildingRenderer {
       const pseudo = { geo: { boundingBox: { min: { x: -w * 0.42, z: -h * 0.42 }, max: { x: w * 0.42, z: h * 0.42 } } }, base: null, maxY: my };
       a = { geo: frameFor(pseudo), anchors: null, maxY: my };
     } else if (kind === 'pile') a = { geo: materialPile('vale'), anchors: null, maxY: 0.3 };
+    else if (kind === 'crane') a = craneGeometry();
     else if (kind === 'proxy') a = { geo: proxyGeometry(p1), anchors: null, maxY: 1 };
     else if (kind === 'lamppost') {
       const l = lampPost();
@@ -327,6 +329,12 @@ export class BuildingRenderer {
         if (stage === 'build') push(akey, true, M, col, b, { maxY: a.maxY });
         const pm = this._m2.copy(M).multiply(new THREE.Matrix4().makeTranslation(def.w / 2 - 0.35, 0, def.h / 2 - 0.3));
         push(`pile`, false, pm, col, b);
+        // Engineering: a tower crane over the larger sites
+        if (stage !== 'found' && def.w * def.h >= 4 && civ.hasTech?.(b.kingdom, 'engineering')) {
+          const cm = new THREE.Matrix4().copy(M).multiply(new THREE.Matrix4().makeTranslation(-def.w / 2 + 0.25, 0, -def.h / 2 + 0.25));
+          push('crane', false, cm, col, null);
+          civ._firstUse?.(civ.kingdoms[b.kingdom], 'crane', { x: b.x, z: b.z });
+        }
       } else {
         push(akey, false, M, col, b);
         if (stage === 'upg') push(`scaf|${def.w}|${def.h}|${Math.min(3, Math.round(a.maxY * 2) / 2)}`, false, M, col, b);

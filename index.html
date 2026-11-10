@@ -45,6 +45,39 @@
         color: rgba(235, 201, 119, 0.7);
         padding-left: 0.4em;
       }
+      #boot .boot-sub {
+        margin-top: 12px;
+        letter-spacing: 0.12em;
+        text-transform: none;
+        font-size: 12px;
+        color: rgba(235, 225, 200, 0.62);
+        min-height: 1em;
+      }
+      /* paced bar: a compositor transition, so it keeps moving while the world builds */
+      #boot .boot-bar {
+        display: block;
+        width: 180px;
+        height: 2px;
+        margin: 14px auto 0;
+        border-radius: 1px;
+        overflow: hidden;
+        background: rgba(235, 201, 119, 0.14);
+      }
+      #boot .boot-bar b {
+        display: block;
+        height: 100%;
+        background: linear-gradient(90deg, #a6772f, #ecc673, #fff1c8);
+        transform-origin: 0 50%;
+        transform: scaleX(0.02);
+      }
+      @keyframes boot-fill {
+        from {
+          transform: scaleX(0.02);
+        }
+        to {
+          transform: scaleX(0.92);
+        }
+      }
       @keyframes boot-pulse {
         50% {
           opacity: 0.55;
@@ -70,6 +103,8 @@
           <path d="M24 11.6c-1.2-3.2-4.2-5-7.6-4.6.6 3.4 3.6 5.2 7.6 4.6zM24 10.4c1.2-3 4-4.6 7.2-4.2-.6 3.2-3.4 4.8-7.2 4.2z" fill="url(#bootg)" />
         </svg>
         <p>Worldseed</p>
+        <p class="boot-sub" id="boot-sub"></p>
+        <i class="boot-bar"><b id="boot-bar"></b></i>
       </div>
     </div>
     <script>
@@ -78,8 +113,33 @@
         var boot = document.getElementById('boot');
         var quick = /[?&]ui=0(&|$)/.test(location.search);
         var t0 = Date.now();
+        // Name what is being built (a reload from New World or the title leaves a
+        // note) and pace the bar by how long this preset and size took last time.
+        var q = new URLSearchParams(location.search);
+        var key = 'worldseed.bootms.' + (q.get('preset') || 'continent') + ':' + (q.get('size') || 'auto');
+        var est = 0,
+          note = null;
+        try {
+          note = JSON.parse(sessionStorage.getItem('worldseed.boot') || 'null');
+          sessionStorage.removeItem('worldseed.boot');
+          est = +localStorage.getItem(key) || 0;
+        } catch (e) {}
+        if (!est) {
+          var sz = +q.get('size') || 256;
+          var wide = q.get('preset') === 'earth';
+          est = 2500 + ((sz * (wide ? sz / 2 : sz)) / 65536) * 2600;
+        }
+        var sub = document.getElementById('boot-sub');
+        var bar = document.getElementById('boot-bar');
+        if (note && note.label && Date.now() - note.t < 120000) sub.textContent = note.label;
+        bar.style.animation = 'boot-fill ' + Math.round(est) + 'ms cubic-bezier(.25,.7,.35,1) forwards';
         (function poll() {
           if (window.__ready || window.__error || Date.now() - t0 > 30000) {
+            try {
+              if (window.__ready && !window.__error) localStorage.setItem(key, String(Math.round(performance.now())));
+            } catch (e) {}
+            bar.style.animation = 'none';
+            bar.style.transform = 'scaleX(1)';
             if (quick) boot.remove();
             else {
               boot.className = 'out';

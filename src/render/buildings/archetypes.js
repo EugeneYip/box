@@ -2111,6 +2111,192 @@ function statue(g, K, style, variant = 0) {
   return { base: { x: 0, z: 0, w: 0.62, d: 0.62 } };
 }
 
+// ---------------------------------------------------------------- technology unlocks
+// Small, original buildings that show what a people has learned.
+function barn(g, K, style) {
+  const wc = style === 'dune' ? K.wall : style === 'vale' ? 0x8a3b2a : K.timber2;
+  g.box(0, 0, -0.1, 1.6, 0.9, 1.3, wc, { jit: 0.03 });
+  g.gable(0, 0.9, -0.1, 1.7, 1.4, 0.6, style === 'dune' ? K.tile : K.thatch, { over: 0.08 });
+  g.box(0, 0, 0.56, 0.6, 0.62, 0.04, K.door, {});
+  g.beam(-0.3, 0.05, 0.585, 0.3, 0.6, 0.585, 0.04, K.cloth, {});
+  g.beam(0.3, 0.05, 0.585, -0.3, 0.6, 0.585, 0.04, K.cloth, {});
+  for (const [x, z] of [
+    [0.72, 0.7],
+    [0.55, 0.78],
+    [-0.75, 0.72],
+  ])
+    g.cyl(x, 0, z, 0.14, 0.2, 8, 0xd8b45a, {});
+  return { base: { x: 0, z: 0, w: 1.7, d: 1.6 } };
+}
+
+function kiln(g, K) {
+  g.cyl(0, 0, 0, 0.36, 0.22, 10, K.stone2, {});
+  g.dome(0, 0.22, 0, 0.36, 10, 4, 0xb8754a, { sy: 1.1 });
+  g.box(0, 0.05, 0.3, 0.18, 0.16, 0.08, 0xff8a3a, { glow: 1 });
+  g.cyl(0.12, 0.5, -0.08, 0.06, 0.3, 6, 0x8a5a3a, {});
+  g.anchor('chimneys', 0.12, 0.82, -0.08, { rate: 0.7 });
+  for (let i = 0; i < 4; i++) g.cyl(-0.36 + i * 0.06, 0, 0.38, 0.05, 0.11, 6, 0xa86a42, { r2: 0.035 });
+  return { base: { x: 0, z: 0, w: 0.9, d: 0.9 } };
+}
+
+function wheel(g, K, x, y, z, r, axisX = true) {
+  g.push();
+  g.translate(x, y, z);
+  if (axisX) g.rotateZ(Math.PI / 2);
+  else g.rotateX(Math.PI / 2);
+  g.cyl(0, -0.05, 0, r, 0.04, 14, K.timber, { cap: false });
+  g.cyl(0, 0.04, 0, r, 0.04, 14, K.timber, { cap: false });
+  g.cyl(0, -0.08, 0, 0.06, 0.16, 6, K.timber2, {});
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    g.box(Math.cos(a) * r * 0.55, -0.05, Math.sin(a) * r * 0.55, 0.05, 0.13, r * 0.95, K.timber2, { ry: -a + Math.PI / 2 });
+  }
+  g.pop();
+}
+
+function waterwheel(g, K) {
+  g.box(-0.12, 0, -0.1, 0.5, 0.42, 0.55, K.wall2 ?? K.wall, {});
+  g.gable(-0.12, 0.42, -0.1, 0.6, 0.62, 0.26, K.thatch, {});
+  wheel(g, K, 0.3, 0.32, 0.05, 0.34, true);
+  g.box(0.3, 0, 0.42, 0.1, 0.06, 0.5, 0x5a87a8, { glow: 0.1 }); // channel
+  return { base: { x: 0, z: 0, w: 0.9, d: 0.9 } };
+}
+
+function stables(g, K, style) {
+  g.box(0, 0, -0.35, 1.7, 0.7, 0.9, K.timber2, { jit: 0.03 });
+  g.gable(0, 0.7, -0.35, 1.8, 1.05, 0.42, style === 'dune' ? K.tile : K.thatch, {});
+  for (let i = 0; i < 4; i++) g.box(-0.62 + i * 0.42, 0.05, 0.11, 0.3, 0.45, 0.03, 0x3a2a1c, {});
+  // paddock rails
+  for (let i = 0; i < 5; i++) g.box(-0.8 + i * 0.4, 0, 0.82, 0.05, 0.36, 0.05, K.timber, {});
+  g.box(0, 0.24, 0.82, 1.65, 0.04, 0.03, K.timber, {});
+  g.box(0.6, 0, 0.5, 0.28, 0.16, 0.2, 0xd8b45a, {}); // hay
+  g.box(-0.55, 0, 0.5, 0.36, 0.1, 0.12, K.timber2, {}); // trough
+  return { base: { x: 0, z: 0, w: 1.8, d: 1.8 } };
+}
+
+function bloomery(g, K) {
+  g.cyl(0, 0, 0, 0.36, 0.95, 8, K.stone2, { r2: 0.2 });
+  g.cyl(0, 0.95, 0, 0.21, 0.08, 8, K.stone, {});
+  g.box(0, 0.05, 0.31, 0.16, 0.2, 0.06, 0xff6a20, { glow: 1 });
+  g.anchor('chimneys', 0, 1.05, 0, { rate: 1.4, forge: true });
+  g.box(0.38, 0, 0.1, 0.18, 0.16, 0.3, 0x4a3a30, {}); // ore heap
+  g.box(-0.36, 0, 0.2, 0.06, 0.32, 0.06, K.timber, {}); // bellows post
+  return { base: { x: 0, z: 0, w: 0.9, d: 0.9 } };
+}
+
+function healer(g, K, style) {
+  g.box(-0.45, 0, -0.05, 0.85, 0.55, 0.65, style === 'dune' ? K.wall : K.wall2 ?? K.wall, {});
+  g.gable(-0.45, 0.55, -0.05, 0.95, 0.75, 0.32, style === 'frost' ? K.thatch : K.tile, {});
+  g.box(-0.45, 0, 0.28, 0.2, 0.36, 0.03, K.door, {});
+  g.box(-0.2, 0.32, 0.29, 0.14, 0.14, 0.02, 0xc0392b, { glow: 0.2 }); // the healer's sign
+  // herb garden rows
+  const herbs = [0x5d9a3a, 0x8a6cc0, 0x6fae4a, 0xd8c050];
+  for (let r = 0; r < 3; r++) for (let i = 0; i < 4; i++) g.bead(0.25 + i * 0.16, 0, -0.25 + r * 0.24, 0.06, herbs[(r + i) % 4], {});
+  return { base: { x: 0, z: 0, w: 1.9, d: 0.9 } };
+}
+
+function shipyard(g, K) {
+  // a planked slipway running down to the water and a hull on the stocks
+  g.box(0, 0, 0, 2.7, 0.08, 1.7, K.plank, {});
+  for (let i = 0; i < 6; i++) g.box(-1.1 + i * 0.44, 0, 0, 0.08, 0.18, 1.6, K.timber2, {});
+  g.box(0, 0.18, 0, 2.0, 0.08, 0.1, K.timber, {}); // keel
+  for (let i = 0; i < 7; i++) {
+    const x = -0.85 + i * 0.28,
+      s = 1 - Math.abs(i - 3) * 0.12;
+    g.beam(x, 0.22, 0, x, 0.62 * s, 0.42 * s, 0.05, K.timber2, {});
+    g.beam(x, 0.22, 0, x, 0.62 * s, -0.42 * s, 0.05, K.timber2, {});
+  }
+  g.box(-0.4, 0.26, 0, 0.9, 0.3, 0.6, K.timber, { tint: 0.3 }); // planking begun
+  // a sheer-legs crane
+  g.beam(1.15, 0, -0.6, 0.95, 1.4, 0, 0.06, K.timber, {});
+  g.beam(1.15, 0, 0.6, 0.95, 1.4, 0, 0.06, K.timber, {});
+  g.box(0.95, 0.9, 0, 0.012, 0.5, 0.012, K.metal, {});
+  return { base: { x: 0, z: 0, w: 2.8, d: 1.8 } };
+}
+
+function foundry(g, K, style) {
+  g.box(0, 0, 0, 1.5, 0.95, 1.3, style === 'dune' ? K.wall : 0x8a4a36, { jit: 0.03 });
+  g.hip(0, 0.95, 0, 1.6, 1.4, 0.38, K.tile, {});
+  g.cyl(0.5, 0.95, -0.35, 0.16, 1.5, 8, 0x7a3e2c, {});
+  g.anchor('chimneys', 0.5, 2.5, -0.35, { rate: 2, forge: true });
+  for (const x of [-0.45, 0, 0.45]) g.box(x, 0.3, 0.66, 0.2, 0.32, 0.03, 0xff7a2a, { glow: 1 });
+  g.box(-0.6, 0, 0.75, 0.3, 0.2, 0.25, 0x5a5f66, {}); // ingots
+  return { base: { x: 0, z: 0, w: 1.7, d: 1.6 } };
+}
+
+function forum(g, K, style) {
+  const c = style === 'dune' ? K.wall : K.stone;
+  g.box(0, 0, 0, 2.8, 0.18, 2.8, K.stone2, { jit: 0.03 });
+  g.box(0, 0.18, 0, 2.5, 0.08, 2.5, c, {});
+  // colonnade around an open court, a portico at the back
+  for (let i = 0; i < 6; i++)
+    for (const [sx, sz] of [
+      [-1.1 + i * 0.44, -1.1],
+      [-1.1 + i * 0.44, 1.1],
+      [-1.1, -1.1 + i * 0.44],
+      [1.1, -1.1 + i * 0.44],
+    ]) {
+      if (sz === 1.1 && Math.abs(sx) < 0.4) continue; // the entrance
+      g.cyl(sx, 0.26, sz, 0.06, 0.75, 8, K.wall2 ?? c, {});
+    }
+  for (const z of [-1.1, 1.1]) g.box(0, 1.01, z, 2.35, 0.1, 0.18, c, {});
+  for (const x of [-1.1, 1.1]) g.box(x, 1.01, 0, 0.18, 0.1, 2.35, c, {});
+  g.box(0, 0.26, -0.75, 1.1, 0.95, 0.5, c, {});
+  g.gable(0, 1.21, -0.75, 1.2, 0.6, 0.35, K.tile, {});
+  g.box(0, 0.26, 0.1, 0.22, 0.4, 0.22, K.stone2, {}); // speaker's plinth
+  return { base: { x: 0, z: 0, w: 2.8, d: 2.8 } };
+}
+
+function watermill(g, K, style) {
+  g.box(-0.25, 0, 0, 1.1, 0.8, 0.75, style === 'dune' ? K.wall : K.wall2 ?? K.wall, {});
+  g.gable(-0.25, 0.8, 0, 1.2, 0.85, 0.38, K.tile, {});
+  g.box(-0.25, 0, 0.38, 0.22, 0.42, 0.03, K.door, {});
+  wheel(g, K, 0.5, 0.42, 0, 0.42, true);
+  g.box(0.6, 0, 0, 0.5, 0.06, 0.22, 0x5a87a8, { glow: 0.1 });
+  return { base: { x: 0, z: 0, w: 1.9, d: 0.9 } };
+}
+
+function bridge(g, K) {
+  // a stone arch: deck, parapets, a pier into the water
+  g.box(0, 0.1, 0, 1.02, 0.14, 0.8, K.stone, { jit: 0.03 });
+  g.box(0, 0.24, 0.37, 1.02, 0.14, 0.06, K.stone2, {});
+  g.box(0, 0.24, -0.37, 1.02, 0.14, 0.06, K.stone2, {});
+  g.box(0, -1.6, 0, 0.3, 1.7, 0.7, K.stone2, { jit: 0.05 });
+  return { base: { x: 0, z: 0, w: 1, d: 0.8 } };
+}
+
+function marketHall(g, K, style) {
+  // a covered hall on columns, striped stalls and a counting house
+  const c = style === 'dune' ? K.wall : K.stone;
+  g.box(0, 0, 0.2, 2.5, 0.1, 1.6, K.stone2, {});
+  for (const x of [-1.1, -0.37, 0.37, 1.1]) for (const z of [-0.4, 0.8]) g.cyl(x, 0.1, z, 0.06, 0.8, 8, c, {});
+  g.hip(0, 0.9, 0.2, 2.6, 1.6, 0.5, K.tile, { over: 0.06 });
+  const aw = [0xc0392b, 0x2f7fb8, 0xd8a830];
+  for (let i = 0; i < 3; i++) {
+    g.box(-0.75 + i * 0.75, 0.1, 0.25, 0.5, 0.3, 0.3, K.plank, {});
+    g.box(-0.75 + i * 0.75, 0.62, 0.38, 0.56, 0.04, 0.42, aw[i], { tint: 0.3 });
+  }
+  g.box(0, 0, -1.05, 1.2, 0.85, 0.6, style === 'dune' ? K.wall2 : K.wall, {});
+  g.gable(0, 0.85, -1.05, 1.3, 0.7, 0.35, K.tile, {});
+  windowOn(g, K, 0, -1.05, 1.2, 0.6, 'F', 0, 0.5, { w: 0.18, h: 0.2 });
+  g.cyl(0.45, 0.06, -0.62, 0.08, 0.1, 8, 0xe2b440, {}); // the counting house's coin chest
+  return { base: { x: 0, z: 0, w: 2.8, d: 2.8 } };
+}
+
+// Engineering: a timber tower crane over a building site.
+export function craneGeometry() {
+  const K = PAL.vale;
+  const g = new GeoBuilder(77, { roofKind });
+  g.box(0, 0, 0, 0.1, 2.6, 0.1, K.timber);
+  for (let i = 0; i < 6; i++) g.beam(-0.05, i * 0.42, 0, 0.05, i * 0.42 + 0.4, 0, 0.025, K.timber2);
+  g.beam(-0.6, 2.6, 0, 1.6, 2.6, 0, 0.08, K.timber);
+  g.beam(0, 2.2, 0, 1.4, 2.6, 0, 0.04, K.timber2);
+  g.box(-0.55, 2.35, 0, 0.3, 0.25, 0.25, K.stone2);
+  g.box(1.45, 1.7, 0, 0.012, 0.9, 0.012, K.metal);
+  g.box(1.45, 1.55, 0, 0.18, 0.15, 0.18, K.stone);
+  return { geo: g.build(), anchors: g.anchors, maxY: 2.7 };
+}
+
 // ---------------------------------------------------------------- entry point
 const BUILDERS = {
   house: (g, K, s, lv) => (s === 'vale' ? valeHouse : s === 'dune' ? duneHouse : s === 'frost' ? frostHouse : mireHouse)(g, K, lv),
@@ -2127,7 +2313,18 @@ const BUILDERS = {
   academy: (g, K, s) => academy(g, K, s),
   observatory: (g, K, s) => observatory(g, K, s),
   aqueduct: (g, K, s) => aqueduct(g, K, s),
-  market: (g, K, s) => market(g, K, s),
+  market: (g, K, s, lv) => (lv >= 2 ? marketHall : market)(g, K, s),
+  barn: (g, K, s) => barn(g, K, s),
+  kiln: (g, K, s) => kiln(g, K, s),
+  waterwheel: (g, K, s) => waterwheel(g, K, s),
+  stables: (g, K, s) => stables(g, K, s),
+  bloomery: (g, K, s) => bloomery(g, K, s),
+  healer: (g, K, s) => healer(g, K, s),
+  shipyard: (g, K, s) => shipyard(g, K, s),
+  foundry: (g, K, s) => foundry(g, K, s),
+  forum: (g, K, s) => forum(g, K, s),
+  watermill: (g, K, s) => watermill(g, K, s),
+  bridge: (g, K, s) => bridge(g, K, s),
   temple: (g, K, s, lv) => temple(g, K, s, lv),
   barracks: (g, K, s) => barracks(g, K, s),
   watchtower: (g, K, s) => watchtower(g, K, s),

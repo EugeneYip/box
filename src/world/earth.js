@@ -132,7 +132,7 @@ function table(t, x) {
 const TEMP_LAT = [[0, 0.95], [10, 0.93], [20, 0.86], [25, 0.8], [30, 0.72], [35, 0.64], [40, 0.57], [45, 0.5], [50, 0.43], [55, 0.37], [60, 0.31], [65, 0.245], [70, 0.18], [75, 0.12], [80, 0.07], [90, 0]];
 // Annual moisture by distance from the thermal equator (about 4°N): the wet
 // tropics, the dry subtropical belt, the wet westerlies, the dry poles.
-const MOIST_LAT = [[0, 0.82], [6, 0.74], [12, 0.52], [18, 0.33], [24, 0.22], [30, 0.3], [36, 0.45], [44, 0.55], [52, 0.6], [62, 0.55], [72, 0.42], [90, 0.3]];
+const MOIST_LAT = [[0, 0.8], [4, 0.72], [8, 0.56], [12, 0.43], [18, 0.29], [24, 0.21], [30, 0.3], [36, 0.45], [44, 0.55], [52, 0.6], [62, 0.55], [72, 0.42], [90, 0.3]];
 
 export function generateEarth(world, seed = 1, options = {}, H_) {
   const W = world.w,
@@ -290,6 +290,28 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
         }
       if (max && !nearLand) land[i] = 1;
     }
+  // Antarctica's far side: on a plate carree the pole is the whole bottom
+  // edge, so the ice sheet is given a ragged southern coast (bays and capes
+  // around 81-86°S) with open sea between it and the border, instead of a
+  // white slab cut straight by the map edge.
+  const southCut = new Float32Array(W);
+  for (let x = 0; x < W; x++) {
+    const u = x / tpd;
+    const cut = -83.2 + fbm(nWarp, u / 16 + 50, 3.7, 3) * 2.4 + nWarp(u / 3.5 - 20, 8.1) * 0.8;
+    southCut[x] = cut;
+    for (let y = H - 1; y >= 0 && latY[y] < cut; y--) land[y * W + x] = 0;
+  }
+  // clean borders: a thin ring of open sea all round. The shaders and the
+  // terrain skirt clamp edge tiles outward, so polar ice or Antarctica's snow
+  // on the edge would continue as white bands beyond the map. (This splits
+  // Greenland's east coast at the Atlantic seam and gives Antarctica a far
+  // coast just inside the bottom edge.)
+  const ringX = Math.max(2, Math.round(5 * scale768)), // wide enough that the shore field clamped past the side edges reads as open sea
+    ringY = Math.max(2, Math.round(3 * scale768));
+  const edgeDist = (x, y) => Math.min(x, W - 1 - x, y, H - 1 - y); // tiles to the border
+  const inRing = (x, y) => x < ringX || x >= W - ringX || y < ringY || y >= H - ringY;
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++) if (x < ringX || x >= W - ringX || y < ringY || y >= H - ringY) land[y * W + x] = 0;
   _t('land');
 
   // ------------------------------------------------------------- 2. distances
@@ -465,11 +487,15 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
       if (!land[i]) continue;
       const dT = dLand[i] / scale768;
       let dome = 0;
-      if (lat <= -60) dome = 1.3 + 10.5 * (1 - Math.exp(-dT / 9));
+      if (lat <= -60) dome = 1.3 + 9.8 * (1 - Math.exp(-dT / 7.5));
       else if (inPoly(GREENLAND, lonX[x], lat)) dome = 1.2 + 9.8 * (1 - Math.exp(-dT / 5));
       if (!dome) continue;
       icecap[i] = 1;
-      dome += fbm(nRough, U(i) / 3, V(i) / 3, 3) * 0.6 * smoothstep(0, 6, dT);
+      // undulating ice: broad swells and ridged drainage divides, flattening
+      // toward the coast where outlet glaciers run down to the sea
+      const sw = fbm(nRough, U(i) / 3, V(i) / 3, 3);
+      const rd = ridged(nRidge, U(i) / 2.2 + 31, V(i) / 2.2 - 17);
+      dome += (sw * 0.9 + (rd - 0.45) * 1.1) * smoothstep(1, 7, dT);
       hgt[i] = smax(hgt[i], dome, 1.2);
     }
   }
@@ -657,6 +683,18 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
   }
   _t('rivers');
 
+  // the border ring is deep open sea: the water shader and the terrain skirt
+  // extend the edge tiles' depth outward, so shallows there would show as a
+  // pale band beyond the map
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++) {
+      const i = y * W + x;
+      // open sea below Antarctica's far coast: a short shelf, then deep water
+      if (!land[i] && latY[y] < southCut[x] - 0.2) hgt[i] = Math.min(hgt[i], -Math.min(6, 1.0 + 1.3 * dSea[i] / Math.max(0.7, scale768)));
+      if (!inRing(x, y)) continue;
+      const k = Math.min(1, edgeDist(x, y) / ringY); // 0 at the border
+      hgt[i] = Math.min(hgt[i], -(6.2 - 2.4 * k) + fbm(nBank, x / tpd / 3, y / tpd / 3, 2) * 0.5);
+    }
   // ----------------------------------------------------------------- 6. climate
   const wet = new Uint8Array(N);
   for (let i = 0; i < N; i++) wet[i] = hgt[i] < SEA_LEVEL ? 1 : 0;
@@ -702,6 +740,12 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
       if (k > 0) moist[i] += (f.m - moist[i]) * k;
     });
   }
+  // ...and never cold enough to freeze: the seasonal sea-ice shelf is drawn
+  // from the (edge-clamped) temperature, so a frozen border would spread
+  // ice beyond the map in winter
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++)
+      if (inRing(x, y) || (latY[y] < southCut[x] - 0.4 && hgt[y * W + x] < SEA_LEVEL)) temp[y * W + x] = Math.max(temp[y * W + x], 0.42);
   // rivers and lakes water their banks (green valleys through dry land)
   for (let i = 0; i < N; i++) {
     if (hgt[i] < SEA_LEVEL) continue;
@@ -739,8 +783,20 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
         let ice = false;
         if (sea[i] && !riverMask[i]) {
           const ds = dSea[i] / scale768;
-          if (lat > 76.5 + bn * 1.5 || lat < -71.5 + bn * 1.5) ice = true;
-          else if ((lat > 70 || lat < -65) && ds < 2.2 + bn) ice = true;
+          // Arctic pack: a ragged band with open water before the border;
+          // around Antarctica: ice shelves and fast ice hugging the coast
+          const pk = nWarp(x / tpd / 9 + 70, 2.3) * 2.6 + nWarp(x / tpd / 2.6 - 40, 5.5) * 0.9;
+          if (lat > 78.5 + pk + bn && lat < 84.6 + pk * 0.6 - bn * 0.6) ice = true;
+          else if (lat > 70 && ds < 2.2 + bn) ice = true;
+          else if (lat < -60 && ds < 2.4 + bn * 1.2 + Math.max(0, pk) * 0.9) ice = true;
+          else if (lat > southCut[x] + 1.4) {
+            // the Ross and Filchner-Ronne ice shelves (water in the land mask)
+            const lo = lonX[x];
+            if (((lo > 158 || lo < -146) && lat < -77.8 + bn) || (lo > -82 && lo < -28 && lat < -74.8 + bn)) ice = true;
+          }
+          // open sea south of Antarctica's far coast, and short of the border
+          if (lat < southCut[x] - 0.2) ice = false;
+          if (Math.min(x, W - 1 - x) < ringX + 1 + bn || Math.min(y, H - 1 - y) < ringY + 2 + bn) ice = false;
         }
         if (ice) type[i] = TILE.ICE;
         else if (!sea[i]) type[i] = riverMask[i] || depth > 1.1 + bn * 0.5 ? TILE.SOIL : TILE.SAND;
@@ -754,7 +810,8 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
       const rockLine = snowLine - 2.5 + bn * 0.5;
       const dOcT = dOcean[i]; // tiles to the open sea
       let tt;
-      if (icecap[i] || h > snowLine || t < 0.11 + bn * 0.02) tt = TILE.SNOW;
+      if (icecap[i] && dLand[i] >= 1 && dLand[i] < 9 * scale768 && ridged(nRidge, x / tpd / 1.3 + 7, y / tpd / 1.3 - 3) > 0.86) tt = TILE.ROCK; // nunataks
+      else if (icecap[i] || h > snowLine || t < 0.11 + bn * 0.02) tt = TILE.SNOW;
       else if ((h > rockLine && slope > 0.6 + bn * 0.2) || slope > 2.2 + bn * 0.4) tt = TILE.ROCK;
       else if (h > rockLine) tt = t > 0.17 ? TILE.TUNDRA : TILE.SNOW; // alpine meadow, high plateaus
       else if (dOcT <= beachW + bn * 0.6 && h < 0.9 + bn * 0.3 && slope < 0.7 && t > 0.3) tt = TILE.SAND;
@@ -784,7 +841,12 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
   }
   _t('flora');
 
-  world.meta = { preset: 'earth', lon0: EARTH_LON0, projection: 'plate-carree', spreadStarts: true };
+  // budgetArea: the map area (tiles) whose population and building budgets
+  // this world should get. Much of the World Map is ocean and ice, so it is
+  // scaled from habitable land (typical presets are ~30% habitable land).
+  let habitable = 0;
+  for (let i = 0; i < N; i++) if (hgt[i] >= SEA_LEVEL && type[i] !== TILE.SNOW && type[i] !== TILE.ICE && type[i] !== TILE.ROCK) habitable++;
+  world.meta = { preset: 'earth', lon0: EARTH_LON0, projection: 'plate-carree', spreadStarts: true, budgetArea: Math.round(habitable / 0.3) };
   world.owner.fill(-1);
   world.building.fill(-1);
   world.fire.fill(0);

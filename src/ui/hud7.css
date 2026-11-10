@@ -1,0 +1,419 @@
+/* ==========================================================================
+   Worldseed UI, round 11: editor accordion, item preview, touch sizes,
+   header fitting, HUD leftovers. Loaded last.
+   ========================================================================== */
+
+/* ---- accordion sections */
+.ws-esec {
+  padding: 0;
+}
+.ws-esec__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 38px;
+  padding: 6px 0;
+  text-align: left;
+  color: var(--ws-ink-2);
+  background: none;
+  border-radius: 8px;
+}
+.ws-esec__head:hover {
+  color: var(--ws-ink);
+}
+.ws-esec__head h5 {
+  flex: none;
+  margin: 0;
+  font: 700 9.5px var(--ws-font);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ws-gold);
+}
+.ws-esec__sum {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--ws-ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ws-esec__sum > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ws-esec.is-open .ws-esec__sum {
+  visibility: hidden;
+}
+.ws-esec__flag {
+  flex: none;
+  width: 14px;
+  height: 17.5px;
+}
+.ws-esec__chev {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  transition: transform 0.2s var(--ws-ease);
+}
+.ws-esec__chev svg {
+  width: 16px;
+  height: 16px;
+}
+.ws-esec.is-open .ws-esec__chev {
+  transform: rotate(180deg);
+}
+.ws-esec__body {
+  display: none;
+  padding: 2px 0 12px;
+}
+.ws-esec.is-open .ws-esec__body {
+  display: block;
+}
+.is-touch .ws-esec__head {
+  min-height: 44px;
+}
+
+/* ---- trait list: part of the card's own scroll (no nested scroller) */
+.ws-etraits {
+  max-height: none;
+  overflow: visible;
+}
+.ws-etrait[aria-pressed='true'] .ws-etrait__mark {
+  color: #1d1608;
+  background: var(--tint);
+}
+
+/* ---- custom colour: the picker swatch shows a picked colour */
+.ws-swatch--custom.is-picked {
+  background: var(--c);
+}
+.ws-swatch--custom.is-picked span {
+  background: rgba(255, 255, 255, 0.9);
+}
+
+/* ---- item preview */
+.ws-egive__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ws-egive__preview {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.22);
+  box-shadow: inset 0 0 0 1px var(--ws-line);
+}
+.ws-egive__ico {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  color: var(--ws-gold-hi);
+  --tint: var(--ws-gold-hi);
+  background: rgba(235, 201, 119, 0.12);
+}
+.ws-egive__ico svg {
+  width: 20px;
+  height: 20px;
+}
+.ws-egive__txt {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.ws-egive__txt b {
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ws-egive__txt small {
+  font-size: 10.5px;
+  color: var(--ws-ink-3);
+}
+.ws-egive__txt em {
+  font-style: normal;
+  font-weight: 700;
+}
+.ws-egive__txt em.is-up {
+  color: #9be3a8;
+}
+.ws-egive__txt em.is-down {
+  color: #ff9f86;
+}
+.ws-egive__go {
+  flex: none;
+}
+.is-touch .ws-egive__go {
+  min-height: 44px;
+}
+
+/* ---- touch targets: category pills and banner grids */
+.is-touch .ws-pills--cats .ws-pill {
+  min-width: 48px;
+  justify-content: center;
+}
+.is-touch .ws-ebannerrow {
+  flex-direction: column;
+  align-items: center;
+}
+.is-touch .ws-ebannerpick {
+  width: 100%;
+}
+.is-touch .ws-egrid--sym {
+  grid-template-columns: repeat(auto-fill, minmax(46px, 1fr));
+}
+.is-touch .ws-egrid--field {
+  grid-template-columns: repeat(5, minmax(46px, 1fr));
+}
+.is-touch .ws-ebtn {
+  min-width: 44px;
+}
+.ws-edip__row.is-gone {
+  opacity: 0.45;
+}
+
+/* ---- header: long names step down instead of breaking mid-word */
+.ws-insp__title {
+  overflow-wrap: break-word;
+  hyphens: manual;
+}
+.ws-insp__title.is-long {
+  font-size: 15.5px;
+}
+.ws-insp__title.is-vlong {
+  font-size: 14px;
+}
+
+/* ---- Overview on short landscape touch screens: Back pill in the bottom-right
+   corner (the camera pad is folded away), so the map can use the full height */
+@media (max-height: 500px) and (min-width: 721px) {
+  .is-touch.is-overview .ws-overview {
+    top: auto;
+    left: auto;
+    right: calc(var(--ws-edge) + env(safe-area-inset-right, 0px));
+    bottom: calc(var(--ws-edge) + env(safe-area-inset-bottom, 0px));
+    transform: none;
+  }
+  .is-touch.is-overview .ws-overview:hover {
+    transform: translateY(-1px);
+  }
+}
+
+/* touch tablets: the folded dock also steps aside in Overview (the Back pill returns) */
+.is-touch.is-overview .ws-dock {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none !important;
+  transition:
+    opacity 0.25s,
+    visibility 0s 0.25s;
+}
+
+/* ---- New World with five landmasses: one balanced row (3 + 2 on phones) */
+.ws-presets {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+.ws-preset {
+  padding: 6px 6px 8px;
+}
+.ws-preset__blurb {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+@media (max-width: 720px) {
+  .ws-presets {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+  .ws-preset {
+    grid-column: span 2;
+  }
+  .ws-preset:nth-child(n + 4) {
+    grid-column: span 3;
+  }
+  .ws-preset__blurb {
+    display: none;
+  }
+}
+.ws-civauto {
+  flex: none;
+  height: 26px;
+  padding: 0 9px;
+  border-radius: 13px;
+  font: 700 10px var(--ws-font);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ws-ink-3);
+  background: rgba(255, 247, 230, 0.05);
+  box-shadow: inset 0 0 0 1px var(--ws-line);
+}
+.ws-civauto.is-on {
+  color: var(--ws-gold-hi);
+  box-shadow: inset 0 0 0 1px rgba(235, 201, 119, 0.45);
+}
+.ws-civauto:not([disabled]):hover {
+  color: var(--ws-ink);
+}
+.is-touch .ws-civauto {
+  height: 44px;
+  padding: 0 14px;
+  border-radius: 22px;
+}
+.ws-size__note.is-warn {
+  color: #ffc98a;
+}
+.ws-size.is-slow small::after {
+  content: ' · slow';
+  color: #ffc98a;
+}
+
+/* ---- title card: five landmass chips on one row, keyboard hint in the flow */
+.ws-title__card {
+  width: min(540px, calc(100vw - 32px));
+}
+.ws-title__card .ws-chips {
+  gap: 6px;
+}
+.ws-title__hint {
+  margin-top: -4px;
+  font-size: 11.5px;
+  color: var(--ws-ink-3);
+  letter-spacing: 0.06em;
+}
+.ws-title__hint .ws-key {
+  margin: 0 4px;
+}
+.is-touch .ws-title__hint {
+  display: none;
+}
+.ws-chip.is-armed {
+  color: #ffc98a;
+  box-shadow: inset 0 0 0 1.5px #ffc98a;
+}
+
+/* ---- phone sheets stay opaque even with blur off (.no-blur .ws-glass was 0.9) */
+@media (max-width: 720px), (max-height: 500px) and (min-width: 721px) {
+  .ws-root .ws-insp.ws-glass {
+    background: linear-gradient(180deg, rgba(27, 31, 45, 0.985), rgba(12, 14, 22, 0.995));
+  }
+}
+
+/* ---- phone landscape: a compact one-line header so the content gets the room */
+@media (max-height: 500px) and (min-width: 721px) {
+  .ws-insp {
+    padding: 10px 12px;
+  }
+  .ws-insp__head {
+    gap: 8px;
+    align-items: center;
+  }
+  .ws-insp__badge {
+    width: 40px;
+    height: 40px;
+    border-radius: 11px;
+    font-size: 26px;
+  }
+  .ws-insp__title,
+  .ws-insp__title.is-long,
+  .ws-insp__title.is-vlong {
+    margin-top: 1px;
+    font-size: 15px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .ws-insp__sub {
+    margin-top: 1px;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .ws-insp__sub span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .ws-insp__also {
+    margin-top: 6px;
+  }
+  .ws-insp__actions {
+    margin-top: 6px;
+  }
+  .ws-insp__actions .ws-key {
+    display: none;
+  }
+  /* editing: kind and subtitle fold away, the header is a single line */
+  .ws-insp.is-editing .ws-insp__kind,
+  .ws-insp.is-editing .ws-insp__sub,
+  .ws-insp.is-editing .ws-insp__grab {
+    display: none;
+  }
+  .ws-insp.is-editing .ws-insp__badge {
+    width: 34px;
+    height: 34px;
+  }
+}
+
+/* ---- never a sideways scroll inside the inspector (tablet kingdom card) */
+.ws-insp,
+.ws-insp__scroll {
+  overflow-x: hidden;
+}
+.ws-edit,
+.ws-esec,
+.ws-esec__body {
+  min-width: 0;
+}
+
+/* ---- on-screen keyboard: the sheet rides above it (--kb from visualViewport) */
+@media (max-width: 720px) {
+  .has-kb .ws-insp,
+  .has-kb .ws-insp.is-expanded {
+    bottom: calc(var(--kb) + 6px);
+    height: min(82vh, calc(100vh - var(--kb) - 72px));
+    transform: none;
+  }
+}
+@media (max-height: 500px) and (min-width: 721px) {
+  .has-kb .ws-insp,
+  .ws-root:not(.has-minimap).has-kb .ws-insp {
+    bottom: calc(var(--kb) + 6px);
+  }
+}
+
+/* ---- tech panel: what the current study will bring */
+.ws-tech__unlocks {
+  margin: 6px 0 4px;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+}
+.ws-tech__unlocks li {
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  color: var(--ws-ink-2);
+  background: rgba(235, 201, 119, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(235, 201, 119, 0.22);
+}
+.is-touch .ws-swatches {
+  grid-template-columns: repeat(6, minmax(44px, 1fr));
+}

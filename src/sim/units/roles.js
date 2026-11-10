@@ -568,7 +568,8 @@ export function installRoles(Units) {
     const vid = (e) => e?.vessel?.id ?? e?.id ?? e?.vesselId ?? null;
     const listed = (e) => {
       const v = e?.vessel || e;
-      const L = v?.passengers || v?.crew || v?.cargo?.units || e?.passengers || null;
+      // only real lists: Fleets keeps `crew` as a head count, not a roster
+      const L = [v?.passengers, v?.cargo?.units, e?.passengers, v?.crew].find((x) => Array.isArray(x)) || null;
       if (!L) return [];
       const out = [];
       for (const x of L) {
