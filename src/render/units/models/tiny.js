@@ -103,6 +103,15 @@ function humanMid(B) {
 
 export const MID = { human: humanMid };
 
+// Riding horse: body, neck-and-head, legs, tail, realm saddle cloth and the rider's shins.
+const horseBase = quad({ body: [0, 0.355, -0.01, 0.1, 0.105, 0.25], bodyMat: 'coat', head: [0, 0.6, 0.3, 0.04, 0.075, 0.07], leg: 0.04, tail: [0, 0.33, -0.28, 0.022, 0.08, 0.02], tailMat: 'mane', ears: [0.028, 0.04, 0.68, 0.29] });
+function horse(B) {
+  horseBase(B);
+  box(B, 0.07, 0.13, 0.08, [0, 0.49, 0.2], 'body', 'coat', { rot: [0.65, 0, 0] });
+  box(B, 0.24, 0.12, 0.15, [0, 0.39, -0.035], 'body', 'cloth');
+  for (const s of [1, -1]) box(B, 0.03, 0.17, 0.04, [0.11 * s, 0.335, 0.01], 'body', 'pants');
+}
+
 export const TINY = {
   human,
   sheep: quad({ body: [0, 0.25, 0, 0.13, 0.11, 0.18], bodyMat: 'wool', head: [0, 0.3, 0.21, 0.045, 0.05, 0.06], headMat: 'face', leg: 0.034, legMat: 'face' }),
@@ -114,4 +123,5 @@ export const TINY = {
   bear: quad({ body: [0, 0.34, 0, 0.145, 0.15, 0.26], bodyMat: 'fur', head: [0, 0.4, 0.32, 0.08, 0.075, 0.09], headMat: 'fur', leg: 0.085 }),
   fox: quad({ body: [0, 0.172, 0, 0.052, 0.056, 0.14], bodyMat: 'fur', head: [0, 0.215, 0.18, 0.045, 0.04, 0.06], leg: 0.024, legMat: 'leg', tail: [0, 0.15, -0.24, 0.036, 0.036, 0.1], ears: [0.03, 0.05, 0.27, 0.155] }),
   chicken,
+  horse,
 };

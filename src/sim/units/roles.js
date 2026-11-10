@@ -396,7 +396,7 @@ export function installRoles(Units) {
     for (const k of civ.kingdoms || []) {
       if (!k || k.alive === false || k.id === kid || civ.atWar?.(kid, k.id)) continue;
       const cap = civ.villages[k.capital];
-      if (near(cap) && (civ.rel?.(kid, k.id)?.contact ?? true)) foreign.push(cap);
+      if (near(cap)) foreign.push(cap); // riders are how distant realms first hear of each other
     }
     if (foreign.length && (!own.length || Math.random() < 0.35)) return foreign[Math.floor(Math.random() * foreign.length)];
     if (!own.length) return null;

@@ -9,6 +9,7 @@ import { poseHumanoid, poseQuad, poseChicken, poseSerpent, poseWyrm } from './po
 import { Overlays, DECAL, EMOTE } from './Overlays.js';
 import { AmbientFauna } from './AmbientFauna.js';
 import { TINY, MID } from './models/tiny.js';
+import { horseModel, SADDLE_Y, SADDLE_Z } from './models/horse.js';
 import { MATERIALS, WEAPON_TOOL } from '../../sim/units/items.js';
 import { STATUS_BY_ID } from '../../sim/units/statuses.js';
 const HAT_TINT = [null, 0xe6c870, 0xc4ccd6, 0xf2c14e, 0x5d5a3a, 0x5b3a26, null, 0xf0c030];
@@ -93,7 +94,7 @@ export class UnitRenderer {
     this.group.name = 'units';
     game.scene.add(this.group);
     this.defs = new Map();
-    for (const d of [humanModel, ...ANIMAL_MODELS, ...MONSTER_MODELS, ...AMBIENT_MODELS]) this.defs.set(d.id, d);
+    for (const d of [humanModel, horseModel, ...ANIMAL_MODELS, ...MONSTER_MODELS, ...AMBIENT_MODELS]) this.defs.set(d.id, d);
     this.models = new Map();
     this.lo = new Map();
     this.tiny = new Map();
@@ -118,6 +119,10 @@ export class UnitRenderer {
     this._s = new THREE.Vector3();
     this._n = { x: 0, y: 1, z: 0 };
     this._Pt = new Float32Array(16);
+    this._Pt2 = new Float32Array(16);
+    // stand-in the horse is posed from (the rider's motion without the rider's chores)
+    this._hu = { state: 'idle', sleeping: false, swimming: false, lastAttack: -99, activity: null, stateTime: 0, combat: null };
+    this._q2 = new THREE.Quaternion();
     this._camRight = new THREE.Vector3(1, 0, 0);
     this._rimDay = new THREE.Color(1, 0.94, 0.82);
     this._rimNight = new THREE.Color(0.32, 0.42, 0.7);
@@ -210,7 +215,7 @@ export class UnitRenderer {
     const eq = u._eqVer || 0,
       nt = u.traits ? u.traits.length : 0;
     const kv = this._kver * 16777216 + (u.kingdom >= 0 ? this.game.civ?.kingdomColor?.(u.kingdom) ?? 0 : 0);
-    const cb = u.job === 'king' && !!u.combat; // a ruler draws the sheathed blade to fight
+    const cb = (u.job === 'king' && !!u.combat) * 1 + (u.data?.role === 'healer') * 2; // a ruler draws the sheathed blade to fight; healers dress for it
     if (k && k.job === u.job && k.ct === ct && k.kd === u.kingdom && k.ageB === ageB && k.wa === wa && k.rg === rg && k.col === u.color && k.sex === u.sex && k.eq === eq && k.nt === nt && k.kv === kv && k.cb === cb) return;
     rs.apK = { job: u.job, ct, kd: u.kingdom, ageB, wa, rg, col: u.color, sex: u.sex, eq, nt, kv, cb };
     rs.starborn = !!u.traits?.includes('starborn');
@@ -319,6 +324,13 @@ export class UnitRenderer {
       else if (anim === 'fish') tool = TOOL_OPT.rod;
     }
     if (u.data?.ranged && tool === TOOL_OPT.none) tool = TOOL_OPT.bow;
+    // healers wear a hood and a herb-green sash, and tend the sick empty-handed
+    const healer = !child && (u.job === 'healer' || u.data?.role === 'healer');
+    if (healer) {
+      hat = HAT_OPT.hood;
+      outfit = 2;
+      if (anim === 'heal' || u.job === 'healer') tool = TOOL_OPT.none;
+    }
     // equipment shows on the model: weapon shape, armour, material colour
     const eqp = u.equipment;
     const wpn = eqp?.weapon,
@@ -349,6 +361,7 @@ export class UnitRenderer {
     let sec = Math.floor(r(10) * 8);
     if (job === 'soldier') sec = r(10) < 0.5 ? 1 : 7;
     if (job === 'king') sec = 5;
+    if (healer) sec = 6;
     rs.tool = tool;
     rs.shield = offhand === 1;
     rs.ap = {
@@ -398,6 +411,78 @@ export class UnitRenderer {
       rippleT: s,
       step: 0,
     };
+  }
+
+  // A rider sits: thighs forward on the saddle, hands on the reins unless fighting.
+  _seatRider(u, rs, ctx, P) {
+    const fighting = u.state === 'attack' || ctx.now - (u.lastAttack ?? -99) < 0.55;
+    P[9] = P[10] = -0.72;
+    if (!fighting) {
+      const gal = ctx.speed > 1.7 ? 1 : 0;
+      P[0] = 0.05 + gal * 0.16;
+      P[1] = 0;
+      P[2] = 0;
+      P[3] = -0.04 - gal * 0.12;
+      P[5] = -0.6;
+      P[6] = 0.08;
+      P[7] = rs.tool ? -0.42 : -0.6;
+      P[8] = -0.08;
+    }
+    rs.rootY = 0;
+    rs.rootRoll = 0;
+    rs.rootPitch = 0;
+    rs.k = Math.max(rs.k, 18);
+  }
+  // Pose the horse under a rider (its own smoothed channels on rs.horse).
+  _poseHorse(u, rs, ctx, skipPose, kSmooth) {
+    const md = horseModel;
+    let hrs = rs.horse;
+    if (!hrs) hrs = rs.horse = this._initRS({ id: u.id * 7 + 13 }, null);
+    if (hrs.apSrc !== rs.ap && rs.ap) {
+      hrs.apSrc = rs.ap;
+      const e = pickWeighted(md.palette.combos, h1(u.id, 41));
+      const pants = lin(humanModel.secondary[rs.ap.sec] ?? 0x5b3a26);
+      const k = Math.floor((rs.ap.var?.[3] ?? 0) + 1e-4);
+      hrs.ap = { a: jitter(lin(e[0]), h1(u.id, 42)), b: lin(e[1]), c: pants, sec: 0, var: [0, 0, 0, k + hrs.seed * 0.98] };
+    }
+    const P2 = this._Pt2;
+    if (!skipPose || !hrs.init) {
+      const hu = this._hu;
+      const st = u.state;
+      hu.state = st === 'attack' || st === 'eat' || st === 'work' || st === 'swim' ? 'idle' : st;
+      hu.stateTime = u.stateTime;
+      hu.combat = u.combat;
+      const run = ctx.run,
+        seed = ctx.seed;
+      ctx.run = ctx.speed > 1.7;
+      ctx.seed = hrs.seed;
+      hrs.fwd = 0;
+      poseQuad(hu, hrs, ctx, P2, md);
+      ctx.run = run;
+      ctx.seed = seed;
+      // the horse rears a little as its rider strikes
+      const since = ctx.now - (u.lastAttack ?? -99);
+      if (since < 0.6) {
+        const p = since / 0.6;
+        hrs.rootPitch -= 0.22 * Math.sin(p * Math.PI);
+        P2[3] -= 0.3 * Math.sin(p * Math.PI);
+      }
+    } else P2.set(hrs.P);
+    const Ps = hrs.P;
+    if (!hrs.init) {
+      Ps.set(P2);
+      hrs.sY = hrs.rootY;
+      hrs.sPitch = hrs.rootPitch;
+      hrs.sRoll = hrs.rootRoll;
+      hrs.init = true;
+    } else {
+      const k = kSmooth(hrs.k);
+      if (!skipPose) for (let i = 0; i < 16; i++) Ps[i] += (P2[i] - Ps[i]) * k;
+      hrs.sY += (hrs.rootY - hrs.sY) * k;
+      hrs.sPitch += (hrs.rootPitch - hrs.sPitch) * k;
+      hrs.sRoll += (hrs.rootRoll - hrs.sRoll) * k;
+    }
+    return hrs;
   }
 
   _onDeath(u) {
@@ -546,6 +631,8 @@ export class UnitRenderer {
       }
       const every = md.rig === 'serpent' || md.rig === 'wyrm' ? hiEvery : rs.lv === 2 ? tinyEvery : rs.lv === 1 ? midEvery : hiEvery;
       const skipPose = every > 1 && rs.init && (frame + u.id) % every !== 0;
+      const riding = !!u._riding && md.id === 'human' && hab === 'land' && !u.swimming;
+      let lift = 0; // a rider sits this high (world units) above the ground
       if (lod > 0.001) {
         ctx.speed = u.speedNow || 0;
         ctx.run = ctx.speed > def.speed * 1.28;
@@ -561,6 +648,7 @@ export class UnitRenderer {
           rs.accA = rs.accI = 0;
           rs.fwd = 0;
           POSE[md.rig](u, rs, ctx, P, md);
+          if (riding) this._seatRider(u, rs, ctx, P);
         } else P.set(rs.P);
         // per-channel smoothing (state changes blend instead of popping)
         const Ps = rs.P;
@@ -595,11 +683,21 @@ export class UnitRenderer {
           bank = Math.max(-0.6, Math.min(0.6, rs.bank));
           climb = Math.max(-0.4, Math.min(0.4, -(u.y - (u.py ?? u.y)) / Math.max(1e-3, U.tickDt) * 0.15));
         }
+        let hrs = null,
+          hTilt = 0;
+        if (riding) {
+          const fx = Math.sin(heading) * 0.3,
+            fz = Math.cos(heading) * 0.3;
+          hTilt = -Math.atan2(w.heightAt(ix + fx, iz + fz) - w.heightAt(ix - fx, iz - fz), 0.6) * 0.8;
+          hrs = this._poseHorse(u, rs, ctx, skipPose, kSmooth);
+          lift = (SADDLE_Y + 0.035 - 0.19 + hrs.sY) * scale;
+          tilt = hTilt + hrs.sPitch + hrs.P[0] * 0.6;
+        }
         this._e.set(rs.sPitch + tilt + climb, heading + rs.rootYaw, rs.sRoll + bank, 'YXZ');
         this._q.setFromEuler(this._e);
         const s = scale * pop;
-        const fwd = rs.fwd * scale;
-        this._p.set(ix + Math.sin(heading) * fwd, y + rs.sY * scale - emerge * md.height * scale, iz + Math.cos(heading) * fwd);
+        const fwd = (rs.fwd + (riding ? SADDLE_Z : 0)) * scale;
+        this._p.set(ix + Math.sin(heading) * fwd, y + rs.sY * scale + lift - emerge * md.height * scale, iz + Math.cos(heading) * fwd);
         this._m.compose(this._p, this._q, this._s.set(s, s, s));
         const flash = Math.max(0, 1 - (simNow - u.lastHurt) / 0.28) + (u.mad > simNow ? 0.12 + 0.08 * Math.sin(now * 7) : 0);
         let glow = u.blessed > simNow ? Math.min(1, (u.blessed - simNow) / 2) * (0.55 + 0.2 * Math.sin(now * 3 + rs.seed * 9)) : 0;
@@ -609,6 +707,22 @@ export class UnitRenderer {
         const near = (ix - camT.x) ** 2 + (iz - camT.z) ** 2 < SHADOW_RANGE * SHADOW_RANGE;
         const apUse = pm.tiny ? (pm.mesh.name.endsWith(':mid') ? rs.apMid : rs.apTiny) || rs.ap : rs.ap;
         pm.write(this._m, Ps, apUse, Math.min(1, flash), lod, glow, near);
+        if (hrs) {
+          // the horse under the rider (same heading, the rider's realm on its saddle cloth)
+          this._e.set(hrs.sPitch + hTilt, heading + hrs.rootYaw, hrs.sRoll, 'YXZ');
+          this._q2.setFromEuler(this._e);
+          this._p.set(ix, y + hrs.sY * scale, iz);
+          this._m2.compose(this._p, this._q2, this._s.set(s, s, s));
+          const hm = this.pick(this._horseRM || (this._horseRM = this.model('horse')), pxH * 1.1, hrs);
+          hm.write(this._m2, hrs.P, hrs.ap, Math.min(1, flash), lod, 0, near);
+        }
+        // a healer's touch: a soft green glint over the patient
+        if (u._healAt != null && simNow - u._healAt < 1.2 && md.id === 'human' && dCam < 70) {
+          const t = (now * 0.9 + rs.seed) % 1;
+          const hs = Math.max(0.22 * scale, 12 / ppu) * (0.7 + 0.5 * Math.sin(t * Math.PI));
+          const fade = 1 - smoothstep(0.6, 1.2, simNow - u._healAt);
+          ov.emotes.add(ix, y + lift + (0.25 + t * 0.35) * scale, iz, hs, EMOTE.heal, 0.85 * fade, now);
+        }
         // legendary light at the blade; starsteel and Starborn sparkle
         if ((rs.legendary || rs.starborn) && md.id === 'human') {
           const ch = Math.cos(heading),
@@ -619,7 +733,7 @@ export class UnitRenderer {
             lz = onBack ? -0.13 * scale : (0.12 + 0.22 * wg) * scale;
           const bx = ix + lx * ch + lz * sh,
             bz = iz - lx * sh + lz * ch;
-          const by = y + rs.sY * scale + (onBack ? 0.42 : 0.3 + 0.06 * wg) * scale;
+          const by = y + lift + rs.sY * scale + (onBack ? 0.42 : 0.3 + 0.06 * wg) * scale;
           if (rs.legendary) {
             const pulse = 0.9 + 0.15 * Math.sin(now * 3 + rs.seed * 9);
             const gs = Math.max(0.6 * scale, 30 / ppu) * pulse;
@@ -662,7 +776,7 @@ export class UnitRenderer {
           nrm.y = 1;
           nrm.z = 0;
         } else w.normalAt(ix, iz, nrm);
-        const sz = (md.radius * 0.62 + 0.08) * scale * (u.sleeping ? 1.25 : 1);
+        const sz = ((riding ? horseModel.radius : md.radius) * 0.62 + 0.08) * scale * (u.sleeping ? 1.25 : 1);
         if (lod > 0.001) ov.ground.add(ix, ground, iz, sz * 2, nrm.x, nrm.y, nrm.z, DECAL.shadow, 0.02, 0.02, 0.05, 0.42 * lod);
       } else if (hab === 'air') {
         const gy = Math.max(ground, SEA_LEVEL);
@@ -703,7 +817,7 @@ export class UnitRenderer {
         for (const id of u.statuses.keys()) if (STATUS_ICON[id] != null) ids.push(id);
         ids.sort((a, b) => (STATUS_BY_ID[b]?.priority ?? 0) - (STATUS_BY_ID[a]?.priority ?? 0));
         const esz2 = Math.max(md.height * scale * 0.3, 16 / ppu);
-        const top2 = y + rs.sY * scale + md.height * scale + 0.15;
+        const top2 = y + lift + rs.sY * scale + md.height * scale + 0.15;
         for (let k = 0; k < Math.min(3, ids.length); k++) {
           const off = (k - (Math.min(3, ids.length) - 1) / 2) * esz2 * 1.1;
           ov.emotes.add(ix + this._camRight.x * off, top2 + esz2 * 0.6, iz + this._camRight.z * off, esz2, STATUS_ICON[ids[k]], 1, 0);
@@ -712,7 +826,7 @@ export class UnitRenderer {
       // ---- emotes (only when close enough to read)
       if (dCam < 55 && lod > 0.3) {
         const ea = 1 - smoothstep(38, 55, dCam);
-        const top = y + rs.sY * scale + md.height * scale * (u.sleeping ? 0.6 : 1.05) + 0.12;
+        const top = y + lift + rs.sY * scale + md.height * scale * (u.sleeping ? 0.6 : 1.05) + 0.12;
         const esz = 0.24 * Math.max(1, dCam / 22) * (def.kind === 'monster' ? 1.6 : 1);
         const em = u.emote;
         if (em && simNow < em.until) {
