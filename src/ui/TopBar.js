@@ -312,7 +312,8 @@ export class TopBar {
         this._dayKey = key;
         const fixed = this.game.laws?.weatherSeasons === false;
         const epoch = !fixed && len >= 1.5;
-        const until = left <= 1 ? `${next} next year` : `${next} in ${left} yrs`;
+        // short enough for the 1280 px bar; the tip names the next season
+        const until = left <= 1 ? '1 yr left' : `${left} yrs left`;
         this.dayEl.innerHTML = `<i class="ws-season" style="--season:${SEASON_TINT[season]}">${uiIcon(SEASON_GLYPH[season] || 'sun')}</i><span class="ws-season__name">${season}</span><span class="ws-clock__sep">·</span><span class="ws-clock__epoch">${epoch ? until : time}</span>`;
         this.dayEl.style.setProperty('--season', SEASON_TINT[season]);
         this.timeBox.dataset.tip = fixed

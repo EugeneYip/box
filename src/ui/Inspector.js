@@ -55,7 +55,10 @@ const TILE_POWER = {
   [TILE.ROAD]: 'paint-road',
   [TILE.ICE]: 'paint-ice',
 };
-const KIND_LABEL = { unit: 'Creature', building: 'Building', village: 'Settlement', kingdom: 'Kingdom', flora: 'Flora', tile: 'Land', info: 'Detail' };
+const KIND_LABEL = { unit: 'Creature', building: 'Building', village: 'Settlement', kingdom: 'Kingdom', flora: 'Flora', tile: 'Land', info: 'Detail', vessel: 'Vessel', vehicle: 'Vehicle' };
+// Fleets (game.fleet.inspect): cargo lines with an icon each
+const CARGO_ICON = { settlers: 'found-village', army: 'job-soldier', fish: 'spawn-fish', food: 'plant-wheat', wood: 'plant-tree', stone: 'mountain', ore: 'job-miner', gold: 'gold', goods: 'trade' };
+const isCraft = (r) => !!r?.vessel || r?.kind === 'vessel' || r?.kind === 'vehicle';
 const JOB = {
   woodcutter: ['job-woodcutter', '#d9a466', 'Woodcutter'],
   farmer: ['job-farmer', '#f0cf6a', 'Farmer'],
@@ -222,7 +225,7 @@ export class Inspector {
       this.portraits.set(ref, ''); // in flight: never render the same subject twice
       let url = null;
       try {
-        url = await this.renderPortrait(ref, r.unit ? 'unit' : 'building');
+        url = await this.renderPortrait(ref, r.unit ? 'unit' : isCraft(r) ? 'vessel' : 'building');
       } catch (err) {
         safe(() => {
           throw err;
@@ -250,14 +253,14 @@ export class Inspector {
     }
     const W = g.world;
     const sz = (ref.scale || 1) * (ref.def?.size || 1);
-    const h = kind === 'unit' ? 0.9 * sz + 0.2 : 2.6;
+    const h = kind === 'unit' ? 0.9 * sz + 0.2 : kind === 'vessel' ? 0.9 + (ref.def?.length || 1) * 0.45 : 2.6;
     const y0 = ref.y ?? W.surfaceAt(ref.x, ref.z);
     const c = new THREE.Vector3(ref.x, y0 + h * 0.5, ref.z);
     const main = g.cameraRig.camera.position;
     const d = new THREE.Vector3(main.x - c.x, 0, main.z - c.z);
     if (d.lengthSq() < 1e-4) d.set(0, 0, 1);
     d.normalize();
-    const dist = kind === 'unit' ? h * 2.4 + 0.9 : 7 + Math.max(ref.w || 2, ref.h || 2) * 1.6;
+    const dist = kind === 'unit' ? h * 2.4 + 0.9 : kind === 'vessel' ? 3.2 + (ref.def?.length || 1) * 2.2 : 7 + Math.max(ref.w || 2, ref.h || 2) * 1.6;
     const cam = this._pcam;
     cam.position.set(c.x + d.x * dist, c.y + dist * 0.42, c.z + d.z * dist);
     cam.lookAt(c);
@@ -302,6 +305,7 @@ export class Inspector {
   applySelection() {
     const r = this.track;
     if (r?.unit) this.setSelected({ kind: 'unit', ref: r.unit });
+    else if (isCraft(r)) this.setSelected({ kind: 'vessel', ref: r.vessel || r.building });
     else if (r?.building) this.setSelected({ kind: 'building', ref: r.building });
     else this.setSelected(null);
   }
@@ -342,6 +346,11 @@ export class Inspector {
       const hit = BUILDING_ICON.find(([re]) => re.test(t));
       return hit ? { svg: uiIcon(hit[1]), tint: hit[2] } : { svg: uiIcon('house'), tint: '#9fbcff' };
     }
+    if (isCraft(r)) {
+      const v = r.vessel || r.building;
+      const sea = v?.cls === 'sea' || r.kind === 'vessel';
+      return { svg: uiIcon(sea ? 'ship' : v?.def?.siege ? 'catapult' : 'cart'), tint: v?.def?.war || v?.def?.siege ? '#ff8a7a' : sea ? '#7fc8ff' : '#d9a466' };
+    }
     if (k === 'village') return { svg: uiIcon('found-village'), tint: this.kingdomTint(r) || '#9fbcff' };
     if (k === 'kingdom') return { svg: uiIcon('banner'), tint: this.kingdomTint(r) || '#ffd36a' };
     return { svg: uiIcon('info'), tint: '#7fdcec' };
@@ -363,7 +372,8 @@ export class Inspector {
     const k = kindOf(r);
     const ic = this.iconFor(r);
     const u = r.unit;
-    const dead = u && u.alive === false;
+    const craft = isCraft(r) ? r.vessel || r.building : null;
+    const dead = (u && u.alive === false) || (craft && (craft.alive === false || craft.state === 'sinking'));
     const kTint = this.kingdomTint(r);
     // a building's own era only matters when it differs from its realm's
     let realmEraName = null;
@@ -374,6 +384,7 @@ export class Inspector {
     const stats = (r.stats || [])
       .filter((s) => Array.isArray(s) && s.length >= 2 && !HIDE_STATS.test(String(s[0])))
       .filter((s) => !(realmEraName && /^built in$/i.test(String(s[0])) && String(s[1]).toLowerCase() === realmEraName))
+      .filter((s) => !(craft && /^(voyage|cargo)$/i.test(String(s[0]))))
       .map((s, i) => [s, i])
       .sort((a, b) => rankOf(a[0][0]) - rankOf(b[0][0]) || a[1] - b[1])
       .map(([s]) => s);
@@ -413,19 +424,20 @@ export class Inspector {
         return `<button class="ws-chip2" type="button" data-i="${i}" style="--tint:${c.tint}" title="${esc(KIND_LABEL[kindOf(o)] || '')}"><span class="ws-chip2__ico">${c.svg}</span><span>${esc(o.title || KIND_LABEL[kindOf(o)])}</span></button>`;
       })
       .join('');
-    const following = u && this.game.cameraRig.follow === u;
+    const following = (u || craft) && this.game.cameraRig.follow === (u || craft);
     const actions = [];
-    if (u && !dead) actions.push(`<button class="ws-btn ws-btn--sm ${following ? 'is-on' : ''}" type="button" data-act="follow">${uiIcon('follow')}<span>${following ? 'Following' : 'Follow'}</span><kbd class="ws-key">F</kbd></button>`);
+    if ((u || craft) && !dead) actions.push(`<button class="ws-btn ws-btn--sm ${following ? 'is-on' : ''}" type="button" data-act="follow">${uiIcon('follow')}<span>${following ? 'Following' : 'Follow'}</span><kbd class="ws-key">F</kbd></button>`);
     actions.push(`<button class="ws-btn ws-btn--sm ws-btn--ghost" type="button" data-act="focus">${uiIcon('focus')}<span>Focus</span></button>`);
-    const kindLabel = k === 'tile' && r.tile?.water ? 'Waters' : u && ic.label ? ic.label : KIND_LABEL[k] || 'Detail';
+    const kindLabel = k === 'tile' && r.tile?.water ? 'Waters' : u && ic.label ? ic.label : craft ? (craft.def?.war ? 'Warship' : craft.def?.siege ? 'Siege engine' : KIND_LABEL[k]) : KIND_LABEL[k] || 'Detail';
     const pref = u || r.building;
     // a realm shows its banner (the same drawing as its flags) in place of a portrait
     const kObj = !pref && kindOf(r) === 'kingdom' && typeof r.kingdom === 'object' ? r.kingdom : null;
     const portrait = pref ? this.portraits.get(pref) : kObj?.banner ? bannerURL(kObj.banner, kObj.color, 72) : null;
     const editable = !!(u ? u.alive !== false : k === 'kingdom' || k === 'village' || (k === 'building' && (r.village || this.game.civ?.villages?.[r.building?.village])));
     const editing = !!this.editing && editable && this.editTarget(r) === this.editing;
-    const depth = safe(() => (u ? this.unitDepth(u) : k === 'village' || k === 'kingdom' || k === 'building' ? this.realmDepth(r) : ''), '', 'inspector depth') || '';
+    const depth = safe(() => (u ? this.unitDepth(u) : craft ? this.craftDepth(craft) : k === 'village' || k === 'kingdom' || k === 'building' ? this.realmDepth(r) : ''), '', 'inspector depth') || '';
     const level = u && Number.isFinite(u.level) ? u.level : null;
+    const ownerK = craft ? kingdomOf(this.game, craft.kingdom) : null;
     const epithet = u ? u.title || u.data?.title || null : null;
     const fav = !!u?.data?.favorite;
     const realmK = !u && (k === 'village' || k === 'kingdom' || k === 'building') ? (typeof r.kingdom === 'object' && r.kingdom) || kingdomOf(this.game, (r.village || this.game.civ?.villages?.[r.building?.village])?.kingdom) : null;
@@ -437,9 +449,9 @@ export class Inspector {
       <header class="ws-insp__head">
         <span class="ws-insp__badge${portrait ? ' has-portrait' : ''}${kObj?.banner ? ' has-banner' : ''}">${level != null ? `<i class="ws-lvl" title="Level ${level}">${level}</i>` : ''}${portrait ? `<img class="ws-insp__portrait" src="${portrait}" alt=""><span class="ws-insp__glyph">${ic.svg}</span>` : ic.svg}${kTint ? `<i class="ws-insp__kdot" style="--k:${kTint}"></i>` : ''}</span>
         <div class="ws-insp__titles">
-          <div class="ws-insp__kind">${esc(kindLabel)}${dead ? ' <em class="ws-insp__dead">Fallen</em>' : ''}</div>
+          <div class="ws-insp__kind">${esc(kindLabel)}${dead ? ` <em class="ws-insp__dead">${craft ? 'Lost' : 'Fallen'}</em>` : ''}</div>
           <h3 class="ws-insp__title">${esc(r.title || 'Unknown')}${epithet ? ` <span class="ws-insp__epithet">${esc(epithet)}</span>` : ''}</h3>
-          ${r.subtitle ? `<div class="ws-insp__sub">${kTint ? `<i class="ws-crest" style="--k:${kTint}"></i>` : ''}<span>${esc(r.subtitle)}</span></div>` : ''}
+          ${r.subtitle ? `<div class="ws-insp__sub">${craft && ownerK?.banner ? `<img class="ws-crest ws-crest--banner" alt="" src="${bannerURL(ownerK.banner, ownerK.color, 28)}">` : kTint ? `<i class="ws-crest" style="--k:${kTint}"></i>` : ''}<span>${esc(r.subtitle)}</span></div>` : ''}
         </div>
         ${editable ? `<button class="ws-iconbtn ws-iconbtn--sm ws-insp__edit${editing ? ' is-on' : ''}" type="button" aria-label="${editing ? 'Done editing' : 'Edit'}" data-tip="${editing ? 'Done editing' : 'Edit name, colours and more'}" data-act="${editing ? 'edit-done' : 'edit'}">${uiIcon(editing ? 'check' : 'edit')}</button>` : ''}
         ${u ? `<button class="ws-iconbtn ws-iconbtn--sm ws-insp__fav${fav ? ' is-on' : ''}" type="button" aria-label="${fav ? 'Unstar' : 'Star this creature'}" data-tip="${fav ? 'Favourite' : 'Mark as favourite'}" data-act="fav">${uiIcon(fav ? 'star-on' : 'star')}</button>` : ''}
@@ -545,6 +557,40 @@ export class Inspector {
         return this.chip(def.name || prettyId(id), tip, `is-${cat}${rare ? ' is-rare' : ''}`, TRAIT_ICON[cat] || 'sparkle');
       })
       .join('');
+  }
+  // Vessels and vehicles: the voyage as a route with progress, and the cargo hold.
+  craftDepth(v) {
+    const g = this.game;
+    const civ = g.civ;
+    let html = '';
+    const vo = v.voyage;
+    if (vo) {
+      const from = civ?.villages?.[vo.from];
+      const to = typeof vo.to === 'object' && vo.to ? vo.to : civ?.villages?.[vo.to];
+      const tx = to?.cx ?? to?.x,
+        tz = to?.cz ?? to?.z;
+      let pct = null;
+      if (from && tx != null) {
+        const total = Math.hypot(tx - from.cx, tz - from.cz);
+        const left = Math.hypot(tx - v.x, tz - v.z);
+        if (total > 1) pct = Math.max(0, Math.min(1, 1 - left / total));
+      }
+      const homeward = v.mission?.phase === 'home';
+      html += `<section class="ws-dsec"><h5>${homeward ? 'Homeward' : 'Voyage'}</h5><div class="ws-voyage"><span class="ws-voyage__end">${esc(vo.fromName || '—')}</span><i class="ws-voyage__track">${pct != null ? `<b style="left:${(pct * 100).toFixed(1)}%"></b>` : ''}</i><span class="ws-voyage__end is-to">${esc(vo.toName || 'open sea')}</span></div></section>`;
+    }
+    const c = v.cargo;
+    if (v.def?.capacity || c) {
+      const parts = [];
+      if (c) {
+        const n = (x) => (Array.isArray(x) ? x.length : x);
+        if (c.settlers) parts.push(['settlers', `${n(c.settlers)} settlers`]);
+        if (c.army) parts.push(['army', `${n(c.army)} soldiers`]);
+        for (const k of ['fish', 'food', 'wood', 'stone', 'ore', 'gold', 'goods']) if (c[k] > 0) parts.push([k, `${Math.round(c[k])} ${k}`]);
+      }
+      const cap = v.def?.capacity ? ` <small>of ${v.def.capacity}</small>` : '';
+      html += `<section class="ws-dsec"><h5>Hold${cap}</h5><div class="ws-chips">${parts.length ? parts.map(([k, t]) => this.chip(t, '', 'is-cargo', CARGO_ICON[k] || 'trade')).join('') : `<span class="ws-insp__muted">Empty</span>`}</div></section>`;
+    }
+    return html;
   }
   unitDepth(u) {
     const g = this.game;
@@ -701,8 +747,8 @@ export class Inspector {
   }
 
   toggleFollow() {
-    const u = this.track?.unit;
-    if (!u || u.alive === false) return;
+    const u = this.track?.unit || (isCraft(this.track) ? this.track.vessel || this.track.building : null);
+    if (!u || u.alive === false || u.state === 'sinking') return;
     const rig = this.game.cameraRig;
     if (rig.follow === u) rig.follow = null;
     else {
@@ -861,6 +907,14 @@ export class Inspector {
     const list = this.collect(at);
     let idx = list.findIndex((o) => (u && o.unit === u) || (b && o.building === b) || (!u && !b && kindOf(o) === kindOf(r) && o.title === r.title));
     if (idx < 0) {
+      if (isCraft(r)) {
+        if (!this._deadShown) {
+          this._deadShown = true;
+          if (this.game.cameraRig.follow === b) this.game.cameraRig.follow = null;
+          this.render();
+        }
+        return;
+      }
       if (u) {
         if (u.alive === false && !this._deadShown) {
           this._deadShown = true;

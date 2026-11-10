@@ -417,3 +417,62 @@
 .is-touch .ws-swatches {
   grid-template-columns: repeat(6, minmax(44px, 1fr));
 }
+
+/* ---- vessels and vehicles (Fleets) */
+.ws-crest--banner {
+  width: 11px;
+  height: 14px;
+  flex: none;
+  background: none;
+  clip-path: none;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
+}
+.ws-voyage {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.ws-voyage__end {
+  max-width: 96px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--ws-ink-2);
+}
+.ws-voyage__end.is-to {
+  color: var(--ws-gold-hi);
+}
+.ws-voyage__track {
+  position: relative;
+  height: 2px;
+  border-radius: 1px;
+  background: repeating-linear-gradient(90deg, rgba(235, 201, 119, 0.5) 0 4px, transparent 4px 8px);
+}
+.ws-voyage__track b {
+  position: absolute;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  border-radius: 50%;
+  background: var(--ws-gold-hi);
+  box-shadow:
+    0 0 0 3px rgba(235, 201, 119, 0.22),
+    0 0 10px rgba(235, 201, 119, 0.5);
+}
+.ws-dsec h5 small {
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: none;
+  color: var(--ws-ink-3);
+}
+.ws-tchip.is-cargo {
+  --tint: #d9c27a;
+}
+.ws-insp__muted {
+  font-size: 11.5px;
+  color: var(--ws-ink-3);
+}
