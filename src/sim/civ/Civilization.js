@@ -647,9 +647,11 @@ export class Civilization {
       this._buildingsTick(T.b);
       T.b = 0;
     }
-    if ((T.terr += step) >= 2) {
+    // (bigger maps refresh territory less often: the fill grows with the map)
+    if ((T.terr += step) >= 2 * Math.max(1, Math.sqrt(this.world.size / 65536))) {
       T.terr = 0;
-      this._territory();
+      // the full flood fill is costly on big maps: only when the realms changed
+      this._territoryIfChanged();
     }
     if ((T.dip += step) >= 4) {
       T.dip = 0;
@@ -1982,6 +1984,7 @@ export class Civilization {
 
   _onHeight(r) {
     if (this._flattening) return;
+    this._terrDirty = true;
     const w = this.world;
     for (const b of this.buildings) {
       if (!b.alive) continue;
@@ -2076,6 +2079,21 @@ export class Civilization {
   // slopes, ridges, forest and especially water are expensive, so rivers and
   // mountain chains become natural borders. Multi-source Dijkstra; each tile
   // goes to the source that reaches it cheapest relative to its strength.
+  // Territory changes only when settlements grow, shrink, change hands or the
+  // land itself is reshaped; otherwise skip the map-wide flood fill (a refresh
+  // still runs every 30 s for the slow incumbency drift).
+  _territoryIfChanged() {
+    let sig = this.villages.length * 7919;
+    for (const v of this.villages) if (v.alive) sig = (Math.imul(sig, 31) + v.id * 131 + v.kingdom * 977 + Math.round(v.radius) * 17 + v.tier * 5) | 0;
+    for (const b of this.buildings) if (b.alive && !b.constructing && (b.type === 'watchtower' || b.type === 'tower')) sig = (Math.imul(sig, 31) + b.id) | 0;
+    const now = this.game.time.total;
+    if (sig === this._terrSig && !this._terrDirty && now - (this._terrT ?? -1e9) < 30) return;
+    this._terrSig = sig;
+    this._terrDirty = false;
+    this._terrT = now;
+    this._territory();
+  }
+
   _territory() {
     const w = this.world;
     const W = w.w;
