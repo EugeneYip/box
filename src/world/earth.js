@@ -295,7 +295,7 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
   // on the edge would continue as white bands beyond the map. (This splits
   // Greenland's east coast at the Atlantic seam and gives Antarctica a far
   // coast just inside the bottom edge.)
-  const ringX = 2,
+  const ringX = Math.max(2, Math.round(5 * scale768)), // wide enough that the shore field clamped past the side edges reads as open sea
     ringY = Math.max(2, Math.round(3 * scale768));
   const edgeDist = (x, y) => Math.min(x, W - 1 - x, y, H - 1 - y); // tiles to the border
   const inRing = (x, y) => x < ringX || x >= W - ringX || y < ringY || y >= H - ringY;
@@ -768,7 +768,7 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
           if (lat > 76.5 + bn * 1.5 || lat < -71.5 + bn * 1.5) ice = true;
           else if ((lat > 70 || lat < -65) && ds < 2.2 + bn) ice = true;
           // the pack ice stops short of the border (open water beyond it)
-          if (edgeDist(x, y) < ringY + 2 + bn) ice = false;
+          if (Math.min(x, W - 1 - x) < ringX + 1 + bn || Math.min(y, H - 1 - y) < ringY + 2 + bn) ice = false;
         }
         if (ice) type[i] = TILE.ICE;
         else if (!sea[i]) type[i] = riverMask[i] || depth > 1.1 + bn * 0.5 ? TILE.SOIL : TILE.SAND;
