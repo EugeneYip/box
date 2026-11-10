@@ -42,6 +42,7 @@ export const LAWS = [
   B('diploPeace', 'diplomacy', 'Peace treaties', 'War-weary kingdoms sue for peace.', true, 'civ'),
   B('diploCultureFriction', 'diplomacy', 'Cultural rivalry', 'Kingdoms of different cultures distrust one another.', true, 'civ'),
   N('diploWarlike', 'diplomacy', 'Warmongering', 'How eager rulers are to start wars.', 1, 0, 3, 0.25, 'civ'),
+  B('fleetNaval', 'diplomacy', 'Naval war', 'War galleys of realms at war fight at sea, blockade harbours and sink transports.', true, 'fleet'),
   // ---- Civilization -------------------------------------------------------------
   B('civExpansion', 'civilization', 'Settlers', 'Villages send settlers to found new villages.', true, 'civ'),
   B('civNewKingdoms', 'civilization', 'New kingdoms', 'Far-flung settlements may crown rulers of their own.', true, 'civ'),
@@ -50,6 +51,8 @@ export const LAWS = [
   N('civTechSpeed', 'civilization', 'Research speed', 'How quickly kingdoms gain knowledge.', 1, 0.25, 4, 0.25, 'civ'),
   B('civRoads', 'civilization', 'Roads', 'Villages pave paths between their buildings and neighbours.', true, 'civ'),
   B('civWalls', 'civilization', 'Fortifications', 'Cities raise walls, gates and watchtowers.', true, 'civ'),
+  B('fleetSailing', 'civilization', 'Ships', 'Realms launch fishing boats, trading cogs, transports and great ships.', true, 'fleet'),
+  B('fleetColonize', 'civilization', 'Overseas colonies', 'Ships carry settlers to found villages on other islands and continents.', true, 'fleet'),
   // ---- Creatures -------------------------------------------------------------
   B('lifeHunger', 'creatures', 'Hunger', 'Creatures must eat to survive.', true, 'life'),
   B('lifeAging', 'creatures', 'Old age', 'Creatures grow old and pass away.', true, 'life'),
