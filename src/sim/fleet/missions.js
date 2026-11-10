@@ -77,7 +77,8 @@ export const missions = {
     v.mission = { type, phase: 'out', requested: !o._self, toH: toH?.id ?? null, from: h.id, t0: this.game.time.total };
     v.cargo = cargo;
     v.deliver = deliver;
-    v.voyage = { from: h.id, to: o.to, fromName: h.name, toName, requested: !o._self, t0: this.game.time.total };
+    // voyage.from / .to are villages (or a point) for the inspector; the harbour ids ride along
+    v.voyage = { from: h.village, to: toH ? toH.village : o.to, fromHarbour: h.id, toHarbour: toH?.id ?? null, fromName: h.name, toName, requested: !o._self, t0: this.game.time.total };
     v.idleT = 0;
     this._sail(v, dest, Math.hypot(v.x - h.berth.x, v.z - h.berth.z) < 0.6 ? path : null);
     if (!v.path) {
@@ -299,7 +300,7 @@ export const missions = {
       if (cargo.settlers) cargo.settlers = people;
       else if (cargo.army) cargo.army = people;
     }
-    const e = { vessel: v, id: v.id, kind: v.kind, kingdom: v.kingdom, from: v.voyage?.from, to: v.voyage?.to, cargo, x: land.x, z: land.z, landing: { x: v.x, z: v.z }, requested: !!m.requested, passengers: people.length };
+    const e = { vessel: v, id: v.id, kind: v.kind, kingdom: v.kingdom, from: v.voyage?.fromHarbour ?? v.voyage?.from, to: v.voyage?.toHarbour ?? v.voyage?.to, cargo, x: land.x, z: land.z, landing: { x: v.x, z: v.z }, requested: !!m.requested, passengers: people.length };
     const civ = this.game.civ;
     const civApplies = typeof civ?._onFleetArrived === 'function';
     e.applied = civApplies;
@@ -661,7 +662,7 @@ export const missions = {
       v = this.spawn('explorer', kid, from.berth.x, from.berth.z, { home: from.village, harbour: from.id, heading: Math.atan2(from.dirZ, from.dirX) });
     }
     v.mission = { type: 'chart', phase: 'out', cell: best };
-    v.voyage = { from: from.id, to: { x: nav.nx[best], z: nav.nz[best] }, fromName: from.name, toName: 'uncharted waters', t0: now };
+    v.voyage = { from: from.village, fromHarbour: from.id, to: { x: nav.nx[best], z: nav.nz[best] }, fromName: from.name, toName: 'uncharted waters', t0: now };
     const p = nav.findPath(v.x, v.z, nav.nx[best], nav.nz[best], { big: true, maxLen: this.range(kid, 'explorer') });
     if (!p) {
       v.mission = null;
