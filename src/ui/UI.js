@@ -465,10 +465,16 @@ export class UI {
     }
     if (e.key === '?') return this.modals.toggle('help');
     switch (code) {
-      case 'Tab':
+      case 'Tab': {
+        // Tab cycles power categories only while nothing has focus (the world has
+        // the keyboard); on a button, pill or field it moves focus as usual, so the
+        // inspector, panels and dialogs stay keyboard-navigable.
+        const a = document.activeElement;
+        if (a && a !== document.body && a !== document.documentElement && a.tagName !== 'CANVAS') break;
         e.preventDefault();
         this.toolbar.cycleCategory(e.shiftKey ? -1 : 1);
         break;
+      }
       case 'KeyI': {
         const p = getPower('inspect');
         if (p) {
