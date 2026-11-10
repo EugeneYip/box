@@ -17,6 +17,7 @@ attribute vec3 iColor;
 attribute vec4 iAnim;
 attribute vec4 iState;
 uniform float uTime;
+float wsHide = 0.0;
 vec3 wsRotZ(vec3 p, float a) { float c = cos(a), s = sin(a); return vec3(c * p.x - s * p.y, s * p.x + c * p.y, p.z); }
 vec3 wsRotY(vec3 p, float a) { float c = cos(a), s = sin(a); return vec3(c * p.x + s * p.z, p.y, -s * p.x + c * p.z); }
 vec3 wsRotX(vec3 p, float a) { float c = cos(a), s = sin(a); return vec3(p.x, c * p.y - s * p.z, s * p.y + c * p.z); }
@@ -24,7 +25,7 @@ void wsAnim(inout vec3 p, inout vec3 n) {
   float code = aAnim.x;
   float slot = floor(code / 16.0 + 0.001);
   float k = code - slot * 16.0;
-  if (slot > 0.5 && abs(slot - 1.0 - iState.w) > 0.5) { p = vec3(0.0, -80.0, 0.0); return; }
+  if (slot > 0.5 && abs(slot - 1.0 - iState.w) > 0.5) { wsHide = 1.0; return; }
   if (k < 0.5) return;
   if (k < 1.5) {
     // square sail: billows forward with the wind, furls up to its yard
@@ -83,7 +84,8 @@ export function createVehicleMaterial(uniforms) {
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', `#include <common>\n${ANIM_GLSL}\nvarying float vTint;\nvarying float vGlow;\nvarying vec3 vKCol;\nvarying vec4 vState;\nvarying vec3 vLocal;`)
       .replace('#include <beginnormal_vertex>', `vec3 wsP = position;\nvec3 wsN = normal;\nwsAnim(wsP, wsN);\nvec3 objectNormal = wsN;`)
-      .replace('#include <begin_vertex>', `vec3 transformed = wsP;\nvTint = aTint; vGlow = aGlow; vKCol = iColor; vState = iState; vLocal = position;`);
+      .replace('#include <begin_vertex>', `vec3 transformed = wsP;\nvTint = aTint; vGlow = aGlow; vKCol = iColor; vState = iState; vLocal = position;`)
+      .replace('#include <project_vertex>', `#include <project_vertex>\nif (wsHide > 0.5) gl_Position = vec4(4.0, 4.0, 4.0, 1.0); // hidden variant: clipped away`);
     sh.fragmentShader = sh.fragmentShader
       .replace(
         '#include <common>',
@@ -135,7 +137,7 @@ export function createVehicleDepthMaterial(uniforms) {
   const mat = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
   mat.onBeforeCompile = (sh) => {
     sh.uniforms.uTime = uniforms.uTime;
-    sh.vertexShader = sh.vertexShader.replace('#include <common>', `#include <common>\n${ANIM_GLSL}`).replace('#include <begin_vertex>', `vec3 wsP = position;\nvec3 wsN = vec3(0.0, 1.0, 0.0);\nwsAnim(wsP, wsN);\nvec3 transformed = wsP;`);
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', `#include <common>\n${ANIM_GLSL}`).replace('#include <begin_vertex>', `vec3 wsP = position;\nvec3 wsN = vec3(0.0, 1.0, 0.0);\nwsAnim(wsP, wsN);\nvec3 transformed = wsP;`).replace('#include <project_vertex>', `#include <project_vertex>\nif (wsHide > 0.5) gl_Position = vec4(4.0, 4.0, 4.0, 1.0);`);
   };
   mat.customProgramCacheKey = () => 'wsVehicleDepth';
   return mat;

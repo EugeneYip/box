@@ -36,7 +36,7 @@ export const missions = {
     if (typeof to === 'number' || (to && typeof to === 'object' && to.x == null)) {
       toH = this.resolveHarbour(to);
       if (!toH) return refuse('no such harbour');
-      dest = this._mooringSpot(toH, null) || toH.berth;
+      dest = this._mooringSpot(toH, null, KINDS[kind]?.length) || toH.berth;
       deliver = { x: toH.x, z: toH.z };
       toName = toH.name;
     } else if (to && to.x != null) {
@@ -119,27 +119,46 @@ export const missions = {
     return !!p;
   },
 
-  // A free spot at a harbour's berth for one more ship to moor.
-  _mooringSpot(h, self) {
+  // A free spot at a harbour for one more ship to moor: off the end of the
+  // jetty, then alongside it, then further out (spaced by the ship's length).
+  _mooringSpot(h, self, len = null) {
     const nav = this.nav;
+    const L = len ?? self?.def?.length ?? 2;
     const px = -h.dirZ,
       pz = h.dirX;
+    const ex = h.x + h.dirX * 3.4,
+      ez = h.z + h.dirZ * 3.4; // the end of the pier
     const taken = (x, z) => {
       for (const o of this.list) {
         if (!o.alive || o === self || o.cls !== 'sea') continue;
-        if ((o.state === 'moored' || (o.dest && o.state === 'sail')) && Math.hypot((o.state === 'moored' ? o.x : o.dest.x) - x, (o.state === 'moored' ? o.z : o.dest.z) - z) < 1.3) return true;
+        const ox = o.state === 'moored' ? o.x : o.state === 'sail' && o.mission?.phase === 'home' && o.dest ? o.dest.x : null;
+        if (ox == null) continue;
+        const oz = o.state === 'moored' ? o.z : o.dest.z;
+        if (Math.hypot(ox - x, oz - z) < 0.75 + (L + o.def.length) * 0.32) return true;
       }
       return false;
     };
-    const offs = [0, 1.3, -1.3, 2.6, -2.6, 3.9, -3.9];
-    for (const fwd of [0, 1.4, 2.8])
-      for (const s of offs) {
-        const x = h.berth.x + px * s + h.dirX * fwd,
-          z = h.berth.z + pz * s + h.dirZ * fwd;
-        if (nav.clearAt(x, z) < 0.9 || taken(x, z)) continue;
-        if (!nav.los(h.berth.x, h.berth.z, x, z, 0)) continue;
-        return { x, z };
-      }
+    const slots = [
+      [L / 2 + 0.35, 0],
+      [L * 0.2, 1.3],
+      [L * 0.2, -1.3],
+      [L * 0.35 + 0.4, 2.7],
+      [L * 0.35 + 0.4, -2.7],
+      [L * 1.5 + 0.8, 0],
+      [L * 1.2 + 0.6, 1.6],
+      [L * 1.2 + 0.6, -1.6],
+      [L * 0.5 + 0.6, 4.1],
+      [L * 0.5 + 0.6, -4.1],
+    ];
+    for (const [f, sd] of slots) {
+      const x = ex + h.dirX * f + px * sd,
+        z = ez + h.dirZ * f + pz * sd;
+      if (nav.clearAt(x, z) < 0.7) continue;
+      if (!nav.isWater(x + h.dirX * L * 0.5, z + h.dirZ * L * 0.5) || !nav.isWater(x - h.dirX * L * 0.45, z - h.dirZ * L * 0.45)) continue;
+      if (taken(x, z)) continue;
+      if (!nav.los(h.berth.x, h.berth.z, x, z, 0)) continue;
+      return { x, z };
+    }
     return h.berth;
   },
 
@@ -208,10 +227,11 @@ export const missions = {
       // lie alongside the jetty
       const h = v.harbour != null ? this._berths.get(v.harbour) : null;
       if (h) {
-        const want = Math.atan2(h.dirX, -h.dirZ);
-        const d = ((want - v.heading + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
-        const d2 = Math.abs(d) > Math.PI / 2 ? (d > 0 ? d - Math.PI : d + Math.PI) : d;
-        v.heading += d2 * Math.min(1, step * 0.4);
+        const want = Math.atan2(h.dirZ, h.dirX); // bow to the sea, alongside the jetty
+        let d = want - v.heading;
+        while (d > Math.PI) d -= Math.PI * 2;
+        while (d < -Math.PI) d += Math.PI * 2;
+        v.heading += d * Math.min(1, step * 0.35);
       }
       if (v.layup && v.idleT > 4) this.remove(v);
       else if (v.idleT > 240 && v.kind !== 'fishing' && this.count(v.kingdom, v.kind) > 1) this.remove(v);
@@ -419,8 +439,8 @@ export const missions = {
       let have = 0;
       for (const v of this.list) if (v.alive && v.kind === 'fishing' && v.harbour === h.id) have++;
       if (have < want && this.seaCount() < this.budget.sea && this.count(kid, 'fishing') < this.cap(kid, 'fishing')) {
-        const spot = this._mooringSpot(h, null);
-        this.spawn('fishing', kid, spot.x, spot.z, { home: h.village, harbour: h.id, heading: Math.atan2(h.dirX, -h.dirZ) });
+        const spot = this._mooringSpot(h, null, KINDS.fishing.length);
+        this.spawn('fishing', kid, spot.x, spot.z, { home: h.village, harbour: h.id, heading: Math.atan2(h.dirZ, h.dirX) });
       }
       if (this.blockaded(h) || this.storm() > 0.4) continue;
       if (this.isNight() && !this.hasTech(kid, 'astronomy') && this.game.settings?.dayNight !== false) continue;
