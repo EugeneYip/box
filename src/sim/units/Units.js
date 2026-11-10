@@ -64,6 +64,7 @@ export { SPECIES, registerSpecies };
 const YEAR = 30; // == YEAR_SECONDS (src/core/Game.js); duplicated to avoid an import cycle
 const CELL = 4;
 const THINK_INTERVAL = 0.6;
+const TICK_DT = 1 / 15; // the fine simulation step (coarser steps run at 8x and above)
 // How deep a land creature wades before it must swim. People never wade in
 // over their heads on their own (they only swim when the water comes to them);
 // animals still ford shallow rivers and straits.
@@ -472,6 +473,53 @@ export class Units {
       blockedT: 0,
       _wantPath: false,
       _cell: -1,
+      // Fields other passes add later, declared up front so every creature
+      // shares one object shape (keeps the per-tick loop's property access fast).
+      _far: false,
+      _ext: false,
+      _lastThink: -1,
+      _curB: -1,
+      _allowB: -1,
+      _ex: Infinity,
+      _ez: 0,
+      onDeck: false,
+      _farSea: false,
+      _pounce: false,
+      _carcass: null,
+      _pastureT: 0,
+      _scoutT: 0,
+      _mateSeekT: 0,
+      _mate: null,
+      _chatWith: 0,
+      _mSpd: 1,
+      _mDmg: 1,
+      _mFear: 1,
+      _mFert: 1,
+      _mSight: 1,
+      _mAggr: 1,
+      _lvlHp: 1,
+      _blessHp: 1,
+      _eqVer: 0,
+      _battles: 0,
+      _wars: null,
+      _yr: null,
+      _woundLow: null,
+      _famine: null,
+      _luckLogged: false,
+      _divine: null,
+      _riding: false,
+      _rideMul: 1,
+      _charged: -99,
+      _chargeT: -99,
+      _trips: 0,
+      _cured: 0,
+      _nurse: 0,
+      _nurseWait: 0,
+      _healAt: -99,
+      _lostT: 0,
+      _aboardSince: 0,
+      _rs: null,
+      _rm: null,
     };
     if (def.habitat === 'air') {
       u.alt = opts.alt ?? 6;
@@ -1706,7 +1754,7 @@ export class Units {
       }
     }
     const brain = this.brains.get(u.species);
-    const elapsed = Math.min(3, Math.max(0.05, now - (u._lastThink ?? now - THINK_INTERVAL)));
+    const elapsed = u._lastThink < 0 ? THINK_INTERVAL : Math.min(6, Math.max(0.05, now - u._lastThink));
     u._lastThink = now;
     // tech roles (healers, messengers, riders) act before the registered brain
     if (u.species === 'human' && this._roleThink(u, now)) return;
@@ -1754,7 +1802,17 @@ export class Units {
     if (this._tickN % 150 === 7) this._rolesTick();
     this._ridePaths = 0;
     this._landingsTick();
-    this._buildDanger();
+    // the danger grid is rebuilt inside the unit loop (one pass over the list):
+    // this tick's thinking reads the grid the previous tick wrote
+    const dw = Math.ceil(w.w / DCELL),
+      dh = Math.ceil(w.h / DCELL);
+    if (!this._danger || this._danger.length !== dw * dh) this._buildDanger();
+    let DN = this._dangerNext;
+    if (!DN || DN.length !== dw * dh) DN = this._dangerNext = new Uint8Array(dw * dh);
+    else DN.fill(0);
+    // AI LOD at 8x and above: the coarse step would multiply thinking per tick;
+    // distant creatures re-decide less often per game second instead
+    const fastFar = Math.min(2.5, Math.max(1, dt / TICK_DT));
     const overview = (g.cameraRig?.cur?.dist ?? 0) > OVERVIEW_DIST;
     const cam = g.cameraRig?.cur;
     const focus = this._focus;
@@ -1783,6 +1841,11 @@ export class Units {
       if (u.data.aboard != null) {
         this._aboardTick(u, now);
         continue;
+      }
+      if (def.kind !== 'animal' || def.diet !== 'herbivore' || u.combat || u.mad > now) {
+        const cx = u.x < 0 ? 0 : Math.min(dw - 1, Math.floor(u.x / DCELL)),
+          cz = u.z < 0 ? 0 : Math.min(dh - 1, Math.floor(u.z / DCELL));
+        DN[cz * dw + cx] = 1;
       }
       // ---- needs
       const active = u.state === 'run' || u.state === 'flee' || u.state === 'hunt' || u.state === 'attack';
@@ -1824,7 +1887,7 @@ export class Units {
         const deep = !deck && w.height[ti] < SEA_LEVEL && h < SEA_LEVEL - Math.max(0.12, def.height * 0.55 * def.size);
         u.swimming = deep;
         u.wading = !deck && !deep && h < SEA_LEVEL - 0.02;
-        if (deep && (u._ex === undefined || Math.abs(u.x - u._ex) + Math.abs(u.z - u._ez) > 2) && this._ashore(u)) u.swimming = false;
+        if (deep && Math.abs(u.x - u._ex) + Math.abs(u.z - u._ez) > 2 && this._ashore(u)) u.swimming = false;
         else if (deep) {
           if (u._ext && u._farSea) u.energy = Math.max(0, u.energy - dt * 0.012);
           if (!def.canSwim || u.energy <= 0.01) this.damage(u, dt * (def.canSwim ? 2 : 12), null, { cause: 'drowned' });
@@ -1872,7 +1935,7 @@ export class Units {
         if (budgetOn && this._frameThinkMs > THINK_BUDGET_MS && !u.combat) {
           u.thinkT = 0.05 + g.rng.next() * 0.15; // over budget: think a little later
         } else {
-          let mul = u._far ? FAR_THINK[def.kind] || 2 : 1;
+          let mul = u._far ? (FAR_THINK[def.kind] || 2) * fastFar : 1;
           // calm grazers with no danger about re-decide less often
           if (def.kind === 'animal' && def.diet === 'herbivore' && !u.combat && u.hunger < 0.4 && !u.alarm && u.fleeUntil < now && !this.dangerNear(u.x, u.z, def.sight)) mul *= 1.6;
           u.thinkT = THINK_INTERVAL * (0.8 + g.rng.next() * 0.4) * mul;
@@ -1912,6 +1975,8 @@ export class Units {
       u._ex = u.x;
       u._ez = u.z;
     }
+    this._dangerNext = this._danger;
+    this._danger = DN;
     this._projectilesTick(dt);
     if (tickN % 15 === 0) this._forageTick(dt * 15);
     if (tickN % 900 === 1) this._initForage();
