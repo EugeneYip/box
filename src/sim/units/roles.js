@@ -95,6 +95,25 @@ export function installRoles(Units) {
     const g = this.game;
     const civ = g.civ;
     if (!civ || !civ.villages || typeof civ.hasTech !== 'function') return;
+    // Civ now hands out healers, messengers and cavalry itself (unlocks._riders,
+    // the healer job): stand down and release anyone this fallback recruited,
+    // so roles are not doubled.
+    if (typeof civ._riders === 'function') {
+      if (!this._rolesReleased) {
+        this._rolesReleased = true;
+        for (const u of this.list) {
+          const d = u.alive && u.data;
+          if (!d || !d.lifeRole) continue;
+          delete d.lifeRole;
+          if (d.role === 'healer' || d.role === 'messenger' || d.role === 'cavalry') delete d.role;
+          delete d.ride;
+          delete d.heal;
+          delete d.mounted;
+          this._updateRiding(u);
+        }
+      }
+      return;
+    }
     const vs = Array.isArray(civ.villages) ? civ.villages : Object.values(civ.villages);
     for (const v of vs) {
       if (!v || !v.alive || v.razed || !(v.kingdom >= 0) || !v.members) continue;
