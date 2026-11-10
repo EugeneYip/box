@@ -97,9 +97,19 @@ export class Popover {
     this.el.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
     clearTimeout(this._hide);
     if (ms) this._hide = setTimeout(() => this.hide(), ms);
+    // watchdog: a tip never outlives its target (dialog closed, panel re-rendered, hidden)
+    clearInterval(this._watch);
+    this._watch = setInterval(() => {
+      const tg = this.target;
+      if (!tg) return this.hide();
+      const b = tg.isConnected ? tg.getBoundingClientRect() : null;
+      if (!b || (!b.width && !b.height) || tg.closest('[hidden], [inert]')) this.hide();
+    }, 250);
   }
   hide() {
     clearTimeout(this._hide);
+    clearTimeout(this._hov);
+    clearInterval(this._watch);
     this.el.classList.remove('is-shown');
     this.target = null;
   }

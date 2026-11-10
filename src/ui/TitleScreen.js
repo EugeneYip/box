@@ -1,8 +1,8 @@
 import { el, esc } from './dom.js';
 import { uiIcon } from './icons.js';
 import { emblemSvg } from './TopBar.js';
-import { PRESETS } from './Panels.js';
-import { WORLD_SIZES, EARTH_SIZES, IS_TOUCH, isWidePreset } from '../core/params.js';
+import { PRESETS, PRESET_NAMES, bootNote } from './Panels.js';
+import { WORLD_SIZES, EARTH_SIZES, IS_TOUCH, isWidePreset, sizeForPreset } from '../core/params.js';
 
 // Title screen over the live world. The camera slowly orbits while the
 // player picks a landmass; choosing one re-seeds the world behind the logo.
@@ -77,9 +77,10 @@ export class TitleScreen {
             el('span', { class: 'ws-title__dot' }),
             el('button', { class: 'ws-link', type: 'button', onclick: () => ui.modals.open('settings'), html: `${uiIcon('settings')}<span>Settings</span>` }),
           ),
+          el('div', { class: 'ws-title__hint', html: `Press <kbd class="ws-key">Enter</kbd> to begin` }),
         ),
       ),
-      el('div', { class: 'ws-title__foot', html: `Press <kbd class="ws-key">Enter</kbd> to begin` }),
+      // keyboard hint inside the card's flow, so it can never overlap the card
     );
     ui.root.append(this.el);
     requestAnimationFrame(() => requestAnimationFrame(() => this.el.classList.add('is-in')));
@@ -94,16 +95,21 @@ export class TitleScreen {
     const g = this.game;
     this.presetBtns.forEach((b) => b.classList.toggle('is-on', b.dataset.id === id));
     if (id === g.params.preset) return;
-    const def = PRESETS.find((p) => p.id === id);
-    if (def?.size && g.world.w !== def.size) {
-      // the World Map wants a Huge world: reload with it (keeping the seed)
-      const z = WORLD_SIZES.find((s) => s.size === def.size) || { name: 'Huge', size: def.size };
+    const from = g.params.preset || 'continent';
+    if (isWidePreset(id) !== isWidePreset(from)) {
+      // into or out of the 2:1 World Map: reload in its shape, keeping the seed,
+      // with the size mapped the same way New World and the game map it
+      const size = sizeForPreset(g.params.size ?? g.world.w, from, id);
+      const z = (isWidePreset(id) ? EARTH_SIZES : WORLD_SIZES).find((s) => s.size === size);
       const q = new URLSearchParams(location.search);
       q.set('preset', id);
       q.set('seed', g.params.seed);
-      q.set('size', z.size);
+      q.set('size', size);
       for (const k of ['cam', 'hour', 'ff', 'title']) q.delete(k);
-      this.ui.veil.querySelector('.ws-veil__label').textContent = 'Shaping the World Map';
+      const label = `${isWidePreset(id) ? 'Shaping the World Map' : `Seeding ${/^[aeiou]/i.test(PRESET_NAMES[id] || '') ? 'an' : 'a'} ${PRESET_NAMES[id] || 'new'} world`}${z ? ` · ${z.name}` : ''}`;
+      bootNote(label);
+      const vl = this.ui.veil.querySelector('.ws-veil__label');
+      if (vl) vl.textContent = label;
       this.ui.veil.classList.add('is-shown');
       setTimeout(() => (location.search = q.toString()), 320);
       return;
@@ -113,15 +119,33 @@ export class TitleScreen {
 
   chooseSize(z) {
     const g = this.game;
-    this.sizeBtns.forEach((b) => b.classList.toggle('is-on', +b.dataset.size === z.size));
-    if (z.size === g.world.w) return;
+    if (z.size === g.world.w) {
+      this.sizeBtns.forEach((b) => b.classList.toggle('is-on', +b.dataset.size === z.size));
+      return;
+    }
+    // Vast takes about twice as long as Huge: the first tap warns, the second goes
+    if (z.desktopOnly || (isWidePreset(g.params.preset) && z.size >= 1024)) {
+      if (this._vastArmed !== z.size) {
+        this._vastArmed = z.size;
+        this.ui.toast('Vast takes about twice as long as Huge to create. Tap again to go ahead.', 3600);
+        this.sizeBtns.forEach((b) => b.classList.toggle('is-armed', +b.dataset.size === z.size));
+        return;
+      }
+    }
+    this._vastArmed = null;
+    this.sizeBtns.forEach((b) => {
+      b.classList.toggle('is-on', +b.dataset.size === z.size);
+      b.classList.remove('is-armed');
+    });
     const q = new URLSearchParams(location.search);
     q.set('seed', g.params.seed);
     q.set('preset', g.params.preset || 'continent');
     q.set('size', z.size);
     for (const k of ['cam', 'hour', 'ff', 'title']) q.delete(k);
     const label = this.ui.veil.querySelector('.ws-veil__label');
-    if (label) label.textContent = `Shaping a ${z.name.toLowerCase()} world`;
+    const text = isWidePreset(g.params.preset) ? `Shaping the World Map · ${z.name}` : `Shaping a ${z.name.toLowerCase()} world`;
+    if (label) label.textContent = text;
+    bootNote(text);
     this.ui.veil.classList.add('is-shown');
     setTimeout(() => (location.search = q.toString()), 320);
   }
