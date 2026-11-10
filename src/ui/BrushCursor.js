@@ -460,6 +460,7 @@ export class BrushCursor {
     if (uiOn && ref && ref.alive !== false && ref.x != null) {
       let r;
       if (s.kind === 'building') r = Math.max(1, Math.max(ref.w || 1, ref.h || 1) * 0.72);
+      else if (s.kind === 'vessel') r = 0.45 + (ref.def?.length || 1) * 0.55;
       else r = 0.5 * (ref.scale || 1) * (ref.def?.size || 1) + 0.25;
       r *= 1 + Math.sin(this.t * 3.2) * 0.04;
       this.sel.circle(ref.x, ref.z, r);

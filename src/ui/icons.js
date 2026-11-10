@@ -1008,6 +1008,8 @@ const U = {
   expand: '<path d="M5 12V5h7M27 12V5h-7M5 20v7h7M27 20v7h-7"/>',
   collapse: '<path d="M12 5v7H5M20 5v7h7M12 27v-7H5M20 27v-7h7"/>',
   check: '<path d="M7 16.5l6 6L25.5 9.5"/>',
+  cart: '<path class="f" d="M4 10h18l-2 10H6z"/><path d="M4 10h18l-2 10H6zM22 13.5l5.5-3"/><circle cx="9" cy="23.5" r="3"/><circle cx="18" cy="23.5" r="3"/>',
+  catapult: '<path d="M5 27h22M8.5 27l4.5-10.5M23.5 27 19 16.5M11 21h10M14.5 19.5 24.5 7"/><circle class="f" cx="25.6" cy="5.8" r="2.6"/><circle cx="25.6" cy="5.8" r="2.6"/>',
   ship: '<path class="f" d="M15 5v14H7zM17.5 8l7.5 11h-7.5z"/><path d="M15 5v14H7zM17.5 8l7.5 11h-7.5zM16 4v19M4 23h24l-3.5 5h-17z"/>',
   edit: '<path class="f" d="M7 21.5 21.5 7l3.5 3.5L10.5 25H7z"/><path d="M7 21.5 21.5 7l3.5 3.5L10.5 25H7zM18.5 10l3.5 3.5M5 28h22"/>',
   star: `<path d="${star(16, 16.6, 12.4, 5.4)}"/>`,

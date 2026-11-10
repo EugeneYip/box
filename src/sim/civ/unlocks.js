@@ -326,7 +326,10 @@ export const unlocks = {
     if (!K || !K.alive || !this._kLaw?.(kingdomId, 'civExpansion')) return null;
     if (this.villages.filter((v) => v.alive).length >= this.budget.villages + 2) return null;
     const n = Array.isArray(settlers) ? settlers.length : Math.max(4, Math.min(16, settlers | 0 || 8));
-    const v = this.foundVillage(Math.floor(x), Math.floor(z), { kingdom: kingdomId, culture: K.culture, settlers: n, units: Array.isArray(settlers) ? settlers : undefined, starter: true, houses: 2, silent: true, searchR: 9 });
+    const opts = { kingdom: kingdomId, culture: K.culture, settlers: n, units: Array.isArray(settlers) ? settlers : undefined, starter: true, houses: 2, silent: true, searchR: 9 };
+    // the settlers come ashore: the village stands on dry land near the landing
+    let v = this.foundVillage(Math.floor(x), Math.floor(z), opts);
+    if (!v) v = this.foundVillage(Math.floor(x), Math.floor(z), { ...opts, searchR: 16 });
     if (!v) return null;
     v.colony = true;
     this._firstUse(K, 'colony', { x: v.cx, z: v.cz });
@@ -418,64 +421,82 @@ export const unlocks = {
   },
 
   // The realm's captains: trade with friends, colonise empty shores, invade
-  // enemies across the water. Only when the Fleets module is present.
+  // enemies across the water. Fleets runs the ships; Civ decides the voyages
+  // (Fleets leaves its own trade and colony AI off while this exists).
   _fleetDecisions(k) {
     const F = this.game.fleet;
     if (!F?.requestVoyage) return;
-    const mine = this.harbours(k.id);
+    const mine = (F.harbours ? F.harbours(k.id) : this.harbours(k.id)).filter((h) => !F.blockaded?.(h));
     if (!mine.length) return;
     const now = this.game.time.total;
     const from = mine[(this.rng.next() * mine.length) | 0];
     const fv = this.villages[from.village];
-    // trade with a friendly realm's harbour
-    if (now - (k.tradeT || 0) > YEAR * 1.5) {
+    if (!fv?.alive) return;
+    const sameSea = (h) => from.water == null || h.water == null || h.water === from.water;
+    // trade with a friendly realm's harbour on the same waters
+    if (now - (k.tradeT || 0) > YEAR * 1.2 && fv.food > 30) {
+      k.tradeT = now - YEAR * 0.8; // a refused voyage is tried again soon
       let best = null,
         bs = -Infinity;
       for (const o of this.kingdoms) {
         if (!o.alive || o === k || this.atWar(o.id, k.id)) continue;
         const r = this.relations.get(this._relKeyOf(o.id, k.id));
         const op = r?.opinion ?? 0;
-        if (op < -5 && !r?.ally) continue;
-        for (const h of this.harbours(o.id)) {
-          const sc = op + (r?.ally ? 30 : 0) + (h.landId !== from.landId ? 20 : 0) - Math.hypot(h.x - from.x, h.z - from.z) * 0.1;
+        if (op < -10 && !r?.ally) continue;
+        for (const h of F.harbours ? F.harbours(o.id) : this.harbours(o.id)) {
+          if (!sameSea(h)) continue;
+          const d = Math.hypot(h.x - from.x, h.z - from.z);
+          const sc = op + (r?.ally ? 30 : 0) - d * 0.08 + this.rng.next() * 10;
           if (sc > bs) (bs = sc), (best = h);
         }
       }
-      if (best && fv && fv.food > 40) {
-        k.tradeT = now;
+      // with no foreign partner, ships still carry goods between the realm's own ports
+      if (!best && mine.length > 1) best = mine.find((h) => h !== from && sameSea(h) && h.village !== from.village) || null;
+      if (best) {
         const kind = this.hasTech(k.id, 'navigation') ? 'carrack' : 'cog';
-        fv.food -= 10;
-        F.requestVoyage({ kind, kingdom: k.id, from: from.id, to: best.id, cargo: { gold: 8 + (this.hasTech(k.id, 'banking') ? 6 : 0), food: 12, wood: 6, trade: true } });
+        const ok = F.requestVoyage({ kind, kingdom: k.id, from: from.id, to: best.id, cargo: { gold: 8 + (this.hasTech(k.id, 'banking') ? 6 : 0), food: 12, wood: 6, trade: true } });
+        if (ok) {
+          k.tradeT = now;
+          fv.food -= 10;
+        }
       }
     }
-    // colonise an empty shore on another landmass
-    if (this.law('fleetColonize') !== false && this._kLaw(k.id, 'civExpansion') && now - (k.colonyT || 0) > YEAR * 18 && fv && fv.pop >= 20 && fv.food > 60) {
+    // colonise an empty shore across the water
+    if (this.law('fleetColonize') !== false && this._kLaw(k.id, 'civExpansion') && now - (k.colonyT || 0) > YEAR * 12 && fv.pop >= 16 && fv.food > 50) {
       const alive = this.villages.filter((v) => v.alive).length;
       if (alive < this.budget.villages) {
-        const site = this._overseasSite(from);
+        k.colonyT = now - YEAR * 8; // try again in a few years if nothing comes of it
+        const range = F.range ? Math.max(F.range(k.id, 'transport'), this.hasTech(k.id, 'astronomy') ? F.range(k.id, 'explorer') : 0) : Infinity;
+        const site = F.overseasSite ? F.overseasSite(from, range) : this._overseasSite(from);
         if (site) {
-          k.colonyT = now;
-          fv.food -= 30;
-          fv.wood = Math.max(0, fv.wood - 20);
-          F.requestVoyage({ kind: this.hasTech(k.id, 'navigation') ? 'carrack' : 'transport', kingdom: k.id, from: from.id, to: { x: site.x, z: site.z }, cargo: { settlers: 8, colony: true } });
+          const kind = this.hasTech(k.id, 'navigation') ? 'carrack' : 'transport';
+          const ok = F.requestVoyage({ kind, kingdom: k.id, from: from.id, to: { x: site.x, z: site.z }, cargo: { settlers: 8, colony: true } });
+          if (ok) {
+            k.colonyT = now;
+            fv.food -= 30;
+            fv.wood = Math.max(0, fv.wood - 20);
+          }
         }
       }
     }
     // carry an army across the water to an enemy out of reach by land
-    if (now - (k.invadeT || 0) > YEAR * 6) {
+    if (now - (k.invadeT || 0) > YEAR * 5) {
       for (const e of this.enemiesOf(k.id)) {
         const E = this.kingdoms[e];
         if (!E?.alive || this._reachable(k, E)) continue;
         let tgt = null;
-        for (const h of this.harbours(e)) tgt = tgt || h;
+        for (const h of F.harbours ? F.harbours(e) : this.harbours(e)) if (!tgt && sameSea(h)) tgt = h;
         if (!tgt) {
           const ev = this.villages[E.capital];
           if (ev?.alive) tgt = this._coastNear(ev);
         }
         if (!tgt) continue;
-        k.invadeT = now;
-        F.requestVoyage({ kind: 'transport', kingdom: k.id, from: from.id, to: { x: tgt.x, z: tgt.z }, cargo: { army: 10, target: e } });
-        break;
+        k.invadeT = now - YEAR * 3;
+        const ok = F.requestVoyage({ kind: 'transport', kingdom: k.id, from: from.id, to: { x: tgt.x, z: tgt.z }, cargo: { army: 10, target: e } });
+        if (ok) {
+          k.invadeT = now;
+          break;
+        }
       }
     }
   },
