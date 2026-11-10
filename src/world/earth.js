@@ -290,6 +290,16 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
         }
       if (max && !nearLand) land[i] = 1;
     }
+  // clean borders: a thin ring of open sea all round. The shaders and the
+  // terrain skirt clamp edge tiles outward, so polar ice or Antarctica's snow
+  // on the edge would continue as white bands beyond the map. (This splits
+  // Greenland's east coast at the Atlantic seam and gives Antarctica a far
+  // coast just inside the bottom edge.)
+  const ringX = 2,
+    ringY = Math.max(2, Math.round(3 * scale768));
+  const edgeDist = (x, y) => Math.min(x, W - 1 - x, y, H - 1 - y); // tiles to the border
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++) if (x < ringX || x >= W - ringX || y < ringY || y >= H - ringY) land[y * W + x] = 0;
   _t('land');
 
   // ------------------------------------------------------------- 2. distances
@@ -741,6 +751,8 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
           const ds = dSea[i] / scale768;
           if (lat > 76.5 + bn * 1.5 || lat < -71.5 + bn * 1.5) ice = true;
           else if ((lat > 70 || lat < -65) && ds < 2.2 + bn) ice = true;
+          // the pack ice stops short of the border (open water beyond it)
+          if (edgeDist(x, y) < ringY + 2 + bn) ice = false;
         }
         if (ice) type[i] = TILE.ICE;
         else if (!sea[i]) type[i] = riverMask[i] || depth > 1.1 + bn * 0.5 ? TILE.SOIL : TILE.SAND;
