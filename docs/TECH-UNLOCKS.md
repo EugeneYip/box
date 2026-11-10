@@ -17,7 +17,7 @@ New techs are added where the tree had gaps (marked **new**). Ids are stable.
 | Masonry | Stone footings, stone houses replace timber, paved village square | Sturdier buildings (fire resistance) | Civ |
 | Pottery | Kiln and granary with jars | Food cap (existing) | Civ |
 | Fishing | **Fishing boats**: small rowing/sail boats leave a jetty, fish offshore over shoals, return with catch | Food from water tiles near the coast and on lakes and rivers | Fleets |
-| **The Wheel** (new, requires Agriculture) | **Ox carts** haul wood, stone, food and ore between villages and the capital along roads | Pools resources inside a realm; carts can be raided in war | Civ (vehicles) |
+| **The Wheel** (new, requires Agriculture) | **Ox carts** haul wood, stone, food and ore between villages and the capital along roads | Pools resources inside a realm; carts can be raided in war | Fleets (vehicles; Civ decides when) |
 
 ## Bronze era
 
@@ -39,7 +39,7 @@ New techs are added where the tree had gaps (marked **new**). Ids are stable.
 | Mathematics | Surveyors' stakes, straight roads | Roads link villages (carts and armies move faster on them) | Civ |
 | Architecture | Aqueduct (existing), **stone bridges** over rivers | Bridges let carts and armies cross rivers | Civ |
 | **Shipbuilding** (new, requires Sailing and Ironworking) | Shipyard slipway with a hull being built; **war galleys** | Naval battles, blockades of enemy harbours, escorting transports | Fleets |
-| **Siegecraft** (new, requires Fortification and Mathematics) | **Battering rams** and **catapults** roll with armies; catapult stones arc and break walls | Sieges breach walls faster | Civ (vehicles) |
+| **Siegecraft** (new, requires Fortification and Mathematics) | **Battering rams** and **catapults** roll with armies; catapult stones arc and break walls | Sieges breach walls faster | Fleets (vehicles; Civ decides when) |
 
 ## Enlightened era
 
@@ -47,12 +47,12 @@ New techs are added where the tree had gaps (marked **new**). Ids are stable.
 |---|---|---|---|
 | Steelworking | Steel gear (existing), foundry | | Civ |
 | Philosophy | Forum or temple with gathered citizens | Loyalty (existing) | Civ |
-| Banking | Market hall with stalls and a counting house; **trade caravans** of pack animals between realms at peace | Gold and diplomacy improve with trade partners | Civ (vehicles) |
+| Banking | Market hall with stalls and a counting house; **trade caravans** of pack animals between realms at peace | Gold and diplomacy improve with trade partners | Fleets (vehicles; Civ decides when) |
 | Engineering | Windmills and watermills turning, cranes on construction sites | Build speed (existing) | Civ |
 | Astronomy | Observatory (existing) | Ships sail at night and further; **exploration ships** chart the world and carry colonists to distant continents (important on the World Map) | Fleets |
 | **Navigation** (new, requires Astronomy and Shipbuilding) | Great **carracks** (larger trade and transport ships, ocean-going) | Long ocean trade routes and overseas colonies | Fleets |
 
-## Fleets module (new: `src/sim/fleet/`, `src/render/fleet/`)
+## Fleets module (new: `src/sim/fleet/`, `src/render/fleet/`) — all vehicles, on water and on land
 
 - `game.fleet` with `tick(step)`, `update(dt)`, `reset`, `inspect`, `stats`.
 - Vessel kinds: `fishing`, `cog` (trade), `transport`, `galley` (war), `explorer`, `carrack`.
