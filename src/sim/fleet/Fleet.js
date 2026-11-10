@@ -548,8 +548,30 @@ export class Fleet {
   // Hulls never sit inside one another: neighbours drift apart (on water only).
   _separate(step) {
     const nav = this.nav;
+    const w = this.world;
     for (const a of this.list) {
-      if (!a.alive || a.cls !== 'sea' || a.state === 'sinking') continue;
+      if (!a.alive || a.state === 'sinking') continue;
+      if (a.cls === 'land') {
+        // siege engines and carts do not stack up either
+        if (!a.def.siege && a.speed > 0.2) continue;
+        this.near(a.x, a.z, 1.6, (b, d) => {
+          if (b === a || b.cls !== 'land' || b.id < a.id) return;
+          const min = (a.def.length + b.def.length) * 0.45;
+          if (d >= min || d < 1e-3) return;
+          const push = Math.min(0.3, (min - d) * 0.5) * Math.min(1, step * 3);
+          const ux = ((b.x - a.x) / d) * push,
+            uz = ((b.z - a.z) / d) * push;
+          if (w.isWalkable(Math.floor(a.x - ux), Math.floor(a.z - uz))) {
+            a.x -= ux;
+            a.z -= uz;
+          }
+          if (w.isWalkable(Math.floor(b.x + ux), Math.floor(b.z + uz))) {
+            b.x += ux;
+            b.z += uz;
+          }
+        });
+        continue;
+      }
       const ra = a.def.length * 0.32 + 0.25;
       this.near(a.x, a.z, ra + 1.4, (b, d) => {
         if (b === a || b.cls !== 'sea' || b.id < a.id || b.state === 'sinking') return;

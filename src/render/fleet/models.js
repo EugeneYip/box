@@ -635,5 +635,5 @@ export function debrisGeometry() {
 }
 
 export function stoneGeometry() {
-  return new THREE.IcosahedronGeometry(0.12, 0);
+  return new THREE.IcosahedronGeometry(0.2, 0);
 }

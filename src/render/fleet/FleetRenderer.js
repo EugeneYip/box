@@ -88,7 +88,7 @@ export class FleetRenderer {
     // wreckage and catapult stones
     this.propMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 });
     this.debris = this._inst(debrisGeometry(), this.propMat, 64);
-    this.stoneMat = new THREE.MeshStandardMaterial({ color: 0x8c857a, roughness: 0.95, flatShading: true });
+    this.stoneMat = new THREE.MeshStandardMaterial({ color: 0x6e675c, roughness: 0.95, flatShading: true });
     this.stones = this._inst(stoneGeometry(), this.stoneMat, 16);
     // trade lanes (dashed, faint, mid zoom)
     const MAXV = 6000;
@@ -327,7 +327,7 @@ export class FleetRenderer {
           const put = (px, pz, ph, variant, py) => {
             this._e.set(roll, -ph, pitch, 'YZX');
             this._q.setFromEuler(this._e);
-            this._m.compose(this._p.set(px, py ?? y, pz), this._q, this._s.setScalar(kind === "caravan" ? 1.3 : 1));
+            this._m.compose(this._p.set(px, py ?? y, pz), this._q, this._s.setScalar(kind === 'caravan' ? 1.3 : 1));
             mesh.setMatrixAt(k, this._m);
             iC[k * 3] = kc.r;
             iC[k * 3 + 1] = kc.g;
