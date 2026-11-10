@@ -511,6 +511,7 @@ export class Fleet {
       if (v.cls === 'sea') this._seaTick(v, step);
       else this._landTick(v, step);
     }
+    this._separate(step);
     if ((T.war += step) >= 0.5) {
       this._warTick(T.war);
       T.war = 0;
@@ -544,6 +545,41 @@ export class Fleet {
       a.push(v);
     }
   }
+  // Hulls never sit inside one another: neighbours drift apart (on water only).
+  _separate(step) {
+    const nav = this.nav;
+    for (const a of this.list) {
+      if (!a.alive || a.cls !== 'sea' || a.state === 'sinking') continue;
+      const ra = a.def.length * 0.32 + 0.25;
+      this.near(a.x, a.z, ra + 1.4, (b, d) => {
+        if (b === a || b.cls !== 'sea' || b.id < a.id || b.state === 'sinking') return;
+        const min = ra + b.def.length * 0.32 + 0.25;
+        if (d >= min) return;
+        let dx = b.x - a.x,
+          dz = b.z - a.z;
+        if (d < 1e-3) {
+          dx = Math.cos(a.seed * 6.3);
+          dz = Math.sin(a.seed * 6.3);
+          d = 1;
+        }
+        const push = Math.min(0.5, (min - d) * 0.5) * Math.min(1, step * 3);
+        const ux = (dx / d) * push,
+          uz = (dz / d) * push;
+        // a moored ship holds its berth; the newcomer gives way
+        const wa = a.state === 'moored' ? 0 : b.state === 'moored' ? 2 : 1,
+          wb = b.state === 'moored' ? 0 : a.state === 'moored' ? 2 : 1;
+        if (wa && nav.isWater(a.x - ux * wa, a.z - uz * wa)) {
+          a.x -= ux * wa;
+          a.z -= uz * wa;
+        }
+        if (wb && nav.isWater(b.x + ux * wb, b.z + uz * wb)) {
+          b.x += ux * wb;
+          b.z += uz * wb;
+        }
+      });
+    }
+  }
+
   // vehicles within r of a point (from the per-tick hash)
   near(x, z, r, fn) {
     const H = this._hash;

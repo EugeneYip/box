@@ -327,7 +327,7 @@ export class FleetRenderer {
           const put = (px, pz, ph, variant, py) => {
             this._e.set(roll, -ph, pitch, 'YZX');
             this._q.setFromEuler(this._e);
-            this._m.compose(this._p.set(px, py ?? y, pz), this._q, this._s.set(1, 1, 1));
+            this._m.compose(this._p.set(px, py ?? y, pz), this._q, this._s.setScalar(kind === "caravan" ? 1.3 : 1));
             mesh.setMatrixAt(k, this._m);
             iC[k * 3] = kc.r;
             iC[k * 3 + 1] = kc.g;
@@ -347,7 +347,7 @@ export class FleetRenderer {
             const camel = a.cargoType === 2 ? 2 : 0;
             const T = v.trail;
             for (let i = 0; i < 4; i++) {
-              const back = i * 0.72;
+              const back = i * 0.9;
               const p = trailPoint(T, x, z, h, back);
               put(p.x, p.z, p.h, camel + (i === 0 ? 1 : 0), W.heightAt(p.x, p.z));
             }
