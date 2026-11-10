@@ -64,6 +64,13 @@ export { SPECIES, registerSpecies };
 const YEAR = 30; // == YEAR_SECONDS (src/core/Game.js); duplicated to avoid an import cycle
 const CELL = 4;
 const THINK_INTERVAL = 0.6;
+// How deep a land creature wades before it must swim. People never wade in
+// over their heads on their own (they only swim when the water comes to them);
+// animals still ford shallow rivers and straits.
+function wadeDepth(def) {
+  if (def._wade == null) def._wade = def.kind === 'humanoid' ? Math.max(0.12, def.height * 0.55 * def.size) : SHALLOW_DEPTH;
+  return def._wade;
+}
 const PATH_BUDGET = 40; // near units; distant ones share PATH_BUDGET_FAR
 const PATH_BUDGET_FAR = 8;
 const FCELL = 8;
@@ -663,7 +670,8 @@ export class Units {
     if (hab === 'water') return h < SEA_LEVEL - 0.3;
     if (h < SEA_LEVEL) {
       if (!u.def.canSwim) return false;
-      return u.swimming || h > SEA_LEVEL - SHALLOW_DEPTH;
+      if (w.building[i] >= 0) return true; // a jetty, dock or bridge deck
+      return u.swimming || h > SEA_LEVEL - wadeDepth(u.def);
     }
     const b = w.building[i];
     if (b >= 0 && b !== u._allowB && b !== u._curB) return false;
@@ -675,7 +683,7 @@ export class Units {
     const i = w.idx(tx, ty);
     const h = w.height[i];
     if (u.def.habitat === 'water') return h < SEA_LEVEL - 0.3;
-    if (h < SEA_LEVEL) return u.def.canSwim && h > SEA_LEVEL - SHALLOW_DEPTH * 0.85;
+    if (h < SEA_LEVEL) return u.def.canSwim && (w.building[i] >= 0 || h > SEA_LEVEL - Math.min(SHALLOW_DEPTH * 0.85, wadeDepth(u.def)));
     const b = w.building[i];
     if (b >= 0 && b !== u._allowB) return false;
     return TILE_INFO[w.type[i]].walkable && !FLORA_INFO[w.flora[i]].blocksMovement;
@@ -695,6 +703,7 @@ export class Units {
     const hab = u.def.habitat;
     if (hab === 'water') return SEA_LEVEL;
     if (hab === 'air') return Math.max(h, SEA_LEVEL) + u.alt;
+    if (u.onDeck) return Math.max(h, SEA_LEVEL + 0.1);
     return u.swimming ? SEA_LEVEL : h;
   }
   isLandAt(x, z) {
@@ -1601,14 +1610,30 @@ export class Units {
     return false;
   }
 
-  _swimToShore(u) {
+  _shoreTile(x, z, r) {
     const w = this.game.world;
-    const t = this.findNearestTile(u.x, u.z, 14, (tx, ty, i) => w.height[i] >= SEA_LEVEL && TILE_INFO[w.type[i]].walkable && !FLORA_INFO[w.flora[i]].blocksMovement);
+    return this.findNearestTile(x, z, r, (tx, ty, i) => w.height[i] >= SEA_LEVEL && TILE_INFO[w.type[i]].walkable && !FLORA_INFO[w.flora[i]].blocksMovement && w.building[i] < 0);
+  }
+  _swimToShore(u, r = 14) {
+    const t = this._shoreTile(u.x, u.z, r);
     if (t) {
       u.path = null;
       u.target = { x: t.x, z: t.z };
       if (u.state !== 'flee') u.state = 'walk';
     }
+    return !!t;
+  }
+  // Someone put down in open water by another system (a landing, a teleport):
+  // they come ashore at the nearest land instead of standing in the sea.
+  _ashore(u, r = 30) {
+    const t = this._shoreTile(u.x, u.z, r);
+    if (!t) return false;
+    u.x = u.px = t.x + (Math.random() - 0.5) * 0.5;
+    u.z = u.pz = t.z + (Math.random() - 0.5) * 0.5;
+    u.swimming = false;
+    u.path = null;
+    u.target = null;
+    return true;
   }
 
   // ---- default AI ----------------------------------------------------------
@@ -1641,7 +1666,18 @@ export class Units {
     // escape water
     if (u.swimming && u.def.habitat === 'land' && !u.combat) {
       const tgtLand = u.target && this.isLandAt(u.target.x, u.target.z);
-      if (!tgtLand) this._swimToShore(u);
+      if (!tgtLand && !this._swimToShore(u) && !this._swimToShore(u, 40)) {
+        // no land in reach: lost at sea
+        if (u.flags?.immortal) this._ashore(u, 200);
+        else {
+          if (u.def.kind === 'humanoid') this.log(u, 'Lost at sea');
+          this.kill(u, 'drowned');
+        }
+        return;
+      }
+      // the brain would path over water and cancel the swim: keep swimming to shore
+      u._farSea = !this._shoreTile(u.x, u.z, 2);
+      if (u.target) return;
     }
     // escape fire
     const w = g.world;
@@ -1781,10 +1817,16 @@ export class Units {
       const ti = ty * w.w + tx;
       if (def.habitat === 'land') {
         const h = w.heightAt(u.x, u.z);
-        const deep = h < SEA_LEVEL - Math.max(0.12, def.height * 0.55 * def.size);
+        // a jetty, dock or bridge over the water is a deck to stand on
+        const deck = h < SEA_LEVEL && w.building[ti] >= 0;
+        u.onDeck = deck;
+        // swimming needs a water tile (a coastal land tile can interpolate below the sea)
+        const deep = !deck && w.height[ti] < SEA_LEVEL && h < SEA_LEVEL - Math.max(0.12, def.height * 0.55 * def.size);
         u.swimming = deep;
-        u.wading = !deep && h < SEA_LEVEL - 0.02;
-        if (deep) {
+        u.wading = !deck && !deep && h < SEA_LEVEL - 0.02;
+        if (deep && (u._ex === undefined || Math.abs(u.x - u._ex) + Math.abs(u.z - u._ez) > 2) && this._ashore(u)) u.swimming = false;
+        else if (deep) {
+          if (u._ext && u._farSea) u.energy = Math.max(0, u.energy - dt * 0.012);
           if (!def.canSwim || u.energy <= 0.01) this.damage(u, dt * (def.canSwim ? 2 : 12), null, { cause: 'drowned' });
         }
         const fire = w.fire[ti];
@@ -1867,6 +1909,8 @@ export class Units {
       else if (u.state === 'swim' && !u.swimming) u.state = u.moving ? 'walk' : 'idle';
       if (u.state === 'flee' && now > u.fleeUntil && !u.target) u.state = 'idle';
       this._gridUpdate(u);
+      u._ex = u.x;
+      u._ez = u.z;
     }
     this._projectilesTick(dt);
     if (tickN % 15 === 0) this._forageTick(dt * 15);

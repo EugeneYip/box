@@ -525,7 +525,8 @@ export function installRoles(Units) {
     let px = x ?? u.x,
       pz = z ?? u.z;
     if (u.def.habitat === 'land') {
-      const t = this.findNearestTile(px, pz, 12, (tx, ty, i) => w.height[i] >= SEA_LEVEL && this._pathable(u, tx, ty));
+      // step ashore at the nearest land (never into open water)
+      const t = this._shoreTile(px, pz, 12) || this._shoreTile(px, pz, 48);
       if (t) {
         px = t.x + (Math.random() - 0.5) * 0.4;
         pz = t.z + (Math.random() - 0.5) * 0.4;
@@ -606,6 +607,7 @@ export function installRoles(Units) {
           this.disembark(u, u.x, u.z);
           continue;
         }
+        if (u.def.kind === 'humanoid') this.log(u, 'Went down with a sinking ship');
         this.kill(u, 'drowned');
         drowned++;
       }
