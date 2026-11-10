@@ -855,6 +855,8 @@ export class Fleet {
     const home = civ?.villages?.[v.home];
     const stats = [['Health', `${Math.max(0, Math.ceil(v.hp))} / ${v.maxHp}`], ['Doing', this.doingText(v)], ['Crew', v.kind === 'galley' ? `${v.crew} oarsmen and marines` : v.crew]];
     if (def.capacity || v.cargo) stats.push(['Cargo', cargoText(v.cargo)]);
+    const aboard = v.cls === 'sea' ? this.aboard(v).length : 0;
+    if (aboard) stats.push(['Aboard', `${aboard} ${v.cargo?.army ? 'soldiers' : 'passengers'}`]);
     if (v.voyage) stats.push(['Voyage', `${v.voyage.fromName || '—'} → ${v.voyage.toName || 'open sea'}`]);
     if (home) stats.push([v.cls === 'sea' ? 'Home port' : 'Home', home.name]);
     stats.push(['Speed', `${(v.speed * 10).toFixed(0)} knots`.replace('knots', v.cls === 'sea' ? 'knots' : 'paces')]);

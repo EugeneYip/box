@@ -55,7 +55,7 @@ const TILE_POWER = {
   [TILE.ROAD]: 'paint-road',
   [TILE.ICE]: 'paint-ice',
 };
-const KIND_LABEL = { unit: 'Creature', building: 'Building', village: 'Settlement', kingdom: 'Kingdom', flora: 'Flora', tile: 'Land', info: 'Detail' };
+const KIND_LABEL = { unit: 'Creature', building: 'Building', village: 'Settlement', kingdom: 'Kingdom', flora: 'Flora', tile: 'Land', info: 'Detail', vessel: 'Vessel', vehicle: 'Vehicle' };
 const JOB = {
   woodcutter: ['job-woodcutter', '#d9a466', 'Woodcutter'],
   farmer: ['job-farmer', '#f0cf6a', 'Farmer'],
@@ -344,6 +344,7 @@ export class Inspector {
     }
     if (k === 'village') return { svg: uiIcon('found-village'), tint: this.kingdomTint(r) || '#9fbcff' };
     if (k === 'kingdom') return { svg: uiIcon('banner'), tint: this.kingdomTint(r) || '#ffd36a' };
+    if (k === 'vessel' || k === 'vehicle') return { svg: uiIcon(k === 'vessel' ? 'ship' : 'trade'), tint: this.kingdomTint(r) || '#9fd0ff' };
     return { svg: uiIcon('info'), tint: '#7fdcec' };
   }
 
