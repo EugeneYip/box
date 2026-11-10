@@ -389,7 +389,7 @@ export function installRoles(Units) {
     const kid = home.kingdom;
     const K = civ.kingdoms?.[kid];
     const vs = Array.isArray(civ.villages) ? civ.villages : Object.values(civ.villages);
-    const reach = Math.min(170, Math.max(60, Math.max(g.world.w, g.world.h) * 0.4));
+    const reach = Math.min(280, Math.max(150, Math.max(g.world.w, g.world.h) * 0.36));
     const near = (v) => v && v.alive && v !== home && Math.hypot(v.cx - home.cx, v.cz - home.cz) < reach;
     const own = vs.filter((v) => near(v) && v.kingdom === kid);
     const foreign = [];
