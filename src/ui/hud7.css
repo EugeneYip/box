@@ -308,3 +308,75 @@
   color: #ffc98a;
   box-shadow: inset 0 0 0 1.5px #ffc98a;
 }
+
+/* ---- phone sheets stay opaque even with blur off (.no-blur .ws-glass was 0.9) */
+@media (max-width: 720px), (max-height: 500px) and (min-width: 721px) {
+  .ws-root .ws-insp.ws-glass {
+    background: linear-gradient(180deg, rgba(27, 31, 45, 0.985), rgba(12, 14, 22, 0.995));
+  }
+}
+
+/* ---- phone landscape: a compact one-line header so the content gets the room */
+@media (max-height: 500px) and (min-width: 721px) {
+  .ws-insp {
+    padding: 10px 12px;
+  }
+  .ws-insp__head {
+    gap: 8px;
+    align-items: center;
+  }
+  .ws-insp__badge {
+    width: 40px;
+    height: 40px;
+    border-radius: 11px;
+    font-size: 26px;
+  }
+  .ws-insp__title,
+  .ws-insp__title.is-long,
+  .ws-insp__title.is-vlong {
+    margin-top: 1px;
+    font-size: 15px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .ws-insp__sub {
+    margin-top: 1px;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .ws-insp__sub span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .ws-insp__also {
+    margin-top: 6px;
+  }
+  .ws-insp__actions {
+    margin-top: 6px;
+  }
+  .ws-insp__actions .ws-key {
+    display: none;
+  }
+  /* editing: kind and subtitle fold away, the header is a single line */
+  .ws-insp.is-editing .ws-insp__kind,
+  .ws-insp.is-editing .ws-insp__sub,
+  .ws-insp.is-editing .ws-insp__grab {
+    display: none;
+  }
+  .ws-insp.is-editing .ws-insp__badge {
+    width: 34px;
+    height: 34px;
+  }
+}
+
+/* ---- never a sideways scroll inside the inspector (tablet kingdom card) */
+.ws-insp,
+.ws-insp__scroll {
+  overflow-x: hidden;
+}
+.ws-edit,
+.ws-esec,
+.ws-esec__body {
+  min-width: 0;
+}
