@@ -498,7 +498,7 @@ export class UnitRenderer {
 
     for (let li = 0; li < U.list.length; li++) {
       const u = U.list[li];
-      if (!u.alive || u.data.hidden || u.data.inside === true || u.hidden) continue;
+      if (!u.alive || u.data.hidden || u.data.inside === true || u.hidden || u.data.aboard != null) continue;
       const rm = this.modelFor(u);
       const md = rm.def;
       let rs = u._rs;

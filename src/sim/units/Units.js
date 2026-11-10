@@ -6,6 +6,7 @@ import { makeName, makeMonsterName } from './names.js';
 import { VillageHerds } from './herds.js';
 import { installDepth } from './depth.js';
 import { installEditing } from './edit.js';
+import { installRoles, ROLE_NAMES } from './roles.js';
 
 // Core creature simulation (owned by the Life module; the Civilization module
 // programs humanoid behaviour through registerBrain / unit.job).
@@ -36,6 +37,12 @@ import { installEditing } from './edit.js';
 //   game.units.shoot(attacker, target, opts?)  arrow projectile (units with data.ranged)
 //   game.units.setMad(unit, seconds), bless(unit, seconds)
 //   SPECIES / registerSpecies(def)
+//   ROLES (roles.js, docs/TECH-UNLOCKS.md): roleOf(u) -> 'healer'|'messenger'|'cavalry'|null,
+//        isRiding(u), setRole(u, role), healStats {cured, plague, sick, wounds},
+//        rideStats {trips, foreign}; Civ picks roles with u.job 'healer' / 'messenger'
+//        (or u.data.role) and u.data.mounted (cavalry = mounted soldier).
+//   TRANSPORTS: board(u, vessel|id), disembark(u, x, z), aboard(vesselId) -> unit[];
+//        listens to 'fleet:lost' (those aboard drown or swim ashore) and 'fleet:arrived'.
 //
 // Unit fields read by renderers: x, y, z, heading, species, def, age, scale,
 // state ('idle'|'walk'|'run'|'attack'|'eat'|'work'|'sleep'|'swim'|'fly'|'flee'|'hunt'|'dead'),
@@ -48,7 +55,8 @@ import { installEditing } from './edit.js';
 // Hooks honoured: unit.data.hostile(other) -> bool (enemies), unit.data.hidden or
 // unit.data.inside === true (not rendered, e.g. inside a house), unit.data.ranged (shoots arrows),
 // unit.data.autoAggro (engage hostiles in sight; default for job 'soldier'),
-// unit.data.damage (attack damage override).
+// unit.data.damage (attack damage override), unit.data.aboard (vessel id: not drawn,
+// not thinking, out of queries), unit.data.mounted (rides a horse; renderer reads u._riding).
 // Events emitted (additive): 'unit:hurt' {unit, amount, source},
 // 'unit:attack' {unit, target, damage}, 'unit:birth' {unit, parent}.
 export { SPECIES, registerSpecies };
@@ -100,6 +108,7 @@ export class Units {
     this._pathBudgetFar = 0;
     this._focus = { x: 0, z: 0, r2: 1e9 };
     this.herds = new VillageHerds(this);
+    this._installFleetHooks();
     this._lastFrame = -1;
     this._frameThinkMs = 0;
     this._ticksThisFrame = 0;
@@ -184,6 +193,10 @@ export class Units {
     this._rescueAt.clear();
     this._forage = null;
     this.herds?.reset();
+    this._firstRole = null;
+    this._landings = null;
+    this.healStats = { cured: 0, plague: 0, sick: 0, wounds: 0 };
+    this.rideStats = { trips: 0, foreign: 0 };
     this._initGrid();
   }
 
@@ -865,6 +878,7 @@ export class Units {
     if (u.blessed > now) sp *= 1.15;
     if (u.mad > now) sp *= 1.1;
     if (u.data.speedMul) sp *= u.data.speedMul;
+    if (u._riding) sp *= u._rideMul || 1.6;
     if (u._pounce) sp *= 1.4;
     if (u._mSpd) sp *= u._mSpd;
     if (def.habitat === 'land') {
@@ -1233,14 +1247,14 @@ export class Units {
     u.lastAttack = now;
     if (u.combat) u.combat.struck = true;
     // the swing lands a moment after it starts (renderer shows the wind-up)
-    const dmg = this.attackDamage(u) * rng.float(0.8, 1.2);
+    const dmg = this.attackDamage(u) * rng.float(0.8, 1.2) * (u._riding ? this._rideStrikeMul(u, t, now) : 1);
     const l = d || 1;
     const dirX = (t.x - u.x) / l,
       dirZ = (t.z - u.z) / l;
     const hitY = t.y + t.def.height * 0.55 * t.def.size;
     const miss = rng.chance(0.08);
     if (!miss) {
-      this.damage(t, dmg, u, { knock: u.def.knockback, dirX, dirZ });
+      this.damage(t, dmg, u, { knock: u.def.knockback * (u._charged === now ? 2.4 : 1), dirX, dirZ });
       g.fx.emit?.('hit', { x: t.x - dirX * t.def.radius, y: hitY, z: t.z - dirZ * t.def.radius }, { scale: 0.5 + u.def.mass * 0.08, dir: { x: dirX, y: 0.3, z: dirZ } });
       if (t.def.blood) g.fx.emit?.('blood', { x: t.x, y: hitY, z: t.z }, { scale: 0.5 + Math.min(1, dmg / 20), dir: { x: dirX, y: 0.5, z: dirZ } });
       this.sfx('hit', t.x, t.z, { volume: 0.55, pitch: rng.float(0.85, 1.15) / Math.sqrt(Math.max(0.5, u.def.mass)) });
@@ -1648,7 +1662,7 @@ export class Units {
     const aggr = u._mAggr || 1;
     if (!u.combat && u.data.hostile && (u.data.autoAggro ?? (u.job === 'soldier' || aggr >= 1.4))) {
       const range = u.def.sight * (u._mSight || 1) * (u.job === 'soldier' ? Math.min(1.5, Math.max(0.7, aggr)) : 0.4);
-      const foe = this.nearest(u.x, u.z, range, (o) => o !== u && this.isHostile(u, o));
+      const foe = u._riding && u.job === 'soldier' ? this._cavalryFoe(u, range) : this.nearest(u.x, u.z, range, (o) => o !== u && this.isHostile(u, o));
       if (foe) {
         this.engage(u, foe);
         return;
@@ -1657,6 +1671,8 @@ export class Units {
     const brain = this.brains.get(u.species);
     const elapsed = Math.min(3, Math.max(0.05, now - (u._lastThink ?? now - THINK_INTERVAL)));
     u._lastThink = now;
+    // tech roles (healers, messengers, riders) act before the registered brain
+    if (u.species === 'human' && this._roleThink(u, now)) return;
     if (brain) {
       try {
         brain(u, elapsed, g);
@@ -1691,6 +1707,9 @@ export class Units {
     // fast-forward runs many ticks per frame: no budget there (correctness first)
     const budgetOn = ++this._ticksThisFrame <= 64;
     if (this._tickN % 75 === 0) this.herds.tick(now);
+    if (this._tickN % 150 === 7) this._rolesTick();
+    this._ridePaths = 0;
+    this._landingsTick();
     this._buildDanger();
     const overview = (g.cameraRig?.cur?.dist ?? 0) > OVERVIEW_DIST;
     const cam = g.cameraRig?.cur;
@@ -1716,6 +1735,11 @@ export class Units {
       if (!u.flags?.frozenAge) u.age += yearDt;
       u.attackCd -= dt;
       u.stateTime += dt;
+      // aboard a vessel: carried along, out of the world until it lands
+      if (u.data.aboard != null) {
+        this._aboardTick(u, now);
+        continue;
+      }
       // ---- needs
       const active = u.state === 'run' || u.state === 'flee' || u.state === 'hunt' || u.state === 'attack';
       const lean = MVP[u.species] && (this._counts.get(u.species) || 0) < MVP[u.species] * 2 ? 0.6 : 1;
@@ -2039,13 +2063,19 @@ export class Units {
       const who = t ? (t.name || t.def.name) : 'foe';
       return (u.combat.hunt ? 'Hunting ' : 'Fighting ') + who;
     }
+    if (u.data.aboard != null) return 'At sea';
     if (u.state === 'flee') return 'Fleeing';
     if (u.swimming) return 'Swimming';
     if (u.state === 'eat') return u.def.diet === 'herbivore' ? 'Grazing' : 'Feeding';
     if (u.state === 'work') {
       const a = u.data.workAnim;
-      return a === 'chop' ? 'Chopping wood' : a === 'dig' ? 'Mining' : a === 'hammer' ? 'Building' : a === 'harvest' ? 'Harvesting' : a === 'fish' ? 'Fishing' : 'Working';
+      return a === 'chop' ? 'Chopping wood' : a === 'dig' ? 'Mining' : a === 'hammer' ? 'Building' : a === 'harvest' ? 'Harvesting' : a === 'fish' ? 'Fishing' : a === 'heal' ? 'Tending the sick' : 'Working';
     }
+    if (u.data.ride && (u.data.ride.phase === 'out' || u.data.ride.phase === 'back') && u.moving) {
+      const v = this.game.civ?.villages?.[u.data.ride.phase === 'out' ? u.data.ride.to : u.village];
+      return v ? `Riding to ${v.name}` : 'Riding';
+    }
+    if (u.data.heal?.pid && u.moving) return 'Hurrying to the sick';
     if (u.activity === 'talk') return 'Chatting';
     if (u.activity === 'fish') return 'Fishing';
     if (u.def.habitat === 'air') return u.data.breath > now ? 'Breathing fire' : 'Soaring';
@@ -2094,6 +2124,8 @@ export class Units {
     stats.push(['Energy', `${energyL} (${pct(u.energy)})`]);
     if (def.kind === 'humanoid') {
       if (u.job) stats.push(['Job', u.job.charAt(0).toUpperCase() + u.job.slice(1)]);
+      const role = this.roleOf(u);
+      if (role && (role !== u.job || u._cured)) stats.push(['Role', ROLE_NAMES[role] + (u._cured ? ` (${u._cured} healed)` : u._trips ? ` (${u._trips} rides)` : '')]);
       if (u.carry) stats.push(['Carrying', `${u.carry.amount ?? 1} ${u.carry.type}`]);
     }
     if (def.kind !== 'humanoid') stats.push(['Sex', u.sex === 'f' ? 'Female' : 'Male']);
@@ -2138,5 +2170,6 @@ export class Units {
 
 installDepth(Units);
 installEditing(Units);
+installRoles(Units);
 
 export { FLORA, FLORA_INFO };
