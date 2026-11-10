@@ -898,7 +898,12 @@ export const planner = {
       const t = w.type[i];
       if (!TILE_INFO[t].walkable) continue;
       let type = 'wall';
-      if (u === USE.ROAD) type = 'gate';
+      if (u === USE.ROAD) {
+        // one gatehouse per street: the rest of a wide paved crossing stays open
+        const last = plan[plan.length - 1];
+        if (last && last.type === 'gate' && Math.abs(last.x - x) + Math.abs(last.y - y) <= 2) continue;
+        type = 'gate';
+      }
       else if (towersAt.has(i) || n % 7 === 3) type = 'tower';
       n++;
       plan.push({ i, x, y, type });
