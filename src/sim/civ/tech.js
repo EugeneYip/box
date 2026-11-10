@@ -16,44 +16,51 @@ export const ERAS = [
   { id: 3, name: 'Enlightened', description: 'Dressed stone, glass windows and learning.' },
 ];
 
+// `unlocks` lists, in plain words, what each technology adds to the world
+// (the tech panel and tooltips show it); `builds` are the building types it
+// permits (Civ); vehicles listed are run by the Fleets module.
 export const TECHS = [
   // Hearth
-  { id: 'agriculture', name: 'Agriculture', era: 0, cost: 60, requires: [], description: 'Ploughs and seed-saving: richer harvests.', effects: { harvest: 1.15 } },
-  { id: 'masonry', name: 'Masonry', era: 0, cost: 70, requires: [], description: 'Cut stone for footings and walls.', effects: { stone: 1.2 } },
-  { id: 'pottery', name: 'Pottery', era: 0, cost: 60, requires: [], description: 'Fired jars keep grain longer.', effects: { foodCap: 1.25 } },
-  { id: 'fishing', name: 'Fishing', era: 0, cost: 55, requires: [], description: 'Nets and weirs fill the larder.', effects: { fish: 1.3 } },
+  { id: 'agriculture', name: 'Agriculture', era: 0, cost: 60, requires: [], description: 'Ploughs and seed-saving: richer harvests.', effects: { harvest: 1.15 }, unlocks: ['Ploughed field rows', 'Farmstead barns'], builds: ['barn'] },
+  { id: 'masonry', name: 'Masonry', era: 0, cost: 70, requires: [], description: 'Cut stone for footings and walls.', effects: { stone: 1.2 }, unlocks: ['Stone footings and stone houses', 'A paved village square', 'Sturdier, fire-resistant buildings'], builds: ['plaza'] },
+  { id: 'pottery', name: 'Pottery', era: 0, cost: 60, requires: [], description: 'Fired jars keep grain longer.', effects: { foodCap: 1.25 }, unlocks: ['Kilns', 'Granaries full of jars'], builds: ['kiln'] },
+  { id: 'fishing', name: 'Fishing', era: 0, cost: 55, requires: [], description: 'Nets and weirs fill the larder.', effects: { fish: 1.3 }, unlocks: ['Fishing jetties', 'Fishing boats over the shoals'], builds: ['docks'] },
+  { id: 'wheel', name: 'The Wheel', era: 0, cost: 80, requires: ['agriculture'], description: 'Axles and spoked wheels: ox carts carry the harvest.', effects: { work: 1.03 }, unlocks: ['Ox carts hauling wood, stone, food and ore between villages'] },
   // Bronze
-  { id: 'bronzeworking', name: 'Bronzeworking', era: 1, cost: 210, requires: ['masonry'], description: 'Bronze tools and blades.', effects: { material: 'bronze', work: 1.08 } },
-  { id: 'sailing', name: 'Sailing', era: 1, cost: 200, requires: ['fishing'], description: 'Harbours and sea-going ships.', effects: { fish: 1.2 }, unlocks: ['harbour'] },
-  { id: 'writing', name: 'Writing', era: 1, cost: 220, requires: ['pottery'], description: 'Scribes and libraries.', effects: { research: 1.15 }, unlocks: ['library'] },
-  { id: 'irrigation', name: 'Irrigation', era: 1, cost: 190, requires: ['agriculture'], description: 'Channels water the fields.', effects: { harvest: 1.15 } },
-  { id: 'horsemanship', name: 'Horsemanship', era: 1, cost: 180, requires: ['agriculture'], description: 'Riders carry news and armies further.', effects: { march: 1.15 } },
+  { id: 'bronzeworking', name: 'Bronzeworking', era: 1, cost: 210, requires: ['masonry'], description: 'Bronze tools and blades.', effects: { material: 'bronze', work: 1.08 }, unlocks: ['A forge with a glowing hearth', 'Bronze arms and tools'] },
+  { id: 'sailing', name: 'Sailing', era: 1, cost: 200, requires: ['fishing'], description: 'Harbours and sea-going ships.', effects: { fish: 1.2 }, unlocks: ['Harbours', 'Trading cogs between friendly ports', 'Transport ships for settlers and armies'], builds: ['harbour'] },
+  { id: 'writing', name: 'Writing', era: 1, cost: 220, requires: ['pottery'], description: 'Scribes and libraries.', effects: { research: 1.15 }, unlocks: ['Libraries', 'Scribes carrying scrolls'], builds: ['library'] },
+  { id: 'irrigation', name: 'Irrigation', era: 1, cost: 190, requires: ['agriculture'], description: 'Channels water the fields.', effects: { harvest: 1.15 }, unlocks: ['Irrigation channels beside the fields', 'Water wheels'], builds: ['waterwheel'] },
+  { id: 'horsemanship', name: 'Horsemanship', era: 1, cost: 180, requires: ['agriculture'], description: 'Riders carry news and armies further.', effects: { march: 1.15 }, unlocks: ['Stables', 'Mounted messengers on the roads', 'Cavalry'], builds: ['stables'] },
   // Iron
-  { id: 'ironworking', name: 'Ironworking', era: 2, cost: 520, requires: ['bronzeworking'], description: 'Iron arms and armour.', effects: { material: 'iron', work: 1.08 } },
-  { id: 'fortification', name: 'Fortification', era: 2, cost: 480, requires: ['masonry', 'bronzeworking'], description: 'Curtain walls, gates and towers.', effects: { walls: true }, unlocks: ['walls'] },
-  { id: 'medicine', name: 'Medicine', era: 2, cost: 460, requires: ['writing'], description: 'Healers: more children live to grow up.', effects: { birth: 1.2 } },
-  { id: 'mathematics', name: 'Mathematics', era: 2, cost: 470, requires: ['writing'], description: 'Numbers speed every inquiry.', effects: { research: 1.15 } },
-  { id: 'architecture', name: 'Architecture', era: 2, cost: 500, requires: ['masonry', 'mathematics'], description: 'Arches, aqueducts and grand halls.', effects: { build: 1.15 }, unlocks: ['aqueduct'] },
+  { id: 'ironworking', name: 'Ironworking', era: 2, cost: 520, requires: ['bronzeworking'], description: 'Iron arms and armour.', effects: { material: 'iron', work: 1.08 }, unlocks: ['A smoking bloomery', 'Iron arms and armour'], builds: ['bloomery'] },
+  { id: 'fortification', name: 'Fortification', era: 2, cost: 480, requires: ['masonry', 'bronzeworking'], description: 'Curtain walls, gates and towers.', effects: { walls: true }, unlocks: ['Town walls and gatehouses', 'Watchtowers whose archers shoot at raiders'], builds: ['walls'] },
+  { id: 'medicine', name: 'Medicine', era: 2, cost: 460, requires: ['writing'], description: 'Healers: more children live to grow up.', effects: { birth: 1.2 }, unlocks: ["A healer's house with an herb garden", 'Healers who tend the sick and wounded'], builds: ['healer'] },
+  { id: 'mathematics', name: 'Mathematics', era: 2, cost: 470, requires: ['writing'], description: 'Numbers speed every inquiry.', effects: { research: 1.15 }, unlocks: ["Surveyors' straight roads linking the realm's villages"] },
+  { id: 'architecture', name: 'Architecture', era: 2, cost: 500, requires: ['masonry', 'mathematics'], description: 'Arches, aqueducts and grand halls.', effects: { build: 1.15 }, unlocks: ['Aqueducts', 'Stone bridges over rivers'], builds: ['aqueduct', 'bridge'] },
+  { id: 'shipbuilding', name: 'Shipbuilding', era: 2, cost: 560, requires: ['sailing', 'ironworking'], description: 'Keels and ribs on the slipway: ships of war.', effects: { fish: 1.05 }, unlocks: ['A shipyard slipway with a hull on the stocks', 'War galleys'], builds: ['shipyard'] },
+  { id: 'siegecraft', name: 'Siegecraft', era: 2, cost: 540, requires: ['fortification', 'mathematics'], description: 'Rams and catapults to break walls.', effects: { siege: 1.6 }, unlocks: ['Battering rams and catapults with the armies'] },
   // Enlightened
-  { id: 'steelworking', name: 'Steelworking', era: 3, cost: 1000, requires: ['ironworking'], description: 'Steel: the finest blades.', effects: { material: 'steel' } },
-  { id: 'philosophy', name: 'Philosophy', era: 3, cost: 900, requires: ['mathematics', 'medicine'], description: 'Wise laws keep provinces loyal.', effects: { loyalty: 12 } },
-  { id: 'banking', name: 'Banking', era: 3, cost: 940, requires: ['mathematics'], description: 'Coin works harder: markets prosper.', effects: { gold: 1.5 } },
-  { id: 'engineering', name: 'Engineering', era: 3, cost: 960, requires: ['architecture'], description: 'Cranes and mills: faster building.', effects: { build: 1.25 } },
-  { id: 'astronomy', name: 'Astronomy', era: 3, cost: 920, requires: ['mathematics', 'sailing'], description: 'Star charts and observatories.', effects: { research: 1.1 }, unlocks: ['observatory'] },
+  { id: 'steelworking', name: 'Steelworking', era: 3, cost: 1000, requires: ['ironworking'], description: 'Steel: the finest blades.', effects: { material: 'steel' }, unlocks: ['A foundry', 'Steel arms and armour'], builds: ['foundry'] },
+  { id: 'philosophy', name: 'Philosophy', era: 3, cost: 900, requires: ['mathematics', 'medicine'], description: 'Wise laws keep provinces loyal.', effects: { loyalty: 12 }, unlocks: ['A forum where citizens gather'], builds: ['forum'] },
+  { id: 'banking', name: 'Banking', era: 3, cost: 940, requires: ['mathematics'], description: 'Coin works harder: markets prosper.', effects: { gold: 1.5 }, unlocks: ['A market hall with stalls and a counting house', 'Trade caravans between realms at peace'], builds: ['markethall'] },
+  { id: 'engineering', name: 'Engineering', era: 3, cost: 960, requires: ['architecture'], description: 'Cranes and mills: faster building.', effects: { build: 1.25 }, unlocks: ['Watermills on the rivers', 'Cranes over building sites'], builds: ['watermill'] },
+  { id: 'astronomy', name: 'Astronomy', era: 3, cost: 920, requires: ['mathematics', 'sailing'], description: 'Star charts and observatories.', effects: { research: 1.1 }, unlocks: ['Observatories', 'Exploration ships that chart the world'], builds: ['observatory'] },
+  { id: 'navigation', name: 'Navigation', era: 3, cost: 1050, requires: ['astronomy', 'shipbuilding'], description: 'Compass and charts: ships cross the open ocean.', effects: { research: 1.03 }, unlocks: ['Great carracks for ocean trade and overseas colonies'] },
 ];
 
 export const techById = Object.fromEntries(TECHS.map((t) => [t.id, t]));
 
 // Research leanings of culture traits.
 const LEANINGS = {
-  Seafaring: ['fishing', 'sailing', 'astronomy'],
-  Martial: ['bronzeworking', 'horsemanship', 'ironworking', 'fortification', 'steelworking'],
+  Seafaring: ['fishing', 'sailing', 'astronomy', 'shipbuilding', 'navigation'],
+  Martial: ['bronzeworking', 'horsemanship', 'ironworking', 'fortification', 'steelworking', 'siegecraft'],
   Scholarly: ['writing', 'mathematics', 'philosophy', 'astronomy'],
   Pastoral: ['agriculture', 'irrigation', 'medicine'],
   Mystic: ['pottery', 'medicine', 'philosophy', 'astronomy'],
-  Mercantile: ['pottery', 'sailing', 'banking'],
+  Mercantile: ['pottery', 'sailing', 'banking', 'wheel'],
   Masons: ['masonry', 'architecture', 'engineering', 'fortification'],
-  Wanderers: ['horsemanship', 'fishing', 'agriculture'],
+  Wanderers: ['horsemanship', 'fishing', 'agriculture', 'wheel', 'navigation'],
 };
 
 export const tech = {
