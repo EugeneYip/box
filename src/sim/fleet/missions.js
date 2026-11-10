@@ -84,6 +84,7 @@ export const missions = {
       this.remove(v);
       return refuse('no water route');
     }
+    this._embark(v, h);
     return v;
   },
 
@@ -286,13 +287,25 @@ export const missions = {
       v.state = 'patrol';
       return;
     }
-    // a voyage: deliver the cargo
-    const e = { vessel: v, id: v.id, kind: v.kind, kingdom: v.kingdom, from: v.voyage?.from, to: v.voyage?.to, cargo: v.cargo, x: v.deliver?.x ?? v.x, z: v.deliver?.z ?? v.z, landing: { x: v.x, z: v.z }, requested: !!m.requested };
+    // a voyage: deliver the cargo (and put the passengers ashore first)
+    const land = v.deliver && this.world.isWalkable(Math.floor(v.deliver.x), Math.floor(v.deliver.z)) ? v.deliver : this._landPoint(v.deliver?.x ?? v.x, v.deliver?.z ?? v.z, v);
+    const people = this.aboard(v);
+    const cargo = v.cargo ? { ...v.cargo } : {};
+    if (people.length) {
+      this.disembarkAll(v, land.x, land.z);
+      if (cargo.settlers) cargo.settlers = people;
+      else if (cargo.army) cargo.army = people;
+    }
+    const e = { vessel: v, id: v.id, kind: v.kind, kingdom: v.kingdom, from: v.voyage?.from, to: v.voyage?.to, cargo, x: land.x, z: land.z, landing: { x: v.x, z: v.z }, requested: !!m.requested, passengers: people.length };
     const civ = this.game.civ;
     const civApplies = typeof civ?._onFleetArrived === 'function';
     e.applied = civApplies;
     if (!civApplies) this._applyCargo(e);
     this.game.events.emit('fleet:arrived', e);
+    // nobody took them in (no room for a village, no enemy to fight): back aboard, home again
+    const home = this.game.civ?.villages?.[v.home];
+    const stranded = people.filter((u) => u.alive && u.data?.aboard == null && (cargo.settlers ? u.village === v.home : !u.data?.civ?.army));
+    if (stranded.length && home?.alive && this.game.units?.board) for (const u of stranded) this.game.units.board(u, v);
     if (m.type === 'trade') {
       this.totals.trades++;
       // the return cargo: silver for home
@@ -307,6 +320,12 @@ export const missions = {
   },
 
   _moor(v) {
+    if (this.aboard(v).length) {
+      const h = v.harbour != null ? this._berths.get(v.harbour) : null;
+      const p = this._landPoint(h ? h.x : v.x, h ? h.z : v.z, v);
+      const n = this.disembarkAll(v, p.x, p.z);
+      this.game.events.emit('fleet:returned', { vessel: v, id: v.id, kind: v.kind, kingdom: v.kingdom, cargo: v.cargo, x: p.x, z: p.z, aborted: false, passengers: n });
+    }
     v.state = 'moored';
     v.stateT = 0;
     v.idleT = 0;
@@ -370,8 +389,8 @@ export const missions = {
     const from = civ.villages[v?.home];
     const n = Array.isArray(e.cargo.settlers) ? e.cargo.settlers.length : Math.max(4, Math.min(16, e.cargo.settlers | 0));
     // the settlers who boarded leave their old town now
-    const units = [];
-    if (from?.alive && from.members) {
+    const units = Array.isArray(e.cargo.settlers) ? e.cargo.settlers.filter((u) => u.alive) : [];
+    if (!units.length && from?.alive && from.members) {
       for (const u of from.members) {
         if (units.length >= n) break;
         if (!u.alive || u.job === 'king' || u.job === 'soldier' || u.data?.civ?.army || u.age < 8) continue;
@@ -379,7 +398,8 @@ export const missions = {
       }
     }
     for (const u of units) {
-      from.members.delete(u);
+      if (u.data?.aboard != null) this.game.units?.disembark?.(u, e.x, e.z);
+      from?.members?.delete(u);
       u.x = u.px = e.x + (this.rng() - 0.5) * 2;
       u.z = u.pz = e.z + (this.rng() - 0.5) * 2;
       this.game.units?.stop?.(u);

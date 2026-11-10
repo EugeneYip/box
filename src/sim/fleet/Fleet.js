@@ -358,11 +358,93 @@ export class Fleet {
     return v;
   }
 
-  remove(v) {
+  // Take a vessel out of the world (laid up, culled, lost its way). Anyone
+  // still aboard steps ashore first, and the voyage's end is reported.
+  remove(v, why = 'laid up') {
     if (!v.alive) return;
+    if (v.cls === 'sea' && v.state !== 'sinking') {
+      const n = this.disembarkAll(v);
+      if (n || (v.mission && v.mission.phase === 'out' && (v.cargo?.settlers || v.cargo?.army))) {
+        const p = this._landPoint(v.x, v.z, v);
+        this.game.events.emit('fleet:returned', { vessel: v, id: v.id, kind: v.kind, kingdom: v.kingdom, cargo: v.cargo, x: p.x, z: p.z, aborted: true, why, passengers: n });
+      }
+    }
     v.alive = false;
     this.byId.delete(v.id);
     this.version++;
+  }
+
+  // ------------------------------------------------------------------ passengers
+  // Real people ride the transports (Life's units.board / disembark).
+  aboard(v) {
+    const U = this.game.units;
+    return U?.aboard ? U.aboard(v.id) : [];
+  }
+  // A land point near (x, z) to put people ashore: the nearest dry tile, else
+  // the vessel's home town.
+  _landPoint(x, z, v = null) {
+    const w = this.world;
+    const cx = Math.floor(x),
+      cz = Math.floor(z);
+    let best = null,
+      bd = Infinity;
+    for (let r = 0; r <= 14 && !best; r++)
+      for (let dz = -r; dz <= r; dz++)
+        for (let dx = -r; dx <= r; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;
+          const tx = cx + dx,
+            tz = cz + dz;
+          if (!w.inBounds(tx, tz) || !w.isWalkable(tx, tz)) continue;
+          const d = dx * dx + dz * dz;
+          if (d < bd) {
+            bd = d;
+            best = { x: tx + 0.5, z: tz + 0.5 };
+          }
+        }
+    if (best) return best;
+    const home = this.game.civ?.villages?.[v?.home];
+    if (home?.alive) return { x: home.hall?.doorX ?? home.cx, z: home.hall?.doorZ ?? home.cz };
+    return { x, z };
+  }
+  disembarkAll(v, x = null, z = null) {
+    const U = this.game.units;
+    const list = this.aboard(v);
+    if (!list.length || !U?.disembark) return 0;
+    const p = x != null ? { x, z } : this._landPoint(v.x, v.z, v);
+    for (const u of list) U.disembark(u, p.x + (this.rng() - 0.5) * 1.2, p.z + (this.rng() - 0.5) * 1.2);
+    return list.length;
+  }
+  // Settlers or soldiers of the home town go aboard at departure.
+  _embark(v, h) {
+    const U = this.game.units;
+    const civ = this.game.civ;
+    const c = v.cargo;
+    if (!U?.board || !c || (!c.settlers && !c.army)) return 0;
+    const home = civ?.villages?.[h.village];
+    if (!home?.alive) return 0;
+    const want = Math.min(Array.isArray(c.settlers) ? c.settlers.length : c.settlers || 0, v.def.capacity || 10) || Math.min(Array.isArray(c.army) ? c.army.length : c.army || 0, 14);
+    const army = !c.settlers;
+    const picked = [];
+    if (Array.isArray(c.settlers) || Array.isArray(c.army)) {
+      for (const u of c.settlers || c.army) if (u?.alive && u.data?.aboard == null) picked.push(u);
+    } else {
+      let kids = 0;
+      for (const u of home.members) {
+        if (picked.length >= want) break;
+        if (!u.alive || u.data?.aboard != null || u.job === 'king' || u.data?.civ?.army || u.data?.civ?.task?.kind === 'migrate') continue;
+        if (army ? u.job !== 'soldier' : u.job === 'soldier') continue;
+        if (u.age < 16) {
+          if (army || kids >= 2 || u.age < 6) continue;
+          kids++;
+        }
+        picked.push(u);
+      }
+      // a town of peasants still sends its settlers; an army needs soldiers
+      if (picked.length < (army ? 4 : 3)) return 0;
+    }
+    for (const u of picked) U.board(u, v);
+    v.passengers = picked.length;
+    return picked.length;
   }
 
   // ------------------------------------------------------------------ paths
