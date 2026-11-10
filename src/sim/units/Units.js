@@ -281,7 +281,8 @@ export class Units {
 
   get areaScale() {
     const w = this.game.world;
-    return (w.w * w.h) / (256 * 256);
+    // world.meta.budgetArea (World Map): budgets follow habitable land, not the rectangle
+    return (w.meta?.budgetArea ?? w.w * w.h) / (256 * 256);
   }
   // Population scale: grows with map area but sub-linearly, so a Huge (512)
   // map holds ~1.6x the creatures of a Medium (256) one, not 4x.
