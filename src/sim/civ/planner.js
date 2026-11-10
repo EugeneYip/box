@@ -948,7 +948,7 @@ export const planner = {
   },
 
   // ---------------------------------------------------------------- special sites
-  _placeDocks(v) {
+  _placeDocks(v, type = 'docks') {
     const w = this.world;
     const W = w.w;
     const n = spiralCount(Math.min(SPIRAL[SPIRAL.length - 1][2], v.buildRadius + 6));
@@ -963,8 +963,8 @@ export const planner = {
         y = cy + dy;
       for (let rot = 0; rot < 4; rot++) {
         const [fx, fz] = ROT_DIR[rot];
-        const fw = 2,
-          fh = 2;
+        const fw = rot & 1 ? BUILDING_TYPES[type].h : BUILDING_TYPES[type].w,
+          fh = rot & 1 ? BUILDING_TYPES[type].w : BUILDING_TYPES[type].h;
         if (!this._footprintOK(x, y, fw, fh, 1.2)) continue;
         // the two tiles in front of the door edge and 3 beyond must be water
         let water = 0,
@@ -992,7 +992,7 @@ export const planner = {
       if (best && k > 200) break;
     }
     if (!best) return null;
-    const b = this.addBuilding(v, 'docks', best.x, best.y, best.rot);
+    const b = this.addBuilding(v, type, best.x, best.y, best.rot);
     // walk-able link from the docks to the street network
     const back = (best.rot + 2) & 3;
     const [bx, bz] = ROT_DIR[back];

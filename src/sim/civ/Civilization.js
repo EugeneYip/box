@@ -6,6 +6,7 @@ import { planner } from './planner.js';
 import { brain } from './brain.js';
 import { politics, relKey } from './politics.js';
 import { editing } from './editing.js';
+import { unlocks } from './unlocks.js';
 import { tech, ERAS, TECHS, techById } from './tech.js';
 import { culture, TRAIT_INFO } from './culture.js';
 
@@ -87,6 +88,12 @@ export class Civilization {
     game.units?.registerBrain?.('human', (u, dt) => this.think(u, dt));
     game.events.on('unit:death', ({ unit, cause }) => this._onDeath(unit, cause));
     game.events.on('world:height', (r) => this._onHeight(r));
+    // Fleets (optional module) reports voyages; Civ applies the cargo
+    game.events.on('fleet:arrived', (e) => this._onFleetArrived?.(e));
+    game.events.on('fleet:lost', (e) => {
+      const k = this.kingdoms[e?.kingdom ?? e?.vessel?.kingdom];
+      if (k && (e?.cargo?.settlers || e?.cargo?.army)) this._history(`A ship of ${this._kn(k)} is lost at sea with all aboard`, 'bad', null);
+    });
     game.events.on('laws', ({ key, value }) => {
       if ((key === 'civWars' || key == null) && !this.law('civWars')) this._endAllWars();
       if ((key === 'civDiplomacy' || key == null) && !this.law('civDiplomacy')) for (const r of this.relations.values()) r.ally = false;
@@ -660,10 +667,15 @@ export class Civilization {
       T.regrow = 0;
       this._regrowTick();
     }
+    if ((T.tower = (T.tower || 0) + step) >= 1) {
+      T.tower = 0;
+      this._towerTick();
+    }
     if ((T.tech = (T.tech || 0) + step) >= 2) {
       this._researchTick(T.tech);
       this._inventoryTick(T.tech);
       this._wonderFx();
+      this._unlockTick(T.tech);
       T.tech = 0;
     }
     if ((T.cult = (T.cult || 0) + step) >= 5) {
@@ -897,7 +909,8 @@ export class Civilization {
     // a kingdom's new era spreads through its towns building by building
     const K0 = this.kingdoms[v.kingdom];
     // a realm of masters gilds its capital and cities (render era 4)
-    const era = Math.min(4, (K0?.era ?? 0) + ((K0?.mastery || 0) >= 4 && (K0.capital === v.id || v.tier >= 1) ? 1 : 0));
+    let era = Math.min(4, (K0?.era ?? 0) + ((K0?.mastery || 0) >= 4 && (K0.capital === v.id || v.tier >= 1) ? 1 : 0));
+    if (era < 1 && K0 && this.hasTech(K0.id, 'masonry')) era = 1; // masons build in stone from the start
     if (this.rng.chance(0.06 * dt)) {
       const old = v.buildings.find((b) => b.alive && !b.constructing && (b.era ?? 0) < era);
       if (old) {
@@ -1368,7 +1381,7 @@ export class Civilization {
       else if (b.burning > 0.05 || b.hp < b.maxHp * 0.85) repairs++;
     }
     const atWar = this.warCount(v.kingdom) > 0;
-    const want = { farmer: 0, builder: 0, woodcutter: 0, fisher: 0, soldier: 0, miner: 0 };
+    const want = { farmer: 0, builder: 0, woodcutter: 0, fisher: 0, soldier: 0, miner: 0, healer: 0, messenger: 0 };
     let left = n;
     const give = (job, k) => {
       k = Math.max(0, Math.min(left, Math.round(k)));
@@ -1380,6 +1393,9 @@ export class Civilization {
     const woodFull = v.wood > 120 + v.tier * 140;
     const stoneFull = v.stone > 60 + v.tier * 120;
     const ctr = (t) => this.hasCultureTrait(v.culture, t);
+    // the realm's messenger keeps riding; a healer's house keeps its healer
+    give('messenger', members.filter((u) => u.job === 'messenger').length);
+    if (n >= 8 && v.buildings.some((b) => b.alive && b.type === 'healer' && !b.constructing)) give('healer', 1);
     give('farmer', v.fieldCount ? Math.max(1, Math.min(Math.ceil(v.fieldCount / (foodFull ? 14 : ctr('Pastoral') ? 7 : 9)), n * 0.5)) : 0);
     give('fisher', v.docks ? Math.min(v.docks * (ctr('Seafaring') ? 3 : 2), 1 + n * (ctr('Seafaring') ? 0.25 : 0.15)) : foodLow && n >= 5 && v.coastal ? 1 : 0);
     const drafting = this.game.time.total - (v.draft ?? -99) < 45;
@@ -1567,6 +1583,7 @@ export class Civilization {
     if (room() && pop >= 30 && this.hasTech(kid, 'astronomy') && count('observatory') === 0) build('observatory', () => this._placeOutskirts(v, 'observatory', 4, v.buildRadius, null, null));
     if (room() && pop >= 34 && this.hasTech(kid, 'architecture') && count('aqueduct') === 0) build('aqueduct', () => this._placeOutskirts(v, 'aqueduct', 5, v.buildRadius + 3, null, null));
     const K = this.kingdoms[kid];
+    this._planUnlocks(v, K, room, build, upgrade, count, crowded);
     // monuments: the realm's great works rise stage by stage; masters raise more
     if (K && sites <= maxSites) {
       const mine = v.buildings.find((b) => b.alive && BUILDING_TYPES[b.type].monument);
@@ -1778,6 +1795,7 @@ export class Civilization {
     const v = this.villages[b.village];
     if (v) this._updateVillageDerived(v);
     if (BUILDING_TYPES[b.type].monument && v) this._monumentStage(b, v);
+    this._firstBuild?.(b);
     if (b.type === 'temple' && v) this._note(`${v.name} completes its ${buildingLabel(b).toLowerCase()}.`, 'info', { x: b.x, z: b.z }, 'temple' + v.id, 600);
     this._fx('sparkle', b.x, b.z, 0.8);
   }
@@ -1796,6 +1814,7 @@ export class Civilization {
     this._sfx('bell', b.x, b.z, 1.5);
     if (b.type === 'hall' && v) this._note(`${v.name} raises a ${buildingLabel(b).toLowerCase()}.`, 'good', { x: b.x, z: b.z });
     if (def.monument && v) this._monumentStage(b, v);
+    this._firstBuild?.(b);
     this._fx('sparkle', b.x, b.z, 1);
   }
 
@@ -2429,5 +2448,5 @@ export class Civilization {
   }
 }
 
-Object.assign(Civilization.prototype, planner, brain, politics, tech, culture, editing);
+Object.assign(Civilization.prototype, planner, brain, politics, tech, culture, editing, unlocks);
 export { ERAS, TECHS, techById, TRAIT_INFO };
