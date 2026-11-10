@@ -58,8 +58,8 @@ function monumentTitle(type, style, variant) {
   return MONUMENT_TITLES[type]?.[style]?.[variant % 3] || null;
 }
 
-function budgets(w, h) {
-  const a = (w * h) / (256 * 256);
+function budgets(w, h, area = w * h) {
+  const a = area / (256 * 256);
   return {
     area: a,
     humans: Math.round(Math.min(900, 850 * Math.pow(a, 0.04))),
@@ -98,7 +98,7 @@ export class Civilization {
   _init() {
     const w = this.world;
     this.rng = this.game.rng.fork('civ');
-    this.budget = budgets(w.w, w.h);
+    this.budget = budgets(w.w, w.h, w.meta?.budgetArea); // World Map: scaled by habitable land
     this.use = new Uint8Array(w.size);
     this.plotOf = new Int16Array(w.size).fill(-1);
     this.reservedBy = new Int32Array(w.size);

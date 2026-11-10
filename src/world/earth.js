@@ -812,7 +812,12 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
   }
   _t('flora');
 
-  world.meta = { preset: 'earth', lon0: EARTH_LON0, projection: 'plate-carree', spreadStarts: true };
+  // budgetArea: the map area (tiles) whose population and building budgets
+  // this world should get. Much of the World Map is ocean and ice, so it is
+  // scaled from habitable land (typical presets are ~30% habitable land).
+  let habitable = 0;
+  for (let i = 0; i < N; i++) if (hgt[i] >= SEA_LEVEL && type[i] !== TILE.SNOW && type[i] !== TILE.ICE && type[i] !== TILE.ROCK) habitable++;
+  world.meta = { preset: 'earth', lon0: EARTH_LON0, projection: 'plate-carree', spreadStarts: true, budgetArea: Math.round(habitable / 0.3) };
   world.owner.fill(-1);
   world.building.fill(-1);
   world.fire.fill(0);
