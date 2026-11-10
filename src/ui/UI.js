@@ -5,8 +5,10 @@ import './hud3.css';
 import './hud4.css';
 import './hud5.css';
 import './hud6.css';
+import './hud7.css';
 import { CATEGORIES, listPowers, getPower } from '../powers/registry.js';
 import { el, safe } from './dom.js';
+import { SEA_LEVEL } from '../world/constants.js';
 import { TopBar, PRESET_NAMES } from './TopBar.js';
 import { Toolbar, SLOT_CODES } from './Toolbar.js';
 import { Minimap } from './Minimap.js';
@@ -101,6 +103,23 @@ export class UI {
     // input
     addEventListener('keydown', (e) => this.onKeyCapture(e), true);
     addEventListener('keydown', (e) => this.onKey(e));
+    // On-screen keyboards: while a text field in the inspector has focus, lift the
+    // sheet above the keyboard (visualViewport) and keep the field in view.
+    const vv = window.visualViewport;
+    if (vv) {
+      const fit = () => {
+        const a = document.activeElement;
+        const typing = !!a && this.inspector.el.contains(a) && a.matches?.('input:not([type]), input[type=text], input[type=search], textarea');
+        const kb = typing ? Math.max(0, Math.round(innerHeight - (vv.height + vv.offsetTop))) : 0;
+        root.style.setProperty('--kb', kb + 'px');
+        root.classList.toggle('has-kb', kb > 40);
+        if (kb > 40) requestAnimationFrame(() => a.scrollIntoView?.({ block: 'nearest' }));
+      };
+      vv.addEventListener('resize', fit);
+      vv.addEventListener('scroll', fit);
+      root.addEventListener('focusin', () => setTimeout(fit, 60));
+      root.addEventListener('focusout', () => setTimeout(fit, 60));
+    }
     // typing in any field never reaches game hotkeys (Input, power slots, ...)
     root.addEventListener('keydown', (e) => {
       if (this.isTyping(e)) e.stopPropagation();
@@ -248,14 +267,15 @@ export class UI {
   regenerate(seed, preset, civs, { quiet = false, after = null } = {}) {
     const g = this.game;
     const label = this.veil.querySelector('.ws-veil__label');
-    label.textContent = `Seeding ${/^[aeiou]/i.test(PRESET_NAMES[preset] || '') ? 'an' : 'a'} ${PRESET_NAMES[preset] || 'new'} world`;
+    label.textContent = preset === 'earth' ? 'Shaping the World Map' : `Seeding ${/^[aeiou]/i.test(PRESET_NAMES[preset] || '') ? 'an' : 'a'} ${PRESET_NAMES[preset] || 'new'} world`;
     this.veil.classList.add('is-shown');
     setTimeout(() => {
       requestAnimationFrame(() => {
         safe(() => g.regenerate(seed, preset, civs), null, 'regenerate');
+        this._regenN = (this._regenN || 0) + 1; // new land: the overview frame is measured again
         g.params.civs = civs;
         after?.();
-        if (!quiet) setTimeout(() => g.notify(`A new ${(PRESET_NAMES[preset] || 'world').toLowerCase()} rises from the deep. Seed ${seed}.`, 'good'), 400);
+        if (!quiet) setTimeout(() => g.notify(preset === 'earth' ? `The World Map rises from the deep. Seed ${seed}.` : `A new ${(PRESET_NAMES[preset] || 'world').toLowerCase()} rises from the deep. Seed ${seed}.`, 'good'), 400);
         setTimeout(() => this.veil.classList.remove('is-shown'), 120);
       });
     }, 360);
@@ -288,6 +308,7 @@ export class UI {
     this.root.classList.add('is-overview');
     if (!prev.dockMin && !this.toolbar.isDrawer()) this.toolbar.setMin(true);
     if (this.toolbar.isDrawer()) this.toolbar.toggleDrawer(false);
+    this.placeBackPill(true);
     const vw = innerWidth,
       vh = innerHeight;
     const topR = this.topbar.el.getBoundingClientRect();
@@ -295,27 +316,37 @@ export class UI {
     const pillBottom = ovR.height && ovR.top < innerHeight * 0.4 ? ovR.bottom : 0;
     const dockR = this.toolbar.panel.getBoundingClientRect();
     const top = Math.min(vh * 0.45, Math.max(topR.bottom, pillBottom) + 12);
-    const bottom = Math.max(vh * 0.6, (dockR.top > vh * 0.5 ? dockR.top : vh) - 12);
+    // on drawer layouts (phones, short landscape) and touch tablets the dock folds
+    // away during Overview (hud5.css, hud7.css), so the map may use the full height
+    const dockGone = matchMedia('(max-width: 720px), (max-height: 500px)').matches || this.root.classList.contains('is-touch');
+    const bottom = dockGone ? vh - 10 : Math.max(vh * 0.6, (dockR.top > vh * 0.5 ? dockR.top : vh) - 12);
     const left = 12,
       right = vw - 12;
-    const yaw = Math.round(rig.goal.yaw / (Math.PI * 2)) * Math.PI * 2;
+    const north = Math.round(rig.goal.yaw / (Math.PI * 2)) * Math.PI * 2;
     const bias = THREE.MathUtils.degToRad(innerHeight <= 500 ? 15 : 8);
     const pitch = THREE.MathUtils.degToRad(70) + bias;
     const cam = new THREE.PerspectiveCamera(rig.camera.fov, vw / vh, 1, 1e6);
     const v = new THREE.Vector3();
-    const cx = W.w / 2;
-    const ty = Math.max(0, W.heightAt(cx, W.h / 2)) * 0.6;
-    const fits = (d, tz) => {
+    // frame the land, not the empty ocean around it (a continent fills the
+    // screen instead of floating in a blue square)
+    const box = this.landBox();
+    const cx = (box.x0 + box.x1) / 2,
+      cz = (box.z0 + box.z1) / 2;
+    const ty = Math.max(0, W.heightAt(cx, cz)) * 0.6;
+    // the coastline's outline (not the box corners, which are open sea): the
+    // corners of the world may slip under the HUD, the land may not
+    const corners = this._landOutline || [
+      [box.x0, box.z0],
+      [box.x1, box.z0],
+      [box.x0, box.z1],
+      [box.x1, box.z1],
+    ];
+    const fits = (d, tx, tz, yaw) => {
       const horiz = Math.cos(pitch) * d;
-      cam.position.set(cx + Math.sin(yaw) * horiz, ty + Math.sin(pitch) * d, tz + Math.cos(yaw) * horiz);
-      cam.lookAt(cx, ty, tz);
+      cam.position.set(tx + Math.sin(yaw) * horiz, ty + Math.sin(pitch) * d, tz + Math.cos(yaw) * horiz);
+      cam.lookAt(tx, ty, tz);
       cam.updateMatrixWorld();
-      for (const [x, z] of [
-        [0, 0],
-        [W.w, 0],
-        [0, W.h],
-        [W.w, W.h],
-      ]) {
+      for (const [x, z] of corners) {
         v.set(x, 0, z).project(cam);
         const sx = (v.x * 0.5 + 0.5) * vw,
           sy = (-v.y * 0.5 + 0.5) * vh;
@@ -323,33 +354,135 @@ export class UI {
       }
       return true;
     };
-    let best = null;
-    for (let k = -10; k <= 10; k++) {
-      const tz = W.h / 2 + (k / 40) * W.h;
-      let lo = 5,
-        hi = Math.max(W.w, W.h) * 12;
-      if (!fits(hi, tz)) continue;
-      for (let it = 0; it < 26; it++) {
-        const m = (lo + hi) / 2;
-        if (fits(m, tz)) hi = m;
-        else lo = m;
+    const solve = (yaw) => {
+      let best = null;
+      const span = Math.abs(Math.cos(yaw)) > 0.5 ? box.z1 - box.z0 : box.x1 - box.x0;
+      for (let k = -10; k <= 10; k++) {
+        // slide the target along the view direction (perspective puts the far edge higher)
+        const off = (k / 40) * span;
+        const tx = cx - Math.sin(yaw) * off,
+          tz = cz - Math.cos(yaw) * off;
+        let lo = 5,
+          hi = Math.max(W.w, W.h) * 12;
+        if (!fits(hi, tx, tz, yaw)) continue;
+        for (let it = 0; it < 26; it++) {
+          const m = (lo + hi) / 2;
+          if (fits(m, tx, tz, yaw)) hi = m;
+          else lo = m;
+        }
+        if (!best || hi < best.d) best = { d: hi, tx, tz, yaw };
       }
-      if (!best || hi < best.d) best = { d: hi, tz };
+      return best;
+    };
+    let best = solve(north);
+    // a long map on a tall screen (the 2:1 World Map in portrait) turns a quarter
+    // so its long axis runs down the screen, when that fills clearly more of it
+    const bw = box.x1 - box.x0,
+      bh = box.z1 - box.z0;
+    if ((vh > vw * 1.15 && bw > bh * 1.3) || (vw > vh * 1.15 && bh > bw * 1.3)) {
+      const turned = solve(north + Math.PI / 2);
+      if (turned && (!best || turned.d < best.d * 0.9)) best = turned;
     }
-    if (!best) best = { d: rig.maxDist, tz: W.h / 2 };
+    if (!best) best = { d: rig.maxDist, tx: W.w / 2, tz: W.h / 2, yaw: north };
     const d = best.d * 1.02;
     this._overview = { ...prev, dist: prev.dist, target: d };
     rig.follow = null;
     // maxDist = d makes the rig's auto-pitch reach its top (70°) exactly at d,
     // so pitch + bias equals the 78° the fit was solved for
     rig.maxDist = d;
-    rig.goal.x = cx;
+    rig.goal.x = best.tx;
     rig.goal.z = best.tz;
     rig.goal.dist = d;
-    rig.goal.yaw = yaw;
+    rig.goal.yaw = best.yaw;
+    if (best.yaw !== north) this.toast('Turned to fit the screen: north is to the right', 2600);
     this._biasGoal = bias;
     this.syncOverviewBtn();
     g.audio?.play?.('ui-click', { volume: 0.45 });
+  }
+
+  // Bounding box of the land (above sea level) plus a small shore margin, cached per world.
+  landBox() {
+    const W = this.game.world;
+    const key = `${W.w}x${W.h}:${this.game.params?.seed}:${this.game.params?.preset}:${this._regenN || 0}`;
+    if (this._landBox?.key === key) {
+      this._landOutline = this._landBox.outline;
+      return this._landBox.box;
+    }
+    const n = 96;
+    const sx = W.w / n,
+      sz = W.h / Math.max(8, Math.round((n * W.h) / W.w));
+    let x0 = Infinity,
+      z0 = Infinity,
+      x1 = -Infinity,
+      z1 = -Infinity;
+    const rowMin = new Map(),
+      rowMax = new Map(),
+      colMin = new Map(),
+      colMax = new Map();
+    for (let z = sz / 2; z < W.h; z += sz)
+      for (let x = sx / 2; x < W.w; x += sx) {
+        const h = safe(() => W.heightAt(x, z), 0, 'land box');
+        if (h > SEA_LEVEL + 0.05) {
+          if (x < x0) x0 = x;
+          if (x > x1) x1 = x;
+          if (z < z0) z0 = z;
+          if (z > z1) z1 = z;
+          if (!(rowMin.get(z) <= x)) rowMin.set(z, x);
+          if (!(rowMax.get(z) >= x)) rowMax.set(z, x);
+          if (!(colMin.get(x) <= z)) colMin.set(x, z);
+          if (!(colMax.get(x) >= z)) colMax.set(x, z);
+        }
+      }
+    // outline: the outermost land sample of every row and column, pushed out by a shore margin
+    const out = [];
+    const mo = Math.max(W.w, W.h) * 0.035 + Math.max(sx, sz);
+    const push = (x, z, dx, dz) => out.push([Math.max(0, Math.min(W.w, x + dx * mo)), Math.max(0, Math.min(W.h, z + dz * mo))]);
+    for (const [z, x] of rowMin) push(x, z, -1, 0);
+    for (const [z, x] of rowMax) push(x, z, 1, 0);
+    for (const [x, z] of colMin) push(x, z, 0, -1);
+    for (const [x, z] of colMax) push(x, z, 0, 1);
+    this._landOutline = out.length >= 4 ? out : null;
+    let box;
+    if (!Number.isFinite(x0)) box = { x0: 0, z0: 0, x1: W.w, z1: W.h };
+    else {
+      const m = Math.max(W.w, W.h) * 0.04 + Math.max(sx, sz);
+      box = { x0: Math.max(0, x0 - m), z0: Math.max(0, z0 - m), x1: Math.min(W.w, x1 + m), z1: Math.min(W.h, z1 + m) };
+      // never zoom into a sliver: keep at least 45% of the world in view
+      for (const [a, b, size] of [
+        ['x0', 'x1', W.w],
+        ['z0', 'z1', W.h],
+      ]) {
+        const need = size * 0.45 - (box[b] - box[a]);
+        if (need > 0) {
+          box[a] = Math.max(0, box[a] - need / 2);
+          box[b] = Math.min(size, box[b] + need / 2);
+        }
+      }
+    }
+    this._landBox = { key, box, outline: this._landOutline };
+    return box;
+  }
+
+  // Touch Overview: the Back pill sits just below whatever occupies the top
+  // centre (clock, age chip), measured rather than guessed per device; on short
+  // landscape screens it moves to the bottom-right corner, out of the map's way.
+  placeBackPill(on) {
+    const b = this.overviewBtn;
+    b.style.top = '';
+    if (!on || !this.root.classList.contains('is-touch') || innerHeight <= 500) return;
+    let y = 0;
+    for (const e of [this.topbar.el, this.ageChip?.el]) {
+      const r = e?.getBoundingClientRect?.();
+      if (!r || !r.height || r.top > innerHeight * 0.3) continue;
+      if (e === this.topbar.el) {
+        // only the parts of the top bar over the centre column count
+        for (const c of e.querySelectorAll(':scope > *')) {
+          const q = c.getBoundingClientRect();
+          if (q.height && q.left < innerWidth * 0.62 && q.right > innerWidth * 0.38) y = Math.max(y, q.bottom);
+        }
+      } else if (r.left < innerWidth * 0.62 && r.right > innerWidth * 0.38) y = Math.max(y, r.bottom);
+    }
+    b.style.top = Math.round((y || 60) + 10) + 'px';
   }
 
   exitOverview(restoreView) {
@@ -357,6 +490,7 @@ export class UI {
     const p = this._overview;
     if (!p) return;
     this._overview = null;
+    this.placeBackPill(false);
     rig.maxDist = p.maxDist;
     if (restoreView) {
       rig.goal.x = p.x;
@@ -464,10 +598,16 @@ export class UI {
     }
     if (e.key === '?') return this.modals.toggle('help');
     switch (code) {
-      case 'Tab':
+      case 'Tab': {
+        // Tab cycles power categories only while nothing has focus (the world has
+        // the keyboard); on a button, pill or field it moves focus as usual, so the
+        // inspector, panels and dialogs stay keyboard-navigable.
+        const a = document.activeElement;
+        if (a && a !== document.body && a !== document.documentElement && a.tagName !== 'CANVAS') break;
         e.preventDefault();
         this.toolbar.cycleCategory(e.shiftKey ? -1 : 1);
         break;
+      }
       case 'KeyI': {
         const p = getPower('inspect');
         if (p) {

@@ -62,7 +62,7 @@ const STAT_DEFS = [
   { key: 'animals', label: 'Animals', icon: 'paw', tint: '#ffab94' },
   { key: 'trees', label: 'Trees', icon: 'tree', tint: '#6fdca4' },
 ];
-export const PRESET_NAMES = { continent: 'Continent', pangaea: 'Pangaea', archipelago: 'Archipelago', islands: 'Islands' };
+export const PRESET_NAMES = { continent: 'Continent', pangaea: 'Pangaea', archipelago: 'Archipelago', islands: 'Islands', earth: 'World Map' };
 
 export class TopBar {
   constructor(ui) {
@@ -303,17 +303,21 @@ export class TopBar {
       }
       const len = t.seasonYears || this.game.laws?.weatherSeasonLength || 1;
       const frac = (((t.season ?? 0) % 1) + 1) % 1;
-      const k = Math.min(len, Math.floor(frac * len) + 1);
-      const key = `${season}|${time}|${k}`;
+      // years until the next season (a world begins part-way through spring, so
+      // "7 / 12 yrs" in year 1 read as if years had passed; this reads true at any time)
+      const left = Math.max(1, Math.ceil((1 - frac) * len - 1e-6));
+      const next = ['Spring', 'Summer', 'Autumn', 'Winter'][(Math.floor(t.season ?? 0) + 1) % 4];
+      const key = `${season}|${time}|${left}`;
       if (this._dayKey !== key) {
         this._dayKey = key;
         const fixed = this.game.laws?.weatherSeasons === false;
         const epoch = !fixed && len >= 1.5;
-        this.dayEl.innerHTML = `<i class="ws-season" style="--season:${SEASON_TINT[season]}">${uiIcon(SEASON_GLYPH[season] || 'sun')}</i><span class="ws-season__name">${season}</span><span class="ws-clock__sep">·</span><span class="ws-clock__epoch">${epoch ? `${k} / ${Math.round(len)} yrs` : time}</span>`;
+        const until = left <= 1 ? `${next} next year` : `${next} in ${left} yrs`;
+        this.dayEl.innerHTML = `<i class="ws-season" style="--season:${SEASON_TINT[season]}">${uiIcon(SEASON_GLYPH[season] || 'sun')}</i><span class="ws-season__name">${season}</span><span class="ws-clock__sep">·</span><span class="ws-clock__epoch">${epoch ? until : time}</span>`;
         this.dayEl.style.setProperty('--season', SEASON_TINT[season]);
         this.timeBox.dataset.tip = fixed
           ? `Seasons are paused by World Law · ${time}`
-          : `${season}: year ${k} of ${Math.round(len)}. The Season length law sets how many years each season lasts (now ${Math.round(len)}). Time of day ${time}.`;
+          : `${season}, ${left <= 1 ? `${next} comes next year` : `${left} years until ${next}`}. The Season length law sets how many years each season lasts (now ${Math.round(len)}). Time of day ${time}.`;
       }
       this.seasonBar.style.width = `${(frac * 100).toFixed(1)}%`;
       this.seasonBar.style.background = SEASON_TINT[season];

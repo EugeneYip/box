@@ -31,7 +31,7 @@ PORT=5173 npm run dev          # http://127.0.0.1:5173/
 npm run build                  # static build in dist/
 ```
 
-URL parameters (`src/core/params.js`): `seed, size, preset, cam=x,z,dist,yawDeg[,pitchDeg],
+URL parameters (`src/core/params.js`): `seed, size, preset (continent | pangaea | archipelago | islands | earth), cam=x,z,dist,yawDeg[,pitchDeg],
 hour, ff (fast-forward seconds), speed, weather, ui=0, title=0, quality, audio=0, civs`.
 `window.game` is the live Game object; `window.__ready`, `window.__frames` and
 `window.__error` are set for tooling.
@@ -174,7 +174,17 @@ Every module is a class constructed with `game`, kept as `game.<name>`. Optional
   96 and 512). Touch devices default to 192. Every system must scale with `world.w/h` rather
   than assume 256: chunk counts, population and fauna budgets, starting villages, shadow and
   fog ranges, camera limits, and simulation sweep budgets. `game.view.worldScale` is
-  `size / 256`.
+  `size / 256` for squares.
+- **World Map and rectangular worlds**: `?preset=earth` builds the real Earth on a 2:1 world
+  centred on the Pacific (150°E), with `size` as the width: `EARTH_SIZES` Large 512×256,
+  Huge 768×384 (default; 512 on touch) and Vast 1024×512 (desktop only). Never assume
+  `w === h`: use `world.w` for x and the row stride, `world.h` for z. `worldDims(size, preset)`
+  gives the dimensions, and `game.regenerate()` reloads the page when a preset needs a different
+  shape. For a 2:1 map, `worldScale` and the camera's `maxDist` use `max(0.8·w, h)`, the square
+  with the same framing. The generator (`src/world/earth.js`, data in `src/world/data/`, mask
+  built by `tools/earth-mask.mjs`) sets `world.meta = {preset, lon0, spreadStarts, budgetArea}`:
+  starting villages spread over continents, and population and building budgets use
+  `budgetArea` (scaled from habitable land) instead of `w·h` when it is present.
 - **View level of detail**: `game.view = {dist, zoom01, far, worldScale}` is updated each frame
   before visual systems run. Renderers must shed detail as `zoom01` rises: skip small props, use
   cheaper LODs, simplify shaders, reduce post-processing and shadow resolution. Looking at a

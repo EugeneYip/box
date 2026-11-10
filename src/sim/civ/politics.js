@@ -666,7 +666,7 @@ export const politics = {
       for (const e of this.enemiesOf(a.kingdom)) {
         for (const evid of this.kingdoms[e].villages) {
           const ev = this.villages[evid];
-          if (!ev?.alive || ev.landId !== this.villages[a.home]?.landId) continue;
+          if (!ev?.alive || ev.landId !== (a.landId ?? this.villages[a.home]?.landId)) continue;
           const d = Math.hypot(ev.cx - c.x, ev.cz - c.z);
           if (d < bd) {
             bd = d;

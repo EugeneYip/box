@@ -110,8 +110,79 @@ export const brain = {
         return this._jobSoldier(u, v, d, dt);
       case 'king':
         return this._jobKing(u, v, d, dt);
+      case 'healer':
+        return this._jobHealer(u, v, d, dt);
+      case 'messenger':
+        return this._jobMessenger(u, v, d, dt);
       default:
         return this._jobIdle(u, v, d, dt);
+    }
+  },
+
+  // Medicine: the healer walks to the sick and the wounded and tends them.
+  _jobHealer(u, v, d, dt) {
+    const U = this.game.units;
+    let t = d.task;
+    if (!t || t.kind !== 'heal') {
+      if ((d.scanT = (d.scanT || 0) - dt) > 0) return this._jobIdle(u, v, d, dt);
+      d.scanT = 2;
+      let best = null,
+        bd = Infinity;
+      for (const m of v.members) {
+        if (!m.alive || m === u) continue;
+        if (!(U.hasStatus?.(m, 'sick') || U.hasStatus?.(m, 'wounded') || m.hp < m.maxHp * 0.5)) continue;
+        const dd = Math.hypot(m.x - u.x, m.z - u.z);
+        if (dd < bd && dd < 40) (bd = dd), (best = m);
+      }
+      if (!best) return this._jobIdle(u, v, d, dt);
+      t = d.task = { kind: 'heal', id: best.id, phase: 'go', t: 0 };
+    }
+    const m = U.byId.get(t.id);
+    if (!m || !m.alive) {
+      d.task = null;
+      return;
+    }
+    if (t.phase === 'go') {
+      const close = Math.hypot(m.x - u.x, m.z - u.z) < 1.2;
+      if (!close) {
+        const r = this._go(u, m.x, m.z, 0.9);
+        if (r === FAIL) d.task = null;
+        if (r !== ARRIVED) return;
+      }
+      t.phase = 'tend';
+      t.t = 2.2;
+    }
+    this._work(u, 'harvest', m.x, m.z);
+    t.t -= dt;
+    if (t.t > 0) return;
+    U.removeStatus?.(m, 'sick');
+    m.hp = Math.min(m.maxHp, m.hp + m.maxHp * 0.35);
+    this._fx('heal', m.x, m.z, 0.7);
+    this._xp(u, 1.5);
+    this._firstUse?.(this.kingdoms[v.kingdom], 'healers', { x: m.x, z: m.z });
+    d.task = null;
+    this._idle(u);
+  },
+
+  // Horsemanship: the mounted messenger rides between the realm's towns.
+  _jobMessenger(u, v, d, dt) {
+    const k = this.kingdoms[v.kingdom];
+    let t = d.task;
+    if (!t || t.kind !== 'ride') {
+      const vs = (k?.villages || []).map((id) => this.villages[id]).filter((o) => o?.alive && o.landId === v.landId);
+      if (vs.length < 2) return this._jobIdle(u, v, d, dt);
+      t = d.task = { kind: 'ride', vid: vs[(this.rng.next() * vs.length) | 0].id };
+    }
+    const dest = this.villages[t.vid];
+    if (!dest?.alive) {
+      d.task = null;
+      return;
+    }
+    const r = this._go(u, dest.cx + 1.5, dest.cz + 1.5, 2.2, true);
+    if (r === ARRIVED || r === FAIL) {
+      d.task = null;
+      // news from the crown steadies the province
+      if (r === ARRIVED && dest.id !== k?.capital) dest.loyaltyBoost = Math.max(dest.loyaltyBoost || 0, 4);
     }
   },
 
