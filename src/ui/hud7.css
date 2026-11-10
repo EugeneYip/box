@@ -199,3 +199,18 @@
 .ws-insp__title.is-vlong {
   font-size: 14px;
 }
+
+/* ---- Overview on short landscape touch screens: Back pill in the bottom-right
+   corner (the camera pad is folded away), so the map can use the full height */
+@media (max-height: 500px) and (min-width: 721px) {
+  .is-touch.is-overview .ws-overview {
+    top: auto;
+    left: auto;
+    right: calc(var(--ws-edge) + env(safe-area-inset-right, 0px));
+    bottom: calc(var(--ws-edge) + env(safe-area-inset-bottom, 0px));
+    transform: none;
+  }
+  .is-touch.is-overview .ws-overview:hover {
+    transform: translateY(-1px);
+  }
+}
