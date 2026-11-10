@@ -27,7 +27,7 @@ import { SEA_LEVEL } from '../../world/constants.js';
 
 export const ROLE_NAMES = { healer: 'Healer', messenger: 'Messenger', cavalry: 'Cavalry' };
 const RIDE_SPEED = { cavalry: 1.6, messenger: 1.75 };
-const HEAL_RANGE = 12;
+const HEAL_RANGE = 16;
 const TREAT_TIME = 3; // seconds at the bedside
 const CHARGE_GAP = 6; // seconds between cavalry charges
 const WORKER = new Set(['farmer', 'woodcutter', 'builder', 'miner']);
@@ -233,7 +233,8 @@ export function installRoles(Units) {
     const dt = Math.min(2, Math.max(0, now - h.last));
     h.last = now;
     let p = h.pid ? this.byId.get(h.pid) : null;
-    if (p && (!p.alive || !needsCare(p) || p.data.aboard != null || p.data.inside || p.combat)) {
+    // a patient whose treatment has begun is seen through to the end
+    if (p && (!p.alive || (!needsCare(p) && h.t <= 0) || p.data.aboard != null || p.data.inside || p.combat)) {
       if (p._nurse === u.id) p._nurse = 0;
       p = null;
       h.pid = 0;
@@ -251,10 +252,12 @@ export function installRoles(Units) {
     const dx = p.x - u.x,
       dz = p.z - u.z;
     const d = Math.hypot(dx, dz);
+    // the patient waits once the healer is close
+    if (d < 4 && !p.combat && p.state !== 'flee') p._nurseWait = now + 1.6;
     if (d > 0.7) {
       h.t = Math.max(0, h.t - dt * 0.5);
       if (!u.target || Math.hypot(u.target.x - p.x, u.target.z - p.z) > 0.8) this.moveTo(u, p.x - (dx / (d || 1)) * 0.45, p.z - (dz / (d || 1)) * 0.45);
-      u.state = p.data.plague || d > 5 ? 'run' : 'walk';
+      u.state = p.data.plague || d > 2 ? 'run' : 'walk';
       u.data.workAnim = null;
       return true;
     }
@@ -268,11 +271,10 @@ export function installRoles(Units) {
     if (!p.combat && p.state !== 'flee') {
       p.target = null;
       p.path = null;
-      p.busyUntil = Math.max(p.busyUntil || 0, now + 1.2);
+      p._nurseWait = now + 1.6;
     }
     p._healAt = now; // the renderer shows a soft green glint
     u._healAt = now;
-    p.hp = Math.min(p.maxHp, p.hp + dt * p.maxHp * 0.04);
     h.t += dt;
     if (h.t >= TREAT_TIME / Math.max(0.6, this.traitMod?.(u, 'work') ?? 1)) this._cure(u, p);
     return true;

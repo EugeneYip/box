@@ -1673,6 +1673,13 @@ export class Units {
     u._lastThink = now;
     // tech roles (healers, messengers, riders) act before the registered brain
     if (u.species === 'human' && this._roleThink(u, now)) return;
+    // a patient keeps still while a healer comes to them
+    if (u._nurseWait > now && !u.combat && u.state !== 'flee') {
+      u.target = null;
+      u.path = null;
+      if (u.state !== 'sleep') u.state = 'idle';
+      return;
+    }
     if (brain) {
       try {
         brain(u, elapsed, g);
