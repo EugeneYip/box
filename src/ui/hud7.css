@@ -396,3 +396,21 @@
     bottom: calc(var(--kb) + 6px);
   }
 }
+
+/* ---- tech panel: what the current study will bring */
+.ws-tech__unlocks {
+  margin: 6px 0 4px;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+}
+.ws-tech__unlocks li {
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  color: var(--ws-ink-2);
+  background: rgba(235, 201, 119, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(235, 201, 119, 0.22);
+}

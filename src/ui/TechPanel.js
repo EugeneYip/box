@@ -68,6 +68,8 @@ export function techPanel(ui, kingdomId) {
         el('small', { text: g.laws?.civTechnology === false ? 'Research is halted by World Law' : res ? 'Now studying' : 'Not studying anything' }),
         el('b', { text: res ? res.name : '—' }),
         res?.def?.description ? el('p', { text: res.def.description }) : null,
+        // what it will add to the world, in plain words (tech.js `unlocks`)
+        Array.isArray(res?.def?.unlocks) && res.def.unlocks.length ? el('ul', { class: 'ws-tech__unlocks' }, ...res.def.unlocks.slice(0, 4).map((u) => el('li', { text: u }))) : null,
         res && res.pct != null ? el('span', { class: 'ws-meter' }, el('i', { style: `width:${(res.pct * 100).toFixed(1)}%` })) : null,
       ),
       res && res.pct != null ? el('span', { class: 'ws-tech__pct', text: `${Math.round(res.pct * 100)}%` }) : null,
@@ -87,7 +89,7 @@ export function techPanel(ui, kingdomId) {
         col.append(
           el(
             'div',
-            { class: 'ws-techcard' + (got ? ' is-learned' : now ? ' is-now' : ready ? ' is-ready' : ' is-locked'), 'data-tip': [t.description, got ? 'Learned' : now ? 'Being studied now' : ready ? 'Ready to study' : reqs.length ? `Needs ${reqs.join(', ')}` : ''].filter(Boolean).join(' · ') },
+            { class: 'ws-techcard' + (got ? ' is-learned' : now ? ' is-now' : ready ? ' is-ready' : ' is-locked'), 'data-tip': [t.description, Array.isArray(t.unlocks) && t.unlocks.length ? `${got ? 'Brought' : 'Brings'}: ${t.unlocks.join('; ')}` : '', got ? 'Learned' : now ? 'Being studied now' : ready ? 'Ready to study' : reqs.length ? `Needs ${reqs.join(', ')}` : ''].filter(Boolean).join(' · ') },
             el('span', { class: 'ws-techcard__state', html: uiIcon(got ? 'good' : now ? 'sparkle' : ready ? 'chev-right' : 'shield') }),
             el('span', { class: 'ws-techcard__txt' }, el('b', { text: t.name || prettyId(t.id) }), reqs.length ? el('small', { text: `Needs ${reqs.join(', ')}` }) : t.description ? el('small', { text: t.description }) : null),
             now && res.pct != null ? el('span', { class: 'ws-meter' }, el('i', { style: `width:${(res.pct * 100).toFixed(1)}%` })) : null,
