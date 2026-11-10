@@ -292,12 +292,12 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
     }
   // Antarctica's far side: on a plate carree the pole is the whole bottom
   // edge, so the ice sheet is given a ragged southern coast (bays and capes
-  // around 82-88°S) with open sea between it and the border, instead of a
+  // around 81-86°S) with open sea between it and the border, instead of a
   // white slab cut straight by the map edge.
   const southCut = new Float32Array(W);
   for (let x = 0; x < W; x++) {
     const u = x / tpd;
-    const cut = -85.4 + fbm(nWarp, u / 16 + 50, 3.7, 3) * 2.6 + nWarp(u / 3.5 - 20, 8.1) * 0.8;
+    const cut = -83.2 + fbm(nWarp, u / 16 + 50, 3.7, 3) * 2.4 + nWarp(u / 3.5 - 20, 8.1) * 0.8;
     southCut[x] = cut;
     for (let y = H - 1; y >= 0 && latY[y] < cut; y--) land[y * W + x] = 0;
   }
@@ -688,8 +688,10 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
   // pale band beyond the map
   for (let y = 0; y < H; y++)
     for (let x = 0; x < W; x++) {
-      if (!inRing(x, y)) continue;
       const i = y * W + x;
+      // open sea below Antarctica's far coast: a short shelf, then deep water
+      if (!land[i] && latY[y] < southCut[x] - 0.2) hgt[i] = Math.min(hgt[i], -Math.min(6, 1.0 + 1.3 * dSea[i] / Math.max(0.7, scale768)));
+      if (!inRing(x, y)) continue;
       const k = Math.min(1, edgeDist(x, y) / ringY); // 0 at the border
       hgt[i] = Math.min(hgt[i], -(6.2 - 2.4 * k) + fbm(nBank, x / tpd / 3, y / tpd / 3, 2) * 0.5);
     }
@@ -742,7 +744,8 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
   // from the (edge-clamped) temperature, so a frozen border would spread
   // ice beyond the map in winter
   for (let y = 0; y < H; y++)
-    for (let x = 0; x < W; x++) if (inRing(x, y)) temp[y * W + x] = Math.max(temp[y * W + x], 0.42);
+    for (let x = 0; x < W; x++)
+      if (inRing(x, y) || (latY[y] < southCut[x] - 0.4 && hgt[y * W + x] < SEA_LEVEL)) temp[y * W + x] = Math.max(temp[y * W + x], 0.42);
   // rivers and lakes water their banks (green valleys through dry land)
   for (let i = 0; i < N; i++) {
     if (hgt[i] < SEA_LEVEL) continue;
@@ -783,7 +786,7 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
           // Arctic pack: a ragged band with open water before the border;
           // around Antarctica: ice shelves and fast ice hugging the coast
           const pk = nWarp(x / tpd / 9 + 70, 2.3) * 2.6 + nWarp(x / tpd / 2.6 - 40, 5.5) * 0.9;
-          if (lat > 78.5 + pk + bn && lat < 86.6 + pk * 0.45 - bn * 0.6) ice = true;
+          if (lat > 78.5 + pk + bn && lat < 84.6 + pk * 0.6 - bn * 0.6) ice = true;
           else if (lat > 70 && ds < 2.2 + bn) ice = true;
           else if (lat < -60 && ds < 2.4 + bn * 1.2 + Math.max(0, pk) * 0.9) ice = true;
           else if (lat > southCut[x] + 1.4) {
@@ -791,7 +794,8 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
             const lo = lonX[x];
             if (((lo > 158 || lo < -146) && lat < -77.8 + bn) || (lo > -82 && lo < -28 && lat < -74.8 + bn)) ice = true;
           }
-          // the pack ice stops short of the border (open water beyond it)
+          // open sea south of Antarctica's far coast, and short of the border
+          if (lat < southCut[x] - 0.2) ice = false;
           if (Math.min(x, W - 1 - x) < ringX + 1 + bn || Math.min(y, H - 1 - y) < ringY + 2 + bn) ice = false;
         }
         if (ice) type[i] = TILE.ICE;
@@ -806,7 +810,8 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
       const rockLine = snowLine - 2.5 + bn * 0.5;
       const dOcT = dOcean[i]; // tiles to the open sea
       let tt;
-      if (icecap[i] || h > snowLine || t < 0.11 + bn * 0.02) tt = TILE.SNOW;
+      if (icecap[i] && dLand[i] >= 1 && dLand[i] < 9 * scale768 && ridged(nRidge, x / tpd / 1.3 + 7, y / tpd / 1.3 - 3) > 0.86) tt = TILE.ROCK; // nunataks
+      else if (icecap[i] || h > snowLine || t < 0.11 + bn * 0.02) tt = TILE.SNOW;
       else if ((h > rockLine && slope > 0.6 + bn * 0.2) || slope > 2.2 + bn * 0.4) tt = TILE.ROCK;
       else if (h > rockLine) tt = t > 0.17 ? TILE.TUNDRA : TILE.SNOW; // alpine meadow, high plateaus
       else if (dOcT <= beachW + bn * 0.6 && h < 0.9 + bn * 0.3 && slope < 0.7 && t > 0.3) tt = TILE.SAND;
