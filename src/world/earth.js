@@ -132,7 +132,7 @@ function table(t, x) {
 const TEMP_LAT = [[0, 0.95], [10, 0.93], [20, 0.86], [25, 0.8], [30, 0.72], [35, 0.64], [40, 0.57], [45, 0.5], [50, 0.43], [55, 0.37], [60, 0.31], [65, 0.245], [70, 0.18], [75, 0.12], [80, 0.07], [90, 0]];
 // Annual moisture by distance from the thermal equator (about 4°N): the wet
 // tropics, the dry subtropical belt, the wet westerlies, the dry poles.
-const MOIST_LAT = [[0, 0.82], [6, 0.74], [12, 0.52], [18, 0.33], [24, 0.22], [30, 0.3], [36, 0.45], [44, 0.55], [52, 0.6], [62, 0.55], [72, 0.42], [90, 0.3]];
+const MOIST_LAT = [[0, 0.8], [4, 0.72], [8, 0.56], [12, 0.43], [18, 0.29], [24, 0.21], [30, 0.3], [36, 0.45], [44, 0.55], [52, 0.6], [62, 0.55], [72, 0.42], [90, 0.3]];
 
 export function generateEarth(world, seed = 1, options = {}, H_) {
   const W = world.w,
