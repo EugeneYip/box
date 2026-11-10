@@ -290,6 +290,17 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
         }
       if (max && !nearLand) land[i] = 1;
     }
+  // Antarctica's far side: on a plate carree the pole is the whole bottom
+  // edge, so the ice sheet is given a ragged southern coast (bays and capes
+  // around 82-88°S) with open sea between it and the border, instead of a
+  // white slab cut straight by the map edge.
+  const southCut = new Float32Array(W);
+  for (let x = 0; x < W; x++) {
+    const u = x / tpd;
+    const cut = -85.4 + fbm(nWarp, u / 16 + 50, 3.7, 3) * 2.6 + nWarp(u / 3.5 - 20, 8.1) * 0.8;
+    southCut[x] = cut;
+    for (let y = H - 1; y >= 0 && latY[y] < cut; y--) land[y * W + x] = 0;
+  }
   // clean borders: a thin ring of open sea all round. The shaders and the
   // terrain skirt clamp edge tiles outward, so polar ice or Antarctica's snow
   // on the edge would continue as white bands beyond the map. (This splits
@@ -476,11 +487,15 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
       if (!land[i]) continue;
       const dT = dLand[i] / scale768;
       let dome = 0;
-      if (lat <= -60) dome = 1.3 + 10.5 * (1 - Math.exp(-dT / 9));
+      if (lat <= -60) dome = 1.3 + 9.8 * (1 - Math.exp(-dT / 7.5));
       else if (inPoly(GREENLAND, lonX[x], lat)) dome = 1.2 + 9.8 * (1 - Math.exp(-dT / 5));
       if (!dome) continue;
       icecap[i] = 1;
-      dome += fbm(nRough, U(i) / 3, V(i) / 3, 3) * 0.6 * smoothstep(0, 6, dT);
+      // undulating ice: broad swells and ridged drainage divides, flattening
+      // toward the coast where outlet glaciers run down to the sea
+      const sw = fbm(nRough, U(i) / 3, V(i) / 3, 3);
+      const rd = ridged(nRidge, U(i) / 2.2 + 31, V(i) / 2.2 - 17);
+      dome += (sw * 0.9 + (rd - 0.45) * 1.1) * smoothstep(1, 7, dT);
       hgt[i] = smax(hgt[i], dome, 1.2);
     }
   }
@@ -765,8 +780,17 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
         let ice = false;
         if (sea[i] && !riverMask[i]) {
           const ds = dSea[i] / scale768;
-          if (lat > 76.5 + bn * 1.5 || lat < -71.5 + bn * 1.5) ice = true;
-          else if ((lat > 70 || lat < -65) && ds < 2.2 + bn) ice = true;
+          // Arctic pack: a ragged band with open water before the border;
+          // around Antarctica: ice shelves and fast ice hugging the coast
+          const pk = nWarp(x / tpd / 9 + 70, 2.3) * 2.6 + nWarp(x / tpd / 2.6 - 40, 5.5) * 0.9;
+          if (lat > 78.5 + pk + bn && lat < 86.6 + pk * 0.45 - bn * 0.6) ice = true;
+          else if (lat > 70 && ds < 2.2 + bn) ice = true;
+          else if (lat < -60 && ds < 2.4 + bn * 1.2 + Math.max(0, pk) * 0.9) ice = true;
+          else if (lat > southCut[x] + 1.4) {
+            // the Ross and Filchner-Ronne ice shelves (water in the land mask)
+            const lo = lonX[x];
+            if (((lo > 158 || lo < -146) && lat < -77.8 + bn) || (lo > -82 && lo < -28 && lat < -74.8 + bn)) ice = true;
+          }
           // the pack ice stops short of the border (open water beyond it)
           if (Math.min(x, W - 1 - x) < ringX + 1 + bn || Math.min(y, H - 1 - y) < ringY + 2 + bn) ice = false;
         }
