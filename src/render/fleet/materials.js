@@ -121,9 +121,11 @@ float wsHash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p
   float burn = vState.y;
   if (burn > 0.001) {
     float t = uTime;
-    float n1 = wsHash(floor(vLocal * 9.0 + vec3(0.0, -t * 2.4, 0.0)));
+    // flames lick up from the hull: low, warm, flickering (no blocky noise)
+    float low = 1.0 - smoothstep(0.1, 1.2, vLocal.y);
+    float n1 = 0.5 + 0.5 * sin(vLocal.x * 11.0 + t * 5.0) * sin(vLocal.z * 13.0 - t * 4.0 + vLocal.y * 6.0);
     float tongue = smoothstep(0.5, 0.95, n1);
-    totalEmissiveRadiance += burn * vec3(1.0, 0.38, 0.08) * (0.2 + 2.0 * tongue) * (0.7 + 0.3 * sin(t * 12.0 + vLocal.z * 9.0));
+    totalEmissiveRadiance += burn * low * vec3(1.0, 0.4, 0.1) * (0.15 + 1.1 * tongue) * (0.75 + 0.25 * sin(t * 12.0 + vLocal.z * 9.0));
   }
 }`,
       );
@@ -188,17 +190,17 @@ void main() {
   if (bx > 0.0) {
     float arm = bx * 0.55 + beam * 0.22;
     float w = 0.03 + bx * 0.035;
-    float br = smoothstep(w, 0.0, abs(az - arm)) * exp(-bx * 2.6);
+    float br = smoothstep(w, 0.0, abs(az - arm)) * exp(-bx * 3.4);
     if (br > 0.01) foam += br * (0.3 + 0.55 * spd) * (0.8 + 0.2 * vnoise(vec2(bx * 9.0 - t * 2.0, z * 9.0)));
   }
   // Kelvin wake: a V from the stern with soft transverse ripples
   float sx = -0.5 - x;
   if (sx > 0.0) {
     float arm = sx * 0.34 + beam * 0.28;
-    float w = 0.035 + sx * 0.04;
-    float k = smoothstep(w, 0.0, abs(az - arm)) * exp(-sx * 1.25);
+    float w = 0.05 + sx * 0.07;
+    float k = smoothstep(w, 0.0, abs(az - arm)) * exp(-sx * 2.0);
     float rip = 0.78 + 0.22 * sin(sx * 22.0 - t * 4.0 + az * 6.0);
-    foam += k * rip * spd * 0.65;
+    foam += k * rip * spd * 0.42;
     // churned water straight behind
     float cw = beam * 0.32 + sx * 0.1;
     float c = smoothstep(cw, cw * 0.15, az) * exp(-sx * 1.5);
