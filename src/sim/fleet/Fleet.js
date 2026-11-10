@@ -499,6 +499,13 @@ export class Fleet {
     }
     const T = this._timers;
     this._roadBudget = 1;
+    // per-tick shared state (night, storm, who sails by the stars)
+    this._nightNow = this.isNight() && g.settings?.dayNight !== false;
+    this._stormNow = this.storm();
+    const ks = g.civ.kingdoms;
+    const A = this._astro || (this._astro = []);
+    A.length = ks.length;
+    for (let i = 0; i < ks.length; i++) A[i] = !!ks[i]?.techs?.has?.('astronomy');
     this._buildHash();
     // movement and per-vehicle logic
     for (let i = 0; i < this.list.length; i++) {
@@ -625,7 +632,7 @@ export class Fleet {
   _seaTick(v, step) {
     const def = v.def;
     const a = v.anim;
-    const night = this.isNight() && !this.hasTech(v.kingdom, 'astronomy') && this.game.settings?.dayNight !== false;
+    const night = this._nightNow && !this._astro?.[v.kingdom];
     if (v.state === 'sinking') {
       v.sink = Math.min(1, v.sink + step / 6);
       v.speed *= Math.exp(-step * 1.5);
@@ -648,6 +655,14 @@ export class Fleet {
       } else return this.lose(v, 'aground');
     }
     this._missionTick(v, step, night);
+    if (!v.alive) return;
+    if (v.state === 'moored') {
+      // at rest: sails furled, oars shipped, nothing to steer
+      a.furl += (1 - a.furl) * Math.min(1, step * 1.2);
+      a.oar *= Math.exp(-step * 2);
+      a.fill = 0;
+      return;
+    }
     if (!v.alive) return;
     let target = 0;
     if (v.state === 'sail' && v.path) {
@@ -676,7 +691,7 @@ export class Fleet {
         if (dd < 2.5 && v.pi >= v.path.length - 2) target *= 0.35 + dd * 0.26;
         if (v.chase) target *= 1.12;
         if (night) target = 0;
-        const st = this.storm();
+        const st = this._stormNow;
         if (st > 0.4) target *= 1 - st * 0.25;
       }
     } else if (v.state === 'fish') {
