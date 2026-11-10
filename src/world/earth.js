@@ -298,6 +298,7 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
   const ringX = 2,
     ringY = Math.max(2, Math.round(3 * scale768));
   const edgeDist = (x, y) => Math.min(x, W - 1 - x, y, H - 1 - y); // tiles to the border
+  const inRing = (x, y) => x < ringX || x >= W - ringX || y < ringY || y >= H - ringY;
   for (let y = 0; y < H; y++)
     for (let x = 0; x < W; x++) if (x < ringX || x >= W - ringX || y < ringY || y >= H - ringY) land[y * W + x] = 0;
   _t('land');
@@ -667,6 +668,16 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
   }
   _t('rivers');
 
+  // the border ring is deep open sea: the water shader and the terrain skirt
+  // extend the edge tiles' depth outward, so shallows there would show as a
+  // pale band beyond the map
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++) {
+      if (!inRing(x, y)) continue;
+      const i = y * W + x;
+      const k = Math.min(1, edgeDist(x, y) / ringY); // 0 at the border
+      hgt[i] = Math.min(hgt[i], -(6.2 - 2.4 * k) + fbm(nBank, x / tpd / 3, y / tpd / 3, 2) * 0.5);
+    }
   // ----------------------------------------------------------------- 6. climate
   const wet = new Uint8Array(N);
   for (let i = 0; i < N; i++) wet[i] = hgt[i] < SEA_LEVEL ? 1 : 0;
@@ -712,6 +723,11 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
       if (k > 0) moist[i] += (f.m - moist[i]) * k;
     });
   }
+  // ...and never cold enough to freeze: the seasonal sea-ice shelf is drawn
+  // from the (edge-clamped) temperature, so a frozen border would spread
+  // ice beyond the map in winter
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++) if (inRing(x, y)) temp[y * W + x] = Math.max(temp[y * W + x], 0.42);
   // rivers and lakes water their banks (green valleys through dry land)
   for (let i = 0; i < N; i++) {
     if (hgt[i] < SEA_LEVEL) continue;
