@@ -288,6 +288,7 @@ export class Inspector {
   close() {
     if (!this.open) return;
     this.editing = null;
+    this.ui.popover?.hide?.();
     this.el.classList.remove('is-open');
     this.ui.root.classList.remove('has-insp');
     const rig = this.game.cameraRig;

@@ -287,6 +287,7 @@ export class Modals {
   close() {
     if (!this.current) return;
     const card = this.card;
+    this.ui.popover?.hide?.(); // no tip outlives its dialog
     this.current = null;
     this.card = null;
     this.layer.classList.remove('is-open');
