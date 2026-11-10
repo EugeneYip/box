@@ -602,6 +602,8 @@ export class UnitRenderer {
       if (hab === 'air') y = u.py + (u.y - u.py) * alpha;
       else if (hab === 'water') y = SEA_LEVEL;
       else if (u.swimming) y = SEA_LEVEL - (md.id === 'human' ? 0.34 : md.height * 0.5) * scale;
+      else if (u.onDeck) y = Math.max(ground, SEA_LEVEL + 0.1);
+      else if (u.wading) y = Math.max(ground, SEA_LEVEL - 0.18); // knee-deep at most
       else y = ground;
       this._sph.center.set(ix, y + md.height * 0.5 * scale, iz);
       this._sph.radius = md.radius * scale + 0.3;
