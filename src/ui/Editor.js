@@ -339,8 +339,10 @@ export class Editor {
     const okPol = fn(civ, 'setKingdomPolicy');
     const pol = () => safe(() => civ.kingdomPolicies?.(id), null) || {};
     const setPol = (key, v, prev, label) => {
+      // Undo restores the realm's own setting, or "follow the world law" (null) when it had none
+      const raw = k.policy && key in k.policy ? k.policy[key] : null;
       if (!safe(() => civ.setKingdomPolicy(id, key, v), false)) return false;
-      this.applied(label, () => civ.setKingdomPolicy(id, key, prev));
+      this.applied(label, () => civ.setKingdomPolicy(id, key, raw));
       return true;
     };
     box.append(
@@ -404,8 +406,9 @@ export class Editor {
     const okP = fn(civ, 'setVillagePolicy');
     const pol = () => safe(() => civ.villagePolicies?.(id), null) || {};
     const setPol = (key, val, prev, label) => {
+      const raw = v.policy && key in v.policy ? v.policy[key] : null;
       if (!safe(() => civ.setVillagePolicy(id, key, val), false)) return false;
-      this.applied(label, () => civ.setVillagePolicy(id, key, prev));
+      this.applied(label, () => civ.setVillagePolicy(id, key, raw));
       return true;
     };
     box.append(
