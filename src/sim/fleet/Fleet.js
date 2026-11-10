@@ -175,13 +175,33 @@ export class Fleet {
   // Harbour sites of a realm: every finished jetty (docks), with the berth
   // where ships moor (the water at the end of its pier).
   harbours(kid) {
-    const out = [];
-    for (const b of this.game.civ?.buildings || []) {
-      if (!b.alive || b.constructing || b.type !== 'docks' || (kid != null && b.kingdom !== kid)) continue;
-      const h = this.harbourInfo(b.id);
-      if (h) out.push(h);
+    const now = this.game.time.total;
+    const civ = this.game.civ;
+    let C = this._hc;
+    if (!C || now - C.t > 1 || C.n !== (civ?.buildings?.length ?? 0) || C.v !== civ?.version || C.nav !== this.nav.version) {
+      C = this._hc = { t: now, n: civ?.buildings?.length ?? 0, v: civ?.version, nav: this.nav.version, all: [], by: new Map() };
+      for (const b of civ?.buildings || []) {
+        if (!b.alive || b.constructing || b.type !== 'docks') continue;
+        const h = this.harbourInfo(b.id);
+        if (!h) continue;
+        C.all.push(h);
+        let L = C.by.get(h.kingdom);
+        if (!L) C.by.set(h.kingdom, (L = []));
+        L.push(h);
+      }
     }
-    return out;
+    return kid == null ? C.all.slice() : (C.by.get(kid) || []).slice();
+  }
+  // Can a ship sail between two harbours (or a harbour and a point)?
+  canReach(from, to) {
+    const a = this.resolveHarbour(from);
+    if (!a) return false;
+    if (to && typeof to === 'object' && to.x != null) {
+      const L = this.nav.isWater(to.x, to.z) ? { x: to.x, z: to.z } : this.nav.landingNear(to.x, to.z, 14, a.water);
+      return !!L && this.nav.comp(L.x, L.z) === a.water;
+    }
+    const b = this.resolveHarbour(to);
+    return !!b && b.water === a.water;
   }
   harbourInfo(bid) {
     const civ = this.game.civ;
@@ -291,7 +311,7 @@ export class Fleet {
       case 'transport':
         return 2;
       case 'galley':
-        return Math.min(6, 2 + (villages >> 1));
+        return Math.min(4, 1 + (villages >> 2) + (this.hasTech(kid, 'navigation') ? 1 : 0));
       case 'explorer':
         return 1;
       case 'carrack':
@@ -702,8 +722,10 @@ export class Fleet {
       else if (v.def.siege) this.history(`${Who} loses ${nm} before the walls`, 'war', pos);
       return;
     }
-    if (cause === 'battle' && by) {
-      this.note(`⚓ ${nm[0].toUpperCase() + nm.slice(1)} of ${who} is sunk by galleys of ${this.kname(by.kingdom)}`, 'war', pos, 'sunk' + v.kingdom + '-' + by.kingdom, 40);
+    if (cause === 'battle' && by && v.kind === 'fishing') {
+      this.history(`${Who}'s fishing boat is sunk by galleys of ${this.kname(by.kingdom)}`, 'war', pos);
+    } else if (cause === 'battle' && by) {
+      this.note(`⚓ ${nm[0].toUpperCase() + nm.slice(1)} of ${who} is sunk by galleys of ${this.kname(by.kingdom)}`, 'war', pos, 'sunk' + v.kingdom + '-' + by.kingdom, 150);
     } else if (cause === 'storm' || cause === 'lightning') {
       this.note(`🌊 ${nm[0].toUpperCase() + nm.slice(1)} of ${who} founders in the storm`, 'disaster', pos, 'stormsink' + v.kingdom, 60);
     } else if (cause === 'serpent' || cause === 'monster') {

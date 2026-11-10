@@ -234,9 +234,12 @@ export const missions = {
         while (d < -Math.PI) d += Math.PI * 2;
         v.heading += d * Math.min(1, step * 0.35);
       }
+      // the rest once a second is plenty for a ship at rest
+      if ((v._mt = (v._mt || 0) + step) < 1) return;
+      v._mt = 0;
       if (v.layup && v.idleT > 4) this.remove(v);
       else if (v.idleT > 240 && v.kind !== 'fishing' && this.count(v.kingdom, v.kind) > 1) this.remove(v);
-      else if ((v.idleT | 0) % 5 === 0 && v.harbour != null && !this.harbourInfo(v.harbour)) this.remove(v);
+      else if (v.harbour != null && !this.harbourInfo(v.harbour)) this.remove(v);
       return;
     }
     if (v.state === 'fish') {
@@ -458,7 +461,9 @@ export const missions = {
       const want = 1 + (h.level >= 2 || seafaring ? 1 : 0);
       let have = 0;
       for (const v of this.list) if (v.alive && v.kind === 'fishing' && v.harbour === h.id) have++;
-      if (have < want && this.seaCount() < this.budget.sea && this.count(kid, 'fishing') < this.cap(kid, 'fishing')) {
+      const now = this.game.time.total;
+      if (have < want && !this.blockaded(h) && now - (this._boatT?.get(h.id) ?? -999) > 45 && this.seaCount() < this.budget.sea && this.count(kid, 'fishing') < this.cap(kid, 'fishing')) {
+        (this._boatT || (this._boatT = new Map())).set(h.id, now);
         const spot = this._mooringSpot(h, null, KINDS.fishing.length);
         this.spawn('fishing', kid, spot.x, spot.z, { home: h.village, harbour: h.id, heading: Math.atan2(h.dirZ, h.dirX) });
       }
@@ -704,7 +709,7 @@ export const missions = {
     const t = this._kt(kid);
     const now = this.game.time.total;
     if (!enemies.length) return;
-    if (now - t.galley < 8) return;
+    if (now - t.galley < 20) return;
     t.galley = now;
     if (this.count(kid, 'galley') >= this.cap(kid, 'galley') || this.seaCount() >= this.budget.sea) return;
     // the harbour nearest an enemy port on the same water

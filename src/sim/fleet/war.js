@@ -42,12 +42,12 @@ export const war = {
   _galley(v, enemies, dt, now) {
     const nav = this.nav;
     let tgt = v.target != null ? this.byId.get(v.target) : null;
-    if (tgt && (!tgt.alive || tgt.state === 'sinking' || !enemies.includes(tgt.kingdom) || Math.hypot(tgt.x - v.x, tgt.z - v.z) > 40)) tgt = null;
+    if (tgt && (!tgt.alive || tgt.state === 'sinking' || tgt.state === 'moored' || !enemies.includes(tgt.kingdom) || Math.hypot(tgt.x - v.x, tgt.z - v.z) > 40)) tgt = null;
     if (!tgt) {
       // nearest enemy ship (warships and transports first)
       let bs = Infinity;
       this.near(v.x, v.z, 30, (o, d) => {
-        if (o.cls !== 'sea' || o.state === 'sinking' || !enemies.includes(o.kingdom)) return;
+        if (o.cls !== 'sea' || o.state === 'sinking' || o.state === 'moored' || !enemies.includes(o.kingdom)) return;
         const sc = d - (o.kind === 'galley' ? 6 : o.kind === 'transport' ? 4 : 0);
         if (sc < bs) {
           bs = sc;
@@ -65,13 +65,14 @@ export const war = {
       const reach = 1.6 + (v.def.size + tgt.def.size) * 0.5;
       if (d <= reach) {
         this._fight(v, tgt, dt);
+        if (!v.alive || v.state === 'sinking') return;
         v.state = 'patrol';
         v.path = null;
         // turn alongside
         const want = Math.atan2(tgt.z - v.z, tgt.x - v.x) + Math.PI / 2;
         v.heading += Math.max(-0.5, Math.min(0.5, ((want - v.heading + Math.PI * 3) % (Math.PI * 2)) - Math.PI)) * dt;
-      } else if ((m.repath = (m.repath || 0) - dt) <= 0 || v.state !== 'sail') {
-        m.repath = 2;
+      } else if ((m.repath = (m.repath || 0) - dt) <= 0) {
+        m.repath = 4;
         // close in, straight when the water allows
         const ax = tgt.x - Math.cos(tgt.heading) * 0.5,
           az = tgt.z - Math.sin(tgt.heading) * 0.5;

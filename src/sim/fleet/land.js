@@ -6,7 +6,7 @@ import { USE } from '../civ/util.js';
 // Land vehicles (mixed into Fleet): ox carts that pool a realm's goods along
 // its roads (The Wheel), trade caravans between realms at peace (Banking),
 // and battering rams and catapults that roll with armies (Siegecraft).
-const ROAD_NODES = 9000;
+const ROAD_NODES = 2500; // across country (the laid roads are searched first, cheaply)
 
 export const land = {
   // ------------------------------------------------------------------ API
@@ -44,7 +44,7 @@ export const land = {
       b = civ?.villages?.[o.to];
     if (!a?.alive || !b?.alive || a === b) return null;
     if (this.landCount() >= this.budget.land) return null;
-    const path = this._roadPath(a, b, 16000);
+    const path = this._roadPath(a, b, 5000);
     if (!path) return null;
     const kid = o.kingdom ?? a.kingdom;
     const v = this.spawn('caravan', kid, path[0], path[1], { home: a.id, state: 'move', heading: Math.atan2(path[3] - path[1], path[2] - path[0]) });
@@ -75,7 +75,7 @@ export const land = {
     const key = a.id + '>' + b.id;
     const now = this.game.time.total;
     const c = this._rp.get(key);
-    if (c && now - c.t < 120 && (c.fv === civ.fieldVersion || now - c.t < 20)) return c.path;
+    if (c && (c.path ? now - c.t < 120 && (c.fv === civ.fieldVersion || now - c.t < 20) : now - c.t < 240)) return c.path;
     // the way back is the way there, reversed
     const rc = this._rp.get(b.id + '>' + a.id);
     if (rc && rc.path && now - rc.t < 120) return reversePath(rc.path);
@@ -101,7 +101,7 @@ export const land = {
       const last = p[p.length - 1];
       if (Math.hypot((last % w.w) - gx, ((last / w.w) | 0) - gy) > 3) p = null;
     }
-    if (!p) p = civPath(w, sx, sy, gx, gy, base, maxNodes, 0.65);
+    if (!p && Math.hypot(gx - sx, gy - sy) < maxNodes / 60) p = civPath(w, sx, sy, gx, gy, base, maxNodes, 0.75);
     let path = null;
     if (p && p.length > 3) {
       const last = p[p.length - 1];
@@ -315,7 +315,7 @@ export const land = {
       v.cargo = { gold: 10 };
       m.phase = 'home';
       const back = civ.villages[m.from];
-      const p = back?.alive && to ? this._roadPath(to, back, 16000) : null;
+      const p = back?.alive && to ? this._roadPath(to, back, 5000) : null;
       if (p) {
         this.setPath(v, p);
         v.state = 'rest';
