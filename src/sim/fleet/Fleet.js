@@ -91,6 +91,8 @@ export class Fleet {
   }
 
   reset() {
+    // nobody is left aboard a ship that no longer exists
+    for (const v of this.list) if (v.alive && v.cls === 'sea') this.disembarkAll(v);
     this.list.length = 0;
     this.byId.clear();
     this.debris.length = 0;

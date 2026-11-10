@@ -189,7 +189,7 @@ void main() {
     float arm = bx * 0.55 + beam * 0.22;
     float w = 0.03 + bx * 0.035;
     float br = smoothstep(w, 0.0, abs(az - arm)) * exp(-bx * 2.6);
-    foam += br * (0.3 + 0.55 * spd) * (0.8 + 0.2 * vnoise(vec2(bx * 9.0 - t * 2.0, z * 9.0)));
+    if (br > 0.01) foam += br * (0.3 + 0.55 * spd) * (0.8 + 0.2 * vnoise(vec2(bx * 9.0 - t * 2.0, z * 9.0)));
   }
   // Kelvin wake: a V from the stern with soft transverse ripples
   float sx = -0.5 - x;
@@ -202,7 +202,7 @@ void main() {
     // churned water straight behind
     float cw = beam * 0.32 + sx * 0.1;
     float c = smoothstep(cw, cw * 0.15, az) * exp(-sx * 1.5);
-    c *= 0.4 + 0.6 * vnoise(vec2(sx * 7.0 - t * 3.0, z * 12.0));
+    if (c > 0.01) c *= 0.4 + 0.6 * vnoise(vec2(sx * 7.0 - t * 3.0, z * 12.0));
     foam += c * spd * 0.6;
   }
   // oar splashes along the sides
@@ -210,7 +210,7 @@ void main() {
     float sp = smoothstep(0.08, 0.0, abs(az - beam * 0.95)) * (0.5 + 0.5 * sin(x * 50.0 + t * 6.0)) * (0.5 + 0.5 * sin(t * 3.2));
     foam += sp * vW.w * 0.5;
   }
-  foam = clamp(foam, 0.0, 1.0);
+  foam = clamp(foam, 0.0, 1.0) * smoothstep(1.05, 0.8, az) * smoothstep(-2.8, -2.2, x);
   if (foam < 0.01) discard;
   vec3 col = vec3(0.92, 0.96, 1.0) * mix(0.28, 1.0, uLight);
   gl_FragColor = vec4(col, foam * 0.72);

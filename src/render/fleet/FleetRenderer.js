@@ -62,7 +62,7 @@ export class FleetRenderer {
     this.flags.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(32 * 3), 3);
     this._flagAttr(32);
     // wakes
-    const wg = new THREE.PlaneGeometry(3.9, 2.8, 1, 1).rotateX(-Math.PI / 2).translate(-1.25, 0, 0);
+    const wg = new THREE.PlaneGeometry(3.45, 2.1, 1, 1).rotateX(-Math.PI / 2).translate(-1.07, 0, 0); // x -2.8 .. 0.65 ship lengths
     this.wakeMat = createWakeMaterial(this.uniforms);
     this.wakes = this._inst(wg, this.wakeMat, 32);
     this.wakes.renderOrder = -4; // just after the water sheet
