@@ -322,8 +322,8 @@ export class FleetRenderer {
           const c = Math.cos(h),
             s = Math.sin(h);
           const hl = def.length * 0.35;
-          const pitch = Math.atan2(W.heightAt(x + c * hl, z + s * hl) - W.heightAt(x - c * hl, z - s * hl), hl * 2);
-          const roll = -Math.atan2(W.heightAt(x - s * 0.3, z + c * 0.3) - W.heightAt(x + s * 0.3, z - c * 0.3), 0.6) * 0.6;
+          const pitch = Math.max(-0.35, Math.min(0.35, Math.atan2(W.heightAt(x + c * hl, z + s * hl) - W.heightAt(x - c * hl, z - s * hl), hl * 2)));
+          const roll = Math.max(-0.25, Math.min(0.25, -Math.atan2(W.heightAt(x - s * 0.3, z + c * 0.3) - W.heightAt(x + s * 0.3, z - c * 0.3), 0.6) * 0.6));
           const put = (px, pz, ph, variant, py) => {
             this._e.set(roll, -ph, pitch, 'YZX');
             this._q.setFromEuler(this._e);
