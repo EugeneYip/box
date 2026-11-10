@@ -414,3 +414,6 @@
   background: rgba(235, 201, 119, 0.1);
   box-shadow: inset 0 0 0 1px rgba(235, 201, 119, 0.22);
 }
+.is-touch .ws-swatches {
+  grid-template-columns: repeat(6, minmax(44px, 1fr));
+}

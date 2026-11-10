@@ -217,7 +217,9 @@ export class Editor {
       this.applied(`Colours changed${k.colorName ? ` to ${k.colorName}` : ''}`, () => civ.setKingdomColor(id, prev));
     };
     const sugg = safe(() => civ.kingdomColorSuggestions?.(id), null) || [];
-    for (const hex of [k.color, ...sugg.filter((h) => h !== k.color)].slice(0, 13))
+    // 13 + the picker = two rows of 7; on touch (44 px swatches) 11 + the picker = two rows of 6
+    const nSw = this.ui.root?.classList.contains('is-touch') ? 11 : 13;
+    for (const hex of [k.color, ...sugg.filter((h) => h !== k.color)].slice(0, nSw))
       sw.append(el('button', { class: 'ws-swatch', type: 'button', 'data-hex': hex, style: `--c:${hexCss(hex)}`, 'aria-label': hexCss(hex), disabled: okColor ? null : true, onclick: () => setColor(hex) }));
     const picker = el('input', { type: 'color', class: 'ws-colorpick', 'aria-label': 'Custom colour', disabled: okColor ? null : true });
     picker.addEventListener('change', () => setColor(parseInt(picker.value.slice(1), 16)));
