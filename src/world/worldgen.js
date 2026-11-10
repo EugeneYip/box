@@ -1,11 +1,13 @@
 import { createNoise2D } from 'simplex-noise';
 import { mulberry32, hash2 } from '../core/Random.js';
 import { TILE, FLORA, SEA_LEVEL, MAX_HEIGHT, MIN_HEIGHT } from './constants.js';
+import { generateEarth } from './earth.js';
 
 // Procedural world generation (Landscape). Fills height / type / temperature /
 // moisture / flora of a World. Deterministic for a given seed.
 //
-// options.preset: 'continent' | 'pangaea' | 'archipelago' | 'islands'
+// options.preset: 'continent' | 'pangaea' | 'archipelago' | 'islands' | 'earth'
+// ('earth' is the World Map: real geography on a 2:1 world, src/world/earth.js)
 //
 // Pipeline
 //  1. Land shape: preset-specific "blobs" (landmass seeds) + domain-warped
@@ -31,9 +33,10 @@ const PRESETS = {
 
 // Preset ids this generator can build; the UI only offers these.
 // (A preset implemented outside PRESETS, such as the World Map, appends its id.)
-export const WORLD_PRESET_IDS = Object.keys(PRESETS);
+export const WORLD_PRESET_IDS = [...Object.keys(PRESETS), 'earth'];
 
 export function generateWorld(world, seed = 1, options = {}) {
+  if (options.preset === 'earth') return generateEarth(world, seed, options, EARTH_HELPERS);
   const presetName = PRESETS[options.preset] ? options.preset : 'continent';
   const P = PRESETS[presetName];
   world.seed = seed;
@@ -1198,3 +1201,7 @@ export function findLandTile(world, rng, predicate = () => true, tries = 4000) {
   }
   return null;
 }
+
+// Shared stages lent to the World Map generator (src/world/earth.js), so the
+// real-Earth preset gets the same terracing, typing and flora as every map.
+const EARTH_HELPERS = { distanceField, blurHeights, terraceMountains, slopeOf, despeckleTypes, dissolveSmallPatches, placeFlora, biomeFor, removeSpecks };

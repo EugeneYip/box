@@ -6,7 +6,7 @@ import { LAWS, LAW_CATEGORIES, lawDef } from '../core/laws.js';
 import { agesPanel } from './Ages.js';
 import { techPanel } from './TechPanel.js';
 import { eraNames, traitDef } from './depth.js';
-import { WORLD_SIZES } from '../core/params.js';
+import { WORLD_SIZES, EARTH_SIZES, EARTH_DEFAULT_SIZE, IS_TOUCH, isWidePreset, worldDims } from '../core/params.js';
 import { WORLD_PRESET_IDS } from '../world/worldgen.js';
 
 const SIZE_NOTES = {
@@ -15,6 +15,12 @@ const SIZE_NOTES = {
   256: 'The classic balance of land and sea.',
   384: 'Room for many rival realms.',
   512: 'Epic scale. Best on desktop.',
+};
+// World Map sizes (2:1, keyed by width)
+const EARTH_SIZE_NOTES = {
+  512: 'Large: 512 × 256 tiles. Lighter, and quicker to fill.',
+  768: 'Huge: 768 × 384 tiles. The recommended World Map.',
+  1024: 'Vast: 1024 × 512 tiles. Desktop only, about twice the work of Huge.',
 };
 const LAW_ICON = {
   harmony: 'alliance',
@@ -153,7 +159,7 @@ export const PRESETS = [
   { id: 'pangaea', name: 'Pangaea', blurb: 'A single vast supercontinent' },
   { id: 'archipelago', name: 'Archipelago', blurb: 'Chains of scattered islands' },
   { id: 'islands', name: 'Islands', blurb: 'A few lonely island realms' },
-  { id: 'earth', name: 'World Map', blurb: 'Our planet, Pacific-centred · best Huge', size: 512 },
+  { id: 'earth', name: 'World Map', blurb: 'Our planet, Pacific-centred · Huge 2:1', size: EARTH_DEFAULT_SIZE },
 ].filter((p) => WORLD_PRESET_IDS.includes(p.id)); // hide presets the generator cannot build yet
 const LAND = {
   continent:
@@ -423,9 +429,12 @@ export class Modals {
           role: 'radio',
           'aria-checked': p.id === state.preset ? 'true' : 'false',
           onclick: () => {
+            const wasWide = isWidePreset(state.preset);
             state.preset = p.id;
             cards.querySelectorAll('.ws-preset').forEach((x) => x.classList.toggle('is-on', x === c));
-            if (p.size && typeof pickSize === 'function') pickSize(p.size);
+            // the World Map has its own 2:1 sizes: swap the size cards
+            if (wasWide !== isWidePreset(p.id) && typeof buildSizes === 'function') buildSizes(p.size ?? (wasWide ? 256 : null));
+            else if (p.size && typeof pickSize === 'function') pickSize(p.size);
           },
         },
         el('span', { class: 'ws-preset__thumb', html: presetThumb(p.id) }),
@@ -448,32 +457,42 @@ export class Modals {
     const pickSize = (v) => {
       state.size = v;
       sizeCards.querySelectorAll('.ws-size').forEach((b) => b.classList.toggle('is-on', +b.dataset.size === v));
-      sizeNote.textContent = SIZE_NOTES[v] || `${v} × ${v} tiles`;
+      const wide = isWidePreset(state.preset);
+      sizeNote.textContent = (wide ? EARTH_SIZE_NOTES[v] : SIZE_NOTES[v]) || (wide ? `${v} × ${v / 2} tiles` : `${v} × ${v} tiles`);
     };
-    for (const z of WORLD_SIZES) {
-      sizeCards.append(
-        el(
-          'button',
-          { class: 'ws-size', type: 'button', role: 'radio', 'data-size': z.size, onclick: () => pickSize(z.size) },
-          el('span', { class: 'ws-size__box', style: `--s:${(0.42 + 0.58 * (z.size / 512)).toFixed(3)}` }, el('i')),
-          el('b', { text: z.name }),
-          el('small', { text: `${z.size}²` }),
+    const buildSizes = (want) => {
+      const wide = isWidePreset(state.preset);
+      const list = wide ? EARTH_SIZES.filter((z) => !(IS_TOUCH && z.desktopOnly)) : WORLD_SIZES;
+      sizeCards.replaceChildren(
+        ...list.map((z) =>
+          el(
+            'button',
+            { class: 'ws-size', type: 'button', role: 'radio', 'data-size': z.size, onclick: () => pickSize(z.size) },
+            el('span', { class: 'ws-size__box', style: wide ? `--s:${(0.42 + 0.58 * (z.size / 1024)).toFixed(3)};aspect-ratio:2` : `--s:${(0.42 + 0.58 * (z.size / 512)).toFixed(3)}` }, el('i')),
+            el('b', { text: z.name }),
+            el('small', { text: wide ? `${z.w}×${z.h}` : `${z.size}²` }),
+          ),
         ),
       );
-    }
-    pickSize(WORLD_SIZES.some((z) => z.size === state.size) ? state.size : 256);
+      const v = want ?? state.size;
+      pickSize(list.some((z) => z.size === v) ? v : wide ? EARTH_DEFAULT_SIZE : 256);
+    };
+    buildSizes(state.size);
     const sizes = el('div', { class: 'ws-field' }, el('label', { class: 'ws-field__label', text: 'World size' }), sizeCards, sizeNote);
     this.nwState = state;
     const create = () => {
       const n = parseInt(String(state.seed).replace(/[^0-9]/g, ''), 10);
       const seed = Number.isFinite(n) ? n : hashSeed(state.seed);
       this.close();
-      if (state.size !== g.world.w) {
+      const dims = worldDims(state.size, state.preset);
+      if (dims.w !== g.world.w || dims.h !== g.world.h) {
         // world size is fixed at construction: reload with the new parameters
         const q = new URLSearchParams(location.search);
         q.set('seed', seed);
         q.set('preset', state.preset);
-        q.set('civs', state.civs);
+        // on the World Map the default three villages scale with the map
+        if (isWidePreset(state.preset) && state.civs === 3) q.delete('civs');
+        else q.set('civs', state.civs);
         q.set('size', state.size);
         q.set('title', '0');
         for (const k of ['cam', 'hour', 'ff']) q.delete(k);

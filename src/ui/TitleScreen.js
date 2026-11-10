@@ -2,7 +2,7 @@ import { el, esc } from './dom.js';
 import { uiIcon } from './icons.js';
 import { emblemSvg } from './TopBar.js';
 import { PRESETS } from './Panels.js';
-import { WORLD_SIZES } from '../core/params.js';
+import { WORLD_SIZES, EARTH_SIZES, IS_TOUCH, isWidePreset } from '../core/params.js';
 
 // Title screen over the live world. The camera slowly orbits while the
 // player picks a landmass; choosing one re-seeds the world behind the logo.
@@ -29,14 +29,16 @@ export class TitleScreen {
       ),
     );
     this.seedEl = el('span', { class: 'ws-title__seed', text: String(g.params.seed) });
-    this.sizeBtns = WORLD_SIZES.map((z) =>
+    // the World Map offers its own 2:1 sizes
+    const sizeList = isWidePreset(g.params.preset) ? EARTH_SIZES.filter((z) => !(IS_TOUCH && z.desktopOnly)) : WORLD_SIZES;
+    this.sizeBtns = sizeList.map((z) =>
       el(
         'button',
         {
           class: 'ws-chip ws-chip--size' + (z.size === g.world.w ? ' is-on' : ''),
           type: 'button',
           'data-size': z.size,
-          'aria-label': `${z.name} world, ${z.size} tiles`,
+          'aria-label': z.h ? `${z.name} world, ${z.w} by ${z.h} tiles` : `${z.name} world, ${z.size} tiles`,
           onclick: () => this.chooseSize(z),
         },
         z.name,
