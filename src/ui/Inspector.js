@@ -447,6 +447,8 @@ export class Inspector {
       ${chips ? `<div class="ws-insp__also" aria-label="Also here">${chips}</div>` : ''}
       ${editing ? '<div class="ws-insp__scroll ws-insp__editwrap"></div>' : `${cells || depth ? `<div class="ws-insp__scroll">${cells ? `<div class="ws-insp__grid">${cells}</div>` : ''}${depth}</div>` : ''}
       <div class="ws-insp__actions">${actions.join('')}</div>`}`;
+    const th = this.el.querySelector('.ws-insp__title');
+    if (th) this.sizeTitle(th, r.title);
     if (editing) {
       this.el.querySelector('.ws-insp__also')?.remove();
       this.el.querySelector('.ws-insp__editwrap').append(this.editor.build(r));
@@ -797,6 +799,40 @@ export class Inspector {
       glyph.append(svg);
       img.after(glyph);
     } else b.prepend(img);
+  }
+  // After an edit (or its Undo): re-query the subject and refresh the header in
+  // place (title, subtitle such as "banner of Maroon", crest, banner badge),
+  // leaving the edit card untouched.
+  patchHeader() {
+    const r0 = this.track;
+    if (!r0 || !this.hit) return;
+    const k0 = kindOf(r0);
+    const tgt = this.editTarget(r0);
+    const list = safe(() => this.collect(this.hit), null) || [];
+    const r = list.find((o) => kindOf(o) === k0 && (r0.unit ? o.unit === r0.unit : r0.building ? o.building === r0.building : this.editTarget(o) === tgt));
+    if (!r) return;
+    this.results = list;
+    this.index = list.indexOf(r);
+    this.track = r;
+    const h = this.el.querySelector('.ws-insp__title');
+    if (h && h.firstChild) h.firstChild.textContent = r.title || '';
+    if (h) this.sizeTitle(h, r.title);
+    const sub = this.el.querySelector('.ws-insp__sub span');
+    if (sub && r.subtitle) sub.textContent = r.subtitle;
+    const tint = this.kingdomTint(r);
+    if (tint) this.el.querySelectorAll('.ws-insp__head .ws-crest, .ws-insp__kdot').forEach((i) => i.style.setProperty('--k', tint));
+    const kObj = kindOf(r) === 'kingdom' && typeof r.kingdom === 'object' ? r.kingdom : null;
+    const hb = kObj?.banner && this.el.querySelector('.ws-insp__badge.has-banner .ws-insp__portrait');
+    if (hb) hb.src = bannerURL(kObj.banner, kObj.color, 72);
+    const pin = this.pin?.querySelector('.ws-pin__label');
+    if (pin) pin.textContent = r.title || '';
+    this._sig = this.signature();
+  }
+  // long names step down a size instead of breaking mid-word
+  sizeTitle(h, title) {
+    const n = String(title || '').length;
+    h.classList.toggle('is-long', n > 16 && n <= 24);
+    h.classList.toggle('is-vlong', n > 24);
   }
   // after a rename: update the header without touching the edit card
   patchTitle(text) {

@@ -5,6 +5,7 @@ import './hud3.css';
 import './hud4.css';
 import './hud5.css';
 import './hud6.css';
+import './hud7.css';
 import { CATEGORIES, listPowers, getPower } from '../powers/registry.js';
 import { el, safe } from './dom.js';
 import { TopBar, PRESET_NAMES } from './TopBar.js';

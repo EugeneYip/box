@@ -1,0 +1,201 @@
+/* ==========================================================================
+   Worldseed UI, round 11: editor accordion, item preview, touch sizes,
+   header fitting, HUD leftovers. Loaded last.
+   ========================================================================== */
+
+/* ---- accordion sections */
+.ws-esec {
+  padding: 0;
+}
+.ws-esec__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 38px;
+  padding: 6px 0;
+  text-align: left;
+  color: var(--ws-ink-2);
+  background: none;
+  border-radius: 8px;
+}
+.ws-esec__head:hover {
+  color: var(--ws-ink);
+}
+.ws-esec__head h5 {
+  flex: none;
+  margin: 0;
+  font: 700 9.5px var(--ws-font);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ws-gold);
+}
+.ws-esec__sum {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--ws-ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ws-esec__sum > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ws-esec.is-open .ws-esec__sum {
+  visibility: hidden;
+}
+.ws-esec__flag {
+  flex: none;
+  width: 14px;
+  height: 17.5px;
+}
+.ws-esec__chev {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  transition: transform 0.2s var(--ws-ease);
+}
+.ws-esec__chev svg {
+  width: 16px;
+  height: 16px;
+}
+.ws-esec.is-open .ws-esec__chev {
+  transform: rotate(180deg);
+}
+.ws-esec__body {
+  display: none;
+  padding: 2px 0 12px;
+}
+.ws-esec.is-open .ws-esec__body {
+  display: block;
+}
+.is-touch .ws-esec__head {
+  min-height: 44px;
+}
+
+/* ---- trait list: part of the card's own scroll (no nested scroller) */
+.ws-etraits {
+  max-height: none;
+  overflow: visible;
+}
+.ws-etrait[aria-pressed='true'] .ws-etrait__mark {
+  color: #1d1608;
+  background: var(--tint);
+}
+
+/* ---- custom colour: the picker swatch shows a picked colour */
+.ws-swatch--custom.is-picked {
+  background: var(--c);
+}
+.ws-swatch--custom.is-picked span {
+  background: rgba(255, 255, 255, 0.9);
+}
+
+/* ---- item preview */
+.ws-egive__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ws-egive__preview {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.22);
+  box-shadow: inset 0 0 0 1px var(--ws-line);
+}
+.ws-egive__ico {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  color: var(--ws-gold-hi);
+  --tint: var(--ws-gold-hi);
+  background: rgba(235, 201, 119, 0.12);
+}
+.ws-egive__ico svg {
+  width: 20px;
+  height: 20px;
+}
+.ws-egive__txt {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.ws-egive__txt b {
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ws-egive__txt small {
+  font-size: 10.5px;
+  color: var(--ws-ink-3);
+}
+.ws-egive__txt em {
+  font-style: normal;
+  font-weight: 700;
+}
+.ws-egive__txt em.is-up {
+  color: #9be3a8;
+}
+.ws-egive__txt em.is-down {
+  color: #ff9f86;
+}
+.ws-egive__go {
+  flex: none;
+}
+.is-touch .ws-egive__go {
+  min-height: 44px;
+}
+
+/* ---- touch targets: category pills and banner grids */
+.is-touch .ws-pills--cats .ws-pill {
+  min-width: 48px;
+  justify-content: center;
+}
+.is-touch .ws-ebannerrow {
+  flex-direction: column;
+  align-items: center;
+}
+.is-touch .ws-ebannerpick {
+  width: 100%;
+}
+.is-touch .ws-egrid--sym {
+  grid-template-columns: repeat(auto-fill, minmax(46px, 1fr));
+}
+.is-touch .ws-egrid--field {
+  grid-template-columns: repeat(5, minmax(46px, 1fr));
+}
+.is-touch .ws-ebtn {
+  min-width: 44px;
+}
+.ws-edip__row.is-gone {
+  opacity: 0.45;
+}
+
+/* ---- header: long names step down instead of breaking mid-word */
+.ws-insp__title {
+  overflow-wrap: break-word;
+  hyphens: manual;
+}
+.ws-insp__title.is-long {
+  font-size: 15.5px;
+}
+.ws-insp__title.is-vlong {
+  font-size: 14px;
+}
