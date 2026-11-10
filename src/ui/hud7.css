@@ -380,3 +380,19 @@
 .ws-esec__body {
   min-width: 0;
 }
+
+/* ---- on-screen keyboard: the sheet rides above it (--kb from visualViewport) */
+@media (max-width: 720px) {
+  .has-kb .ws-insp,
+  .has-kb .ws-insp.is-expanded {
+    bottom: calc(var(--kb) + 6px);
+    height: min(82vh, calc(100vh - var(--kb) - 72px));
+    transform: none;
+  }
+}
+@media (max-height: 500px) and (min-width: 721px) {
+  .has-kb .ws-insp,
+  .ws-root:not(.has-minimap).has-kb .ws-insp {
+    bottom: calc(var(--kb) + 6px);
+  }
+}

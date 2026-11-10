@@ -103,6 +103,23 @@ export class UI {
     // input
     addEventListener('keydown', (e) => this.onKeyCapture(e), true);
     addEventListener('keydown', (e) => this.onKey(e));
+    // On-screen keyboards: while a text field in the inspector has focus, lift the
+    // sheet above the keyboard (visualViewport) and keep the field in view.
+    const vv = window.visualViewport;
+    if (vv) {
+      const fit = () => {
+        const a = document.activeElement;
+        const typing = !!a && this.inspector.el.contains(a) && a.matches?.('input:not([type]), input[type=text], input[type=search], textarea');
+        const kb = typing ? Math.max(0, Math.round(innerHeight - (vv.height + vv.offsetTop))) : 0;
+        root.style.setProperty('--kb', kb + 'px');
+        root.classList.toggle('has-kb', kb > 40);
+        if (kb > 40) requestAnimationFrame(() => a.scrollIntoView?.({ block: 'nearest' }));
+      };
+      vv.addEventListener('resize', fit);
+      vv.addEventListener('scroll', fit);
+      root.addEventListener('focusin', () => setTimeout(fit, 60));
+      root.addEventListener('focusout', () => setTimeout(fit, 60));
+    }
     // typing in any field never reaches game hotkeys (Input, power slots, ...)
     root.addEventListener('keydown', (e) => {
       if (this.isTyping(e)) e.stopPropagation();
