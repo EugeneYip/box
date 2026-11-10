@@ -199,6 +199,19 @@ export function poseHumanoid(u, rs, c, P, model) {
       P[8] = 0.1;
       P[9] = -0.32;
       P[10] = 0.12;
+    } else if (anim === 'heal') {
+      // kneeling at a bedside, both hands working gently
+      const p = (now / 1.9 + c.seed) * TAU;
+      rs.rootY = -0.045;
+      P[9] = -1.05;
+      P[10] = 0.32;
+      P[0] = 0.48;
+      P[3] = 0.32;
+      P[4] = 0.1 * sin(p * 0.5);
+      P[5] = -1.0 + 0.14 * sin(p);
+      P[7] = -1.0 + 0.14 * sin(p + 1.6);
+      P[6] = -0.14;
+      P[8] = 0.14;
     } else if (anim === 'fish') {
       const cast = frac(now / 9 + c.seed);
       P[7] = cast > 0.9 ? track((cast - 0.9) * 10, [[0, -0.95], [0.4, -2.3], [0.7, -0.7], [1, -0.95]]) : -0.95 + 0.04 * sin(now * 1.3);

@@ -6,7 +6,7 @@ import * as THREE from 'three';
 //   - emotes: camera-facing status icons (heart, zzz, !, anger, sparkle, ...)
 //   - projectiles (arrows) and the skywyrm's fire-breath plume
 export const DECAL = { shadow: 0, ring: 1, select: 2, dot: 3, glow: 4 };
-export const EMOTE = { heart: 0, zzz: 1, alert: 2, anger: 3, sparkle: 4, note: 5, chat: 6, skull: 7, burning: 8, sick: 9, chilled: 10, starving: 11, wounded: 12, mourning: 13, inspired: 14, exhausted: 15, glow: 16, star: 17 };
+export const EMOTE = { heart: 0, zzz: 1, alert: 2, anger: 3, sparkle: 4, note: 5, chat: 6, skull: 7, burning: 8, sick: 9, chilled: 10, starving: 11, wounded: 12, mourning: 13, inspired: 14, exhausted: 15, glow: 16, star: 17, heal: 18 };
 
 const decalVert = /* glsl */ `
 attribute vec4 iA; // x y z size
@@ -389,6 +389,25 @@ function drawAtlas() {
     }
     g.closePath();
     g.fillStyle = 'rgba(240,252,255,0.95)';
+    g.fill();
+  });
+  // a healer's touch: a soft green glint with a four-point sparkle
+  cell(EMOTE.heal, () => {
+    const gr = g.createRadialGradient(0, 0, 0, 0, 0, 60);
+    gr.addColorStop(0, 'rgba(225,255,215,1)');
+    gr.addColorStop(0.3, 'rgba(130,240,120,0.75)');
+    gr.addColorStop(0.7, 'rgba(70,200,90,0.22)');
+    gr.addColorStop(1, 'rgba(60,190,80,0)');
+    g.fillStyle = gr;
+    g.fillRect(-62, -62, 124, 124);
+    g.beginPath();
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      const r = i % 2 ? 8 : 50;
+      g.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+    }
+    g.closePath();
+    g.fillStyle = 'rgba(240,255,235,0.95)';
     g.fill();
   });
   const tex = new THREE.CanvasTexture(cv);
