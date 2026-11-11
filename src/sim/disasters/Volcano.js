@@ -259,7 +259,6 @@ export class Volcano {
     const { x, z } = this;
     const top = g.world.heightAt(x, z) + 0.4;
     fx.emit('explosion', { x, y: top, z }, { scale: 1.2 });
-    fx.shell(x, top, z, 8, { life: 0.45, color: 0xffc890, intensity: 1.1, power: 4, squash: 0.8 });
     fx.screenFlash(0xffd0a0, 0.45);
     fx.addLight({ x, y: top + 3, z }, 0xff9050, 9, 1.2);
     fx.shake(x, z, 1.4);
