@@ -611,6 +611,17 @@ export class Vegetation {
       sz = Math.round(cdz / cl);
     let sig = (sx + 2) * 5 + (sz + 2);
     if (craft) sig = (Math.imul(sig, 31) + ((craft.z | 0) * W + (craft.x | 0)) * 3 + 2) | 0;
+    // land vehicles: siege engines (rams, catapults) always open the canopy
+    // around them; carts and caravans more gently
+    const fl = g.fleet?.list || [];
+    const veh = this._occVeh || (this._occVeh = []);
+    veh.length = 0;
+    for (let k = 0, m = Math.min(fl.length, 400); k < m; k++) {
+      const v = fl[k];
+      if (!v || !v.alive || v.cls !== 'land' || v === craft || typeof v.x !== 'number') continue;
+      veh.push(v);
+      sig = (Math.imul(sig, 31) + ((v.z | 0) * W + (v.x | 0)) * 3 + (v.def?.siege ? 1 : 0)) | 0;
+    }
     const n = Math.min(list.length, 1000);
     for (let k = 0; k < n; k++) {
       const un = list[k];
@@ -648,6 +659,18 @@ export class Vegetation {
         mark(tx + sx, tz + sz, 1);
         mark(tx + 2 * sx, tz + 2 * sz, 0.9);
         mark(tx + 3 * sx, tz + 3 * sz, 0.6);
+      }
+      for (const v of veh) {
+        const tx = v.x | 0,
+          tz = v.z | 0;
+        const s = v.def?.siege ? 1 : 0.75;
+        const R = v.def?.siege ? 2 : 1;
+        for (let dz = -R; dz <= R; dz++) for (let dx = -R; dx <= R; dx++) mark(tx + dx, tz + dz, Math.abs(dx) + Math.abs(dz) <= R ? s : s * 0.7);
+        mark(tx + sx, tz + sz, s);
+        mark(tx + 2 * sx, tz + 2 * sz, s * 0.9);
+        mark(tx + 2 * sx + sz, tz + 2 * sz - sx, s * 0.6);
+        mark(tx + 2 * sx - sz, tz + 2 * sz + sx, s * 0.6);
+        if (v.def?.siege) mark(tx + 3 * sx, tz + 3 * sz, 0.65);
       }
       for (let k = 0; k < n; k++) {
         const un = list[k];
