@@ -71,7 +71,7 @@ export const brain = {
 
     // children
     if (u.age < ADULT_AGE) {
-      u.age += (dt / YEAR) * CHILD_AGE_RATE;
+      if (!u.flags?.frozenAge && !u.data?.frozenAge) u.age += (dt / YEAR) * CHILD_AGE_RATE;
       u.job = 'child';
       return this._child(u, v, d, dt);
     }
@@ -1501,7 +1501,7 @@ export const brain = {
   },
 
   _homeless(u, d, dt) {
-    if (u.age < ADULT_AGE) u.age += (dt / YEAR) * CHILD_AGE_RATE;
+    if (u.age < ADULT_AGE && !u.flags?.frozenAge && !u.data?.frozenAge) u.age += (dt / YEAR) * CHILD_AGE_RATE;
     if ((d.homelessT = (d.homelessT || 0) - dt) > 0) {
       if (!u.target) this.game.units.wander?.(u, 4);
       return;

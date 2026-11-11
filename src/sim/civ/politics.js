@@ -176,7 +176,7 @@ export const politics = {
     k.heir = heir ? heir.id : -1;
   },
 
-  _succession(k, deadName) {
+  _succession(k, deadName, abdicated = false) {
     const cap = this.villages[k.capital];
     let heir = null;
     const pools = [];
@@ -185,7 +185,7 @@ export const politics = {
     for (const v of pools) {
       if (!v || !v.alive) continue;
       for (const u of v.members) {
-        if (!u.alive || u.age < ADULT_AGE) continue;
+        if (!u.alive || u.age < ADULT_AGE || u.data?.civ?.abdicated) continue;
         // a mature heir in the prime of life (closest to 30) rules longest
         if (!heir || Math.abs(u.age - 30) < Math.abs(heir.age - 30)) heir = u;
       }
@@ -203,7 +203,7 @@ export const politics = {
     }
     // the family and the court mourn (the spouse is Life's to grieve), not the realm
     const deadId = this._lastRulerId;
-    if (cap && this.game.units.addStatus) {
+    if (cap && this.game.units.addStatus && !abdicated) {
       const hall = cap.hall;
       for (const m of cap.members) {
         if (!m.alive) continue;
@@ -216,7 +216,7 @@ export const politics = {
     if (heir) {
       if (heir.village !== k.capital && cap && cap.alive) this._moveMember(heir, cap);
       this.crown(k, heir);
-      this._note(`${deadName} dies; ${heir.name} rules ${this._kn(k)}`, 'info', { x: heir.x, z: heir.z }, 'succ' + k.id, 20);
+      this._note(abdicated ? `${deadName} abdicates; ${heir.name} rules ${this._kn(k)}` : `${deadName} dies; ${heir.name} rules ${this._kn(k)}`, 'info', { x: heir.x, z: heir.z }, 'succ' + k.id, 20);
       // a contested succession can split a large realm
       if (k.villages.length >= 3 && this._kLaw(k.id, 'civRebellions') && this.rng.chance(0.3)) {
         let claimant = null;
@@ -235,6 +235,29 @@ export const politics = {
       k.interregnumUntil = this.game.time.total + YEAR * 5;
       this._note(`${deadName} dies heirless; a council of elders rules ${this._kn(k)}`, 'bad', cap ? { x: cap.cx, z: cap.cz } : null);
       k.council = true;
+    }
+  },
+
+  // A crown worn for sixty years is laid down (an immortal ruler, or one the
+  // gods keep young, would otherwise reign for ever): the heir takes the throne
+  // and the old ruler lives on at court.
+  _abdications() {
+    const now = this.game.time.total;
+    for (const k of this.kingdoms) {
+      if (!k.alive) continue;
+      const u = this.game.units.byId.get(k.ruler);
+      if (!u || !u.alive) continue;
+      const since = u.data.civ?.crownedAt ?? now;
+      if (now - since < YEAR * 60) continue;
+      const name = u.name;
+      u.data.civ.abdicated = true;
+      u.data.civ.royal = false;
+      u.job = null;
+      if (u.data.civ.given) u.name = u.data.civ.given;
+      this._bio(u, `Laid down the crown after ${Math.round((now - since) / YEAR)} years`);
+      this._history(`${name} lays down the crown of ${this._kn(k)} after ${Math.round((now - since) / YEAR)} years`, 'info', { x: u.x, z: u.z });
+      k.ruler = -1;
+      this._succession(k, name, true);
     }
   },
 
@@ -268,6 +291,7 @@ export const politics = {
   // ---------------------------------------------------------------- diplomacy
   _diplomacy() {
     this._recolorClashes();
+    this._abdications();
     this._secession();
     const g = this.game;
     const rng = this.rng;
