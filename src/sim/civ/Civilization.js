@@ -2259,6 +2259,33 @@ export class Civilization {
       }
     }
     if (x1 >= 0) w.markDirty('owner', x0, y0, x1, y1);
+    // label anchors: the realm's own land nearest the centre of its territory
+    {
+      const sx = new Float64Array(this.kingdoms.length),
+        sz = new Float64Array(this.kingdoms.length),
+        cnt = new Float64Array(this.kingdoms.length);
+      for (let i = 0; i < w.size; i++) {
+        const o = own[i];
+        if (o < 0) continue;
+        sx[o] += i % W;
+        sz[o] += (i / W) | 0;
+        cnt[o]++;
+      }
+      const best = new Float64Array(this.kingdoms.length).fill(Infinity);
+      const at = new Int32Array(this.kingdoms.length).fill(-1);
+      for (let i = 0; i < w.size; i++) {
+        const o = own[i];
+        if (o < 0 || !cnt[o] || H[i] < SEA_LEVEL + 0.1) continue;
+        const d = (i % W - sx[o] / cnt[o]) ** 2 + (((i / W) | 0) - sz[o] / cnt[o]) ** 2;
+        if (d < best[o]) (best[o] = d), (at[o] = i);
+      }
+      for (const k of this.kingdoms) {
+        if (at[k.id] >= 0) {
+          k.labelX = (at[k.id] % W) + 0.5;
+          k.labelZ = ((at[k.id] / W) | 0) + 0.5;
+        } else k.labelX = k.labelZ = null;
+      }
+    }
     // border lengths between kingdoms
     this._borders.clear();
     for (let y = 0; y < w.h - 1; y++)
