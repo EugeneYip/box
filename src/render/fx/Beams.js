@@ -108,6 +108,34 @@ export class Beams {
   }
 
   segment(x0, y0, z0, x1, y1, z1, o) {
+    // keep both ends in front of the camera: a ribbon whose end passes
+    // behind the eye (a sky-high pillar under a low camera) projects
+    // inverted and smears a translucent wedge across the scene
+    const cam = this.fx.game.cameraRig?.camera;
+    if (cam) {
+      const cp = cam.position;
+      const f = (this._fwd ||= new THREE.Vector3());
+      cam.getWorldDirection(f);
+      const m = Math.max(1.5, cam.near * 4);
+      const d0 = (x0 - cp.x) * f.x + (y0 - cp.y) * f.y + (z0 - cp.z) * f.z - m;
+      const d1 = (x1 - cp.x) * f.x + (y1 - cp.y) * f.y + (z1 - cp.z) * f.z - m;
+      if (d0 < 0 && d1 < 0) return;
+      if (d0 < 0 || d1 < 0) {
+        const t = d0 / (d0 - d1);
+        const cx = x0 + (x1 - x0) * t,
+          cy = y0 + (y1 - y0) * t,
+          cz = z0 + (z1 - z0) * t;
+        if (d0 < 0) {
+          x0 = cx;
+          y0 = cy;
+          z0 = cz;
+        } else {
+          x1 = cx;
+          y1 = cy;
+          z1 = cz;
+        }
+      }
+    }
     const now = this.fx.time;
     let i = this.cursor;
     for (let k = 0; k < 32; k++) {
