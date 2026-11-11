@@ -36,8 +36,9 @@ export class Earthquake {
           d = 0,
           zig = Math.random() < 0.5 ? 1 : -1;
         const head = ang + (dir < 0 ? Math.PI : 0);
-        const len = radius * rand(0.75, 1.0) * (f ? 0.7 : 1);
-        let hw0 = rand(1.6, 2.1) * (f ? 0.8 : 1);
+        // each arm runs past the shaking radius (the rift spans 2.2-2.8x it)
+        const len = radius * rand(1.1, 1.4) * (f ? 0.6 : 1);
+        let hw0 = rand(2.0, 2.5) * (f ? 0.75 : 1);
         while (d < len) {
           const step = rand(1.3, 2.3);
           zig = Math.random() < 0.8 ? -zig : zig;
@@ -46,7 +47,7 @@ export class Earthquake {
             nz = pz + Math.sin(a) * step;
           d += step;
           const taper = Math.pow(Math.max(0, 1 - d / len), 0.6);
-          const hw1 = Math.max(0.45, (0.5 + 1.6 * taper) * rand(0.7, 1.15) * (f ? 0.8 : 1));
+          const hw1 = Math.max(0.5, (0.6 + 1.8 * taper) * rand(0.75, 1.15) * (f ? 0.75 : 1));
           segs.push({ x0: px, z0: pz, x1: nx, z1: nz, t: d / PROPAGATION, done: false, w: 1 - d / len, hw0, hw1 });
           hw0 = hw1;
           px = nx;
@@ -184,15 +185,13 @@ export class Earthquake {
       // a thin near-black core along the deepest part of this leg (kept to
       // the leg's own length so zigzags never overshoot onto the grass)
       const rot = Math.atan2(dz, dx);
-      fx.decal({ frame: DF.CRACKLINE, x: mx, z: mz, size: L * 1.25 + hwm * 0.6, rot, life: 170, color: 0x000000, alpha: 0.9, overlay: true, lift: 0.1, fadeIn: 0.0005, fadeOut: 0.9, grain: 0 });
+      fx.decal({ frame: DF.CRACKLINE, x: mx, z: mz, size: L * 1.2 + hwm * 0.4, rot, life: 170, color: 0x000000, alpha: 0.55, lift: 0.1, fadeIn: 0.0005, fadeOut: 0.9, grain: 0 });
       // sunlit lips: a faint warm highlight just outside both edges
       for (const sd of [1, -1])
-        fx.decal({ frame: DF.CRACKLINE, x: mx + nx * sd * (hwm + 0.45), z: mz + nz * sd * (hwm + 0.45), size: L * 1.2, rot, life: 150, additive: true, color: 0xe8d6b0, intensity: 0.28, lift: 0.25, fadeIn: 0.002, fadeOut: 0.85, grain: 0.3 });
-      fx.decal({ frame: DF.SOFTDARK, x: mx, z: mz, size: L * 1.2 + hwm * 1.6, life: 120, color: 0x1e1610, alpha: 0.5, fadeIn: 0.001, fadeOut: 0.85, grain: 0.7 });
+        fx.decal({ frame: DF.CRACKLINE, x: mx + nx * sd * (hwm * 0.8), z: mz + nz * sd * (hwm * 0.8), size: L * 1.2, rot, life: 150, additive: true, color: 0xe8d6b0, intensity: 0.45, lift: 0.25, fadeIn: 0.002, fadeOut: 0.85, grain: 0.3 });
       // soil spilled along both lips
       for (const sd of [1, -1])
         if (Math.random() < 0.7) fx.decal({ frame: DF.STAIN, x: mx + nx * sd * (hwm + 1.1), z: mz + nz * sd * (hwm + 1.1), size: rand(2.0, 3.0), life: 150, color: 0x4e3620, alpha: 0.65, fadeIn: 0.001, fadeOut: 0.88, grain: 0.8 });
-      if (Math.random() < 0.5) fx.decal({ frame: DF.CRACK1, x: mx + nx * rand(-1.5, 1.5) * (hwm + 1), z: mz + nz * rand(-1.5, 1.5) * (hwm + 1), size: rand(2.0, 3.4) * k, life: 140, color: 0x060403, alpha: 0.9, fadeIn: 0.001, fadeOut: 0.88 });
       // thick dust walls erupting along both lips of the rupture
       for (let j = 0; j < fx.k(8); j++) {
         const f = Math.random();
@@ -241,7 +240,7 @@ export class Earthquake {
       const inSpan = along > -0.5 && along < L + 0.5;
       if (inSpan && side > hw && side < hw + 3.6) want -= thr * k * 2.2 * taperK * (1 - smooth((side - hw - 2.2) / 1.4));
       if (ad < hw) {
-        const depth = (1.9 + 0.9 * jag) * Math.max(0.8, k) * (0.5 + 0.5 * taperK) * (ad < hw * 0.65 ? 1 : 1 - (ad - hw * 0.65) / (hw * 0.35 + 0.01));
+        const depth = (2.8 + 1.0 * jag) * Math.max(0.8, k) * (0.55 + 0.45 * taperK) * (ad < hw * 0.6 ? 1 : 1 - (ad - hw * 0.6) / (hw * 0.4 + 0.01));
         want -= depth;
       } else if (ad < hw + 0.9) want += (0.15 + 0.5 * jag) * k * (1 - (ad - hw) / 0.9);
       const cur = prev ? prev.want : 0;
@@ -253,7 +252,7 @@ export class Earthquake {
       w.markDirty('height', tx, ty);
       if (ad < hw) {
         // dark scorched floor (the shadowed depths) between rock walls
-        const ty2 = ad < hw * 0.65 ? TILE.ASH : TILE.ROCK;
+        const ty2 = ad < hw * 0.6 ? TILE.ASH : TILE.ROCK;
         if (w.type[i] !== ty2) {
           w.type[i] = ty2;
           w.markDirty('type', tx, ty);
