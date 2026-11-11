@@ -435,7 +435,7 @@ export class Inspector {
     const portrait = pref ? this.portraits.get(pref) : kObj?.banner ? bannerURL(kObj.banner, kObj.color, 72) : null;
     const editable = !!(u ? u.alive !== false : k === 'kingdom' || k === 'village' || (k === 'building' && (r.village || this.game.civ?.villages?.[r.building?.village])));
     const editing = !!this.editing && editable && this.editTarget(r) === this.editing;
-    const depth = safe(() => (u ? this.unitDepth(u) : craft ? this.craftDepth(craft) : k === 'village' || k === 'kingdom' || k === 'building' ? this.realmDepth(r) : ''), '', 'inspector depth') || '';
+    const depth = safe(() => (u ? this.unitDepth(u) : craft ? this.craftDepth(craft, r) : k === 'village' || k === 'kingdom' || k === 'building' ? this.realmDepth(r) : ''), '', 'inspector depth') || '';
     const level = u && Number.isFinite(u.level) ? u.level : null;
     const ownerK = craft ? kingdomOf(this.game, craft.kingdom) : null;
     // the epithet ("the Fierce") only when the title does not carry it already
@@ -568,24 +568,33 @@ export class Inspector {
       .join('');
   }
   // Vessels and vehicles: the voyage as a route with progress, and the cargo hold.
-  craftDepth(v) {
+  craftDepth(v, r = null) {
     const g = this.game;
     const civ = g.civ;
     let html = '';
     const vo = v.voyage;
-    if (vo) {
-      const from = civ?.villages?.[vo.from];
-      const to = typeof vo.to === 'object' && vo.to ? vo.to : civ?.villages?.[vo.to];
-      const tx = to?.cx ?? to?.x,
-        tz = to?.cz ?? to?.z;
+    // the route follows Fleets' own account: none in port, reversed on the way home
+    const hasVoyage = r?.stats ? r.stats.some((s) => /^voyage$/i.test(String(s?.[0]))) : !!vo && v.state !== 'moored';
+    if (vo && hasVoyage) {
+      const homeward = v.mission?.phase === 'home' || v.mission?.type === 'home';
+      const homeV = civ?.villages?.[v.home];
+      const place = (ref) => (ref && typeof ref === 'object' ? ref : civ?.villages?.[ref]);
+      const toRef = place(vo.to);
+      const a = homeward ? toRef : place(vo.from) || homeV;
+      const b = homeward ? homeV || place(vo.from) : toRef;
+      const ax = a?.cx ?? a?.x,
+        az = a?.cz ?? a?.z,
+        bx = b?.cx ?? b?.x,
+        bz = b?.cz ?? b?.z;
       let pct = null;
-      if (from && tx != null) {
-        const total = Math.hypot(tx - from.cx, tz - from.cz);
-        const left = Math.hypot(tx - v.x, tz - v.z);
+      if (ax != null && bx != null) {
+        const total = Math.hypot(bx - ax, bz - az);
+        const left = Math.hypot(bx - v.x, bz - v.z);
         if (total > 1) pct = Math.max(0, Math.min(1, 1 - left / total));
       }
-      const homeward = v.mission?.phase === 'home';
-      html += `<section class="ws-dsec"><h5>${homeward ? 'Homeward' : 'Voyage'}</h5><div class="ws-voyage"><span class="ws-voyage__end">${esc(vo.fromName || '—')}</span><i class="ws-voyage__track">${pct != null ? `<b style="left:${(pct * 100).toFixed(1)}%"></b>` : ''}</i><span class="ws-voyage__end is-to">${esc(vo.toName || 'open sea')}</span></div></section>`;
+      const fromName = homeward ? vo.toName || 'abroad' : vo.fromName || '—';
+      const toName = homeward ? homeV?.name || vo.fromName || 'home' : vo.toName || 'open sea';
+      html += `<section class="ws-dsec"><h5>${homeward ? 'Homeward' : 'Voyage'}</h5><div class="ws-voyage"><span class="ws-voyage__end">${esc(fromName)}</span><i class="ws-voyage__track">${pct != null ? `<b style="left:${(pct * 100).toFixed(1)}%"></b>` : ''}</i><span class="ws-voyage__end is-to">${esc(toName)}</span></div></section>`;
     }
     const c = v.cargo;
     if (v.def?.capacity || c) {
@@ -953,7 +962,11 @@ export class Inspector {
   // subtitle with a custom realm colour named plainly ("banner of deep teal")
   subText(r) {
     const k = typeof r.kingdom === 'object' && r.kingdom ? r.kingdom : null;
-    return k ? realmColourText(r.subtitle, k.color) : r.subtitle;
+    if (k) return realmColourText(r.subtitle, k.color);
+    // carts and caravans rest in a village; only ships lie in port
+    const c = isCraft(r) ? r.vessel || r.building : null;
+    if (c && c.cls === 'land') return String(r.subtitle || '').replace(' · in port at ', ' · resting at ');
+    return r.subtitle;
   }
   // long names step down a size instead of breaking mid-word
   sizeTitle(h, title) {
