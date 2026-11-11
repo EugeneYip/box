@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { TILE_INFO, FLORA_INFO, SEA_LEVEL, SHALLOW_DEPTH, TILE } from '../world/constants.js';
 import { powerIcon, uiIcon, tileTint, hasIcon } from './icons.js';
 import { getPower } from '../powers/registry.js';
-import { el, esc, safe, hexCss, fmtNum } from './dom.js';
+import { el, esc, safe, hexCss, fmtNum, realmColourText } from './dom.js';
 import { traitDef, statusDef, modLines, prettyId, eraNames, techDef, techList } from './depth.js';
 import { kingdomOf, eraOf, researchOf } from './TechPanel.js';
 import { CULTURES } from '../sim/civ/cultures.js';
@@ -453,7 +453,7 @@ export class Inspector {
         <div class="ws-insp__titles">
           <div class="ws-insp__kind">${esc(kindLabel)}${dead ? ` <em class="ws-insp__dead">${craft ? 'Lost' : 'Fallen'}</em>` : ''}</div>
           <h3 class="ws-insp__title">${esc(r.title || 'Unknown')}${epithet ? ` <span class="ws-insp__epithet">${esc(epithet)}</span>` : ''}</h3>
-          ${r.subtitle ? `<div class="ws-insp__sub">${craft && ownerK?.banner ? `<img class="ws-crest ws-crest--banner" alt="" src="${bannerURL(ownerK.banner, ownerK.color, 28)}">` : kTint ? `<i class="ws-crest" style="--k:${kTint}"></i>` : ''}<span>${esc(r.subtitle)}</span></div>` : ''}
+          ${r.subtitle ? `<div class="ws-insp__sub" data-sub>${craft && ownerK?.banner ? `<img class="ws-crest ws-crest--banner" alt="" src="${bannerURL(ownerK.banner, ownerK.color, 28)}">` : kTint ? `<i class="ws-crest" style="--k:${kTint}"></i>` : ''}<span>${esc(this.subText(r))}</span></div>` : ''}
         </div>
         ${editable ? `<button class="ws-iconbtn ws-iconbtn--sm ws-insp__edit${editing ? ' is-on' : ''}" type="button" aria-label="${editing ? 'Done editing' : 'Edit'}" data-tip="${editing ? 'Done editing' : 'Edit name, colours and more'}" data-act="${editing ? 'edit-done' : 'edit'}">${uiIcon(editing ? 'check' : 'edit')}</button>` : ''}
         ${u ? `<button class="ws-iconbtn ws-iconbtn--sm ws-insp__fav${fav ? ' is-on' : ''}" type="button" aria-label="${fav ? 'Unstar' : 'Star this creature'}" data-tip="${fav ? 'Favourite' : 'Mark as favourite'}" data-act="fav">${uiIcon(fav ? 'star-on' : 'star')}</button>` : ''}
@@ -940,7 +940,7 @@ export class Inspector {
     if (h && h.firstChild) h.firstChild.textContent = r.title || '';
     if (h) this.sizeTitle(h, r.title);
     const sub = this.el.querySelector('.ws-insp__sub span');
-    if (sub && r.subtitle) sub.textContent = r.subtitle;
+    if (sub && r.subtitle) sub.textContent = this.subText(r);
     const tint = this.kingdomTint(r);
     if (tint) this.el.querySelectorAll('.ws-insp__head .ws-crest, .ws-insp__kdot').forEach((i) => i.style.setProperty('--k', tint));
     const kObj = kindOf(r) === 'kingdom' && typeof r.kingdom === 'object' ? r.kingdom : null;
@@ -949,6 +949,11 @@ export class Inspector {
     const pin = this.pin?.querySelector('.ws-pin__label');
     if (pin) pin.textContent = r.title || '';
     this._sig = this.signature();
+  }
+  // subtitle with a custom realm colour named plainly ("banner of deep teal")
+  subText(r) {
+    const k = typeof r.kingdom === 'object' && r.kingdom ? r.kingdom : null;
+    return k ? realmColourText(r.subtitle, k.color) : r.subtitle;
   }
   // long names step down a size instead of breaking mid-word
   sizeTitle(h, title) {

@@ -107,6 +107,9 @@ const LAW_KEY_ICON = [
 ];
 // explicit icons: distinct within every category
 const LAW_ICON_BY_KEY = {
+  fleetNaval: 'naval-war',
+  fleetSailing: 'ship',
+  fleetColonize: 'found-village',
   civRebellions: 'rebellion',
   harmonySecession: 'banner',
   harmonyMigration: 'migrate',

@@ -47,7 +47,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.ws-esec.is-open .ws-esec__sum {
+.ws-esec.is-open:not(.keeps-sum) .ws-esec__sum {
   visibility: hidden;
 }
 .ws-esec__flag {
@@ -556,4 +556,18 @@
 .is-photo .ws-north,
 .is-intro .ws-north {
   display: none;
+}
+
+/* ---- 'Also here' chips wrap instead of cutting the last one off */
+.ws-insp__also {
+  flex-wrap: wrap;
+  overflow: visible;
+}
+.ws-chip2 {
+  max-width: 100%;
+}
+.ws-chip2 > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
