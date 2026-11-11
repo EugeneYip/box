@@ -438,7 +438,9 @@ export class Inspector {
     const depth = safe(() => (u ? this.unitDepth(u) : craft ? this.craftDepth(craft) : k === 'village' || k === 'kingdom' || k === 'building' ? this.realmDepth(r) : ''), '', 'inspector depth') || '';
     const level = u && Number.isFinite(u.level) ? u.level : null;
     const ownerK = craft ? kingdomOf(this.game, craft.kingdom) : null;
-    const epithet = u ? u.title || u.data?.title || null : null;
+    // the epithet ("the Fierce") only when the title does not carry it already
+    const ep0 = u ? u.title || u.data?.title || null : null;
+    const epithet = ep0 && !String(r.title || '').toLowerCase().includes(String(ep0).toLowerCase()) ? ep0 : null;
     const fav = !!u?.data?.favorite;
     const realmK = !u && (k === 'village' || k === 'kingdom' || k === 'building') ? (typeof r.kingdom === 'object' && r.kingdom) || kingdomOf(this.game, (r.village || this.game.civ?.villages?.[r.building?.village])?.kingdom) : null;
     if (realmK) actions.unshift(`<button class="ws-btn ws-btn--sm" type="button" data-act="tech" data-k="${realmK.id}">${uiIcon('chronicle')}<span>Technology</span></button>`);
