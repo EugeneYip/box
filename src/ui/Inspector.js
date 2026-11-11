@@ -534,6 +534,13 @@ export class Inspector {
           b.dataset.tip = u.data.favorite ? 'Favourite' : 'Mark as favourite';
         } else this.render();
       } else if (act === 'tech') this.ui.modals.open('tech', { kingdom: +b.dataset.k });
+      else if (act === 'occupant') {
+        const id = +b.dataset.uid;
+        const U = this.game.units;
+        const who = U?.byId?.get?.(id) || U?.list?.find?.((o) => o.id === id);
+        this.showUnit(who);
+        return;
+      }
       else if (act === 'follow') this.toggleFollow();
       else if (act === 'focus') this.focusCamera();
       this.game.audio?.play?.('ui-click', { volume: 0.45 });
@@ -652,6 +659,71 @@ export class Inspector {
     const found = C instanceof Map ? C.get(id) : Array.isArray(C) ? C.find((c) => c && (c.id === id || c.name === id)) : C?.[id];
     return found || (CULTURES[id] ? { id, name: CULTURES[id].name, traits: CULTURES[id].traits || [] } : { id, name: prettyId(id), traits: [] });
   }
+  // People inside or standing in a building (the king in his hall): chips that open their card.
+  occupants(b) {
+    const U = this.game.units;
+    if (!U?.list || b.tx == null) return [];
+    const x0 = b.tx - 0.3,
+      z0 = b.ty - 0.3,
+      x1 = b.tx + (b.w || 1) + 0.3,
+      z1 = b.ty + (b.h || 1) + 0.3;
+    const cx = (x0 + x1) / 2,
+      cz = (z0 + z1) / 2,
+      rr = Math.max(x1 - x0, z1 - z0);
+    const out = [];
+    const take = (u) => {
+      if (!u?.alive || u.def?.kind !== 'humanoid' || u.data?.aboard != null) return;
+      if (u.x >= x0 && u.x <= x1 && u.z >= z0 && u.z <= z1) out.push(u);
+    };
+    if (typeof U.forEachNear === 'function') U.forEachNear(cx, cz, rr, (u) => take(u));
+    else for (const u of U.list) take(u);
+    out.sort((a, b2) => (b2.job === 'king') - (a.job === 'king') || (b2.data?.inside === true) - (a.data?.inside === true));
+    return out;
+  }
+  occupantsHtml(b) {
+    const list = safe(() => this.occupants(b), [], 'occupants') || [];
+    if (!list.length) return '';
+    const chips = list
+      .slice(0, 8)
+      .map((u) => {
+        const job = JOB[u.job] || (u.age < (u.def?.maturity ?? 0) ? JOB.child : null);
+        return `<button class="ws-tchip ws-occ" type="button" data-act="occupant" data-uid="${u.id}" style="--tint:${job?.[1] || '#c9b88a'}" aria-label="Show ${esc(u.name || 'this person')}">${uiIcon(job?.[0] || 'spawn-human')}<span>${esc(u.name || job?.[2] || 'Someone')}</span>${uiIcon('chev-right')}</button>`;
+      })
+      .join('');
+    const more = list.length > 8 ? `<span class="ws-insp__muted">+${list.length - 8} more</span>` : '';
+    return `<section class="ws-dsec"><h5>Inside · ${list.length}</h5><div class="ws-chips">${chips}${more}</div></section>`;
+  }
+  // The inspector result for one exact creature (Units.inspect picks the one
+  // nearest a point, which may be a neighbour standing on the same spot).
+  unitResult(u) {
+    const U = this.game.units;
+    if (!u || typeof U?.inspect !== 'function') return null;
+    if (typeof U.forEachNear !== 'function') return safe(() => U.inspect({ x: u.x, z: u.z }), null, 'unit result');
+    const own = Object.prototype.hasOwnProperty.call(U, 'forEachNear');
+    const prev = U.forEachNear;
+    try {
+      U.forEachNear = (x, z, r, fn) => fn(u, 0);
+      const res = U.inspect({ x: u.x, z: u.z, tx: Math.floor(u.x), ty: Math.floor(u.z) });
+      return res && res.unit === u ? res : null;
+    } catch (err) {
+      console.warn('[ui] unit result', err);
+      return null;
+    } finally {
+      if (own) U.forEachNear = prev;
+      else delete U.forEachNear;
+    }
+  }
+  showUnit(u) {
+    if (!u || u.alive === false) return;
+    const r = this.unitResult(u);
+    this.show({ x: u.x, z: u.z });
+    let i = this.results.findIndex((o) => o.unit === u);
+    if (i < 0 && r) {
+      this.results.unshift(r);
+      i = 0;
+    }
+    if (i >= 0) this.focusIndex(i);
+  }
   realmDepth(r) {
     const g = this.game;
     const isKingdom = kindOf(r) === 'kingdom';
@@ -659,6 +731,7 @@ export class Inspector {
     const k = (typeof r.kingdom === 'object' && r.kingdom) || (v ? kingdomOf(g, v.kingdom) : null);
     if (!k && !v) return '';
     let html = '';
+    if (kindOf(r) === 'building' && r.building) html += this.occupantsHtml(r.building);
     if (isKingdom && k.motto && !(r.stats || []).some((s) => /motto/i.test(String(s[0])))) html += `<p class="ws-motto">“${esc(String(k.motto))}”</p>`;
     if (k && !isKingdom) {
       const era = eraOf(g, k);
@@ -709,7 +782,7 @@ export class Inspector {
     const eq = u?.equipment ? Object.values(u.equipment).map((i) => i?.name || i?.id || 0) : null;
     const k = typeof r?.kingdom === 'object' ? r.kingdom : null;
     const keys = (r?.stats || []).map((s) => s?.[0]);
-    return r ? JSON.stringify([r.title, r.subtitle, keys, u?.alive, this.game.cameraRig.follow === u, this.results.map((o) => o.title), u?.job, u?.traits, st, eq, u?.level, u?.bio?.length, u?.data?.favorite, u?.flags, u?.name, k ? [k.motto, k.color, k.name, k.banner?.symbol, k.banner?.field] : null, k?.era, k?.researching, k?.techs?.size, !!(u || r.building) && !!this.portraits.get(u || r.building), this.isCompact()]) : '';
+    return r ? JSON.stringify([r.title, r.subtitle, keys, u?.alive, this.game.cameraRig.follow === u, this.results.map((o) => o.title), u?.job, u?.traits, st, eq, u?.level, u?.bio?.length, u?.data?.favorite, u?.flags, u?.name, k ? [k.motto, k.color, k.name, k.banner?.symbol, k.banner?.field] : null, k?.era, k?.researching, k?.techs?.size, !!(u || r.building) && !!this.portraits.get(u || r.building), this.isCompact(), kindOf(r) === 'building' && r.building ? safe(() => this.occupants(r.building).map((o) => o.id).join(','), '') : '']) : '';
   }
   valueSignature() {
     const r = this.track;
@@ -908,6 +981,13 @@ export class Inspector {
     else if (b && b.x != null) at = { x: b.x, z: b.z, tx: Math.floor(b.x), ty: Math.floor(b.z) };
     const list = this.collect(at);
     let idx = list.findIndex((o) => (u && o.unit === u) || (b && o.building === b) || (!u && !b && kindOf(o) === kindOf(r) && o.title === r.title));
+    if (idx < 0 && u && u.alive !== false) {
+      const own = this.unitResult(u);
+      if (own) {
+        list.unshift(own);
+        idx = 0;
+      }
+    }
     if (idx < 0) {
       if (isCraft(r)) {
         if (!this._deadShown) {

@@ -494,3 +494,22 @@
   opacity: 0.8;
   font-style: italic;
 }
+
+/* ---- building occupants: chips that open the person */
+.ws-occ {
+  cursor: pointer;
+  border: 0;
+  font: inherit;
+}
+.ws-occ > svg:last-child {
+  width: 12px;
+  height: 12px;
+  margin-left: 2px;
+  opacity: 0.6;
+}
+.ws-occ:hover {
+  filter: brightness(1.15);
+}
+.is-touch .ws-occ {
+  min-height: 44px;
+}
