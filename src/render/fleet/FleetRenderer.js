@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { vehicleModel, debrisGeometry, stoneGeometry } from './models.js';
-import { createVehicleMaterial, createVehicleDepthMaterial, createWakeMaterial } from './materials.js';
-import { bannerGeometry, bannerMaterial, glowTexture } from '../buildings/props.js';
+import { createVehicleMaterial, createVehicleDepthMaterial, createWaterFxMaterial } from './materials.js';
+import { bannerGeometry, bannerMaterial } from '../buildings/props.js';
 import { emblemAtlas, EMBLEM_IDS, FIELD_IDS } from '../buildings/emblems.js';
 import { ALL_KINDS, KINDS } from '../../sim/fleet/kinds.js';
 
@@ -61,12 +61,23 @@ export class FleetRenderer {
     this.flags = this._inst(bannerGeometry('vale'), this.flagMat, 32);
     this.flags.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(32 * 3), 3);
     this._flagAttr(32);
-    // wakes
-    const wg = new THREE.PlaneGeometry(3.45, 2.1, 1, 1).rotateX(-Math.PI / 2).translate(-1.07, 0, 0); // x -2.8 .. 0.65 ship lengths
-    this.wakeMat = createWakeMaterial(this.uniforms);
-    this.wakes = this._inst(wg, this.wakeMat, 32);
-    this.wakes.renderOrder = -4; // just after the water sheet
-    this._wakeAttr(32);
+    // wakes along each ship's track, hull foam and bow waves, contact shadows:
+    // one dynamic mesh, one program, one draw call
+    const FXV = 36000;
+    const fg = new THREE.BufferGeometry();
+    fg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(FXV * 3), 3).setUsage(THREE.DynamicDrawUsage));
+    fg.setAttribute('aUV', new THREE.BufferAttribute(new Float32Array(FXV * 2), 2).setUsage(THREE.DynamicDrawUsage));
+    fg.setAttribute('aK', new THREE.BufferAttribute(new Float32Array(FXV * 4), 4).setUsage(THREE.DynamicDrawUsage));
+    fg.setDrawRange(0, 0);
+    this.fxMat = createWaterFxMaterial(this.uniforms);
+    this.waterFx = new THREE.Mesh(fg, this.fxMat);
+    this.waterFx.frustumCulled = false;
+    this.waterFx.renderOrder = -4; // just after the water sheet
+    this.waterFx.visible = false;
+    this.group.add(this.waterFx);
+    this._fxMax = FXV;
+    this._hist = new Map(); // vessel id -> recent track [x, z, ...] (newest last)
+    this._histT = 0;
     // far-zoom dots: realm colour with a dark rim
     const dg = new THREE.CircleGeometry(1, 10).rotateX(-Math.PI / 2);
     const col = new Float32Array(dg.attributes.position.count * 3);
@@ -80,11 +91,6 @@ export class FleetRenderer {
     this.dots = this._inst(dg, this.dotMat, 64);
     this.dots.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(64 * 3), 3);
     this.dots.renderOrder = 7;
-    // soft contact shadows under land vehicles
-    const bg = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
-    this.blobMat = new THREE.MeshBasicMaterial({ map: this._blobTexture(), color: 0x000000, transparent: true, opacity: 0.42, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
-    this.blobs = this._inst(bg, this.blobMat, 32);
-    this.blobs.renderOrder = 2;
     // wreckage and catapult stones
     this.propMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 });
     this.debris = this._inst(debrisGeometry(), this.propMat, 64);
@@ -113,21 +119,6 @@ export class FleetRenderer {
     this._laneMax = MAXV;
   }
 
-  _blobTexture() {
-    const c = document.createElement('canvas');
-    c.width = c.height = 64;
-    const x = c.getContext('2d');
-    const g = x.createRadialGradient(32, 32, 2, 32, 32, 31);
-    g.addColorStop(0, 'rgba(255,255,255,1)');
-    g.addColorStop(0.6, 'rgba(255,255,255,0.55)');
-    g.addColorStop(1, 'rgba(255,255,255,0)');
-    x.fillStyle = g;
-    x.fillRect(0, 0, 64, 64);
-    const t = new THREE.CanvasTexture(c);
-    void glowTexture;
-    return t;
-  }
-
   _inst(geo, mat, cap) {
     const m = new THREE.InstancedMesh(geo, mat, cap);
     m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -144,11 +135,6 @@ export class FleetRenderer {
     const ea = new THREE.InstancedBufferAttribute(new Float32Array(cap * 2).fill(-1), 2);
     ea.setUsage(THREE.DynamicDrawUsage);
     this.flags.geometry.setAttribute('aEmblem', ea);
-  }
-  _wakeAttr(cap) {
-    const a = new THREE.InstancedBufferAttribute(new Float32Array(cap * 4), 4);
-    a.setUsage(THREE.DynamicDrawUsage);
-    this.wakes.geometry.setAttribute('iWake', a);
   }
   // grow an instanced prop mesh, keeping its extra attributes
   _growProp(name, n, extra) {
@@ -362,8 +348,7 @@ export class FleetRenderer {
       b.iState.needsUpdate = true;
     }
     this._flags(flagList, flagsOn, wind);
-    this._wakes(wakeList, wakesOn);
-    this._blobs(blobList, !far);
+    this._waterFxUpdate(wakeList, wakesOn, blobList, !far, dt);
     this._dots(list, far, dist, cx, cz, viewR);
     this._debris(F, !far, alpha);
     this._stones(F, alpha);
@@ -402,44 +387,150 @@ export class FleetRenderer {
     this.flags.visible = n > 0;
   }
 
-  _wakes(L, on) {
+  // Wakes laid along each ship's own track (a Kelvin V that bends with its
+  // turns and fades within a few lengths), hull foam and a short bow wave,
+  // and soft contact shadows under carts and engines.
+  _waterFxUpdate(wakes, wakesOn, blobs, blobsOn, dt) {
+    const g = this.waterFx.geometry;
+    const P = g.attributes.position.array,
+      UV = g.attributes.aUV.array,
+      K = g.attributes.aK.array;
+    const max = this._fxMax - 6;
     let n = 0;
-    if (on && L.length) {
-      const mesh = this._growProp('wakes', L.length, (cap) => this._wakeAttr(cap));
-      const wa = mesh.geometry.getAttribute('iWake');
-      for (const { x, z, h, v, beam } of L) {
-        const len = v.def.length;
-        this._q.setFromAxisAngle(this._up, -h);
-        this._m.compose(this._p.set(x, 0.015, z), this._q, this._s.set(len, 1, len));
-        mesh.setMatrixAt(n, this._m);
-        wa.setXYZW(n, Math.min(1, v.speed / v.def.speed) * (v.kind === 'fishing' ? 0.6 : 1), beam, v.seed * 10, v.anim.oar * (v.kind === 'galley' ? 1 : 0.5));
-        n++;
+    const vert = (x, y, z, u, v, kind, a, beam, s) => {
+      P[n * 3] = x;
+      P[n * 3 + 1] = y;
+      P[n * 3 + 2] = z;
+      UV[n * 2] = u;
+      UV[n * 2 + 1] = v;
+      K[n * 4] = kind;
+      K[n * 4 + 1] = a;
+      K[n * 4 + 2] = beam;
+      K[n * 4 + 3] = s;
+      n++;
+    };
+    const quad = (ax, az, bx, bz, cx, cz, dx, dz, ua, va, ub, vb, uc, vc, ud, vd, kind, aa, ab, beam, sa, sb, y = 0.02) => {
+      vert(ax, y, az, ua, va, kind, aa, beam, sa);
+      vert(bx, y, bz, ub, vb, kind, aa, beam, sa);
+      vert(cx, y, cz, uc, vc, kind, ab, beam, sb);
+      vert(ax, y, az, ua, va, kind, aa, beam, sa);
+      vert(cx, y, cz, uc, vc, kind, ab, beam, sb);
+      vert(dx, y, dz, ud, vd, kind, ab, beam, sb);
+    };
+    // track history (sampled as ships move)
+    const H = this._hist;
+    if ((this._histT -= dt) <= 0) {
+      this._histT = 2;
+      const F = this.game.fleet;
+      for (const id of H.keys()) {
+        const v = F.byId.get(id);
+        if (!v || !v.alive || v.state === 'moored') H.delete(id);
       }
-      wa.needsUpdate = true;
-      mesh.instanceMatrix.needsUpdate = true;
     }
-    this.wakes.count = n;
-    this.wakes.visible = n > 0;
-  }
-
-  _blobs(L, on) {
-    const cnt = L.length / 4;
-    let n = 0;
-    if (on && cnt) {
-      const mesh = this._growProp('blobs', cnt);
+    if (wakesOn) {
+      for (const w of wakes) {
+        const v = w.v;
+        const L = v.def.length;
+        let T = H.get(v.id);
+        if (!T) H.set(v.id, (T = []));
+        const lx = T[T.length - 2],
+          lz = T[T.length - 1];
+        if (lx == null || Math.hypot(w.x - lx, w.z - lz) > Math.max(0.15, L * 0.12)) {
+          T.push(w.x, w.z);
+          if (T.length > 64) T.splice(0, 2);
+        }
+        const spd = Math.min(1, v.speed / v.def.speed);
+        const beam = (v.def.beam || 0.4) / L;
+        const fx = Math.cos(w.h),
+          fz = Math.sin(w.h);
+        // hull foam and bow wave
+        if (n < max) {
+          const hl = L * 0.72,
+            hw = (v.def.beam || 0.4) * 0.5 + L * 0.3;
+          const px = -fz,
+            pz = fx;
+          const c0x = w.x - fx * L * 0.62,
+            c0z = w.z - fz * L * 0.62;
+          const c1x = w.x + fx * hl,
+            c1z = w.z + fz * hl;
+          quad(c0x + px * hw, c0z + pz * hw, c1x + px * hw, c1z + pz * hw, c1x - px * hw, c1z - pz * hw, c0x - px * hw, c0z - pz * hw, -0.62, hw / L, hl / L, hw / L, hl / L, -hw / L, -0.62, -hw / L, 2, spd, spd, beam, 0, 0, 0.022);
+        }
+        // the wake: walk back along the track from the stern
+        const maxS = L * 3.5;
+        let px0 = w.x - fx * L * 0.5,
+          pz0 = w.z - fz * L * 0.5;
+        let dirx = fx,
+          dirz = fz;
+        let s0 = 0;
+        let prev = null;
+        for (let i = T.length - 2; i >= -2 && s0 < maxS && n < max - 18; i -= 2) {
+          let qx, qz;
+          if (i >= 0) {
+            qx = T[i];
+            qz = T[i + 1];
+            // points ahead of the stern are skipped
+            if ((qx - px0) * fx + (qz - pz0) * fz > -0.05 && prev == null) continue;
+          } else {
+            // no more history: run straight back to finish the fade
+            qx = px0 - dirx * (maxS - s0);
+            qz = pz0 - dirz * (maxS - s0);
+          }
+          const sl = Math.hypot(qx - px0, qz - pz0);
+          if (sl < 1e-3) continue;
+          const ndx = (px0 - qx) / sl,
+            ndz = (pz0 - qz) / sl;
+          dirx = ndx;
+          dirz = ndz;
+          const s1 = Math.min(maxS, s0 + sl);
+          const t1 = Math.min(1, (s1 - s0) / sl);
+          const ex = px0 - ndx * sl * t1,
+            ez = pz0 - ndz * sl * t1;
+          const nx = -ndz,
+            nz = ndx;
+          const fade = (s) => Math.pow(Math.max(0, 1 - s / maxS), 1.6) * spd;
+          const arm = (s) => (v.def.beam || 0.4) * 0.45 + s * 0.34;
+          const bw = (s) => 0.05 + s * 0.06;
+          const a0 = fade(s0),
+            a1 = fade(s1);
+          for (const side of [1, -1]) {
+            const i0 = arm(s0) - bw(s0),
+              o0 = arm(s0) + bw(s0),
+              i1 = arm(s1) - bw(s1),
+              o1 = arm(s1) + bw(s1);
+            quad(px0 + nx * side * i0, pz0 + nz * side * i0, px0 + nx * side * o0, pz0 + nz * side * o0, ex + nx * side * o1, ez + nz * side * o1, ex + nx * side * i1, ez + nz * side * i1, s0, 0, s0, 1, s1, 1, s1, 0, 0, a0, a1, beam, s0, s1);
+          }
+          const cw0 = (v.def.beam || 0.4) * 0.3 + s0 * 0.08,
+            cw1 = (v.def.beam || 0.4) * 0.3 + s1 * 0.08;
+          quad(px0 + nx * cw0, pz0 + nz * cw0, px0 - nx * cw0, pz0 - nz * cw0, ex - nx * cw1, ez - nz * cw1, ex + nx * cw1, ez + nz * cw1, s0, 0, s0, 1, s1, 1, s1, 0, 1, a0 * (v.anim.oar > 0.3 ? 1 : 0.8), a1, beam, s0, s1);
+          prev = [ex, ez];
+          px0 = ex;
+          pz0 = ez;
+          s0 = s1;
+        }
+      }
+    }
+    if (blobsOn) {
       const W = this.game.world;
-      for (let i = 0; i < L.length; i += 4) {
-        const x = L[i],
-          z = L[i + 1],
-          s = L[i + 2];
-        this._q.setFromAxisAngle(this._up, -L[i + 3]);
-        this._m.compose(this._p.set(x, W.heightAt(x, z) + 0.04, z), this._q, this._s.set(s, 1, s * 0.6));
-        mesh.setMatrixAt(n++, this._m);
+      for (let i = 0; i < blobs.length && n < max; i += 4) {
+        const x = blobs[i],
+          z = blobs[i + 1],
+          sz = blobs[i + 2] * 0.5,
+          h = blobs[i + 3];
+        const c = Math.cos(h),
+          s = Math.sin(h);
+        const ax = c * sz,
+          az = s * sz,
+          bx = -s * sz * 0.6,
+          bz = c * sz * 0.6;
+        const y = W.heightAt(x, z) + 0.05;
+        quad(x - ax - bx, z - az - bz, x + ax - bx, z + az - bz, x + ax + bx, z + az + bz, x - ax + bx, z - az + bz, 0, 0, 1, 0, 1, 1, 0, 1, 3, 1, 1, 0, 0, 0, y);
       }
-      mesh.instanceMatrix.needsUpdate = true;
     }
-    this.blobs.count = n;
-    this.blobs.visible = n > 0;
+    g.setDrawRange(0, n);
+    g.attributes.position.needsUpdate = true;
+    g.attributes.aUV.needsUpdate = true;
+    g.attributes.aK.needsUpdate = true;
+    this.waterFx.visible = n > 0;
   }
 
   _dots(list, far, dist, cx, cz, viewR) {

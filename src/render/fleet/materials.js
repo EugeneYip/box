@@ -145,29 +145,34 @@ export function createVehicleDepthMaterial(uniforms) {
   return mat;
 }
 
-// Wake and bow wave: one instanced quad per vessel, drawn on the water in
-// ship-length units (bow at x = +0.5, stern at -0.5). Per instance: iWake
-// (x speed 0..1, y beam/length, z time offset, w rowing 0..1).
-export function createWakeMaterial(uniforms) {
+// Water effects, one program and one draw call for every vessel and vehicle:
+//   kind 0  Kelvin wake arm: a soft band laid along the ship's own track
+//           (path history), fading within a few ship lengths
+//   kind 1  churned water straight behind the stern, along the track
+//   kind 2  hull foam and the bow wave (local quad, uv in ship lengths)
+//   kind 3  contact shadow under a land vehicle
+// Attributes: aUV (x: along / local x, y: across 0..1 / local z),
+// aK (x: kind, y: strength 0..1, z: beam in ship lengths, w: distance along).
+export function createWaterFxMaterial(uniforms) {
   return new THREE.ShaderMaterial({
     uniforms: { uTime: uniforms.uTime, uLight: uniforms.uLight },
     transparent: true,
     depthWrite: false,
     vertexShader: /* glsl */ `
-attribute vec4 iWake;
-varying vec2 vP;
-varying vec4 vW;
+attribute vec2 aUV;
+attribute vec4 aK;
+varying vec2 vUV;
+varying vec4 vK;
 void main() {
-  vP = position.xz;
-  vW = iWake;
-  vec4 wp = modelMatrix * instanceMatrix * vec4(position, 1.0);
-  gl_Position = projectionMatrix * viewMatrix * wp;
+  vUV = aUV;
+  vK = aK;
+  gl_Position = projectionMatrix * viewMatrix * vec4(position, 1.0);
 }`,
     fragmentShader: /* glsl */ `
 uniform float uTime;
 uniform float uLight;
-varying vec2 vP;
-varying vec4 vW;
+varying vec2 vUV;
+varying vec4 vK;
 float h21(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float vnoise(vec2 p) {
   vec2 i = floor(p), f = fract(p);
@@ -175,47 +180,46 @@ float vnoise(vec2 p) {
   return mix(mix(h21(i), h21(i + vec2(1.0, 0.0)), f.x), mix(h21(i + vec2(0.0, 1.0)), h21(i + vec2(1.0, 1.0)), f.x), f.y);
 }
 void main() {
-  float spd = vW.x;
-  if (spd < 0.02) discard;
-  float x = vP.x, z = vP.y;
-  float az = abs(z);
-  float beam = vW.y;
-  float t = uTime + vW.z;
-  float foam = 0.0;
-  // foam hugging the hull at the waterline
-  float e = length(vec2(x / 0.52, z / max(0.05, beam * 0.55)));
-  foam += smoothstep(0.22, 0.0, abs(e - 1.0)) * (0.35 + 0.65 * spd) * step(x, 0.48);
-  // bow wave: two arms spreading back from the stem
-  float bx = 0.5 - x;
-  if (bx > 0.0) {
-    float arm = bx * 0.55 + beam * 0.22;
-    float w = 0.03 + bx * 0.035;
-    float br = smoothstep(w, 0.0, abs(az - arm)) * exp(-bx * 3.4);
-    if (br > 0.01) foam += br * (0.3 + 0.55 * spd) * (0.8 + 0.2 * vnoise(vec2(bx * 9.0 - t * 2.0, z * 9.0)));
+  float kind = vK.x;
+  float a = vK.y;
+  vec3 foamCol = vec3(0.92, 0.96, 1.0) * mix(0.3, 1.0, uLight);
+  if (kind < 0.5) {
+    // a feathered arm: soft across the band, rippled along it
+    float v = vUV.y;
+    float band = smoothstep(0.0, 0.45, v) * smoothstep(1.0, 0.55, v);
+    float rip = 0.72 + 0.28 * sin(vK.w * 9.0 - uTime * 3.0);
+    float al = band * rip * a;
+    if (al < 0.01) discard;
+    gl_FragColor = vec4(foamCol, al * 0.75);
+  } else if (kind < 1.5) {
+    float v = abs(vUV.y * 2.0 - 1.0);
+    float band = 1.0 - v * v;
+    float n = 0.45 + 0.55 * vnoise(vec2(vK.w * 3.0 - uTime * 1.5, vUV.y * 6.0));
+    float al = band * n * a;
+    if (al < 0.01) discard;
+    gl_FragColor = vec4(foamCol, al * 0.6);
+  } else if (kind < 2.5) {
+    // hull foam at the waterline and a short bow wave
+    float x = vUV.x, z = vUV.y;
+    float az = abs(z);
+    float beam = vK.z;
+    float e = length(vec2(x / 0.5, z / max(0.05, beam * 0.55)));
+    float foam = smoothstep(0.24, 0.0, abs(e - 1.0)) * (0.3 + 0.7 * a) * step(x, 0.5);
+    float bx = 0.5 - x;
+    if (bx > 0.0) {
+      float arm = bx * 0.55 + beam * 0.25;
+      float w = 0.03 + bx * 0.04;
+      foam += smoothstep(w, 0.0, abs(az - arm)) * exp(-bx * 4.0) * (0.25 + 0.75 * a);
+    }
+    foam = clamp(foam, 0.0, 1.0);
+    if (foam < 0.01) discard;
+    gl_FragColor = vec4(foamCol, foam * 0.78);
+  } else {
+    float r = length(vUV * 2.0 - 1.0);
+    float al = (1.0 - smoothstep(0.25, 1.0, r)) * 0.42 * a;
+    if (al < 0.01) discard;
+    gl_FragColor = vec4(0.0, 0.0, 0.0, al);
   }
-  // Kelvin wake: a V from the stern with soft transverse ripples
-  float sx = -0.5 - x;
-  if (sx > 0.0) {
-    float arm = sx * 0.34 + beam * 0.28;
-    float w = 0.05 + sx * 0.07;
-    float k = smoothstep(w, 0.0, abs(az - arm)) * exp(-sx * 2.0);
-    float rip = 0.78 + 0.22 * sin(sx * 22.0 - t * 4.0 + az * 6.0);
-    foam += k * rip * spd * 0.42;
-    // churned water straight behind
-    float cw = beam * 0.32 + sx * 0.1;
-    float c = smoothstep(cw, cw * 0.15, az) * exp(-sx * 1.5);
-    if (c > 0.01) c *= 0.4 + 0.6 * vnoise(vec2(sx * 7.0 - t * 3.0, z * 12.0));
-    foam += c * spd * 0.6;
-  }
-  // oar splashes along the sides
-  if (vW.w > 0.01 && abs(x) < 0.4) {
-    float sp = smoothstep(0.08, 0.0, abs(az - beam * 0.95)) * (0.5 + 0.5 * sin(x * 50.0 + t * 6.0)) * (0.5 + 0.5 * sin(t * 3.2));
-    foam += sp * vW.w * 0.5;
-  }
-  foam = clamp(foam, 0.0, 1.0) * smoothstep(1.05, 0.8, az) * smoothstep(-2.8, -2.2, x);
-  if (foam < 0.01) discard;
-  vec3 col = vec3(0.92, 0.96, 1.0) * mix(0.28, 1.0, uLight);
-  gl_FragColor = vec4(col, foam * 0.72);
   #include <colorspace_fragment>
 }`,
   });
