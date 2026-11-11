@@ -40,6 +40,7 @@ export function landscapeUniforms(game) {
       uCamDist: { value: 100 },
       // seasons & climate (game.time.season, game.age.mods.temperature, biomeFrost law)
       uSeasonTint: { value: new THREE.Vector4(0.07, 0.3, 0.045, 0.25) }, // rgb target hue, w = strength
+      uSeason: { value: 0.5 }, // game.time.season (0 spring .. 4), for crops
       uSnowT: { value: -1 }, // seasonal snow where temperature < uSnowT
       uMeltH: { value: 0 }, // snow tiles below this height melt (warm ages)
       uFreezeT: { value: -1 }, // lakes / calm shallows freeze where temperature < uFreezeT
@@ -121,6 +122,7 @@ function updateSeasonUniforms(game, u, dt = 0.016) {
   let s = game.time?.season;
   if (typeof s !== 'number' || !isFinite(s)) s = 1.5;
   s = ((s % 4) + 4) % 4;
+  u.uSeason.value = s;
   // blend between the two nearest season centres (continuous, eased)
   const x = s - 0.5;
   const i0 = (Math.floor(x) + 4) % 4,
@@ -182,6 +184,7 @@ uniform float uCamDist;
 uniform float uDetail;
 uniform float uPower;
 uniform vec4 uSeasonTint;
+uniform float uSeason;
 uniform float uSnowT;
 uniform float uMeltH;
 uniform float uFreezeT;

@@ -371,9 +371,26 @@ Mat matFarm(NS s) {
   vec3 dark = vec3(0.150, 0.080, 0.035);
   vec3 ridge = vec3(0.260, 0.155, 0.075);
   vec3 c = mix(dark, ridge, mix(0.5, fur, near));
-  // some fields are green with young crops
-  float crop = step(0.62, hash12(blk + 3.1));
-  c = mix(c, mix(vec3(0.10, 0.20, 0.04), vec3(0.18, 0.28, 0.06), fur), crop * 0.75 * mix(0.85, smoothstep(0.35, 0.75, fur), near));
+  // crops follow the year (each field a little ahead or behind): young green
+  // in spring, ripening gold through summer, stubble after the autumn
+  // harvest, bare tilled earth in winter; a few fields lie fallow
+  float ss = mod(uSeason + (hash12(blk + 5.7) - 0.5) * 0.5, 4.0);
+  float green = ss < 2.0 ? smoothstep(0.0, 0.45, ss) * (1.0 - smoothstep(1.0, 1.6, ss)) : 0.0;
+  float gold = smoothstep(1.0, 1.6, ss) * (1.0 - smoothstep(2.3, 2.7, ss));
+  float stubble = smoothstep(2.3, 2.7, ss) * (1.0 - smoothstep(2.95, 3.25, ss));
+  float sown = step(0.22, hash12(blk + 3.1));
+  float rows = mix(0.85, smoothstep(0.35, 0.75, fur), near);
+  vec3 young = mix(vec3(0.11, 0.24, 0.045), vec3(0.19, 0.31, 0.07), fur);
+  vec3 ripe = mix(vec3(0.47, 0.37, 0.12), vec3(0.60, 0.48, 0.17), fur);
+  vec3 straw = mix(vec3(0.40, 0.32, 0.17), vec3(0.50, 0.41, 0.23), fur);
+  c = mix(c, young, green * sown * 0.85 * rows);
+  c = mix(c, ripe, gold * sown * 0.9 * mix(0.9, 1.0, rows));
+  c = mix(c, straw, stubble * sown * 0.8);
+  // winter: darker, frost-dulled soil, snow dusting the furrow ridges first
+  float wint = ss > 2.9 ? smoothstep(2.9, 3.3, ss) : 0.0;
+  c = mix(c, c * vec3(0.86, 0.86, 0.92), wint);
+  float dust = smoothstep(-0.10, 0.0, uSnowT - s.temp) * mix(0.5, fur, near);
+  c = mix(c, vec3(0.60, 0.62, 0.67), dust * 0.7);
   c *= 0.88 + 0.2 * s.det.r;
   // hedgerow lines on block borders
   vec2 fb = fract((s.p.xz + (s.macro.rg - 0.5) * 1.5) / 6.0);
