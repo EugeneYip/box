@@ -754,6 +754,15 @@ export class UnitRenderer {
             }
           }
         }
+        // sea monsters at night: a soft halo at the head (photophores and fins glow on the body)
+        if (md.rig === 'serpent' && day < 0.6 && dCam < 160) {
+          const nk = Math.min(1, (0.6 - day) / 0.35);
+          const sh = Math.sin(heading),
+            chh = Math.cos(heading);
+          const gs = Math.max(0.9 * scale, 26 / ppu);
+          const sy = SEA_LEVEL + 0.12 * scale;
+          ov.emotes.add(ix + sh * 0.55 * scale, sy + 0.1 * scale, iz + chh * 0.55 * scale, gs, EMOTE.lure, 0.7 * nk, 0);
+        }
         // skywyrm fire breath
         if (md.rig === 'wyrm' && u.data?.breath > simNow) {
           this._m2.makeRotationX(0.42).setPosition(0, -0.02, 0.97);

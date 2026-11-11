@@ -110,9 +110,10 @@ export const serpentModel = {
   materials: {
     scales: { src: 'A', src2: 'B', noise: 'scales', rough: 0.35 },
     belly: { src: 'B', rough: 0.5 },
-    fin: { src: 'C', rough: 0.5, emissive: 0.12 },
-    glow: { color: 0x9ff8ff, emissive: 2.2 },
-    eye: { color: 0xfff0a0, emissive: 2.6 },
+    // fins carry the accent colour and glow faintly; photophores run down both flanks
+    fin: { src: 'C', rough: 0.5, emissive: 0.55 },
+    glow: { color: 0x9ff8ff, emissive: 3.2 },
+    eye: { color: 0xfff0a0, emissive: 3.4 },
     ivory: { color: 0xeee4cc, rough: 0.4 },
   },
   build(B) {
@@ -126,7 +127,9 @@ export const serpentModel = {
       const r = serpentRadius(t);
       const h = 0.16 * (1 - t * 0.8);
       B.add(P.slab([[0, 0], [h * 1.4, 0], [h * 0.2, h]], 0.012), { pos: [0, r * 0.85, z + h * 0.7], rot: [0, Math.PI / 2, 0], bone: 'spine', mat: 'fin' });
-      if (i % 2 === 0) for (const s of [1, -1]) B.add(P.sphere(0.022 * (1 - t * 0.6), 6, 4), { pos: [r * 0.95 * s, r * 0.1, z], bone: 'spine', mat: 'glow' });
+      for (const s of [1, -1]) B.add(P.sphere((i % 2 ? 0.024 : 0.036) * (1 - t * 0.55), 6, 4), { pos: [r * 0.96 * s, r * 0.12, z], bone: 'spine', mat: 'glow' });
+      // a glowing dorsal bead at each fin
+      B.add(P.sphere(0.02 * (1 - t * 0.5), 5, 4), { pos: [0, r * 0.98, z], bone: 'spine', mat: 'glow', minor: true });
     }
     // tail fluke
     B.add(P.leaf([[0, 0], [0.1, -0.15], [0.02, -0.4], [0, -0.22], [-0.02, -0.4], [-0.1, -0.15]], 0.012), { pos: [0, 0, -3.08], rot: [Math.PI / 2, 0, 0], bone: 'spine', mat: 'fin' });

@@ -44,6 +44,40 @@ function pickTrait(rng, pool, u) {
   return null;
 }
 
+// How each cause of death reads in a life story ("Died ...").
+const DEATH_WORDS = {
+  'old age': 'of old age',
+  starvation: 'of hunger',
+  fire: 'in the flames',
+  lava: 'in molten rock',
+  drowned: 'by drowning',
+  plague: 'of the plague',
+  sickness: 'of a fever',
+  wounds: 'of their wounds',
+  killed: 'in a fight',
+  arrow: 'by an arrow',
+  executed: "at the executioner's block",
+  meteor: 'beneath a falling star',
+  lightning: 'struck by lightning',
+  smite: 'smitten by the gods',
+  divine: 'by the will of the gods',
+  removed: 'taken by the gods',
+  earthquake: 'in an earthquake',
+  tornado: 'in a whirlwind',
+  flood: 'in a flood',
+  tsunami: 'beneath a great wave',
+  storm: 'in a storm',
+  cold: 'of the cold',
+  ship: 'in a sea fight',
+  stranded: 'stranded ashore',
+  explosion: 'in a blast',
+  acid: 'in acid rain',
+  curse: 'under a curse',
+  disaster: 'in a disaster',
+  golem: 'crushed by a golem',
+  damage: 'of their wounds',
+};
+
 export function installDepth(Units) {
   const P = Units.prototype;
   P.TRAITS = TRAITS;
@@ -331,8 +365,14 @@ export function installDepth(Units) {
     const g = this.game;
     if (u.def.kind !== 'animal') {
       const age = Math.floor(u.age);
-      const why = cause === 'old age' ? 'of old age' : cause === 'starvation' ? 'of hunger' : cause === 'fire' ? 'in the flames' : cause === 'drowned' ? 'by drowning' : killer ? `at the hands of ${killer.name || 'a ' + killer.def.name.toLowerCase()}` : `(${cause})`;
+      let why = DEATH_WORDS[cause];
+      if (killer) {
+        const realm = killer.def.kind === 'humanoid' && killer.kingdom >= 0 && killer.kingdom !== u.kingdom ? g.civ?.kingdomName?.(killer.kingdom) : null;
+        why = `${cause === 'arrow' ? 'by an arrow from' : 'at the hands of'} ${killer.name || 'a ' + killer.def.name.toLowerCase()}${realm ? ' of ' + realm : ''}`;
+      }
+      if (!why) why = `of ${String(cause || 'unknown causes').replace(/_/g, ' ')}`;
       this.log(u, `Died ${why}, aged ${age}`);
+      u.deathCause = cause;
     }
     // a widow or widower outlives their spouse
     const sp = u.data?.civ?.spouse;
