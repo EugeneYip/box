@@ -135,44 +135,45 @@ export const land = {
     void civ;
   },
 
+  // Ox carts even out a realm's stores: goods go from the town whose store is
+  // fullest (relative to what it can keep) to the one that has least, the
+  // capital first. Relative fill, not fixed amounts: late in the game towns
+  // spend their wood and stone on arms and great works and rarely sit above
+  // a fixed mark, yet one is always richer than another.
   _sendCart(k) {
     const civ = this.game.civ;
     const vs = k.villages.map((id) => civ.villages[id]).filter((v) => v?.alive);
     if (vs.length < 2) return;
     const cap = civ.villages[k.capital];
-    const surplus = (v, r) => {
-      const keep = r === 'food' ? v.pop * 5 + 40 : r === 'wood' ? 70 : r === 'stone' ? 45 : 20;
-      return (v[r] || 0) - keep;
-    };
+    const capOf = (v, r) => (r === 'food' ? v.foodCap || 160 : r === 'wood' ? v.woodCap || 120 : r === 'stone' ? v.stoneCap || 100 : 60);
+    const fill = (v, r) => (v[r] || 0) / Math.max(1, capOf(v, r));
     let best = null,
       bs = 0;
-    for (const v of vs)
-      for (const r of ['food', 'wood', 'stone', 'ore']) {
-        const s = surplus(v, r);
-        if (s > bs + this.rng() * 8) {
-          bs = s;
-          best = { v, r };
+    // food only moves when someone is short of it (it is the plentiful good)
+    const want = ['wood', 'stone', 'ore', 'food'];
+    for (const r of want)
+      for (const from of vs) {
+        const have = from[r] || 0;
+        if (have < (r === 'food' ? from.pop * 3 + 30 : 18)) continue;
+        for (const to of vs) {
+          if (to === from || to.landId !== from.landId) continue;
+          const d = Math.hypot(to.cx - from.cx, to.cz - from.cz);
+          if (d < 8 || d > 110) continue;
+          let gap = fill(from, r) - fill(to, r) + (to === cap ? 0.15 : 0);
+          if (r === 'food') gap = to.starving || to.food < to.pop * 2.5 + 6 ? gap + 0.3 : gap - 0.35;
+          if (gap < 0.22) continue;
+          const sc = gap * (r === 'food' ? 0.8 : 1) - d * 0.002 + this.rng() * 0.08;
+          if (sc > bs) {
+            bs = sc;
+            best = { from, to, r, gap };
+          }
         }
       }
-    if (!best || bs < 8) return;
-    // where it is needed most
-    let to = null,
-      td = Infinity;
-    for (const o of vs) {
-      if (o === best.v || o.landId !== best.v.landId) continue;
-      const d = Math.hypot(o.cx - best.v.cx, o.cz - best.v.cz);
-      if (d < 8 || d > 110) continue;
-      const need = (o[best.r] || 0) - (o === cap ? 60 : 0);
-      const sc = need + d * 0.3;
-      if (sc < td) {
-        td = sc;
-        to = o;
-      }
-    }
-    if (!to) return;
-    const amt = Math.floor(Math.min(24, bs * 0.5));
+    if (!best) return;
+    const { from, to, r, gap } = best;
+    const amt = Math.floor(Math.min(24, (from[r] || 0) * 0.4, gap * 0.5 * capOf(to, r)));
     if (amt < 4) return;
-    this.requestCart({ kingdom: k.id, from: best.v.id, to: to.id, cargo: { [best.r]: amt } });
+    this.requestCart({ kingdom: k.id, from: from.id, to: to.id, cargo: { [r]: amt } });
   },
 
   _sendCaravan(k) {
@@ -402,7 +403,9 @@ export const land = {
     const target = civ.villages[army.target];
     // in the siege: find something to batter
     let b = null;
-    if (army.state === 'siege' && target?.alive) {
+    // before the walls (the army's siege, or already in sight of the town on the march)
+    const close = target?.alive && Math.hypot(target.cx - v.x, target.cz - v.z) < (target.radius || 9) + 14;
+    if (target?.alive && (army.state === 'siege' || (army.state === 'march' && close))) {
       if ((v.pickT = (v.pickT || 0) - step) <= 0 || !v.siegeTarget?.alive) {
         v.pickT = 1.5;
         v.siegeTarget = this._siegePick(v, target);
@@ -430,7 +433,7 @@ export const land = {
           v.fireT = 2.2;
           a.ram = 1;
           const mod = civ.techMod?.(v.kingdom, 'siege') ?? 1;
-          civ.damageBuilding?.(b, 24 * mod, 'siege');
+          civ.damageBuilding?.(b, Math.max(24 * mod, (b.maxHp || 100) * (BUILDING_TYPES[b.type]?.wall ? 0.2 : 0.12) * mod), 'siege');
           this._fx('debris', b.x, b.z, 0.6);
           this._fx('dust', v.x + Math.cos(v.heading) * 0.8, v.z + Math.sin(v.heading) * 0.8, 0.5);
           this._sfx('hit', b.x, b.z, 0.5);
@@ -473,7 +476,7 @@ export const land = {
     const behind = (trail.length - v.ti) / 2;
     const want = Math.atan2(tz - v.z, tx - v.x);
     v.heading = turnTo(v.heading, want, step * v.def.turn);
-    const tgt = v.def.speed * (behind > 30 ? 1.5 : 1);
+    const tgt = v.def.speed * (behind > 24 ? 1.7 : behind > 10 ? 1.25 : 1);
     v.speed += (tgt - v.speed) * Math.min(1, step * 2);
     const s = Math.min(d, v.speed * step);
     v.x += Math.cos(want) * s;
@@ -509,7 +512,7 @@ export const land = {
       jz = (this.rng() - 0.5) * 0.8;
     const d = Math.hypot(b.x - ax, b.z - az);
     v.anim.arm = 1;
-    this.stones.push({ x0: ax, z0: az, y0: w.heightAt(ax, az) + 0.9, x1: b.x + jx, z1: b.z + jz, y1: (b.y ?? w.heightAt(b.x, b.z)) + 0.6, t: 0, dur: 1.3 + d * 0.07, peak: 2.5 + d * 0.35, b: b.id, kingdom: v.kingdom, dmg: 38 * (civ.techMod?.(v.kingdom, 'siege') ?? 1), from: v.id });
+    this.stones.push({ x0: ax, z0: az, y0: w.heightAt(ax, az) + 0.9, x1: b.x + jx, z1: b.z + jz, y1: (b.y ?? w.heightAt(b.x, b.z)) + 0.6, t: 0, dur: 1.3 + d * 0.07, peak: 2.5 + d * 0.35, b: b.id, kingdom: v.kingdom, dmg: Math.max(38, (b.maxHp || 100) * (BUILDING_TYPES[b.type]?.wall ? 0.24 : 0.14)) * (civ.techMod?.(v.kingdom, 'siege') ?? 1), from: v.id });
     this.totals.stones++;
     this._sfx('chop', v.x, v.z, 0.5);
   },
@@ -529,8 +532,9 @@ export const land = {
         civ.damageBuilding?.(b, s.dmg, 'siege');
         this._siegeBreach({ kingdom: s.kingdom, kind: 'catapult' }, b);
       }
-      this._fx('debris', s.x1, s.z1, 0.7);
-      this._fx('dust', s.x1, s.z1, 0.9);
+      this._fx('debris', s.x1, s.z1, 1.1);
+      this._fx('dust', s.x1, s.z1, 1.6);
+      this._fx('dust', s.x1 + (this.rng() - 0.5), s.z1 + (this.rng() - 0.5), 1.1);
       this.game.fx?.shake?.(s.x1, s.z1, 0.15);
       this._sfx('hit', s.x1, s.z1, 0.7);
     }
