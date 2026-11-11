@@ -256,7 +256,7 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   vec3 foamCol = vec3(0.90, 0.95, 1.0) * (waterIrradianceV(lightVis) * 0.78 + vec3(0.02));
 
   // ---- frozen water (ICE tiles under the surface) - opaque sheet, soft edges
-  vec2 iq = p + (fn.rg - 0.5) * 1.2 - 0.5;
+  vec2 iq = p + (fn.rg - 0.5) * 2.0 + (fc.gb - 0.5) * 0.3 - 0.5;
   ivec2 ic = ivec2(floor(iq));
   vec2 ifr = smoothstep(0.0, 1.0, fract(iq));
   ivec2 isz = ivec2(uWorldSize) - 1;
@@ -265,7 +265,7 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   float i01 = isIceAt(ic + ivec2(0, 1), isz);
   float i11 = isIceAt(ic + ivec2(1, 1), isz);
   float iceF = mix(mix(i00, i10, ifr.x), mix(i01, i11, ifr.x), ifr.y);
-  float ice = smoothstep(0.18, 0.82, iceF + (fc.b - 0.5) * 0.3 + (fn.g - 0.5) * 0.25) * (1.0 - outK) * step(0.001, depth);
+  float ice = smoothstep(0.25, 0.75, iceF + (fn.g - 0.5) * 0.35 + (fn.b - 0.5) * 0.2) * (1.0 - outK) * step(0.001, depth);
   // seasonal freeze: lakes, rivers and calm shallows at the coldest latitudes
   if (uFreezeT > -0.1) {
     // coherent: the shelf grows out from the shore as the cold deepens (smooth
