@@ -154,7 +154,6 @@ export class Smite {
     // a lingering hot glow at the foot of the beam
     glowFlash(fx, x, y + 1.2, z, r * 4.2, { life: 2.2, bright: 0.7, color: 0xffc870, from: 0.9, soft: 0 });
     for (let k = 1; k <= 3; k++) glowFlash(fx, x, y + 2 + k * 2.6, z, r * (2.6 - k * 0.45), { life: 0.55 + k * 0.1, bright: 1.3, color: 0xfff0c8, from: 0.6, soft: 0, delay: k * 0.03 });
-    fx.decal({ frame: DF.RING, x, z, size: r * 1.6, grow: 4.6, life: 0.9, overlay: true, additive: true, surface: 2, color: 0xfff0c0, intensity: 2.2, fadeIn: 0.01, fadeOut: 0.2, grain: 0 });
     sparks(fx, x, y + 0.3, z, fx.k(46), { speed: 12, ramp: RAMP.GOLD, bright: 2.2, size: 1.4, gravity: 10, stretch: 0.08 });
     sparks(fx, x, y + 0.6, z, fx.k(26), { speed: 9, up: true, ramp: RAMP.GOLD, bright: 2.0, size: 1.2, gravity: 12, stretch: 0.07 });
     // outward debris
