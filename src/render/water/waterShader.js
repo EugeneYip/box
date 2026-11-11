@@ -369,7 +369,7 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
     // thin, darker slush towards the floe edge
     iceAlb = mix(scat * 4.0 + vec3(0.06, 0.08, 0.10), iceAlb, smoothstep(0.0, 0.6, ice));
     // raised rim along every plate and sheet edge (reads as thickness)
-    float rimK = max(iceRim, smoothstep(0.3, 0.5, ice) * (1.0 - smoothstep(0.55, 0.85, ice)));
+    float rimK = max(iceRim, smoothstep(0.3, 0.5, ice) * (1.0 - smoothstep(0.55, 0.85, ice))) * (1.0 - 0.85 * rivIce);
     iceAlb = mix(iceAlb, vec3(0.52, 0.58, 0.63), rimK * 0.55);
     float ndl = max(L.y, 0.0);
     vec3 iceCol = iceAlb * (keyL * ndl * lightVis * 0.85 + uAmbCol * 0.65);
@@ -397,7 +397,7 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
 
   // ---- distance fade into the horizon (never show the far-plane cut)
   float farK = smoothstep(uCamFar * 0.55, uCamFar * 0.92, viewDist);
-  col = mix(col, uSkyCol, farK);
+  col = mix(col, mix(uSkyCol * 0.78, uZenCol, 0.3), farK);
   a = mix(a, 1.0, farK);
 
   gl_FragColor = vec4(col, a);
