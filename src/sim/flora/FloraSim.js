@@ -110,6 +110,9 @@ export class FloraSim {
         const ok = alt && climateFactor(alt, world.temperature[i]) >= 0.5 && suitAt(world, alt, tx, ty, i) >= 0.3;
         world.flora[i] = ok ? alt : FLORA.NONE;
         if (!ok) world.floraGrowth[i] = 0;
+      } else if (f === FLORA.CACTUS && world.moisture[i] > 0.42) {
+        // a cactus in moist country becomes a shrub
+        world.flora[i] = FLORA.BUSH;
       } else if (f === FLORA.FLOWERS) {
         const d = flowerDrift(tx, ty);
         if (d < 0.5 || world.slopeAt(tx, ty) > 1.15) {
@@ -126,7 +129,8 @@ export class FloraSim {
         // arid land: cacti, succulents, dry shrubs and stones around the dunes
         const r = this.hash(i * 13 + 7);
         const desert = world.type[i] === TILE.DESERT;
-        if (desert ? r < 0.09 : r < 0.018) world.flora[i] = FLORA.CACTUS;
+        const dry = world.moisture[i] < (desert ? 0.42 : 0.33);
+        if (dry && (desert ? r < 0.09 : r < 0.018)) world.flora[i] = FLORA.CACTUS;
         else if (desert ? r < 0.17 : r < 0.085) world.flora[i] = FLORA.BUSH;
         else if (desert ? r < 0.21 : r < 0.1) world.flora[i] = FLORA.ROCK_SMALL;
         if (world.flora[i]) world.floraGrowth[i] = 0.7 + this.hash(i * 3) * 0.3;

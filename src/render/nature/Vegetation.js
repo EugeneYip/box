@@ -600,6 +600,9 @@ export class Vegetation {
     const list = g.units?.list || [];
     const sel = g.selected?.kind === 'unit' ? g.selected.ref : null;
     const fol = rig.follow;
+    // a selected or followed boat / cart (fleet craft) also opens the canopy
+    const craftRef = g.selected && g.selected.kind !== 'unit' && g.selected.kind !== 'building' ? g.selected.ref : null;
+    const craft = craftRef && typeof craftRef.x === 'number' && typeof craftRef.z === 'number' ? craftRef : fol && fol.vessel && typeof fol.vessel.x === 'number' ? fol.vessel : null;
     // camera direction in tile steps (crowns between unit and camera)
     const cdx = rig.camera.position.x - rig.target.x,
       cdz = rig.camera.position.z - rig.target.z;
@@ -607,6 +610,7 @@ export class Vegetation {
     const sx = Math.round(cdx / cl),
       sz = Math.round(cdz / cl);
     let sig = (sx + 2) * 5 + (sz + 2);
+    if (craft) sig = (Math.imul(sig, 31) + ((craft.z | 0) * W + (craft.x | 0)) * 3 + 2) | 0;
     const n = Math.min(list.length, 1000);
     for (let k = 0; k < n; k++) {
       const un = list[k];
@@ -637,6 +641,14 @@ export class Vegetation {
         if (v > T[i]) T[i] = v;
         this.occEnqueue(i);
       };
+      if (craft) {
+        const tx = craft.x | 0,
+          tz = craft.z | 0;
+        for (let dz = -2; dz <= 2; dz++) for (let dx = -2; dx <= 2; dx++) mark(tx + dx, tz + dz, Math.abs(dx) + Math.abs(dz) <= 2 ? 1 : 0.7);
+        mark(tx + sx, tz + sz, 1);
+        mark(tx + 2 * sx, tz + 2 * sz, 0.9);
+        mark(tx + 3 * sx, tz + 3 * sz, 0.6);
+      }
       for (let k = 0; k < n; k++) {
         const un = list[k];
         if (!un.alive || un.data?.hidden || un.data?.inside) continue;
