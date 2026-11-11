@@ -55,15 +55,15 @@ export class LightPool {
     this.requests.length = 0;
   }
 
-  // Power saver uses fewer lights. Hidden lights leave the shader light
-  // count, so materials recompile once per toggle (programs are cached).
+  // Power saver uses fewer lights. The unused ones stay in the scene (always
+  // visible) at zero intensity: changing the scene's light count would make
+  // every lit material compile a new shader-program variant.
   setMax(n) {
     n = Math.max(1, Math.min(MAX, n | 0));
     if (n === this.max) return;
     this.max = n;
     for (let i = 0; i < MAX; i++) {
       const on = i < n;
-      this.lights[i].visible = on;
       if (!on) {
         this.lights[i].intensity = 0;
         this.keys[i] = null;
