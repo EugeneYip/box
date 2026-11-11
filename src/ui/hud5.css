@@ -199,7 +199,7 @@
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.15s;
-  z-index: 60;
+  z-index: 70; /* above .ws-modals (60) */
 }
 .ws-pop.is-shown {
   opacity: 1;

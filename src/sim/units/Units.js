@@ -2263,7 +2263,9 @@ export class Units {
     if (u.traits && u.traits.length) stats.push(['Traits', u.traits.map((id) => this.TRAITS.find((t) => t.id === id)?.name || id).join(', ')]);
     const kname = u.kingdom >= 0 ? g.civ?.kingdomName?.(u.kingdom) || 'Kingdom ' + u.kingdom : null;
     return {
-      priority: 10,
+      // a creature is only picked within ~0.75 tiles of the tap, so it outranks
+      // the building it stands at (buildings are 20); the inspector still lists both
+      priority: 25,
       kind: 'unit',
       unit: u,
       title: (u.name || def.name) + (this.levelTitle(u) ? ' ' + this.levelTitle(u) : ''),

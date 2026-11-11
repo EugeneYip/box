@@ -12,7 +12,9 @@ export class Popover {
   constructor(ui) {
     this.ui = ui;
     this.el = el('div', { class: 'ws-pop', role: 'tooltip' });
-    ui.layer.append(this.el);
+    // mounted on the UI root above the dialogs (the floating layer is its own
+    // stacking context at z 40, so tips inside World Laws, tech and settings were hidden)
+    (ui.root || ui.layer).append(this.el);
     this.target = null;
     const root = ui.root;
     root.addEventListener('pointerover', (e) => {
