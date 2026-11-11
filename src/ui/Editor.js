@@ -465,6 +465,8 @@ export class Editor {
 
     // blessings (flags)
     const okF = fn(U, 'setUnitFlag');
+    const kRealm = g.civ?.kingdoms?.[u.kingdom];
+    const isRuler = u.job === 'king' || (kRealm && (kRealm.ruler === u.id || kRealm.ruler === u));
     const flag = (key) => !!(u.flags?.[key] ?? u.data?.flags?.[key]);
     const setF = (key, val, label) => {
       if (!safe(() => U.setUnitFlag(u, key, val), false)) return false;
@@ -475,7 +477,7 @@ export class Editor {
       this.section(
         'Blessings',
         [
-          this.toggle('Immortal', () => flag('immortal'), okF, (v) => setF('immortal', v, v ? 'Made immortal' : 'Mortal again'), 'No death from age, hunger or wounds'),
+          this.toggle('Immortal', () => flag('immortal'), okF, (v) => setF('immortal', v, v ? 'Made immortal' : 'Mortal again'), isRuler ? 'No death from age, hunger or wounds. Immortal rulers step down after 60 years on the throne.' : 'No death from age, hunger or wounds'),
           this.toggle('Pacifist', () => flag('pacifist'), okF, (v) => setF('pacifist', v, v ? 'Swears off violence' : 'Will fight again'), 'Never starts a fight'),
           this.toggle('Ageless', () => flag('frozenAge'), okF, (v) => setF('frozenAge', v, v ? 'Age frozen' : 'Ageing resumes'), 'Stops growing older'),
           okF ? null : this.missing(),
