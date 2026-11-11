@@ -53,22 +53,36 @@ export const missions = {
       toName = this._placeName(deliver.x, deliver.z);
     } else return refuse('no destination');
     if (nav.comp(dest.x, dest.z) !== h.water) return refuse('no water route');
-    const path = nav.findPath(h.berth.x, h.berth.z, dest.x, dest.z, { big: false });
-    if (!path) return refuse('no water route');
-    const L = pathLength(path);
-    // the right ship for the distance
-    let options = [kind];
-    if (kind === 'transport') options = cargo.army ? ['transport', 'carrack'] : ['transport', 'explorer', 'carrack'];
-    else if (kind === 'cog') options = ['cog', 'carrack'];
-    let pick = null;
+    const straight = Math.hypot(dest.x - h.berth.x, dest.z - h.berth.z);
+    // the right ship for the route: short hauls go in cogs and transports (even
+    // for a realm with carracks), long ones in ocean-going ships; great ships
+    // never sail up narrow rivers
+    let options;
+    if (kind === 'transport' || cargo.settlers || cargo.army) options = cargo.army ? ['transport', 'carrack'] : straight < 120 ? ['transport', 'carrack', 'explorer'] : ['carrack', 'explorer', 'transport'];
+    else if (kind === 'cog' || kind === 'carrack') options = straight < 70 || kind === 'cog' ? ['cog', 'carrack'] : ['carrack', 'cog'];
+    else options = [kind];
+    let pick = null,
+      path = null;
+    const byClear = new Map();
+    let reason = 'no water route';
     for (const k of options) {
       if (k !== kind && !this.hasTech(kid, KINDS[k].tech)) continue;
-      if (L <= this.range(kid, k)) {
-        pick = k;
-        break;
+      const c = KINDS[k].clear || 0;
+      let p = byClear.get(c);
+      if (p === undefined) {
+        p = nav.findPath(h.berth.x, h.berth.z, dest.x, dest.z, { big: c >= 2, minClear: c });
+        byClear.set(c, p);
       }
+      if (!p) continue;
+      if (pathLength(p) > this.range(kid, k)) {
+        reason = 'beyond the reach of its ships';
+        continue;
+      }
+      pick = k;
+      path = p;
+      break;
     }
-    if (!pick) return refuse('beyond the reach of its ships');
+    if (!pick) return refuse(reason);
     if (pick === 'explorer' && cargo.settlers) cargo.settlers = Array.isArray(cargo.settlers) ? cargo.settlers.slice(0, 6) : Math.min(6, cargo.settlers);
     let v = this.list.find((s) => s.alive && s.kind === pick && s.harbour === h.id && s.state === 'moored' && !s.mission && !s.layup);
     if (!v) v = this.spawn(pick, kid, h.berth.x, h.berth.z, { home: h.village, harbour: h.id, heading: Math.atan2(h.dirZ, h.dirX) });
@@ -727,7 +741,7 @@ export const missions = {
     }
     v.mission = { type: 'chart', phase: 'out', cell: best };
     v.voyage = { from: from.village, fromHarbour: from.id, to: { x: nav.nx[best], z: nav.nz[best] }, fromName: from.name, toName: 'uncharted waters', t0: now };
-    const p = nav.findPath(v.x, v.z, nav.nx[best], nav.nz[best], { big: true, maxLen: this.range(kid, 'explorer') });
+    const p = nav.findPath(v.x, v.z, nav.nx[best], nav.nz[best], { big: true, maxLen: this.range(kid, 'explorer'), minClear: KINDS.explorer.clear });
     if (!p) {
       v.mission = null;
       v.voyage = null;

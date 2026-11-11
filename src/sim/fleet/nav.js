@@ -449,7 +449,8 @@ export class WaterNav {
   }
 
   // Smoothed water route between two water points. opts: {big (prefer open
-  // water), maxLen (tiles; refuse longer), clear (preferred clearance)}.
+  // water), minClear (never use narrower water, except near the two ends),
+  // maxLen (tiles; refuse longer), clear (clearance kept when smoothing)}.
   findPath(sx, sz, gx, gz, opts = {}) {
     if (!this.isWater(sx, sz) || !this.isWater(gx, gz)) return null;
     // short hops in plain sight need no graph
@@ -458,14 +459,14 @@ export class WaterNav {
     const b = this._attach(gx, gz);
     if (!a || !b) return null;
     if (this.compOf[a.cell] !== this.compOf[b.cell]) return null;
-    const cells = this._astar(a.cell, b.cell, !!opts.big);
+    const cells = this._astar(a.cell, b.cell, !!opts.big, opts.minClear || 0);
     if (!cells) return null;
     const raw = [sx, sz, ...a.pts];
     for (const c of cells) raw.push(this.nx[c], this.nz[c]);
     // b.pts runs goal -> node: append reversed (node -> goal)
     for (let i = b.pts.length - 2; i >= 0; i -= 2) raw.push(b.pts[i], b.pts[i + 1]);
     raw.push(gx, gz);
-    const path = this.smooth(raw, opts.clear ?? (opts.big ? 2 : 1.4));
+    const path = this.smooth(raw, opts.clear ?? Math.max(opts.big ? 2 : 1.4, opts.minClear || 0));
     if (opts.maxLen && pathLength(path) > opts.maxLen) return null;
     return path;
   }
@@ -494,8 +495,18 @@ export class WaterNav {
     return clean;
   }
 
-  _astar(s, g, big) {
+  _astar(s, g, big, minClear = 0) {
     const cw = this.cw;
+    const sx0 = s % cw,
+      sy0 = (s / cw) | 0,
+      gx0 = g % cw,
+      gy0 = (g / cw) | 0;
+    // within two cells of either end a ship may use narrower water (harbour mouths)
+    const nearEnd = (c) => {
+      const x = c % cw,
+        y = (c / cw) | 0;
+      return Math.max(Math.abs(x - sx0), Math.abs(y - sy0)) <= 2 || Math.max(Math.abs(x - gx0), Math.abs(y - gy0)) <= 2;
+    };
     const stamp = ++this._stamp;
     const G = this._g,
       from = this._from,
@@ -581,6 +592,7 @@ export class WaterNav {
         const md = Math.min(dc, this.nd[o]);
         // keep off the coasts; big ships avoid rivers and narrows
         let mul = 1 + 1.2 / Math.max(1, md);
+        if (minClear > 0 && md < minClear && !(nearEnd(c) && nearEnd(o))) continue;
         if (big && md < 2) mul *= 3;
         const ng = G[c] + len * mul;
         if (seen[o] !== stamp || ng < G[o]) {

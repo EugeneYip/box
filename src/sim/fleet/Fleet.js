@@ -479,8 +479,10 @@ export class Fleet {
   // Water route for a vessel from where it is to (gx, gz).
   seaPath(v, gx, gz, maxLen = Infinity) {
     const big = !!(v.def.big || v.kind === 'galley' || v.kind === 'carrack');
-    let p = this.nav.findPath(v.x, v.z, gx, gz, { big, maxLen });
-    if (!p && big) p = this.nav.findPath(v.x, v.z, gx, gz, { big: false, maxLen });
+    const minClear = v.def.clear || 0;
+    let p = this.nav.findPath(v.x, v.z, gx, gz, { big, maxLen, minClear });
+    // cogs and transports may thread a channel to get home; great ships may not
+    if (!p && minClear > 0 && minClear < 2.5) p = this.nav.findPath(v.x, v.z, gx, gz, { big: false, maxLen, minClear: 1 });
     return p;
   }
 
