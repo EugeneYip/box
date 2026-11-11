@@ -1515,7 +1515,9 @@ export class Civilization {
       }
       return;
     }
-    if (v.policy?.buildings === false) return; // the gods forbid new building here
+    const frozen = v.policy?.buildings === false; // the gods forbid new building here
+    if (frozen && v.frozenHousing == null) v.frozenHousing = v.housing;
+    if (!frozen) v.frozenHousing = null;
     let sites = 0;
     for (const b of v.buildings) if (b.alive && (b.constructing || b.upgrading) && !BUILDING_TYPES[b.type].wall) sites++;
     const maxSites = 1 + Math.floor(v.adults / 7);
@@ -1527,6 +1529,7 @@ export class Civilization {
     let actions = 0;
     const room = () => sites < maxSites && actions < 2;
     const build = (type, placer) => {
+      if (frozen && !(type === 'house' && v.housing < (v.frozenHousing ?? 0)) && !(type === 'granary' && count('granary') === 0)) return false;
       const cost = costOf(type, 1, v.culture);
       if (!canAfford(v, cost)) {
         v.need = type;
@@ -1543,7 +1546,7 @@ export class Civilization {
       return true;
     };
     const upgrade = (b) => {
-      if (!b || b.upgrading || b.constructing) return false;
+      if (!b || b.upgrading || b.constructing || frozen) return false;
       const def = BUILDING_TYPES[b.type];
       if (b.level >= def.levels) return false;
       const cost = costOf(b.type, b.level + 1, v.culture);
@@ -1692,7 +1695,7 @@ export class Civilization {
       if (cap >= 28) this._planWalls(v, cap);
       else v.wallsPlanned = true; // no room: the town relies on its towers
     }
-    if (v.wallsPlanned && v.wallPlan?.length && (wallPol ?? this.law('civWalls'))) this._advanceWalls(v, 3);
+    if (v.wallsPlanned && v.wallPlan?.length && !frozen && wallPol !== false && (wallPol ?? this.law('civWalls'))) this._advanceWalls(v, 3);
     if (room() && v.tier >= 1) {
       const cand = v.buildings.find((b) => b.alive && b.type === 'house' && !b.constructing && !b.upgrading && b.level < Math.min(3, v.tier + 1));
       if (cand && v.wood > 40) upgrade(cand);
