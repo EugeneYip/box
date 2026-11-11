@@ -888,9 +888,9 @@ export const politics = {
     L += (v.loyaltyBoost || 0);
     v.loyaltyBoost = Math.max(0, (v.loyaltyBoost || 0) - 1);
     v.loyalty = clamp(v.loyalty + (L - v.loyalty) * 0.2, 0, 100);
-    if (v.loyalty < 32 && v.pop >= 8) v.unrest = (v.unrest || 0) + 1;
+    if (v.loyalty < 36 && v.pop >= 8) v.unrest = (v.unrest || 0) + 1;
     else v.unrest = Math.max(0, (v.unrest || 0) - 1);
-    if (v.unrest >= 3 && this._kLaw(k.id, 'civRebellions') && this.rng.chance(alive < 3 ? 0.3 : 0.14)) this.rebel(v);
+    if (v.unrest >= 3 && this._kLaw(k.id, 'civRebellions') && this.rng.chance(alive < 3 ? 0.3 : 0.2)) this.rebel(v);
   },
 
   _aliveKingdoms() {
