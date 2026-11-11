@@ -88,6 +88,10 @@ export const missions = {
     if (!v) v = this.spawn(pick, kid, h.berth.x, h.berth.z, { home: h.village, harbour: h.id, heading: Math.atan2(h.dirZ, h.dirX) });
     if (!v) return refuse('no ship');
     const type = cargo.settlers ? 'colony' : cargo.army ? 'army' : toH ? 'trade' : 'voyage';
+    // when each realm last traded, and when anyone last sailed to settle
+    const lv = this._lastVoy || (this._lastVoy = { trade: new Map(), colony: -1e9 });
+    if (type === 'trade') lv.trade.set(kid, this.game.time.total);
+    if (type === 'colony') lv.colony = this.game.time.total;
     v.mission = { type, phase: 'out', requested: !o._self, toH: toH?.id ?? null, from: h.id, t0: this.game.time.total };
     v.cargo = cargo;
     v.deliver = deliver;
@@ -522,8 +526,14 @@ export const missions = {
       const kid = k.id;
       if (sailing && this.hasTech(kid, 'fishing') && this.auto.fishing) this._scheduleFishing(k);
       if (sailing && this.hasTech(kid, 'sailing')) {
-        if (!civDecides && this.auto.trade) this._scheduleTrade(k);
-        if (!civDecides && this.auto.colonize && this.law('fleetColonize')) this._scheduleColony(k);
+        // Civ decides trade and colonies; when its captains have been idle for
+        // years, the fleets keep the sea lanes and the settling going
+        const lv = this._lastVoy || (this._lastVoy = { trade: new Map(), colony: -1e9 });
+        const now = this.game.time.total;
+        const quietTrade = now - (lv.trade.get(kid) ?? -1e9) > 30 * 12 && now > 30 * 15;
+        const quietSea = now - lv.colony > 30 * 15 && now > 30 * 20;
+        if ((!civDecides || quietTrade) && this.auto.trade) this._scheduleTrade(k);
+        if ((!civDecides || quietSea) && this.auto.colonize && this.law('fleetColonize')) this._scheduleColony(k);
         if (this.auto.explore && this.hasTech(kid, 'astronomy')) this._scheduleExplore(k);
         if (this.auto.naval && this.law('fleetNaval') && this.hasTech(kid, 'shipbuilding')) this._scheduleNavy(k);
       }
@@ -672,7 +682,10 @@ export const missions = {
     let best = null,
       bs = -Infinity,
       scored = 0;
-    for (let t = 0; t < 500 && scored < 40; t++) {
+    // land without a single village is the prize (the empty continents)
+    const settled = new Set();
+    for (const v of civ.villages) if (v.alive && v.landId != null) settled.add(v.landId);
+    for (let t = 0; t < 900 && scored < 60; t++) {
       const c = Math.floor(this.rng() * n);
       if (nav.compOf[c] !== h.water || nav.nd[c] > 3) continue;
       const cx = nav.nx[c],
@@ -694,7 +707,9 @@ export const missions = {
         scored++;
         const s = civ._scoreSite ? civ._scoreSite(tx, tz, { minSpace: 85 }) : 100;
         if (s < 0) continue;
-        const sc = s - dd * 0.15 + this.rng() * 20;
+        const land = civ.landId ? civ.landId[i] : -1;
+        const empty = land >= 0 && !settled.has(land);
+        const sc = s - dd * 0.15 + this.rng() * 20 + (empty ? 80 + Math.min(80, (civ._landSizes?.get?.(land) || 0) / 400) : 0);
         if (sc > bs) {
           bs = sc;
           best = { x: tx + 0.5, z: tz + 0.5 };
