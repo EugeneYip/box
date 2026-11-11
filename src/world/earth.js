@@ -504,7 +504,7 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
   // Great fronts (the Himalaya above the Ganges) become stepped slopes of spurs
   // and summits instead of one wall hundreds of pixels tall.
   const limitSlopes = () => {
-    const S = 2.4 / Math.max(0.6, scale768),
+    const S = 1.9 / Math.max(0.6, scale768),
       SD = S * 1.414;
     const lim = (i, j, s) => {
       if (land[j] && hgt[j] + s < hgt[i]) hgt[i] = hgt[j] + s;
