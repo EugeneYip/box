@@ -845,11 +845,9 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
           // Arctic pack: a ragged band with open water before the border;
           // around Antarctica: ice shelves and fast ice hugging the coast
           const pk = nWarp(x / tpd / 9 + 70, 2.3) * 2.6 + nWarp(x / tpd / 2.6 - 40, 5.5) * 0.9;
-          // the pack thins out toward the side borders (natural ends) and opens
-          // in a few broad leads, so it is not one long white smear
+          // the pack thins out toward the side borders (natural ends)
           const ek = sideK[x];
-          const leadN = nWarp(x / tpd / 6 + 11, 9.3);
-          if (lat > 78.5 + pk + bn + (1 - ek) * 7 && lat < 84.6 + pk * 0.6 - bn * 0.6 - (1 - ek) * 2.5 && leadN > -0.62) ice = true;
+          if (lat > 78.5 + pk + bn + (1 - ek) * 7 && lat < 84.6 + pk * 0.6 - bn * 0.6 - (1 - ek) * 2.5) ice = true;
           else if (lat > 70 && ds < 2.2 + bn) ice = true;
           else if (lat < -60 && ds < 2.4 + bn * 1.2 + Math.max(0, pk) * 0.9) ice = true;
           else if (lat > southCut[x] + 1.4) {
