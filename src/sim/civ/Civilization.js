@@ -678,6 +678,7 @@ export class Civilization {
       this._inventoryTick(T.tech);
       this._wonderFx();
       this._unlockTick(T.tech);
+      this._worksTick();
       T.tech = 0;
     }
     if ((T.cult = (T.cult || 0) + step) >= 5) {
@@ -1613,7 +1614,7 @@ export class Civilization {
           }
         }
         if (mine.alive && !mine.constructing && !mine.upgrading && mine.level < 3 && this._poolForWonder(K, v, costOf(mine.type, mine.level + 1, v.culture))) upgrade(mine);
-      } else if ((K.era || 0) >= 3 && (this.hasTech(kid, 'engineering') || (K.mastery || 0) >= 2) && (K.capital === v.id || v.tier >= 2)) {
+      } else if ((K.era || 0) >= 3 && (this.hasTech(kid, 'engineering') || (K.mastery || 0) >= 2) && (K.capital === v.id || v.tier >= 1)) {
         let have = 0,
           world = 0,
           capHas = false;
@@ -1786,6 +1787,43 @@ export class Civilization {
       if (f === FLORA.BOULDER || f === FLORA.ROCK_SMALL || (w.type[i] === TILE.ROCK && w.height[i] >= 0)) return true;
     }
     return false;
+  }
+
+  // Great works never stall for ever: every 2 s the realm checks its building
+  // sites; one idle for ten years is finished by masons sent from across the
+  // realm (the stage completes), or, if barely begun, given up and refunded.
+  _worksTick() {
+    const now = this.game.time.total;
+    for (const b of this.buildings) {
+      if (!b.alive || !BUILDING_TYPES[b.type]?.monument) continue;
+      const prog = b.constructing ? b.progress : b.upgrading ? b.upgradeProgress || 0 : -1;
+      if (prog < 0) {
+        b.lastProg = null;
+        continue;
+      }
+      if (b.lastProg == null || prog > b.lastProg + 0.004) {
+        b.lastProg = prog;
+        b.progT = now;
+        continue;
+      }
+      if (now - (b.progT ?? now) < YEAR * 10) continue;
+      const v = this.villages[b.village];
+      const K = this.kingdoms[b.kingdom];
+      b.lastProg = null;
+      b.progT = now;
+      if (b.constructing && b.progress < 0.2) {
+        if (v) {
+          this._note(`🏚 The works on the ${buildingLabel({ ...b, level: 3 })} at ${v.name} are given up`, 'info', { x: b.x, z: b.z }, 'monquit' + b.id, 1);
+          v.stone += 40;
+          v.wood += 20;
+        }
+        this.destroyBuilding(b, 'cancelled');
+        continue;
+      }
+      if (v && K) this._note(`🏗 Masons from across ${this._kn(K)} finish the stalled works at ${v.name}`, 'info', { x: b.x, z: b.z }, 'monfund' + b.id, 30);
+      if (b.constructing) this._finishBuilding(b);
+      else this._finishUpgrade(b);
+    }
   }
 
   _finishBuilding(b) {
