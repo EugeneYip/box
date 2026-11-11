@@ -158,7 +158,7 @@ export const missions = {
   berthed(h, self = null) {
     let n = 0;
     for (const o of this.list) {
-      if (!o.alive || o === self || o.cls !== 'sea' || o.state === 'sinking') continue;
+      if (!o.alive || o === self || o.cls !== 'sea' || o.state === 'sinking' || o.kind === 'fishing') continue;
       if (o.state === 'moored' && o.harbour === h.id) n++;
       else if (o.state === 'sail' && o.mission?.phase === 'home' && o.harbour === h.id && o.dest?.berth) n++;
     }
@@ -191,6 +191,7 @@ export const missions = {
     const nav = this.nav;
     const def = self?.def || KINDS[kind] || KINDS.cog;
     const L = def.length;
+    if (def === KINDS.fishing) return this._boatSlot(h, self);
     if (this.berthed(h, self) >= this.harbourCap(h)) return null;
     const px = -h.dirZ,
       pz = h.dirX;
@@ -233,6 +234,31 @@ export const missions = {
     }
     return null;
   },
+  // Fishing boats tie up beside the pier itself, out of the ships' way.
+  _boatSlot(h, self) {
+    const px = -h.dirZ,
+      pz = h.dirX;
+    const def = KINDS.fishing;
+    for (const f of [1.3, 2.3, 3.2, 4.0, 1.0, 2.8])
+      for (const sd of [0.62, -0.62, 1.25, -1.25]) {
+        const x = h.x + h.dirX * f + px * sd,
+          z = h.z + h.dirZ * f + pz * sd;
+        if (!this._hullFits(x, z, h.dirX, h.dirZ, def)) continue;
+        let taken = false;
+        for (const o of this.list) {
+          if (!o.alive || o === self || o.kind !== 'fishing') continue;
+          const ox = o.state === 'moored' ? o.x : o.dest?.x,
+            oz = o.state === 'moored' ? o.z : o.dest?.z;
+          if (ox != null && Math.hypot(ox - x, oz - z) < 0.72) {
+            taken = true;
+            break;
+          }
+        }
+        if (!taken) return { x, z, berth: true };
+      }
+    return null;
+  },
+
   // Roads off a full harbour: open water a little way out, deep enough.
   _anchorage(h, def) {
     const nav = this.nav;
@@ -558,11 +584,11 @@ export const missions = {
     const civ = this.game.civ;
     const seafaring = civ.hasCultureTrait?.(k.culture, 'Seafaring');
     for (const h of this.harbours(kid)) {
-      const want = 1 + (h.level >= 2 || seafaring ? 1 : 0);
+      const want = 2 + (h.level >= 2 ? 1 : 0) + (seafaring ? 1 : 0);
       let have = 0;
       for (const v of this.list) if (v.alive && v.kind === 'fishing' && v.harbour === h.id) have++;
       const now = this.game.time.total;
-      if (have < want && !this.blockaded(h) && now - (this._boatT?.get(h.id) ?? -999) > 45 && this.seaCount() < this.budget.sea * 0.75 && this.count(kid, 'fishing') < this.cap(kid, 'fishing')) {
+      if (have < want && !this.blockaded(h) && now - (this._boatT?.get(h.id) ?? -999) > 20 && this.fishCount() < this.budget.fishing && this.count(kid, 'fishing') < this.cap(kid, 'fishing')) {
         (this._boatT || (this._boatT = new Map())).set(h.id, now);
         const spot = this._mooringSpot(h, null, 'fishing');
         if (spot) this.spawn('fishing', kid, spot.x, spot.z, { home: h.village, harbour: h.id, heading: Math.atan2(h.dirZ, h.dirX) });
@@ -571,13 +597,13 @@ export const missions = {
       if (this.isNight() && !this.hasTech(kid, 'astronomy') && this.game.settings?.dayNight !== false) continue;
       for (const v of this.list) {
         if (!v.alive || v.kind !== 'fishing' || v.harbour !== h.id || v.state !== 'moored' || v.layup) continue;
-        if (v.idleT < 6 + (v.seed * 10)) continue;
+        if (v.idleT < 4 + v.seed * 6) continue;
         const spot = this._fishingSpot(h);
         if (!spot) continue;
         v.mission = { type: 'fish', phase: 'out' };
         v.voyage = null;
         if (!this._sail(v, spot)) v.mission = null;
-        break; // one boat out per jetty per beat
+        else break; // one boat out per jetty per beat
       }
     }
   },
@@ -599,7 +625,7 @@ export const missions = {
       const x = h.berth.x + Math.cos(a) * r,
         z = h.berth.z + Math.sin(a) * r;
       const c = nav.clearAt(x, z);
-      if (c < 1.4 || c > 9) continue;
+      if (c < 1.0 || c > 9) continue;
       if (nav.comp(x, z) !== h.water) continue;
       return { x, z };
     }

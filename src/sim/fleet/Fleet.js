@@ -85,7 +85,8 @@ export class Fleet {
     const area = (w.w * w.h) / (256 * 256);
     // budgets: vessels and land vehicles in the whole world (scaled with the map)
     this.budget = {
-      sea: Math.round(Math.min(220, 70 * Math.pow(area, 0.6))),
+      sea: Math.round(Math.min(220, 70 * Math.pow(area, 0.6))), // ships (fishing boats apart)
+      fishing: Math.round(Math.min(200, 60 * Math.pow(area, 0.6))),
       land: Math.round(Math.min(120, 36 * Math.pow(area, 0.55))),
       debris: 240,
     };
@@ -292,9 +293,15 @@ export class Fleet {
   get(id) {
     return this.byId.get(id) || null;
   }
+  // ships against the sea budget (fishing boats have a budget of their own)
   seaCount() {
     let n = 0;
-    for (const v of this.list) if (v.alive && v.cls === 'sea') n++;
+    for (const v of this.list) if (v.alive && v.cls === 'sea' && v.kind !== 'fishing') n++;
+    return n;
+  }
+  fishCount() {
+    let n = 0;
+    for (const v of this.list) if (v.alive && v.kind === 'fishing') n++;
     return n;
   }
   landCount() {
@@ -309,7 +316,7 @@ export class Fleet {
     const villages = k?.villages?.length || 1;
     switch (kind) {
       case 'fishing':
-        return Math.min(10, 2 + villages);
+        return Math.min(18, 3 + villages * 2);
       case 'cog':
         return 2 + (this.hasTech(kid, 'banking') ? 1 : 0) + Math.min(2, villages >> 2);
       case 'transport':
