@@ -348,8 +348,8 @@ export class Atmosphere {
       const br = b && b.age < b.life ? this.lightning.brightness(b) : 0;
       const D = rig.cur.dist;
       this.strikeLight.distance = 34 + D * 0.4;
-      this.strikeLight.position.y = (b ? b.y : 0) + 4 + D * 0.04;
-      this.strikeLight.intensity = br * (70 + D * 2.6);
+      this.strikeLight.position.y = (b ? b.y : 0) + 6 + D * 0.06;
+      this.strikeLight.intensity = br * (110 + D * 4);
     }
     this.fitShadow(camera, M.keyDir);
     game.scene.environmentIntensity = (0.62 + 0.12 * mix.overcast + 0.1 * W.wetness) * (1 - 0.35 * mix.storm);

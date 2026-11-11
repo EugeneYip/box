@@ -78,7 +78,7 @@ void main() {
   float n = cFbm(vUv * 1.6 + seed * 37.0 + vec2(uTime * 0.012, -uTime * 0.009));
   float n2 = cNoise(vUv * 5.0 + seed * 11.0);
   float edge = rr + (n - 0.5) * (0.62 + 0.45 * uWisp) + (n2 - 0.5) * (0.12 + 0.2 * uWisp);
-  float dens = 1.0 - smoothstep(0.32, 0.92, edge);
+  float dens = 1.0 - smoothstep(0.32 - 0.24 * uWisp, 0.92 + 0.04 * uWisp, edge); // softer falloff far away
   // flat, shaded cluster base
   float h = (vW.y - vCloud.y) / max(vCloud.z, 0.5);
   dens *= smoothstep(-0.08, 0.1, h);
@@ -88,6 +88,7 @@ void main() {
   float nz = sqrt(max(0.0, 1.0 - rr * rr));
   vec3 toCam = normalize(cameraPosition - vC);
   vec3 N = normalize(vRight * vUv.x + vUp * vUv.y + toCam * (nz + 0.25));
+  N = normalize(mix(N, vec3(0.0, 1.0, 0.0), 0.55 * uWisp)); // flatter shading from above
   float ndl = dot(N, uSunDir);
   float wrap = smoothstep(-0.55, 0.95, ndl);
   float hh = clamp(h, 0.0, 1.0);
@@ -95,12 +96,12 @@ void main() {
   vec3 col = amb + uLit * wrap * mix(0.5, 1.02, hh);
   col *= mix(0.74, 1.0, smoothstep(0.0, 0.3, hh)); // darker base band
   float back = pow(max(dot(-toCam, uSunDir), 0.0), 3.0);
-  col += uLit * pow(1.0 - nz, 2.0) * (0.12 + 1.1 * back) * (0.4 + 0.6 * hh);
+  col += uLit * pow(1.0 - nz, 2.0) * (0.12 + 1.1 * back) * (0.4 + 0.6 * hh) * (1.0 - 0.75 * uWisp); // no ball rims far away
   col *= 0.95 + 0.1 * seed;
   col *= mix(1.0, 0.42, uDark);
   col += uFlash * (0.5 + 0.5 * hh);
 
-  float a = dens * vCloud.x * uOpacity * 0.62;
+  float a = dens * vCloud.x * uOpacity * 0.62 * (1.0 - 0.3 * uWisp);
   a *= smoothstep(uNearFade * 0.35, uNearFade, distance(cameraPosition, vW));
   gl_FragColor = vec4(col, a);
 }
@@ -116,7 +117,7 @@ void main() {
   vUv = position.xy;
   vFade = aCloud.x;
   vSeed = aCloud.w;
-  vec3 wp = aPuff.xyz + vec3(position.x, 0.0, position.y) * aPuff.w * 1.3;
+  vec3 wp = aPuff.xyz + vec3(position.x, 0.0, position.y) * aPuff.w * 1.05;
   gl_Position = projectionMatrix * viewMatrix * vec4(wp, 1.0);
 }
 `;
@@ -128,7 +129,7 @@ ${NOISE}
 void main() {
   float r = length(vUv);
   float n = cFbm(vUv * 1.6 + vSeed * 37.0);
-  float a = (1.0 - smoothstep(0.25, 0.95, r + (n - 0.5) * 0.5)) * vFade;
+  float a = (1.0 - smoothstep(0.2, 0.9, r + (n - 0.5) * 0.6)) * vFade;
   gl_FragColor = vec4(a, a, a, a);
 }
 `;
