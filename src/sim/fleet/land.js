@@ -402,7 +402,9 @@ export const land = {
     const target = civ.villages[army.target];
     // in the siege: find something to batter
     let b = null;
-    if (army.state === 'siege' && target?.alive) {
+    // before the walls (the army's siege, or already in sight of the town on the march)
+    const close = target?.alive && Math.hypot(target.cx - v.x, target.cz - v.z) < (target.radius || 9) + 14;
+    if (target?.alive && (army.state === 'siege' || (army.state === 'march' && close))) {
       if ((v.pickT = (v.pickT || 0) - step) <= 0 || !v.siegeTarget?.alive) {
         v.pickT = 1.5;
         v.siegeTarget = this._siegePick(v, target);
@@ -430,7 +432,7 @@ export const land = {
           v.fireT = 2.2;
           a.ram = 1;
           const mod = civ.techMod?.(v.kingdom, 'siege') ?? 1;
-          civ.damageBuilding?.(b, 24 * mod, 'siege');
+          civ.damageBuilding?.(b, Math.max(24 * mod, (b.maxHp || 100) * (BUILDING_TYPES[b.type]?.wall ? 0.2 : 0.12) * mod), 'siege');
           this._fx('debris', b.x, b.z, 0.6);
           this._fx('dust', v.x + Math.cos(v.heading) * 0.8, v.z + Math.sin(v.heading) * 0.8, 0.5);
           this._sfx('hit', b.x, b.z, 0.5);
@@ -473,7 +475,7 @@ export const land = {
     const behind = (trail.length - v.ti) / 2;
     const want = Math.atan2(tz - v.z, tx - v.x);
     v.heading = turnTo(v.heading, want, step * v.def.turn);
-    const tgt = v.def.speed * (behind > 30 ? 1.5 : 1);
+    const tgt = v.def.speed * (behind > 24 ? 1.7 : behind > 10 ? 1.25 : 1);
     v.speed += (tgt - v.speed) * Math.min(1, step * 2);
     const s = Math.min(d, v.speed * step);
     v.x += Math.cos(want) * s;
@@ -509,7 +511,7 @@ export const land = {
       jz = (this.rng() - 0.5) * 0.8;
     const d = Math.hypot(b.x - ax, b.z - az);
     v.anim.arm = 1;
-    this.stones.push({ x0: ax, z0: az, y0: w.heightAt(ax, az) + 0.9, x1: b.x + jx, z1: b.z + jz, y1: (b.y ?? w.heightAt(b.x, b.z)) + 0.6, t: 0, dur: 1.3 + d * 0.07, peak: 2.5 + d * 0.35, b: b.id, kingdom: v.kingdom, dmg: 38 * (civ.techMod?.(v.kingdom, 'siege') ?? 1), from: v.id });
+    this.stones.push({ x0: ax, z0: az, y0: w.heightAt(ax, az) + 0.9, x1: b.x + jx, z1: b.z + jz, y1: (b.y ?? w.heightAt(b.x, b.z)) + 0.6, t: 0, dur: 1.3 + d * 0.07, peak: 2.5 + d * 0.35, b: b.id, kingdom: v.kingdom, dmg: Math.max(38, (b.maxHp || 100) * (BUILDING_TYPES[b.type]?.wall ? 0.24 : 0.14)) * (civ.techMod?.(v.kingdom, 'siege') ?? 1), from: v.id });
     this.totals.stones++;
     this._sfx('chop', v.x, v.z, 0.5);
   },
@@ -529,8 +531,9 @@ export const land = {
         civ.damageBuilding?.(b, s.dmg, 'siege');
         this._siegeBreach({ kingdom: s.kingdom, kind: 'catapult' }, b);
       }
-      this._fx('debris', s.x1, s.z1, 0.7);
-      this._fx('dust', s.x1, s.z1, 0.9);
+      this._fx('debris', s.x1, s.z1, 1.1);
+      this._fx('dust', s.x1, s.z1, 1.6);
+      this._fx('dust', s.x1 + (this.rng() - 0.5), s.z1 + (this.rng() - 0.5), 1.1);
       this.game.fx?.shake?.(s.x1, s.z1, 0.15);
       this._sfx('hit', s.x1, s.z1, 0.7);
     }

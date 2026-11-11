@@ -56,6 +56,7 @@ export class Fleet {
     this.byId = new Map();
     this.debris = [];
     this.stones = [];
+    this.shots = [];
     this.auto = { fishing: true, trade: true, colonize: true, naval: true, explore: true, carts: true, caravans: true, siege: true };
     this.version = 0;
     this._init();
@@ -97,6 +98,7 @@ export class Fleet {
     this.byId.clear();
     this.debris.length = 0;
     this.stones.length = 0;
+    this.shots.length = 0;
     this._init();
     this.version++;
   }
@@ -538,6 +540,7 @@ export class Fleet {
       T.siege = 0;
     }
     this._stonesTick(step);
+    this._shotsTick(step);
     this._debrisTick(step);
     // drop the dead
     if (this.list.some((v) => !v.alive)) this.list = this.list.filter((v) => v.alive);
@@ -693,6 +696,7 @@ export class Fleet {
         target = def.speed * this._windFactor(v) * (1 - Math.min(0.75, Math.abs(diff) / Math.PI) * 0.9);
         if (dd < 2.5 && v.pi >= v.path.length - 2) target *= 0.35 + dd * 0.26;
         if (v.chase) target *= 1.12;
+        if (v.grappled > this.game.time.total) target *= 0.25;
         if (night) target = 0;
         const st = this._stormNow;
         if (st > 0.4) target *= 1 - st * 0.25;
@@ -703,7 +707,7 @@ export class Fleet {
       target = 0.12;
     } else if (v.state === 'patrol') {
       v.heading += step * 0.35;
-      target = def.speed * 0.3;
+      target = def.speed * (v.grappled > this.game.time.total ? 0.08 : 0.3);
     }
     // accelerate / brake
     const acc = target > v.speed ? 0.7 : 1.4;
@@ -893,6 +897,26 @@ export class Fleet {
     } catch {
       /* audio is optional */
     }
+  }
+
+  // Arrows and fire pots between ships: a splash when they miss, sparks or
+  // flames where they strike.
+  _shotsTick(step) {
+    if (!this.shots.length) return;
+    const keep = [];
+    for (const s of this.shots) {
+      s.t += step;
+      if (s.t < s.dur) {
+        keep.push(s);
+        continue;
+      }
+      if (s.hit) {
+        const v = this.byId.get(s.target);
+        if (s.pot && v && v.alive && v.state !== 'sinking') v.burning = Math.min(1, v.burning + 0.45);
+        this._fx(s.pot ? 'fire' : 'sparks', s.x1, s.z1, s.pot ? 0.6 : 0.45, { y: 0.5 });
+      } else if (this.nav.isWater(s.x1, s.z1)) this._fx('splash', s.x1, s.z1, s.pot ? 0.5 : 0.3);
+    }
+    this.shots = keep;
   }
 
   _addDebris(x, z, i) {

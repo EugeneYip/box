@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { vehicleModel, debrisGeometry, stoneGeometry } from './models.js';
+import { vehicleModel, debrisGeometry, stoneGeometry, arrowGeometry } from './models.js';
 import { createVehicleMaterial, createVehicleDepthMaterial, createWaterFxMaterial } from './materials.js';
 import { bannerGeometry, bannerMaterial } from '../buildings/props.js';
 import { emblemAtlas, EMBLEM_IDS, FIELD_IDS } from '../buildings/emblems.js';
@@ -94,8 +94,9 @@ export class FleetRenderer {
     // wreckage and catapult stones
     this.propMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 });
     this.debris = this._inst(debrisGeometry(), this.propMat, 64);
-    this.stoneMat = new THREE.MeshStandardMaterial({ color: 0x6e675c, roughness: 0.95, flatShading: true });
-    this.stones = this._inst(stoneGeometry(), this.stoneMat, 16);
+    // stones, arrows and wreckage share one vertex-coloured material (one program)
+    this.stones = this._inst(stoneGeometry(), this.propMat, 32);
+    this.arrows = this._inst(arrowGeometry(), this.propMat, 64);
     // trade lanes (dashed, faint, mid zoom)
     const MAXV = 6000;
     const lg = new THREE.BufferGeometry();
@@ -352,6 +353,7 @@ export class FleetRenderer {
     this._dots(list, far, dist, cx, cz, viewR);
     this._debris(F, !far, alpha);
     this._stones(F, alpha);
+    this._shots(F, alpha, far);
     this._lanes(F, dt, dist, far);
     this._effects(F, dt, far, dist, cx, cz);
     this.visibleCount = visible;
@@ -579,25 +581,69 @@ export class FleetRenderer {
     void alpha;
   }
 
+  // Catapult stones on their arc, with a dotted trail of grit behind them
+  // and a puff of dust where they fly.
   _stones(F, alpha) {
     let n = 0;
     const L = F.stones;
     if (L.length) {
-      const mesh = this._growProp('stones', L.length);
+      const mesh = this._growProp('stones', L.length * 5);
       const step = this.game.simStep || TICK;
-      for (const s of L) {
-        const u = Math.min(1, (s.t + alpha * step) / s.dur);
-        const x = s.x0 + (s.x1 - s.x0) * u,
-          z = s.z0 + (s.z1 - s.z0) * u;
-        const y = s.y0 + (s.y1 - s.y0) * u + 4 * s.peak * u * (1 - u);
-        this._q.setFromAxisAngle(this._up, u * 9);
-        this._m.compose(this._p.set(x, y, z), this._q, this._s.set(1, 1, 1));
-        mesh.setMatrixAt(n++, this._m);
+      const at = (st, u) => {
+        const x = st.x0 + (st.x1 - st.x0) * u,
+          z = st.z0 + (st.z1 - st.z0) * u;
+        return [x, st.y0 + (st.y1 - st.y0) * u + 4 * st.peak * u * (1 - u), z];
+      };
+      for (const st of L) {
+        const u = Math.max(0, Math.min(1, (st.t + alpha * step) / st.dur));
+        for (let k = 0; k < 5; k++) {
+          const uk = u - k * 0.045;
+          if (uk < 0) break;
+          const [x, y, z] = at(st, uk);
+          const sc = k === 0 ? 1 : 0.42 - k * 0.07;
+          this._q.setFromAxisAngle(this._up, uk * 9);
+          this._m.compose(this._p.set(x, y, z), this._q, this._s.setScalar(sc));
+          mesh.setMatrixAt(n++, this._m);
+        }
+        if (this.game.fx?.emit && (st._puff = (st._puff || 0) + 1) % 6 === 0) {
+          const [x, y, z] = at(st, u);
+          this.game.fx.emit('dust', { x, y, z }, { scale: 0.35 });
+        }
       }
       mesh.instanceMatrix.needsUpdate = true;
     }
     this.stones.count = n;
     this.stones.visible = n > 0;
+  }
+
+  // Arrows and fire pots arcing between ships.
+  _shots(F, alpha, far) {
+    let n = 0;
+    const L = F.shots || [];
+    if (L.length && !far) {
+      const mesh = this._growProp('arrows', L.length);
+      const step = this.game.simStep || TICK;
+      for (const sh of L) {
+        const u = (sh.t + alpha * step) / sh.dur;
+        if (u < 0 || u > 1) continue;
+        const dx = sh.x1 - sh.x0,
+          dz = sh.z1 - sh.z0;
+        const d = Math.hypot(dx, dz) || 1;
+        const peak = 0.4 + d * 0.09;
+        const x = sh.x0 + dx * u,
+          z = sh.z0 + dz * u,
+          y = 0.55 + 4 * peak * u * (1 - u);
+        const pitch = Math.atan2(4 * peak * (1 - 2 * u), d);
+        this._e.set(0, -Math.atan2(dz, dx), pitch, 'YZX');
+        this._q.setFromEuler(this._e);
+        this._m.compose(this._p.set(x, y, z), this._q, this._s.setScalar(sh.pot ? 1.6 : 1));
+        mesh.setMatrixAt(n++, this._m);
+        if (sh.pot && this.game.fx?.emit && Math.random() < 0.35) this.game.fx.emit('fire', { x, y, z }, { scale: 0.25 });
+      }
+      mesh.instanceMatrix.needsUpdate = true;
+    }
+    this.arrows.count = n;
+    this.arrows.visible = n > 0;
   }
 
   // Faint dashed trade lanes at mid zoom (rebuilt twice a second).

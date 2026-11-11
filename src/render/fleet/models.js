@@ -635,5 +635,16 @@ export function debrisGeometry() {
 }
 
 export function stoneGeometry() {
-  return new THREE.IcosahedronGeometry(0.2, 0);
+  const g = new VB(7);
+  g.bead(0, -0.2, 0, 0.22, 0x6e675c);
+  return g.build();
+}
+
+// An arrow (or a fire pot's shaft) pointing along +X.
+export function arrowGeometry() {
+  const g = new VB(9);
+  g.box(0, -0.012, 0, 0.42, 0.024, 0.024, 0x4a3420);
+  g.box(-0.2, -0.02, 0, 0.08, 0.04, 0.005, 0xe8e0d0);
+  g.box(0.22, -0.016, 0, 0.05, 0.032, 0.032, 0x8a8a8a);
+  return g.build();
 }

@@ -141,14 +141,29 @@ export const war = {
   // Volleys of arrows, grapples and rams: both crews trade blows.
   _fight(a, b, dt) {
     const crew = (v) => 0.45 + 0.55 * (v.hp / v.maxHp);
+    // volleys of arrows and the odd fire pot, both ways (seen in flight)
+    const volley = (from, to, n) => {
+      for (let i = 0; i < n; i++) {
+        const pot = this.rng() < 0.12;
+        const hit = this.rng() < (pot ? 0.55 : 0.6);
+        const ox = (this.rng() - 0.5) * from.def.length * 0.6,
+          oz = (this.rng() - 0.5) * from.def.length * 0.6;
+        const mx = hit ? (this.rng() - 0.5) * to.def.length * 0.5 : (this.rng() - 0.5) * 3,
+          mz = hit ? (this.rng() - 0.5) * to.def.length * 0.5 : (this.rng() - 0.5) * 3;
+        if (this.shots.length > 160) this.shots.shift();
+        this.shots.push({ x0: from.x + ox, z0: from.z + oz, x1: to.x + mx, z1: to.z + mz, t: -this.rng() * 0.4, dur: 0.55 + this.rng() * 0.3, pot, hit, target: to.id });
+      }
+    };
+    volley(a, b, 2 + Math.floor(this.rng() * 3));
+    if (b.def.dps > 0) volley(b, a, 1 + Math.floor(this.rng() * 2));
+    // grappled: both ships lose way and fight it out where they are
+    a.grappled = b.grappled = this.game.time.total + 1.5;
     const da = a.def.dps * this._matMod(a.kingdom) * crew(a) * dt;
     this.hurt(b, da, 'battle', a);
     if (b.alive && b.state !== 'sinking' && b.def.dps > 0) this.hurt(a, b.def.dps * this._matMod(b.kingdom) * crew(b) * dt * 0.85, 'battle', b);
-    if (this.rng() < 0.12 * dt && b.alive) b.burning = Math.min(1, b.burning + 0.35); // fire arrows
     a.lastFight = b.lastFight = this.game.time.total;
     a.fightWith = b.id;
     b.fightWith = a.id;
-    if (this.rng() < 0.6) this._fx('sparks', (a.x + b.x) / 2, (a.z + b.z) / 2, 0.6, { y: 0.6 });
     const ka = Math.min(a.kingdom, b.kingdom),
       kb = Math.max(a.kingdom, b.kingdom);
     if (b.kind === 'galley') {
