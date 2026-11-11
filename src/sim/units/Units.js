@@ -2286,7 +2286,9 @@ export class Units {
       priority: 25,
       kind: 'unit',
       unit: u,
-      title: (u.name || def.name) + (this.levelTitle(u) ? ' ' + this.levelTitle(u) : ''),
+      // the epithet ("the Fierce") travels separately: the inspector shows it beside the name
+      title: u.name || def.name,
+      epithet: this.levelTitle(u) || null,
       subtitle: (u.name ? def.name : stage + ' ' + (u.sex === 'f' ? 'female' : 'male')) + (kname ? ' · ' + kname : ''),
       stats,
     };
