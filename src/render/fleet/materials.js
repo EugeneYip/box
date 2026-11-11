@@ -197,14 +197,14 @@ void main() {
     float rip = 0.72 + 0.28 * sin(vK.w * 9.0 - uTime * 3.0);
     float al = band * rip * a;
     if (al < 0.01) discard;
-    gl_FragColor = vec4(foamCol, al * 0.75);
+    gl_FragColor = vec4(foamCol, al * 0.48);
   } else if (kind < 1.5) {
     float v = abs(vUV.y * 2.0 - 1.0);
     float band = 1.0 - v * v;
     float n = 0.45 + 0.55 * vnoise(vec2(vK.w * 3.0 - uTime * 1.5, vUV.y * 6.0));
     float al = band * n * a;
     if (al < 0.01) discard;
-    gl_FragColor = vec4(foamCol, al * 0.6);
+    gl_FragColor = vec4(foamCol, al * 0.42);
   } else if (kind < 2.5) {
     // hull foam at the waterline and a short bow wave
     float x = vUV.x, z = vUV.y;

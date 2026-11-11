@@ -449,7 +449,7 @@ export class FleetRenderer {
           quad(c0x + px * hw, c0z + pz * hw, c1x + px * hw, c1z + pz * hw, c1x - px * hw, c1z - pz * hw, c0x - px * hw, c0z - pz * hw, -0.62, hw / L, hl / L, hw / L, hl / L, -hw / L, -0.62, -hw / L, 2, spd, spd, beam, 0, 0, 0.022);
         }
         // the wake: walk back along the track from the stern
-        const maxS = L * 3.5;
+        const maxS = L * 3.2;
         let px0 = w.x - fx * L * 0.5,
           pz0 = w.z - fz * L * 0.5;
         let dirx = fx,
@@ -480,9 +480,9 @@ export class FleetRenderer {
             ez = pz0 - ndz * sl * t1;
           const nx = -ndz,
             nz = ndx;
-          const fade = (s) => Math.pow(Math.max(0, 1 - s / maxS), 1.6) * spd;
+          const fade = (s) => Math.pow(Math.max(0, 1 - s / maxS), 2.4) * spd;
           const arm = (s) => (v.def.beam || 0.4) * 0.45 + s * 0.34;
-          const bw = (s) => 0.05 + s * 0.06;
+          const bw = (s) => 0.07 + s * 0.11;
           const a0 = fade(s0),
             a1 = fade(s1);
           for (const side of [1, -1]) {
