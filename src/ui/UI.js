@@ -7,7 +7,7 @@ import './hud5.css';
 import './hud6.css';
 import './hud7.css';
 import { CATEGORIES, listPowers, getPower } from '../powers/registry.js';
-import { el, safe } from './dom.js';
+import { el, safe, hexCss } from './dom.js';
 import { SEA_LEVEL } from '../world/constants.js';
 import { TopBar, PRESET_NAMES } from './TopBar.js';
 import { Toolbar, SLOT_CODES } from './Toolbar.js';
@@ -84,6 +84,11 @@ export class UI {
     // north arrow for a turned Overview (the 2:1 World Map on tall screens)
     this.northEl = el('div', { class: 'ws-north ws-glass', role: 'img', 'aria-label': 'North', 'data-tip': 'North' }, el('i', { class: 'ws-north__arrow', html: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 16.5 13h-9z" fill="currentColor"/><path d="M12 20.5 7.5 13h9z" fill="currentColor" opacity=".35"/></svg>' }), el('b', { text: 'N' }));
     this.hud.append(this.northEl);
+    // touch Overview: realm names as crisp HTML (the 3D name sprites smear at
+    // phone pixel ratios from this far away)
+    this.ovLabels = el('div', { class: 'ws-ovlabels', 'aria-hidden': 'true' });
+    this.hud.append(this.ovLabels);
+    this._ovLab = new Map();
     loadRegistries(() => this.inspector.open && this.inspector.render());
     if (root.classList.contains('is-touch')) {
       this.campad = new CameraPad(this);
@@ -539,6 +544,50 @@ export class UI {
     if (show) this.northEl.firstChild.style.transform = `rotate(${(yaw * 180) / Math.PI}deg)`;
   }
 
+  updateOverviewLabels() {
+    const on = !!this._overview && this.root.classList.contains('is-touch') && !this.root.classList.contains('is-photo');
+    this.ovLabels.classList.toggle('is-shown', on);
+    if (!on) {
+      if (this._ovLabOn) {
+        this._ovLabOn = false;
+        for (const e of this._ovLab.values()) e.remove();
+        this._ovLab.clear();
+      }
+      return;
+    }
+    this._ovLabOn = true;
+    const g = this.game;
+    const L = g.buildings?.labels;
+    // the sprite names step aside while the HTML ones show
+    for (const m of [L?.kLabels, L?.vLabels]) if (m?.values) for (const s of m.values()) if (s) s.visible = false;
+    const cam = g.cameraRig.camera;
+    const v = (this._ovV ||= new THREE.Vector3());
+    const seen = new Set();
+    for (const k of g.civ?.kingdoms || []) {
+      if (!k || k.alive === false) continue;
+      const cap = g.civ.villages?.[k.capital];
+      if (!cap || cap.alive === false) continue;
+      seen.add(k.id);
+      let e = this._ovLab.get(k.id);
+      if (!e) {
+        e = el('span', { class: 'ws-ovlabel' }, el('i'), el('b'));
+        this._ovLab.set(k.id, e);
+        this.ovLabels.append(e);
+      }
+      const name = String(k.name || '');
+      if (e.dataset.n !== name) {
+        e.dataset.n = name;
+        e.lastChild.textContent = name;
+      }
+      e.style.setProperty('--k', hexCss(k.color));
+      v.set(cap.cx, Math.max(0, g.world.heightAt(cap.cx, cap.cz)) + 2, cap.cz).project(cam);
+      const vis = v.z < 1 && Math.abs(v.x) < 1.1 && Math.abs(v.y) < 1.1;
+      e.hidden = !vis;
+      if (vis) e.style.transform = `translate(${Math.round((v.x * 0.5 + 0.5) * innerWidth)}px, ${Math.round((-v.y * 0.5 + 0.5) * innerHeight)}px) translate(-50%, -100%)`;
+    }
+    for (const [id, e] of this._ovLab) if (!seen.has(id)) (e.remove(), this._ovLab.delete(id));
+  }
+
   togglePhoto() {
     const on = !this.root.classList.contains('is-photo');
     this.root.classList.toggle('is-photo', on);
@@ -713,6 +762,7 @@ export class UI {
     }
     for (const p of this.parts) safe(() => p.update(dt), null, p.constructor.name);
     safe(() => this.updateOverview(dt), null, 'overview');
+    safe(() => this.updateOverviewLabels(), null, 'overview labels');
     // while a brush stroke is held, side panels fade back so the land is clear
     const painting = !!(this.game.activePower && this.game.input?._pressed);
     this._paintT = painting ? this._paintT + dt : 0;

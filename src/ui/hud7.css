@@ -571,3 +571,41 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ---- touch Overview: crisp HTML realm names */
+.ws-ovlabels {
+  position: absolute;
+  inset: 0;
+  pointer-events: none !important;
+  display: none;
+}
+.ws-ovlabels.is-shown {
+  display: block;
+}
+.ws-ovlabel {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px 4px 6px;
+  border-radius: 6px;
+  white-space: nowrap;
+  font: 700 12px/1 var(--ws-display);
+  letter-spacing: 0.06em;
+  color: #fff6e2;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+  background: rgba(10, 12, 19, 0.55);
+  box-shadow: inset 0 -2px 0 var(--k);
+  will-change: transform;
+}
+.ws-ovlabel i {
+  width: 8px;
+  height: 10px;
+  background: var(--k);
+  clip-path: polygon(0 0, 100% 0, 100% 62%, 50% 100%, 0 62%);
+}
+.ws-ovlabel[hidden] {
+  display: none;
+}
