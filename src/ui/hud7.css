@@ -476,3 +476,21 @@
   font-size: 11.5px;
   color: var(--ws-ink-3);
 }
+
+/* ---- tech cards: one line of what each brings; a missing requirement below it */
+.ws-techcard__txt small {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ws-techcard__brings {
+  color: color-mix(in srgb, var(--ws-gold-hi) 70%, var(--ws-ink-3));
+}
+.ws-techcard.is-locked .ws-techcard__brings {
+  color: var(--ws-ink-3);
+}
+.ws-techcard__needs {
+  opacity: 0.8;
+  font-style: italic;
+}
