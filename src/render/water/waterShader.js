@@ -105,7 +105,11 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
 
   // ---- climate: polar water is slate-teal, not tropical turquoise
   float temp = texture2D(uClimTex, p / uWorldSize).g;
-  gCold = (1.0 - smoothstep(0.22, 0.50, temp)) * (1.0 - outK * 0.5);
+  // near the map border the cold slate tint fades out, so polar seas meet the
+  // endless outer ocean without a darker band outlining the map rectangle
+  vec2 inB = min(p, uWorldSize - p);
+  float borderK = smoothstep(2.0, 16.0, min(inB.x, inB.y));
+  gCold = (1.0 - smoothstep(0.22, 0.50, temp)) * (1.0 - outK * 0.5) * mix(0.35, 1.0, borderK);
 
   // ---- waves
   float calm = mix(0.55, 1.0, smoothstep(0.0, 2.5, depth)) * mix(1.0, 0.75, outK) * mix(1.0, 0.5, narrow);
@@ -164,11 +168,14 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   vec3 Hs = normalize(L + V);
   float nh = max(dot(N, Hs), 0.0);
   float keyUp = smoothstep(-0.02, 0.12, L.y);
-  float sharpK = 1.0 - smoothstep(0.06, 0.32, fw);
+  // crisp sparkles only up close and with some wind; beyond that the sun's
+  // reflection is a broad soft sheen (sharp lobes on the chop clumped into a
+  // white "rash" at mid zoom)
+  float sharpK = (1.0 - smoothstep(0.03, 0.10, fw)) * (0.25 + 0.75 * smoothstep(0.15, 0.6, uWind));
   // roughness widens with the pixel footprint: a soft sheen far away, crisp glints up close
-  float rgh = mix(0.07, 0.30, smoothstep(0.06, 0.6, fw));
+  float rgh = mix(0.08, 0.45, smoothstep(0.02, 0.16, fw));
   float Fs = 0.02 + 0.98 * pow(1.0 - max(dot(V, Hs), 0.0), 5.0);
-  float glint = ggxD(nh, rgh) * Fs * mix(1.1, 0.55, smoothstep(0.1, 0.6, fw)) + pow(nh, 1400.0) * 6.5 * sharpK;
+  float glint = ggxD(nh, rgh) * Fs * mix(1.0, 0.45, smoothstep(0.04, 0.4, fw)) + pow(nh, 1400.0) * 4.0 * sharpK;
   // rivers, channels and calm shallow flats are not mirrors: never flare to white
   float narrowW = (1.0 - smoothstep(1.2, 3.6, wide)) * (1.0 - outK);
   float shallowK = 1.0 - smoothstep(0.05, 0.6, depth);
@@ -196,7 +203,8 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   float mirrorK = 1.0 - smoothstep(0.10, 0.28, tiltNeed);
   spec *= mix(1.0, 1.0 - smoothstep(0.22, 0.45, tiltNeed), lowSun);
   spec += keyL * pathK * 0.8 * lowSun * lightVis * (1.0 - narrow * 0.7) * pathMask * mirrorK;
-  spec = min(spec, vec3(1.1));
+  // the far sheen never burns to white: capped lower with distance
+  spec = min(spec, vec3(mix(1.0, 0.42, smoothstep(0.03, 0.2, fw))));
 
   // ---- water body veil (the seabed below is already tinted by the terrain)
   vec3 scat = mix(waterShallowColorV(lightVis), waterDeepColorV(lightVis), smoothstep(0.6, 6.0, depth));
@@ -207,6 +215,9 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   float veil = 1.0 - exp(-depth / vy * 0.16);
   veil = clamp(veil * 0.85, 0.0, 0.92);
   veil = mix(veil, 1.0, outK);
+  // deep open water is opaque, exactly like the endless ocean beyond the map,
+  // so the map rectangle never shows as a lighter box against the outer sea
+  veil = mix(veil, 1.0, smoothstep(2.8, 5.5, depth) * 0.92);
   // rivers and narrow channels: a clear teal body of their own
   // rivers keep their teal under overcast skies: a soft light floor (scaled at night)
   vec3 irrR = max(waterIrradianceV(lightVis), vec3(0.44, 0.66, 0.64) * (0.25 + 0.75 * uDay));
@@ -249,7 +260,7 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   vec3 foamCol = vec3(0.90, 0.95, 1.0) * (waterIrradianceV(lightVis) * 0.78 + vec3(0.02));
 
   // ---- frozen water (ICE tiles under the surface) - opaque sheet, soft edges
-  vec2 iq = p + (fn.rg - 0.5) * 1.2 - 0.5;
+  vec2 iq = p + (fn.rg - 0.5) * 2.0 + (fc.gb - 0.5) * 0.3 - 0.5;
   ivec2 ic = ivec2(floor(iq));
   vec2 ifr = smoothstep(0.0, 1.0, fract(iq));
   ivec2 isz = ivec2(uWorldSize) - 1;
@@ -258,7 +269,7 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   float i01 = isIceAt(ic + ivec2(0, 1), isz);
   float i11 = isIceAt(ic + ivec2(1, 1), isz);
   float iceF = mix(mix(i00, i10, ifr.x), mix(i01, i11, ifr.x), ifr.y);
-  float ice = smoothstep(0.18, 0.82, iceF + (fc.b - 0.5) * 0.3 + (fn.g - 0.5) * 0.25) * (1.0 - outK) * step(0.001, depth);
+  float ice = smoothstep(0.25, 0.75, iceF + (fn.g - 0.5) * 0.35 + (fn.b - 0.5) * 0.2) * (1.0 - outK) * step(0.001, depth);
   // seasonal freeze: lakes, rivers and calm shallows at the coldest latitudes
   if (uFreezeT > -0.1) {
     // coherent: the shelf grows out from the shore as the cold deepens (smooth
@@ -276,7 +287,7 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   float rivIce = (1.0 - smoothstep(2.5, 6.0, wide)) * smoothstep(0.72, 0.92, gCold) * (1.0 - outK) * step(0.001, depth);
   if (rivIce > 0.0) {
     vec4 rl = texture2D(uNoise, p * (1.0 / 31.0) + 0.57);
-    float leadFrac = clamp((rl.r - 0.47) * 1.8 + (fn.g - 0.5) * 0.6, 0.0, 0.75);
+    float leadFrac = clamp((rl.r - 0.60) * 2.4 + (fn.g - 0.5) * 0.5, 0.0, 0.6);
     // ice bridges close the lead every 10-20 units along the river
     leadFrac *= smoothstep(0.30, 0.46, fn.r);
     float halfW = max(wide, 0.6);
@@ -362,7 +373,7 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
     // thin, darker slush towards the floe edge
     iceAlb = mix(scat * 4.0 + vec3(0.06, 0.08, 0.10), iceAlb, smoothstep(0.0, 0.6, ice));
     // raised rim along every plate and sheet edge (reads as thickness)
-    float rimK = max(iceRim, smoothstep(0.3, 0.5, ice) * (1.0 - smoothstep(0.55, 0.85, ice)));
+    float rimK = max(iceRim, smoothstep(0.3, 0.5, ice) * (1.0 - smoothstep(0.55, 0.85, ice))) * (1.0 - 0.85 * rivIce);
     iceAlb = mix(iceAlb, vec3(0.52, 0.58, 0.63), rimK * 0.55);
     float ndl = max(L.y, 0.0);
     vec3 iceCol = iceAlb * (keyL * ndl * lightVis * 0.85 + uAmbCol * 0.65);
@@ -390,7 +401,7 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
 
   // ---- distance fade into the horizon (never show the far-plane cut)
   float farK = smoothstep(uCamFar * 0.55, uCamFar * 0.92, viewDist);
-  col = mix(col, uSkyCol, farK);
+  col = mix(col, mix(uSkyCol * 0.78, uZenCol, 0.3), farK);
   a = mix(a, 1.0, farK);
 
   gl_FragColor = vec4(col, a);

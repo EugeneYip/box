@@ -2,7 +2,7 @@ import { createNoise2D } from 'simplex-noise';
 import { mulberry32, hash2 } from '../core/Random.js';
 import { TILE, SEA_LEVEL, MIN_HEIGHT } from './constants.js';
 import { EARTH_MASK } from './data/earthMask.js';
-import { RANGES, PLATEAUS, BASINS, SHELVES, MOISTURE, WARMTH, WETLANDS, RIVERS, LAKES } from './data/earthFeatures.js';
+import { RANGES, PLATEAUS, BASINS, SHELVES, MOISTURE, WARMTH, WETLANDS, RIVERS, LAKES, ISLAND_SPINES } from './data/earthFeatures.js';
 
 // World Map preset ('earth'): the real Earth on a 2:1 plate carree world,
 // centred on the Pacific (central meridian 150°E, so the Atlantic splits at
@@ -274,6 +274,14 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
   const cov = landCoverage(W, H);
   const land = new Uint8Array(N);
   for (let i = 0; i < N; i++) land[i] = cov[i] >= 0.5 ? 1 : 0;
+  // key named islands keep a minimum width (at least ~2 tiles across)
+  for (const f of ISLAND_SPINES) {
+    const minW = 0.95 / tpd;
+    const g = { ...f, w: Math.max(f.w, minW) };
+    stamp(g, 1, 0, (i, d, h, w) => {
+      if (d <= w || cov[i] >= 0.3) land[i] = 1;
+    });
+  }
   // keep small islands: an isolated local maximum of coverage becomes land
   for (let y = 1; y < H - 1; y++)
     for (let x = 1; x < W - 1; x++) {
@@ -300,6 +308,30 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
     const cut = -83.2 + fbm(nWarp, u / 16 + 50, 3.7, 3) * 2.4 + nWarp(u / 3.5 - 20, 8.1) * 0.8;
     southCut[x] = cut;
     for (let y = H - 1; y >= 0 && latY[y] < cut; y--) land[y * W + x] = 0;
+  }
+  // natural ends at the Atlantic seam (the left / right edges): Antarctica's
+  // coast curves back south to nothing near both edges, and Greenland is cut
+  // back to a ragged coast well inside the right edge (its far east coast
+  // would otherwise be sliced straight by the border on both sides)
+  const ringX0 = Math.max(2, Math.round(5 * scale768));
+  const sideK = new Float32Array(W); // 0 at the side borders .. 1 inland
+  for (let x = 0; x < W; x++) sideK[x] = smoothstep(ringX0 + 1, ringX0 + 34 * scale768, Math.min(x, W - 1 - x));
+  for (let x = 0; x < W; x++) {
+    const u = x / tpd;
+    const ek = sideK[x];
+    if (ek < 1) {
+      const capN = -84.5 + 24 * Math.sqrt(ek) + nWarp(u / 2.2 + 3, 41.7) * 1.6 * ek;
+      for (let y = H - 1; y >= 0 && latY[y] < -58; y--) if (latY[y] > capN) land[y * W + x] = 0;
+    }
+  }
+  for (let y = 0; y < H; y++) {
+    const lat = latY[y];
+    if (lat < 66.9 || lat > 86) continue;
+    const cutLon = -36 - 7 * smoothstep(70, 82, lat) + nWarp(lat / 1.7 + 9, 2.9) * 2.4;
+    for (let x = 0; x < W; x++) {
+      const lo = lonX[x];
+      if (lo > cutLon && lo < -8) land[y * W + x] = 0;
+    }
   }
   // clean borders: a thin ring of open sea all round. The shaders and the
   // terrain skirt clamp edge tiles outward, so polar ice or Antarctica's snow
@@ -467,6 +499,32 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
     }
   }
   for (let i = 0; i < N; i++) if (rng[i] > 0 && land[i]) hgt[i] = smax(hgt[i], rng[i], 1.0);
+  // no sheer ramparts: inland, the ground may rise at most ~2.4 units per tile
+  // (chamfer passes over land neighbours only, so sea cliffs keep their drop).
+  // Great fronts (the Himalaya above the Ganges) become stepped slopes of spurs
+  // and summits instead of one wall hundreds of pixels tall.
+  const limitSlopes = () => {
+    const S = 1.9 / Math.max(0.6, scale768),
+      SD = S * 1.414;
+    const lim = (i, j, s) => {
+      if (land[j] && hgt[j] + s < hgt[i]) hgt[i] = hgt[j] + s;
+    };
+    for (let pass = 0; pass < 2; pass++) {
+      for (let y = 1; y < H - 1; y++)
+        for (let x = 1; x < W - 1; x++) {
+          const i = y * W + x;
+          if (!land[i] || !rangeMask[i]) continue;
+          lim(i, i - 1, S), lim(i, i - W, S), lim(i, i - W - 1, SD), lim(i, i - W + 1, SD);
+        }
+      for (let y = H - 2; y >= 1; y--)
+        for (let x = W - 2; x >= 1; x--) {
+          const i = y * W + x;
+          if (!land[i] || !rangeMask[i]) continue;
+          lim(i, i + 1, S), lim(i, i + W, S), lim(i, i + W + 1, SD), lim(i, i + W - 1, SD);
+        }
+    }
+  };
+  limitSlopes();
   // ice domes: Greenland and Antarctica rise from their coasts
   const GREENLAND = [[-73, 78], [-60, 82.5], [-30, 84], [-10, 82], [-17, 75], [-21, 70], [-32, 68], [-40, 64.5], [-43, 59.5], [-50, 61], [-54, 66], [-56, 71], [-66, 76]];
   const inPoly = (poly, lon, lat) => {
@@ -681,6 +739,7 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
       }
     }
   }
+  limitSlopes();
   _t('rivers');
 
   // the border ring is deep open sea: the water shader and the terrain skirt
@@ -786,7 +845,9 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
           // Arctic pack: a ragged band with open water before the border;
           // around Antarctica: ice shelves and fast ice hugging the coast
           const pk = nWarp(x / tpd / 9 + 70, 2.3) * 2.6 + nWarp(x / tpd / 2.6 - 40, 5.5) * 0.9;
-          if (lat > 78.5 + pk + bn && lat < 84.6 + pk * 0.6 - bn * 0.6) ice = true;
+          // the pack thins out toward the side borders (natural ends)
+          const ek = sideK[x];
+          if (lat > 78.5 + pk + bn + (1 - ek) * 7 && lat < 84.6 + pk * 0.6 - bn * 0.6 - (1 - ek) * 2.5) ice = true;
           else if (lat > 70 && ds < 2.2 + bn) ice = true;
           else if (lat < -60 && ds < 2.4 + bn * 1.2 + Math.max(0, pk) * 0.9) ice = true;
           else if (lat > southCut[x] + 1.4) {
@@ -797,6 +858,7 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
           // open sea south of Antarctica's far coast, and short of the border
           if (lat < southCut[x] - 0.2) ice = false;
           if (Math.min(x, W - 1 - x) < ringX + 1 + bn || Math.min(y, H - 1 - y) < ringY + 2 + bn) ice = false;
+          if (sideK[x] < 0.35 + bn * 0.25) ice = false;
         }
         if (ice) type[i] = TILE.ICE;
         else if (!sea[i]) type[i] = riverMask[i] || depth > 1.1 + bn * 0.5 ? TILE.SOIL : TILE.SAND;
@@ -821,6 +883,10 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
       else tt = biome(t + bn * 0.02 + (hash2(x, y, seed) - 0.5) * 0.01, m - bn * 0.04);
       type[i] = tt;
     }
+  }
+  for (let i = 0; i < N; i++) {
+    if (type[i] !== TILE.ROCK || hgt[i] < SEA_LEVEL) continue;
+    if (moist[i] < 0.14 && temp[i] > 0.42 && baseT[i] > 0.6) type[i] = TILE.DESERT;
   }
   H_.despeckleTypes(type, hgt, W, H);
   H_.dissolveSmallPatches(type, hgt, W, H, TILE.SNOW, 10, (i) => (icecap[i] ? TILE.SNOW : temp[i] < 0.3 ? TILE.TUNDRA : biome(temp[i], moist[i])));
