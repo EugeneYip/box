@@ -781,7 +781,7 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
       const u = U(i),
         v = V(i);
       let bt = tl + warm[i] + fbm(nMoist, u / 9 + 40, v / 9, 2) * 0.025;
-      if (lat < -60) bt -= 0.2; // the Antarctic continent and its ice shelves
+      bt -= 0.2 * smoothstep(-57, -67, lat + fbm(nMoist, u / 7 + 3, v / 7, 2) * 2.5); // Antarctica and its ice shelves
       if (icecap[i]) bt -= 0.08;
       baseT[i] = bt;
       const h = Math.max(0, hgt[i]);
@@ -804,7 +804,11 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
   // ice beyond the map in winter
   for (let y = 0; y < H; y++)
     for (let x = 0; x < W; x++)
-      if (inRing(x, y) || (latY[y] < southCut[x] - 0.4 && hgt[y * W + x] < SEA_LEVEL)) temp[y * W + x] = Math.max(temp[y * W + x], 0.42);
+      if (latY[y] < southCut[x] - 0.4 && hgt[y * W + x] < SEA_LEVEL) temp[y * W + x] = Math.max(temp[y * W + x], 0.42);
+      else {
+        const ek = 1 - smoothstep(ringY, ringY + 10 * scale768, Math.min(edgeDist(x, y), Math.min(x, W - 1 - x)));
+        if (ek > 0) temp[y * W + x] = Math.max(temp[y * W + x], 0.42 * ek + temp[y * W + x] * (1 - ek));
+      }
   // rivers and lakes water their banks (green valleys through dry land)
   for (let i = 0; i < N; i++) {
     if (hgt[i] < SEA_LEVEL) continue;
@@ -847,7 +851,7 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
           const pk = nWarp(x / tpd / 9 + 70, 2.3) * 2.6 + nWarp(x / tpd / 2.6 - 40, 5.5) * 0.9;
           // the pack thins out toward the side borders (natural ends)
           const ek = sideK[x];
-          if (lat > 78.5 + pk + bn + (1 - ek) * 7 && lat < 84.6 + pk * 0.6 - bn * 0.6 - (1 - ek) * 2.5) ice = true;
+          if (lat > 81.5 + pk + bn + (1 - ek) * 7 && lat < 84.2 + pk * 0.6 - bn * 0.6 - (1 - ek) * 2.5 && nWarp(x / tpd / 14 + 5, 3.1) > 0.15) ice = true;
           else if (lat > 70 && ds < 2.2 + bn) ice = true;
           else if (lat < -60 && ds < 2.4 + bn * 1.2 + Math.max(0, pk) * 0.9) ice = true;
           else if (lat > southCut[x] + 1.4) {
