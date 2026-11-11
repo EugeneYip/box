@@ -694,12 +694,18 @@ export class FleetRenderer {
       if (!v.alive || budget <= 0) continue;
       if (Math.abs(v.x - cx) > R || Math.abs(v.z - cz) > R) continue;
       if (v.burning > 0.15 || (v.sink > 0 && v.sink < 0.5)) {
+        // a burning ship trails smoke and throws embers
         fx.emit('smoke', { x: v.x, y: (v.y || 0) + 0.6, z: v.z }, { scale: 0.6 + v.def.length * 0.2 });
-        if (v.burning > 0.3) fx.emit('fire', { x: v.x + (Math.random() - 0.5) * 0.5, y: (v.y || 0) + 0.4, z: v.z }, { scale: 0.5 });
+        if (v.burning > 0.3) {
+          fx.emit('fire', { x: v.x + (Math.random() - 0.5) * 0.5, y: (v.y || 0) + 0.4, z: v.z }, { scale: 0.5 });
+          if (Math.random() < 0.4) fx.emit('embers', { x: v.x, y: (v.y || 0) + 0.8, z: v.z }, { count: 2 });
+        }
         budget--;
       }
-      if (v.sink > 0 && v.sink < 0.25) {
-        fx.emit('splash', { x: v.x, y: 0, z: v.z }, { scale: 0.5 });
+      if (v.sink > 0 && v.sink < 0.6) {
+        // going down: spray, and steam where a burning hull meets the sea
+        if (v.sink < 0.25) fx.emit('splash', { x: v.x, y: 0, z: v.z }, { scale: 0.5 });
+        if (v.burning > 0.05 || v.lastCause === 'fire' || v.lastCause === 'lightning') fx.emit('steam', { x: v.x, y: 0.1, z: v.z }, { scale: 0.5 + v.def.length * 0.2, count: 1 });
         budget--;
       }
     }

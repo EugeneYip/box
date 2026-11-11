@@ -70,7 +70,17 @@ export const missions = {
       const c = KINDS[k].clear || 0;
       let p = byClear.get(c);
       if (p === undefined) {
-        p = nav.findPath(h.berth.x, h.berth.z, dest.x, dest.z, { big: c >= 2, minClear: c });
+        // routes between the same two places are remembered a while (a failed
+        // search over a whole ocean is the costliest thing a fleet does)
+        const rc = this._routes || (this._routes = new Map());
+        const key = h.id + '>' + Math.round(dest.x) + ',' + Math.round(dest.z) + ':' + c;
+        const hit = rc.get(key);
+        if (hit && this.game.time.total - hit.t < 90 && hit.v === nav.version) p = hit.p;
+        else {
+          p = nav.findPath(h.berth.x, h.berth.z, dest.x, dest.z, { big: c >= 2, minClear: c });
+          rc.set(key, { p, t: this.game.time.total, v: nav.version });
+          if (rc.size > 400) rc.delete(rc.keys().next().value);
+        }
         byClear.set(c, p);
       }
       if (!p) continue;

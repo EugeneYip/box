@@ -578,7 +578,7 @@ export class WaterNav {
         found = true;
         break;
       }
-      if (++expanded > 60000) break;
+      if (++expanded > (minClear > 0 ? 24000 : 60000)) break;
       const e = this.edges[c];
       if (!e) continue;
       const cx = c % cw,

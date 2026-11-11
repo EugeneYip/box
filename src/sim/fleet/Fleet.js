@@ -916,7 +916,8 @@ export class Fleet {
       if (s.hit) {
         const v = this.byId.get(s.target);
         if (s.pot && v && v.alive && v.state !== 'sinking') v.burning = Math.min(1, v.burning + 0.45);
-        this._fx(s.pot ? 'fire' : 'sparks', s.x1, s.z1, s.pot ? 0.6 : 0.45, { y: 0.5 });
+        if (s.pot) this._fx('fireball', s.x1, s.z1, 0.45, { y: 0.5 });
+        else this._fx('sparks', s.x1, s.z1, 0.45, { y: 0.5 });
       } else if (this.nav.isWater(s.x1, s.z1)) this._fx('splash', s.x1, s.z1, s.pot ? 0.5 : 0.3);
     }
     this.shots = keep;
