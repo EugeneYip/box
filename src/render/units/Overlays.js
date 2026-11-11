@@ -6,7 +6,7 @@ import * as THREE from 'three';
 //   - emotes: camera-facing status icons (heart, zzz, !, anger, sparkle, ...)
 //   - projectiles (arrows) and the skywyrm's fire-breath plume
 export const DECAL = { shadow: 0, ring: 1, select: 2, dot: 3, glow: 4 };
-export const EMOTE = { heart: 0, zzz: 1, alert: 2, anger: 3, sparkle: 4, note: 5, chat: 6, skull: 7, burning: 8, sick: 9, chilled: 10, starving: 11, wounded: 12, mourning: 13, inspired: 14, exhausted: 15, glow: 16, star: 17, heal: 18 };
+export const EMOTE = { heart: 0, zzz: 1, alert: 2, anger: 3, sparkle: 4, note: 5, chat: 6, skull: 7, burning: 8, sick: 9, chilled: 10, starving: 11, wounded: 12, mourning: 13, inspired: 14, exhausted: 15, glow: 16, star: 17, heal: 18, lure: 19 };
 
 const decalVert = /* glsl */ `
 attribute vec4 iA; // x y z size
@@ -390,6 +390,16 @@ function drawAtlas() {
     g.closePath();
     g.fillStyle = 'rgba(240,252,255,0.95)';
     g.fill();
+  });
+  // bioluminescence: a soft cyan halo (sea monsters at night)
+  cell(EMOTE.lure, () => {
+    const gr = g.createRadialGradient(0, 0, 0, 0, 0, 62);
+    gr.addColorStop(0, 'rgba(225,255,255,1)');
+    gr.addColorStop(0.22, 'rgba(120,235,255,0.8)');
+    gr.addColorStop(0.6, 'rgba(60,170,230,0.25)');
+    gr.addColorStop(1, 'rgba(40,140,220,0)');
+    g.fillStyle = gr;
+    g.fillRect(-64, -64, 128, 128);
   });
   // a healer's touch: a soft green glint with a four-point sparkle
   cell(EMOTE.heal, () => {
