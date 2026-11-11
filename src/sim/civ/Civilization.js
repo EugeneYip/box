@@ -1409,7 +1409,7 @@ export class Civilization {
     // an empty woodshed stops all building: send more hands to the woods
     give('woodcutter', woodFull ? (n >= 6 ? 1 : 0) : v.wood < 15 ? 2 + Math.floor(n / 6) : v.wood < 40 + v.tier * 30 ? 1 + Math.floor(n / 7) : n >= 4 ? 1 + Math.floor(n / 14) : 0);
     if (!atWar && n >= 6) give('soldier', Math.max(1, n * 0.1 * lean) + (v.hasBarracks ? 2 : 0));
-    if (v.hasRock !== false || v.quarry >= 0) give('miner', stoneFull ? 0 : v.stone < 30 + v.tier * 50 ? 1 + Math.floor(n / (ctr('Masons') ? 6 : 9)) : ctr('Masons') ? 2 : 1);
+    if (v.hasRock !== false || v.quarry >= 0) give('miner', stoneFull ? 0 : v.stone < 12 ? 2 + Math.floor(n / 7) : v.stone < 30 + v.tier * 50 ? 1 + Math.floor(n / (ctr('Masons') ? 6 : 9)) : ctr('Masons') ? 2 : 1);
     // the rest go where they are most useful; anyone left over keeps the town lively
     let guard = 0;
     while (left > 0 && guard++ < 200) {
