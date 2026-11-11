@@ -513,3 +513,47 @@
 .is-touch .ws-occ {
   min-height: 44px;
 }
+
+/* ---- north arrow (turned Overview) */
+.ws-north {
+  position: absolute;
+  left: calc(var(--ws-edge) + env(safe-area-inset-left, 0px));
+  bottom: calc(var(--ws-edge) + env(safe-area-inset-bottom, 0px));
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 44px;
+  padding: 0 14px 0 8px;
+  border-radius: 22px;
+  opacity: 0;
+  transform: translateY(8px);
+  pointer-events: none !important;
+  transition:
+    opacity 0.25s,
+    transform 0.3s var(--ws-ease);
+}
+.ws-north.is-shown {
+  opacity: 1;
+  transform: none;
+}
+.ws-north__arrow {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  color: var(--ws-gold-hi);
+  transition: transform 0.2s linear;
+}
+.ws-north__arrow svg {
+  width: 24px;
+  height: 24px;
+}
+.ws-north b {
+  font: 700 12px var(--ws-display);
+  letter-spacing: 0.08em;
+  color: var(--ws-gold-hi);
+}
+.is-photo .ws-north,
+.is-intro .ws-north {
+  display: none;
+}

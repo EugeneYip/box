@@ -81,6 +81,9 @@ export class UI {
       el('span', { class: 'ws-overview__txt', text: 'Overview' }),
     );
     this.hud.append(this.overviewBtn);
+    // north arrow for a turned Overview (the 2:1 World Map on tall screens)
+    this.northEl = el('div', { class: 'ws-north ws-glass', role: 'img', 'aria-label': 'North', 'data-tip': 'North' }, el('i', { class: 'ws-north__arrow', html: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 16.5 13h-9z" fill="currentColor"/><path d="M12 20.5 7.5 13h9z" fill="currentColor" opacity=".35"/></svg>' }), el('b', { text: 'N' }));
+    this.hud.append(this.northEl);
     loadRegistries(() => this.inspector.open && this.inspector.render());
     if (root.classList.contains('is-touch')) {
       this.campad = new CameraPad(this);
@@ -381,7 +384,7 @@ export class UI {
       bh = box.z1 - box.z0;
     if ((vh > vw * 1.15 && bw > bh * 1.3) || (vw > vh * 1.15 && bh > bw * 1.3)) {
       const turned = solve(north + Math.PI / 2);
-      if (turned && (!best || turned.d < best.d * 0.9)) best = turned;
+      if (turned && (!best || turned.d < best.d * 0.95)) best = turned;
     }
     if (!best) best = { d: rig.maxDist, tx: W.w / 2, tz: W.h / 2, yaw: north };
     const d = best.d * 1.02;
@@ -394,7 +397,8 @@ export class UI {
     rig.goal.z = best.tz;
     rig.goal.dist = d;
     rig.goal.yaw = best.yaw;
-    if (best.yaw !== north) this.toast('Turned to fit the screen: north is to the right', 2600);
+    this._ovTurned = best.yaw !== north;
+    if (this._ovTurned) this.toast('Turned to fit the screen: north is to the right', 2600);
     this._biasGoal = bias;
     this.syncOverviewBtn();
     g.audio?.play?.('ui-click', { volume: 0.45 });
@@ -524,6 +528,15 @@ export class UI {
       rig.goal.pitchBias = rig.cur.pitchBias;
     }
     if (this._overview && rig.goal.dist < this._overview.target * 0.6) this.exitOverview(false);
+    // the north arrow shows while the view is turned away from north (Overview or after it)
+    const yaw = rig.cur.yaw || 0;
+    const off = Math.abs(Math.atan2(Math.sin(yaw), Math.cos(yaw)));
+    const show = off > 0.35 && !!this._overview;
+    if (show !== this._northOn) {
+      this._northOn = show;
+      this.northEl.classList.toggle('is-shown', show);
+    }
+    if (show) this.northEl.firstChild.style.transform = `rotate(${(yaw * 180) / Math.PI}deg)`;
   }
 
   togglePhoto() {
