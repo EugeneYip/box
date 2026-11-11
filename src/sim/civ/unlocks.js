@@ -288,15 +288,15 @@ export const unlocks = {
     let shots = 0;
     for (const b of this.buildings) {
       if (shots > 24) break;
-      if (!b.alive || b.constructing || (b.type !== 'watchtower' && b.type !== 'tower' && b.type !== 'gate')) continue;
-      if (now - (b.shotT || 0) < 1.6) continue;
+      if (!b.alive || b.constructing || (b.type !== 'watchtower' && b.type !== 'gate')) continue;
+      if (now - (b.shotT || 0) < 2.2) continue;
       const k = this.kingdoms[b.kingdom];
       if (!k?.alive || !(this.hasTech(k.id, 'fortification') || b.type === 'watchtower')) continue;
       const foe = U.nearest(b.x, b.z, 7, (o) => o.alive && (o.def?.kind === 'monster' || (o.def?.kind === 'animal' && o.def?.diet === 'carnivore' && o.def?.mass >= 1) || (o.species === 'human' && o.kingdom >= 0 && o.kingdom !== b.kingdom && this.atWar(o.kingdom, b.kingdom))));
       if (!foe) continue;
       b.shotT = now;
       shots++;
-      U.damage(foe, 5 + this.rng.next() * 4, null, { cause: 'arrow' });
+      U.damage(foe, (foe.species === 'human' ? 2.5 : 6) + this.rng.next() * 3, null, { cause: 'arrow' });
       this._fx('sparks', foe.x, foe.z, 0.45, true);
       this._sfx?.('chop', b.x, b.z, 4);
       if (foe.species !== 'human' || !foe.alive) this._firstUse(k, 'archers', { x: b.x, z: b.z });

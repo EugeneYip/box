@@ -435,6 +435,8 @@ export const politics = {
         const joined = this.enemiesOf(a).length - 1;
         if (joined >= 3 || (B.population || 0) > (A.population || 0) * 2) break;
         if (this._relLocked?.(this.relations.get(relKey(k.id, a)))) continue;
+        // a realm sworn to peace (warlike 0) keeps out of its allies' wars
+        if (this._kLaw(k.id, 'diploWarlike', 1) <= 0) continue;
         if (this.allied(k.id, b) && !this.allied(k.id, a) && this.warCount(k.id) < 2 && this.rng.chance(0.7)) {
           const rr = this.rel(k.id, a);
           if (!rr.war) {
@@ -850,7 +852,7 @@ export const politics = {
     if (v.buildings.some((b) => b.alive && b.type === 'temple' && !b.constructing)) L += 8;
     if (v.tier >= 1 && cap && v.pop > cap.pop * 0.8) L -= 14; // rival city
     if (v.tier >= 2) L -= 6; // proud cities chafe under distant rule
-    if (k.villages.length > 3) L -= (k.villages.length - 3) * 4.5; // overstretched realm
+    if (k.villages.length > 3) L -= (k.villages.length - 3) * 6; // overstretched realm
     // a crowded, capped world turns ambition inward: provinces want their own crown
     L -= (this._crowd?.() || 0) * 12;
     if (alive < 3) L -= 14; // a world of two empires is a powder keg
@@ -929,7 +931,7 @@ export const politics = {
     const now = this.game.time.total;
     // a crushed rebellion is remembered: the town needs years to rise again,
     // longer after every rising, though deep grievance shortens the wait
-    const wait = YEAR * Math.min(30, 8 + 5 * (v.rebellions || 0)) * (v.loyalty < 12 ? 0.5 : 1);
+    const wait = YEAR * Math.min(24, 6 + 4 * (v.rebellions || 0)) * (v.loyalty < 12 ? 0.5 : 1);
     if (!forced && now - (v.lastRebel ?? -1e9) < wait) return null;
     v.lastRebel = now;
     v.rebellions = (v.rebellions || 0) + 1;

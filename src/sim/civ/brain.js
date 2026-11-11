@@ -182,7 +182,7 @@ export const brain = {
     if (r === ARRIVED || r === FAIL) {
       d.task = null;
       // news from the crown steadies the province
-      if (r === ARRIVED && dest.id !== k?.capital) dest.loyaltyBoost = Math.max(dest.loyaltyBoost || 0, 4);
+      if (r === ARRIVED && dest.id !== k?.capital) dest.loyaltyBoost = Math.max(dest.loyaltyBoost || 0, 2);
     }
   },
 

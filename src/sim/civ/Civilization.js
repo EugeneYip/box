@@ -39,11 +39,11 @@ const VILLAGE_MAX_POP = 64; // legacy reference size (a town)
 const TIER_POP = [40, 70, 115]; // village, town, city
 // What each finished monument gives its realm (techMod / techAdd keys).
 const MONUMENT_FX = {
-  vale: { mods: { 'loyalty+': 12, build: 1.15 }, text: 'its provinces hold fast to the crown' },
-  dune: { mods: { gold: 1.5, 'loyalty+': 4 }, text: 'caravans come from every road' },
+  vale: { mods: { 'loyalty+': 6, build: 1.15 }, text: 'its provinces hold fast to the crown' },
+  dune: { mods: { gold: 1.5, 'loyalty+': 2 }, text: 'caravans come from every road' },
   frost: { mods: { research: 1.35 }, text: 'scholars gather to read its runes' },
   mire: { mods: { harvest: 1.15, birth: 1.15 }, text: 'the fields and the families flourish' },
-  colossus: { mods: { 'loyalty+': 6, research: 1.1, march: 1.05 }, text: 'the people stand taller beneath it' },
+  colossus: { mods: { 'loyalty+': 3, research: 1.1, march: 1.05 }, text: 'the people stand taller beneath it' },
 };
 
 // Each realm raises its own design (see archetypes wonder/statue variants).

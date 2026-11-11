@@ -58,9 +58,9 @@ export const BUILDING_TYPES = {
   temple: { names: ['Shrine', 'Temple'], w: 3, h: 3, levels: 2, hp: [220, 360], buildTime: [36, 48], cost: [{ wood: 20, stone: 26 }, { wood: 20, stone: 50, gold: 3 }] },
   barracks: { names: ['Barracks'], w: 3, h: 2, levels: 1, hp: [260], buildTime: [32], cost: [{ wood: 26, stone: 22 }], banner: true },
   watchtower: { names: ['Watchtower'], w: 1, h: 1, levels: 1, hp: [150], buildTime: [16], cost: [{ wood: 12, stone: 8 }], banner: true },
-  wall: { names: ['Wall'], w: 1, h: 1, levels: 1, hp: [200], buildTime: [5], cost: [{ stone: 3 }], wall: true },
-  tower: { names: ['Wall Tower'], w: 1, h: 1, levels: 1, hp: [320], buildTime: [12], cost: [{ stone: 10 }], wall: true, banner: true },
-  gate: { names: ['Gatehouse'], w: 1, h: 1, levels: 1, hp: [360], buildTime: [12], cost: [{ stone: 10, wood: 4 }], wall: true },
+  wall: { names: ['Wall'], w: 1, h: 1, levels: 1, hp: [110], buildTime: [5], cost: [{ stone: 3 }], wall: true },
+  tower: { names: ['Wall Tower'], w: 1, h: 1, levels: 1, hp: [170], buildTime: [12], cost: [{ stone: 10 }], wall: true, banner: true },
+  gate: { names: ['Gatehouse'], w: 1, h: 1, levels: 1, hp: [190], buildTime: [12], cost: [{ stone: 10, wood: 4 }], wall: true },
 };
 
 export const BUILDING_LABEL = {
