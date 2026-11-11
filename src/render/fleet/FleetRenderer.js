@@ -31,7 +31,7 @@ export class FleetRenderer {
     this.group.name = 'fleet';
     game.scene.add(this.group);
     this.t = 0;
-    this.uniforms = { uTime: { value: 0 }, uNight: { value: 0 }, uLight: { value: 1 }, uWind: { value: 0.35 }, uEmblems: { value: emblemAtlas() } };
+    this.uniforms = { uTime: { value: 0 }, uNight: { value: 0 }, uLight: { value: 1 }, uLaneAlpha: { value: 0.5 }, uWind: { value: 0.35 }, uEmblems: { value: emblemAtlas() } };
     this.mat = createVehicleMaterial(this.uniforms);
     this.depthMat = createVehicleDepthMaterial(this.uniforms);
     this.batches = new Map();
@@ -68,6 +68,7 @@ export class FleetRenderer {
     fg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(FXV * 3), 3).setUsage(THREE.DynamicDrawUsage));
     fg.setAttribute('aUV', new THREE.BufferAttribute(new Float32Array(FXV * 2), 2).setUsage(THREE.DynamicDrawUsage));
     fg.setAttribute('aK', new THREE.BufferAttribute(new Float32Array(FXV * 4), 4).setUsage(THREE.DynamicDrawUsage));
+    fg.setAttribute('aC', new THREE.BufferAttribute(new Float32Array(FXV * 3), 3).setUsage(THREE.DynamicDrawUsage));
     fg.setDrawRange(0, 0);
     this.fxMat = createWaterFxMaterial(this.uniforms);
     this.waterFx = new THREE.Mesh(fg, this.fxMat);
@@ -78,41 +79,23 @@ export class FleetRenderer {
     this._fxMax = FXV;
     this._hist = new Map(); // vessel id -> recent track [x, z, ...] (newest last)
     this._histT = 0;
-    // far-zoom dots: realm colour with a dark rim
-    const dg = new THREE.CircleGeometry(1, 10).rotateX(-Math.PI / 2);
-    const col = new Float32Array(dg.attributes.position.count * 3);
-    for (let i = 0; i < dg.attributes.position.count; i++) {
-      const r = Math.hypot(dg.attributes.position.getX(i), dg.attributes.position.getZ(i));
-      const k = r > 0.9 ? 0.18 : 1;
-      col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = k;
-    }
-    dg.setAttribute('color', new THREE.BufferAttribute(col, 3));
-    this.dotMat = new THREE.MeshBasicMaterial({ vertexColors: true, depthTest: false, depthWrite: false, transparent: true, opacity: 0.95 });
-    this.dots = this._inst(dg, this.dotMat, 64);
-    this.dots.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(64 * 3), 3);
-    this.dots.renderOrder = 7;
     // wreckage and catapult stones
     this.propMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 });
     this.debris = this._inst(debrisGeometry(), this.propMat, 64);
     // stones, arrows and wreckage share one vertex-coloured material (one program)
     this.stones = this._inst(stoneGeometry(), this.propMat, 32);
     this.arrows = this._inst(arrowGeometry(), this.propMat, 64);
-    // trade lanes (dashed, faint, mid zoom)
+    // trade lanes (dashed, faint, mid zoom): the same water-fx program as lines
     const MAXV = 6000;
     const lg = new THREE.BufferGeometry();
     lg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(MAXV * 3), 3).setUsage(THREE.DynamicDrawUsage));
-    lg.setAttribute('color', new THREE.BufferAttribute(new Float32Array(MAXV * 3), 3).setUsage(THREE.DynamicDrawUsage));
-    lg.setAttribute('aDist', new THREE.BufferAttribute(new Float32Array(MAXV), 1).setUsage(THREE.DynamicDrawUsage));
+    lg.setAttribute('aC', new THREE.BufferAttribute(new Float32Array(MAXV * 3), 3).setUsage(THREE.DynamicDrawUsage));
+    lg.setAttribute('aUV', new THREE.BufferAttribute(new Float32Array(MAXV * 2), 2).setUsage(THREE.DynamicDrawUsage));
+    const lk = new Float32Array(MAXV * 4);
+    for (let i = 0; i < MAXV; i++) lk[i * 4] = 5;
+    lg.setAttribute('aK', new THREE.BufferAttribute(lk, 4));
     lg.setDrawRange(0, 0);
-    this.laneMat = new THREE.ShaderMaterial({
-      uniforms: { uTime: this.uniforms.uTime, uAlpha: { value: 0.5 } },
-      transparent: true,
-      depthWrite: false,
-      vertexColors: true,
-      vertexShader: `attribute float aDist; varying float vD; varying vec3 vC; void main() { vD = aDist; vC = color; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-      fragmentShader: `uniform float uTime; uniform float uAlpha; varying float vD; varying vec3 vC; void main() { float d = fract(vD * 0.7 - uTime * 0.25); if (d > 0.55) discard; gl_FragColor = vec4(vC, uAlpha); }`,
-    });
-    this.lanes = new THREE.LineSegments(lg, this.laneMat);
+    this.lanes = new THREE.LineSegments(lg, this.fxMat);
     this.lanes.frustumCulled = false;
     this.lanes.renderOrder = -3;
     this.lanes.visible = false;
@@ -349,8 +332,7 @@ export class FleetRenderer {
       b.iState.needsUpdate = true;
     }
     this._flags(flagList, flagsOn, wind);
-    this._waterFxUpdate(wakeList, wakesOn, blobList, !far, dt);
-    this._dots(list, far, dist, cx, cz, viewR);
+    this._waterFxUpdate(wakeList, wakesOn, blobList, !far, dt, far ? { list, dist, cx, cz, R: viewR * 1.4 } : null);
     this._debris(F, !far, alpha);
     this._stones(F, alpha);
     this._shots(F, alpha, far);
@@ -392,14 +374,21 @@ export class FleetRenderer {
   // Wakes laid along each ship's own track (a Kelvin V that bends with its
   // turns and fades within a few lengths), hull foam and a short bow wave,
   // and soft contact shadows under carts and engines.
-  _waterFxUpdate(wakes, wakesOn, blobs, blobsOn, dt) {
+  _waterFxUpdate(wakes, wakesOn, blobs, blobsOn, dt, dots = null) {
     const g = this.waterFx.geometry;
     const P = g.attributes.position.array,
       UV = g.attributes.aUV.array,
-      K = g.attributes.aK.array;
+      K = g.attributes.aK.array,
+      CC = g.attributes.aC.array;
     const max = this._fxMax - 6;
     let n = 0;
+    let cr = 1,
+      cg = 1,
+      cb = 1;
     const vert = (x, y, z, u, v, kind, a, beam, s) => {
+      CC[n * 3] = cr;
+      CC[n * 3 + 1] = cg;
+      CC[n * 3 + 2] = cb;
       P[n * 3] = x;
       P[n * 3 + 1] = y;
       P[n * 3 + 2] = z;
@@ -528,37 +517,31 @@ export class FleetRenderer {
         quad(x - ax - bx, z - az - bz, x + ax - bx, z + az - bz, x + ax + bx, z + az + bz, x - ax + bx, z - az + bz, 0, 0, 1, 0, 1, 1, 0, 1, 3, 1, 1, 0, 0, 0, y);
       }
     }
+    // far zoom: a dot per craft in its realm's colour
+    if (dots) {
+      const W = this.game.world;
+      const { list, dist, cx, cz, R } = dots;
+      const base = Math.max(0.5, dist * 0.0068);
+      for (const v of list) {
+        if (n >= max) break;
+        if (!v.alive || v.state === 'sinking') continue;
+        if (Math.abs(v.x - cx) > R || Math.abs(v.z - cz) > R) continue;
+        const sc = base * (v.cls === 'sea' ? (v.def.length > 2.3 ? 1.35 : v.kind === 'fishing' ? 0.7 : 1.1) : 0.75);
+        const y = v.cls === 'sea' ? 0.6 + dist * 0.004 : W.heightAt(v.x, v.z) + 1.2 + dist * 0.004;
+        const c = this._kingdomColor(v.kingdom);
+        cr = c.r;
+        cg = c.g;
+        cb = c.b;
+        quad(v.x - sc, v.z - sc, v.x + sc, v.z - sc, v.x + sc, v.z + sc, v.x - sc, v.z + sc, 0, 0, 1, 0, 1, 1, 0, 1, 4, 1, 1, 0, 0, 0, y);
+      }
+      cr = cg = cb = 1;
+    }
     g.setDrawRange(0, n);
     g.attributes.position.needsUpdate = true;
     g.attributes.aUV.needsUpdate = true;
     g.attributes.aK.needsUpdate = true;
+    g.attributes.aC.needsUpdate = true;
     this.waterFx.visible = n > 0;
-  }
-
-  _dots(list, far, dist, cx, cz, viewR) {
-    let n = 0;
-    if (far && list.length) {
-      const mesh = this._growProp('dots', list.length);
-      const W = this.game.world;
-      const R = viewR * 1.4;
-      const base = Math.max(0.5, dist * 0.0068);
-      for (const v of list) {
-        if (!v.alive || v.state === 'sinking') continue;
-        if (Math.abs(v.x - cx) > R || Math.abs(v.z - cz) > R) continue;
-        const s = base * (v.cls === 'sea' ? (v.def.length > 2.3 ? 1.35 : v.kind === 'fishing' ? 0.7 : 1.1) : 0.75);
-        const y = v.cls === 'sea' ? 0.3 : W.heightAt(v.x, v.z) + 0.4;
-        this._m.compose(this._p.set(v.x, y, v.z), this._q.identity(), this._s.set(s, 1, s));
-        mesh.setMatrixAt(n, this._m);
-        const c = this._kingdomColor(v.kingdom);
-        this._c.copy(c).multiplyScalar(1.25);
-        mesh.setColorAt(n, this._c);
-        n++;
-      }
-      mesh.instanceMatrix.needsUpdate = true;
-      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-    }
-    this.dots.count = n;
-    this.dots.visible = n > 0;
   }
 
   _debris(F, on, alpha) {
@@ -652,13 +635,13 @@ export class FleetRenderer {
     const on = !far && z01 > 0.12 && dist > 45 && !this.game.settings?.powerSaver;
     this.lanes.visible = on;
     if (!on) return;
-    this.laneMat.uniforms.uAlpha.value = Math.min(0.55, (dist - 45) / 60) * 0.85;
+    this.uniforms.uLaneAlpha.value = Math.min(0.55, (dist - 45) / 60) * 0.85;
     if ((this._laneT -= dt) > 0) return;
     this._laneT = 0.5;
     const geo = this.lanes.geometry;
     const P = geo.attributes.position.array,
-      C = geo.attributes.color.array,
-      D = geo.attributes.aDist.array;
+      C = geo.attributes.aC.array,
+      D = geo.attributes.aUV.array;
     let n = 0;
     for (const lane of F.lanes()) {
       const v = F.get(lane.id);
@@ -683,8 +666,8 @@ export class FleetRenderer {
           C[(n + q) * 3 + 1] = c.g * 1.3 + 0.2;
           C[(n + q) * 3 + 2] = c.b * 1.3 + 0.2;
         }
-        D[n] = acc;
-        D[n + 1] = acc + L;
+        D[n * 2] = acc;
+        D[n * 2 + 2] = acc + L;
         acc += L;
         n += 2;
         px = x;
@@ -693,8 +676,8 @@ export class FleetRenderer {
     }
     geo.setDrawRange(0, n);
     geo.attributes.position.needsUpdate = true;
-    geo.attributes.color.needsUpdate = true;
-    geo.attributes.aDist.needsUpdate = true;
+    geo.attributes.aC.needsUpdate = true;
+    geo.attributes.aUV.needsUpdate = true;
   }
 
   // Smoke and flames over burning ships, spray in a storm.

@@ -151,28 +151,35 @@ export function createVehicleDepthMaterial(uniforms) {
 //   kind 1  churned water straight behind the stern, along the track
 //   kind 2  hull foam and the bow wave (local quad, uv in ship lengths)
 //   kind 3  contact shadow under a land vehicle
+//   kind 4  far-zoom dot in the realm's colour (aC), dark rim
+//   kind 5  dashed trade lane (LineSegments; aUV.x = distance along)
 // Attributes: aUV (x: along / local x, y: across 0..1 / local z),
 // aK (x: kind, y: strength 0..1, z: beam in ship lengths, w: distance along).
 export function createWaterFxMaterial(uniforms) {
   return new THREE.ShaderMaterial({
-    uniforms: { uTime: uniforms.uTime, uLight: uniforms.uLight },
+    uniforms: { uTime: uniforms.uTime, uLight: uniforms.uLight, uLaneAlpha: uniforms.uLaneAlpha },
     transparent: true,
     depthWrite: false,
     vertexShader: /* glsl */ `
 attribute vec2 aUV;
 attribute vec4 aK;
+attribute vec3 aC;
 varying vec2 vUV;
 varying vec4 vK;
+varying vec3 vC;
 void main() {
   vUV = aUV;
   vK = aK;
+  vC = aC;
   gl_Position = projectionMatrix * viewMatrix * vec4(position, 1.0);
 }`,
     fragmentShader: /* glsl */ `
 uniform float uTime;
 uniform float uLight;
+uniform float uLaneAlpha;
 varying vec2 vUV;
 varying vec4 vK;
+varying vec3 vC;
 float h21(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float vnoise(vec2 p) {
   vec2 i = floor(p), f = fract(p);
@@ -214,11 +221,19 @@ void main() {
     foam = clamp(foam, 0.0, 1.0);
     if (foam < 0.01) discard;
     gl_FragColor = vec4(foamCol, foam * 0.78);
-  } else {
+  } else if (kind < 3.5) {
     float r = length(vUV * 2.0 - 1.0);
     float al = (1.0 - smoothstep(0.25, 1.0, r)) * 0.42 * a;
     if (al < 0.01) discard;
     gl_FragColor = vec4(0.0, 0.0, 0.0, al);
+  } else if (kind < 4.5) {
+    float r = length(vUV * 2.0 - 1.0);
+    if (r > 1.0) discard;
+    gl_FragColor = vec4(r > 0.78 ? vC * 0.2 : vC * 1.25, 0.95);
+  } else {
+    float d = fract(vUV.x * 0.7 - uTime * 0.25);
+    if (d > 0.55) discard;
+    gl_FragColor = vec4(vC * 1.3 + 0.2, uLaneAlpha);
   }
   #include <colorspace_fragment>
 }`,
