@@ -2,7 +2,7 @@ import { createNoise2D } from 'simplex-noise';
 import { mulberry32, hash2 } from '../core/Random.js';
 import { TILE, SEA_LEVEL, MIN_HEIGHT } from './constants.js';
 import { EARTH_MASK } from './data/earthMask.js';
-import { RANGES, PLATEAUS, BASINS, SHELVES, MOISTURE, WARMTH, WETLANDS, RIVERS, LAKES } from './data/earthFeatures.js';
+import { RANGES, PLATEAUS, BASINS, SHELVES, MOISTURE, WARMTH, WETLANDS, RIVERS, LAKES, ISLAND_SPINES } from './data/earthFeatures.js';
 
 // World Map preset ('earth'): the real Earth on a 2:1 plate carree world,
 // centred on the Pacific (central meridian 150°E, so the Atlantic splits at
@@ -274,6 +274,14 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
   const cov = landCoverage(W, H);
   const land = new Uint8Array(N);
   for (let i = 0; i < N; i++) land[i] = cov[i] >= 0.5 ? 1 : 0;
+  // key named islands keep a minimum width (at least ~2 tiles across)
+  for (const f of ISLAND_SPINES) {
+    const minW = 0.95 / tpd;
+    const g = { ...f, w: Math.max(f.w, minW) };
+    stamp(g, 1, 0, (i, d, h, w) => {
+      if (d <= w || cov[i] >= 0.3) land[i] = 1;
+    });
+  }
   // keep small islands: an isolated local maximum of coverage becomes land
   for (let y = 1; y < H - 1; y++)
     for (let x = 1; x < W - 1; x++) {
@@ -848,6 +856,10 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
       else tt = biome(t + bn * 0.02 + (hash2(x, y, seed) - 0.5) * 0.01, m - bn * 0.04);
       type[i] = tt;
     }
+  }
+  for (let i = 0; i < N; i++) {
+    if (type[i] !== TILE.ROCK || hgt[i] < SEA_LEVEL) continue;
+    if (moist[i] < 0.14 && temp[i] > 0.42 && baseT[i] > 0.6) type[i] = TILE.DESERT;
   }
   H_.despeckleTypes(type, hgt, W, H);
   H_.dissolveSmallPatches(type, hgt, W, H, TILE.SNOW, 10, (i) => (icecap[i] ? TILE.SNOW : temp[i] < 0.3 ? TILE.TUNDRA : biome(temp[i], moist[i])));
