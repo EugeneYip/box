@@ -135,7 +135,7 @@ vFWSnow = fSW.w * smoothstep(0.5, 0.3, fTemp);
 vFGlow = texelFetch(uOcc, fTile, 0).ba;
 #endif
 // winter: deciduous leaf clusters pull in to sparse tufts on bare boughs
-transformed = mix(aPivot, transformed, 1.0 - 0.74 * fSW.w * fDec);
+transformed = mix(aPivot, transformed, 1.0 - 0.28 * fSW.w * fDec);
 float fThin = mix(0.42, 1.0, smoothstep(0.0, 0.85, fG));
 transformed.xz *= mix(fThin, 1.0, fLeaf);
 float fScale = 0.14 + 0.86 * fG;
@@ -246,8 +246,14 @@ if (abs(fMat - 9.0) < 0.5) {
   vec3 summer = base * vec3(0.9, 1.0, 0.86);
   vec3 aHue = vFIH < 0.34 ? vec3(0.80, 0.40, 0.03) : vFIH < 0.68 ? vec3(0.70, 0.15, 0.03) : vec3(0.86, 0.60, 0.06);
   vec3 autumn = mix(base, aHue * (0.5 + lum * 2.2), smoothstep(0.12, 0.55, sw.z + (fCell - 0.5) * 0.45));
-  vec3 winter = mix(vec3(0.26, 0.17, 0.09), vec3(0.40, 0.27, 0.13), fCell) * (0.7 + lum);
+  // winter: a grey-brown mass of bare twigs (no white puffs)
+  vec3 winter = mix(vec3(0.17, 0.13, 0.1), vec3(0.27, 0.2, 0.14), fCell) * (0.75 + lum * 0.8);
   diffuseColor.rgb = spring * sw.x + summer * sw.y + autumn * sw.z + winter * sw.w;
+  // bare crowns read as lace: holes cut by world-space noise (stable, no screen-door)
+  if (sw.w > 0.15) {
+    float lace = fVNoise(vFWorld * 9.0 + vFIH * 17.0) * 0.65 + fVNoise(vFWorld * 23.0) * 0.35;
+    if (lace < (sw.w - 0.15) * 0.68) discard;
+  }
   // spring blossom (pink or white) on some trees
   // soft scattered blossom clusters (smooth value noise) within the green,
   // mostly on upward faces, on about a third of the trees
@@ -286,7 +292,8 @@ float fChar = clamp(max(vFState.g * 1.25, vFState.b), 0.0, 1.0);
 diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.03, 0.026, 0.022), fChar * 0.92);
 // weather
 vec3 fWN = normalize(vFWNormal);
-float fSnowAmt = max(uSnowCover, vFWSnow * 0.85) * smoothstep(0.3, 0.8, fWN.y) * (1.0 - fChar);
+float fIsDec = 1.0 - step(0.5, abs(fMat - 9.0));
+float fSnowAmt = max(uSnowCover, vFWSnow * 0.85) * smoothstep(0.3, 0.8, fWN.y) * (1.0 - fChar) * (1.0 - 0.78 * fIsDec);
 diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.92, 0.95, 0.99), fSnowAmt);
 diffuseColor.rgb *= 1.0 - uWet * 0.16 * (1.0 - fIsSnow) * (1.0 - fSnowAmt);
 `;
