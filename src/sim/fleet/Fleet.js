@@ -1,7 +1,7 @@
 import { SEA_LEVEL } from '../../world/constants.js';
 import { mulberry32 } from '../../core/Random.js';
 import { WaterNav, pathLength } from './nav.js';
-import { KINDS, SEA_KINDS, shipName, cargoText } from './kinds.js';
+import { KINDS, SEA_KINDS, shipName, craftName, cargoText } from './kinds.js';
 import { missions } from './missions.js';
 import { land } from './land.js';
 import { war } from './war.js';
@@ -56,6 +56,7 @@ export class Fleet {
     this.byId = new Map();
     this.debris = [];
     this.stones = [];
+    this.shots = [];
     this.auto = { fishing: true, trade: true, colonize: true, naval: true, explore: true, carts: true, caravans: true, siege: true };
     this.version = 0;
     this._init();
@@ -97,6 +98,7 @@ export class Fleet {
     this.byId.clear();
     this.debris.length = 0;
     this.stones.length = 0;
+    this.shots.length = 0;
     this._init();
     this.version++;
   }
@@ -337,7 +339,7 @@ export class Fleet {
       def,
       cls: def.cls,
       kingdom: kid,
-      name: def.cls === 'sea' && kind !== 'fishing' ? shipName(this.rng) : null,
+      name: def.cls === 'sea' ? shipName(this.rng, kind) : craftName(this.rng, kind, this.game.civ?.villages?.[opts.home]?.name),
       home: opts.home ?? -1,
       harbour: opts.harbour ?? null,
       village: opts.home ?? -1,
@@ -479,8 +481,10 @@ export class Fleet {
   // Water route for a vessel from where it is to (gx, gz).
   seaPath(v, gx, gz, maxLen = Infinity) {
     const big = !!(v.def.big || v.kind === 'galley' || v.kind === 'carrack');
-    let p = this.nav.findPath(v.x, v.z, gx, gz, { big, maxLen });
-    if (!p && big) p = this.nav.findPath(v.x, v.z, gx, gz, { big: false, maxLen });
+    const minClear = v.def.clear || 0;
+    let p = this.nav.findPath(v.x, v.z, gx, gz, { big, maxLen, minClear });
+    // cogs and transports may thread a channel to get home; great ships may not
+    if (!p && minClear > 0 && minClear < 2.5) p = this.nav.findPath(v.x, v.z, gx, gz, { big: false, maxLen, minClear: 1 });
     return p;
   }
 
@@ -516,7 +520,10 @@ export class Fleet {
       v.ph = v.heading;
       v.stateT += step;
       if (v.cls === 'sea') this._seaTick(v, step);
-      else this._landTick(v, step);
+      else {
+        this._landTick(v, step);
+        v.y = this.world.heightAt(v.x, v.z);
+      }
     }
     this._separate(step);
     if ((T.war += step) >= 0.5) {
@@ -536,6 +543,7 @@ export class Fleet {
       T.siege = 0;
     }
     this._stonesTick(step);
+    this._shotsTick(step);
     this._debrisTick(step);
     // drop the dead
     if (this.list.some((v) => !v.alive)) this.list = this.list.filter((v) => v.alive);
@@ -595,8 +603,9 @@ export class Fleet {
         const ux = (dx / d) * push,
           uz = (dz / d) * push;
         // a moored ship holds its berth; the newcomer gives way
-        const wa = a.state === 'moored' ? 0 : b.state === 'moored' ? 2 : 1,
-          wb = b.state === 'moored' ? 0 : a.state === 'moored' ? 2 : 1;
+        const both = a.state === 'moored' && b.state === 'moored';
+        const wa = both ? 0.5 : a.state === 'moored' ? 0 : b.state === 'moored' ? 2 : 1,
+          wb = both ? 0.5 : b.state === 'moored' ? 0 : a.state === 'moored' ? 2 : 1;
         if (wa && nav.isWater(a.x - ux * wa, a.z - uz * wa)) {
           a.x -= ux * wa;
           a.z -= uz * wa;
@@ -690,6 +699,7 @@ export class Fleet {
         target = def.speed * this._windFactor(v) * (1 - Math.min(0.75, Math.abs(diff) / Math.PI) * 0.9);
         if (dd < 2.5 && v.pi >= v.path.length - 2) target *= 0.35 + dd * 0.26;
         if (v.chase) target *= 1.12;
+        if (v.grappled > this.game.time.total) target *= 0.25;
         if (night) target = 0;
         const st = this._stormNow;
         if (st > 0.4) target *= 1 - st * 0.25;
@@ -700,7 +710,7 @@ export class Fleet {
       target = 0.12;
     } else if (v.state === 'patrol') {
       v.heading += step * 0.35;
-      target = def.speed * 0.3;
+      target = def.speed * (v.grappled > this.game.time.total ? 0.08 : 0.3);
     }
     // accelerate / brake
     const acc = target > v.speed ? 0.7 : 1.4;
@@ -892,6 +902,26 @@ export class Fleet {
     }
   }
 
+  // Arrows and fire pots between ships: a splash when they miss, sparks or
+  // flames where they strike.
+  _shotsTick(step) {
+    if (!this.shots.length) return;
+    const keep = [];
+    for (const s of this.shots) {
+      s.t += step;
+      if (s.t < s.dur) {
+        keep.push(s);
+        continue;
+      }
+      if (s.hit) {
+        const v = this.byId.get(s.target);
+        if (s.pot && v && v.alive && v.state !== 'sinking') v.burning = Math.min(1, v.burning + 0.45);
+        this._fx(s.pot ? 'fire' : 'sparks', s.x1, s.z1, s.pot ? 0.6 : 0.45, { y: 0.5 });
+      } else if (this.nav.isWater(s.x1, s.z1)) this._fx('splash', s.x1, s.z1, s.pot ? 0.5 : 0.3);
+    }
+    this.shots = keep;
+  }
+
   _addDebris(x, z, i) {
     if (this.debris.length >= this.budget.debris) this.debris.shift();
     if (!this.nav.isWater(x, z)) return;
@@ -954,9 +984,12 @@ export class Fleet {
     if (def.capacity || v.cargo) stats.push(['Cargo', cargoText(v.cargo)]);
     const aboard = v.cls === 'sea' ? this.aboard(v).length : 0;
     if (aboard) stats.push(['Aboard', `${aboard} ${v.cargo?.army ? 'soldiers' : 'passengers'}`]);
-    if (v.voyage) stats.push(['Voyage', `${v.voyage.fromName || '—'} → ${v.voyage.toName || 'open sea'}`]);
+    const homeward = v.mission?.phase === 'home' || v.mission?.type === 'home';
+    const homeName = home?.name || v.voyage?.fromName || 'home';
+    if (v.voyage && v.state !== 'moored') stats.push(['Voyage', homeward ? `${v.voyage.toName || 'abroad'} → ${homeName}` : `${v.voyage.fromName || '—'} → ${v.voyage.toName || 'open sea'}`]);
     if (home) stats.push([v.cls === 'sea' ? 'Home port' : 'Home', home.name]);
-    stats.push(['Speed', `${(v.speed * 10).toFixed(0)} knots`.replace('knots', v.cls === 'sea' ? 'knots' : 'paces')]);
+    // speed only when it is really moving (a ship turning or waiting at anchor shows none)
+    if (v.speed > 0.05) stats.push(['Speed', `${Math.max(1, Math.round(v.speed * 10))} ${v.cls === 'sea' ? 'knots' : 'paces'}`]);
     stats.push(['Built', `year ${Math.floor(v.born / YEAR) + 1}`]);
     if (v.cls === 'sea' && this.hasTech(v.kingdom, 'astronomy')) stats.push(['Charts', 'sails by the stars, day and night']);
     return {
@@ -964,8 +997,8 @@ export class Fleet {
       kind: v.cls === 'sea' ? 'vessel' : 'vehicle',
       building: v, // tracked by the inspector (it follows ref.x / ref.z)
       vessel: v,
-      title: v.name ? `${def.name} ${v.name}` : def.name,
-      subtitle: `${k ? k.name : 'No realm'}${v.voyage?.toName ? ' · bound for ' + v.voyage.toName : ''}`,
+      title: v.cls === 'sea' ? `${def.name} ${v.name}` : `${v.name} (${def.name.toLowerCase()})`,
+      subtitle: `${k ? k.name : 'No realm'}${v.state === 'moored' ? ' · in port at ' + homeName : homeward ? ' · returning to ' + homeName : v.voyage?.toName ? ' · bound for ' + v.voyage.toName : ''}`,
       stats,
       x: v.x,
       z: v.z,
@@ -979,6 +1012,7 @@ export class Fleet {
     if (v.state === 'anchored') return this.isNight() ? 'At anchor for the night' : 'At anchor';
     if (v.state === 'fish') return 'Hauling nets over the shoal';
     if (!m) return 'Under way';
+    if (v.state === 'sail' && v.speed < 0.05) return this.isNight() && !this.hasTech(v.kingdom, 'astronomy') ? 'Waiting for daylight' : v.grappled > this.game.time.total ? 'Locked in a fight' : 'Coming about';
     switch (m.type) {
       case 'fish':
         return m.phase === 'home' ? 'Bringing the catch home' : 'Sailing out to the fishing grounds';

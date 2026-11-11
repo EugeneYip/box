@@ -82,7 +82,7 @@ export class Atmosphere {
     scene.add(this.flashLight.target);
     // lightning impact pool light (always present, intensity 0 at rest, so
     // the light count never changes and no material recompiles)
-    this.strikeLight = new THREE.PointLight(0xd2d6ff, 0, 40, 2);
+    this.strikeLight = new THREE.PointLight(0xd2d6ff, 0, 40, 1);
     this.strikeLight.castShadow = false;
     scene.add(this.strikeLight);
     this._strikeGlow = 0;
@@ -121,6 +121,7 @@ export class Atmosphere {
       shadowTint: new THREE.Vector3(),
       highTint: new THREE.Vector3(),
       midTint: new THREE.Vector3(),
+      moonSea: new THREE.Color(),
       wet: 0,
       lightDir: new THREE.Vector3(0, 1, 0),
       lightColor: new THREE.Color(),
@@ -346,8 +347,9 @@ export class Atmosphere {
       const b = this._strikeBolt;
       const br = b && b.age < b.life ? this.lightning.brightness(b) : 0;
       const D = rig.cur.dist;
-      this.strikeLight.distance = 22 + D * 0.18;
-      this.strikeLight.intensity = br * (260 + D * 9);
+      this.strikeLight.distance = 34 + D * 0.4;
+      this.strikeLight.position.y = (b ? b.y : 0) + 4 + D * 0.04;
+      this.strikeLight.intensity = br * (70 + D * 2.6);
     }
     this.fitShadow(camera, M.keyDir);
     game.scene.environmentIntensity = (0.62 + 0.12 * mix.overcast + 0.1 * W.wetness) * (1 - 0.35 * mix.storm);
@@ -617,6 +619,12 @@ export class Atmosphere {
     P.highTint.copy(M.highTint);
     P.grade.set(M.saturation, M.vibrance, M.contrast, 0.45);
     P.midTint.copy(M.midTint);
+    // night sea floor: moonlight on water, never pure black (dark ages too)
+    {
+      const nk = M.night;
+      const moon = M.keyIsMoon ? M.keyIntensity : 0.25 * nk;
+      P.moonSea.copy(M.keyIsMoon ? M.keyColor : M.hemiSky).multiplyScalar(0.012 + 0.03 * moon).add(this._c2 || (this._c2 = new THREE.Color()).copy(M.zenith).multiplyScalar(0.35)).multiplyScalar(nk);
+    }
     // wet sheen on rain-soaked surfaces
     P.wet = Math.min(1, this.weather.wetness * 1.1) * (0.4 + 0.6 * W.rain);
     P.lightDir.copy(M.keyDir);

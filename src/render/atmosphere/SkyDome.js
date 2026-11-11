@@ -163,7 +163,7 @@ void main() {
   if (uSunVis > 0.001) {
     float mu = dot(dir, uSunDir);
     float ang = acos(clamp(mu, -1.0, 1.0));
-    float R = 0.028;
+    float R = 0.034 + 0.012 * (1.0 - smoothstep(0.0, 0.25, uSunDir.y)); // larger near the horizon
     float aa = fwidth(ang) * 1.5 + 1e-5;
     float disc = 1.0 - smoothstep(R - aa, R + aa, ang);
     float limb = 0.75 + 0.25 * sqrt(max(0.0, 1.0 - (ang / R) * (ang / R)));

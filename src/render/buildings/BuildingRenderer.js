@@ -364,8 +364,8 @@ export class BuildingRenderer {
       const x = h.x + Math.cos(r) * side + Math.sin(r) * 1.2,
         z = h.z - Math.sin(r) * side + Math.cos(r) * 1.2;
       const gy = world.heightAt(x, z);
-      this.staffs.push([x, gy, z, 3.2]);
-      this.banners.push({ x: x + 0.03, y: gy + 3.15, z, s: 2.4, style: h.style, color: civ.kingdomColor(k.id), k: k.id });
+      this.staffs.push([x, gy, z, 2.5]);
+      this.banners.push({ x: x + 0.03, y: gy + 2.45, z, s: 1.45, style: h.style, color: civ.kingdomColor(k.id), k: k.id });
     }
     // lampposts along town streets
     for (const v of civ.villages) {

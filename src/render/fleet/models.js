@@ -75,7 +75,9 @@ function hull(g, o) {
     const hw = (W / 2) * wf;
     const gy = H + (o.sheer ?? 0.06) * Math.pow(2 * t - 1, 2) + (o.bow ?? 0) * smooth(0.72, 1, t) + (o.stern ?? 0) * smooth(0.28, 0, t);
     const ky = -D * (0.3 + 0.7 * Math.sqrt(Math.max(0, 1 - Math.pow(2 * t - 1, 6))));
-    st.push({ x, hw, gy, ky });
+    // the keel is shorter than the rail: a raked stem and a rising counter stern
+    const kx = x + Math.pow(1 - t, 3) * L * 0.09 - Math.pow(t, 3) * L * 0.07;
+    st.push({ x, hw, gy, ky, kx });
   }
   const col = o.col ?? WOOD;
   const low = o.low ?? HULL_LOW;
@@ -91,10 +93,13 @@ function hull(g, o) {
       const ctr = [cx, 0, 0];
       const G = (p) => [p.x, p.gy, s * p.hw];
       const S = (p) => [p.x, p.gy - wale, s * p.hw * 0.995];
-      const B = (p) => [p.x, p.ky * 0.42, s * p.hw * 0.9];
-      const K = (p) => [p.x, p.ky, 0];
+      const M = (p) => [p.x * 0.6 + p.kx * 0.4, (p.gy - wale) * 0.5 + p.ky * 0.21, s * p.hw * 0.965];
+      const B = (p) => [p.x * 0.35 + p.kx * 0.65, p.ky * 0.42, s * p.hw * 0.9];
+      const K = (p) => [p.kx, p.ky, 0];
       g.quad(G(a), G(b), S(b), S(a), waleCol, waleTint, 0, ctr);
-      g.quad(S(a), S(b), B(b), B(a), col, 0, 0, ctr);
+      // planking in two strakes of slightly different tone
+      g.quad(S(a), S(b), M(b), M(a), shade(col, 1.07), 0, 0, ctr);
+      g.quad(M(a), M(b), B(b), B(a), shade(col, 0.9), 0, 0, ctr);
       g.quad(B(a), B(b), K(b), K(a), low, 0, 0, ctr);
       // rail cap and inner bulwark
       const I = (p) => [p.x, p.gy, s * p.hw * 0.88];
@@ -109,20 +114,28 @@ function hull(g, o) {
   const s0 = st[0];
   const ring = [
     [s0.x, s0.gy, -s0.hw],
-    [s0.x, s0.gy - wale, -s0.hw],
-    [s0.x, s0.ky * 0.42, -s0.hw * 0.9],
-    [s0.x, s0.ky, 0],
-    [s0.x, s0.ky * 0.42, s0.hw * 0.9],
-    [s0.x, s0.gy - wale, s0.hw],
+    [s0.x, s0.gy - wale, -s0.hw * 0.995],
+    [s0.x * 0.6 + s0.kx * 0.4, (s0.gy - wale) * 0.5 + s0.ky * 0.21, -s0.hw * 0.965],
+    [s0.x * 0.35 + s0.kx * 0.65, s0.ky * 0.42, -s0.hw * 0.9],
+    [s0.kx, s0.ky, 0],
+    [s0.x * 0.35 + s0.kx * 0.65, s0.ky * 0.42, s0.hw * 0.9],
+    [s0.x * 0.6 + s0.kx * 0.4, (s0.gy - wale) * 0.5 + s0.ky * 0.21, s0.hw * 0.965],
+    [s0.x, s0.gy - wale, s0.hw * 0.995],
     [s0.x, s0.gy, s0.hw],
   ];
-  const c0 = [s0.x, (s0.gy + s0.ky) / 2, 0];
+  const c0 = [(s0.x + s0.kx) / 2, (s0.gy + s0.ky) / 2, 0];
   for (let i = 0; i < ring.length - 1; i++) g.tri(c0, ring[i], ring[i + 1], shade(col, 0.9), 0, 0, [s0.x + 1, c0[1], 0]);
   g.tri(c0, ring[ring.length - 1], ring[0], shade(col, 0.9), 0, 0, [s0.x + 1, c0[1], 0]);
+  // stem post curving up from the cutwater, a sternpost at the counter
+  const sb = st[N];
+  g.beam(sb.kx, sb.ky * 0.6, 0, sb.x + 0.03, sb.gy * 0.55, 0, 0.045, WOOD3);
+  g.beam(sb.x + 0.03, sb.gy * 0.55, 0, sb.x + 0.02, sb.gy + 0.05, 0, 0.04, WOOD3);
+  g.beam(s0.kx, s0.ky * 0.8, 0, s0.x - 0.01, s0.gy, 0, 0.04, WOOD3);
   return st;
 }
 
 function stationAt(st, x) {
+  if (!st) return { hw: 0.3, gy: 0.3 };
   for (let i = 0; i < st.length - 1; i++) {
     if (x >= st[i].x && x <= st[i + 1].x) {
       const t = (x - st[i].x) / (st[i + 1].x - st[i].x || 1);
@@ -166,7 +179,8 @@ function squareSail(g, x, yTop, hw, h, o = {}) {
         v0 = j / nv,
         v1 = (j + 1) / nv;
       const zA = (u, v) => -hw + u * 2 * hw * (1 - taper * v) + hw * taper * v;
-      const P = (u, v) => [x, yTop - v * h, zA(u, v)];
+      const belly = 0.03 + h * 0.07;
+      const P = (u, v) => [x + belly * Math.sin(Math.PI * u) * Math.sin(Math.PI * (0.15 + 0.85 * v)), yTop - v * h, zA(u, v)];
       const t = cell(i, j);
       const c = t ? SAIL : shade(SAIL, 0.97 + ((i + j) % 2) * 0.03);
       for (const side of [1, -1]) g.quad(P(u0, v0), P(u1, v0), P(u1, v1), P(u0, v1), c, t * (o.tint ?? 1), 0, [x - side, yTop - h / 2, 0], 0.01);
@@ -195,7 +209,8 @@ function lateenSail(g, x0, y0, x1, y1, xFoot, yFoot, o = {}) {
     const a = 1 - i / nu - j / nu,
       b = i / nu,
       c = j / nu;
-    return [A[0] * a + B[0] * b + C[0] * c, A[1] * a + B[1] * b + C[1] * c, 0];
+    const belly = 0.05 + Math.abs(y1 - yFoot) * 0.05;
+    return [A[0] * a + B[0] * b + C[0] * c, A[1] * a + B[1] * b + C[1] * c, belly * 4 * b * (1 - b) * Math.min(1, c * 3) * (1 - c)];
   };
   for (let j = 0; j < nu; j++)
     for (let i = 0; i < nu - j; i++) {
@@ -261,16 +276,33 @@ function shields(g, st, x0, x1, n, side) {
   }
 }
 
-function castle(g, x, y, len, hw, h, col = WOOD) {
-  g.box(x, y, 0, len, h, hw * 2, col, { top: DECK });
-  // crenellated rail
-  const n = Math.max(3, Math.round(len / 0.12));
-  for (let i = 0; i < n; i++)
-    for (const s of [-1, 1]) g.box(x - len / 2 + (len * (i + 0.5)) / n, y + h, s * (hw - 0.02), (len / n) * 0.55, 0.06, 0.04, i % 2 ? shade(col, 1.1) : 0xffffff, { tint: i % 2 ? 0 : 0.8 });
-  for (let i = 0; i < Math.max(2, Math.round((hw * 2) / 0.12)); i++) {
-    const m = Math.max(2, Math.round((hw * 2) / 0.12));
-    for (const e of [-1, 1]) g.box(x + e * (len / 2 - 0.02), y + h, -hw + (hw * 2 * (i + 0.5)) / m, 0.04, 0.06, ((hw * 2) / m) * 0.55, shade(col, 1.1));
+// A castle built into the hull: as wide as the hull at each end (inset a
+// little), leaning in toward the top, planked in two tones, with a rail.
+function castle(g, x, y, len, hw, h, col = WOOD, st = null) {
+  const x0 = x - len / 2,
+    x1 = x + len / 2;
+  const w0 = st ? Math.max(0.06, stationAt(st, x0).hw * 0.93) : hw,
+    w1 = st ? Math.max(0.06, stationAt(st, x1).hw * 0.93) : hw;
+  const t = 0.9; // tumblehome
+  const ctr = [x, y + h / 2, 0];
+  const B = (xx, w, s) => [xx, y, s * w],
+    T = (xx, w, s) => [xx, y + h, s * w * t];
+  for (const sd of [-1, 1]) {
+    const Mh = (xx, w) => [xx, y + h * 0.5, sd * w * (1 + t) * 0.5];
+    g.quad(B(x0, w0, sd), B(x1, w1, sd), Mh(x1, w1), Mh(x0, w0), shade(col, 0.92), 0, 0, ctr);
+    g.quad(Mh(x0, w0), Mh(x1, w1), T(x1, w1, sd), T(x0, w0, sd), shade(col, 1.06), 0, 0, ctr);
   }
+  g.quad(B(x0, w0, -1), B(x0, w0, 1), T(x0, w0, 1), T(x0, w0, -1), shade(col, 0.85), 0, 0, ctr);
+  g.quad(B(x1, w1, 1), B(x1, w1, -1), T(x1, w1, -1), T(x1, w1, 1), shade(col, 0.95), 0, 0, ctr);
+  g.quad(T(x0, w0, -1), T(x0, w0, 1), T(x1, w1, 1), T(x1, w1, -1), DECK, 0, 0, [x, y, 0]);
+  // a rail of posts and a tinted top band
+  const n = Math.max(3, Math.round(len / 0.14));
+  for (let i = 0; i <= n; i++) {
+    const xx = x0 + (len * i) / n;
+    const ww = (w0 + (w1 - w0) * (i / n)) * t;
+    for (const sd of [-1, 1]) g.box(xx, y + h, sd * (ww - 0.015), 0.03, 0.07, 0.03, shade(col, 1.12));
+  }
+  for (const sd of [-1, 1]) g.beam(x0, y + h + 0.07, sd * (w0 * t - 0.015), x1, y + h + 0.07, sd * (w1 * t - 0.015), 0.025, 0xffffff, { tint: 0.85 });
 }
 
 function lantern(g, x, y, z) {
@@ -310,9 +342,9 @@ function fishing() {
 
 function cog() {
   const g = new VB(23);
-  const st = hull(g, { L: 2.2, W: 0.78, H: 0.36, D: 0.22, sheer: 0.08, bow: 0.1, stern: 0.12, transom: 0.7, mid: 0.52, bowPow: 1.6, col: WOOD, wale: 0.06 });
-  castle(g, -0.78, st[1].gy - 0.06, 0.52, 0.34, 0.2);
-  castle(g, 0.78, stationAt(st, 0.78).gy - 0.06, 0.4, 0.26, 0.17);
+  const st = hull(g, { L: 2.2, W: 0.78, H: 0.36, D: 0.22, sheer: 0.12, bow: 0.12, stern: 0.14, transom: 0.52, mid: 0.52, bowPow: 1.6, col: WOOD, wale: 0.06 });
+  castle(g, -0.8, st[1].gy - 0.06, 0.5, 0.34, 0.2, WOOD, st);
+  castle(g, 0.74, stationAt(st, 0.74).gy - 0.06, 0.38, 0.26, 0.17, WOOD, st);
   crates(g, -0.25, 0.1, 4, 1);
   g.box(0.3, 0.28, 0, 0.3, 0.06, 0.4, 0x8a6a46);
   mast(g, 0.05, 0.3, 1.9, 0.04);
@@ -334,7 +366,7 @@ function cog() {
 
 function transport() {
   const g = new VB(37);
-  const st = hull(g, { L: 2.4, W: 0.9, H: 0.32, D: 0.22, sheer: 0.07, bow: 0.08, stern: 0.08, transom: 0.65, mid: 0.5, col: WOOD2, wale: 0.06 });
+  const st = hull(g, { L: 2.4, W: 0.9, H: 0.32, D: 0.22, sheer: 0.1, bow: 0.1, stern: 0.1, transom: 0.5, mid: 0.5, col: WOOD2, wale: 0.06 });
   // a canopy aft in the realm's colours, settlers and their bundles on deck
   const ay = st[1].gy - 0.05;
   for (const x of [-0.98, -0.6]) for (const s of [-1, 1]) g.box(x, ay, s * 0.32, 0.04, 0.3, 0.04, WOOD3);
@@ -390,8 +422,8 @@ function galley() {
 
 function explorer() {
   const g = new VB(53);
-  const st = hull(g, { L: 2.5, W: 0.68, H: 0.3, D: 0.2, sheer: 0.07, bow: 0.12, stern: 0.14, transom: 0.55, mid: 0.48, bowPow: 1.5, col: 0x8a5a34, wale: 0.05 });
-  castle(g, -0.9, st[1].gy - 0.05, 0.56, 0.28, 0.18, 0x8a5a34);
+  const st = hull(g, { L: 2.5, W: 0.68, H: 0.3, D: 0.2, sheer: 0.07, bow: 0.12, stern: 0.14, transom: 0.45, mid: 0.48, bowPow: 1.5, col: 0x8a5a34, wale: 0.05 });
+  castle(g, -0.92, st[1].gy - 0.05, 0.52, 0.28, 0.18, 0x8a5a34, st);
   // two lateen-rigged masts (a caravel), sails with a realm-coloured band
   mast(g, 0.45, 0.25, 1.55, 0.035);
   mast(g, -0.3, 0.25, 1.3, 0.032);
@@ -409,11 +441,11 @@ function explorer() {
 
 function carrack() {
   const g = new VB(67);
-  const st = hull(g, { L: 3.5, W: 1.08, H: 0.5, D: 0.32, sheer: 0.12, bow: 0.18, stern: 0.22, transom: 0.75, mid: 0.5, bowPow: 1.5, col: 0x6a4228, wale: 0.08, stations: 12 });
+  const st = hull(g, { L: 3.5, W: 1.08, H: 0.5, D: 0.32, sheer: 0.16, bow: 0.2, stern: 0.24, transom: 0.55, mid: 0.5, bowPow: 1.5, col: 0x6a4228, wale: 0.08, stations: 12 });
   // towering castles fore and aft with lit stern windows
-  castle(g, -1.2, st[1].gy - 0.08, 0.9, 0.48, 0.36, 0x6a4228);
-  castle(g, -1.25, st[1].gy + 0.3, 0.55, 0.4, 0.2, 0x6a4228);
-  castle(g, 1.2, stationAt(st, 1.2).gy - 0.08, 0.62, 0.36, 0.3, 0x6a4228);
+  castle(g, -1.25, st[1].gy - 0.08, 0.85, 0.48, 0.34, 0x6a4228, st);
+  castle(g, -1.38, st[1].gy + 0.28, 0.5, 0.4, 0.18, 0x6a4228, st);
+  castle(g, 1.15, stationAt(st, 1.15).gy - 0.08, 0.58, 0.36, 0.28, 0x6a4228, st);
   for (let i = 0; i < 3; i++) g.box(-1.66, st[0].gy + 0.05, -0.2 + i * 0.2, 0.02, 0.1, 0.08, 0xffc070, { glow: 1 });
   crates(g, -0.2, 0.2, 4, 3);
   crates(g, 0.4, -0.2, 2, 4);
@@ -635,5 +667,16 @@ export function debrisGeometry() {
 }
 
 export function stoneGeometry() {
-  return new THREE.IcosahedronGeometry(0.2, 0);
+  const g = new VB(7);
+  g.bead(0, -0.2, 0, 0.22, 0x6e675c);
+  return g.build();
+}
+
+// An arrow (or a fire pot's shaft) pointing along +X.
+export function arrowGeometry() {
+  const g = new VB(9);
+  g.box(0, -0.012, 0, 0.42, 0.024, 0.024, 0x4a3420);
+  g.box(-0.2, -0.02, 0, 0.08, 0.04, 0.005, 0xe8e0d0);
+  g.box(0.22, -0.016, 0, 0.05, 0.032, 0.032, 0x8a8a8a);
+  return g.build();
 }
