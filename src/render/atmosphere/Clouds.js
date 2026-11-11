@@ -62,6 +62,7 @@ uniform float uDark;
 uniform float uOpacity;
 uniform float uNearFade;
 uniform float uTime;
+uniform float uWisp; // 0 close .. 1 overview: wispier, thinner puffs
 varying vec2 vUv;
 varying vec3 vW;
 varying vec3 vC;
@@ -76,7 +77,7 @@ void main() {
   // noise-eroded soft edge (slowly boiling)
   float n = cFbm(vUv * 1.6 + seed * 37.0 + vec2(uTime * 0.012, -uTime * 0.009));
   float n2 = cNoise(vUv * 5.0 + seed * 11.0);
-  float edge = rr + (n - 0.5) * 0.62 + (n2 - 0.5) * 0.12;
+  float edge = rr + (n - 0.5) * (0.62 + 0.45 * uWisp) + (n2 - 0.5) * (0.12 + 0.2 * uWisp);
   float dens = 1.0 - smoothstep(0.32, 0.92, edge);
   // flat, shaded cluster base
   float h = (vW.y - vCloud.y) / max(vCloud.z, 0.5);
@@ -325,6 +326,7 @@ export class Clouds {
       uOpacity: { value: 1 },
       uNearFade: { value: 40 },
       uTime: { value: 0 },
+      uWisp: { value: 0 },
     };
     this.material = new THREE.ShaderMaterial({
       name: 'CloudPuff',
@@ -534,6 +536,7 @@ export class Clouds {
     const vis = THREE.MathUtils.smoothstep(camDist, 70, 150) * (1 - 0.72 * THREE.MathUtils.smoothstep(z01, 0.8, 1.0));
     u.uOpacity.value = vis * (0.82 + 0.18 * weather.overcast) * (1 - 0.35 * weather.storm);
     u.uNearFade.value = 70 + camDist * 0.45; // never a wash right under the lens
+    u.uWisp.value = THREE.MathUtils.smoothstep(game.view?.zoom01 ?? 0.5, 0.55, 1.0);
     this.group.visible = vis > 0.01;
     // high cirrus layer
     const C = this.cirrusU;
@@ -585,13 +588,15 @@ export class Clouds {
 
     // cloud shadow parameters: project along the sun to the ground
     const sd = model.sunDir;
-    const sy = Math.max(0.35, sd.y);
+    const sy = Math.max(0.55, sd.y); // keep shadows close to their clouds
     const P = this.shadow.params;
     const alt = this.altitude - (this.altitude - this.deckAltitude) * weather.storm;
     P.x = -f.x0 + (sd.x / sy) * alt;
     P.y = -f.z0 + (sd.z / sy) * alt;
     P.z = 1 / f.sx;
-    P.w = (0.6 + 0.25 * weather.storm) * THREE.MathUtils.smoothstep(sd.y, 0.04, 0.3) * (model.keyIsMoon ? 0 : 1);
+    // shadows fade with the clouds at the overview, so no orphaned blobs
+    const ovw = 1 - 0.72 * THREE.MathUtils.smoothstep(game.view?.zoom01 ?? 0.5, 0.8, 1.0);
+    P.w = (0.6 + 0.25 * weather.storm) * ovw * THREE.MathUtils.smoothstep(sd.y, 0.04, 0.3) * (model.keyIsMoon ? 0 : 1);
   }
 
   renderShadow(renderer) {

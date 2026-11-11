@@ -26,6 +26,7 @@ uniform vec3 uWorld;       // world w, h, has-height-texture
 uniform float uWet;
 uniform vec3 uLightDir;
 uniform vec3 uLightCol;
+uniform vec3 uMoonSea;   // night sea sheen (moon x sky), 0 by day
 uniform vec2 uCloudOffset;
 uniform float uCover;
 uniform vec3 uCloudLit;
@@ -122,7 +123,7 @@ void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor)
     vec2 cp = sd.xz / (ly + 0.06) * 0.9 + uCloudOffset;
     float n = hFbm(cp);
     float cov = clamp(0.32 + uCover * 0.8, 0.0, 1.0);
-    float cb = smoothstep(1.02 - cov, 1.25 - cov * 0.6, n) * (1.0 - smoothstep(0.05, 0.3, ly));
+    float cb = smoothstep(1.0 - cov, 1.12 - cov * 0.55, n) * (1.0 - smoothstep(0.06, 0.32, ly)); // crisper banks
     float shade = smoothstep(0.3, 0.9, hFbm(cp * 1.7 + vec2(0.4, 0.2)));
     float sunSide = pow(max(dot(normalize(sd.xz + 1e-4), normalize(uSunDir.xz + 1e-4)) * 0.5 + 0.5, 0.0), 3.0);
     vec3 litC = uCloudLit * 1.15 + uCloudShade * 0.55;
@@ -142,9 +143,18 @@ void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor)
     seaRefl = mix(seaRefl, band, 1.0 - smoothstep(0.0, 0.035, -dir.y));
     band = mix(band, seaRefl, water);
     hc = mix(hc, band, horiz);
-    hz = min(hz, mix(0.95, 0.62, water));
+    // right at the horizon the band takes over completely (it matches the
+    // sky just above, so there is no seam); lower down the sea shows through
+    hz = min(hz, mix(0.97, mix(1.0, 0.62, smoothstep(0.0, 0.05, -dir.y)), water));
   }
   col = mix(col, hc, hz);
+  // night over open water: a minimum moonlit sheen plus a moon path, so the
+  // sea reads as water instead of a black void
+  if (uMoonSea.r + uMoonSea.g + uMoonSea.b > 1e-5 && water > 0.01) {
+    float azm = max(dot(normalize(vec3(dir.x, 0.0, dir.z)), normalize(vec3(uMoonDir.x, 0.0, uMoonDir.z))), 0.0);
+    float grazing = 1.0 - smoothstep(0.0, 0.9, -dir.y);
+    col += uMoonSea * water * (0.55 + 0.45 * grazing + pow(azm, 60.0) * 1.4 * grazing);
+  }
 
   outputColor = vec4(col, inputColor.a);
 }
@@ -172,6 +182,7 @@ export class AtmosphereEffect extends Effect {
         ['uCover', u(0.4)],
         ['uCloudLit', u(new THREE.Color())],
         ['uCloudShade', u(new THREE.Color())],
+        ['uMoonSea', u(new THREE.Color(0, 0, 0))],
         ['uSunDir', u(new THREE.Vector3(0, 1, 0))],
         ['uMoonDir', u(new THREE.Vector3(0, 1, 0))],
         ['uZenith', u(new THREE.Color())],
@@ -202,6 +213,7 @@ export class AtmosphereEffect extends Effect {
       U.get('uWorld').value.set(params.worldW || 256, params.worldH || 256, params.heightTex ? 1 : 0);
       U.get('uLightDir').value.copy(params.lightDir);
       U.get('uLightCol').value.copy(params.lightColor);
+      if (params.moonSea) U.get('uMoonSea').value.copy(params.moonSea);
     }
   }
 }
