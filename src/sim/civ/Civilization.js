@@ -792,7 +792,7 @@ export class Civilization {
       if (!v.starving && v.emptyT > 12) {
         v.starving = true;
         v.famineT = now;
-        this._note(`Famine in ${v.name}`, 'disaster', { x: v.cx, z: v.cz }, 'famine' + v.id, 400);
+        this._note(`Famine in ${v.name}`, 'bad', { x: v.cx, z: v.cz }, 'famine' + v.id, 400);
       }
     } else {
       v.emptyT = 0;
@@ -1357,7 +1357,7 @@ export class Civilization {
         else if (k.capital === v.id) this._chooseCapital(k);
       }
     }
-    if (why !== 'silent' && v.pop0 !== 0) this._note(`${v.name} has been ${why === 'razed' ? 'razed and abandoned' : 'abandoned'}.`, why === 'razed' ? 'disaster' : 'bad', { x: v.cx, z: v.cz });
+    if (why !== 'silent' && v.pop0 !== 0) this._note(`${v.name} has been ${why === 'razed' ? 'razed and abandoned' : 'abandoned'}.`, why === 'razed' ? 'war' : 'bad', { x: v.cx, z: v.cz });
     this.version++;
     this.colorVersion++;
   }
@@ -1958,7 +1958,7 @@ export class Civilization {
     this._fx('debris', b.x, b.z, 1.2, true);
     this._fx('dust', b.x, b.z, 1.6, true);
     this._fx('smoke', b.x, b.z, 1.2, true);
-    if (b.type === 'hall' && v && v.alive && !b.abandoned) this._note(`The ${buildingLabel(b).toLowerCase()} of ${v.name} has been destroyed!`, 'disaster', { x: b.x, z: b.z });
+    if (b.type === 'hall' && v && v.alive && !b.abandoned) this._note(`The ${buildingLabel(b).toLowerCase()} of ${v.name} has been destroyed!`, b.besieged && this.game.time.total - b.besieged < 30 ? 'war' : 'bad', { x: b.x, z: b.z });
     this.version++;
     if (v && v.alive && !v.buildings.some((o) => o.alive && !BUILDING_TYPES[o.type].wall) && (v.razed || v.pop < 3)) this._abandon(v, v.razed ? 'razed' : 'empty');
   }

@@ -294,6 +294,30 @@ export const politics = {
     }
   },
 
+  // A one- or two-town realm long allied with a greater realm of its own
+  // people joins it in union (fewer splinters on big maps).
+  _unions() {
+    const now = this.game.time.total;
+    if (now - (this._unionT || 0) < YEAR * 2) return;
+    this._unionT = now;
+    for (const r of this.relations.values()) {
+      if (!r.ally || r.war || this._relLocked?.(r) || r.opinion < 45) continue;
+      const A = this.kingdoms[r.a],
+        B = this.kingdoms[r.b];
+      if (!A?.alive || !B?.alive || baseCulture(A.culture) !== baseCulture(B.culture)) continue;
+      const [small, big] = A.villages.length <= B.villages.length ? [A, B] : [B, A];
+      if (small.villages.length > 2 || big.villages.length < small.villages.length + 1 || small.player?.name) continue;
+      if (!this.rng.chance(0.25)) continue;
+      const name = this._kn(small);
+      for (const vid of [...small.villages]) {
+        const v = this.villages[vid];
+        if (v?.alive) this._transferVillage(v, big.id, 'union');
+      }
+      this._note(`🤝 ${name} joins ${this._kn(big)} in union`, 'good', this._kingdomPos(big), 'union' + small.id, 1);
+      return;
+    }
+  },
+
   _chooseCapital(k) {
     let best = null;
     for (const vid of k.villages) {
@@ -326,6 +350,7 @@ export const politics = {
     this._recolorClashes();
     this._abdications();
     this._overextension();
+    this._unions();
     this._secession();
     const g = this.game;
     const rng = this.rng;
@@ -792,7 +817,7 @@ export const politics = {
     r.grievance = Math.min(80, r.grievance + 25);
     r.conquests = (r.conquests || 0) + 1;
     if (raze) {
-      this._note(`🔥 ${this._kn(K)} burns ${v.name}`, 'disaster', { x: v.cx, z: v.cz });
+      this._note(`🔥 ${this._kn(K)} burns ${v.name}`, 'war', { x: v.cx, z: v.cz });
       for (const b of v.buildings) if (b.alive) b.burning = Math.max(b.burning, 0.7 + this.rng.next() * 0.3);
       v.razed = true;
       for (const u of [...v.members]) if (u.job !== 'soldier') this._makeRefugee(u, old);
@@ -840,7 +865,7 @@ export const politics = {
     v.kingdom = kid;
     K.villages.push(v.id);
     v.conqueredAt = this.game.time.total;
-    v.loyalty = cause === 'rebellion' ? 80 : 35;
+    v.loyalty = cause === 'rebellion' ? 80 : cause === 'union' ? 75 : 35;
     if (cause === 'conquest' && (v.rebellions || 0) >= 2) v.loyaltyBoost = Math.max(v.loyaltyBoost || 0, 12); // a restless town is garrisoned and watched
     for (const b of v.buildings) {
       if (BUILDING_TYPES[b.type]?.monument && b.alive && old && K && old !== K && cause === 'conquest') {
@@ -900,7 +925,7 @@ export const politics = {
     const cap = this.villages[k.capital];
     const alive = this._aliveKingdoms();
     let L = 74;
-    if (cap) L -= Math.max(0, Math.hypot(cap.cx - v.cx, cap.cz - v.cz) - 28) * 0.75;
+    if (cap) L -= Math.max(0, Math.hypot(cap.cx - v.cx, cap.cz - v.cz) / Math.max(1, Math.sqrt(this.world.size / 65536)) - 28) * 0.75;
     if (v.culture !== k.culture) L -= 18;
     if (v.conqueredAt) L -= Math.max(0, 34 - ((now - v.conqueredAt) / YEAR) * 3);
     if (v.starving && this.law('harmonyUnrest')) L -= 22;

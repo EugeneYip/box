@@ -268,7 +268,7 @@ export class Labels {
       const y = w.surfaceAt(ax, az) + 2.5 + D * 0.03;
       s.position.set(ax, y, az);
       const dist = cam.distanceTo(s.position);
-      const many = this.kLabels.size > 9 ? Math.max(0.62, 1 - (this.kLabels.size - 9) * 0.035) : 1;
+      const many = this.kLabels.size > 9 ? Math.max(0.45, 1 - (this.kLabels.size - 9) * 0.03) : 1;
       const h = Math.max(1.4, dist * 0.032 * many);
       s.scale.set(h * s.userData.aspect, h, 1);
       cand.push({ s, a: kAk, prio: 3 + (k.villages.length || 0) * 0.01 + (this._focusSet?.has(id) ? 0.5 : 0), kid: id });
@@ -327,7 +327,7 @@ export class Labels {
       this._hudT = 1;
       this._hud = [];
       try {
-        for (const el of document.querySelectorAll('#ui-root .hud-panel, #ui-root [class*="panel"], #ui-root [class*="toolbar"], #ui-root [class*="feed"], #ui-root [class*="minimap"]')) {
+        for (const el of document.querySelectorAll('#ui-root .hud-panel, #ui-root [class*="panel"], #ui-root [class*="toolbar"], #ui-root [class*="feed"], #ui-root [class*="minimap"], #ui-root [class*="chip"], #ui-root [class*="badge"], #ui-root [class*="topbar"], #ui-root [class*="dock"]')) {
           const r = el.getBoundingClientRect();
           if (r.width > 4 && r.height > 4 && getComputedStyle(el).visibility !== 'hidden' && r.width < W * 0.95) this._hud.push(r);
         }
