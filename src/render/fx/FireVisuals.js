@@ -199,11 +199,14 @@ export class FireVisuals {
         for (let k = 0; k < lava.count && n < CAP; k++) {
           const i = lava.list[k];
           const h = lava.heat[i];
-          if (h <= 0.05) continue;
+          // only flowing lava glows (rivers in the gullies); thin films and
+          // crusting sheets read as dark rock, not a crack net over the cone
+          const gl = Math.min(1, h) * Math.min(1, (lava.vol[i] - 0.015) / 0.06);
+          if (h <= 0.05 || gl <= 0.08) continue;
           const o = n * 4;
           A[o] = (i % W) + 0.5;
           A[o + 1] = ((i / W) | 0) + 0.5;
-          A[o + 2] = Math.min(1, h);
+          A[o + 2] = gl;
           A[o + 3] = 2;
           n++;
         }

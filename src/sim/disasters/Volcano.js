@@ -52,7 +52,7 @@ export class Volcano {
       if (d > this.crater * 0.8) {
         let best = Infinity;
         for (const ga of this.gullies) best = Math.min(best, angDist(ang, ga) * d * radius);
-        if (best < 1.6) target -= (1 - best / 1.6) * 1.1 * (1 - d * 0.6);
+        if (best < 1.6) target -= (1 - best / 1.6) * 2.0 * (1 - d * 0.5);
       }
       // blend smoothly into the surrounding land
       target = Math.max(target, w.height[i]);
@@ -128,13 +128,13 @@ export class Volcano {
     // lava from the vent (visual clock => same volume at any game speed)
     if (erupting) {
       const rate = 1.5 * k;
-      this.ds.lava.pour(this.cx, this.cz, rate * vt * 0.3, 1);
+      this.ds.lava.pour(this.cx, this.cz, rate * vt * 0.08, 1);
       // overflow down each flank gully: glowing rivers running into the land
       const rr = (this.crater + 0.07) * this.R;
       for (const ga of this.gullies) {
         const gx = Math.floor(x + Math.cos(ga) * rr),
           gz = Math.floor(z + Math.sin(ga) * rr);
-        this.ds.lava.pour(gx, gz, rate * vt * 1.0, 1);
+        this.ds.lava.pour(gx, gz, rate * vt * 0.6, 1);
       }
     }
     // fountain
