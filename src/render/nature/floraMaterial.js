@@ -65,6 +65,7 @@ varying vec4 vFSeason;
 varying float vFIH;
 varying float vFWSnow;
 varying vec2 vFGlow;
+varying vec3 vFRest;
 #endif
 float fHash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
 // Season weights (spring, summer, autumn, winter) for a continuous season t in [0,4).
@@ -150,6 +151,8 @@ vFState = fState;
 vFInfo = vec3(fLeaf, aInfo.w, 0.0);
 vFWorld = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;
 vFWNormal = normalize(mat3(modelMatrix) * (fIM * objectNormal));
+// rest pose in world units: surface patterns (blossom) do not swim in the wind
+vFRest = (modelMatrix * instanceMatrix * vec4(position, 1.0)).xyz;
 #endif
 `;
 
@@ -182,6 +185,7 @@ vFWSnow = vFSeason.w * smoothstep(0.48, 0.3, fGTemp);
 vFInfo = vec3(aInfo.z, aInfo.w, fK);
 vFWorld = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;
 vFWNormal = normalize(mat3(modelMatrix) * (fIM * objectNormal));
+vFRest = vFWorld;
 #endif
 `;
 
@@ -216,6 +220,7 @@ varying vec4 vFSeason;
 varying float vFIH;
 varying float vFWSnow;
 varying vec2 vFGlow;
+varying vec3 vFRest;
 uniform float uFungiGlow;
 vec3 fGlowPal(float hue) { return hue < 0.25 ? vec3(0.05, 0.85, 0.6) : hue < 0.75 ? vec3(0.55, 0.22, 1.0) : vec3(1.0, 0.55, 0.08); }
 float fVHash(vec3 p) { return fract(sin(dot(p, vec3(12.9898, 78.233, 45.164))) * 43758.5453); }
@@ -254,14 +259,31 @@ if (abs(fMat - 9.0) < 0.5) {
     float lace = fVNoise(vFWorld * 9.0 + vFIH * 17.0) * 0.65 + fVNoise(vFWorld * 23.0) * 0.35;
     if (lace < (sw.w - 0.15) * 0.68) discard;
   }
-  // spring blossom (pink or white) on some trees
-  // soft scattered blossom clusters (smooth value noise) within the green,
-  // mostly on upward faces, on about a third of the trees
-  float bn = fVNoise(vFWorld * 11.0 + vFIH * 31.0);
-  float up = smoothstep(-0.4, 0.5, normalize(vFWNormal).y);
-  float bloom = step(fract(vFIH * 7.13), 0.34) * smoothstep(0.3, 0.8, sw.x) * smoothstep(0.6, 0.7, bn) * up;
-  vec3 bc = fract(vFIH * 13.7) < 0.8 ? vec3(0.84, 0.3, 0.46) : vec3(0.9, 0.74, 0.78);
-  bc = mix(bc, vec3(0.95, 0.86, 0.88), smoothstep(0.72, 0.82, bn) * 0.45);
+  // spring blossom on about a third of the trees: soft clusters of tiny
+  // round flowers (two layers of jittered cells, anti-aliased) in a faint
+  // blush, mostly on upward faces; far away the dots resolve to an even tint
+  float bTree = step(fract(vFIH * 7.13), 0.34) * smoothstep(0.3, 0.8, sw.x);
+  vec3 bp = vFRest + vFIH * 31.0;
+  float up = smoothstep(-0.35, 0.6, normalize(vFWNormal).y);
+  float cl = smoothstep(0.5, 0.8, fVNoise(bp * 2.4)) * bTree * up;
+  vec3 q = bp * 6.5;
+  vec3 ci = floor(q);
+  vec3 cf = fract(q) - 0.5 - (vec3(fVHash(ci), fVHash(ci + 7.1), fVHash(ci + 3.7)) - 0.5) * 0.12;
+  float r = 0.3 + 0.12 * fVHash(ci + 1.3);
+  float d = length(cf);
+  vec3 cj = floor(q + 0.5);
+  vec3 cg = fract(q + 0.5) - 0.5 - (vec3(fVHash(cj + 2.9), fVHash(cj + 9.4), fVHash(cj + 5.2)) - 0.5) * 0.12;
+  float r2 = 0.26 + 0.12 * fVHash(cj + 4.4);
+  float d2 = length(cg);
+  float aa = max(fwidth(d), 1e-3) * 1.2;
+  float dots = max(1.0 - smoothstep(r - aa, r + aa, d), 1.0 - smoothstep(r2 - aa, r2 + aa, d2));
+  float far = smoothstep(0.3, 0.75, length(fwidth(q)));
+  float bloom = cl * mix(dots, 0.38, far);
+  vec3 bc = fract(vFIH * 13.7) < 0.75 ? vec3(0.95, 0.67, 0.77) : vec3(0.96, 0.92, 0.88);
+  bc *= mix(0.88, 1.04, fVHash(ci + 5.5));
+  // the flower's heart is a touch deeper
+  bc = mix(bc, bc * vec3(0.9, 0.72, 0.82), (1.0 - smoothstep(0.0, r, min(d, d2))) * 0.35 * (1.0 - far));
+  diffuseColor.rgb = mix(diffuseColor.rgb, mix(diffuseColor.rgb, bc, 0.2), cl * 0.85);
   diffuseColor.rgb = mix(diffuseColor.rgb, bc, bloom * 0.9);
   // winter thinning
 }
