@@ -235,7 +235,7 @@ const FRAG_COLOR = /* glsl */ `
 float fLeafM = vFInfo.x;
 float fMat = vFInfo.y;
 if (abs(fMat - 11.0) < 0.5) {
-  diffuseColor.rgb *= mix(vec3(1.0), fGlowPal(vFGlow.y), 0.45);
+  diffuseColor.rgb *= mix(vec3(1.0), fGlowPal(vFGlow.y), 0.45 * (1.0 - smoothstep(16.0, 42.0, distance(vFWorld, cameraPosition))));
 }
 float fCell = fract(sin(dot(floor(vFWorld * 6.0), vec3(12.9898, 78.233, 45.164))) * 43758.5453);
 if (abs(fMat - 9.0) < 0.5) {
@@ -331,8 +331,8 @@ if (fFire > 0.002) {
 if (abs(fMat - 11.0) < 0.5) {
   float night = clamp(1.0 - uDaylight, 0.0, 1.0);
   float pulse = 0.8 + 0.2 * sin(uTime * 1.3 + vFIH * 40.0);
-  float gDist = smoothstep(22.0, 70.0, distance(vFWorld, cameraPosition));
-  totalEmissiveRadiance += fGlowPal(vFGlow.y) * (0.05 + 0.85 * night) * pulse * uFungiGlow * mix(1.0, 0.3, gDist);
+  float gDist = smoothstep(16.0, 42.0, distance(vFWorld, cameraPosition));
+  totalEmissiveRadiance += fGlowPal(vFGlow.y) * (0.05 + 0.85 * night) * pulse * uFungiGlow * (1.0 - gDist);
 }
 // light from nearby glowcap groves falls on trunks, caps, bushes and grass
 if (vFGlow.x > 0.01 && uFungiGlow > 0.001) {
@@ -401,7 +401,7 @@ export function createDecalMaterials(shared) {
         ivec2 t = clamp(ivec2(floor(o.xz)), ivec2(0), ivec2(uWorldSize) - 1);
         vCol = fGlowPal(texelFetch(uOcc, t, 0).a);
         // pools shrink to faint glints with distance (no bokeh blobs at mid zoom)
-        vNear = 1.0 - smoothstep(24.0, 60.0, distance(o, cameraPosition));
+        vNear = 1.0 - smoothstep(16.0, 40.0, distance(o, cameraPosition));
         vPh = fHash(o.xz) * 40.0;
         gl_Position = projectionMatrix * viewMatrix * wp;
       }`,
