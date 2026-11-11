@@ -599,7 +599,7 @@ export class Units {
     g.events.emit('unit:hurt', { unit: u, amount, source });
     if (u.hp <= 0) {
       if (source) source.kills = (source.kills || 0) + 1;
-      this.kill(u, source ? 'killed' : opts.cause || 'damage', source);
+      this.kill(u, source ? 'killed' : opts.cause || (u.hunger >= 0.95 ? 'starvation' : u.statuses?.has('sick') ? 'sickness' : 'wounds'), source);
       return;
     }
     if (u.sleeping) this._wake(u);
@@ -1875,7 +1875,7 @@ export class Units {
           if (!u.alive) continue;
         }
       }
-      if (u.age > u.lifespan * lifeLaw && this.law('lifeAging') && !u.flags?.immortal) {
+      if (u.age > u.lifespan * lifeLaw && this.law('lifeAging') && !u.flags?.immortal && !u.flags?.frozenAge) {
         this.kill(u, 'old age');
         continue;
       }
