@@ -29,10 +29,22 @@ export const ALL_KINDS = [...SEA_KINDS, ...LAND_KINDS];
 // Proud names for ships (the chronicle and the inspector use them).
 const ADJ = ['Swift', 'Grey', 'Golden', 'Bold', 'Silver', 'Red', 'Morning', 'Wandering', 'Faithful', 'Northern', 'Lucky', 'Proud', 'Quiet', 'Salt', 'Iron', 'Merry', 'Blue', 'Brave', 'Old', 'Evening'];
 const NOUN = ['Heron', 'Gull', 'Star', 'Otter', 'Wind', 'Maiden', 'Dolphin', 'Lantern', 'Crown', 'Swan', 'Tide', 'Pike', 'Hawk', 'Rose', 'Promise', 'Seal', 'Petrel', 'Fortune', 'Wave', 'Anchor'];
-export function shipName(rng) {
+const SMALL = ['Little', 'Bonny', 'Wee', 'Busy', 'Patient', 'Quick', 'Brown', 'Lucky', 'Spry', 'Humble'];
+const FISH = ['Herring', 'Minnow', 'Sprat', 'Tern', 'Cockle', 'Mullet', 'Puffin', 'Shrimp', 'Eel', 'Kittiwake'];
+export function shipName(rng, kind = null) {
+  if (kind === 'fishing') return `${SMALL[Math.floor(rng() * SMALL.length)]} ${FISH[Math.floor(rng() * FISH.length)]}`;
   const a = ADJ[Math.floor(rng() * ADJ.length)];
   const n = NOUN[Math.floor(rng() * NOUN.length)];
   return `${a} ${n}`;
+}
+// Names for land craft: a town's wain, a caravan, an engine of war.
+const WAIN = ['Old', 'Red', 'Long', 'Stout', 'Creaking', 'Green', 'Faithful', 'Slow'];
+const ENGINE = ['Wallbreaker', 'Thunder', 'Old Grudge', 'Stonefist', 'Gatecrusher', 'Iron Goat', 'Long Arm', 'Hammer'];
+export function craftName(rng, kind, town = null) {
+  const pick = (L) => L[Math.floor(rng() * L.length)];
+  if (kind === 'oxcart') return `${pick(WAIN)} Wain${town ? ' of ' + town : ''}`;
+  if (kind === 'caravan') return `${town ? town + ' ' : ''}Caravan`;
+  return pick(ENGINE);
 }
 
 // Cargo for the inspector, in plain words.

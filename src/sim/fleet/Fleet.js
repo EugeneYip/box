@@ -1,7 +1,7 @@
 import { SEA_LEVEL } from '../../world/constants.js';
 import { mulberry32 } from '../../core/Random.js';
 import { WaterNav, pathLength } from './nav.js';
-import { KINDS, SEA_KINDS, shipName, cargoText } from './kinds.js';
+import { KINDS, SEA_KINDS, shipName, craftName, cargoText } from './kinds.js';
 import { missions } from './missions.js';
 import { land } from './land.js';
 import { war } from './war.js';
@@ -339,7 +339,7 @@ export class Fleet {
       def,
       cls: def.cls,
       kingdom: kid,
-      name: def.cls === 'sea' && kind !== 'fishing' ? shipName(this.rng) : null,
+      name: def.cls === 'sea' ? shipName(this.rng, kind) : craftName(this.rng, kind, this.game.civ?.villages?.[opts.home]?.name),
       home: opts.home ?? -1,
       harbour: opts.harbour ?? null,
       village: opts.home ?? -1,
@@ -520,7 +520,10 @@ export class Fleet {
       v.ph = v.heading;
       v.stateT += step;
       if (v.cls === 'sea') this._seaTick(v, step);
-      else this._landTick(v, step);
+      else {
+        this._landTick(v, step);
+        v.y = this.world.heightAt(v.x, v.z);
+      }
     }
     this._separate(step);
     if ((T.war += step) >= 0.5) {
@@ -981,9 +984,12 @@ export class Fleet {
     if (def.capacity || v.cargo) stats.push(['Cargo', cargoText(v.cargo)]);
     const aboard = v.cls === 'sea' ? this.aboard(v).length : 0;
     if (aboard) stats.push(['Aboard', `${aboard} ${v.cargo?.army ? 'soldiers' : 'passengers'}`]);
-    if (v.voyage) stats.push(['Voyage', `${v.voyage.fromName || '—'} → ${v.voyage.toName || 'open sea'}`]);
+    const homeward = v.mission?.phase === 'home' || v.mission?.type === 'home';
+    const homeName = home?.name || v.voyage?.fromName || 'home';
+    if (v.voyage && v.state !== 'moored') stats.push(['Voyage', homeward ? `${v.voyage.toName || 'abroad'} → ${homeName}` : `${v.voyage.fromName || '—'} → ${v.voyage.toName || 'open sea'}`]);
     if (home) stats.push([v.cls === 'sea' ? 'Home port' : 'Home', home.name]);
-    stats.push(['Speed', `${(v.speed * 10).toFixed(0)} knots`.replace('knots', v.cls === 'sea' ? 'knots' : 'paces')]);
+    // speed only when it is really moving (a ship turning or waiting at anchor shows none)
+    if (v.speed > 0.05) stats.push(['Speed', `${Math.max(1, Math.round(v.speed * 10))} ${v.cls === 'sea' ? 'knots' : 'paces'}`]);
     stats.push(['Built', `year ${Math.floor(v.born / YEAR) + 1}`]);
     if (v.cls === 'sea' && this.hasTech(v.kingdom, 'astronomy')) stats.push(['Charts', 'sails by the stars, day and night']);
     return {
@@ -991,8 +997,8 @@ export class Fleet {
       kind: v.cls === 'sea' ? 'vessel' : 'vehicle',
       building: v, // tracked by the inspector (it follows ref.x / ref.z)
       vessel: v,
-      title: v.name ? `${def.name} ${v.name}` : def.name,
-      subtitle: `${k ? k.name : 'No realm'}${v.voyage?.toName ? ' · bound for ' + v.voyage.toName : ''}`,
+      title: v.cls === 'sea' ? `${def.name} ${v.name}` : `${v.name} (${def.name.toLowerCase()})`,
+      subtitle: `${k ? k.name : 'No realm'}${v.state === 'moored' ? ' · in port at ' + homeName : homeward ? ' · returning to ' + homeName : v.voyage?.toName ? ' · bound for ' + v.voyage.toName : ''}`,
       stats,
       x: v.x,
       z: v.z,
@@ -1006,6 +1012,7 @@ export class Fleet {
     if (v.state === 'anchored') return this.isNight() ? 'At anchor for the night' : 'At anchor';
     if (v.state === 'fish') return 'Hauling nets over the shoal';
     if (!m) return 'Under way';
+    if (v.state === 'sail' && v.speed < 0.05) return this.isNight() && !this.hasTech(v.kingdom, 'astronomy') ? 'Waiting for daylight' : v.grappled > this.game.time.total ? 'Locked in a fight' : 'Coming about';
     switch (m.type) {
       case 'fish':
         return m.phase === 'home' ? 'Bringing the catch home' : 'Sailing out to the fishing grounds';
