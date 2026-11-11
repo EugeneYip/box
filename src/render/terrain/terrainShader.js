@@ -263,6 +263,13 @@ Mat matTundra(NS s) {
   float peb = smoothstep(0.6, 0.3, s.cellS.r);
   c = mix(c, vec3(0.30, 0.30, 0.29) * (0.80 + 0.35 * s.cellS.b) * mix(0.78, 1.0, peb), stn * 0.85);
   c *= 0.90 + 0.2 * s.macro.g;
+  // high, dry plateaus (Tibet, the Altiplano): khaki high steppe with ochre
+  // and russet patches instead of polar moss
+  float hiDry = smoothstep(4.0, 7.0, s.p.y) * (1.0 - smoothstep(0.30, 0.55, s.moist));
+  vec3 steppeH = mix(vec3(0.36, 0.31, 0.17), vec3(0.45, 0.37, 0.20), smoothstep(0.35, 0.7, s.meso.g * 0.6 + s.det.r * 0.4));
+  steppeH = mix(steppeH, vec3(0.34, 0.22, 0.13), smoothstep(0.62, 0.8, s.meso.r * 0.6 + s.det.b * 0.4) * 0.6);
+  steppeH *= 0.88 + 0.22 * s.micro.r;
+  c = mix(c, mix(steppeH, c, stn * 0.7), hiDry);
   c = seasonal(c, 0.45, s.temp);
   return mk(c, 0.90, 0.40 + 0.25 * lich + 0.3 * stn, 0.05 + 0.04 * stn);
 }
@@ -476,7 +483,8 @@ Mat matCliff(NS s, float volc, out vec3 facetN) {
   float bandFade = 1.0 - smoothstep(0.25, 0.7, s.fwy * 0.95);
   // beds pinch out: their contrast comes and goes along each layer
   float lens = smoothstep(0.30, 0.70, t.g * 0.75 + lh * 0.5 - 0.1);
-  float bandK = bandFade * mix(0.30, 1.0, lens) * (1.0 - 0.8 * volc);
+  // high alpine rock (crystalline cores) shows little bedding: no fortress courses
+  float bandK = bandFade * mix(0.30, 1.0, lens) * (1.0 - 0.8 * volc) * (1.0 - 0.65 * smoothstep(8.0, 13.0, p.y));
   lr = mix(0.5, lr, bandK);
   vec3 cA = vec3(0.370, 0.345, 0.310);
   vec3 cB = vec3(0.275, 0.265, 0.252);
@@ -749,7 +757,11 @@ void terrainSurface() {
     Mat cm = matCliff(s, volc, facetN);
     // snow clings to ledges that face up
     float snowLedge = snowB * smoothstep(0.55, 0.75, facetN.y + (s.det.g - 0.5) * 0.3);
-    cm.albedo = mix(cm.albedo, vec3(0.50, 0.53, 0.60), snowLedge);
+    // above the snow line steep faces carry snowfields too: rock shows through
+    // only on the steepest ribs and in noisy breaks (no white lip on a bare wall)
+    float snowSteep = snowB * smoothstep(0.30, 0.58, facetN.y + (s.meso.g - 0.5) * 0.45 + (s.det.b - 0.5) * 0.25);
+    snowLedge = max(snowLedge, snowSteep * 0.92);
+    cm.albedo = mix(cm.albedo, mix(vec3(0.50, 0.53, 0.60), vec3(0.60, 0.63, 0.68), snowSteep), snowLedge);
     albedo = mix(albedo, cm.albedo, cliff);
     rough = mix(rough, cm.rough, cliff);
     H = mix(H, cm.h * cm.bump, cliff);

@@ -467,6 +467,32 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
     }
   }
   for (let i = 0; i < N; i++) if (rng[i] > 0 && land[i]) hgt[i] = smax(hgt[i], rng[i], 1.0);
+  // no sheer ramparts: inland, the ground may rise at most ~2.4 units per tile
+  // (chamfer passes over land neighbours only, so sea cliffs keep their drop).
+  // Great fronts (the Himalaya above the Ganges) become stepped slopes of spurs
+  // and summits instead of one wall hundreds of pixels tall.
+  const limitSlopes = () => {
+    const S = 2.4 / Math.max(0.6, scale768),
+      SD = S * 1.414;
+    const lim = (i, j, s) => {
+      if (land[j] && hgt[j] + s < hgt[i]) hgt[i] = hgt[j] + s;
+    };
+    for (let pass = 0; pass < 2; pass++) {
+      for (let y = 1; y < H - 1; y++)
+        for (let x = 1; x < W - 1; x++) {
+          const i = y * W + x;
+          if (!land[i] || !rangeMask[i]) continue;
+          lim(i, i - 1, S), lim(i, i - W, S), lim(i, i - W - 1, SD), lim(i, i - W + 1, SD);
+        }
+      for (let y = H - 2; y >= 1; y--)
+        for (let x = W - 2; x >= 1; x--) {
+          const i = y * W + x;
+          if (!land[i] || !rangeMask[i]) continue;
+          lim(i, i + 1, S), lim(i, i + W, S), lim(i, i + W + 1, SD), lim(i, i + W - 1, SD);
+        }
+    }
+  };
+  limitSlopes();
   // ice domes: Greenland and Antarctica rise from their coasts
   const GREENLAND = [[-73, 78], [-60, 82.5], [-30, 84], [-10, 82], [-17, 75], [-21, 70], [-32, 68], [-40, 64.5], [-43, 59.5], [-50, 61], [-54, 66], [-56, 71], [-66, 76]];
   const inPoly = (poly, lon, lat) => {
@@ -681,6 +707,7 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
       }
     }
   }
+  limitSlopes();
   _t('rivers');
 
   // the border ring is deep open sea: the water shader and the terrain skirt
