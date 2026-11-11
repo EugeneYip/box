@@ -1,8 +1,8 @@
 import { createNoise2D } from 'simplex-noise';
 import { mulberry32, hash2 } from '../core/Random.js';
-import { TILE, SEA_LEVEL, MIN_HEIGHT } from './constants.js';
+import { TILE, SEA_LEVEL, MIN_HEIGHT, FLORA_INFO } from './constants.js';
 import { EARTH_MASK } from './data/earthMask.js';
-import { RANGES, PLATEAUS, BASINS, SHELVES, MOISTURE, WARMTH, WETLANDS, RIVERS, LAKES, ISLAND_SPINES } from './data/earthFeatures.js';
+import { RANGES, PLATEAUS, BASINS, SHELVES, MOISTURE, WARMTH, WETLANDS, RIVERS, LAKES, ISLAND_SPINES, COAST_PLAINS } from './data/earthFeatures.js';
 
 // World Map preset ('earth'): the real Earth on a 2:1 plate carree world,
 // centred on the Pacific (central meridian 150°E, so the Atlantic splits at
@@ -504,27 +504,40 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
   // Great fronts (the Himalaya above the Ganges) become stepped slopes of spurs
   // and summits instead of one wall hundreds of pixels tall.
   const limitSlopes = () => {
-    const S = 1.9 / Math.max(0.6, scale768),
+    const S = 1.5 / Math.max(0.6, scale768),
       SD = S * 1.414;
-    const lim = (i, j, s) => {
-      if (land[j] && hgt[j] + s < hgt[i]) hgt[i] = hgt[j] + s;
+    const minDL = 4 * scale768;
+    const cap = new Float32Array(N).fill(1e9);
+    for (let i = 0; i < N; i++) if (land[i] && hgt[i] < 3.5 && dLand[i] >= minDL) cap[i] = hgt[i];
+    const rel = (i, j, s) => {
+      if (land[j] && cap[j] + s < cap[i]) cap[i] = cap[j] + s;
     };
     for (let pass = 0; pass < 2; pass++) {
       for (let y = 1; y < H - 1; y++)
         for (let x = 1; x < W - 1; x++) {
           const i = y * W + x;
-          if (!land[i] || !rangeMask[i]) continue;
-          lim(i, i - 1, S), lim(i, i - W, S), lim(i, i - W - 1, SD), lim(i, i - W + 1, SD);
+          if (land[i]) rel(i, i - 1, S), rel(i, i - W, S), rel(i, i - W - 1, SD), rel(i, i - W + 1, SD);
         }
       for (let y = H - 2; y >= 1; y--)
         for (let x = W - 2; x >= 1; x--) {
           const i = y * W + x;
-          if (!land[i] || !rangeMask[i]) continue;
-          lim(i, i + 1, S), lim(i, i + W, S), lim(i, i + W + 1, SD), lim(i, i + W - 1, SD);
+          if (land[i]) rel(i, i + 1, S), rel(i, i + W, S), rel(i, i + W + 1, SD), rel(i, i + W - 1, SD);
         }
+    }
+    for (let i = 0; i < N; i++) {
+      if (!land[i] || !rangeMask[i] || cap[i] >= hgt[i]) continue;
+      const c = cap[i] + fbm(nRough, U(i) / 0.9 + 21, V(i) / 0.9 - 4, 2) * 1.0;
+      if (c < hgt[i]) hgt[i] = c;
     }
   };
   limitSlopes();
+  for (const f of COAST_PLAINS) {
+    stamp(f, 1, 0, (i) => {
+      if (!land[i]) return;
+      const d = dLand[i] / Math.max(0.7, scale768);
+      if (d <= 2.6) hgt[i] = Math.min(hgt[i], 0.35 + d * 0.75);
+    });
+  }
   // ice domes: Greenland and Antarctica rise from their coasts
   const GREENLAND = [[-73, 78], [-60, 82.5], [-30, 84], [-10, 82], [-17, 75], [-21, 70], [-32, 68], [-40, 64.5], [-43, 59.5], [-50, 61], [-54, 66], [-56, 71], [-66, 76]];
   const inPoly = (poly, lon, lat) => {
@@ -584,8 +597,8 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
   // terraced benches on the flanks and plateau rims; crests stay sharp
   const benchMask = new Float32Array(N);
   for (let i = 0; i < N; i++) {
-    let m = rangeMask[i] * 0.45 * (1 - smoothstep(0.45, 0.8, rangeMask[i]));
-    if (plat[i] > 4) m = Math.max(m, platK[i] * 0.6 * (1 - smoothstep(0.25, 0.6, rangeMask[i])));
+    let m = 0;
+    if (plat[i] > 4) m = platK[i] * 0.25 * (1 - smoothstep(0.15, 0.4, rangeMask[i]));
     benchMask[i] = m;
   }
   H_.terraceMountains(hgt, benchMask, W, H);
@@ -872,7 +885,8 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
       const t = temp[i],
         m = moist[i];
       const slope = H_.slopeOf(hgt, W, H, x, y) * slopeK;
-      const snowLine = 5 + 7.2 * clamp01(baseT[i]) + bn * 1.0;
+      // crests of the great ranges carry snow even where the lowered relief stays under the regional line
+      const snowLine = 5 + 7.2 * clamp01(baseT[i]) + bn * 1.0 - 2.6 * smoothstep(0.35, 0.85, rangeMask[i]);
       const rockLine = snowLine - 2.5 + bn * 0.5;
       const dOcT = dOcean[i]; // tiles to the open sea
       let tt;
@@ -892,6 +906,16 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
     if (type[i] !== TILE.ROCK || hgt[i] < SEA_LEVEL) continue;
     if (moist[i] < 0.14 && temp[i] > 0.42 && baseT[i] > 0.6) type[i] = TILE.DESERT;
   }
+  for (let i = 0; i < N; i++) {
+    if (hgt[i] < 5 || plat[i] < 5.5 || rangeMask[i] > 0.4) continue;
+    const t = type[i];
+    // (the cold plateau floor below the snow line is steppe, not snowfield)
+    const lowSnow = t === TILE.SNOW && hgt[i] < 5 + 7.2 * clamp01(baseT[i]) - 1.5 && !icecap[i];
+    if (t === TILE.FOREST || t === TILE.GRASS || t === TILE.JUNGLE || t === TILE.SWAMP || lowSnow) {
+      type[i] = TILE.TUNDRA;
+      moist[i] = Math.min(moist[i], 0.36);
+    }
+  }
   H_.despeckleTypes(type, hgt, W, H);
   H_.dissolveSmallPatches(type, hgt, W, H, TILE.SNOW, 10, (i) => (icecap[i] ? TILE.SNOW : temp[i] < 0.3 ? TILE.TUNDRA : biome(temp[i], moist[i])));
   _t('biomes');
@@ -903,7 +927,10 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
   for (let i = 0; i < N; i++) {
     const f = world.flora[i];
     if (!f) continue;
-    const bare = icecap[i] ? dLand[i] > 2 || hash2(i % W, (i / W) | 0, seed + 5) > 0.15 : hgt[i] > 7 && type[i] === TILE.TUNDRA && f !== 12 && f !== 13;
+    const x = i % W,
+      y = (i / W) | 0;
+    const steep = FLORA_INFO[f]?.isTree && x > 0 && y > 0 && x < W - 1 && y < H - 1 && H_.slopeOf(hgt, W, H, x, y) > 1.05;
+    const bare = steep || (icecap[i] ? dLand[i] > 2 || hash2(x, y, seed + 5) > 0.15 : (hgt[i] > 7 || plat[i] >= 5.5) && type[i] === TILE.TUNDRA && FLORA_INFO[f]?.isTree);
     if (bare) {
       world.flora[i] = 0;
       world.floraGrowth[i] = 0;
