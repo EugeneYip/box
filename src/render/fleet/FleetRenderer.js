@@ -449,7 +449,7 @@ export class FleetRenderer {
           quad(c0x + px * hw, c0z + pz * hw, c1x + px * hw, c1z + pz * hw, c1x - px * hw, c1z - pz * hw, c0x - px * hw, c0z - pz * hw, -0.62, hw / L, hl / L, hw / L, hl / L, -hw / L, -0.62, -hw / L, 2, spd, spd, beam, 0, 0, 0.022);
         }
         // the wake: walk back along the track from the stern
-        const maxS = L * 3.5;
+        const maxS = L * 3.2;
         let px0 = w.x - fx * L * 0.5,
           pz0 = w.z - fz * L * 0.5;
         let dirx = fx,
@@ -480,9 +480,9 @@ export class FleetRenderer {
             ez = pz0 - ndz * sl * t1;
           const nx = -ndz,
             nz = ndx;
-          const fade = (s) => Math.pow(Math.max(0, 1 - s / maxS), 1.6) * spd;
+          const fade = (s) => Math.pow(Math.max(0, 1 - s / maxS), 2.4) * spd;
           const arm = (s) => (v.def.beam || 0.4) * 0.45 + s * 0.34;
-          const bw = (s) => 0.05 + s * 0.06;
+          const bw = (s) => 0.07 + s * 0.11;
           const a0 = fade(s0),
             a1 = fade(s1);
           for (const side of [1, -1]) {
@@ -694,12 +694,18 @@ export class FleetRenderer {
       if (!v.alive || budget <= 0) continue;
       if (Math.abs(v.x - cx) > R || Math.abs(v.z - cz) > R) continue;
       if (v.burning > 0.15 || (v.sink > 0 && v.sink < 0.5)) {
+        // a burning ship trails smoke and throws embers
         fx.emit('smoke', { x: v.x, y: (v.y || 0) + 0.6, z: v.z }, { scale: 0.6 + v.def.length * 0.2 });
-        if (v.burning > 0.3) fx.emit('fire', { x: v.x + (Math.random() - 0.5) * 0.5, y: (v.y || 0) + 0.4, z: v.z }, { scale: 0.5 });
+        if (v.burning > 0.3) {
+          fx.emit('fire', { x: v.x + (Math.random() - 0.5) * 0.5, y: (v.y || 0) + 0.4, z: v.z }, { scale: 0.5 });
+          if (Math.random() < 0.4) fx.emit('embers', { x: v.x, y: (v.y || 0) + 0.8, z: v.z }, { count: 2 });
+        }
         budget--;
       }
-      if (v.sink > 0 && v.sink < 0.25) {
-        fx.emit('splash', { x: v.x, y: 0, z: v.z }, { scale: 0.5 });
+      if (v.sink > 0 && v.sink < 0.6) {
+        // going down: spray, and steam where a burning hull meets the sea
+        if (v.sink < 0.25) fx.emit('splash', { x: v.x, y: 0, z: v.z }, { scale: 0.5 });
+        if (v.burning > 0.05 || v.lastCause === 'fire' || v.lastCause === 'lightning') fx.emit('steam', { x: v.x, y: 0.1, z: v.z }, { scale: 0.5 + v.def.length * 0.2, count: 1 });
         budget--;
       }
     }

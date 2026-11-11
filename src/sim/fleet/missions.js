@@ -25,7 +25,8 @@ export const missions = {
     const h = this.resolveHarbour(o.from, kid);
     if (!h) return refuse('no harbour');
     if (this.blockaded(h)) return refuse('the harbour is blockaded');
-    if (this.seaCount() >= this.budget.sea) return refuse('the seas are crowded');
+    // settlers and armies always find a ship; trade leaves room for them
+    if (this.seaCount() >= this.budget.sea * (cargo.settlers || cargo.army ? 1.1 : 0.85)) return refuse('the seas are crowded');
     const nav = this.nav;
     // where to sail, and where the cargo is delivered
     let toH = null,
@@ -70,7 +71,17 @@ export const missions = {
       const c = KINDS[k].clear || 0;
       let p = byClear.get(c);
       if (p === undefined) {
-        p = nav.findPath(h.berth.x, h.berth.z, dest.x, dest.z, { big: c >= 2, minClear: c });
+        // routes between the same two places are remembered a while (a failed
+        // search over a whole ocean is the costliest thing a fleet does)
+        const rc = this._routes || (this._routes = new Map());
+        const key = h.id + '>' + Math.round(dest.x) + ',' + Math.round(dest.z) + ':' + c;
+        const hit = rc.get(key);
+        if (hit && this.game.time.total - hit.t < 90 && hit.v === nav.version) p = hit.p;
+        else {
+          p = nav.findPath(h.berth.x, h.berth.z, dest.x, dest.z, { big: c >= 2, minClear: c });
+          rc.set(key, { p, t: this.game.time.total, v: nav.version });
+          if (rc.size > 400) rc.delete(rc.keys().next().value);
+        }
         byClear.set(c, p);
       }
       if (!p) continue;
@@ -129,7 +140,7 @@ export const missions = {
   },
 
   _sail(v, dest, path = null) {
-    v.dest = { x: dest.x, z: dest.z };
+    v.dest = { x: dest.x, z: dest.z, berth: !!dest.berth };
     const p = path || this.seaPath(v, dest.x, dest.z);
     this.setPath(v, p);
     if (p) {
@@ -321,7 +332,7 @@ export const missions = {
       if ((v._mt = (v._mt || 0) + step) < 1) return;
       v._mt = 0;
       if (v.layup && v.idleT > 4) this.remove(v);
-      else if (v.idleT > 240 && v.kind !== 'fishing' && this.count(v.kingdom, v.kind) > 1) this.remove(v);
+      else if (v.kind !== 'fishing' && (v.idleT > 420 || (v.idleT > 120 && this.count(v.kingdom, v.kind) > 1))) this.remove(v); // idle ships are laid up
       else if (v.harbour != null && !this.harbourInfo(v.harbour)) this.remove(v);
       return;
     }
@@ -551,7 +562,7 @@ export const missions = {
       let have = 0;
       for (const v of this.list) if (v.alive && v.kind === 'fishing' && v.harbour === h.id) have++;
       const now = this.game.time.total;
-      if (have < want && !this.blockaded(h) && now - (this._boatT?.get(h.id) ?? -999) > 45 && this.seaCount() < this.budget.sea && this.count(kid, 'fishing') < this.cap(kid, 'fishing')) {
+      if (have < want && !this.blockaded(h) && now - (this._boatT?.get(h.id) ?? -999) > 45 && this.seaCount() < this.budget.sea * 0.75 && this.count(kid, 'fishing') < this.cap(kid, 'fishing')) {
         (this._boatT || (this._boatT = new Map())).set(h.id, now);
         const spot = this._mooringSpot(h, null, 'fishing');
         if (spot) this.spawn('fishing', kid, spot.x, spot.z, { home: h.village, harbour: h.id, heading: Math.atan2(h.dirZ, h.dirX) });
