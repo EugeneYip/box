@@ -180,7 +180,7 @@ export class FireVisuals {
         const tx0 = i % W;
         const edge = tx0 > 0 && tx0 < W - 1 && (world.fire[i + 1] <= 0.01 || world.fire[i - 1] <= 0.01 || world.fire[i + W] <= 0.01 || world.fire[i - W] <= 0.01);
         const ff = fire.fuel0[i] > 0 ? fire.fuel[i] / fire.fuel0[i] : 1;
-        A[o + 2] = Math.min(1, f) * (edge ? 1 : 0.2 + 0.25 * Math.min(1, ff * 2));
+        A[o + 2] = Math.min(1, f) * (edge ? 1 : 0.08 + 0.3 * Math.max(0, Math.min(1, (ff - 0.5) * 2.5)));
         A[o + 3] = 0;
         n++;
       }
@@ -274,9 +274,13 @@ export class FireVisuals {
       // fuel left: tiles that have burnt most of their fuel only flicker
       // low over charred ground, so the tall flames gather on the front
       const f0 = fire.fuel0[i];
-      const fresh = front || !(f0 > 0) ? 1 : THREE.MathUtils.clamp((fire.fuel[i] / f0 - 0.5) / 0.35, 0.15, 1);
+      const fresh = front || !(f0 > 0) ? 1 : THREE.MathUtils.clamp((fire.fuel[i] / f0 - 0.55) / 0.3, 0.04, 1);
+      // the front surges and lulls along its length (slow travelling gusts),
+      // so it reads as a living edge rather than an even orange band
+      const gn = 0.5 + 0.5 * Math.sin(tx * 0.37 + fx.time * 0.55) * Math.sin(ty * 0.31 - fx.time * 0.41 + 1.7);
+      const gust = 0.3 + 1.6 * gn * gn;
       // flames: strongly varied sizes (0.5x .. 2x), redder ramp
-      let e = (tree ? 2.4 : 1.3) * f * dt * rateK * fresh;
+      let e = (tree ? 2.4 : 1.3) * f * dt * rateK * fresh * (front ? 0.5 + 0.5 * gust : 1);
       while (e > 0) {
         if (e < 1 && rnd() > e) break;
         e -= 1;
@@ -291,12 +295,12 @@ export class FireVisuals {
       // wide flame sheets rolling along the burning edge: broad, low,
       // overlapping tongues that merge into a continuous wall of fire
       if (front) {
-        let es = (tree ? 5 : 3.5) * f * dt * rateK;
+        let es = (tree ? 5 : 3.5) * f * dt * rateK * gust;
         while (es > 0) {
           if (es < 1 && rnd() > es) break;
           es -= 1;
           const along = rnd() - 0.5;
-          flame(fx, x + along * 1.1, ground + (tree ? gr * 0.3 : 0.02), z - along * 1.1, (tree ? 2.6 : 2.0) * (0.55 + 0.95 * rnd()) * lod, {
+          flame(fx, x + along * 1.1, ground + (tree ? gr * 0.3 : 0.02), z - along * 1.1, (tree ? 2.6 : 2.0) * (0.45 + 0.95 * rnd()) * (0.6 + 0.5 * gust) * lod, {
             bright: 0.85 + f * 0.35,
             aspect: 0.62 + rnd() * 0.26,
             ramp: rnd() < 0.6 ? RAMP.FIRE_DEEP : RAMP.FIRE,
@@ -305,7 +309,7 @@ export class FireVisuals {
         }
       }
       // soft volumetric halo behind the tongues
-      e = (tree ? 2.2 : 1.2) * f * dt * rateK * fresh;
+      e = (tree ? 2.2 : 1.2) * f * dt * rateK * fresh * fresh * (front ? gust : 1);
       if (rnd() < e) {
         const P = fx.P.reset();
         P.x = x + (rnd() - 0.5) * 0.5;
