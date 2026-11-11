@@ -747,6 +747,10 @@ void terrainSurface() {
   vec3 nrm = s.n;
   float slopeN = s.n.y + (s.meso.b - 0.5) * 0.10 + (s.det.r - 0.5) * 0.06;
   float cliff = smoothstep(0.745, 0.665, slopeN) * (1.0 - lavaRaw) * (1.0 - iceB);
+  // rock ground takes the triplanar rock from moderate slopes up: projected
+  // top-down, its detail stretched into a grey smear on any steeper face
+  float rockT = dot(vec4(equal(vec4(t0, t1, t2, t3), vec4(8.0))) * live, b);
+  cliff = max(cliff, rockT * smoothstep(0.96, 0.82, slopeN) * (1.0 - lavaRaw) * (1.0 - iceB));
   // a darker, lusher lip of turf along the top of every rock face
   float lip = smoothstep(0.83, 0.75, slopeN) * (1.0 - cliff) * (1.0 - snowB) * (1.0 - dot(vec4(equal(vec4(t0, t1, t2, t3), vec4(0.0))) * live, b));
   albedo = mix(albedo, albedo * vec3(0.72, 0.84, 0.70), lip * 0.8);
