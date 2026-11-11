@@ -205,6 +205,8 @@ function buildOak(b, v, lod) {
       { p: V(-0.05, 1.2, 0.38), r: 0.28 },
     ];
   }
+  // fuller crowns: lobes larger and spread wider so trees read at mid zoom
+  blobs = blobs.map((bl) => ({ ...bl, r: bl.r * 1.2, p: V(bl.p.x * 1.14, bl.p.y + 0.06, bl.p.z * 1.14) }));
   if (lod) blobs = blobs.slice(0, 3).map((bl, i) => ({ ...bl, r: bl.r * (i === 0 ? 1.18 : 1.1) }));
   // branches into the main blobs
   if (!lod) {
@@ -449,6 +451,7 @@ function buildBirch(b, v, lod) {
   ];
   if (v === 1) blobs.push({ p: V(top.x - 0.06, H - 0.55, top.z + 0.16), r: 0.22 });
   if (v === 2) blobs = blobs.slice(0, 4).map((bl) => ({ ...bl, r: bl.r * 1.12, p: bl.p.clone().multiply(V(1.15, 1, 1.15)) }));
+  blobs = blobs.map((bl) => ({ ...bl, r: bl.r * 1.22, p: V(top.x + (bl.p.x - top.x) * 1.15, bl.p.y, top.z + (bl.p.z - top.z) * 1.15) }));
   if (lod) blobs = [{ p: V(top.x, H - 0.05, top.z), r: 0.4, sq: 1.25 }, { p: V(top.x, H + 0.32, top.z), r: 0.26 }];
   if (!lod) {
     for (let k = 1; k < 4; k++) {
@@ -1358,10 +1361,10 @@ export const KINDS = [];
 function kind(id, variants, build, o = {}) {
   KINDS[id] = { id, variants, build, far: 'lod', castShadow: true, jitter: 0.22, scale: [0.88, 1.12], tilt: 0, sink: 0.04, ...o };
 }
-kind(FLORA.OAK, 4, buildOak, { scale: [0.9, 1.15], far2: true });
+kind(FLORA.OAK, 4, buildOak, { scale: [1.0, 1.25], far2: true });
 kind(FLORA.PINE, 4, (b, v, l) => buildPine(b, v, l, false), { far2: 'cone' });
 kind(FLORA.SNOW_PINE, 4, (b, v, l) => buildPine(b, v, l, true), { far2: 'cone' });
-kind(FLORA.BIRCH, 4, buildBirch, { far2: true });
+kind(FLORA.BIRCH, 4, buildBirch, { far2: true, scale: [0.95, 1.2] });
 kind(FLORA.PALM, 4, buildPalm, { jitter: 0.25, far2: true });
 kind(FLORA.JUNGLE_TREE, 4, buildJungle, { scale: [0.92, 1.18], far2: true });
 kind(FLORA.ACACIA, 3, buildAcacia, { scale: [0.9, 1.15], far2: true });
