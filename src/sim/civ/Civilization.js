@@ -766,7 +766,7 @@ export class Civilization {
     v.food -= eat;
     // upkeep: firewood for every hearth and timber to keep roofs mended
     const nb = v.buildings.length;
-    v.wood = Math.max(0, v.wood - ((pop * 0.28 + nb * 0.1) / YEAR) * dt);
+    v.wood = Math.max(0, v.wood - ((pop * 0.2 + nb * 0.06) / YEAR) * dt);
     // storage: what does not fit in the stores rots or is carted off
     v.woodCap = 90 + (v.hasWorkshop ? 90 : 0) + (v.hall ? v.hall.level * 40 : 0) + v.tier * 40;
     v.stoneCap = 70 + (v.hasWorkshop ? 80 : 0) + (v.hall ? v.hall.level * 35 : 0) + v.tier * 40;
@@ -956,12 +956,12 @@ export class Civilization {
         }
       });
       v.trees = mature;
-      const want = 55 + v.tier * 15;
+      const want = 75 + v.tier * 20;
       if (mature + young < want) {
         const species = { vale: [FLORA.OAK, FLORA.BIRCH], dune: [FLORA.PALM, FLORA.ACACIA], frost: [FLORA.PINE, FLORA.PINE], mire: [FLORA.JUNGLE_TREE, FLORA.SWAMP_TREE] }[baseCulture(v.culture)] || [FLORA.OAK];
         if (v.groveAngle == null) v.groveAngle = this.rng.float(0, Math.PI * 2);
         let planted = 0;
-        for (let k = 0; k < 40 && planted < 6; k++) {
+        for (let k = 0; k < 60 && planted < 10; k++) {
           const a = v.groveAngle + this.rng.float(-1.3, 1.3);
           const r = v.buildRadius + 2 + this.rng.next() * 9;
           const x = Math.floor(v.cx + Math.cos(a) * r),
@@ -1407,7 +1407,8 @@ export class Civilization {
     if (atWar) give('soldier', Math.max(3, n * Math.min(0.55, (drafting ? 0.32 : 0.2) * lean)) + (v.hasBarracks ? 3 : 0));
     give('builder', sites ? Math.min(Math.max(1, Math.ceil(sites * 1.1)), 1 + Math.floor(n / 6)) : repairs ? 1 : 0);
     // an empty woodshed stops all building: send more hands to the woods
-    give('woodcutter', woodFull ? (n >= 6 ? 1 : 0) : v.wood < 15 ? 2 + Math.floor(n / 6) : v.wood < 40 + v.tier * 30 ? 1 + Math.floor(n / 7) : n >= 4 ? 1 + Math.floor(n / 14) : 0);
+    const woodsCap = (v.trees ?? 99) < 25 ? 1 : (v.trees ?? 99) < 50 ? 2 : 9;
+    give('woodcutter', Math.min(woodsCap, woodFull ? (n >= 6 ? 1 : 0) : v.wood < 15 ? 1 + Math.floor(n / 7) : v.wood < 40 + v.tier * 30 ? 1 + Math.floor(n / 9) : n >= 4 ? 1 + Math.floor(n / 16) : 0));
     if (!atWar && n >= 6) give('soldier', Math.max(1, n * 0.1 * lean) + (v.hasBarracks ? 2 : 0));
     if (v.hasRock !== false || v.quarry >= 0) give('miner', stoneFull ? 0 : v.stone < 12 ? 2 + Math.floor(n / 7) : v.stone < 30 + v.tier * 50 ? 1 + Math.floor(n / (ctr('Masons') ? 6 : 9)) : ctr('Masons') ? 2 : 1);
     // the rest go where they are most useful; anyone left over keeps the town lively
