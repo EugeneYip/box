@@ -31,10 +31,19 @@ export const war = {
         continue;
       }
       if (v.state === 'moored') {
+        if (v.hp < v.maxHp * 0.85) continue; // still refitting
         v.mission = { type: 'patrol', phase: 'out', t: 0 };
         v.state = 'patrol';
       }
       if (v.mission?.type !== 'patrol') continue;
+      // badly hurt: break off and row home to refit
+      if (v.hp < v.maxHp * 0.4) {
+        v.target = null;
+        v.chase = false;
+        v.mission = { type: 'home', phase: 'home' };
+        this._goHome(v);
+        continue;
+      }
       this._galley(v, enemies, dt, now);
     }
   },
@@ -135,7 +144,7 @@ export const war = {
         this.blockades.set(bh.id, now + 4);
         if (!m.announced) {
           m.announced = true;
-          this.note(`⚓ Galleys of ${this.kname(v.kingdom)} blockade the harbour of ${bh.name}`, 'war', { x: bh.x, z: bh.z }, 'blockade' + bh.id, 300);
+          this.note(`⚓ Galleys of ${this.kname(v.kingdom)} blockade the harbour of ${bh.name}`, 'war', { x: bh.x, z: bh.z }, 'blockade' + v.kingdom + '-' + bh.kingdom, 1200);
         }
       }
     }
@@ -170,8 +179,15 @@ export const war = {
     const ka = Math.min(a.kingdom, b.kingdom),
       kb = Math.max(a.kingdom, b.kingdom);
     if (b.kind === 'galley') {
-      const where = this._placeName((a.x + b.x) / 2, (a.z + b.z) / 2);
-      this.note(`⚔ A sea battle off ${where}: galleys of ${this.kname(a.kingdom)} and ${this.kname(b.kingdom)} clash`, 'war', { x: a.x, z: a.z }, 'seabattle' + ka + '-' + kb, 150);
+      // a battle worth the chronicle: three or more warships in the fight
+      let n = 0;
+      this.near((a.x + b.x) / 2, (a.z + b.z) / 2, 10, (o) => {
+        if (o.kind === 'galley' && o.state !== 'sinking' && (o.kingdom === a.kingdom || o.kingdom === b.kingdom)) n++;
+      });
+      if (n >= 3) {
+        const where = this._placeName((a.x + b.x) / 2, (a.z + b.z) / 2);
+        this.note(`⚔ A sea battle off ${where}: ${n} galleys of ${this.kname(a.kingdom)} and ${this.kname(b.kingdom)} clash`, 'war', { x: a.x, z: a.z }, 'seabattle' + ka + '-' + kb, 900);
+      }
     }
   },
 

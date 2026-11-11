@@ -322,7 +322,7 @@ export class Fleet {
       case 'transport':
         return 2;
       case 'galley':
-        return Math.min(4, 1 + (villages >> 2) + (this.hasTech(kid, 'navigation') ? 1 : 0));
+        return Math.min(3, 1 + (villages >> 3) + (this.hasTech(kid, 'navigation') ? 1 : 0));
       case 'explorer':
         return 1;
       case 'carrack':
@@ -827,8 +827,16 @@ export class Fleet {
     }
     if (cause === 'battle' && by && v.kind === 'fishing') {
       this.history(`${Who}'s fishing boat is sunk by galleys of ${this.kname(by.kingdom)}`, 'war', pos);
+    } else if (cause === 'battle' && by && (v.kind === 'galley' || v.kind === 'cog')) {
+      const key = 'sunkh' + v.kingdom + '-' + by.kingdom;
+      const now = this.game.time.total;
+      this._histT = this._histT || new Map();
+      if (now - (this._histT.get(key) ?? -1e9) > 300) {
+        this._histT.set(key, now);
+        this.history(`${nm[0].toUpperCase() + nm.slice(1)} of ${who} is sunk by galleys of ${this.kname(by.kingdom)}`, 'war', pos);
+      }
     } else if (cause === 'battle' && by) {
-      this.note(`⚓ ${nm[0].toUpperCase() + nm.slice(1)} of ${who} is sunk by galleys of ${this.kname(by.kingdom)}`, 'war', pos, 'sunk' + v.kingdom + '-' + by.kingdom, 150);
+      this.note(`⚓ ${nm[0].toUpperCase() + nm.slice(1)} of ${who} is sunk by galleys of ${this.kname(by.kingdom)}`, 'war', pos, 'sunk' + v.kingdom + '-' + by.kingdom, 400);
     } else if (cause === 'storm' || cause === 'lightning') {
       this.note(`🌊 ${nm[0].toUpperCase() + nm.slice(1)} of ${who} founders in the storm`, 'disaster', pos, 'stormsink' + v.kingdom, 60);
     } else if (cause === 'serpent' || cause === 'monster') {

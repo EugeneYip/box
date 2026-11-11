@@ -357,6 +357,9 @@ export const missions = {
       // the rest once a second is plenty for a ship at rest
       if ((v._mt = (v._mt || 0) + step) < 1) return;
       v._mt = 0;
+      // shipwrights patch her up in port
+      if (v.hp < v.maxHp) v.hp = Math.min(v.maxHp, v.hp + v.maxHp * 0.025);
+      v.burning = 0;
       if (v.layup && v.idleT > 4) this.remove(v);
       else if (v.kind !== 'fishing' && (v.idleT > 420 || (v.idleT > 120 && this.count(v.kingdom, v.kind) > 1))) this.remove(v); // idle ships are laid up
       else if (v.harbour != null && !this.harbourInfo(v.harbour)) this.remove(v);
@@ -840,8 +843,11 @@ export const missions = {
     const t = this._kt(kid);
     const now = this.game.time.total;
     if (!enemies.length) return;
-    if (now - t.galley < 20) return;
+    if (now - t.galley < 45) return;
     t.galley = now;
+    // a war worth a fleet: it has lasted a year or more
+    const rel = (e) => civ.relations?.get?.(kid < e ? kid * 4096 + e : e * 4096 + kid);
+    if (!enemies.some((e) => now - (rel(e)?.warSince ?? now) > 30)) return;
     if (this.count(kid, 'galley') >= this.cap(kid, 'galley') || this.seaCount() >= this.budget.sea) return;
     // the harbour nearest an enemy port on the same water
     let best = null,
@@ -859,13 +865,8 @@ export const missions = {
         }
       }
     }
-    // no enemy port on our waters: guard the home coast anyway if their ships sail here
-    if (!best) {
-      const enemyShips = this.list.some((v) => v.alive && v.cls === 'sea' && enemies.includes(v.kingdom));
-      if (!enemyShips) return;
-      best = this.harbours(kid)[0];
-      if (!best) return;
-    }
+    // no enemy port on our waters: no fleet (their ships passing by are not a war at sea)
+    if (!best) return;
     const v = this.spawn('galley', kid, best.berth.x, best.berth.z, { home: best.village, harbour: best.id, heading: Math.atan2(best.dirZ, best.dirX) });
     v.mission = { type: 'patrol', phase: 'out', t: 0 };
     v.state = 'patrol';
