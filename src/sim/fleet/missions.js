@@ -139,7 +139,7 @@ export const missions = {
   },
 
   _sail(v, dest, path = null) {
-    v.dest = { x: dest.x, z: dest.z };
+    v.dest = { x: dest.x, z: dest.z, berth: !!dest.berth };
     const p = path || this.seaPath(v, dest.x, dest.z);
     this.setPath(v, p);
     if (p) {
