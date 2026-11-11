@@ -47,7 +47,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.ws-esec.is-open .ws-esec__sum {
+.ws-esec.is-open:not(.keeps-sum) .ws-esec__sum {
   visibility: hidden;
 }
 .ws-esec__flag {
@@ -475,4 +475,137 @@
 .ws-insp__muted {
   font-size: 11.5px;
   color: var(--ws-ink-3);
+}
+
+/* ---- tech cards: one line of what each brings; a missing requirement below it */
+.ws-techcard__txt small {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ws-techcard__brings {
+  color: color-mix(in srgb, var(--ws-gold-hi) 70%, var(--ws-ink-3));
+}
+.ws-techcard.is-locked .ws-techcard__brings {
+  color: var(--ws-ink-3);
+}
+.ws-techcard__needs {
+  opacity: 0.8;
+  font-style: italic;
+}
+
+/* ---- building occupants: chips that open the person */
+.ws-occ {
+  cursor: pointer;
+  border: 0;
+  font: inherit;
+}
+.ws-occ > svg:last-child {
+  width: 12px;
+  height: 12px;
+  margin-left: 2px;
+  opacity: 0.6;
+}
+.ws-occ:hover {
+  filter: brightness(1.15);
+}
+.is-touch .ws-occ {
+  min-height: 44px;
+}
+
+/* ---- north arrow (turned Overview) */
+.ws-north {
+  position: absolute;
+  left: calc(var(--ws-edge) + env(safe-area-inset-left, 0px));
+  bottom: calc(var(--ws-edge) + env(safe-area-inset-bottom, 0px));
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 44px;
+  padding: 0 14px 0 8px;
+  border-radius: 22px;
+  opacity: 0;
+  transform: translateY(8px);
+  pointer-events: none !important;
+  transition:
+    opacity 0.25s,
+    transform 0.3s var(--ws-ease);
+}
+.ws-north.is-shown {
+  opacity: 1;
+  transform: none;
+}
+.ws-north__arrow {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  color: var(--ws-gold-hi);
+  transition: transform 0.2s linear;
+}
+.ws-north__arrow svg {
+  width: 24px;
+  height: 24px;
+}
+.ws-north b {
+  font: 700 12px var(--ws-display);
+  letter-spacing: 0.08em;
+  color: var(--ws-gold-hi);
+}
+.is-photo .ws-north,
+.is-intro .ws-north {
+  display: none;
+}
+
+/* ---- 'Also here' chips wrap instead of cutting the last one off */
+.ws-insp__also {
+  flex-wrap: wrap;
+  overflow: visible;
+}
+.ws-chip2 {
+  max-width: 100%;
+}
+.ws-chip2 > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- touch Overview: crisp HTML realm names */
+.ws-ovlabels {
+  position: absolute;
+  inset: 0;
+  pointer-events: none !important;
+  display: none;
+}
+.ws-ovlabels.is-shown {
+  display: block;
+}
+.ws-ovlabel {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px 4px 6px;
+  border-radius: 6px;
+  white-space: nowrap;
+  font: 700 12px/1 var(--ws-display);
+  letter-spacing: 0.06em;
+  color: #fff6e2;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+  background: rgba(10, 12, 19, 0.55);
+  box-shadow: inset 0 -2px 0 var(--k);
+  will-change: transform;
+}
+.ws-ovlabel i {
+  width: 8px;
+  height: 10px;
+  background: var(--k);
+  clip-path: polygon(0 0, 100% 0, 100% 62%, 50% 100%, 0 62%);
+}
+.ws-ovlabel[hidden] {
+  display: none;
 }

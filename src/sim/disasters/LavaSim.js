@@ -77,7 +77,9 @@ export class LavaSim {
     const W = w.w;
     const x = i % W,
       y = (i / W) | 0;
-    if (w.type[i] !== TILE.LAVA && this.vol[i] > 0.012) {
+    // only a real flow (not a thin film) becomes a molten lava tile, so the
+    // glow stays in the rivers instead of netting the whole cone
+    if (w.type[i] !== TILE.LAVA && this.vol[i] > 0.045) {
       w.type[i] = TILE.LAVA;
       this._markT(i);
     }
@@ -190,7 +192,7 @@ export class LavaSim {
               if (!this.inList[j]) {
                 this._melt(j);
                 this._add(j);
-              } else if (w.type[j] !== TILE.LAVA && this.vol[j] > 0.012) this._melt(j);
+              } else if (w.type[j] !== TILE.LAVA && this.vol[j] > 0.045) this._melt(j);
               this._markH(j);
             }
           }

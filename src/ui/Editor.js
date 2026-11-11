@@ -1,4 +1,4 @@
-import { el, esc, safe, hexCss } from './dom.js';
+import { el, esc, safe, hexCss, realmColourText } from './dom.js';
 import { uiIcon } from './icons.js';
 import { REG, prettyId } from './depth.js';
 import { bannerURL, emblemFace, EMBLEM_IDS, FIELD_IDS } from './banner.js';
@@ -68,7 +68,7 @@ export class Editor {
     const sum = el('span', { class: 'ws-esec__sum' });
     const head = el('button', { class: 'ws-esec__head', type: 'button', 'aria-expanded': 'false' }, el('h5', { text: title }), sum, el('span', { class: 'ws-esec__chev', html: uiIcon('chev-down') }));
     const body = el('div', { class: 'ws-esec__body' }, ...kids.filter(Boolean));
-    const sec = el('section', { class: 'ws-esec' }, head, body);
+    const sec = el('section', { class: 'ws-esec' + (opts.keep ? ' keeps-sum' : '') }, head, body);
     const setOpen = (on) => {
       sec.classList.toggle('is-open', on);
       head.setAttribute('aria-expanded', on ? 'true' : 'false');
@@ -214,7 +214,7 @@ export class Editor {
       const prev = k.color;
       if (hex === prev) return;
       if (!safe(() => civ.setKingdomColor(id, hex), false)) return;
-      this.applied(`Colours changed${k.colorName ? ` to ${k.colorName}` : ''}`, () => civ.setKingdomColor(id, prev));
+      this.applied(`Colours changed${k.colorName ? ` to ${realmColourText(k.colorName, k.color)}` : ''}`, () => civ.setKingdomColor(id, prev));
     };
     const sugg = safe(() => civ.kingdomColorSuggestions?.(id), null) || [];
     // 13 + the picker = two rows of 7; on touch (44 px swatches) 11 + the picker = two rows of 6
@@ -238,7 +238,7 @@ export class Editor {
       custom.classList.toggle('is-picked', !hit);
       picker.value = hexCss(k.color);
     });
-    box.append(this.section('Colours', [sw, okColor ? null : this.missing()], { summary: () => k.colorName || '' }));
+    box.append(this.section('Colours', [sw, okColor ? null : this.missing()], { summary: () => realmColourText(k.colorName || '', k.color), keep: true }));
 
     // banner
     const okBanner = fn(civ, 'setKingdomBanner');
@@ -465,6 +465,8 @@ export class Editor {
 
     // blessings (flags)
     const okF = fn(U, 'setUnitFlag');
+    const kRealm = g.civ?.kingdoms?.[u.kingdom];
+    const isRuler = u.job === 'king' || (kRealm && (kRealm.ruler === u.id || kRealm.ruler === u));
     const flag = (key) => !!(u.flags?.[key] ?? u.data?.flags?.[key]);
     const setF = (key, val, label) => {
       if (!safe(() => U.setUnitFlag(u, key, val), false)) return false;
@@ -475,7 +477,7 @@ export class Editor {
       this.section(
         'Blessings',
         [
-          this.toggle('Immortal', () => flag('immortal'), okF, (v) => setF('immortal', v, v ? 'Made immortal' : 'Mortal again'), 'No death from age, hunger or wounds'),
+          this.toggle('Immortal', () => flag('immortal'), okF, (v) => setF('immortal', v, v ? 'Made immortal' : 'Mortal again'), isRuler ? 'No death from age, hunger or wounds. Immortal rulers step down after 60 years on the throne.' : 'No death from age, hunger or wounds'),
           this.toggle('Pacifist', () => flag('pacifist'), okF, (v) => setF('pacifist', v, v ? 'Swears off violence' : 'Will fight again'), 'Never starts a fight'),
           this.toggle('Ageless', () => flag('frozenAge'), okF, (v) => setF('frozenAge', v, v ? 'Age frozen' : 'Ageing resumes'), 'Stops growing older'),
           okF ? null : this.missing(),
@@ -632,7 +634,8 @@ export class Editor {
           el('div', { class: 'ws-egive__row' }, prevBox, give),
           okI ? null : this.missing(),
         ],
-        { summary: () => u.equipment?.weapon?.name || 'Unarmed' },
+        // what is worn now stays visible while choosing a gift
+        { summary: () => Object.values(u.equipment || {}).filter(Boolean).map((i) => i.name).join(' · ') || 'Nothing worn', keep: true },
       ),
     );
 

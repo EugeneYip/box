@@ -267,6 +267,8 @@ export function suitAt(world, f, tx, ty, i, tOff = 0) {
   const t = world.type[i];
   let s = suitability(f, t) * climateFactor(f, world.temperature[i] + tOff);
   if (f === FLORA.PALM && s > 0 && !palmNeighbourhoodOK(world, tx, ty)) return 0;
+  // cacti and succulents belong to dry land only (never beside jungle)
+  if (f === FLORA.CACTUS && world.moisture[i] > 0.42) return 0;
   if (SMALL[f] && f !== FLORA.REEDS && world.slopeAt(tx, ty) > 1.15) s = 0;
   if (f === FLORA.REEDS) {
     if (world.height[i] < SEA_LEVEL) return world.height[i] > SEA_LEVEL - 0.7 ? 1 : 0;

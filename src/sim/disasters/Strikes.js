@@ -86,7 +86,7 @@ export class Smite {
     if (this.phase === 0) {
       // a brief charge (0.15 s): motes spiral in and the light builds, but
       // the strike itself must land almost at once
-      const k = this.t / 0.15;
+      const k = this.t / 0.06;
       const P = fx.P;
       for (let i = 0; i < fx.k(3); i++) {
         P.reset();
@@ -111,7 +111,7 @@ export class Smite {
         fx.pGlow();
       }
       fx.lights.request('smite' + x, x, y + 3, z, this._c || (this._c = new THREE.Color(1, 0.82, 0.45)), 1 + k * 4, 18);
-      if (this.t >= 0.15) {
+      if (this.t >= 0.06) {
         this.phase = 1;
         this.strike();
       }
@@ -119,7 +119,7 @@ export class Smite {
     }
     // afterglow
     if (this.t < 3.4) {
-      const k = Math.max(0, 1 - (this.t - 0.15) / 3.2);
+      const k = Math.max(0, 1 - (this.t - 0.06) / 3.2);
       fx.lights.request('smite' + x, x, y + 3, z, this._c, 6 * k * k, 22);
       if (Math.random() < 0.6) fx.emit('sparkle', { x, y, z }, { scale: 0.9, count: 2, color: 0xfff0c0 });
       return true;
@@ -149,10 +149,11 @@ export class Smite {
     // volumetric impact flash (no flat star decals): a white-hot core and a
     // wide soft golden sphere of light, flares climbing the beam, sparks
     // sprayed low and thrown up, and one brief shock ring
-    glowFlash(fx, x, y + 0.8, z, r * 3.4, { life: 0.35, bright: 2.2, color: 0xfff6e0, from: 0.5, soft: 0 });
-    glowFlash(fx, x, y + 2.2, z, r * 6.2, { life: 0.55, bright: 0.9, color: 0xffd890, from: 0.4, soft: 0 });
-    for (let k = 1; k <= 3; k++) glowFlash(fx, x, y + 2 + k * 2.6, z, r * (2.6 - k * 0.45), { life: 0.3 + k * 0.08, bright: 1.3, color: 0xfff0c8, from: 0.6, soft: 0, delay: k * 0.03 });
-    fx.decal({ frame: DF.RING, x, z, size: r * 1.6, grow: 4.6, life: 0.6, overlay: true, additive: true, surface: 2, color: 0xfff0c0, intensity: 2.2, fadeIn: 0.01, fadeOut: 0.2, grain: 0 });
+    glowFlash(fx, x, y + 0.8, z, r * 3.4, { life: 0.7, bright: 2.2, color: 0xfff6e0, from: 0.5, soft: 0 });
+    glowFlash(fx, x, y + 2.2, z, r * 6.2, { life: 1.2, bright: 0.9, color: 0xffd890, from: 0.4, soft: 0 });
+    // a lingering hot glow at the foot of the beam
+    glowFlash(fx, x, y + 1.2, z, r * 4.2, { life: 2.2, bright: 0.7, color: 0xffc870, from: 0.9, soft: 0 });
+    for (let k = 1; k <= 3; k++) glowFlash(fx, x, y + 2 + k * 2.6, z, r * (2.6 - k * 0.45), { life: 0.55 + k * 0.1, bright: 1.3, color: 0xfff0c8, from: 0.6, soft: 0, delay: k * 0.03 });
     sparks(fx, x, y + 0.3, z, fx.k(46), { speed: 12, ramp: RAMP.GOLD, bright: 2.2, size: 1.4, gravity: 10, stretch: 0.08 });
     sparks(fx, x, y + 0.6, z, fx.k(26), { speed: 9, up: true, ramp: RAMP.GOLD, bright: 2.0, size: 1.2, gravity: 12, stretch: 0.07 });
     // outward debris

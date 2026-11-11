@@ -27,11 +27,11 @@ import { GradeEffect } from './atmosphere/post/GradeEffect.js';
 //   game.pipeline.passInfo()        {composer, enabled: [...pass names]}
 //
 // Detail by zoom and power saving (round 5): as game.view.zoom01 rises the
-// pipeline drops AO (and DOF, via the atmosphere's focus params) and cuts
-// bloom mip levels; game.settings.powerSaver (event 'powersaver') lowers the
-// pixel ratio (0.85x, max 1), disables AO and DOF, uses 3 bloom levels, and
-// enables dynamic resolution scaling that keeps the rolling frame time
-// inside the frame budget. game.settings.dynamicResolution forces DRS on.
+// pipeline drops AO (and DOF, via the atmosphere's focus params);
+// game.settings.powerSaver (event 'powersaver') disables AO and DOF and the
+// atmosphere halves the shadow map. The pixel ratio never changes on a
+// toggle (a drawing-buffer resize stalls the GPU). Dynamic resolution
+// scaling is opt-in via game.settings.dynamicResolution.
 //
 // Frame (medium and up):
 //   Render (HDR half-float) -> linear depth -> N8AO (high+) -> aerial haze /
@@ -123,7 +123,9 @@ export class RenderPipeline {
 
   targetPixelRatio() {
     let pr = Math.min(devicePixelRatio || 1, this.tier.pixelRatio);
-    if (this.powerSaver) pr = Math.min(pr, 1) * 0.85;
+    // (the power saver no longer changes the pixel ratio: resizing the
+    // drawing buffer forces a full GPU sync, which stalled the toggle for
+    // seconds; the saver sheds AO, DOF, shadow resolution and frame rate)
     return Math.max(0.5, pr * this.dynScale);
   }
 
@@ -137,7 +139,7 @@ export class RenderPipeline {
 
   // Dynamic resolution: keep the rolling frame time inside the budget.
   updateDynamicResolution(dt) {
-    const on = this.powerSaver || this.game.settings?.dynamicResolution;
+    const on = !!this.game.settings?.dynamicResolution; // opt-in: each resize syncs the GPU
     if (!on) {
       if (this.dynScale !== 1) {
         this.dynScale = 1;
@@ -160,6 +162,24 @@ export class RenderPipeline {
       this._drsT = 0;
       this._dt.length = 0;
       this.applyPixelRatio();
+    }
+  }
+
+  // Once, shortly after boot: render one extra composer frame with AO
+  // flipped so the pass-chain variants used by the power saver / far zoom
+  // (AO off) are compiled now rather than when the player toggles.
+  warmVariants() {
+    if (this._variantsWarm || !this.composer || (this.game.frame || 0) < 8) return;
+    this._variantsWarm = true;
+    const ao = this.passes?.ao;
+    if (!ao) return;
+    try {
+      ao.enabled = !ao.enabled;
+      this.composer.render(0);
+    } catch (err) {
+      console.warn('[pipeline] variant warm-up skipped', err);
+    } finally {
+      ao.enabled = !ao.enabled;
     }
   }
 
@@ -381,6 +401,7 @@ export class RenderPipeline {
       try {
         this.syncPost(dt);
         this.composer.render(dt);
+        this.warmVariants();
         return;
       } catch (err) {
         console.error('[pipeline] post-processing failed; falling back', err);

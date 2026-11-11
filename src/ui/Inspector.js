@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { TILE_INFO, FLORA_INFO, SEA_LEVEL, SHALLOW_DEPTH, TILE } from '../world/constants.js';
 import { powerIcon, uiIcon, tileTint, hasIcon } from './icons.js';
 import { getPower } from '../powers/registry.js';
-import { el, esc, safe, hexCss, fmtNum } from './dom.js';
+import { el, esc, safe, hexCss, fmtNum, realmColourText } from './dom.js';
 import { traitDef, statusDef, modLines, prettyId, eraNames, techDef, techList } from './depth.js';
 import { kingdomOf, eraOf, researchOf } from './TechPanel.js';
 import { CULTURES } from '../sim/civ/cultures.js';
@@ -435,10 +435,12 @@ export class Inspector {
     const portrait = pref ? this.portraits.get(pref) : kObj?.banner ? bannerURL(kObj.banner, kObj.color, 72) : null;
     const editable = !!(u ? u.alive !== false : k === 'kingdom' || k === 'village' || (k === 'building' && (r.village || this.game.civ?.villages?.[r.building?.village])));
     const editing = !!this.editing && editable && this.editTarget(r) === this.editing;
-    const depth = safe(() => (u ? this.unitDepth(u) : craft ? this.craftDepth(craft) : k === 'village' || k === 'kingdom' || k === 'building' ? this.realmDepth(r) : ''), '', 'inspector depth') || '';
+    const depth = safe(() => (u ? this.unitDepth(u) : craft ? this.craftDepth(craft, r) : k === 'village' || k === 'kingdom' || k === 'building' ? this.realmDepth(r) : ''), '', 'inspector depth') || '';
     const level = u && Number.isFinite(u.level) ? u.level : null;
     const ownerK = craft ? kingdomOf(this.game, craft.kingdom) : null;
-    const epithet = u ? u.title || u.data?.title || null : null;
+    // the epithet ("the Fierce") only when the title does not carry it already
+    const ep0 = u ? u.title || u.data?.title || null : null;
+    const epithet = ep0 && !String(r.title || '').toLowerCase().includes(String(ep0).toLowerCase()) ? ep0 : null;
     const fav = !!u?.data?.favorite;
     const realmK = !u && (k === 'village' || k === 'kingdom' || k === 'building') ? (typeof r.kingdom === 'object' && r.kingdom) || kingdomOf(this.game, (r.village || this.game.civ?.villages?.[r.building?.village])?.kingdom) : null;
     if (realmK) actions.unshift(`<button class="ws-btn ws-btn--sm" type="button" data-act="tech" data-k="${realmK.id}">${uiIcon('chronicle')}<span>Technology</span></button>`);
@@ -451,7 +453,7 @@ export class Inspector {
         <div class="ws-insp__titles">
           <div class="ws-insp__kind">${esc(kindLabel)}${dead ? ` <em class="ws-insp__dead">${craft ? 'Lost' : 'Fallen'}</em>` : ''}</div>
           <h3 class="ws-insp__title">${esc(r.title || 'Unknown')}${epithet ? ` <span class="ws-insp__epithet">${esc(epithet)}</span>` : ''}</h3>
-          ${r.subtitle ? `<div class="ws-insp__sub">${craft && ownerK?.banner ? `<img class="ws-crest ws-crest--banner" alt="" src="${bannerURL(ownerK.banner, ownerK.color, 28)}">` : kTint ? `<i class="ws-crest" style="--k:${kTint}"></i>` : ''}<span>${esc(r.subtitle)}</span></div>` : ''}
+          ${r.subtitle ? `<div class="ws-insp__sub" data-sub>${craft && ownerK?.banner ? `<img class="ws-crest ws-crest--banner" alt="" src="${bannerURL(ownerK.banner, ownerK.color, 28)}">` : kTint ? `<i class="ws-crest" style="--k:${kTint}"></i>` : ''}<span>${esc(this.subText(r))}</span></div>` : ''}
         </div>
         ${editable ? `<button class="ws-iconbtn ws-iconbtn--sm ws-insp__edit${editing ? ' is-on' : ''}" type="button" aria-label="${editing ? 'Done editing' : 'Edit'}" data-tip="${editing ? 'Done editing' : 'Edit name, colours and more'}" data-act="${editing ? 'edit-done' : 'edit'}">${uiIcon(editing ? 'check' : 'edit')}</button>` : ''}
         ${u ? `<button class="ws-iconbtn ws-iconbtn--sm ws-insp__fav${fav ? ' is-on' : ''}" type="button" aria-label="${fav ? 'Unstar' : 'Star this creature'}" data-tip="${fav ? 'Favourite' : 'Mark as favourite'}" data-act="fav">${uiIcon(fav ? 'star-on' : 'star')}</button>` : ''}
@@ -532,6 +534,13 @@ export class Inspector {
           b.dataset.tip = u.data.favorite ? 'Favourite' : 'Mark as favourite';
         } else this.render();
       } else if (act === 'tech') this.ui.modals.open('tech', { kingdom: +b.dataset.k });
+      else if (act === 'occupant') {
+        const id = +b.dataset.uid;
+        const U = this.game.units;
+        const who = U?.byId?.get?.(id) || U?.list?.find?.((o) => o.id === id);
+        this.showUnit(who);
+        return;
+      }
       else if (act === 'follow') this.toggleFollow();
       else if (act === 'focus') this.focusCamera();
       this.game.audio?.play?.('ui-click', { volume: 0.45 });
@@ -559,24 +568,33 @@ export class Inspector {
       .join('');
   }
   // Vessels and vehicles: the voyage as a route with progress, and the cargo hold.
-  craftDepth(v) {
+  craftDepth(v, r = null) {
     const g = this.game;
     const civ = g.civ;
     let html = '';
     const vo = v.voyage;
-    if (vo) {
-      const from = civ?.villages?.[vo.from];
-      const to = typeof vo.to === 'object' && vo.to ? vo.to : civ?.villages?.[vo.to];
-      const tx = to?.cx ?? to?.x,
-        tz = to?.cz ?? to?.z;
+    // the route follows Fleets' own account: none in port, reversed on the way home
+    const hasVoyage = r?.stats ? r.stats.some((s) => /^voyage$/i.test(String(s?.[0]))) : !!vo && v.state !== 'moored';
+    if (vo && hasVoyage) {
+      const homeward = v.mission?.phase === 'home' || v.mission?.type === 'home';
+      const homeV = civ?.villages?.[v.home];
+      const place = (ref) => (ref && typeof ref === 'object' ? ref : civ?.villages?.[ref]);
+      const toRef = place(vo.to);
+      const a = homeward ? toRef : place(vo.from) || homeV;
+      const b = homeward ? homeV || place(vo.from) : toRef;
+      const ax = a?.cx ?? a?.x,
+        az = a?.cz ?? a?.z,
+        bx = b?.cx ?? b?.x,
+        bz = b?.cz ?? b?.z;
       let pct = null;
-      if (from && tx != null) {
-        const total = Math.hypot(tx - from.cx, tz - from.cz);
-        const left = Math.hypot(tx - v.x, tz - v.z);
+      if (ax != null && bx != null) {
+        const total = Math.hypot(bx - ax, bz - az);
+        const left = Math.hypot(bx - v.x, bz - v.z);
         if (total > 1) pct = Math.max(0, Math.min(1, 1 - left / total));
       }
-      const homeward = v.mission?.phase === 'home';
-      html += `<section class="ws-dsec"><h5>${homeward ? 'Homeward' : 'Voyage'}</h5><div class="ws-voyage"><span class="ws-voyage__end">${esc(vo.fromName || '—')}</span><i class="ws-voyage__track">${pct != null ? `<b style="left:${(pct * 100).toFixed(1)}%"></b>` : ''}</i><span class="ws-voyage__end is-to">${esc(vo.toName || 'open sea')}</span></div></section>`;
+      const fromName = homeward ? vo.toName || 'abroad' : vo.fromName || '—';
+      const toName = homeward ? homeV?.name || vo.fromName || 'home' : vo.toName || 'open sea';
+      html += `<section class="ws-dsec"><h5>${homeward ? 'Homeward' : 'Voyage'}</h5><div class="ws-voyage"><span class="ws-voyage__end">${esc(fromName)}</span><i class="ws-voyage__track">${pct != null ? `<b style="left:${(pct * 100).toFixed(1)}%"></b>` : ''}</i><span class="ws-voyage__end is-to">${esc(toName)}</span></div></section>`;
     }
     const c = v.cargo;
     if (v.def?.capacity || c) {
@@ -650,6 +668,71 @@ export class Inspector {
     const found = C instanceof Map ? C.get(id) : Array.isArray(C) ? C.find((c) => c && (c.id === id || c.name === id)) : C?.[id];
     return found || (CULTURES[id] ? { id, name: CULTURES[id].name, traits: CULTURES[id].traits || [] } : { id, name: prettyId(id), traits: [] });
   }
+  // People inside or standing in a building (the king in his hall): chips that open their card.
+  occupants(b) {
+    const U = this.game.units;
+    if (!U?.list || b.tx == null) return [];
+    const x0 = b.tx - 0.3,
+      z0 = b.ty - 0.3,
+      x1 = b.tx + (b.w || 1) + 0.3,
+      z1 = b.ty + (b.h || 1) + 0.3;
+    const cx = (x0 + x1) / 2,
+      cz = (z0 + z1) / 2,
+      rr = Math.max(x1 - x0, z1 - z0);
+    const out = [];
+    const take = (u) => {
+      if (!u?.alive || u.def?.kind !== 'humanoid' || u.data?.aboard != null) return;
+      if (u.x >= x0 && u.x <= x1 && u.z >= z0 && u.z <= z1) out.push(u);
+    };
+    if (typeof U.forEachNear === 'function') U.forEachNear(cx, cz, rr, (u) => take(u));
+    else for (const u of U.list) take(u);
+    out.sort((a, b2) => (b2.job === 'king') - (a.job === 'king') || (b2.data?.inside === true) - (a.data?.inside === true));
+    return out;
+  }
+  occupantsHtml(b) {
+    const list = safe(() => this.occupants(b), [], 'occupants') || [];
+    if (!list.length) return '';
+    const chips = list
+      .slice(0, 8)
+      .map((u) => {
+        const job = JOB[u.job] || (u.age < (u.def?.maturity ?? 0) ? JOB.child : null);
+        return `<button class="ws-tchip ws-occ" type="button" data-act="occupant" data-uid="${u.id}" style="--tint:${job?.[1] || '#c9b88a'}" aria-label="Show ${esc(u.name || 'this person')}">${uiIcon(job?.[0] || 'spawn-human')}<span>${esc(u.name || job?.[2] || 'Someone')}</span>${uiIcon('chev-right')}</button>`;
+      })
+      .join('');
+    const more = list.length > 8 ? `<span class="ws-insp__muted">+${list.length - 8} more</span>` : '';
+    return `<section class="ws-dsec"><h5>Inside · ${list.length}</h5><div class="ws-chips">${chips}${more}</div></section>`;
+  }
+  // The inspector result for one exact creature (Units.inspect picks the one
+  // nearest a point, which may be a neighbour standing on the same spot).
+  unitResult(u) {
+    const U = this.game.units;
+    if (!u || typeof U?.inspect !== 'function') return null;
+    if (typeof U.forEachNear !== 'function') return safe(() => U.inspect({ x: u.x, z: u.z }), null, 'unit result');
+    const own = Object.prototype.hasOwnProperty.call(U, 'forEachNear');
+    const prev = U.forEachNear;
+    try {
+      U.forEachNear = (x, z, r, fn) => fn(u, 0);
+      const res = U.inspect({ x: u.x, z: u.z, tx: Math.floor(u.x), ty: Math.floor(u.z) });
+      return res && res.unit === u ? res : null;
+    } catch (err) {
+      console.warn('[ui] unit result', err);
+      return null;
+    } finally {
+      if (own) U.forEachNear = prev;
+      else delete U.forEachNear;
+    }
+  }
+  showUnit(u) {
+    if (!u || u.alive === false) return;
+    const r = this.unitResult(u);
+    this.show({ x: u.x, z: u.z });
+    let i = this.results.findIndex((o) => o.unit === u);
+    if (i < 0 && r) {
+      this.results.unshift(r);
+      i = 0;
+    }
+    if (i >= 0) this.focusIndex(i);
+  }
   realmDepth(r) {
     const g = this.game;
     const isKingdom = kindOf(r) === 'kingdom';
@@ -657,6 +740,7 @@ export class Inspector {
     const k = (typeof r.kingdom === 'object' && r.kingdom) || (v ? kingdomOf(g, v.kingdom) : null);
     if (!k && !v) return '';
     let html = '';
+    if (kindOf(r) === 'building' && r.building) html += this.occupantsHtml(r.building);
     if (isKingdom && k.motto && !(r.stats || []).some((s) => /motto/i.test(String(s[0])))) html += `<p class="ws-motto">“${esc(String(k.motto))}”</p>`;
     if (k && !isKingdom) {
       const era = eraOf(g, k);
@@ -707,7 +791,7 @@ export class Inspector {
     const eq = u?.equipment ? Object.values(u.equipment).map((i) => i?.name || i?.id || 0) : null;
     const k = typeof r?.kingdom === 'object' ? r.kingdom : null;
     const keys = (r?.stats || []).map((s) => s?.[0]);
-    return r ? JSON.stringify([r.title, r.subtitle, keys, u?.alive, this.game.cameraRig.follow === u, this.results.map((o) => o.title), u?.job, u?.traits, st, eq, u?.level, u?.bio?.length, u?.data?.favorite, u?.flags, u?.name, k ? [k.motto, k.color, k.name, k.banner?.symbol, k.banner?.field] : null, k?.era, k?.researching, k?.techs?.size, !!(u || r.building) && !!this.portraits.get(u || r.building), this.isCompact()]) : '';
+    return r ? JSON.stringify([r.title, r.subtitle, keys, u?.alive, this.game.cameraRig.follow === u, this.results.map((o) => o.title), u?.job, u?.traits, st, eq, u?.level, u?.bio?.length, u?.data?.favorite, u?.flags, u?.name, k ? [k.motto, k.color, k.name, k.banner?.symbol, k.banner?.field] : null, k?.era, k?.researching, k?.techs?.size, !!(u || r.building) && !!this.portraits.get(u || r.building), this.isCompact(), kindOf(r) === 'building' && r.building ? safe(() => this.occupants(r.building).map((o) => o.id).join(','), '') : '']) : '';
   }
   valueSignature() {
     const r = this.track;
@@ -865,7 +949,7 @@ export class Inspector {
     if (h && h.firstChild) h.firstChild.textContent = r.title || '';
     if (h) this.sizeTitle(h, r.title);
     const sub = this.el.querySelector('.ws-insp__sub span');
-    if (sub && r.subtitle) sub.textContent = r.subtitle;
+    if (sub && r.subtitle) sub.textContent = this.subText(r);
     const tint = this.kingdomTint(r);
     if (tint) this.el.querySelectorAll('.ws-insp__head .ws-crest, .ws-insp__kdot').forEach((i) => i.style.setProperty('--k', tint));
     const kObj = kindOf(r) === 'kingdom' && typeof r.kingdom === 'object' ? r.kingdom : null;
@@ -874,6 +958,15 @@ export class Inspector {
     const pin = this.pin?.querySelector('.ws-pin__label');
     if (pin) pin.textContent = r.title || '';
     this._sig = this.signature();
+  }
+  // subtitle with a custom realm colour named plainly ("banner of deep teal")
+  subText(r) {
+    const k = typeof r.kingdom === 'object' && r.kingdom ? r.kingdom : null;
+    if (k) return realmColourText(r.subtitle, k.color);
+    // carts and caravans rest in a village; only ships lie in port
+    const c = isCraft(r) ? r.vessel || r.building : null;
+    if (c && c.cls === 'land') return String(r.subtitle || '').replace(' · in port at ', ' · resting at ');
+    return r.subtitle;
   }
   // long names step down a size instead of breaking mid-word
   sizeTitle(h, title) {
@@ -906,6 +999,13 @@ export class Inspector {
     else if (b && b.x != null) at = { x: b.x, z: b.z, tx: Math.floor(b.x), ty: Math.floor(b.z) };
     const list = this.collect(at);
     let idx = list.findIndex((o) => (u && o.unit === u) || (b && o.building === b) || (!u && !b && kindOf(o) === kindOf(r) && o.title === r.title));
+    if (idx < 0 && u && u.alive !== false) {
+      const own = this.unitResult(u);
+      if (own) {
+        list.unshift(own);
+        idx = 0;
+      }
+    }
     if (idx < 0) {
       if (isCraft(r)) {
         if (!this._deadShown) {

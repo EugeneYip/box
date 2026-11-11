@@ -39,11 +39,11 @@ const VILLAGE_MAX_POP = 64; // legacy reference size (a town)
 const TIER_POP = [40, 70, 115]; // village, town, city
 // What each finished monument gives its realm (techMod / techAdd keys).
 const MONUMENT_FX = {
-  vale: { mods: { 'loyalty+': 12, build: 1.15 }, text: 'its provinces hold fast to the crown' },
-  dune: { mods: { gold: 1.5, 'loyalty+': 4 }, text: 'caravans come from every road' },
+  vale: { mods: { 'loyalty+': 6, build: 1.15 }, text: 'its provinces hold fast to the crown' },
+  dune: { mods: { gold: 1.5, 'loyalty+': 2 }, text: 'caravans come from every road' },
   frost: { mods: { research: 1.35 }, text: 'scholars gather to read its runes' },
   mire: { mods: { harvest: 1.15, birth: 1.15 }, text: 'the fields and the families flourish' },
-  colossus: { mods: { 'loyalty+': 6, research: 1.1, march: 1.05 }, text: 'the people stand taller beneath it' },
+  colossus: { mods: { 'loyalty+': 3, research: 1.1, march: 1.05 }, text: 'the people stand taller beneath it' },
 };
 
 // Each realm raises its own design (see archetypes wonder/statue variants).
@@ -678,6 +678,7 @@ export class Civilization {
       this._inventoryTick(T.tech);
       this._wonderFx();
       this._unlockTick(T.tech);
+      this._worksTick();
       T.tech = 0;
     }
     if ((T.cult = (T.cult || 0) + step) >= 5) {
@@ -1405,9 +1406,10 @@ export class Civilization {
     const lean = ctr('Martial') ? 1.8 : ctr('Pastoral') || ctr('Scholarly') ? 0.65 : 1;
     if (atWar) give('soldier', Math.max(3, n * Math.min(0.55, (drafting ? 0.32 : 0.2) * lean)) + (v.hasBarracks ? 3 : 0));
     give('builder', sites ? Math.min(Math.max(1, Math.ceil(sites * 1.1)), 1 + Math.floor(n / 6)) : repairs ? 1 : 0);
-    give('woodcutter', woodFull ? (n >= 6 ? 1 : 0) : v.wood < 40 + v.tier * 30 ? 1 + Math.floor(n / 8) : n >= 4 ? 1 + Math.floor(n / 16) : 0);
+    // an empty woodshed stops all building: send more hands to the woods
+    give('woodcutter', woodFull ? (n >= 6 ? 1 : 0) : v.wood < 15 ? 2 + Math.floor(n / 6) : v.wood < 40 + v.tier * 30 ? 1 + Math.floor(n / 7) : n >= 4 ? 1 + Math.floor(n / 14) : 0);
     if (!atWar && n >= 6) give('soldier', Math.max(1, n * 0.1 * lean) + (v.hasBarracks ? 2 : 0));
-    if (v.hasRock !== false || v.quarry >= 0) give('miner', stoneFull ? 0 : v.stone < 30 + v.tier * 50 ? 1 + Math.floor(n / (ctr('Masons') ? 6 : 9)) : ctr('Masons') ? 2 : 1);
+    if (v.hasRock !== false || v.quarry >= 0) give('miner', stoneFull ? 0 : v.stone < 12 ? 2 + Math.floor(n / 7) : v.stone < 30 + v.tier * 50 ? 1 + Math.floor(n / (ctr('Masons') ? 6 : 9)) : ctr('Masons') ? 2 : 1);
     // the rest go where they are most useful; anyone left over keeps the town lively
     let guard = 0;
     while (left > 0 && guard++ < 200) {
@@ -1613,7 +1615,7 @@ export class Civilization {
           }
         }
         if (mine.alive && !mine.constructing && !mine.upgrading && mine.level < 3 && this._poolForWonder(K, v, costOf(mine.type, mine.level + 1, v.culture))) upgrade(mine);
-      } else if ((K.era || 0) >= 3 && (this.hasTech(kid, 'engineering') || (K.mastery || 0) >= 2) && (K.capital === v.id || v.tier >= 2)) {
+      } else if ((K.era || 0) >= 3 && (this.hasTech(kid, 'engineering') || (K.mastery || 0) >= 2) && (K.capital === v.id || v.tier >= 1)) {
         let have = 0,
           world = 0,
           capHas = false;
@@ -1685,7 +1687,7 @@ export class Civilization {
       let walls = 0;
       for (const b of this.buildings) if (b.alive && BUILDING_TYPES[b.type].wall) walls++;
       const room = Math.round(this.budget.buildings * 0.8) - walls;
-      const cap = Math.min(room, isCap ? 72 : 52);
+      const cap = Math.min(room, isCap ? 110 : 80);
       if (cap >= 28) this._planWalls(v, cap);
       else v.wallsPlanned = true; // no room: the town relies on its towers
     }
@@ -1786,6 +1788,43 @@ export class Civilization {
       if (f === FLORA.BOULDER || f === FLORA.ROCK_SMALL || (w.type[i] === TILE.ROCK && w.height[i] >= 0)) return true;
     }
     return false;
+  }
+
+  // Great works never stall for ever: every 2 s the realm checks its building
+  // sites; one idle for ten years is finished by masons sent from across the
+  // realm (the stage completes), or, if barely begun, given up and refunded.
+  _worksTick() {
+    const now = this.game.time.total;
+    for (const b of this.buildings) {
+      if (!b.alive || !BUILDING_TYPES[b.type]?.monument) continue;
+      const prog = b.constructing ? b.progress : b.upgrading ? b.upgradeProgress || 0 : -1;
+      if (prog < 0) {
+        b.lastProg = null;
+        continue;
+      }
+      if (b.lastProg == null || prog > b.lastProg + 0.004) {
+        b.lastProg = prog;
+        b.progT = now;
+        continue;
+      }
+      if (now - (b.progT ?? now) < YEAR * 10) continue;
+      const v = this.villages[b.village];
+      const K = this.kingdoms[b.kingdom];
+      b.lastProg = null;
+      b.progT = now;
+      if (b.constructing && b.progress < 0.2) {
+        if (v) {
+          this._note(`🏚 The works on the ${buildingLabel({ ...b, level: 3 })} at ${v.name} are given up`, 'info', { x: b.x, z: b.z }, 'monquit' + b.id, 1);
+          v.stone += 40;
+          v.wood += 20;
+        }
+        this.destroyBuilding(b, 'cancelled');
+        continue;
+      }
+      if (v && K) this._note(`🏗 Masons from across ${this._kn(K)} finish the stalled works at ${v.name}`, 'info', { x: b.x, z: b.z }, 'monfund' + b.id, 30);
+      if (b.constructing) this._finishBuilding(b);
+      else this._finishUpgrade(b);
+    }
   }
 
   _finishBuilding(b) {
@@ -2221,6 +2260,33 @@ export class Civilization {
       }
     }
     if (x1 >= 0) w.markDirty('owner', x0, y0, x1, y1);
+    // label anchors: the realm's own land nearest the centre of its territory
+    {
+      const sx = new Float64Array(this.kingdoms.length),
+        sz = new Float64Array(this.kingdoms.length),
+        cnt = new Float64Array(this.kingdoms.length);
+      for (let i = 0; i < w.size; i++) {
+        const o = own[i];
+        if (o < 0) continue;
+        sx[o] += i % W;
+        sz[o] += (i / W) | 0;
+        cnt[o]++;
+      }
+      const best = new Float64Array(this.kingdoms.length).fill(Infinity);
+      const at = new Int32Array(this.kingdoms.length).fill(-1);
+      for (let i = 0; i < w.size; i++) {
+        const o = own[i];
+        if (o < 0 || !cnt[o] || H[i] < SEA_LEVEL + 0.1) continue;
+        const d = (i % W - sx[o] / cnt[o]) ** 2 + (((i / W) | 0) - sz[o] / cnt[o]) ** 2;
+        if (d < best[o]) (best[o] = d), (at[o] = i);
+      }
+      for (const k of this.kingdoms) {
+        if (at[k.id] >= 0) {
+          k.labelX = (at[k.id] % W) + 0.5;
+          k.labelZ = ((at[k.id] / W) | 0) + 0.5;
+        } else k.labelX = k.labelZ = null;
+      }
+    }
     // border lengths between kingdoms
     this._borders.clear();
     for (let y = 0; y < w.h - 1; y++)

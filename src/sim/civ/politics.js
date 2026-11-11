@@ -176,7 +176,7 @@ export const politics = {
     k.heir = heir ? heir.id : -1;
   },
 
-  _succession(k, deadName) {
+  _succession(k, deadName, abdicated = false) {
     const cap = this.villages[k.capital];
     let heir = null;
     const pools = [];
@@ -185,7 +185,7 @@ export const politics = {
     for (const v of pools) {
       if (!v || !v.alive) continue;
       for (const u of v.members) {
-        if (!u.alive || u.age < ADULT_AGE) continue;
+        if (!u.alive || u.age < ADULT_AGE || u.data?.civ?.abdicated) continue;
         // a mature heir in the prime of life (closest to 30) rules longest
         if (!heir || Math.abs(u.age - 30) < Math.abs(heir.age - 30)) heir = u;
       }
@@ -203,7 +203,7 @@ export const politics = {
     }
     // the family and the court mourn (the spouse is Life's to grieve), not the realm
     const deadId = this._lastRulerId;
-    if (cap && this.game.units.addStatus) {
+    if (cap && this.game.units.addStatus && !abdicated) {
       const hall = cap.hall;
       for (const m of cap.members) {
         if (!m.alive) continue;
@@ -216,7 +216,7 @@ export const politics = {
     if (heir) {
       if (heir.village !== k.capital && cap && cap.alive) this._moveMember(heir, cap);
       this.crown(k, heir);
-      this._note(`${deadName} dies; ${heir.name} rules ${this._kn(k)}`, 'info', { x: heir.x, z: heir.z }, 'succ' + k.id, 20);
+      this._note(abdicated ? `${deadName} abdicates; ${heir.name} rules ${this._kn(k)}` : `${deadName} dies; ${heir.name} rules ${this._kn(k)}`, 'info', { x: heir.x, z: heir.z }, 'succ' + k.id, 20);
       // a contested succession can split a large realm
       if (k.villages.length >= 3 && this._kLaw(k.id, 'civRebellions') && this.rng.chance(0.3)) {
         let claimant = null;
@@ -235,6 +235,29 @@ export const politics = {
       k.interregnumUntil = this.game.time.total + YEAR * 5;
       this._note(`${deadName} dies heirless; a council of elders rules ${this._kn(k)}`, 'bad', cap ? { x: cap.cx, z: cap.cz } : null);
       k.council = true;
+    }
+  },
+
+  // A crown worn for sixty years is laid down (an immortal ruler, or one the
+  // gods keep young, would otherwise reign for ever): the heir takes the throne
+  // and the old ruler lives on at court.
+  _abdications() {
+    const now = this.game.time.total;
+    for (const k of this.kingdoms) {
+      if (!k.alive) continue;
+      const u = this.game.units.byId.get(k.ruler);
+      if (!u || !u.alive) continue;
+      const since = u.data.civ?.crownedAt ?? now;
+      if (now - since < YEAR * 60) continue;
+      const name = u.name;
+      u.data.civ.abdicated = true;
+      u.data.civ.royal = false;
+      u.job = null;
+      if (u.data.civ.given) u.name = u.data.civ.given;
+      this._bio(u, `Laid down the crown after ${Math.round((now - since) / YEAR)} years`);
+      this._history(`${name} lays down the crown of ${this._kn(k)} after ${Math.round((now - since) / YEAR)} years`, 'info', { x: u.x, z: u.z });
+      k.ruler = -1;
+      this._succession(k, name, true);
     }
   },
 
@@ -268,6 +291,7 @@ export const politics = {
   // ---------------------------------------------------------------- diplomacy
   _diplomacy() {
     this._recolorClashes();
+    this._abdications();
     this._secession();
     const g = this.game;
     const rng = this.rng;
@@ -435,6 +459,8 @@ export const politics = {
         const joined = this.enemiesOf(a).length - 1;
         if (joined >= 3 || (B.population || 0) > (A.population || 0) * 2) break;
         if (this._relLocked?.(this.relations.get(relKey(k.id, a)))) continue;
+        // a realm sworn to peace (warlike 0) keeps out of its allies' wars
+        if (this._kLaw(k.id, 'diploWarlike', 1) <= 0) continue;
         if (this.allied(k.id, b) && !this.allied(k.id, a) && this.warCount(k.id) < 2 && this.rng.chance(0.7)) {
           const rr = this.rel(k.id, a);
           if (!rr.war) {
@@ -850,7 +876,7 @@ export const politics = {
     if (v.buildings.some((b) => b.alive && b.type === 'temple' && !b.constructing)) L += 8;
     if (v.tier >= 1 && cap && v.pop > cap.pop * 0.8) L -= 14; // rival city
     if (v.tier >= 2) L -= 6; // proud cities chafe under distant rule
-    if (k.villages.length > 3) L -= (k.villages.length - 3) * 4.5; // overstretched realm
+    if (k.villages.length > 3) L -= (k.villages.length - 3) * 6; // overstretched realm
     // a crowded, capped world turns ambition inward: provinces want their own crown
     L -= (this._crowd?.() || 0) * 12;
     if (alive < 3) L -= 14; // a world of two empires is a powder keg
@@ -862,9 +888,9 @@ export const politics = {
     L += (v.loyaltyBoost || 0);
     v.loyaltyBoost = Math.max(0, (v.loyaltyBoost || 0) - 1);
     v.loyalty = clamp(v.loyalty + (L - v.loyalty) * 0.2, 0, 100);
-    if (v.loyalty < 32 && v.pop >= 8) v.unrest = (v.unrest || 0) + 1;
+    if (v.loyalty < 36 && v.pop >= 8) v.unrest = (v.unrest || 0) + 1;
     else v.unrest = Math.max(0, (v.unrest || 0) - 1);
-    if (v.unrest >= 3 && this._kLaw(k.id, 'civRebellions') && this.rng.chance(alive < 3 ? 0.3 : 0.14)) this.rebel(v);
+    if (v.unrest >= 3 && this._kLaw(k.id, 'civRebellions') && this.rng.chance(alive < 3 ? 0.3 : 0.2)) this.rebel(v);
   },
 
   _aliveKingdoms() {
@@ -929,7 +955,7 @@ export const politics = {
     const now = this.game.time.total;
     // a crushed rebellion is remembered: the town needs years to rise again,
     // longer after every rising, though deep grievance shortens the wait
-    const wait = YEAR * Math.min(30, 8 + 5 * (v.rebellions || 0)) * (v.loyalty < 12 ? 0.5 : 1);
+    const wait = YEAR * Math.min(24, 6 + 4 * (v.rebellions || 0)) * (v.loyalty < 12 ? 0.5 : 1);
     if (!forced && now - (v.lastRebel ?? -1e9) < wait) return null;
     v.lastRebel = now;
     v.rebellions = (v.rebellions || 0) + 1;

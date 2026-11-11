@@ -795,7 +795,7 @@ export const planner = {
 
   // ---------------------------------------------------------------- walls
   _planWalls(v, maxLen = 72) {
-    for (let s = 1; s > 0.35; s -= 0.12) {
+    for (const s of [1, 0.9]) {
       const plan = this._wallRing(v, s);
       if (plan.length <= maxLen) {
         v.wallPlan = plan;

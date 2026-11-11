@@ -263,6 +263,13 @@ Mat matTundra(NS s) {
   float peb = smoothstep(0.6, 0.3, s.cellS.r);
   c = mix(c, vec3(0.30, 0.30, 0.29) * (0.80 + 0.35 * s.cellS.b) * mix(0.78, 1.0, peb), stn * 0.85);
   c *= 0.90 + 0.2 * s.macro.g;
+  // high, dry plateaus (Tibet, the Altiplano): khaki high steppe with ochre
+  // and russet patches instead of polar moss
+  float hiDry = smoothstep(4.0, 7.0, s.p.y) * (1.0 - smoothstep(0.30, 0.55, s.moist));
+  vec3 steppeH = mix(vec3(0.36, 0.31, 0.17), vec3(0.45, 0.37, 0.20), smoothstep(0.35, 0.7, s.meso.g * 0.6 + s.det.r * 0.4));
+  steppeH = mix(steppeH, vec3(0.34, 0.22, 0.13), smoothstep(0.62, 0.8, s.meso.r * 0.6 + s.det.b * 0.4) * 0.6);
+  steppeH *= 0.88 + 0.22 * s.micro.r;
+  c = mix(c, mix(steppeH, c, stn * 0.7), hiDry);
   c = seasonal(c, 0.45, s.temp);
   return mk(c, 0.90, 0.40 + 0.25 * lich + 0.3 * stn, 0.05 + 0.04 * stn);
 }
@@ -371,9 +378,26 @@ Mat matFarm(NS s) {
   vec3 dark = vec3(0.150, 0.080, 0.035);
   vec3 ridge = vec3(0.260, 0.155, 0.075);
   vec3 c = mix(dark, ridge, mix(0.5, fur, near));
-  // some fields are green with young crops
-  float crop = step(0.62, hash12(blk + 3.1));
-  c = mix(c, mix(vec3(0.10, 0.20, 0.04), vec3(0.18, 0.28, 0.06), fur), crop * 0.75 * mix(0.85, smoothstep(0.35, 0.75, fur), near));
+  // crops follow the year (each field a little ahead or behind): young green
+  // in spring, ripening gold through summer, stubble after the autumn
+  // harvest, bare tilled earth in winter; a few fields lie fallow
+  float ss = mod(uSeason + (hash12(blk + 5.7) - 0.5) * 0.5, 4.0);
+  float green = ss < 2.0 ? smoothstep(0.0, 0.45, ss) * (1.0 - smoothstep(1.0, 1.6, ss)) : 0.0;
+  float gold = smoothstep(1.0, 1.6, ss) * (1.0 - smoothstep(2.3, 2.7, ss));
+  float stubble = smoothstep(2.3, 2.7, ss) * (1.0 - smoothstep(2.95, 3.25, ss));
+  float sown = step(0.22, hash12(blk + 3.1));
+  float rows = mix(0.85, smoothstep(0.35, 0.75, fur), near);
+  vec3 young = mix(vec3(0.11, 0.24, 0.045), vec3(0.19, 0.31, 0.07), fur);
+  vec3 ripe = mix(vec3(0.47, 0.37, 0.12), vec3(0.60, 0.48, 0.17), fur);
+  vec3 straw = mix(vec3(0.40, 0.32, 0.17), vec3(0.50, 0.41, 0.23), fur);
+  c = mix(c, young, green * sown * 0.85 * rows);
+  c = mix(c, ripe, gold * sown * 0.9 * mix(0.9, 1.0, rows));
+  c = mix(c, straw, stubble * sown * 0.8);
+  // winter: darker, frost-dulled soil, snow dusting the furrow ridges first
+  float wint = ss > 2.9 ? smoothstep(2.9, 3.3, ss) : 0.0;
+  c = mix(c, c * vec3(0.86, 0.86, 0.92), wint);
+  float dust = smoothstep(-0.10, 0.0, uSnowT - s.temp) * mix(0.5, fur, near);
+  c = mix(c, vec3(0.60, 0.62, 0.67), dust * 0.7);
   c *= 0.88 + 0.2 * s.det.r;
   // hedgerow lines on block borders
   vec2 fb = fract((s.p.xz + (s.macro.rg - 0.5) * 1.5) / 6.0);
@@ -459,7 +483,8 @@ Mat matCliff(NS s, float volc, out vec3 facetN) {
   float bandFade = 1.0 - smoothstep(0.25, 0.7, s.fwy * 0.95);
   // beds pinch out: their contrast comes and goes along each layer
   float lens = smoothstep(0.30, 0.70, t.g * 0.75 + lh * 0.5 - 0.1);
-  float bandK = bandFade * mix(0.30, 1.0, lens) * (1.0 - 0.8 * volc);
+  // high alpine rock (crystalline cores) shows little bedding: no fortress courses
+  float bandK = bandFade * mix(0.30, 1.0, lens) * (1.0 - 0.8 * volc) * (1.0 - 0.65 * smoothstep(8.0, 13.0, p.y));
   lr = mix(0.5, lr, bandK);
   vec3 cA = vec3(0.370, 0.345, 0.310);
   vec3 cB = vec3(0.275, 0.265, 0.252);
@@ -467,20 +492,20 @@ Mat matCliff(NS s, float volc, out vec3 facetN) {
   // hot, dry lands: warm sandstone cliffs
   // climate, not altitude: a high mesa in a hot land is still warm sandstone
   float tLat = s.temp + max(s.p.y, 0.0) * (0.55 / 22.0);
-  float hotK = smoothstep(0.50, 0.72, tLat) * (1.0 - 0.7 * smoothstep(0.55, 0.85, s.moist));
-  cA = mix(cA, vec3(0.55, 0.36, 0.22), hotK);
-  cB = mix(cB, vec3(0.42, 0.25, 0.15), hotK);
-  cC = mix(cC, vec3(0.66, 0.47, 0.29), hotK);
+  float hotK = smoothstep(0.55, 0.78, tLat) * (1.0 - 0.7 * smoothstep(0.55, 0.85, s.moist));
+  cA = mix(cA, vec3(0.52, 0.39, 0.28), hotK);
+  cB = mix(cB, vec3(0.40, 0.29, 0.21), hotK);
+  cC = mix(cC, vec3(0.62, 0.50, 0.36), hotK);
   vec3 c = mix(mix(cB, cA, smoothstep(0.15, 0.6, lr)), cC, smoothstep(0.75, 0.97, lr));
   // per-bed mineral tint (cool grey, buff, rust) and broad weathering patches
-  vec3 bedT = mix(mix(vec3(0.93, 0.98, 1.05), vec3(1.07, 1.00, 0.90), smoothstep(0.25, 0.5, lh)), vec3(1.10, 0.93, 0.82), smoothstep(0.72, 0.9, lh));
+  vec3 bedT = mix(mix(vec3(0.93, 0.98, 1.05), vec3(1.07, 1.00, 0.90), smoothstep(0.25, 0.5, lh)), vec3(1.06, 0.96, 0.89), smoothstep(0.72, 0.9, lh));
   c *= mix(vec3(1.0), bedT, bandK * 0.85);
   c *= mix(vec3(1.0), vec3(1.08, 1.00, 0.90), smoothstep(0.5, 0.8, s.meso.g) * 0.8);
   c *= mix(vec3(1.0), vec3(0.91, 0.96, 1.04), smoothstep(0.55, 0.85, s.macro.b) * (1.0 - hotK));
   c *= 0.78 + 0.32 * d.r;
   // ledges: dark lip just above each layer boundary, lit top surface
-  float led = smoothstep(0.0, max(0.22, aa * 2.0), fract(sy));
-  c *= mix(1.0, mix(0.74, 1.07, led), bandK);
+  float led = smoothstep(0.0, max(0.34, aa * 3.0), fract(sy));
+  c *= mix(1.0, mix(0.82, 1.05, led), bandK);
 
   // vertical joints: cells stretched along the fall line on each vertical plane
   vec2 jw = (d.gb - 0.5) * 0.9;
@@ -488,7 +513,7 @@ Mat matCliff(NS s, float volc, out vec3 facetN) {
   vec4 jZ = cz(vec2((p.x + jw.x) * 0.042, (p.y + jw.y) * 0.0085) + 0.61);
   float jg = mix(jZ.g, jX.g, wxz);
   // joint width never below ~2 px (edge distance unit = 0.75 world units here)
-  float jW = max(0.15, s.fw * 3.2);
+  float jW = max(0.2, s.fw * 3.6);
   float joint = (1.0 - smoothstep(0.0, jW, jg)) * near * mix(0.45, 1.0, smoothstep(0.3, 0.6, d.b)) * (1.0 - smoothstep(0.25, 0.5, jW));
   // erosion gullies (ridged noise along the fall line) and dark runoff streaks
   vec4 gX = nz(vec2(p.z * 0.06, p.y * 0.016) + 0.31);
@@ -499,7 +524,7 @@ Mat matCliff(NS s, float volc, out vec3 facetN) {
   // fine grit: crisp micro relief so faces never look moulded
   vec4 e = nz(uvD * 0.45 + 0.43);
   c *= 0.90 + 0.20 * mix(0.5, e.g, fineK);
-  c *= 1.0 - 0.30 * joint;
+  c *= 1.0 - 0.18 * joint;
   c *= 1.0 - 0.30 * gully;
   c = mix(c, c * vec3(0.80, 0.82, 0.87), streak * 0.75);
 
@@ -524,7 +549,7 @@ Mat matCliff(NS s, float volc, out vec3 facetN) {
   c *= mix(1.0, 0.95 + 0.10 * ft.x, near);
   // relief for the derivative bump: grooved joints and gullies, ledge steps, grit
   float hgt = 0.55 + 0.20 * (lr - 0.5) * bandK + 0.16 * (d.r - 0.5) + 0.14 * (e.g - 0.5) * fineK
-            - 0.18 * joint - 0.30 * gully + 0.16 * led * bandK;
+            - 0.18 * joint - 0.30 * gully + 0.04 * led * bandK;
   return mk(c, 0.84 + 0.08 * volc, hgt, 0.13 * near + 0.03 * volc);
 }
 
@@ -654,7 +679,7 @@ void terrainSurface() {
   s.fire = clim.a;
 
   // ---- organic tile blending
-  vec2 warp = (s.meso.rg - 0.5) * 1.5 + (s.det.gb - 0.5) * 0.55 + (s.micro.rg - 0.5) * 0.05;
+  vec2 warp = (s.meso.rg - 0.5) * 1.6 + (s.det.gb - 0.5) * 0.9 + (s.micro.rg - 0.5) * 0.05;
   vec2 g = p + warp - 0.5;
   vec2 i0 = floor(g);
   vec2 f = g - i0;
@@ -732,7 +757,11 @@ void terrainSurface() {
     Mat cm = matCliff(s, volc, facetN);
     // snow clings to ledges that face up
     float snowLedge = snowB * smoothstep(0.55, 0.75, facetN.y + (s.det.g - 0.5) * 0.3);
-    cm.albedo = mix(cm.albedo, vec3(0.50, 0.53, 0.60), snowLedge);
+    // above the snow line steep faces carry snowfields too: rock shows through
+    // only on the steepest ribs and in noisy breaks (no white lip on a bare wall)
+    float snowSteep = snowB * smoothstep(0.30, 0.58, facetN.y + (s.meso.g - 0.5) * 0.45 + (s.det.b - 0.5) * 0.25);
+    snowLedge = max(snowLedge, snowSteep * 0.92);
+    cm.albedo = mix(cm.albedo, mix(vec3(0.50, 0.53, 0.60), vec3(0.60, 0.63, 0.68), snowSteep), snowLedge);
     albedo = mix(albedo, cm.albedo, cliff);
     rough = mix(rough, cm.rough, cliff);
     H = mix(H, cm.h * cm.bump, cliff);
@@ -763,7 +792,10 @@ void terrainSurface() {
     float forestB = dot(vec4(equal(vec4(t0, t1, t2, t3), vec4(2.0))) * live, b) + 0.6 * dot(vec4(equal(vec4(t0, t1, t2, t3), vec4(3.0))) * live, b);
     float grassB = dot(vec4(equal(vec4(t0, t1, t2, t3), vec4(1.0))) * live, b);
     albedo = mix(albedo, albedo * vec3(0.72, 0.85, 0.92), forestB * farR * 0.6 * (1.0 - snowB));
-    albedo = mix(albedo, albedo * vec3(1.06, 1.08, 1.0), grassB * farR * 0.5 * (1.0 - snowB));
+    float gv = s.macro.b * 0.6 + s.macro.r * 0.4;
+    vec3 gTint = mix(vec3(0.86, 0.92, 0.80), vec3(1.10, 1.02, 0.78), smoothstep(0.35, 0.7, gv));
+    vec3 gAlb = mix(albedo * gTint, vec3(lum(albedo)) * vec3(1.0, 1.05, 0.85), 0.22);
+    albedo = mix(albedo, gAlb, grassB * farR * (1.0 - snowB));
   }
 
   // ---- seabed & shore

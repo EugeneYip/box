@@ -49,6 +49,44 @@ export function rgbOf(hex) {
 
 // Run fn, swallowing (and logging once) any exception from another team's code.
 const warned = new Set();
+// "deep teal", "pale rose", "gold": a plain name for any 0xRRGGBB colour.
+export function colourName(hex) {
+  const n = typeof hex === 'number' ? hex : parseInt(String(hex || '').replace('#', ''), 16) || 0;
+  const r = ((n >> 16) & 255) / 255,
+    g = ((n >> 8) & 255) / 255,
+    b = (n & 255) / 255;
+  const mx = Math.max(r, g, b),
+    mn = Math.min(r, g, b),
+    l = (mx + mn) / 2,
+    d = mx - mn;
+  const s = d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1));
+  if (s < 0.14) return l > 0.82 ? 'white' : l < 0.18 ? 'sable black' : l > 0.55 ? 'silver grey' : 'slate grey';
+  let h = 0;
+  if (d) h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  h = (h * 60 + 360) % 360;
+  const names = [
+    [12, 'red'],
+    [36, 'orange'],
+    [52, 'gold'],
+    [72, 'olive'],
+    [150, 'green'],
+    [182, 'teal'],
+    [212, 'azure'],
+    [248, 'blue'],
+    [282, 'violet'],
+    [322, 'purple'],
+    [346, 'rose'],
+    [360, 'red'],
+  ];
+  const base = names.find(([lim]) => h < lim)[1];
+  const tone = l < 0.3 ? 'deep ' : l > 0.7 ? 'pale ' : '';
+  return tone + base;
+}
+// Civ names a custom colour "a tincture of its own": say which one instead.
+export function realmColourText(text, hex) {
+  return String(text || '').replace(/a tincture of its own/i, () => colourName(hex));
+}
+
 export function safe(fn, fallback = null, tag = '') {
   try {
     return fn();

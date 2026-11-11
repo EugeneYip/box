@@ -102,12 +102,13 @@ export class SkyModel {
 
   // Sun path: rises in the east (+X), culminates toward -Z (the far side of
   // the default view, so noon shadows fall gently toward the viewer), sets in
-  // the west (-X). Day is 13 h long (05:45 – 18:45).
+  // the west (-X). Day is 12.4 h long (05:54 - 18:18), so at 18:00 the sun
+  // hangs a few degrees over the horizon and its disc is in a low view.
   // opts: { night: 0..1 (longer nights), lat: extra latitude tilt in deg }
   static sunDirection(hour, out, opts = null) {
     const ln = opts?.night || 0;
-    const rise = 5.75 + 1.4 * ln,
-      set = 18.75 - 1.4 * ln;
+    const rise = 5.9 + 1.4 * ln,
+      set = 18.3 - 1.4 * ln;
     let theta;
     if (hour >= rise && hour <= set) theta = (Math.PI * (hour - rise)) / (set - rise);
     else {

@@ -26,6 +26,8 @@ uniform vec3 uWorld;       // world w, h, has-height-texture
 uniform float uWet;
 uniform vec3 uLightDir;
 uniform vec3 uLightCol;
+uniform vec3 uMoonSea;   // night sea sheen (moon x sky), 0 by day
+uniform float uFar;      // camera far plane
 uniform vec2 uCloudOffset;
 uniform float uCover;
 uniform vec3 uCloudLit;
@@ -44,9 +46,67 @@ float hFbm(vec2 p) {
 ${SKY_UNIFORMS_GLSL}
 ${SKY_FUNCS_GLSL}
 
+// Far-distance colour of a ray: the haze colour, which near the horizon turns
+// into a painted sky band (a real gradient, the sun's glow, distant cloud
+// banks) and, over open water, a darker sky-reflecting sea band with the sun
+// glitter path. Shared by far geometry and by the dome below the horizon
+// (which stands in for the sea beyond the far plane), so they meet seamlessly.
+vec3 farColor(vec3 dir, float water) {
+  vec3 hc = mix(hazeColor(dir), mix(uHorizon, uZenith, 0.68), smoothstep(0.08, 0.5, -dir.y));
+  float horiz = 1.0 - smoothstep(0.02, 0.16, -dir.y);
+  if (horiz > 0.001) {
+    float ly = 0.012 + max(0.0, -dir.y) * 1.6;
+    vec3 sd = normalize(vec3(dir.x, ly, dir.z));
+    vec3 band = skyBase(sd);
+    vec2 cp = sd.xz / (ly + 0.06) * 0.9 + uCloudOffset;
+    float n = hFbm(cp);
+    float cov = clamp(0.32 + uCover * 0.8, 0.0, 1.0);
+    float cb = smoothstep(1.0 - cov, 1.12 - cov * 0.55, n) * (1.0 - smoothstep(0.06, 0.32, ly)); // crisper banks
+    float shade = smoothstep(0.3, 0.9, hFbm(cp * 1.7 + vec2(0.4, 0.2)));
+    float sunSide = pow(max(dot(normalize(sd.xz + 1e-4), normalize(uSunDir.xz + 1e-4)) * 0.5 + 0.5, 0.0), 3.0);
+    vec3 litC = uCloudLit * 1.15 + uCloudShade * 0.55;
+    vec3 darkC = uCloudShade * 0.6 + uCloudLit * 0.12;
+    vec3 cc = mix(mix(litC, darkC, sunSide * 0.8), uCloudShade * 0.55, shade * 0.45);
+    cc += uGlow * sunSide * (1.0 - smoothstep(0.0, 0.6, cb)) * 1.2;
+    band = mix(band, cc, cb * 0.9);
+    // over open water the far sea stays a darker, sky-reflecting band, so a
+    // clear horizon line separates sea from sky
+    vec3 seaRefl = skyBase(normalize(vec3(sd.x, 0.05 + ly * 0.8, sd.z))) * 0.5;
+    // sun glitter path: a narrow warm column on the sea below the sun
+    float azs = max(dot(normalize(vec3(dir.x, 0.0, dir.z)), normalize(vec3(uSunDir.x, 0.0, uSunDir.z))), 0.0);
+    float sunUp = smoothstep(-0.02, 0.06, uSunDir.y) * (1.0 - smoothstep(0.35, 0.7, uSunDir.y));
+    float path = pow(azs, 700.0) * 1.6 + pow(azs, 90.0) * 0.35;
+    seaRefl += (uHalo + uGlow * 0.6) * path * sunUp * (1.0 - smoothstep(0.0, 0.2, -dir.y));
+    // the far sea melts into the sky through a thin haze gradient at the horizon
+    seaRefl = mix(seaRefl, band, 1.0 - smoothstep(0.0, 0.035, -dir.y));
+    band = mix(band, seaRefl, water);
+    hc = mix(hc, band, horiz);
+  }
+  return hc;
+}
+
+// night over open water: a minimum moonlit sheen plus a moon path, so the sea
+// reads as water instead of a black void
+vec3 moonSheen(vec3 dir, float water) {
+  if (uMoonSea.r + uMoonSea.g + uMoonSea.b < 1e-5 || water < 0.01) return vec3(0.0);
+  float azm = max(dot(normalize(vec3(dir.x, 0.0, dir.z)), normalize(vec3(uMoonDir.x, 0.0, uMoonDir.z))), 0.0);
+  float grazing = 1.0 - smoothstep(0.0, 0.9, -dir.y);
+  return uMoonSea * water * (0.55 + 0.45 * grazing + pow(azm, 60.0) * 1.4 * grazing);
+}
+
 void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor) {
   float lin = texture2D(tLinDepth, uv).r;
-  if (lin > 60000.0) { outputColor = inputColor; return; }
+  if (lin > 60000.0) {
+    // sky pixel: below the horizon the dome stands in for the sea beyond the
+    // far plane, so continue the far sea band there (no ruled seam)
+    vec4 fq = uInvProj * vec4(uv * 2.0 - 1.0, 1.0, 1.0);
+    vec3 sdir = normalize(mat3(uCamWorld) * (fq.xyz / fq.w));
+    if (sdir.y < 0.0) {
+      vec3 fc = farColor(sdir, 1.0) + moonSheen(sdir, 1.0);
+      outputColor = vec4(mix(inputColor.rgb, fc, smoothstep(0.0, 0.002, -sdir.y)), inputColor.a);
+    } else outputColor = inputColor;
+    return;
+  }
   vec4 fp = uInvProj * vec4(uv * 2.0 - 1.0, 1.0, 1.0);
   vec3 vdir = fp.xyz / fp.w;
   vec3 viewPos = vdir * (lin / -vdir.z);
@@ -110,41 +170,15 @@ void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor)
     water = smoothstep(0.25, -0.35, th);
   }
   hz *= mix(1.0, 0.35, water * down);
-  vec3 hc = mix(hazeColor(dir), mix(uHorizon, uZenith, 0.68), smoothstep(0.08, 0.5, -dir.y));
-  // Near-horizontal rays (low camera pitch): instead of a flat haze wall the
-  // far distance dissolves into a painted sky band: a real gradient (lower
-  // rays read higher, bluer sky), the sun's glow, and distant cloud banks.
   float horiz = 1.0 - smoothstep(0.02, 0.16, -dir.y);
-  if (horiz > 0.001 && hz > 0.02) {
-    float ly = 0.012 + max(0.0, -dir.y) * 1.6;
-    vec3 sd = normalize(vec3(dir.x, ly, dir.z));
-    vec3 band = skyBase(sd);
-    vec2 cp = sd.xz / (ly + 0.06) * 0.9 + uCloudOffset;
-    float n = hFbm(cp);
-    float cov = clamp(0.32 + uCover * 0.8, 0.0, 1.0);
-    float cb = smoothstep(1.02 - cov, 1.25 - cov * 0.6, n) * (1.0 - smoothstep(0.05, 0.3, ly));
-    float shade = smoothstep(0.3, 0.9, hFbm(cp * 1.7 + vec2(0.4, 0.2)));
-    float sunSide = pow(max(dot(normalize(sd.xz + 1e-4), normalize(uSunDir.xz + 1e-4)) * 0.5 + 0.5, 0.0), 3.0);
-    vec3 litC = uCloudLit * 1.15 + uCloudShade * 0.55;
-    vec3 darkC = uCloudShade * 0.6 + uCloudLit * 0.12;
-    vec3 cc = mix(mix(litC, darkC, sunSide * 0.8), uCloudShade * 0.55, shade * 0.45);
-    cc += uGlow * sunSide * (1.0 - smoothstep(0.0, 0.6, cb)) * 1.2;
-    band = mix(band, cc, cb * 0.9);
-    // over open water the far sea stays a darker, sky-reflecting band, so a
-    // clear horizon line separates sea from sky
-    vec3 seaRefl = skyBase(normalize(vec3(sd.x, 0.05 + ly * 0.8, sd.z))) * 0.5;
-    // sun glitter path: a narrow warm column on the sea below the sun
-    float azs = max(dot(normalize(vec3(dir.x, 0.0, dir.z)), normalize(vec3(uSunDir.x, 0.0, uSunDir.z))), 0.0);
-    float sunUp = smoothstep(-0.02, 0.06, uSunDir.y) * (1.0 - smoothstep(0.35, 0.7, uSunDir.y));
-    float path = pow(azs, 700.0) * 1.6 + pow(azs, 90.0) * 0.35;
-    seaRefl += (uHalo + uGlow * 0.6) * path * sunUp * (1.0 - smoothstep(0.0, 0.2, -dir.y));
-    // the far sea melts into the sky through a thin haze gradient at the horizon
-    seaRefl = mix(seaRefl, band, 1.0 - smoothstep(0.0, 0.035, -dir.y));
-    band = mix(band, seaRefl, water);
-    hc = mix(hc, band, horiz);
-    hz = min(hz, mix(0.95, 0.62, water));
-  }
-  col = mix(col, hc, hz);
+  // right at the horizon the band takes over completely (it matches the sky
+  // just above, so there is no seam); lower down the sea shows through
+  if (horiz > 0.001) hz = min(hz, mix(0.97, mix(1.0, 0.62, smoothstep(0.0, 0.05, -dir.y)), water));
+  // toward the far plane the sea fades fully into the band, which the dome
+  // continues below the horizon, so the clip line never shows
+  hz = max(hz, water * smoothstep(0.7, 0.96, lin / uFar));
+  if (hz > 0.002) col = mix(col, farColor(dir, water), hz);
+  col += moonSheen(dir, water);
 
   outputColor = vec4(col, inputColor.a);
 }
@@ -172,6 +206,8 @@ export class AtmosphereEffect extends Effect {
         ['uCover', u(0.4)],
         ['uCloudLit', u(new THREE.Color())],
         ['uCloudShade', u(new THREE.Color())],
+        ['uMoonSea', u(new THREE.Color(0, 0, 0))],
+        ['uFar', u(1000)],
         ['uSunDir', u(new THREE.Vector3(0, 1, 0))],
         ['uMoonDir', u(new THREE.Vector3(0, 1, 0))],
         ['uZenith', u(new THREE.Color())],
@@ -190,6 +226,7 @@ export class AtmosphereEffect extends Effect {
     U.get('uInvProj').value.copy(camera.projectionMatrixInverse);
     U.get('uCamWorld').value.copy(camera.matrixWorld);
     U.get('uCamPos').value.setFromMatrixPosition(camera.matrixWorld);
+    U.get('uFar').value = camera.far || 1000;
     for (const k of ['uSunDir', 'uMoonDir', 'uZenith', 'uHorizon', 'uGlow', 'uBelt', 'uHalo', 'uGroundHaze', 'uCloudOffset', 'uCloudLit', 'uCloudShade']) U.get(k).value.copy(sky[k].value);
     U.get('uCover').value = sky.uCover.value;
     U.get('uGlowWidth').value = sky.uGlowWidth.value;
@@ -202,6 +239,7 @@ export class AtmosphereEffect extends Effect {
       U.get('uWorld').value.set(params.worldW || 256, params.worldH || 256, params.heightTex ? 1 : 0);
       U.get('uLightDir').value.copy(params.lightDir);
       U.get('uLightCol').value.copy(params.lightColor);
+      if (params.moonSea) U.get('uMoonSea').value.copy(params.moonSea);
     }
   }
 }

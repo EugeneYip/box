@@ -62,6 +62,8 @@ export const unlocks = {
     if (b.type === 'market' && b.level >= 2) key = 'markethall';
     else if (b.type === 'docks' && b.level >= 2) key = 'harbour';
     else if (BUILDING_TYPES[b.type]?.wall) key = 'walls';
+    // Engineering: the larger works of the realm rise under cranes
+    if (BUILDING_TYPES[b.type]?.w * BUILDING_TYPES[b.type]?.h >= 4 && this.hasTech(k.id, 'engineering')) this._firstUse(k, 'crane', { x: b.x, z: b.z });
     if (b.type === 'workshop' && b.level < 2) return;
     if (FIRST[key]) this._firstUse(k, key, { x: b.x, z: b.z });
   },
@@ -288,15 +290,15 @@ export const unlocks = {
     let shots = 0;
     for (const b of this.buildings) {
       if (shots > 24) break;
-      if (!b.alive || b.constructing || (b.type !== 'watchtower' && b.type !== 'tower' && b.type !== 'gate')) continue;
-      if (now - (b.shotT || 0) < 1.6) continue;
+      if (!b.alive || b.constructing || (b.type !== 'watchtower' && b.type !== 'gate')) continue;
+      if (now - (b.shotT || 0) < 2.2) continue;
       const k = this.kingdoms[b.kingdom];
       if (!k?.alive || !(this.hasTech(k.id, 'fortification') || b.type === 'watchtower')) continue;
       const foe = U.nearest(b.x, b.z, 7, (o) => o.alive && (o.def?.kind === 'monster' || (o.def?.kind === 'animal' && o.def?.diet === 'carnivore' && o.def?.mass >= 1) || (o.species === 'human' && o.kingdom >= 0 && o.kingdom !== b.kingdom && this.atWar(o.kingdom, b.kingdom))));
       if (!foe) continue;
       b.shotT = now;
       shots++;
-      U.damage(foe, 5 + this.rng.next() * 4, null, { cause: 'arrow' });
+      U.damage(foe, (foe.species === 'human' ? 2.5 : 6) + this.rng.next() * 3, null, { cause: 'arrow' });
       this._fx('sparks', foe.x, foe.z, 0.45, true);
       this._sfx?.('chop', b.x, b.z, 4);
       if (foe.species !== 'human' || !foe.alive) this._firstUse(k, 'archers', { x: b.x, z: b.z });
@@ -324,7 +326,7 @@ export const unlocks = {
   foundColony(kingdomId, x, z, settlers = 8) {
     const K = this.kingdoms[kingdomId];
     if (!K || !K.alive || !this._kLaw?.(kingdomId, 'civExpansion')) return null;
-    if (this.villages.filter((v) => v.alive).length >= this.budget.villages + 2) return null;
+    if (this.villages.filter((v) => v.alive).length >= this.budget.villages + 3) return null;
     const n = Array.isArray(settlers) ? settlers.length : Math.max(4, Math.min(16, settlers | 0 || 8));
     const opts = { kingdom: kingdomId, culture: K.culture, settlers: n, units: Array.isArray(settlers) ? settlers : undefined, starter: true, houses: 2, silent: true, searchR: 9 };
     // the settlers come ashore: the village stands on dry land near the landing
@@ -464,7 +466,8 @@ export const unlocks = {
     // colonise an empty shore across the water
     if (this.law('fleetColonize') !== false && this._kLaw(k.id, 'civExpansion') && now - (k.colonyT || 0) > YEAR * 12 && fv.pop >= 16 && fv.food > 50) {
       const alive = this.villages.filter((v) => v.alive).length;
-      if (alive < this.budget.villages) {
+      // a full homeland still sends its younger sons over the sea
+      if (alive < this.budget.villages + 2) {
         k.colonyT = now - YEAR * 8; // try again in a few years if nothing comes of it
         const range = F.range ? Math.max(F.range(k.id, 'transport'), this.hasTech(k.id, 'astronomy') ? F.range(k.id, 'explorer') : 0) : Infinity;
         const site = F.overseasSite ? F.overseasSite(from, range) : this._overseasSite(from);
@@ -483,7 +486,12 @@ export const unlocks = {
     if (now - (k.invadeT || 0) > YEAR * 5) {
       for (const e of this.enemiesOf(k.id)) {
         const E = this.kingdoms[e];
-        if (!E?.alive || this._reachable(k, E)) continue;
+        if (!E?.alive) continue;
+        // across the water, or a long march away by land: go by sea
+        const ec = this.villages[E.capital],
+          mc = this.villages[k.capital];
+        const far = ec && mc && Math.hypot(ec.cx - mc.cx, ec.cz - mc.cz) > 70 * Math.sqrt(this.world.size / 65536);
+        if (this._reachable(k, E) && !(far && this.rng.chance(0.3))) continue;
         let tgt = null;
         for (const h of F.harbours ? F.harbours(e) : this.harbours(e)) if (!tgt && sameSea(h)) tgt = h;
         if (!tgt) {
