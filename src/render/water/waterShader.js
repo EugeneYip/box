@@ -211,6 +211,9 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   float veil = 1.0 - exp(-depth / vy * 0.16);
   veil = clamp(veil * 0.85, 0.0, 0.92);
   veil = mix(veil, 1.0, outK);
+  // deep open water is opaque, exactly like the endless ocean beyond the map,
+  // so the map rectangle never shows as a lighter box against the outer sea
+  veil = mix(veil, 1.0, smoothstep(2.8, 5.5, depth) * 0.92);
   // rivers and narrow channels: a clear teal body of their own
   // rivers keep their teal under overcast skies: a soft light floor (scaled at night)
   vec3 irrR = max(waterIrradianceV(lightVis), vec3(0.44, 0.66, 0.64) * (0.25 + 0.75 * uDay));

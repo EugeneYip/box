@@ -309,6 +309,30 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
     southCut[x] = cut;
     for (let y = H - 1; y >= 0 && latY[y] < cut; y--) land[y * W + x] = 0;
   }
+  // natural ends at the Atlantic seam (the left / right edges): Antarctica's
+  // coast curves back south to nothing near both edges, and Greenland is cut
+  // back to a ragged coast well inside the right edge (its far east coast
+  // would otherwise be sliced straight by the border on both sides)
+  const ringX0 = Math.max(2, Math.round(5 * scale768));
+  const sideK = new Float32Array(W); // 0 at the side borders .. 1 inland
+  for (let x = 0; x < W; x++) sideK[x] = smoothstep(ringX0 + 1, ringX0 + 34 * scale768, Math.min(x, W - 1 - x));
+  for (let x = 0; x < W; x++) {
+    const u = x / tpd;
+    const ek = sideK[x];
+    if (ek < 1) {
+      const capN = -84.5 + 24 * Math.sqrt(ek) + nWarp(u / 2.2 + 3, 41.7) * 1.6 * ek;
+      for (let y = H - 1; y >= 0 && latY[y] < -58; y--) if (latY[y] > capN) land[y * W + x] = 0;
+    }
+  }
+  for (let y = 0; y < H; y++) {
+    const lat = latY[y];
+    if (lat < 66.9 || lat > 86) continue;
+    const cutLon = -36 - 7 * smoothstep(70, 82, lat) + nWarp(lat / 1.7 + 9, 2.9) * 2.4;
+    for (let x = 0; x < W; x++) {
+      const lo = lonX[x];
+      if (lo > cutLon && lo < -8) land[y * W + x] = 0;
+    }
+  }
   // clean borders: a thin ring of open sea all round. The shaders and the
   // terrain skirt clamp edge tiles outward, so polar ice or Antarctica's snow
   // on the edge would continue as white bands beyond the map. (This splits
@@ -821,7 +845,11 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
           // Arctic pack: a ragged band with open water before the border;
           // around Antarctica: ice shelves and fast ice hugging the coast
           const pk = nWarp(x / tpd / 9 + 70, 2.3) * 2.6 + nWarp(x / tpd / 2.6 - 40, 5.5) * 0.9;
-          if (lat > 78.5 + pk + bn && lat < 84.6 + pk * 0.6 - bn * 0.6) ice = true;
+          // the pack thins out toward the side borders (natural ends) and opens
+          // in a few broad leads, so it is not one long white smear
+          const ek = sideK[x];
+          const leadN = nWarp(x / tpd / 6 + 11, 9.3);
+          if (lat > 78.5 + pk + bn + (1 - ek) * 7 && lat < 84.6 + pk * 0.6 - bn * 0.6 - (1 - ek) * 2.5 && leadN > -0.62) ice = true;
           else if (lat > 70 && ds < 2.2 + bn) ice = true;
           else if (lat < -60 && ds < 2.4 + bn * 1.2 + Math.max(0, pk) * 0.9) ice = true;
           else if (lat > southCut[x] + 1.4) {
@@ -832,6 +860,7 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
           // open sea south of Antarctica's far coast, and short of the border
           if (lat < southCut[x] - 0.2) ice = false;
           if (Math.min(x, W - 1 - x) < ringX + 1 + bn || Math.min(y, H - 1 - y) < ringY + 2 + bn) ice = false;
+          if (sideK[x] < 0.35 + bn * 0.25) ice = false;
         }
         if (ice) type[i] = TILE.ICE;
         else if (!sea[i]) type[i] = riverMask[i] || depth > 1.1 + bn * 0.5 ? TILE.SOIL : TILE.SAND;
