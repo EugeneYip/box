@@ -191,22 +191,26 @@ export const brain = {
     if (this.__walkCost) return this.__walkCost;
     const w = this.world;
     this.__walkCost = (i) => {
-      if (w.height[i] < SEA_LEVEL) return Infinity;
+      if (w.height[i] < SEA_LEVEL) return this.use[i] === USE.ROAD ? 0.6 : Infinity; // bridges carry the road
       const t = w.type[i];
       if (!TILE_INFO[t].walkable) return Infinity;
       const f = w.flora[i];
       if (f && FLORA_INFO[f].blocksMovement) return Infinity;
       const use = this.use[i];
       if (use === USE.ROAD) return 0.5;
+      const H = w.height;
+      const sl = i + w.w < H.length && (i + 1) % w.w ? Math.abs(H[i + 1] - H[i]) + Math.abs(H[i + w.w] - H[i]) : 0;
+      if (sl > 2.6) return Infinity;
+      const steep = sl > 1.3 ? 3 : 0;
       if (use === USE.BUILDING) {
         const b = this._bById.get(w.building[i]);
         if (!b) return 1;
         if (b.type === 'gate') return 0.55;
         return Infinity; // never cut through houses
       }
-      if (use === USE.PLOT) return 1.4;
+      if (use === USE.PLOT) return 1.4 + steep;
       if (w.fire[i] > 0.3) return 8;
-      return 1;
+      return 1 + steep;
     };
     return this.__walkCost;
   },

@@ -1686,7 +1686,7 @@ export class Civilization {
       let walls = 0;
       for (const b of this.buildings) if (b.alive && BUILDING_TYPES[b.type].wall) walls++;
       const room = Math.round(this.budget.buildings * 0.8) - walls;
-      const cap = Math.min(room, isCap ? 72 : 52);
+      const cap = Math.min(room, isCap ? 110 : 80);
       if (cap >= 28) this._planWalls(v, cap);
       else v.wallsPlanned = true; // no room: the town relies on its towers
     }
