@@ -74,7 +74,10 @@ export class FireSim {
     const ff = f ? FLORA_INFO[f]?.flammable ?? 0 : 0;
     let v = Math.max(tf * 0.75, ff * (0.55 + 0.45 * (w.floraGrowth[i] || 0)));
     if (w.building[i] >= 0) v = Math.max(v, 0.65);
-    return v;
+    // dryness of the age (cached per tick): a hot fire age cures the grass
+    // and scrub so open country carries fire too, not only woods (forests
+    // are sparse on many maps); a cold age damps everything
+    return Math.min(1, v * (this._dry || 1));
   }
 
   fuelFor(i) {
@@ -174,13 +177,26 @@ export class FireSim {
     const sf = season === 'Summer' ? 1.35 : season === 'Winter' ? 0.35 : 1;
     const rate = (1 / 600) * area * Math.pow(fireFactor(g), 2.6) * sf * (1 - this.count / cap);
     if (this.rng.next() >= rate * step) return;
-    for (let k = 0; k < 24; k++) {
+    // pick the most combustible of many sampled spots (woods and dry scrub
+    // first), so sparse forests still catch
+    let best = -1,
+      bestS = 0.3;
+    for (let k = 0; k < 120; k++) {
       const tx = 2 + Math.floor(this.rng.next() * (w.w - 4)),
         ty = 2 + Math.floor(this.rng.next() * (w.h - 4));
       const i = ty * w.w + tx;
       if (w.height[i] < SEA_LEVEL || this.inList[i] || w.building[i] >= 0) continue;
       if (w.wetness && w.wetness[i] > 0.25) continue;
-      if (this.flammability(i) < 0.5) continue;
+      const fl = w.flora[i];
+      const sc = this.flammability(i) + (fl && FLORA_INFO[fl].isTree ? 0.35 : 0);
+      if (sc > bestS) {
+        bestS = sc;
+        best = i;
+      }
+    }
+    if (best >= 0) {
+      const tx = best % w.w,
+        ty = (best / w.w) | 0;
       this.natural = (this.natural || 0) + 1;
       try {
         // a dry-lightning strike (bolt, scorch) that sets the spot alight
@@ -193,13 +209,13 @@ export class FireSim {
       } catch (err) {
         this.ignite(tx, ty, 1);
       }
-      return;
     }
   }
 
   tick(step) {
     const g = this.game;
     const w = g.world;
+    this._dry = Math.max(0.6, Math.min(1.4, Math.pow(fireFactor(g), 0.25)));
     this._natural(step);
     this._recent = (this._recent || 0) * Math.exp(-step / 60);
     // adopt fires started by other modules through world.setFire(); the
@@ -252,8 +268,8 @@ export class FireSim {
     // country left is patchy and fire breaks hold: spread slows further
     const area = (w.w * w.h) / 65536;
     const capS = 450 * area;
-    const capB = 1400 * area;
-    const ageF = Math.pow(fireFactor(g), 0.25) * (n > capS ? Math.max(0.3, capS / n) : 1) * (this._recent > capB ? Math.max(0.2, capB / this._recent) : 1);
+    const capB = 1000 * area;
+    const ageF = Math.pow(fireFactor(g), 0.25) * (n > capS ? Math.max(0.3, capS / n) : 1) * (this._recent > capB ? Math.max(0.12, Math.pow(capB / this._recent, 1.5)) : 1);
     const todo = Math.min(n, BUDGET);
     const dtEff = step * (n / Math.max(1, todo));
     let changed = false;
