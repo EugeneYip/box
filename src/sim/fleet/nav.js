@@ -454,7 +454,9 @@ export class WaterNav {
   findPath(sx, sz, gx, gz, opts = {}) {
     if (!this.isWater(sx, sz) || !this.isWater(gx, gz)) return null;
     // short hops in plain sight need no graph
-    if (Math.hypot(gx - sx, gz - sz) < this.C * 3 && this.los(sx, sz, gx, gz, 0)) return [sx, sz, gx, gz];
+    const dd = Math.hypot(gx - sx, gz - sz);
+    if (dd < this.C * 3 && this.los(sx, sz, gx, gz, 0)) return [sx, sz, gx, gz];
+    if (dd < 48 && this.los(sx, sz, gx, gz, Math.max(1, opts.minClear || 0))) return [sx, sz, gx, gz];
     const a = this._attach(sx, sz);
     const b = this._attach(gx, gz);
     if (!a || !b) return null;
@@ -618,8 +620,7 @@ export class WaterNav {
     const h = this.world.height;
     const cx = Math.floor(x),
       cz = Math.floor(z);
-    let best = null,
-      bd = Infinity;
+    const cand = [];
     for (let dz = -R; dz <= R; dz++)
       for (let dx = -R; dx <= R; dx++) {
         const tx = cx + dx,
@@ -627,8 +628,16 @@ export class WaterNav {
         if (tx < 1 || tz < 1 || tx >= W - 1 || tz >= H - 1) continue;
         const i = tz * W + tx;
         if (h[i] >= SEA_LEVEL || this.dist[i] > 1.5) continue;
-        const d = Math.hypot(dx, dz);
-        if (d >= bd) continue;
+        cand.push(dx * dx + dz * dz, tx, tz);
+      }
+    // nearest first; the (costly) water-body test runs on as few as possible
+    const order = [];
+    for (let k = 0; k < cand.length; k += 3) order.push(k);
+    order.sort((a, b) => cand[a] - cand[b]);
+    for (const k of order) {
+      const tx = cand[k + 1],
+        tz = cand[k + 2];
+      {
         // a land neighbour to step onto
         let lx = -1,
           lz = -1;
@@ -643,10 +652,10 @@ export class WaterNav {
         }
         if (lx < 0) continue;
         if (comp >= 0 && this.comp(tx + 0.5, tz + 0.5) !== comp) continue;
-        bd = d;
-        best = { x: tx + 0.5, z: tz + 0.5, landX: lx + 0.5, landZ: lz + 0.5 };
+        return { x: tx + 0.5, z: tz + 0.5, landX: lx + 0.5, landZ: lz + 0.5 };
       }
-    return best;
+    }
+    return null;
   }
 
   // Nearest water tile with some clearance near a point (a berth).

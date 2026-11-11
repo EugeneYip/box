@@ -550,14 +550,20 @@ export class Fleet {
   }
 
   _buildHash() {
-    const H = this._hash;
-    H.clear();
-    for (const v of this.list) {
+    const gw = (this._gw = Math.ceil(this.world.w / 8) + 1),
+      gh = (this._gh = Math.ceil(this.world.h / 8) + 1);
+    if (!this._hHead || this._hHead.length !== gw * gh) this._hHead = new Int32Array(gw * gh);
+    this._hHead.fill(-1);
+    const L = this.list;
+    if (!this._hNext || this._hNext.length < L.length) this._hNext = new Int32Array(Math.max(64, L.length * 2));
+    this._hList = L;
+    for (let i = 0; i < L.length; i++) {
+      const v = L[i];
+      this._hNext[i] = -1;
       if (!v.alive || v.state === 'sinking') continue;
-      const key = ((v.x >> 3) << 12) | (v.z >> 3);
-      let a = H.get(key);
-      if (!a) H.set(key, (a = []));
-      a.push(v);
+      const c = Math.min(gh - 1, Math.max(0, v.z >> 3)) * gw + Math.min(gw - 1, Math.max(0, v.x >> 3));
+      this._hNext[i] = this._hHead[c];
+      this._hHead[c] = i;
     }
   }
   // Hulls never sit inside one another: neighbours drift apart (on water only).
@@ -620,16 +626,21 @@ export class Fleet {
 
   // vehicles within r of a point (from the per-tick hash)
   near(x, z, r, fn) {
-    const H = this._hash;
-    const x0 = Math.floor((x - r) / 8),
-      x1 = Math.floor((x + r) / 8),
-      z0 = Math.floor((z - r) / 8),
-      z1 = Math.floor((z + r) / 8);
-    for (let cx = x0; cx <= x1; cx++)
-      for (let cz = z0; cz <= z1; cz++) {
-        const a = H.get((cx << 12) | cz);
-        if (!a) continue;
-        for (const v of a) {
+    const head = this._hHead,
+      next = this._hNext,
+      L = this._hList;
+    if (!head) return;
+    const gw = this._gw,
+      gh = this._gh;
+    const x0 = Math.max(0, Math.floor((x - r) / 8)),
+      x1 = Math.min(gw - 1, Math.floor((x + r) / 8)),
+      z0 = Math.max(0, Math.floor((z - r) / 8)),
+      z1 = Math.min(gh - 1, Math.floor((z + r) / 8));
+    for (let cz = z0; cz <= z1; cz++)
+      for (let cx = x0; cx <= x1; cx++) {
+        for (let i = head[cz * gw + cx]; i >= 0; i = next[i]) {
+          const v = L[i];
+          if (!v || !v.alive) continue;
           const d = Math.hypot(v.x - x, v.z - z);
           if (d <= r + v.def.size) fn(v, d);
         }
