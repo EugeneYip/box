@@ -136,7 +136,7 @@ float wsHash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p
 
 // Shadow depth with the same animation (furled sails, hidden variants).
 export function createVehicleDepthMaterial(uniforms) {
-  const mat = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
+  const mat = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, side: THREE.DoubleSide });
   mat.onBeforeCompile = (sh) => {
     sh.uniforms.uTime = uniforms.uTime;
     sh.vertexShader = sh.vertexShader.replace('#include <common>', `#include <common>\n${ANIM_GLSL}`).replace('#include <begin_vertex>', `vec3 wsP = position;\nvec3 wsN = vec3(0.0, 1.0, 0.0);\nwsAnim(wsP, wsN);\nvec3 transformed = wsP;`).replace('#include <project_vertex>', `#include <project_vertex>\nif (wsHide > 0.5) gl_Position = vec4(4.0, 4.0, 4.0, 1.0);`);

@@ -86,6 +86,11 @@ export class ShadowCache {
   dynamicRoot() {
     return this.game.unitRenderer?.group || this.game.scene.getObjectByName('units');
   }
+  // Ships and carts move too (Fleets): drawn in the dynamic pass with their
+  // own depth materials (animated sails and oars, hidden model variants).
+  fleetRoot() {
+    return this.game.fleetRenderer?.group || null;
+  }
 
   // Called before the frame is drawn. `changed` = the fitted frustum moved.
   begin(renderer, changed) {
@@ -130,6 +135,7 @@ export class ShadowCache {
           }
         });
       off(this.dynamicRoot());
+      off(this.fleetRoot());
       // power saver: the terrain (hundreds of chunks on big maps) receives
       // but does not cast; trees and buildings still give the land depth
       if (ps) off(this.game.terrain?.group || this.game.scene.getObjectByName('terrain'));
@@ -193,6 +199,29 @@ export class ShadowCache {
           this.mapHasDyn = true;
         }
         list.length = 0;
+      }
+      const froot = this.fleetRoot();
+      if (froot && froot.visible && near) {
+        const fs = this.fleetScene || (this.fleetScene = Object.assign(new THREE.Scene(), { matrixWorldAutoUpdate: false }));
+        const list = fs.children;
+        list.length = 0;
+        const swapped = [];
+        froot.traverseVisible((o) => {
+          if (!o.castShadow || !o.isMesh || (o.isInstancedMesh && o.count === 0)) return;
+          swapped.push([o, o.material]);
+          o.material = o.customDepthMaterial || this.dynScene.overrideMaterial;
+          list.push(o);
+        });
+        try {
+          if (list.length) {
+            renderer.setRenderTarget(map);
+            renderer.render(fs, sh.camera);
+            this.mapHasDyn = true;
+          }
+        } finally {
+          for (const [o, m] of swapped) o.material = m;
+          list.length = 0;
+        }
       }
     } catch (err) {
       console.warn('[atmosphere] shadow cache disabled', err);

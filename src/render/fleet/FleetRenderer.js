@@ -158,7 +158,9 @@ export class FleetRenderer {
     const mesh = new THREE.InstancedMesh(geo, this.mat, cap);
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     mesh.frustumCulled = false;
-    mesh.castShadow = false; // the static shadow cache would leave ghosts behind moving ships
+    // cast through the shadow cache's dynamic pass (near the camera), with the
+    // animated depth material below
+    mesh.castShadow = !this.game.settings?.powerSaver;
     mesh.receiveShadow = true;
     mesh.customDepthMaterial = this.depthMat;
     mesh.count = 0;
