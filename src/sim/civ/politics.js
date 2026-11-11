@@ -218,7 +218,7 @@ export const politics = {
       this.crown(k, heir);
       this._note(abdicated ? `${deadName} abdicates; ${heir.name} rules ${this._kn(k)}` : `${deadName} dies; ${heir.name} rules ${this._kn(k)}`, 'info', { x: heir.x, z: heir.z }, 'succ' + k.id, 20);
       // a contested succession can split a large realm
-      if (k.villages.length >= 3 && this._kLaw(k.id, 'civRebellions') && this.rng.chance(0.3)) {
+      if (k.villages.length >= 3 && this._kLaw(k.id, 'civRebellions') && !abdicated && this.rng.chance(Math.min(0.75, 0.3 + (k.villages.length - 3) * 0.06))) {
         let claimant = null;
         for (const vid of k.villages) {
           const v = this.villages[vid];
@@ -227,7 +227,10 @@ export const politics = {
         }
         if (claimant && claimant.pop >= 10) {
           this._note(`Succession contested: ${claimant.name} defies ${heir.name}`, 'war', { x: claimant.cx, z: claimant.cz });
-          this.rebel(claimant);
+          this._civilWar = k.villages.length >= 6; // a war of succession splits a great realm
+          const R = this.rebel(claimant, false, true);
+          this._civilWar = false;
+          if (R) this.declareWar(R.id, k.id, 'rebellion', true);
         }
       }
     } else {
@@ -254,10 +257,40 @@ export const politics = {
       u.data.civ.royal = false;
       u.job = null;
       if (u.data.civ.given) u.name = u.data.civ.given;
-      this._bio(u, `Laid down the crown after ${Math.round((now - since) / YEAR)} years`);
-      this._history(`${name} lays down the crown of ${this._kn(k)} after ${Math.round((now - since) / YEAR)} years`, 'info', { x: u.x, z: u.z });
+      const yrs = Math.round((now - since) / YEAR);
+      if (this.game.units.log) this.game.units.log(u, `Laid down the crown of ${this._kn(k)} after ${yrs} years`);
+      else this._bio(u, `Laid down the crown after ${yrs} years`);
+      this._note(`👑 ${name} lays down the crown of ${this._kn(k)} after ${yrs} years`, 'info', { x: u.x, z: u.z }, 'abdicate' + k.id, 1);
       k.ruler = -1;
       this._succession(k, name, true);
+    }
+  },
+
+  // A realm of many towns in a full world is hard to hold: now and then its
+  // farthest provinces break away together as a realm of their own.
+  _overextension() {
+    if (!this.law('civRebellions')) return;
+    const now = this.game.time.total;
+    for (const k of this.kingdoms) {
+      if (!k.alive || k.villages.length < 8 || !this._kLaw(k.id, 'civRebellions')) continue;
+      if (now - (k.crackT ?? k.founded) < YEAR * 25) continue;
+      if (!this.rng.chance(0.004 * (k.villages.length - 7) * (0.5 + (this._crowd?.() || 0)))) continue;
+      const cap = this.villages[k.capital];
+      if (!cap) continue;
+      let far = null,
+        fd = -1;
+      for (const vid of k.villages) {
+        const v = this.villages[vid];
+        if (!v?.alive || vid === k.capital || v.pop < 8) continue;
+        const d = Math.hypot(v.cx - cap.cx, v.cz - cap.cz) - v.loyalty * 0.3;
+        if (d > fd) (fd = d), (far = v);
+      }
+      if (!far) continue;
+      k.crackT = now;
+      this._civilWar = true;
+      const R = this.rebel(far, true, true);
+      this._civilWar = false;
+      if (R) this._note(`✊ Overstretched, ${this._kn(k)} cracks: ${far.name} leads its far provinces away as the ${R.name}`, 'war', { x: far.cx, z: far.cz });
     }
   },
 
@@ -292,6 +325,7 @@ export const politics = {
   _diplomacy() {
     this._recolorClashes();
     this._abdications();
+    this._overextension();
     this._secession();
     const g = this.game;
     const rng = this.rng;
@@ -973,7 +1007,7 @@ export const politics = {
     for (const vid of [...old.villages]) {
       const o = this.villages[vid];
       if (!o?.alive || o.id === old.capital) continue;
-      if (Math.hypot(o.cx - v.cx, o.cz - v.cz) < 34 && o.loyalty < 40 && this.rng.chance(0.6)) {
+      if (Math.hypot(o.cx - v.cx, o.cz - v.cz) < (this._civilWar ? 55 : 34) && o.loyalty < (this._civilWar ? 65 : 40) && this.rng.chance(0.6)) {
         this._transferVillage(o, K.id, 'rebellion');
         this._note(`${o.name} joins the rebels`, 'war', { x: o.cx, z: o.cz }, 'joinreb' + K.id, 60);
       }
