@@ -43,12 +43,15 @@ export const war = {
     const nav = this.nav;
     let tgt = v.target != null ? this.byId.get(v.target) : null;
     if (tgt && (!tgt.alive || tgt.state === 'sinking' || tgt.state === 'moored' || !enemies.includes(tgt.kingdom) || Math.hypot(tgt.x - v.x, tgt.z - v.z) > 40)) tgt = null;
+    const blockade = v.mission?.blockade ?? null;
     if (!tgt) {
-      // nearest enemy ship (warships and transports first)
+      // nearest enemy ship: warships and transports first; fishermen are left
+      // alone unless they sail from the harbour this galley blockades
       let bs = Infinity;
       this.near(v.x, v.z, 30, (o, d) => {
         if (o.cls !== 'sea' || o.state === 'sinking' || o.state === 'moored' || !enemies.includes(o.kingdom)) return;
-        const sc = d - (o.kind === 'galley' ? 6 : o.kind === 'transport' ? 4 : 0);
+        if (o.kind === 'fishing' && (blockade == null || o.harbour !== blockade)) return;
+        const sc = d - (o.kind === 'galley' ? 8 : o.kind === 'transport' ? 7 : o.kind === 'carrack' || o.kind === 'cog' ? 3 : 0);
         if (sc < bs) {
           bs = sc;
           tgt = o;
