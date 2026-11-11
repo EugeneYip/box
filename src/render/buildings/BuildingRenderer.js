@@ -76,7 +76,7 @@ export class BuildingRenderer {
     this.group = new THREE.Group();
     this.group.name = 'civ-buildings';
     game.scene.add(this.group);
-    this.uniforms = { uTime: { value: 0 }, uNight: { value: 0 }, uWind: { value: 0.35 }, uEmblems: { value: emblemAtlas() } };
+    this.uniforms = { uTime: { value: 0 }, uNight: { value: 0 }, uSnow: { value: 0 }, uWind: { value: 0.35 }, uEmblems: { value: emblemAtlas() } };
     this.mat = createBuildingMaterial(this.uniforms);
     this.matClip = createBuildingMaterial(this.uniforms, { clip: true });
     this.propMat = createPropMaterial();
@@ -964,6 +964,14 @@ export class BuildingRenderer {
     this.uniforms.uNight.value += (night - this.uniforms.uNight.value) * Math.min(1, dt * 3 + (this._first ? 0 : 1));
     this._first = true;
     this.uniforms.uWind.value = env.wind?.strength ?? 0.35;
+    // roofs whiten through the winter (and in a snowfall), as the fields do
+    {
+      const se = g.time?.season ?? 1.5;
+      const wint = THREE.MathUtils.smoothstep(se, 2.9, 3.15) * (1 - THREE.MathUtils.smoothstep(se, 3.8, 3.98));
+      const snowing = env.weather?.type === 'snow' ? Math.min(1, 0.4 + (env.weather.intensity ?? 0.5)) : 0;
+      const target = Math.max(wint, snowing) * (1 - Math.max(0, (g.age?.mods?.temperature ?? 0) * 2));
+      this.uniforms.uSnow.value += (Math.max(0, target) - this.uniforms.uSnow.value) * Math.min(1, dt * 0.5);
+    }
     this.decalMat.opacity = this.uniforms.uNight.value * 0.42;
     this.decals.visible = this._props !== false && this.decalMat.opacity > 0.01;
     const now = g.time.realTime;
