@@ -263,10 +263,13 @@ export class Labels {
         s.userData.fade = 0;
         continue;
       }
-      const y = w.surfaceAt(v.cx, v.cz) + 2.5 + D * 0.03;
-      s.position.set(v.cx, y, v.cz);
+      const ax = k.labelX ?? v.cx,
+        az = k.labelZ ?? v.cz;
+      const y = w.surfaceAt(ax, az) + 2.5 + D * 0.03;
+      s.position.set(ax, y, az);
       const dist = cam.distanceTo(s.position);
-      const h = Math.max(1.4, dist * 0.032);
+      const many = this.kLabels.size > 9 ? Math.max(0.62, 1 - (this.kLabels.size - 9) * 0.035) : 1;
+      const h = Math.max(1.4, dist * 0.032 * many);
       s.scale.set(h * s.userData.aspect, h, 1);
       cand.push({ s, a: kAk, prio: 3 + (k.villages.length || 0) * 0.01 + (this._focusSet?.has(id) ? 0.5 : 0), kid: id });
     }
@@ -399,16 +402,18 @@ export class Labels {
           return world.owner[tz * world.w + tx] === c.kid || Math.hypot(x - sx, y - sy) < ph * 0.6;
         };
         let placed = false;
-        for (const dy of [0, -1.1, 1.1, -2.2, 2.2]) {
-          const yy = cy + dy * ph;
+        for (const [dx, dy] of [[0, 0], [0, -1.1], [0, 1.1], [-0.35, 0], [0.35, 0], [0, -2.2], [0, 2.2], [-0.35, -1.1], [0.35, 1.1], [-0.35, 1.1], [0.35, -1.1]]) {
+          const yy = cy + dy * ph,
+            xx = Math.min(right - pw / 2, Math.max(mLeft + pw / 2, cx + dx * pw));
           if (yy - ph / 2 < top || yy + ph / 2 > bot) continue;
-          const r = { l: cx - pw / 2, r: cx + pw / 2, t: yy - ph / 2, b: yy + ph / 2 };
-          if (!hits(r) && overRealm(cx, yy)) {
+          const r = { l: xx - pw / 2, r: xx + pw / 2, t: yy - ph / 2, b: yy + ph / 2 };
+          if (!hits(r) && overRealm(xx, yy)) {
             rect.l = r.l;
             rect.r = r.r;
             rect.t = r.t;
             rect.b = r.b;
             cy = yy;
+            cx = xx;
             placed = true;
             break;
           }
