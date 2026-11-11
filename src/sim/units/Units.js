@@ -86,7 +86,9 @@ const SFX_GAP = { hit: 0.07, death: 0.18, birth: 0.6, growl: 0.5, bleat: 1.4 };
 const THINK_BUDGET_MS = 5; // per rendered frame (high game speeds defer the rest)
 const DCELL = 16; // danger grid cell (tiles): where predators, monsters or fights are
 const OVERVIEW_DIST = 110; // camera farther than this: every creature takes the cheap path
-const FAUNA_TOTAL = 1000; // humans + animals target on a 256 x 256 map
+const WILD_TARGET = 620; // wild creatures on a 256 x 256 map with no people
+const WILD_FLOOR = 420; // ...and however large the realms grow
+const HEALTHY = 0.35; // a wild grazer below this share of its capacity gets migrant herds
 
 const KIND_ORDER = { humanoid: 0, animal: 1, monster: 2 };
 
@@ -159,9 +161,11 @@ export class Units {
   }
 
   // Wild animals allowed besides humans and village herds (soft global cap).
+  // Room for wild creatures (village herds not counted). Growing realms take
+  // only a small share of it, so the wilds stay alive beside big kingdoms.
   faunaBudget() {
     const humans = this._counts.get('human') || 0;
-    return Math.max(Math.round(220 * this.popScale), Math.round(FAUNA_TOTAL * this.popScale) - humans - this.herds.totalTended);
+    return Math.round(Math.max(WILD_FLOOR * this.popScale, WILD_TARGET * this.popScale - 0.15 * humans));
   }
 
   // Positional, throttled, guarded sound effect (only near the camera).
@@ -1534,7 +1538,8 @@ export class Units {
     const sf = season == null ? 1 : [1.9, 0.9, 0.45, 0.15][Math.floor(season) % 4];
     if (!g.rng.chance(Math.min(1, sf * (u._mFert || 1) * (g.age?.mods?.birth ?? 1) * 0.8))) return false;
     const hardK = this.capacity(u.species) * 1.6;
-    if (n >= hardK) return false;
+    // village herds of the same kind do not crowd out the wild ones
+    if ((this._wildN?.get(u.species) ?? n) >= hardK) return false;
     const humans = this._counts.get('human') || 0;
     if (this.list.length - humans - this.herds.totalTended >= this.faunaBudget()) return false;
     let K = hardK;
@@ -2092,14 +2097,27 @@ export class Units {
     this._disperseGroups();
     this._wanderingMonsters();
     if (!this.migration || !this.law('lifeWildlife')) return;
+    // wild members per species (village herds excluded)
+    const wildN = this._wildN || (this._wildN = new Map());
+    wildN.clear();
+    let wildAll = 0;
+    for (const u of this.list) {
+      if (!u.alive || u.def.kind !== 'animal' || u.data.tended != null) continue;
+      wildN.set(u.species, (wildN.get(u.species) || 0) + 1);
+      wildAll++;
+    }
+    const roomy = wildAll < this.faunaBudget() * 0.8;
     for (const def of Object.values(SPECIES)) {
       if (!def.seed) continue;
       const n = this.count(def.id);
+      const wn = wildN.get(def.id) || 0;
       const mvp = MVP[def.id] || 5;
-      if (n >= mvp) continue;
+      // grazers well below a healthy herd size are joined by wild herds from the edge
+      const thin = roomy && def.diet === 'herbivore' && def.kind === 'animal' && wn < this.capacity(def.id) * HEALTHY;
+      if (n >= mvp && !thin) continue;
       // rare migrants arrive from the map edge (spawnRate law scales how often)
       const rate = typeof this.game.laws?.spawnRate === 'number' ? Math.max(0.1, this.game.laws.spawnRate) : 1;
-      if (now - (this._rescueAt.get(def.id) ?? -1e9) < (n === 0 ? 30 : 75) / rate) continue;
+      if (now - (this._rescueAt.get(def.id) ?? -1e9) < (n === 0 ? 30 : n < mvp ? 75 : 50) / rate) continue;
       const spot = this._edgeSpot(def);
       if (!spot) continue;
       const grp = this.spawnGroup(def.id, spot.x, spot.z, this.game.rng, def.pack ? 3 : def.solitary ? 2 : null);
