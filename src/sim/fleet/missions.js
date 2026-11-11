@@ -36,7 +36,7 @@ export const missions = {
     if (typeof to === 'number' || (to && typeof to === 'object' && to.x == null)) {
       toH = this.resolveHarbour(to);
       if (!toH) return refuse('no such harbour');
-      dest = this._mooringSpot(toH, null, KINDS[kind]?.length) || toH.berth;
+      dest = this._mooringSpot(toH, null, kind) || this._anchorage(toH, KINDS[kind] || KINDS.cog) || toH.berth;
       deliver = { x: toH.x, z: toH.z };
       toName = toH.name;
     } else if (to && to.x != null) {
@@ -121,47 +121,106 @@ export const missions = {
     return !!p;
   },
 
-  // A free spot at a harbour for one more ship to moor: off the end of the
-  // jetty, then alongside it, then further out (spaced by the ship's length).
-  _mooringSpot(h, self, len = null) {
+  // How many ships a jetty can berth (a harbour more), and how many it has.
+  harbourCap(h) {
+    const seafaring = this.game.civ?.hasCultureTrait?.(this.kingdom(h.kingdom)?.culture, 'Seafaring');
+    return (h.level >= 2 ? 5 : 3) + (seafaring ? 1 : 0);
+  },
+  berthed(h, self = null) {
+    let n = 0;
+    for (const o of this.list) {
+      if (!o.alive || o === self || o.cls !== 'sea' || o.state === 'sinking') continue;
+      if (o.state === 'moored' && o.harbour === h.id) n++;
+      else if (o.state === 'sail' && o.mission?.phase === 'home' && o.harbour === h.id && o.dest?.berth) n++;
+    }
+    return n;
+  },
+  // Water deep and wide enough for a hull at (x, z) lying along (dx, dz).
+  _hullFits(x, z, dx, dz, def) {
+    const w = this.world;
+    const L = def.length,
+      B = (def.beam || 0.5) * 0.5 + 0.12,
+      D = Math.max(0.1, def.draft || 0.2);
+    const px = -dz,
+      pz = dx;
+    for (const f of [-0.5, 0, 0.5])
+      for (const sd of [-1, 0, 1]) {
+        const qx = x + dx * L * f + px * B * sd,
+          qz = z + dz * L * f + pz * B * sd;
+        const tx = Math.floor(qx),
+          tz = Math.floor(qz);
+        if (!w.inBounds(tx, tz)) return false;
+        const h = w.height[tz * w.w + tx];
+        if (h >= 0 || -h < (sd === 0 ? D : D * 0.6)) return false;
+      }
+    return true;
+  },
+  // A free berth for one more ship: off the end of the jetty, alongside it,
+  // then further out, each spaced by the ships' lengths and in water deep
+  // enough for the keel. null when the harbour is full.
+  _mooringSpot(h, self, kind = null) {
     const nav = this.nav;
-    const L = len ?? self?.def?.length ?? 2;
+    const def = self?.def || KINDS[kind] || KINDS.cog;
+    const L = def.length;
+    if (this.berthed(h, self) >= this.harbourCap(h)) return null;
     const px = -h.dirZ,
       pz = h.dirX;
     const ex = h.x + h.dirX * 3.4,
       ez = h.z + h.dirZ * 3.4; // the end of the pier
     const taken = (x, z) => {
       for (const o of this.list) {
-        if (!o.alive || o === self || o.cls !== 'sea') continue;
-        const ox = o.state === 'moored' ? o.x : o.state === 'sail' && o.mission?.phase === 'home' && o.dest ? o.dest.x : null;
-        if (ox == null) continue;
-        const oz = o.state === 'moored' ? o.z : o.dest.z;
-        if (Math.hypot(ox - x, oz - z) < 0.75 + (L + o.def.length) * 0.32) return true;
+        if (!o.alive || o === self || o.cls !== 'sea' || o.state === 'sinking') continue;
+        let ox, oz;
+        if (o.state === 'moored') (ox = o.x), (oz = o.z);
+        else if (o.state === 'sail' && o.mission?.phase === 'home' && o.dest) (ox = o.dest.x), (oz = o.dest.z);
+        else continue;
+        // hulls lie parallel to the pier: compare along and across it
+        const ddx = ox - x,
+          ddz = oz - z;
+        const along = Math.abs(ddx * h.dirX + ddz * h.dirZ),
+          across = Math.abs(ddx * px + ddz * pz);
+        if (along < (L + o.def.length) * 0.5 + 0.25 && across < ((def.beam || 0.5) + (o.def.beam || 0.5)) * 0.5 + 0.35) return true;
       }
       return false;
     };
+    const B = (def.beam || 0.5) + 0.45;
     const slots = [
-      [L / 2 + 0.35, 0],
-      [L * 0.2, 1.3],
-      [L * 0.2, -1.3],
-      [L * 0.35 + 0.4, 2.7],
-      [L * 0.35 + 0.4, -2.7],
-      [L * 1.5 + 0.8, 0],
-      [L * 1.2 + 0.6, 1.6],
-      [L * 1.2 + 0.6, -1.6],
-      [L * 0.5 + 0.6, 4.1],
-      [L * 0.5 + 0.6, -4.1],
+      [L / 2 + 0.45, 0],
+      [L * 0.25, B + 0.1],
+      [L * 0.25, -B - 0.1],
+      [L * 1.5 + 0.9, 0],
+      [L * 0.35 + 0.4, B * 2 + 0.2],
+      [L * 0.35 + 0.4, -B * 2 - 0.2],
+      [L * 1.25 + 0.7, B + 0.1],
+      [L * 1.25 + 0.7, -B - 0.1],
     ];
     for (const [f, sd] of slots) {
       const x = ex + h.dirX * f + px * sd,
         z = ez + h.dirZ * f + pz * sd;
-      if (nav.clearAt(x, z) < 0.7) continue;
-      if (!nav.isWater(x + h.dirX * L * 0.5, z + h.dirZ * L * 0.5) || !nav.isWater(x - h.dirX * L * 0.45, z - h.dirZ * L * 0.45)) continue;
+      if (!this._hullFits(x, z, h.dirX, h.dirZ, def)) continue;
       if (taken(x, z)) continue;
       if (!nav.los(h.berth.x, h.berth.z, x, z, 0)) continue;
-      return { x, z };
+      return { x, z, berth: true };
     }
-    return h.berth;
+    return null;
+  },
+  // Roads off a full harbour: open water a little way out, deep enough.
+  _anchorage(h, def) {
+    const nav = this.nav;
+    for (let r = 4; r <= 14; r += 2) {
+      for (let k = 0; k < 7; k++) {
+        const a = Math.atan2(h.dirZ, h.dirX) + (k - 3) * 0.35;
+        const x = h.berth.x + Math.cos(a) * r,
+          z = h.berth.z + Math.sin(a) * r;
+        if (nav.clearAt(x, z) < Math.max(1.5, def.clear || 0)) continue;
+        if (!this._hullFits(x, z, Math.cos(a), Math.sin(a), def)) continue;
+        if (nav.comp(x, z) !== h.water) continue;
+        let busy = false;
+        for (const o of this.list) if (o.alive && o.cls === 'sea' && Math.hypot(o.x - x, o.z - z) < (o.def.length + def.length) * 0.6) busy = true;
+        if (!busy) return { x, z };
+      }
+    }
+    return null;
   },
 
   _goHome(v) {
@@ -189,7 +248,12 @@ export const missions = {
     v.village = h.village;
     if (!v.mission) v.mission = { type: 'home', phase: 'home' };
     v.mission.phase = 'home';
-    const spot = this._mooringSpot(h, v);
+    let spot = this._mooringSpot(h, v);
+    if (!spot) {
+      // the harbour is full: fishing boats wait in the roads, others are laid up there
+      spot = this._anchorage(h, v.def) || h.berth;
+      if (v.kind !== 'fishing') v.layup = true;
+    }
     if (!this._sail(v, spot)) {
       this.remove(v);
       return false;
@@ -465,8 +529,8 @@ export const missions = {
       const now = this.game.time.total;
       if (have < want && !this.blockaded(h) && now - (this._boatT?.get(h.id) ?? -999) > 45 && this.seaCount() < this.budget.sea && this.count(kid, 'fishing') < this.cap(kid, 'fishing')) {
         (this._boatT || (this._boatT = new Map())).set(h.id, now);
-        const spot = this._mooringSpot(h, null, KINDS.fishing.length);
-        this.spawn('fishing', kid, spot.x, spot.z, { home: h.village, harbour: h.id, heading: Math.atan2(h.dirZ, h.dirX) });
+        const spot = this._mooringSpot(h, null, 'fishing');
+        if (spot) this.spawn('fishing', kid, spot.x, spot.z, { home: h.village, harbour: h.id, heading: Math.atan2(h.dirZ, h.dirX) });
       }
       if (this.blockaded(h) || this.storm() > 0.4) continue;
       if (this.isNight() && !this.hasTech(kid, 'astronomy') && this.game.settings?.dayNight !== false) continue;

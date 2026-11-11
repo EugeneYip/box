@@ -595,8 +595,9 @@ export class Fleet {
         const ux = (dx / d) * push,
           uz = (dz / d) * push;
         // a moored ship holds its berth; the newcomer gives way
-        const wa = a.state === 'moored' ? 0 : b.state === 'moored' ? 2 : 1,
-          wb = b.state === 'moored' ? 0 : a.state === 'moored' ? 2 : 1;
+        const both = a.state === 'moored' && b.state === 'moored';
+        const wa = both ? 0.5 : a.state === 'moored' ? 0 : b.state === 'moored' ? 2 : 1,
+          wb = both ? 0.5 : b.state === 'moored' ? 0 : a.state === 'moored' ? 2 : 1;
         if (wa && nav.isWater(a.x - ux * wa, a.z - uz * wa)) {
           a.x -= ux * wa;
           a.z -= uz * wa;

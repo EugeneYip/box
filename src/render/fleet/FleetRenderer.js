@@ -297,7 +297,7 @@ export class FleetRenderer {
           v.y = 0;
           this._e.set(roll, -h, pitch, 'YZX');
           this._q.setFromEuler(this._e);
-          this._m.compose(this._p.set(x, y, z), this._q, this._s.set(1, 1, 1));
+          this._m.compose(this._p.set(x, y, z), this._q, this._s.setScalar(def.scale || 1));
           mesh.setMatrixAt(k, this._m);
           iC[k * 3] = kc.r;
           iC[k * 3 + 1] = kc.g;
@@ -327,7 +327,7 @@ export class FleetRenderer {
           const put = (px, pz, ph, variant, py) => {
             this._e.set(roll, -ph, pitch, 'YZX');
             this._q.setFromEuler(this._e);
-            this._m.compose(this._p.set(px, py ?? y, pz), this._q, this._s.setScalar(kind === 'caravan' ? 1.3 : 1));
+            this._m.compose(this._p.set(px, py ?? y, pz), this._q, this._s.setScalar(def.scale || 1));
             mesh.setMatrixAt(k, this._m);
             iC[k * 3] = kc.r;
             iC[k * 3 + 1] = kc.g;
@@ -385,7 +385,7 @@ export class FleetRenderer {
           az = (wind.z || 0) * (0.6 + (wind.strength ?? 0.3)) - Math.sin(h) * v.speed * 0.6;
         const yaw = Math.atan2(az, ax);
         this._q.setFromAxisAngle(this._up, -yaw);
-        const s = f.s * 1.05;
+        const s = f.s * 1.05 * (v.def.scale || 1);
         this._m2.compose(this._p, this._q, this._s.set(s, s, s));
         mesh.setMatrixAt(n, this._m2);
         const kb = civ?.kingdoms?.[v.kingdom];
