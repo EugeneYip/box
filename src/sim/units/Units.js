@@ -2233,6 +2233,10 @@ export class Units {
     let u = null,
       bd = Infinity;
     this.forEachNear(hit.x, hit.z, 2.5, (o, d2) => {
+      // people inside a building or aboard a ship are not drawn: picking them
+      // from the map would steal the tap from the building (reach them through
+      // the building card's "Inside" chips instead)
+      if (o.data && (o.data.inside || o.data.aboard != null)) return;
       const r = 0.6 + o.def.radius * 1.5;
       if (d2 > r * r) return;
       const s = d2 / (r * r) - (KIND_ORDER[o.def.kind] === 2 ? 0.2 : 0);
