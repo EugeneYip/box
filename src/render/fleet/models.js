@@ -666,10 +666,31 @@ export function debrisGeometry() {
   return g.build();
 }
 
+// A rough, dark boulder (radius about 0.3, centred on the origin).
 export function stoneGeometry() {
-  const g = new VB(7);
-  g.bead(0, -0.2, 0, 0.22, 0x6e675c);
-  return g.build();
+  const g = new THREE.IcosahedronGeometry(0.3, 1);
+  const P = g.attributes.position;
+  const key = (x, y, z) => Math.round(x * 997 + y * 7919 + z * 104729);
+  const h = (k) => {
+    const s = Math.sin(k * 12.9898) * 43758.5453;
+    return s - Math.floor(s);
+  };
+  for (let i = 0; i < P.count; i++) {
+    const x = P.getX(i),
+      y = P.getY(i),
+      z = P.getZ(i);
+    const f = 0.82 + h(key(x, y, z)) * 0.32;
+    P.setXYZ(i, x * f, y * f * 0.9, z * f);
+  }
+  g.computeVertexNormals();
+  const col = new Float32Array(P.count * 3);
+  const c = new THREE.Color();
+  for (let i = 0; i < P.count; i += 3) {
+    c.setHex(0x3b3631).multiplyScalar(0.8 + h(i * 3.1) * 0.45);
+    for (let k = 0; k < 3; k++) col.set([c.r, c.g, c.b], (i + k) * 3);
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  return g;
 }
 
 // A tracer: a unit streak along -X from its head at the origin, white-hot

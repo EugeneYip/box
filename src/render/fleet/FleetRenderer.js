@@ -626,13 +626,13 @@ export class FleetRenderer {
     void alpha;
   }
 
-  // Catapult stones on their arc, with a dotted trail of grit behind them
-  // and a puff of dust where they fly.
+  // Catapult stones: a big dark tumbling boulder on its arc, trailing smoke
+  // and the odd spark of fire.
   _stones(F, alpha) {
     let n = 0;
     const L = F.stones;
     if (L.length) {
-      const mesh = this._growProp('stones', L.length * 5);
+      const mesh = this._growProp('stones', L.length);
       const step = this.game.simStep || TICK;
       const at = (st, u) => {
         const x = st.x0 + (st.x1 - st.x0) * u,
@@ -641,21 +641,21 @@ export class FleetRenderer {
       };
       for (const st of L) {
         const u = Math.max(0, Math.min(1, (st.t + alpha * step) / st.dur));
-        for (let k = 0; k < 5; k++) {
-          const uk = u - k * 0.045;
-          if (uk < 0) break;
-          const [x, y, z] = at(st, uk);
-          const sc = k === 0 ? 1.6 : 0.6 - k * 0.1;
-          this._q.setFromAxisAngle(this._up, uk * 9);
-          this._m.compose(this._p.set(x, y, z), this._q, this._s.setScalar(sc));
-          mesh.setMatrixAt(n++, this._m);
-        }
-        // the trail is laid by distance flown (none while the game is paused)
-        if (this.game.fx?.emit && u - (st._pu ?? -1) >= 0.035) {
+        const [x, y, z] = at(st, u);
+        this._e.set(u * 7, u * 3, u * 5, 'XYZ');
+        this._q.setFromEuler(this._e);
+        this._m.compose(this._p.set(x, y, z), this._q, this._s.setScalar(1.55));
+        mesh.setMatrixAt(n++, this._m);
+        // the trail is laid by distance flown (none while the game is paused);
+        // a stone first seen in mid-flight gets the trail it has already left
+        if (this.game.fx?.emit && u - (st._pu ?? -1) >= 0.03) {
+          const from = st._pu == null ? Math.max(0, u - 0.45) : u;
+          for (let uu = from; uu <= u + 1e-6; uu += 0.03) {
+            const [x, y, z] = at(st, uu);
+            this.game.fx.emit('smoke', { x, y, z }, { scale: 0.6, count: 2 });
+            if ((st._puff = (st._puff || 0) + 1) % 3 === 0) this.game.fx.emit('fire', { x, y, z }, { scale: 0.25 });
+          }
           st._pu = u;
-          const [x, y, z] = at(st, u);
-          this.game.fx.emit('smoke', { x, y, z }, { scale: 0.45 });
-          if ((st._puff = (st._puff || 0) + 1) % 2 === 0) this.game.fx.emit('fire', { x, y, z }, { scale: 0.3 });
         }
       }
       mesh.instanceMatrix.needsUpdate = true;

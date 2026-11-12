@@ -430,7 +430,8 @@ export const land = {
       const d = Math.hypot(b.x - v.x, b.z - v.z);
       const edge = Math.max(b.w, b.h) * 0.5;
       if (v.kind === 'catapult') {
-        if (d <= 11 && d >= 3.5 && (this._openGround(v.x, v.z) || d < 5.5)) {
+        if (this._battery(v, b, target, step)) return;
+        if (d <= 12 && d >= 3.5 && this._openGround(v.x, v.z)) {
           v.speed *= Math.exp(-step * 3);
           v.heading = turnTo(v.heading, Math.atan2(b.z - v.z, b.x - v.x), step * 1.5);
           if ((v.fireT = (v.fireT ?? 1) - step) <= 0) {
@@ -496,6 +497,117 @@ export const land = {
     v.z += Math.sin(want) * s;
   },
 
+  // A catapult works from a battery: open, level ground just outside the
+  // town (beyond its outermost houses and walls), within range of them,
+  // facing in. It rolls there, sets up and shoots at what lies in range.
+  // Returns false when no battery can be found (then the old way applies).
+  _battery(v, b, village, step) {
+    const w = this.world;
+    if (!v.battery || v.battery.vid !== village.id || (v.batT = (v.batT ?? 0) - step) <= 0 || v.battery.stuck > 8) {
+      v.batT = 14;
+      v.battery = this._batterySite(v, village);
+    }
+    const bt = v.battery;
+    if (!bt) return false;
+    const dx = bt.x - v.x,
+      dz = bt.z - v.z;
+    const d = Math.hypot(dx, dz);
+    if (d > 0.6) {
+      // roll out to the battery, steering round what stands in the way
+      const want = Math.atan2(dz, dx);
+      let moved = false;
+      for (const off of [0, 0.5, -0.5, 1.0, -1.0, 1.6, -1.6]) {
+        const a = want + off;
+        const sp = Math.max(0.3, v.speed);
+        const nx = v.x + Math.cos(a) * sp * step,
+          nz = v.z + Math.sin(a) * sp * step;
+        const lx = v.x + Math.cos(a) * 0.7,
+          lz = v.z + Math.sin(a) * 0.7;
+        if (!w.isWalkable(Math.floor(nx), Math.floor(nz)) || !w.isWalkable(Math.floor(lx), Math.floor(lz))) continue;
+        // round houses, not through them (unless boxed in among them)
+        if ((bt.stuck || 0) < 4 && w.building[w.idx(Math.floor(lx), Math.floor(lz))] >= 0) continue;
+        v.heading = turnTo(v.heading, a, step * v.def.turn);
+        v.speed += (v.def.speed - v.speed) * Math.min(1, step * 2);
+        v.x = nx;
+        v.z = nz;
+        moved = true;
+        break;
+      }
+      if (!moved) {
+        v.speed *= Math.exp(-step * 3);
+        bt.stuck = (bt.stuck || 0) + step;
+      }
+      return true;
+    }
+    // in battery: pick the nearest thing in range from here
+    v.speed *= Math.exp(-step * 3);
+    let tgt = b && Math.hypot(b.x - v.x, b.z - v.z) <= 12.5 ? b : null;
+    if (!tgt) {
+      let bs = Infinity;
+      for (const o of village.buildings || []) {
+        if (!o.alive || o.constructing) continue;
+        const od = Math.hypot(o.x - v.x, o.z - v.z);
+        if (od > 12.5 || od < 3) continue;
+        const sc = od - (BUILDING_TYPES[o.type]?.wall ? 3 : 0);
+        if (sc < bs) {
+          bs = sc;
+          tgt = o;
+        }
+      }
+      if (tgt) v.siegeTarget = tgt;
+    }
+    if (!tgt) {
+      v.batT = Math.min(v.batT, 1); // nothing in reach any more: find a closer battery
+      return true;
+    }
+    v.heading = turnTo(v.heading, Math.atan2(tgt.z - v.z, tgt.x - v.x), step * 1.5);
+    if ((v.fireT = (v.fireT ?? 1) - step) <= 0) {
+      v.fireT = 4.5 + this.rng();
+      this._launchStone(v, tgt);
+    }
+    return true;
+  },
+
+  _batterySite(v, village) {
+    const w = this.world;
+    const B = (village.buildings || []).filter((o) => o.alive);
+    if (!B.length) return null;
+    const cx = village.cx,
+      cz = village.cz;
+    let ext = 0;
+    for (const o of B) ext = Math.max(ext, Math.hypot(o.x - cx, o.z - cz) + Math.max(o.w || 1, o.h || 1) * 0.5);
+    const base = Math.atan2(v.z - cz, v.x - cx);
+    let best = null,
+      bs = Infinity;
+    for (let k = 0; k < 17; k++) {
+      const ang = base + (k & 1 ? 1 : -1) * Math.ceil(k / 2) * 0.24;
+      for (const r of [ext + 2.5, ext + 4, ext + 6]) {
+        const x = cx + Math.cos(ang) * r,
+          z = cz + Math.sin(ang) * r;
+        const tx = Math.floor(x),
+          tz = Math.floor(z);
+        if (!w.inBounds(tx, tz) || !w.isWalkable(tx, tz) || !this._openGround(x, z)) continue;
+        let clear = true,
+          near = Infinity;
+        for (const o of B) {
+          const od = Math.hypot(o.x - x, o.z - z) - Math.max(o.w || 1, o.h || 1) * 0.5;
+          if (od < 1.8) {
+            clear = false;
+            break;
+          }
+          if (od < near) near = od;
+        }
+        if (!clear || near > 10) continue;
+        const sc = Math.ceil(k / 2) * 1.2 + Math.hypot(x - v.x, z - v.z) * 0.12 + (r - ext) * 0.4;
+        if (sc < bs) {
+          bs = sc;
+          best = { x, z, vid: village.id, stuck: 0 };
+        }
+      }
+    }
+    return best;
+  },
+
   // Clear, level ground (no trees close by): where a catapult can work and be seen.
   _openGround(x, z) {
     const w = this.world;
@@ -539,7 +651,7 @@ export const land = {
       jz = (this.rng() - 0.5) * 0.8;
     const d = Math.hypot(b.x - ax, b.z - az);
     v.anim.arm = 1;
-    this.stones.push({ x0: ax, z0: az, y0: w.heightAt(ax, az) + 0.9, x1: b.x + jx, z1: b.z + jz, y1: (b.y ?? w.heightAt(b.x, b.z)) + 0.6, t: 0, dur: 1.7 + d * 0.09, peak: 4 + d * 0.5, b: b.id, kingdom: v.kingdom, dmg: Math.max(38, (b.maxHp || 100) * (BUILDING_TYPES[b.type]?.wall ? 0.24 : 0.14)) * (civ.techMod?.(v.kingdom, 'siege') ?? 1), from: v.id });
+    this.stones.push({ x0: ax, z0: az, y0: w.heightAt(ax, az) + 0.9, x1: b.x + jx, z1: b.z + jz, y1: (b.y ?? w.heightAt(b.x, b.z)) + 0.6, t: 0, dur: 1.6 + d * 0.1, peak: 1.2 + d * 0.22, b: b.id, kingdom: v.kingdom, dmg: Math.max(38, (b.maxHp || 100) * (BUILDING_TYPES[b.type]?.wall ? 0.24 : 0.14)) * (civ.techMod?.(v.kingdom, 'siege') ?? 1), from: v.id });
     this.totals.stones++;
     this._sfx('chop', v.x, v.z, 0.5);
   },
@@ -559,8 +671,8 @@ export const land = {
         civ.damageBuilding?.(b, s.dmg, 'siege');
         this._siegeBreach({ kingdom: s.kingdom, kind: 'catapult' }, b);
       }
-      this._fx('explosion', s.x1, s.z1, 0.55, { y: s.y1 });
-      this._fx('debris', s.x1, s.z1, 1.2);
+      this._fx('explosion', s.x1, s.z1, 0.42, { y: s.y1 });
+      this._fx('debris', s.x1, s.z1, 1.5, { y: s.y1 });
       this._fx('dust', s.x1, s.z1, 1.6);
       this._fx('dust', s.x1 + (this.rng() - 0.5), s.z1 + (this.rng() - 0.5), 1.1);
       this.game.fx?.shake?.(s.x1, s.z1, 0.15);
