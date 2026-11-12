@@ -114,7 +114,7 @@ export function refreshLandscapeUniforms(game, dt) {
 const SEASON_TINTS = [
   [0.15, 0.44, 0.06, 0.35],
   [0.07, 0.3, 0.045, 0.25],
-  [0.54, 0.32, 0.05, 0.9],
+  [0.62, 0.34, 0.06, 1.0],
   [0.25, 0.27, 0.22, 0.6],
 ];
 const _ease = (t) => t * t * (3 - 2 * t);
