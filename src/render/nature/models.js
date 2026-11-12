@@ -122,7 +122,7 @@ const P = {
   ],
   birchBark: { base: C(0xcfc8bb), top: C(0xf2efe6) },
   birch: { dark: C(0x3a6820), mid: C(0x6aa034), light: C(0x9cc84c), hi: C(0xcce070) },
-  birchGold: { dark: C(0x7a5a16), mid: C(0xcc9a24), light: C(0xf0c84a), hi: C(0xfff0a0) },
+  birchLight: { dark: C(0x4a7224), mid: C(0x80b03c), light: C(0xb0d458), hi: C(0xdcec84) },
   pineBark: { base: C(0x4a2e1e), top: C(0x6e4630) },
   pine: { dark: C(0x163d2c), mid: C(0x2a6a45), light: C(0x4f9658), hi: C(0x86b86a) },
   pineB: { dark: C(0x173a33), mid: C(0x285f4c), light: C(0x478a63), hi: C(0x7aac78) },
@@ -452,7 +452,8 @@ function buildBirch(b, v, lod) {
     return mul3(c, ground * (0.9 + 0.12 * clamp01(n.y * 0.5 + 0.5)));
   };
   trunk(b, pts, pts.map((_, i) => 0.065 - (0.032 * i) / (pts.length - 1)), lod ? 5 : 6, null, { color: bark, faceColor: true, yTop: H });
-  const pal = v === 3 ? P.birchGold : P.birch;
+  // one variety in fresher lime leaf (autumn turns every birch gold)
+  const pal = v === 3 ? P.birchLight : P.birch;
   const top = pts[pts.length - 1];
   const at = (t) => {
     const f = clamp01(t) * (pts.length - 1);

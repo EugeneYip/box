@@ -271,7 +271,7 @@ if (abs(fMat - 9.0) < 0.5) {
   float bTree = step(fract(vFIH * 7.13), 0.34) * smoothstep(0.3, 0.8, sw.x);
   vec3 bp = vFRest + vFIH * 31.0;
   float up = smoothstep(-0.35, 0.6, normalize(vFWNormal).y);
-  float cl = smoothstep(0.5, 0.8, fVNoise(bp * 2.4)) * bTree * up;
+  float cl = smoothstep(0.52, 0.8, fVNoise(bp * 3.4)) * bTree * up;
   vec3 q = bp * 6.5;
   vec3 ci = floor(q);
   vec3 cf = fract(q) - 0.5 - (vec3(fVHash(ci), fVHash(ci + 7.1), fVHash(ci + 3.7)) - 0.5) * 0.12;
@@ -279,17 +279,19 @@ if (abs(fMat - 9.0) < 0.5) {
   float d = length(cf);
   vec3 cj = floor(q + 0.5);
   vec3 cg = fract(q + 0.5) - 0.5 - (vec3(fVHash(cj + 2.9), fVHash(cj + 9.4), fVHash(cj + 5.2)) - 0.5) * 0.12;
-  float r2 = 0.26 + 0.12 * fVHash(cj + 4.4);
+  // the second layer fills in only some cells: clusters stay airy
+  float r2 = (0.26 + 0.12 * fVHash(cj + 4.4)) * step(0.5, fVHash(cj + 8.8));
   float d2 = length(cg);
   float aa = max(fwidth(d), 1e-3) * 1.2;
   float dots = max(1.0 - smoothstep(r - aa, r + aa, d), 1.0 - smoothstep(r2 - aa, r2 + aa, d2));
   float far = smoothstep(0.3, 0.75, length(fwidth(q)));
-  float bloom = cl * mix(dots, 0.38, far);
-  vec3 bc = fract(vFIH * 13.7) < 0.75 ? vec3(0.95, 0.67, 0.77) : vec3(0.96, 0.92, 0.88);
+  bool bWhite = fract(vFIH * 13.7) > 0.85;
+  float bloom = cl * mix(dots, bWhite ? 0.16 : 0.24, far);
+  vec3 bc = bWhite ? vec3(0.95, 0.9, 0.86) : vec3(0.93, 0.56, 0.71);
   bc *= mix(0.88, 1.04, fVHash(ci + 5.5));
   // the flower's heart is a touch deeper
   bc = mix(bc, bc * vec3(0.9, 0.72, 0.82), (1.0 - smoothstep(0.0, r, min(d, d2))) * 0.35 * (1.0 - far));
-  diffuseColor.rgb = mix(diffuseColor.rgb, mix(diffuseColor.rgb, bc, 0.2), cl * 0.85);
+  diffuseColor.rgb = mix(diffuseColor.rgb, mix(diffuseColor.rgb, bc, 0.14), cl * 0.8);
   diffuseColor.rgb = mix(diffuseColor.rgb, bc, bloom * 0.9);
   // winter thinning
 }
