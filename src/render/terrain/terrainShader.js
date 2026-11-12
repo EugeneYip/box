@@ -720,6 +720,7 @@ void terrainSurface() {
   vec4 isSnow = vec4(equal(vec4(t0, t1, t2, t3), vec4(7.0))) * live;
   vec4 isIce = vec4(equal(vec4(t0, t1, t2, t3), vec4(15.0))) * live;
   float lavaRaw = dot(isLava, w);
+  float rockB0 = dot(vec4(equal(vec4(t0, t1, t2, t3), vec4(8.0))) * live, b);
   float snowB = dot(isSnow, b);
   float iceB = dot(isIce, b);
 
@@ -747,8 +748,8 @@ void terrainSurface() {
 
   // ---- slope driven cliffs
   vec3 nrm = s.n;
-  float slopeN = s.n.y + (s.meso.b - 0.5) * 0.10 + (s.det.r - 0.5) * 0.06;
-  float cliff = smoothstep(0.745, 0.665, slopeN) * (1.0 - lavaRaw) * (1.0 - iceB);
+  float slopeN = s.n.y + (s.meso.b - 0.5) * 0.14 + (s.det.r - 0.5) * 0.10 + (s.micro.g - 0.5) * 0.03;
+  float cliff = smoothstep(0.78, 0.65, slopeN) * (1.0 - lavaRaw) * (1.0 - iceB);
   // rock ground takes the triplanar rock from moderate slopes up: projected
   // top-down, its detail stretched into a grey smear on any steeper face
   float rockT = dot(vec4(equal(vec4(t0, t1, t2, t3), vec4(8.0))) * live, b);
@@ -756,6 +757,17 @@ void terrainSurface() {
   // a darker, lusher lip of turf along the top of every rock face
   float lip = smoothstep(0.83, 0.75, slopeN) * (1.0 - cliff) * (1.0 - snowB) * (1.0 - dot(vec4(equal(vec4(t0, t1, t2, t3), vec4(0.0))) * live, b));
   albedo = mix(albedo, albedo * vec3(0.72, 0.84, 0.70), lip * 0.8);
+  // rock tiles bleed into their surroundings as scree and bare soil (smooth
+  // bilinear weight, noise-broken), and the ground darkens at the rock's foot
+  float rockW = dot(vec4(equal(vec4(t0, t1, t2, t3), vec4(8.0))) * vec4(1.0), w);
+  float screeN = s.det.g * 0.6 + s.micro.r * 0.4;
+  float scree = smoothstep(0.05, 0.35, rockW + (screeN - 0.5) * 0.25) * (1.0 - smoothstep(0.55, 0.9, rockB0)) * (1.0 - snowB);
+  vec3 screeC = mix(vec3(0.27, 0.24, 0.20), vec3(0.36, 0.33, 0.29), s.micro.g) * (0.85 + 0.3 * s.det.b);
+  albedo = mix(albedo, albedo * 0.78, scree * 0.6);
+  albedo = mix(albedo, screeC, scree * smoothstep(0.45, 0.7, screeN) * 0.55);
+  // the cliff ramp itself: a band of broken scree between turf and face
+  float cBand = cliff * (1.0 - cliff) * 4.0 * (1.0 - snowB);
+  albedo = mix(albedo, screeC * 0.9, cBand * smoothstep(0.35, 0.65, screeN) * 0.45);
   vec3 facetN = nrm;
   if (cliff > 0.001) {
     // ash / lava around: basalt cone rock instead of layered sediment
