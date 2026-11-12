@@ -535,7 +535,7 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
     stamp(f, 1, 0, (i) => {
       if (!land[i]) return;
       const d = dLand[i] / Math.max(0.7, scale768);
-      if (d <= 2.6) hgt[i] = Math.min(hgt[i], 0.35 + d * 0.75);
+      if (d <= 3.8) hgt[i] = Math.min(hgt[i], 0.35 + d * 0.5 + Math.max(0, d - 2.8) * 1.2);
     });
   }
   // ice domes: Greenland and Antarctica rise from their coasts
@@ -592,10 +592,10 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
   }
   for (let i = 0; i < N; i++) {
     if (land[i]) hgt[i] = Math.max(hgt[i], 0.24);
+    else hgt[i] = Math.min(-0.2, Math.max(hgt[i], MIN_HEIGHT));
     // lone islets (a tile or two in open ocean) rise as small volcanic hills,
     // not flat sand discs that read as foam rings
     if (land[i] && landW[i] <= 1.01) hgt[i] = Math.max(hgt[i], 1.1 + hash2(i % W, (i / W) | 0, seed + 9) * 0.6);
-    else hgt[i] = Math.min(-0.2, Math.max(hgt[i], MIN_HEIGHT));
   }
   // terraced benches on the flanks and plateau rims; crests stay sharp
   const benchMask = new Float32Array(N);
