@@ -91,9 +91,10 @@ export class FleetRenderer {
     this.arrows.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(64 * 3), 3);
     this.pots = this._inst(potGeometry(), this.tracerMat, 16);
     this.pots.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(16 * 3), 3);
-    this._cArrow = new THREE.Color(2.2, 1.5, 0.9);
-    this._cPotTail = new THREE.Color(3.0, 1.0, 0.3);
-    this._cPot = new THREE.Color(4.0, 1.9, 0.5);
+    // (yellow at the head, orange down the tail; luminance over 1 so they bloom)
+    this._cArrow = new THREE.Color(2.4, 1.2, 0.3);
+    this._cPotTail = new THREE.Color(3.0, 0.9, 0.15);
+    this._cPot = new THREE.Color(4.0, 1.7, 0.35);
     // trade lanes (dashed, faint, mid zoom): the same water-fx program as lines
     const MAXV = 6000;
     const lg = new THREE.BufferGeometry();
@@ -652,7 +653,7 @@ export class FleetRenderer {
           const from = st._pu == null ? Math.max(0, u - 0.45) : u;
           for (let uu = from; uu <= u + 1e-6; uu += 0.03) {
             const [x, y, z] = at(st, uu);
-            this.game.fx.emit('smoke', { x, y, z }, { scale: 0.6, count: 2 });
+            this.game.fx.emit('smoke', { x, y, z }, { scale: 0.85, count: 2 });
             if ((st._puff = (st._puff || 0) + 1) % 3 === 0) this.game.fx.emit('fire', { x, y, z }, { scale: 0.25 });
           }
           st._pu = u;

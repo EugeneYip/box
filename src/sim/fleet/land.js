@@ -598,6 +598,14 @@ export const land = {
           if (od < near) near = od;
         }
         if (!clear || near > 10) continue;
+        // and clear of any other settlement's houses too
+        for (let dz = -2; dz <= 2 && clear; dz++)
+          for (let dx = -2; dx <= 2; dx++)
+            if (w.inBounds(tx + dx, tz + dz) && w.building[w.idx(tx + dx, tz + dz)] >= 0) {
+              clear = false;
+              break;
+            }
+        if (!clear) continue;
         const sc = Math.ceil(k / 2) * 1.2 + Math.hypot(x - v.x, z - v.z) * 0.12 + (r - ext) * 0.4;
         if (sc < bs) {
           bs = sc;

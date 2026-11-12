@@ -178,8 +178,8 @@ export const war = {
   // Within bowshot but not yet alongside: both crews loose at each other.
   _archery(a, b, dt, d) {
     const crew = (v) => 0.45 + 0.55 * (v.hp / v.maxHp);
-    this._volley(a, b, 2 + Math.floor(this.rng() * 3), 0.13);
-    if (b.def.dps > 0 && d < 7.5) this._volley(b, a, 1 + Math.floor(this.rng() * 2), 0.1);
+    this._volley(a, b, 2 + Math.floor(this.rng() * 3), 0.07);
+    if (b.def.dps > 0 && d < 7.5) this._volley(b, a, 1 + Math.floor(this.rng() * 2), 0.05);
     this.hurt(b, a.def.dps * 0.1 * this._matMod(a.kingdom) * crew(a) * dt, 'battle', a);
     if (b.alive && b.state !== 'sinking' && b.def.dps > 0 && d < 7.5) this.hurt(a, b.def.dps * 0.1 * this._matMod(b.kingdom) * crew(b) * dt, 'battle', b);
     a.lastFight = b.lastFight = this.game.time.total;
