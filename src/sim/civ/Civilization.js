@@ -1514,10 +1514,10 @@ export class Civilization {
     if (v.hasRock == null) v.hasRock = this._hasRockNear(v);
     // lost the hall? rebuild one
     if (!v.hall || !v.hall.alive) {
-      if (v.pop >= 3 && v.wood >= 20) {
+      if (v.pop >= 3 && v.wood >= 8) {
         const spot = this._hallSpotNear(Math.floor(v.cx), Math.floor(v.cz), 9);
         if (spot) {
-          v.wood -= 20;
+          v.wood = Math.max(0, v.wood - 20);
           const b = this.addBuilding(v, 'hall', spot[0], spot[1], this.rng.int(0, 3), { progress: 0.05 });
           this._connectToRoads(v, Math.floor(b.doorX), Math.floor(b.doorZ));
         }
@@ -1575,6 +1575,9 @@ export class Civilization {
     const pop = v.pop;
     if (room() && pop >= 8 && count('granary') === 0 && v.food > v.foodCap * 0.7) build('granary');
     const crowded = this._crowd();
+    // a village packed beyond its homes always gets a new house first, even
+    // while other works are under way (small towns were stuck at their housing)
+    if (!frozen && pop >= v.housing - 1 && v.housing < this._popCap(v) + 6 && sites >= maxSites) sites = maxSites - 1;
     // 1 housing (bounded: big towns upgrade instead of sprawling)
     if (room() && v.housing - pop < 2 + v.tier && v.housing < this._popCap(v) + 6) {
       // a crowded world builds up, not out: cottages become timber houses
