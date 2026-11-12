@@ -609,3 +609,53 @@
 .ws-ovlabel[hidden] {
   display: none;
 }
+
+/* ---- phone landscape inspector: more room for the content
+   ('Also here' stays one scrolling row; the sheet rises over the stats bar,
+   which steps aside while a card is open) */
+@media (max-height: 500px) and (min-width: 721px) {
+  .ws-insp__also {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+  .ws-insp__also .ws-chip2 {
+    max-width: 168px;
+  }
+  .ws-insp,
+  .ws-root:not(.has-minimap) .ws-insp {
+    top: 6px;
+  }
+  .has-insp .ws-stats {
+    opacity: 0;
+    pointer-events: none !important;
+  }
+  /* the clock slides left, clear of the taller sheet */
+  .has-insp .ws-top > .ws-top__centre {
+    left: 64px;
+    transform: none;
+  }
+  .has-insp .ws-stats * {
+    pointer-events: none !important;
+  }
+  .ws-insp__actions {
+    margin-top: 6px;
+  }
+  .ws-insp__actions .ws-btn {
+    min-height: 44px;
+    height: 44px;
+  }
+}
+.ws-egive__preview.is-worn {
+  box-shadow: inset 0 0 0 1px rgba(155, 227, 168, 0.45);
+}
+.ws-egive__preview.is-worn small {
+  color: #9be3a8;
+}
+
+/* long-press on a control explains it: no system callout or text selection */
+.is-touch button[data-tip] {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
