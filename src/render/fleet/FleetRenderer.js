@@ -585,10 +585,12 @@ export class FleetRenderer {
           this._m.compose(this._p.set(x, y, z), this._q, this._s.setScalar(sc));
           mesh.setMatrixAt(n++, this._m);
         }
-        if (this.game.fx?.emit && (st._puff = (st._puff || 0) + 1) % 2 === 0) {
+        // the trail is laid by distance flown (none while the game is paused)
+        if (this.game.fx?.emit && u - (st._pu ?? -1) >= 0.035) {
+          st._pu = u;
           const [x, y, z] = at(st, u);
           this.game.fx.emit('smoke', { x, y, z }, { scale: 0.45 });
-          if (st._puff % 4 === 0) this.game.fx.emit('fire', { x, y, z }, { scale: 0.3 });
+          if ((st._puff = (st._puff || 0) + 1) % 2 === 0) this.game.fx.emit('fire', { x, y, z }, { scale: 0.3 });
         }
       }
       mesh.instanceMatrix.needsUpdate = true;
@@ -619,7 +621,7 @@ export class FleetRenderer {
         this._q.setFromEuler(this._e);
         this._m.compose(this._p.set(x, y, z), this._q, this._s.setScalar(sh.pot ? 2 : 1.5));
         mesh.setMatrixAt(n++, this._m);
-        if (sh.pot && this.game.fx?.emit && Math.random() < 0.35) this.game.fx.emit('fire', { x, y, z }, { scale: 0.25 });
+        if (sh.pot && !this.game.paused && this.game.fx?.emit && Math.random() < 0.35) this.game.fx.emit('fire', { x, y, z }, { scale: 0.25 });
       }
       mesh.instanceMatrix.needsUpdate = true;
     }
@@ -681,7 +683,7 @@ export class FleetRenderer {
   // Smoke and flames over burning ships, spray in a storm.
   _effects(F, dt, far, dist, cx, cz) {
     const fx = this.game.fx;
-    if (!fx?.emit || far || dist > 120) return;
+    if (!fx?.emit || far || dist > 120 || this.game.paused) return;
     if ((this._fxT -= dt) > 0) return;
     this._fxT = this.game.settings?.powerSaver ? 0.5 : 0.25;
     const R = dist * 1.1 + 12;
@@ -691,8 +693,9 @@ export class FleetRenderer {
       if (Math.abs(v.x - cx) > R || Math.abs(v.z - cz) > R) continue;
       if (v.burning > 0.15 || (v.sink > 0 && v.sink < 0.5)) {
         // a burning ship trails smoke and throws embers
-        fx.emit('smoke', { x: v.x, y: (v.y || 0) + 0.6, z: v.z }, { scale: 0.9 + v.def.length * 0.35 });
-        if (v.burning > 0.4) fx.emit('smoke', { x: v.x, y: (v.y || 0) + 1.6, z: v.z }, { scale: 1.2 + v.def.length * 0.3 });
+        // (one thin puff at the deck, the column above it, so the hull stays readable)
+        fx.emit('smoke', { x: v.x, y: (v.y || 0) + 0.9, z: v.z }, { scale: 0.6 + v.def.length * 0.2, count: 1 });
+        if (v.burning > 0.4) fx.emit('smoke', { x: v.x, y: (v.y || 0) + 2.2, z: v.z }, { scale: 0.9 + v.def.length * 0.25, count: 2 });
         if (v.burning > 0.2) {
           fx.emit('fire', { x: v.x + (Math.random() - 0.5) * 0.5, y: (v.y || 0) + 0.4, z: v.z }, { scale: 0.5 });
           if (Math.random() < 0.4) fx.emit('embers', { x: v.x, y: (v.y || 0) + 0.8, z: v.z }, { count: 2 });
