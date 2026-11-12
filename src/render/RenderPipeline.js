@@ -28,10 +28,13 @@ import { GradeEffect } from './atmosphere/post/GradeEffect.js';
 //
 // Detail by zoom and power saving (round 5): as game.view.zoom01 rises the
 // pipeline drops AO (and DOF, via the atmosphere's focus params);
-// game.settings.powerSaver (event 'powersaver') disables AO and DOF and the
-// atmosphere halves the shadow map. The pixel ratio never changes on a
-// toggle (a drawing-buffer resize stalls the GPU). Dynamic resolution
-// scaling is opt-in via game.settings.dynamicResolution.
+// game.settings.powerSaver (event 'powersaver') disables AO and DOF, the
+// atmosphere halves the shadow map, and the 3D view renders at 0.75x pixel
+// ratio (the DOM UI stays sharp). The toggle itself never resizes anything (a
+// drawing-buffer resize stalls the GPU): the new resolution is applied once,
+// a few seconds later, at a moment the camera is still (or right away on a
+// window resize, which reallocates anyway). Dynamic resolution scaling is
+// opt-in via game.settings.dynamicResolution.
 //
 // Frame (medium and up):
 //   Render (HDR half-float) -> linear depth -> N8AO (high+) -> aerial haze /
@@ -48,6 +51,9 @@ import { GradeEffect } from './atmosphere/post/GradeEffect.js';
 //   high   : ~19  + half-res N8AO (1 denoise iteration), SMAA instead of FXAA
 //   ultra  : ~24  full-res N8AO (2 denoise iterations), more bloom levels,
 //                 MSAA x4 + SMAA, 4096 shadow map
+// power-saver resolution factor (on top of the tier's pixel ratio)
+const SAVER_SCALE = 0.75;
+
 export const QUALITY_TIERS = {
   low: { pixelRatio: 1, post: false, shadowMap: 1024, ao: null, dof: 0, bloomLevels: 0, aa: null, msaa: 0 },
   medium: { pixelRatio: 1, post: true, shadowMap: 2048, ao: null, dof: 12, bloomLevels: 4, aa: 'fxaa', msaa: 0 },
@@ -69,7 +75,11 @@ export class RenderPipeline {
       stencil: false,
       alpha: false,
     });
-    this.dynScale = 1; // dynamic resolution factor (power saver / opt-in)
+    this.dynScale = 1; // dynamic resolution factor (opt-in)
+    this.saverScale = game.settings?.powerSaver ? SAVER_SCALE : 1; // applied power-saver resolution factor
+    this._saverT = 0; // seconds since the saver was toggled
+    this._stillT = 0; // seconds the camera has not moved
+    this._camSig = new Float32Array(7);
     this._dt = [];
     this._drsT = 0;
     renderer.setPixelRatio(this.targetPixelRatio());
@@ -90,8 +100,8 @@ export class RenderPipeline {
     this._flash = new THREE.Vector3();
     this._fog = new THREE.Fog(0x9fc6e8, 300, 900);
     game.events?.on?.('powersaver', () => {
-      this.dynScale = 1;
-      this.applyPixelRatio();
+      // no resize here: updateSaverResolution() applies it at a calm moment
+      this._saverT = 0;
     });
     this.linearDepthTexture = null;
     const gl = renderer.getContext();
@@ -126,7 +136,33 @@ export class RenderPipeline {
     // (the power saver no longer changes the pixel ratio: resizing the
     // drawing buffer forces a full GPU sync, which stalled the toggle for
     // seconds; the saver sheds AO, DOF, shadow resolution and frame rate)
-    return Math.max(0.5, pr * this.dynScale);
+    return Math.max(0.5, pr * this.dynScale * this.saverScale);
+  }
+
+  // Power-saver resolution, applied off the toggle: once the saver has been
+  // on (or off) for a moment and the camera has been still briefly, switch
+  // the pixel ratio in a single step. The one GPU sync that a drawing-buffer
+  // resize costs then lands on a still frame instead of the button press.
+  updateSaverResolution(dt) {
+    const want = this.powerSaver ? SAVER_SCALE : 1;
+    const cam = this.game.cameraRig?.camera;
+    if (cam) {
+      const e = cam.matrixWorld.elements;
+      const sig = this._camSig;
+      const now = [e[12], e[13], e[14], e[8], e[9], e[10], cam.fov || 0];
+      let moved = 0;
+      for (let i = 0; i < 7; i++) {
+        moved = Math.max(moved, Math.abs(now[i] - sig[i]));
+        sig[i] = now[i];
+      }
+      this._stillT = moved > 1e-3 ? 0 : this._stillT + dt;
+    }
+    this._saverT += dt;
+    if (want === this.saverScale) return;
+    const wait = want < 1 ? 3 : 1.5; // getting sharp again is wanted sooner
+    if (this._saverT < wait || this._stillT < 0.6) return;
+    this.saverScale = want;
+    this.applyPixelRatio();
   }
 
   applyPixelRatio() {
@@ -312,6 +348,9 @@ export class RenderPipeline {
 
   resize(w, h) {
     this.size.set(w, h);
+    // a resize reallocates every target anyway: settle the saver scale now
+    this.saverScale = this.powerSaver ? SAVER_SCALE : 1;
+    this.renderer.setPixelRatio(this.targetPixelRatio());
     this.renderer.setSize(w, h);
     if (this.composer) this.composer.setSize(w, h);
   }
@@ -382,6 +421,7 @@ export class RenderPipeline {
     const k = Math.exp(-dt * 7);
     this._flash.multiplyScalar(k);
     this.updateDynamicResolution(dt);
+    this.updateSaverResolution(dt);
     try {
       game.atmosphere?.preRender?.(renderer, dt);
       for (const fn of this.beforeRender) fn(renderer, dt);
