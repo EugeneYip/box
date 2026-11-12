@@ -864,8 +864,9 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
           const pk = nWarp(x / tpd / 9 + 70, 2.3) * 2.6 + nWarp(x / tpd / 2.6 - 40, 5.5) * 0.9;
           // the pack thins out toward the side borders (natural ends)
           const ek = sideK[x];
-          if (lat > 81.5 + pk + bn + (1 - ek) * 7 && lat < 84.2 + pk * 0.6 - bn * 0.6 - (1 - ek) * 2.5 && nWarp(x / tpd / 14 + 5, 3.1) > 0.15) ice = true;
-          else if (lat > 70 && ds < 2.2 + bn) ice = true;
+          // (no open-ocean pack band: at the top of a plate carree any pack reads as a white strip or a dashed row)
+          void ek;
+          if (lat > 70 && ds < 2.2 + bn) ice = true;
           else if (lat < -60 && ds < 2.4 + bn * 1.2 + Math.max(0, pk) * 0.9) ice = true;
           else if (lat > southCut[x] + 1.4) {
             // the Ross and Filchner-Ronne ice shelves (water in the land mask)
