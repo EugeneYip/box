@@ -431,7 +431,7 @@ export class Inspector {
     const actions = [];
     if ((u || craft) && !dead) actions.push(`<button class="ws-btn ws-btn--sm ${following ? 'is-on' : ''}" type="button" data-act="follow">${uiIcon('follow')}<span>${following ? 'Following' : 'Follow'}</span><kbd class="ws-key">F</kbd></button>`);
     actions.push(`<button class="ws-btn ws-btn--sm ws-btn--ghost" type="button" data-act="focus">${uiIcon('focus')}<span>Focus</span></button>`);
-    const kindLabel = k === 'tile' && r.tile?.water ? 'Waters' : u && ic.label ? ic.label : craft ? (craft.def?.war ? 'Warship' : craft.def?.siege ? 'Siege engine' : KIND_LABEL[k]) : KIND_LABEL[k] || 'Detail';
+    const kindLabel = k === 'tile' && r.tile?.water ? 'Waters' : u && ic.label ? ic.label : craft ? (craft.name && craft.def?.name ? craft.def.name : craft.def?.war ? 'Warship' : craft.def?.siege ? 'Siege engine' : KIND_LABEL[k]) : KIND_LABEL[k] || 'Detail';
     const pref = u || r.building;
     // a realm shows its banner (the same drawing as its flags) in place of a portrait
     const kObj = !pref && kindOf(r) === 'kingdom' && typeof r.kingdom === 'object' ? r.kingdom : null;
@@ -455,7 +455,7 @@ export class Inspector {
         <span class="ws-insp__badge${portrait ? ' has-portrait' : ''}${kObj?.banner ? ' has-banner' : ''}">${level != null ? `<i class="ws-lvl" title="Level ${level}">${level}</i>` : ''}${portrait ? `<img class="ws-insp__portrait" src="${portrait}" alt=""><span class="ws-insp__glyph">${ic.svg}</span>` : ic.svg}${kTint ? `<i class="ws-insp__kdot" style="--k:${kTint}"></i>` : ''}</span>
         <div class="ws-insp__titles">
           <div class="ws-insp__kind">${esc(kindLabel)}${dead ? ` <em class="ws-insp__dead">${craft ? 'Lost' : 'Fallen'}</em>` : ''}</div>
-          <h3 class="ws-insp__title">${esc(r.title || 'Unknown')}${epithet ? ` <span class="ws-insp__epithet">${esc(epithet)}</span>` : ''}</h3>
+          <h3 class="ws-insp__title">${esc(this.titleOf(r) || 'Unknown')}${epithet ? ` <span class="ws-insp__epithet">${esc(epithet)}</span>` : ''}</h3>
           ${r.subtitle ? `<div class="ws-insp__sub" data-sub>${craft && ownerK?.banner ? `<img class="ws-crest ws-crest--banner" alt="" src="${bannerURL(ownerK.banner, ownerK.color, 28)}">` : kTint ? `<i class="ws-crest" style="--k:${kTint}"></i>` : ''}<span>${esc(this.subText(r))}</span></div>` : ''}
         </div>
         ${editable ? `<button class="ws-iconbtn ws-iconbtn--sm ws-insp__edit${editing ? ' is-on' : ''}" type="button" aria-label="${editing ? 'Done editing' : 'Edit'}" data-tip="${editing ? 'Done editing' : 'Edit name, colours and more'}" data-act="${editing ? 'edit-done' : 'edit'}">${uiIcon(editing ? 'check' : 'edit')}</button>` : ''}
@@ -466,7 +466,7 @@ export class Inspector {
       ${editing ? '<div class="ws-insp__scroll ws-insp__editwrap"></div>' : `${cells || depth ? `<div class="ws-insp__scroll">${cells ? `<div class="ws-insp__grid">${cells}</div>` : ''}${depth}</div>` : ''}
       <div class="ws-insp__actions">${actions.join('')}</div>`}`;
     const th = this.el.querySelector('.ws-insp__title');
-    if (th) this.sizeTitle(th, r.title);
+    if (th) this.sizeTitle(th, this.titleOf(r));
     if (editing) {
       this.el.querySelector('.ws-insp__also')?.remove();
       this.el.querySelector('.ws-insp__editwrap').append(this.editor.build(r));
@@ -689,7 +689,16 @@ export class Inspector {
     };
     if (typeof U.forEachNear === 'function') U.forEachNear(cx, cz, rr, (u) => take(u));
     else for (const u of U.list) take(u);
-    out.sort((a, b2) => (b2.job === 'king') - (a.job === 'king') || (b2.data?.inside === true) - (a.data?.inside === true));
+    // someone who just stepped out stays listed a moment, so a chip never
+    // vanishes under a finger that is already on its way to it
+    const now = performance.now();
+    const st = this._occSticky?.b === b ? this._occSticky : (this._occSticky = { b, seen: new Map() });
+    for (const u of out) st.seen.set(u, now);
+    for (const [u, t] of st.seen) {
+      if (now - t > 2500 || !u.alive) st.seen.delete(u);
+      else if (!out.includes(u)) out.push(u);
+    }
+    out.sort((a, b2) => (b2.job === 'king') - (a.job === 'king') || (b2.data?.inside === true) - (a.data?.inside === true) || a.id - b2.id);
     return out;
   }
   occupantsHtml(b) {
@@ -949,8 +958,8 @@ export class Inspector {
     this.index = list.indexOf(r);
     this.track = r;
     const h = this.el.querySelector('.ws-insp__title');
-    if (h && h.firstChild) h.firstChild.textContent = r.title || '';
-    if (h) this.sizeTitle(h, r.title);
+    if (h && h.firstChild) h.firstChild.textContent = this.titleOf(r) || '';
+    if (h) this.sizeTitle(h, this.titleOf(r));
     const sub = this.el.querySelector('.ws-insp__sub span');
     if (sub && r.subtitle) sub.textContent = this.subText(r);
     const tint = this.kingdomTint(r);
@@ -961,6 +970,16 @@ export class Inspector {
     const pin = this.pin?.querySelector('.ws-pin__label');
     if (pin) pin.textContent = r.title || '';
     this._sig = this.signature();
+  }
+  // A named vessel or vehicle shows its kind in the label above, so the title
+  // drops it: "Old Wain of Briargate (ox cart)" -> "Old Wain of Briargate".
+  titleOf(r) {
+    const c = isCraft(r) ? r.vessel || r.building : null;
+    const t = String(r?.title || '');
+    if (!c?.name || !c.def?.name) return t;
+    const kind = c.def.name;
+    const esc2 = kind.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return t.replace(new RegExp(`\\s*\\(${esc2}\\)\\s*$`, 'i'), '').replace(new RegExp(`^${esc2}\\s+`, 'i'), '') || t;
   }
   // subtitle with a custom realm colour named plainly ("banner of deep teal")
   subText(r) {

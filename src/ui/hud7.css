@@ -743,3 +743,8 @@
   -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 28px), transparent);
   mask-image: linear-gradient(180deg, #000 calc(100% - 28px), transparent);
 }
+
+/* ---- chronicle feed cards: 44 px targets on touch (desktop unchanged) */
+.is-touch .ws-feed__item {
+  min-height: 44px;
+}
