@@ -1029,7 +1029,8 @@ export class Fleet {
     stats.push(['Built', `year ${Math.floor(v.born / YEAR) + 1}`]);
     if (v.cls === 'sea' && this.hasTech(v.kingdom, 'astronomy')) stats.push(['Charts', 'sails by the stars, day and night']);
     return {
-      priority: v.cls === 'sea' ? 26 : 16,
+      // a craft outranks people merely standing beside it (units are 25)
+      priority: v.cls === 'sea' ? 26 : 27,
       kind: v.cls === 'sea' ? 'vessel' : 'vehicle',
       building: v, // tracked by the inspector (it follows ref.x / ref.z)
       vessel: v,
