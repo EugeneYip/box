@@ -797,9 +797,12 @@ void terrainSurface() {
     float forestB = dot(vec4(equal(vec4(t0, t1, t2, t3), vec4(2.0))) * live, b) + 0.6 * dot(vec4(equal(vec4(t0, t1, t2, t3), vec4(3.0))) * live, b);
     float grassB = dot(vec4(equal(vec4(t0, t1, t2, t3), vec4(1.0))) * live, b);
     albedo = mix(albedo, albedo * vec3(0.72, 0.85, 0.92), forestB * farR * 0.6 * (1.0 - snowB));
+    // map-scale variety: dry uplands and drier climates toward ochre-khaki,
+    // wet lowlands deep green (and a neutral, not olive, desaturation)
     float gv = s.macro.b * 0.6 + s.macro.r * 0.4;
-    vec3 gTint = mix(vec3(0.86, 0.92, 0.80), vec3(1.10, 1.02, 0.78), smoothstep(0.35, 0.7, gv));
-    vec3 gAlb = mix(albedo * gTint, vec3(lum(albedo)) * vec3(1.0, 1.05, 0.85), 0.22);
+    float dryv = clamp(smoothstep(0.55, 0.25, s.moist) * 0.7 + smoothstep(0.5, 0.75, gv) * 0.5 + smoothstep(2.5, 6.0, s.p.y) * 0.3, 0.0, 1.0);
+    vec3 gTint = mix(vec3(0.78, 0.90, 0.80), vec3(1.24, 1.06, 0.68), dryv);
+    vec3 gAlb = mix(albedo * gTint, vec3(lum(albedo)) * vec3(1.02, 1.0, 0.9), 0.15);
     albedo = mix(albedo, gAlb, grassB * farR * (1.0 - snowB));
   }
 
