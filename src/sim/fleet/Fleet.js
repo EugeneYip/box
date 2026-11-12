@@ -758,7 +758,9 @@ export class Fleet {
     // the recent track, for the wake that follows the course
     const T = v.track || (v.track = []);
     const tl = T.length;
-    if (!tl || Math.hypot(v.x - T[tl - 2], v.z - T[tl - 1]) > Math.max(0.15, def.length * 0.12)) {
+    const td = tl ? Math.hypot(v.x - T[tl - 2], v.z - T[tl - 1]) : 0;
+    if (!tl || td > Math.max(0.15, def.length * 0.12)) {
+      if (td > 3) T.length = 0; // a jump (snapped off a shoal): start afresh
       T.push(v.x, v.z);
       if (T.length > 48) T.splice(0, 2);
     }
