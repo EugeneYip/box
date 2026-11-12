@@ -403,7 +403,17 @@ export class UI {
     rig.goal.dist = d;
     rig.goal.yaw = best.yaw;
     this._ovTurned = best.yaw !== north;
-    if (this._ovTurned) this.toast('Turned to fit the screen: north is to the right', 2600);
+    if (this._ovTurned) {
+      // say it once, in the north badge itself (a toast would sit under the Back pill on phones)
+      const b = this.northEl.querySelector('b');
+      b.textContent = 'North is to the right';
+      this.northEl.classList.add('is-wide');
+      clearTimeout(this._northT);
+      this._northT = setTimeout(() => {
+        b.textContent = 'N';
+        this.northEl.classList.remove('is-wide');
+      }, 3600);
+    }
     this._biasGoal = bias;
     this.syncOverviewBtn();
     g.audio?.play?.('ui-click', { volume: 0.45 });

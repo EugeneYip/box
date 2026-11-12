@@ -88,7 +88,6 @@ export function techPanel(ui, kingdomId) {
         const missing = (t.requires || []).filter((r) => !has(k, r)).map((r) => techDef(g, r)?.name || prettyId(r));
         const ul = Array.isArray(t.unlocks) ? t.unlocks : [];
         const more = ul.length > 1 ? ` and ${ul.length - 1} more` : '';
-        const brings = ul.length ? `${got ? 'Brought' : 'Brings'}: ${ul[0]}${more}` : '';
         const ready = !got && (t.requires || []).every((r) => has(k, r));
         col.append(
           el(
@@ -98,10 +97,10 @@ export function techPanel(ui, kingdomId) {
             el(
               'span',
               { class: 'ws-techcard__txt' },
-              el('b', { text: t.name || prettyId(t.id) }),
-              // what it brought (learned) or brings; locked cards also name what is still missing
-              brings ? el('small', { class: 'ws-techcard__brings', text: brings }) : t.description ? el('small', { text: t.description }) : null,
-              !got && !ready && missing.length ? el('small', { class: 'ws-techcard__needs', text: `Needs ${missing.join(', ')}` }) : null,
+              // name, and for a locked card what is still missing, on one line
+              el('span', { class: 'ws-techcard__head' }, el('b', { text: t.name || prettyId(t.id) }), !got && !ready && missing.length ? el('em', { class: 'ws-techcard__needs', text: `needs ${missing.join(', ')}` }) : null),
+              // what it brought (learned) or brings: the item may be cut short, "and N more" never is
+              ul.length ? el('small', { class: 'ws-techcard__brings' }, el('span', { class: 'ws-techcard__item', text: `${got ? 'Brought' : 'Brings'}: ${ul[0]}` }), more ? el('span', { class: 'ws-techcard__more', text: more }) : null) : t.description ? el('small', { text: t.description }) : null,
             ),
             now && res.pct != null ? el('span', { class: 'ws-meter' }, el('i', { style: `width:${(res.pct * 100).toFixed(1)}%` })) : null,
           ),

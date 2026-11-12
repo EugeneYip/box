@@ -411,11 +411,14 @@ export class Inspector {
         return `<div class="ws-cell${wideOf[ci] ? ' ws-cell--wide' : ''}" data-k="${esc(key)}"><span class="ws-cell__k">${esc(key)}</span><span class="ws-cell__v">${esc(v)}</span></div>`;
       })
       .join('');
+    // people listed under "Inside" are not repeated among the chips
+    const occIds = kindOf(r) === 'building' && r.building ? new Set((safe(() => this.occupants(r.building), []) || []).map((o) => o.id)) : null;
     const seenTitles = new Set([r.title]);
     const chips = this.results
       .map((o, i) => ({ o, i }))
       .filter(({ o, i }) => {
         if (i === this.index || seenTitles.has(o.title)) return false;
+        if (occIds && o.unit && occIds.has(o.unit.id)) return false;
         seenTitles.add(o.title);
         return true;
       })
@@ -480,7 +483,7 @@ export class Inspector {
         for (const c of cells.slice(4)) g2.append(c);
         more.append(g2);
       }
-      for (const sec of [...sc.querySelectorAll('.ws-dsec')]) if (!/traits|conditions|learning|realm/i.test(sec.querySelector('h5')?.textContent || '')) more.append(sec);
+      for (const sec of [...sc.querySelectorAll('.ws-dsec')]) if (!/inside|traits|conditions|learning|realm|voyage|hold/i.test(sec.querySelector('h5')?.textContent || '')) more.append(sec);
       if (more.childElementCount) {
         more.hidden = !this.moreOpen;
         const btn = document.createElement('button');

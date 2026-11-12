@@ -302,6 +302,11 @@ export class Modals {
     );
     this.card = card;
     this.layer.append(card);
+    // a body taller than the dialog fades at the bottom until scrolled to the end
+    const mb = card.querySelector('.ws-modal__body');
+    const more = () => mb.classList.toggle('is-more', mb.scrollHeight - mb.scrollTop - mb.clientHeight > 4);
+    mb.addEventListener('scroll', more, { passive: true });
+    requestAnimationFrame(more);
     this.ui.root.classList.add('has-modal');
     requestAnimationFrame(() => card.classList.add('is-open'));
     this.layer.classList.add('is-open');

@@ -659,3 +659,87 @@
   -webkit-user-select: none;
   user-select: none;
 }
+
+/* north badge: briefly explains a turned map */
+.ws-north b {
+  white-space: nowrap;
+  transition: opacity 0.2s;
+}
+.ws-north.is-wide b {
+  font: 600 12px var(--ws-font);
+  letter-spacing: 0.02em;
+}
+
+/* ---- tech cards: "and N more" always shows; locked cards readable; the grid fits 720p */
+.ws-techcard__brings {
+  display: flex !important;
+  min-width: 0;
+  white-space: nowrap;
+}
+.ws-techcard__item {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ws-techcard__more {
+  flex: none;
+  padding-left: 3px;
+}
+.ws-tech__col {
+  opacity: 1;
+}
+.ws-techcard.is-locked {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.16);
+  box-shadow: inset 0 0 0 1px rgba(255, 244, 222, 0.07);
+}
+.ws-techcard.is-locked b {
+  color: var(--ws-ink-2);
+}
+.ws-techcard.is-locked small,
+.ws-techcard.is-locked .ws-techcard__brings {
+  color: color-mix(in srgb, var(--ws-ink-3) 85%, #fff 15%);
+}
+.ws-techcard.is-locked .ws-techcard__state {
+  opacity: 0.6;
+}
+@media (max-height: 800px) {
+  .ws-techcard {
+    padding: 6px 8px;
+    gap: 2px 8px;
+  }
+  .ws-tech__col {
+    gap: 5px;
+  }
+  .ws-tech__now {
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+  .ws-tech__now p {
+    margin: 2px 0 0;
+  }
+}
+
+.ws-techcard__head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+.ws-techcard__head b {
+  flex: none;
+}
+.ws-techcard__head .ws-techcard__needs {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--ws-ink-3);
+}
+/* a scrolling dialog says so: a soft fade at the bottom edge while more lies below */
+.ws-modal__body.is-more {
+  -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(180deg, #000 calc(100% - 28px), transparent);
+}
