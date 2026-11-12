@@ -748,3 +748,7 @@
 .is-touch .ws-feed__item {
   min-height: 44px;
 }
+.ws-insp__scroll > .ws-dsec.is-inside:first-child {
+  margin-top: 0;
+  margin-bottom: 10px;
+}

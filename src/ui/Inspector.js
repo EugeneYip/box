@@ -473,6 +473,9 @@ export class Inspector {
       this.el.classList.add('is-editing');
     } else this.el.classList.remove('is-editing');
     const sc = this.el.querySelector('.ws-insp__scroll');
+    // the people inside come first: on short screens they are the reason to open a building
+    const inside = sc?.querySelector(':scope .ws-dsec.is-inside');
+    if (inside) sc.prepend(inside);
     if (sc && this.isCompact()) {
       const more = document.createElement('div');
       more.className = 'ws-insp__more';
@@ -712,7 +715,7 @@ export class Inspector {
       })
       .join('');
     const more = list.length > 8 ? `<span class="ws-insp__muted">+${list.length - 8} more</span>` : '';
-    return `<section class="ws-dsec"><h5>Inside · ${list.length}</h5><div class="ws-chips">${chips}${more}</div></section>`;
+    return `<section class="ws-dsec is-inside"><h5>Inside · ${list.length}</h5><div class="ws-chips">${chips}${more}</div></section>`;
   }
   // The inspector result for one exact creature (Units.inspect picks the one
   // nearest a point, which may be a neighbour standing on the same spot).
