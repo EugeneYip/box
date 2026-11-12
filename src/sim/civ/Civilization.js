@@ -766,13 +766,22 @@ export class Civilization {
     v.food -= eat;
     // upkeep: firewood for every hearth and timber to keep roofs mended
     const nb = v.buildings.length;
-    v.wood = Math.max(0, v.wood - ((pop * 0.2 + nb * 0.06) / YEAR) * dt);
+    v.wood = Math.max(0, v.wood - ((pop * (winter ? 0.2 : 0.09) + nb * 0.035) / YEAR) * dt);
     // storage: what does not fit in the stores rots or is carted off
     v.woodCap = 90 + (v.hasWorkshop ? 90 : 0) + (v.hall ? v.hall.level * 40 : 0) + v.tier * 40;
     v.stoneCap = 70 + (v.hasWorkshop ? 80 : 0) + (v.hall ? v.hall.level * 35 : 0) + v.tier * 40;
     // food spoils: a little always, a lot when the granaries are full to bursting
     v.food -= v.food * ((0.03 + (v.food > v.foodCap * 0.8 ? 0.12 : 0)) / YEAR) * dt;
-    if (v.wood > v.woodCap) v.wood = v.woodCap;
+    if (v.wood > v.woodCap) {
+      const extra = v.wood - v.woodCap;
+      v.wood = v.woodCap;
+      let poor = null;
+      for (const vid of this.kingdoms[v.kingdom]?.villages || []) {
+        const o = this.villages[vid];
+        if (o?.alive && o !== v && o.landId === v.landId && o.wood < (o.woodCap || 90) * 0.5 && (!poor || o.wood < poor.wood)) poor = o;
+      }
+      if (poor) poor.wood += extra * 0.8;
+    }
     if (v.stone > v.stoneCap) v.stone = v.stoneCap;
     // gold: markets trade, road links carry merchants, soldiers draw pay
     const markets = v.buildings.reduce((n, b) => n + (b.alive && b.type === 'market' && !b.constructing ? 1 : 0), 0);
@@ -1086,7 +1095,7 @@ export class Civilization {
         let smithy = null,
           ss = -1;
         for (const o of vs) {
-          if (!(o.hasForge || o.hasWorkshop) || o.wood < 2) continue;
+          if (!(o.hasForge || o.hasWorkshop) || o.wood < 30) continue;
           const sc = (o.ore || 0) * 3 + o.stone + (o.hasForge ? 10 : 0);
           if (sc > ss) (ss = sc), (smithy = o);
         }
