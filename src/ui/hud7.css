@@ -652,3 +652,10 @@
 .ws-egive__preview.is-worn small {
   color: #9be3a8;
 }
+
+/* long-press on a control explains it: no system callout or text selection */
+.is-touch button[data-tip] {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}

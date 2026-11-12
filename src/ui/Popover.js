@@ -31,22 +31,70 @@ export class Popover {
       clearTimeout(this._hov);
       if (t === this.target) this.hide();
     });
+    // Long-press on a control explains it. Robust under load: the hold is
+    // measured from the events' own timestamps (a late timer still counts),
+    // a drag of more than 10 px cancels it, and the click that follows is
+    // swallowed only briefly.
+    const LONG = 450,
+      SLOP = 10;
     root.addEventListener('pointerdown', (e) => {
       if (e.pointerType !== 'touch') return;
       const t = e.target.closest?.('[data-tip]');
       clearTimeout(this._lp);
+      this._swallow = false;
+      this._lpShown = false;
+      this._press = null;
       if (!t || !t.dataset.tip) return this.hide();
       if (t.closest(INTERACTIVE)) {
-        // long-press on a control: explain it, swallow the click that follows
+        this._press = { t: e.timeStamp, x: e.clientX, y: e.clientY, el: t, id: e.pointerId };
         this._lp = setTimeout(() => {
-          this.show(t, 2600);
+          if (!this._press || this._press.el !== t) return;
+          this._lpShown = true;
           this._swallow = true;
-        }, 450);
+          this.show(t, 2600);
+        }, LONG);
       } else this._tap = t;
     });
-    const cancel = () => clearTimeout(this._lp);
+    root.addEventListener('pointermove', (e) => {
+      const pr = this._press;
+      if (!pr || e.pointerId !== pr.id) return;
+      if (Math.hypot(e.clientX - pr.x, e.clientY - pr.y) > SLOP) {
+        clearTimeout(this._lp);
+        this._press = null;
+        this._tap = null;
+      }
+    });
+    // the browser's own long-press gesture can cancel the pointer (and send
+    // contextmenu) before a late timer runs: that also counts as the hold
+    const held = (pr, e) => pr && !this._lpShown && pr.el.isConnected && e.timeStamp - pr.t >= LONG - 60;
+    const longPress = (pr) => {
+      clearTimeout(this._lp);
+      this._lpShown = true;
+      this._swallow = true;
+      clearTimeout(this._swT);
+      this._swT = setTimeout(() => (this._swallow = false), 1200);
+      this.show(pr.el, 2600);
+    };
+    const cancel = (e) => {
+      const pr = this._press;
+      clearTimeout(this._lp);
+      if (e && held(pr, e)) longPress(pr);
+      this._press = null;
+    };
     root.addEventListener('pointerup', (e) => {
-      cancel();
+      const pr = this._press;
+      clearTimeout(this._lp);
+      this._press = null;
+      if (e.pointerType === 'touch' && pr && !this._lpShown && pr.el.isConnected && e.timeStamp - pr.t >= LONG && Math.hypot(e.clientX - pr.x, e.clientY - pr.y) <= SLOP) {
+        // the timer was late (a busy frame): the hold still counts
+        this._swallow = true;
+        this.show(pr.el, 2600);
+      }
+      this._lpShown = false;
+      if (this._swallow) {
+        clearTimeout(this._swT);
+        this._swT = setTimeout(() => (this._swallow = false), 700);
+      }
       if (e.pointerType !== 'touch' || !this._tap) return;
       let t = this._tap;
       this._tap = null;
@@ -55,6 +103,14 @@ export class Popover {
       if (!t) return;
       if (this.target === t && this.el.classList.contains('is-shown')) this.hide();
       else this.show(t, 3200);
+    });
+    // no system callout or context menu on a long-pressed control
+    root.addEventListener('contextmenu', (e) => {
+      const t = e.target.closest?.('[data-tip]');
+      if (!t || !t.closest(INTERACTIVE)) return;
+      e.preventDefault();
+      const pr = this._press;
+      if (pr && pr.el === t && !this._lpShown) longPress(pr);
     });
     root.addEventListener('pointercancel', cancel);
     root.addEventListener(
