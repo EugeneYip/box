@@ -87,7 +87,8 @@ export function techPanel(ui, kingdomId) {
         const reqs = (t.requires || []).map((r) => techDef(g, r)?.name || prettyId(r));
         const missing = (t.requires || []).filter((r) => !has(k, r)).map((r) => techDef(g, r)?.name || prettyId(r));
         const ul = Array.isArray(t.unlocks) ? t.unlocks : [];
-        const brings = ul.length ? `Brings: ${ul[0]}${ul.length > 1 ? ` +${ul.length - 1}` : ''}` : '';
+        const more = ul.length > 1 ? ` and ${ul.length - 1} more` : '';
+        const brings = ul.length ? `${got ? 'Brought' : 'Brings'}: ${ul[0]}${more}` : '';
         const ready = !got && (t.requires || []).every((r) => has(k, r));
         col.append(
           el(
@@ -98,8 +99,8 @@ export function techPanel(ui, kingdomId) {
               'span',
               { class: 'ws-techcard__txt' },
               el('b', { text: t.name || prettyId(t.id) }),
-              // learned: what it is; otherwise what it brings (and, if locked, what is still missing)
-              got ? (t.description ? el('small', { text: t.description }) : null) : brings ? el('small', { class: 'ws-techcard__brings', text: brings }) : t.description ? el('small', { text: t.description }) : null,
+              // what it brought (learned) or brings; locked cards also name what is still missing
+              brings ? el('small', { class: 'ws-techcard__brings', text: brings }) : t.description ? el('small', { text: t.description }) : null,
               !got && !ready && missing.length ? el('small', { class: 'ws-techcard__needs', text: `Needs ${missing.join(', ')}` }) : null,
             ),
             now && res.pct != null ? el('span', { class: 'ws-meter' }, el('i', { style: `width:${(res.pct * 100).toFixed(1)}%` })) : null,
