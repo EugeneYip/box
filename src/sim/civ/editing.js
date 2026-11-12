@@ -1,5 +1,6 @@
 import { HERALDRY, colorDist, baseCulture } from './cultures.js';
 import { relKey } from './politics.js';
+import { BUILDING_TYPES } from './catalog.js';
 import { YEAR, ADULT_AGE } from './util.js';
 
 // Player editing of kingdoms, villages and cultures (contract: docs/EDITING.md).
@@ -304,7 +305,13 @@ export const editing = {
     else if (VPOLICY_KEYS[key] === 'bool') {
       if (typeof value !== 'boolean') return false;
       pol[key] = value;
-      if (key === 'walls' && value === false) v.wallPlan = [];
+      if (key === 'walls' && value === false) {
+        v.wallPlan = [];
+        for (const b of [...v.buildings]) if (b.alive && b.constructing && BUILDING_TYPES[b.type]?.wall) {
+          v.stone += 3;
+          this.destroyBuilding(b, 'cancelled');
+        }
+      }
       if (key === 'walls' && value === true && !v.wallPlan?.length) v.wallsPlanned = false;
     } else {
       const n = Number(value);

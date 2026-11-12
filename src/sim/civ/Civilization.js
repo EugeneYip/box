@@ -766,7 +766,7 @@ export class Civilization {
     v.food -= eat;
     // upkeep: firewood for every hearth and timber to keep roofs mended
     const nb = v.buildings.length;
-    v.wood = Math.max(0, v.wood - ((pop * 0.28 + nb * 0.1) / YEAR) * dt);
+    v.wood = Math.max(0, v.wood - ((pop * 0.2 + nb * 0.06) / YEAR) * dt);
     // storage: what does not fit in the stores rots or is carted off
     v.woodCap = 90 + (v.hasWorkshop ? 90 : 0) + (v.hall ? v.hall.level * 40 : 0) + v.tier * 40;
     v.stoneCap = 70 + (v.hasWorkshop ? 80 : 0) + (v.hall ? v.hall.level * 35 : 0) + v.tier * 40;
@@ -792,7 +792,7 @@ export class Civilization {
       if (!v.starving && v.emptyT > 12) {
         v.starving = true;
         v.famineT = now;
-        this._note(`Famine in ${v.name}`, 'disaster', { x: v.cx, z: v.cz }, 'famine' + v.id, 400);
+        this._note(`Famine in ${v.name}`, 'bad', { x: v.cx, z: v.cz }, 'famine' + v.id, 400);
       }
     } else {
       v.emptyT = 0;
@@ -956,12 +956,12 @@ export class Civilization {
         }
       });
       v.trees = mature;
-      const want = 55 + v.tier * 15;
+      const want = 75 + v.tier * 20;
       if (mature + young < want) {
         const species = { vale: [FLORA.OAK, FLORA.BIRCH], dune: [FLORA.PALM, FLORA.ACACIA], frost: [FLORA.PINE, FLORA.PINE], mire: [FLORA.JUNGLE_TREE, FLORA.SWAMP_TREE] }[baseCulture(v.culture)] || [FLORA.OAK];
         if (v.groveAngle == null) v.groveAngle = this.rng.float(0, Math.PI * 2);
         let planted = 0;
-        for (let k = 0; k < 40 && planted < 6; k++) {
+        for (let k = 0; k < 60 && planted < 10; k++) {
           const a = v.groveAngle + this.rng.float(-1.3, 1.3);
           const r = v.buildRadius + 2 + this.rng.next() * 9;
           const x = Math.floor(v.cx + Math.cos(a) * r),
@@ -1357,7 +1357,7 @@ export class Civilization {
         else if (k.capital === v.id) this._chooseCapital(k);
       }
     }
-    if (why !== 'silent' && v.pop0 !== 0) this._note(`${v.name} has been ${why === 'razed' ? 'razed and abandoned' : 'abandoned'}.`, why === 'razed' ? 'disaster' : 'bad', { x: v.cx, z: v.cz });
+    if (why !== 'silent' && v.pop0 !== 0) this._note(`${v.name} has been ${why === 'razed' ? 'razed and abandoned' : 'abandoned'}.`, why === 'razed' ? 'war' : 'bad', { x: v.cx, z: v.cz });
     this.version++;
     this.colorVersion++;
   }
@@ -1403,12 +1403,13 @@ export class Civilization {
     give('fisher', v.docks ? Math.min(v.docks * (ctr('Seafaring') ? 3 : 2), 1 + n * (ctr('Seafaring') ? 0.25 : 0.15)) : foodLow && n >= 5 && v.coastal ? 1 : 0);
     const drafting = this.game.time.total - (v.draft ?? -99) < 45;
     // a people's ways show in its trades: martial folk keep many under arms
-    const lean = ctr('Martial') ? 1.8 : ctr('Pastoral') || ctr('Scholarly') ? 0.65 : 1;
+    const lean = ctr('Martial') ? 2.1 : ctr('Pastoral') || ctr('Scholarly') ? 0.6 : 1;
     if (atWar) give('soldier', Math.max(3, n * Math.min(0.55, (drafting ? 0.32 : 0.2) * lean)) + (v.hasBarracks ? 3 : 0));
     give('builder', sites ? Math.min(Math.max(1, Math.ceil(sites * 1.1)), 1 + Math.floor(n / 6)) : repairs ? 1 : 0);
     // an empty woodshed stops all building: send more hands to the woods
-    give('woodcutter', woodFull ? (n >= 6 ? 1 : 0) : v.wood < 15 ? 2 + Math.floor(n / 6) : v.wood < 40 + v.tier * 30 ? 1 + Math.floor(n / 7) : n >= 4 ? 1 + Math.floor(n / 14) : 0);
-    if (!atWar && n >= 6) give('soldier', Math.max(1, n * 0.1 * lean) + (v.hasBarracks ? 2 : 0));
+    const woodsCap = (v.trees ?? 99) < 25 ? 1 : (v.trees ?? 99) < 50 ? 2 : 9;
+    give('woodcutter', Math.min(woodsCap, woodFull ? (n >= 6 ? 1 : 0) : v.wood < 15 ? 1 + Math.floor(n / 7) : v.wood < 40 + v.tier * 30 ? 1 + Math.floor(n / 9) : n >= 4 ? 1 + Math.floor(n / 16) : 0));
+    if (!atWar && n >= 5) give('soldier', Math.max(1, n * 0.11 * lean) + (v.hasBarracks ? 2 : 0) + (ctr('Martial') && v.tier >= 1 ? 2 : 0));
     if (v.hasRock !== false || v.quarry >= 0) give('miner', stoneFull ? 0 : v.stone < 12 ? 2 + Math.floor(n / 7) : v.stone < 30 + v.tier * 50 ? 1 + Math.floor(n / (ctr('Masons') ? 6 : 9)) : ctr('Masons') ? 2 : 1);
     // the rest go where they are most useful; anyone left over keeps the town lively
     let guard = 0;
@@ -1514,7 +1515,9 @@ export class Civilization {
       }
       return;
     }
-    if (v.policy?.buildings === false) return; // the gods forbid new building here
+    const frozen = v.policy?.buildings === false; // the gods forbid new building here
+    if (frozen && v.frozenHousing == null) v.frozenHousing = v.housing;
+    if (!frozen) v.frozenHousing = null;
     let sites = 0;
     for (const b of v.buildings) if (b.alive && (b.constructing || b.upgrading) && !BUILDING_TYPES[b.type].wall) sites++;
     const maxSites = 1 + Math.floor(v.adults / 7);
@@ -1526,6 +1529,7 @@ export class Civilization {
     let actions = 0;
     const room = () => sites < maxSites && actions < 2;
     const build = (type, placer) => {
+      if (frozen && !(type === 'house' && v.housing < (v.frozenHousing ?? 0)) && !(type === 'granary' && count('granary') === 0)) return false;
       const cost = costOf(type, 1, v.culture);
       if (!canAfford(v, cost)) {
         v.need = type;
@@ -1542,7 +1546,7 @@ export class Civilization {
       return true;
     };
     const upgrade = (b) => {
-      if (!b || b.upgrading || b.constructing) return false;
+      if (!b || b.upgrading || b.constructing || frozen) return false;
       const def = BUILDING_TYPES[b.type];
       if (b.level >= def.levels) return false;
       const cost = costOf(b.type, b.level + 1, v.culture);
@@ -1691,7 +1695,7 @@ export class Civilization {
       if (cap >= 28) this._planWalls(v, cap);
       else v.wallsPlanned = true; // no room: the town relies on its towers
     }
-    if (v.wallsPlanned && v.wallPlan?.length && (wallPol ?? this.law('civWalls'))) this._advanceWalls(v, 3);
+    if (v.wallsPlanned && v.wallPlan?.length && !frozen && wallPol !== false && (wallPol ?? this.law('civWalls'))) this._advanceWalls(v, 3);
     if (room() && v.tier >= 1) {
       const cand = v.buildings.find((b) => b.alive && b.type === 'house' && !b.constructing && !b.upgrading && b.level < Math.min(3, v.tier + 1));
       if (cand && v.wood > 40) upgrade(cand);
@@ -1954,7 +1958,7 @@ export class Civilization {
     this._fx('debris', b.x, b.z, 1.2, true);
     this._fx('dust', b.x, b.z, 1.6, true);
     this._fx('smoke', b.x, b.z, 1.2, true);
-    if (b.type === 'hall' && v && v.alive && !b.abandoned) this._note(`The ${buildingLabel(b).toLowerCase()} of ${v.name} has been destroyed!`, 'disaster', { x: b.x, z: b.z });
+    if (b.type === 'hall' && v && v.alive && !b.abandoned) this._note(`The ${buildingLabel(b).toLowerCase()} of ${v.name} has been destroyed!`, b.besieged && this.game.time.total - b.besieged < 30 ? 'war' : 'bad', { x: b.x, z: b.z });
     this.version++;
     if (v && v.alive && !v.buildings.some((o) => o.alive && !BUILDING_TYPES[o.type].wall) && (v.razed || v.pop < 3)) this._abandon(v, v.razed ? 'razed' : 'empty');
   }
