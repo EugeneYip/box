@@ -2270,9 +2270,12 @@ export class Civilization {
       const sx = new Float64Array(this.kingdoms.length),
         sz = new Float64Array(this.kingdoms.length),
         cnt = new Float64Array(this.kingdoms.length);
+      // only the land the capital stands on counts (colonies across the sea
+      // would pull the centre out into the ocean)
+      const capLand = this.kingdoms.map((k) => (k.alive && this.villages[k.capital] ? this.villages[k.capital].landId : -2));
       for (let i = 0; i < w.size; i++) {
         const o = own[i];
-        if (o < 0) continue;
+        if (o < 0 || (capLand[o] >= 0 && this.landId?.[i] !== capLand[o])) continue;
         sx[o] += i % W;
         sz[o] += (i / W) | 0;
         cnt[o]++;
@@ -2281,7 +2284,7 @@ export class Civilization {
       const at = new Int32Array(this.kingdoms.length).fill(-1);
       for (let i = 0; i < w.size; i++) {
         const o = own[i];
-        if (o < 0 || !cnt[o] || H[i] < SEA_LEVEL + 0.1) continue;
+        if (o < 0 || !cnt[o] || H[i] < SEA_LEVEL + 0.1 || (capLand[o] >= 0 && this.landId?.[i] !== capLand[o])) continue;
         const d = (i % W - sx[o] / cnt[o]) ** 2 + (((i / W) | 0) - sz[o] / cnt[o]) ** 2;
         if (d < best[o]) (best[o] = d), (at[o] = i);
       }
