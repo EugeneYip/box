@@ -411,12 +411,15 @@ Mat matFarm(NS s) {
 Mat matRoad(NS s) {
   vec3 c = vec3(0.330, 0.250, 0.160);
   c *= 0.86 + 0.24 * s.det.r;
-  // worn ruts & scattered cobbles
-  float cob = smoothstep(0.02, 0.10, s.cellS.g);
-  float hasCob = smoothstep(0.55, 0.70, s.meso.g);
-  vec3 stone = vec3(0.36, 0.33, 0.29) * (0.8 + 0.4 * s.cellS.b);
-  c = mix(c, mix(c * 0.6, stone, cob), hasCob * 0.75);
-  return mk(c, 0.95, 0.25 + 0.2 * cob * hasCob, 0.03 + 0.05 * cob * hasCob);
+  // worn ruts & scattered cobbles: joints never thinner than ~2 px (they
+  // stair-stepped into a grey pixel mosaic up close), softer joint contrast,
+  // and no cobbles on sloping ground (they stretch there) - just worn earth
+  float cw = max(0.10, s.fw * 3.5);
+  float cob = smoothstep(cw * 0.25, cw, s.cellS.g);
+  float hasCob = smoothstep(0.55, 0.70, s.meso.g) * smoothstep(0.86, 0.95, s.n.y) * (1.0 - smoothstep(0.3, 0.6, cw));
+  vec3 stone = vec3(0.36, 0.33, 0.29) * (0.85 + 0.3 * s.cellS.b);
+  c = mix(c, mix(c * 0.78, stone, cob), hasCob * 0.7);
+  return mk(c, 0.95, 0.25 + 0.1 * cob * hasCob, 0.03 + 0.02 * cob * hasCob);
 }
 Mat matIce(NS s) {
   vec3 c = vec3(0.28, 0.36, 0.44);
