@@ -73,12 +73,14 @@ ${NOISE}
 void main() {
   float rr = length(vUv);
   if (rr > 1.0) discard;
-  float seed = vCloud.w;
+  float tower = step(5.0, vCloud.w);
+  float seed = vCloud.w - 10.0 * tower;
+  float wisp = uWisp * (1.0 - 0.75 * tower);
   // noise-eroded soft edge (slowly boiling)
   float n = cFbm(vUv * 1.6 + seed * 37.0 + vec2(uTime * 0.012, -uTime * 0.009));
   float n2 = cNoise(vUv * 5.0 + seed * 11.0);
-  float edge = rr + (n - 0.5) * (0.62 + 0.45 * uWisp) + (n2 - 0.5) * (0.12 + 0.2 * uWisp);
-  float dens = 1.0 - smoothstep(0.32 - 0.24 * uWisp, 0.92 + 0.04 * uWisp, edge); // softer falloff far away
+  float edge = rr + (n - 0.5) * (0.62 + 0.45 * wisp) + (n2 - 0.5) * (0.12 + 0.2 * wisp);
+  float dens = 1.0 - smoothstep(0.32 - 0.24 * wisp, 0.92 + 0.04 * wisp, edge); // softer falloff far away
   // flat, shaded cluster base
   float h = (vW.y - vCloud.y) / max(vCloud.z, 0.5);
   dens *= smoothstep(-0.08, 0.1, h);
@@ -88,7 +90,7 @@ void main() {
   float nz = sqrt(max(0.0, 1.0 - rr * rr));
   vec3 toCam = normalize(cameraPosition - vC);
   vec3 N = normalize(vRight * vUv.x + vUp * vUv.y + toCam * (nz + 0.25));
-  N = normalize(mix(N, vec3(0.0, 1.0, 0.0), 0.55 * uWisp)); // flatter shading from above
+  N = normalize(mix(N, vec3(0.0, 1.0, 0.0), 0.55 * wisp)); // flatter shading from above
   float ndl = dot(N, uSunDir);
   float wrap = smoothstep(-0.55, 0.95, ndl);
   float hh = clamp(h, 0.0, 1.0);
@@ -96,12 +98,12 @@ void main() {
   vec3 col = amb + uLit * wrap * mix(0.5, 1.02, hh);
   col *= mix(0.74, 1.0, smoothstep(0.0, 0.3, hh)); // darker base band
   float back = pow(max(dot(-toCam, uSunDir), 0.0), 3.0);
-  col += uLit * pow(1.0 - nz, 2.0) * (0.12 + 1.1 * back) * (0.4 + 0.6 * hh) * (1.0 - 0.75 * uWisp); // no ball rims far away
+  col += uLit * pow(1.0 - nz, 2.0) * (0.12 + 1.1 * back) * (0.4 + 0.6 * hh) * (1.0 - 0.75 * wisp); // no ball rims far away
   col *= 0.95 + 0.1 * seed;
   col *= mix(1.0, 0.42, uDark);
   col += uFlash * (0.5 + 0.5 * hh);
 
-  float a = dens * vCloud.x * uOpacity * 0.62 * (1.0 - 0.3 * uWisp);
+  float a = dens * vCloud.x * uOpacity * 0.62 * (1.0 - 0.3 * wisp) * (1.0 + 0.35 * tower);
   a *= smoothstep(uNearFade * 0.35, uNearFade, distance(cameraPosition, vW));
   gl_FragColor = vec4(col, a);
 }
@@ -239,6 +241,96 @@ void main() {
 }
 `;
 
+// Map-zoom cloud fields: stratocumulus "streets" of small flat cells,
+// gathered into fields with clear sky between them, plus thin high cirrus
+// streaks. One flat layer under the cumulus puffs; it fades in as the camera
+// climbs to the overview, and its density also feeds the cloud shadows.
+const SHEET_FN = /* glsl */ `
+float sheetDensity(vec2 xz, vec2 drift, float cov) {
+  vec2 w = vec2(0.906, 0.423);                      // street orientation
+  vec2 x = xz - drift;
+  vec2 q = vec2(dot(x, w), dot(x, vec2(-w.y, w.x)));
+  vec2 p = vec2(q.x / 44.0, q.y / 24.0);
+  float field = cNoise(p * 0.11 + 7.3) * 0.62 + cNoise(p * 0.27 + 1.7) * 0.38;
+  float fm = smoothstep(0.86 - 0.45 * cov, 0.98 - 0.4 * cov, field);
+  if (fm < 0.001) return 0.0;
+  float cells = cFbm(p + 3.1);
+  return fm * smoothstep(0.56 - 0.1 * fm, 0.7, cells);
+}
+`;
+const SHEET_VERT = /* glsl */ `
+varying vec3 vW;
+void main() {
+  vec4 wp = modelMatrix * vec4(position, 1.0);
+  vW = wp.xyz;
+  gl_Position = projectionMatrix * viewMatrix * wp;
+}
+`;
+const SHEET_FRAG = /* glsl */ `
+uniform vec2 uDrift;
+uniform float uCov;
+uniform float uAmt;
+uniform float uCirrus;
+uniform float uCirOff;
+uniform float uDark;
+uniform vec3 uLit;
+uniform vec3 uShade;
+uniform vec3 uSunDir;
+uniform vec3 uFlash;
+uniform vec3 uCenter;
+uniform float uRadius;
+varying vec3 vW;
+${NOISE}
+${SHEET_FN}
+void main() {
+  if (uAmt < 0.003) discard;
+  vec2 xz = vW.xz;
+  float radial = 1.0 - smoothstep(uRadius * 0.55, uRadius, distance(xz, uCenter.xz));
+  // stratocumulus cells, self-shadowed toward the sun (lit tops, grey gaps)
+  float d = sheetDensity(xz, uDrift, uCov);
+  float aS = 0.0;
+  vec3 cS = vec3(0.0);
+  if (d > 0.004) {
+    vec2 toSun = uSunDir.xz / max(uSunDir.y, 0.3);
+    float ds = sheetDensity(xz + toSun * 5.0, uDrift, uCov);
+    float lit = clamp(0.78 + (d - ds) * 1.8, 0.3, 1.2);
+    float thick = smoothstep(0.0, 0.8, d);
+    cS = uShade * (0.62 + 0.3 * thick) + uLit * lit * (0.42 + 0.5 * thick);
+    cS *= mix(1.0, 0.45, uDark);
+    cS += uFlash * thick;
+    aS = smoothstep(0.0, 0.5, d) * 0.72;
+  }
+  // thin cirrus streaks, sparse and fine
+  float aC = 0.0;
+  if (uCirrus > 0.003) {
+    vec2 wc = vec2(0.62, 0.785);
+    vec2 qc = vec2(dot(xz, wc), dot(xz, vec2(-wc.y, wc.x)));
+    float bend = cNoise(qc * 0.006 + 4.0) * 3.0;          // curved, not ruled
+    vec2 pc = vec2(qc.x / 100.0 + uCirOff, qc.y / 9.0 + bend);
+    float n = cFbm(pc + 9.1);
+    float m = cNoise(qc * 0.011 + 2.0) * 0.6 + cNoise(qc * 0.03 + 8.0) * 0.4;
+    aC = smoothstep(0.62, 0.86, n) * smoothstep(0.55, 0.8, m) * uCirrus * 0.45;
+  }
+  float a = aC + aS * (1.0 - aC);
+  if (a * uAmt * radial < 0.003) discard;
+  vec3 cC = uLit * 0.85 + uShade * 0.55;
+  vec3 col = (cC * aC + cS * aS * (1.0 - aC)) / max(a, 1e-4);
+  gl_FragColor = vec4(col, a * uAmt * radial);
+}
+`;
+const SHEET_SPLAT_FRAG = /* glsl */ `
+uniform vec2 uDrift;
+uniform float uCov;
+uniform float uAmt;
+varying vec3 vW;
+${NOISE}
+${SHEET_FN}
+void main() {
+  float a = sheetDensity(vW.xz, uDrift, uCov) * uAmt * 0.85;
+  gl_FragColor = vec4(a, a, a, a);
+}
+`;
+
 export class Clouds {
   constructor(atmosphere) {
     this.atm = atmosphere;
@@ -293,6 +385,18 @@ export class Clouds {
         c.puffs.push({ ox: (rnd() - 0.5) * c.size * 0.6, oz: (rnd() - 0.5) * c.size * 0.3, oy: c.size * (0.3 + 0.18 * rnd()), r });
       }
       c.thickness = c.size * 0.7;
+      c.small = c.size < 8.5;
+      // some of the bigger clouds grow into towers (stacked billows)
+      if (c.size >= 12 && rnd() < 0.3) {
+        c.tower = true;
+        const lv = 3 + Math.floor(rnd() * 3);
+        for (let k = 1; k <= lv; k++) {
+          const f = k / lv;
+          const r = c.size * (0.42 - 0.2 * f + 0.06 * rnd());
+          c.puffs.push({ ox: (rnd() - 0.5) * c.size * 0.35 * (1 - f * 0.5), oz: (rnd() - 0.5) * c.size * 0.25, oy: c.size * (0.35 + 1.25 * f), r });
+        }
+        c.thickness = c.size * 1.6;
+      }
       puffTotal += c.puffs.length;
       this.clouds.push(c);
     }
@@ -359,6 +463,29 @@ export class Clouds {
     this.cirrus.frustumCulled = false;
     this.cirrus.renderOrder = 10;
     game.scene.add(this.cirrus);
+    this.sheetU = {
+      uDrift: { value: null }, // this.drift (set below)
+      uCov: { value: 0.5 },
+      uAmt: { value: 0 },
+      uCirrus: { value: 0 },
+      uCirOff: { value: 0 },
+      uDark: { value: 0 },
+      uLit: { value: new THREE.Color(1, 1, 1) },
+      uShade: { value: new THREE.Color(0.6, 0.65, 0.8) },
+      uSunDir: { value: new THREE.Vector3(0, 1, 0) },
+      uFlash: { value: new THREE.Color(0, 0, 0) },
+      uCenter: { value: new THREE.Vector3() },
+      uRadius: { value: 400 },
+    };
+    this.sheet = new THREE.Mesh(
+      new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2),
+      new THREE.ShaderMaterial({ name: 'CloudSheet', uniforms: this.sheetU, vertexShader: SHEET_VERT, fragmentShader: SHEET_FRAG, transparent: true, depthWrite: false, side: THREE.DoubleSide }),
+    );
+    this.sheet.frustumCulled = false;
+    this.sheet.renderOrder = 10;
+    this.sheet.visible = false;
+    this.sheetOn = q !== 'low';
+    game.scene.add(this.sheet);
     game.scene.add(this.group);
 
     // ---- storm scud layer --------------------------------------------------
@@ -425,6 +552,13 @@ export class Clouds {
     this.stormShadow.frustumCulled = false;
     this.stormShadow.visible = false;
     this.splatScene.add(this.stormShadow);
+    this.sheetSplat = new THREE.Mesh(
+      new THREE.PlaneGeometry(f.sx, f.sz).rotateX(-Math.PI / 2).translate(f.x0 + f.sx / 2, 50, f.z0 + f.sz / 2),
+      new THREE.ShaderMaterial({ uniforms: { uDrift: this.sheetU.uDrift, uCov: this.sheetU.uCov, uAmt: this.sheetU.uAmt }, vertexShader: SHEET_VERT, fragmentShader: SHEET_SPLAT_FRAG, ...maxBlend }),
+    );
+    this.sheetSplat.frustumCulled = false;
+    this.sheetSplat.visible = false;
+    this.splatScene.add(this.sheetSplat);
     // Looking straight down (rotation -90deg about X: view x = world x,
     // view y = -world z). The projection is flipped vertically so texture v
     // grows with world Z, matching the published ground-space UV contract.
@@ -441,6 +575,7 @@ export class Clouds {
     game.env.cloudShadow = this.shadow;
 
     this.drift = new THREE.Vector2(0, 0);
+    this.sheetU.uDrift.value = this.drift; // fields drift with the puffs
     this._first = true;
     this._v = new THREE.Vector3();
     this._c = new THREE.Color();
@@ -461,6 +596,7 @@ export class Clouds {
     const raw = this._raw;
     let k = 0;
     const camDist = rig.cur.dist;
+    const ovK = THREE.MathUtils.smoothstep(game.view?.zoom01 ?? 0.5, 0.62, 0.88);
     for (const c of this.clouds) {
       const target = THREE.MathUtils.smoothstep(cover, c.rank - 0.06, c.rank + 0.06);
       if (this._first) c.presence = target;
@@ -472,7 +608,7 @@ export class Clouds {
       const ex = Math.min(x - f.x0, f.x0 + f.sx - x) / 50;
       const ez = Math.min(z - f.z0, f.z0 + f.sz - z) / 50;
       const edge = THREE.MathUtils.clamp(Math.min(ex, ez), 0, 1);
-      const pres = c.presence * edge;
+      const pres = c.presence * edge * (c.small ? 1 - 0.9 * ovK : 1);
       const scale = (0.55 + 0.45 * Math.sqrt(c.presence)) * grow;
       const cs = Math.cos(c.rot),
         sn = Math.sin(c.rot);
@@ -487,7 +623,7 @@ export class Clouds {
         raw[o + 4] = pres;
         raw[o + 5] = base;
         raw[o + 6] = c.thickness * scale;
-        raw[o + 7] = c.seed;
+        raw[o + 7] = c.seed + (c.tower ? 10 : 0); // +10 flags tower puffs
         k++;
       }
     }
@@ -557,6 +693,31 @@ export class Clouds {
       C.uWind.value.set(wind.x, wind.z);
       C.uOff.value.x -= (dt * (2 + 6 * wind.strength)) / 160;
       C.uCol.value.copy(model.cloudLit).multiplyScalar(0.9).add(this._c.copy(model.cloudShade).multiplyScalar(0.8));
+    }
+
+    // ---- map-zoom cloud fields + thin cirrus ------------------------------
+    {
+      const SU = this.sheetU;
+      const sv = this.sheetOn ? THREE.MathUtils.smoothstep(z01, 0.5, 0.76) * (1 - 0.85 * weather.storm) : 0;
+      SU.uAmt.value = sv;
+      this.sheet.visible = sv > 0.003;
+      this.sheetSplat.visible = this.sheet.visible;
+      if (this.sheet.visible) {
+        const t = rig.target;
+        const size = Math.max(600, camDist * 7);
+        this.sheet.position.set(t.x, 50, t.z);
+        this.sheet.scale.set(size, 1, size);
+        SU.uCenter.value.set(t.x, 50, t.z);
+        SU.uRadius.value = size * 0.5;
+        SU.uCov.value = Math.min(1, cover * 0.9 + weather.overcast * 0.25);
+        SU.uCirrus.value = (0.22 + 0.18 * Math.min(1, cover)) * (1 - weather.overcast) * camAbove;
+        SU.uCirOff.value -= (dt * (2 + 6 * wind.strength)) / 240;
+        SU.uDark.value = u.uDark.value;
+        SU.uLit.value.copy(model.cloudLit);
+        SU.uShade.value.copy(model.cloudShade);
+        SU.uSunDir.value.copy(u.uSunDir.value);
+        SU.uFlash.value.copy(u.uFlash.value);
+      }
     }
 
     // ---- storm scud layer ------------------------------------------------

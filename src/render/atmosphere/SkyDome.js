@@ -144,7 +144,7 @@ void main() {
     float n = fbm(p * 0.9);
     float cov = clamp(uCover * 0.8 + uOvercast * 0.35 + 0.12, 0.0, 1.0);
     float c = smoothstep(1.0 - cov * 0.95 - 0.05, 1.12 - cov * 0.55, n);
-    c *= smoothstep(-0.01, 0.06, y) * (1.0 - smoothstep(0.25, 0.6, y));
+    c *= smoothstep(0.02, 0.1, y) * (1.0 - smoothstep(0.3, 0.65, y)); // higher layer above the cumulus row
     float shade = smoothstep(0.35, 0.95, fbm(p * 0.9 + vec2(0.35, 0.2)));
     float sunSide = pow(max(dot(normalize(dir.xz + 1e-4), normalize(uSunDir.xz + 1e-4)) * 0.5 + 0.5, 0.0), 3.0);
     // toward the sun the bank reads as a dark silhouette with a golden rim,
@@ -159,6 +159,50 @@ void main() {
     col = mix(col, cc, c * 0.85);
   }
 
+  // ---- horizon cumulus: readable cloud forms standing on the horizon ----
+  // Built in (azimuth, elevation) space on an annulus of 2D noise (seamless
+  // all the way round), so the shapes never squash into thin bands: groups
+  // of billowy towers with flat hazy bases, lit crowns and darker creases,
+  // silhouetted with a bright rim toward the sun. Two rows: a far, low,
+  // hazier one behind a nearer, taller one.
+  float occl = 0.0;
+  if (uDetail > 0.5 && y > -0.01 && y < 0.32) {
+    float cov = clamp(uCover * 0.9 + uOvercast * 0.3, 0.0, 1.0);
+    vec2 ring = dir.xz / max(length(dir.xz), 1e-4);
+    float sunSideC = pow(max(dot(ring, normalize(uSunDir.xz + 1e-4)) * 0.5 + 0.5, 0.0), 3.0);
+    vec3 skyHere = col;
+    for (int L = 0; L < 2; L++) {
+      float fl = float(L);
+      float R = mix(18.0, 11.0, fl);                                // feature scale round the horizon
+      float Ht = mix(0.065, 0.13, fl) * (0.7 + 0.5 * cov);          // tallest tops (radians)
+      float K = 1.3 * R * Ht;                                       // keeps billows round, not stretched
+      vec2 dr = uCloudOffset * (0.12 + 0.08 * fl);
+      float clump = vnoise(ring * R * 0.3 + vec2(11.0 * fl, 3.0) + dr * 0.4);
+      float pres = smoothstep(0.7 - 0.45 * cov, 0.92 - 0.4 * cov, clump);
+      if (pres < 0.01) continue;
+      float e = y / Ht;
+      vec2 bp = ring * (R + e * K) + dr + vec2(3.7 * fl, 1.3);
+      float dens = fbm(bp) * pres + 0.38 - e * 0.95;
+      float c = smoothstep(0.42, 0.5, dens) * smoothstep(-0.004, 0.012, y);
+      if (c < 0.003) continue;
+      // crowns: brighter where the density falls off just above (a top)
+      float e2 = e + 0.12;
+      float densUp = fbm(ring * (R + e2 * K) + dr + vec2(3.7 * fl, 1.3)) * pres + 0.38 - e2 * 0.95;
+      float crown = clamp((dens - densUp) * 4.0, 0.0, 1.0);
+      vec3 baseC = uCloudShade * 0.72 + uCloudLit * 0.3;
+      vec3 topC = uCloudLit * 1.12 + uCloudShade * 0.42;
+      vec3 litCol = mix(baseC, topC, clamp(0.15 + crown * 0.85 + e * 0.3, 0.0, 1.0));
+      vec3 sil = uCloudShade * 0.5 + uCloudLit * 0.1 + uGlow * 0.25 * crown;
+      float rim = 1.0 - smoothstep(0.42, 0.56, dens);
+      vec3 cc = mix(litCol, sil, sunSideC * 0.82);
+      cc += (uGlow * 1.3 + uHalo * 0.25) * rim * sunSideC;
+      cc = mix(cc, skyHere, mix(0.42, 0.18, fl) + 0.4 * smoothstep(0.03, 0.0, y)); // aerial depth
+      cc *= mix(1.0, 0.55, uStorm);
+      col = mix(col, cc, c * 0.92);
+      occl = max(occl, c);
+    }
+  }
+
   // ---- sun disc -----------------------------------------------------------
   if (uSunVis > 0.001) {
     float mu = dot(dir, uSunDir);
@@ -167,7 +211,7 @@ void main() {
     float aa = fwidth(ang) * 1.5 + 1e-5;
     float disc = 1.0 - smoothstep(R - aa, R + aa, ang);
     float limb = 0.75 + 0.25 * sqrt(max(0.0, 1.0 - (ang / R) * (ang / R)));
-    col += uSunDisc * disc * limb * uSunVis * smoothstep(-0.03, 0.01, y);
+    col += uSunDisc * disc * limb * uSunVis * smoothstep(-0.03, 0.01, y) * (1.0 - 0.92 * occl);
   }
 
   col += vec3(0.55, 0.62, 0.85) * uFlash * (0.35 + 0.65 * uOvercast);
