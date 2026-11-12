@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { vehicleModel, debrisGeometry, stoneGeometry, arrowGeometry } from './models.js';
+import { vehicleModel, debrisGeometry, stoneGeometry, tracerGeometry, potGeometry } from './models.js';
 import { createVehicleMaterial, createVehicleDepthMaterial, createWaterFxMaterial } from './materials.js';
 import { bannerGeometry, bannerMaterial } from '../buildings/props.js';
 import { emblemAtlas, EMBLEM_IDS, FIELD_IDS } from '../buildings/emblems.js';
@@ -82,9 +82,18 @@ export class FleetRenderer {
     // wreckage and catapult stones
     this.propMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 });
     this.debris = this._inst(debrisGeometry(), this.propMat, 64);
-    // stones, arrows and wreckage share one vertex-coloured material (one program)
+    // stones and wreckage share one vertex-coloured material (one program)
     this.stones = this._inst(stoneGeometry(), this.propMat, 32);
-    this.arrows = this._inst(arrowGeometry(), this.propMat, 64);
+    // arrows and fire pots fly as glowing tracers: unlit, bright enough to
+    // bloom, sized to stay a few pixels wide at any battle zoom
+    this.tracerMat = new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false, transparent: true, depthWrite: false });
+    this.arrows = this._inst(tracerGeometry(), this.tracerMat, 64);
+    this.arrows.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(64 * 3), 3);
+    this.pots = this._inst(potGeometry(), this.tracerMat, 16);
+    this.pots.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(16 * 3), 3);
+    this._cArrow = new THREE.Color(2.2, 1.5, 0.9);
+    this._cPotTail = new THREE.Color(3.0, 1.0, 0.3);
+    this._cPot = new THREE.Color(4.0, 1.9, 0.5);
     // trade lanes (dashed, faint, mid zoom): the same water-fx program as lines
     const MAXV = 6000;
     const lg = new THREE.BufferGeometry();
@@ -260,6 +269,12 @@ export class FleetRenderer {
           let y = Math.sin(ph * 1.5) * 0.025 * rough;
           let roll = Math.sin(ph * 1.1) * 0.03 * rough + (v.heading - (v.ph ?? v.heading)) * 1.5;
           let pitch = Math.sin(ph * 0.9 + 1) * 0.02 * rough;
+          if (dmg > 0.3) {
+            // holed: she lists and settles
+            const l = (dmg - 0.3) / 0.7;
+            roll += l * 0.22 * (v.seed > 0.5 ? 1 : -1);
+            y -= l * 0.08;
+          }
           if (v.sink > 0) {
             const s = v.sink;
             y -= s * s * (def.length * 0.35 + 0.8);
@@ -649,13 +664,20 @@ export class FleetRenderer {
     this.stones.visible = n > 0;
   }
 
-  // Arrows and fire pots arcing between ships.
+  // Arrows and fire pots arcing between ships: glowing streaks (a blazing
+  // head for a pot) a few pixels wide from close up to the widest battle view.
   _shots(F, alpha, far) {
-    let n = 0;
+    let n = 0,
+      np = 0;
     const L = F.shots || [];
     if (L.length && !far) {
       const mesh = this._growProp('arrows', L.length);
+      const pm = this._growProp('pots', Math.min(L.length, 48));
       const step = this.game.simStep || TICK;
+      const dist = this.game.cameraRig?.cur?.dist ?? 30;
+      const th = Math.max(0.05, dist * 0.0032);
+      const len = 0.6 + dist * 0.04;
+      const fx = !this.game.paused && this.game.fx?.emit;
       for (const sh of L) {
         const u = (sh.t + alpha * step) / sh.dur;
         if (u < 0 || u > 1) continue;
@@ -669,14 +691,28 @@ export class FleetRenderer {
         const pitch = Math.atan2(4 * peak * (1 - 2 * u), d);
         this._e.set(0, -Math.atan2(dz, dx), pitch, 'YZX');
         this._q.setFromEuler(this._e);
-        this._m.compose(this._p.set(x, y, z), this._q, this._s.setScalar(sh.pot ? 2 : 1.5));
-        mesh.setMatrixAt(n++, this._m);
-        if (sh.pot && !this.game.paused && this.game.fx?.emit && Math.random() < 0.35) this.game.fx.emit('fire', { x, y, z }, { scale: 0.25 });
+        const ln = Math.min(len, d * u + 0.2);
+        this._m.compose(this._p.set(x, y, z), this._q, this._s.set(sh.pot ? ln * 0.8 : ln, sh.pot ? th * 1.5 : th, sh.pot ? th * 1.5 : th));
+        mesh.setMatrixAt(n, this._m);
+        mesh.setColorAt(n, sh.pot ? this._cPotTail : this._cArrow);
+        n++;
+        if (sh.pot && np < pm.instanceMatrix.count) {
+          this._m.compose(this._p, this._q, this._s.setScalar(Math.max(0.14, dist * 0.0075)));
+          pm.setMatrixAt(np, this._m);
+          pm.setColorAt(np, this._cPot);
+          np++;
+          if (fx && Math.random() < 0.35) this.game.fx.emit('fire', { x, y, z }, { scale: 0.25 });
+        }
       }
       mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+      pm.instanceMatrix.needsUpdate = true;
+      if (pm.instanceColor) pm.instanceColor.needsUpdate = true;
     }
     this.arrows.count = n;
     this.arrows.visible = n > 0;
+    this.pots.count = np;
+    this.pots.visible = np > 0;
   }
 
   // Faint dashed trade lanes at mid zoom (rebuilt twice a second).

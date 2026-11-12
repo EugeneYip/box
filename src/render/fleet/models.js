@@ -672,11 +672,21 @@ export function stoneGeometry() {
   return g.build();
 }
 
-// An arrow (or a fire pot's shaft) pointing along +X.
-export function arrowGeometry() {
-  const g = new VB(9);
-  g.box(0, -0.018, 0, 0.62, 0.036, 0.036, 0xfff0b8, { glow: 1 });
-  g.box(-0.3, -0.03, 0, 0.1, 0.06, 0.008, 0xffffff);
-  g.box(0.32, -0.022, 0, 0.06, 0.044, 0.044, 0xc8c8c8);
-  return g.build();
+// A tracer: a unit streak along -X from its head at the origin, white-hot
+// at the head, burning orange down the tail and fading out behind (scaled
+// per instance; drawn unlit and bright enough to bloom). RGBA vertex colours.
+export function tracerGeometry() {
+  const g = new THREE.BoxGeometry(1, 1, 1).translate(-0.5, 0, 0);
+  const P = g.attributes.position;
+  const col = new Float32Array(P.count * 4);
+  for (let i = 0; i < P.count; i++) col.set(P.getX(i) > -0.5 ? [1, 0.97, 0.85, 1] : [0.95, 0.45, 0.12, 0], i * 4);
+  g.setAttribute('color', new THREE.BufferAttribute(col, 4));
+  return g;
+}
+
+// A fire pot's blazing head (RGBA colours too: the tracer's program).
+export function potGeometry() {
+  const g = new THREE.IcosahedronGeometry(1, 0);
+  g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 4).fill(1), 4));
+  return g;
 }
