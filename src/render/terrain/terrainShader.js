@@ -304,7 +304,7 @@ Mat matRock(NS s) {
   c *= 0.84 + 0.28 * s.meso.b;
   // angular blocks (warped cells): joints show only in places (no paving net,
   // no rounded pebbles), each block a slightly different tone
-  vec4 bk = cz(ROT2 * (s.p.xz + (s.det.rg - 0.5) * 2.2) * (1.0 / 26.0) + 0.29);
+  vec4 bk = cz(ROT2 * (s.p.xz + (s.det.rg - 0.5) * 1.2) * (1.0 / 11.0) + 0.29);
   float crackM = smoothstep(0.38, 0.62, s.meso.r * 0.55 + s.det.b * 0.45);
   float cW = max(0.06, s.fw * 1.9);
   float blockC = (1.0 - smoothstep(cW * 0.3, cW, bk.g + (s.micro.b - 0.5) * 0.03)) * crackM * fineK * (1.0 - smoothstep(0.12, 0.25, cW));
@@ -315,7 +315,7 @@ Mat matRock(NS s) {
   float sW = max(0.07, s.fw * 1.7);
   float seam = smoothstep(sW * 0.2, sW, cr.g + (s.det.b - 0.5) * 0.08);
   c *= 0.88 + 0.16 * cr.b;
-  c *= 0.84 + 0.16 * mix(1.0, seam, smoothstep(0.35, 0.65, s.meso.r));
+  c *= 0.84 + 0.16 * mix(1.0, seam, smoothstep(0.35, 0.65, s.meso.r) * smoothstep(0.02, 0.06, s.fw));
   c *= 0.80 + 0.30 * s.det.r;
   c *= 0.90 + 0.18 * s.micro.r;
   float stone = bk.b * crackM;
