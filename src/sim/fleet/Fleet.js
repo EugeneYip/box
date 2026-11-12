@@ -738,7 +738,8 @@ export class Fleet {
       const nx = v.x + Math.cos(v.heading) * v.speed * step,
         nz = v.z + Math.sin(v.heading) * v.speed * step;
       const bow = Math.min(1, def.length * 0.4);
-      if (this.nav.isWater(nx, nz) && this.nav.isWater(nx + Math.cos(v.heading) * bow, nz + Math.sin(v.heading) * bow)) {
+      const deepOK = def.clear < 2 || this.world.heightAt(nx + Math.cos(v.heading) * bow, nz + Math.sin(v.heading) * bow) < -(def.draft || 0.3) * 0.5;
+      if (deepOK && this.nav.isWater(nx, nz) && this.nav.isWater(nx + Math.cos(v.heading) * bow, nz + Math.sin(v.heading) * bow)) {
         v.x = nx;
         v.z = nz;
         v.stuck = Math.max(0, v.stuck - step);

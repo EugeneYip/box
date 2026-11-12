@@ -675,8 +675,8 @@ export function stoneGeometry() {
 // An arrow (or a fire pot's shaft) pointing along +X.
 export function arrowGeometry() {
   const g = new VB(9);
-  g.box(0, -0.012, 0, 0.42, 0.024, 0.024, 0x4a3420);
-  g.box(-0.2, -0.02, 0, 0.08, 0.04, 0.005, 0xe8e0d0);
-  g.box(0.22, -0.016, 0, 0.05, 0.032, 0.032, 0x8a8a8a);
+  g.box(0, -0.018, 0, 0.62, 0.036, 0.036, 0xfff0b8, { glow: 1 });
+  g.box(-0.3, -0.03, 0, 0.1, 0.06, 0.008, 0xffffff);
+  g.box(0.32, -0.022, 0, 0.06, 0.044, 0.044, 0xc8c8c8);
   return g.build();
 }

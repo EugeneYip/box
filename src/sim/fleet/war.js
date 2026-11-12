@@ -66,7 +66,7 @@ export const war = {
           tgt = o;
         }
       });
-      if (tgt && nav.comp(tgt.x, tgt.z) !== nav.comp(v.x, v.z)) tgt = null;
+      if (tgt && (nav.comp(tgt.x, tgt.z) !== nav.comp(v.x, v.z) || nav.clearAt(tgt.x, tgt.z) < 1.8)) tgt = null;
     }
     const m = v.mission;
     if (tgt) {
@@ -88,7 +88,7 @@ export const war = {
         // close in, straight when the water allows
         const ax = tgt.x - Math.cos(tgt.heading) * 0.5,
           az = tgt.z - Math.sin(tgt.heading) * 0.5;
-        if (nav.los(v.x, v.z, ax, az, 0)) {
+        if (nav.los(v.x, v.z, ax, az, 1.2)) {
           v.dest = { x: ax, z: az };
           this.setPath(v, [v.x, v.z, ax, az]);
           v.state = 'sail';
@@ -118,7 +118,7 @@ export const war = {
     let px, pz;
     if (bh) {
       m.blockade = bh.id;
-      const sp = nav.waterNear(bh.berth.x + bh.dirX * 5, bh.berth.z + bh.dirZ * 5, 4, 1.5) || bh.berth;
+      const sp = nav.waterNear(bh.berth.x + bh.dirX * 6, bh.berth.z + bh.dirZ * 6, 5, 2.5) || nav.waterNear(bh.berth.x + bh.dirX * 5, bh.berth.z + bh.dirZ * 5, 4, 1.5) || bh.berth;
       px = sp.x;
       pz = sp.z;
     } else {

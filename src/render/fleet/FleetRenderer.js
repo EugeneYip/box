@@ -617,7 +617,7 @@ export class FleetRenderer {
         const pitch = Math.atan2(4 * peak * (1 - 2 * u), d);
         this._e.set(0, -Math.atan2(dz, dx), pitch, 'YZX');
         this._q.setFromEuler(this._e);
-        this._m.compose(this._p.set(x, y, z), this._q, this._s.setScalar(sh.pot ? 1.6 : 1));
+        this._m.compose(this._p.set(x, y, z), this._q, this._s.setScalar(sh.pot ? 2 : 1.5));
         mesh.setMatrixAt(n++, this._m);
         if (sh.pot && this.game.fx?.emit && Math.random() < 0.35) this.game.fx.emit('fire', { x, y, z }, { scale: 0.25 });
       }
@@ -691,8 +691,9 @@ export class FleetRenderer {
       if (Math.abs(v.x - cx) > R || Math.abs(v.z - cz) > R) continue;
       if (v.burning > 0.15 || (v.sink > 0 && v.sink < 0.5)) {
         // a burning ship trails smoke and throws embers
-        fx.emit('smoke', { x: v.x, y: (v.y || 0) + 0.6, z: v.z }, { scale: 0.6 + v.def.length * 0.2 });
-        if (v.burning > 0.3) {
+        fx.emit('smoke', { x: v.x, y: (v.y || 0) + 0.6, z: v.z }, { scale: 0.9 + v.def.length * 0.35 });
+        if (v.burning > 0.4) fx.emit('smoke', { x: v.x, y: (v.y || 0) + 1.6, z: v.z }, { scale: 1.2 + v.def.length * 0.3 });
+        if (v.burning > 0.2) {
           fx.emit('fire', { x: v.x + (Math.random() - 0.5) * 0.5, y: (v.y || 0) + 0.4, z: v.z }, { scale: 0.5 });
           if (Math.random() < 0.4) fx.emit('embers', { x: v.x, y: (v.y || 0) + 0.8, z: v.z }, { count: 2 });
         }
