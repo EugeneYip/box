@@ -55,6 +55,7 @@ uniform float uOccStrength;
 uniform float uFlutter;
 uniform float uSeason;
 uniform float uTempOff;
+uniform float uSnowCover;
 #ifndef FLORA_DEPTH
 varying vec4 vFState;
 varying vec3 vFInfo;
@@ -119,6 +120,11 @@ float fLeafK = mix(0.36, 1.0, smoothstep(0.04, 0.8, fG));
 float fTemp = texelFetch(uOcc, fTile, 0).g + uTempOff;
 vec4 fSW = fSeasonFor(fOrigin, fTemp);
 float fDec = 1.0 - step(0.5, abs(aInfo.w - 9.0));
+// baked snow on spruce boughs lies only in snow country, in winter or while
+// it snows; elsewhere the drifts melt away (shrink to nothing)
+float fSnowB = 1.0 - step(0.5, abs(aInfo.w - 3.0));
+float fSnowKeep = max(max(smoothstep(0.33, 0.24, fTemp), smoothstep(0.15, 0.6, fSW.w)), uSnowCover);
+transformed = mix(transformed, aPivot, fSnowB * (1.0 - fSnowKeep));
 // petals close up with distance so mid-zoom meadows are not confetti, and
 // follow the year: abundant in spring, gone in winter
 float fPetal = 1.0 - step(0.5, abs(aInfo.w - 5.0));

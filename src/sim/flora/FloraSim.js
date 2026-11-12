@@ -14,6 +14,7 @@ import {
   naturalBiome,
   climateFactor,
   flowerDrift,
+  misfitAs,
 } from './species.js';
 
 // Flora simulation (Nature).
@@ -105,14 +106,15 @@ export class FloraSim {
       const f = world.flora[i];
       const tx = i % W,
         ty = (i / W) | 0;
-      if (isTreeId(f) && (climateFactor(f, world.temperature[i]) < 0.5 || (f === FLORA.PALM && suitAt(world, f, tx, ty, i) <= 0))) {
+      const mis = misfitAs(world, f, i);
+      if (mis) {
+        // cacti on meadow or by cottages, snowy spruce in green valleys
+        world.flora[i] = mis;
+      } else if (isTreeId(f) && (climateFactor(f, world.temperature[i]) < 0.5 || (f === FLORA.PALM && suitAt(world, f, tx, ty, i) <= 0))) {
         const alt = pickTree(world.type[i], world.temperature[i], this.hash(i * 3 + 1));
         const ok = alt && climateFactor(alt, world.temperature[i]) >= 0.5 && suitAt(world, alt, tx, ty, i) >= 0.3;
         world.flora[i] = ok ? alt : FLORA.NONE;
         if (!ok) world.floraGrowth[i] = 0;
-      } else if (f === FLORA.CACTUS && world.moisture[i] > 0.42) {
-        // a cactus in moist country becomes a shrub
-        world.flora[i] = FLORA.BUSH;
       } else if (f === FLORA.FLOWERS) {
         const d = flowerDrift(tx, ty);
         if (d < 0.5 || world.slopeAt(tx, ty) > 1.15) {
@@ -301,6 +303,11 @@ export class FloraSim {
       return;
     }
     if (world.fire[i] > 0) return; // Effects decides what burns into what
+    const mis = misfitAs(world, f, i, this._tOff);
+    if (mis) {
+      world.setFlora(tx, ty, mis, world.floraGrowth[i]);
+      return;
+    }
 
     // ---- remains decay -----------------------------------------------------
     if (f === FLORA.DEAD_TREE || f === FLORA.STUMP) {
@@ -425,6 +432,9 @@ export class FloraSim {
         if (t === this.expect[i]) continue;
         this.expect[i] = t;
         if (!TRANSIENT[t]) this.native[i] = t;
+        // the ground changed under a plant that only belongs to the old one
+        const mis = misfitAs(world, world.flora[i], i, this._tOff || 0);
+        if (mis) world.setFlora(tx, ty, mis, world.floraGrowth[i]);
       }
   }
   setTypeSelf(tx, ty, t) {
