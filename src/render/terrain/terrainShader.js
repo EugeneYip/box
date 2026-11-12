@@ -732,7 +732,7 @@ void terrainSurface() {
   float snowF = mix(mix(s00, s10, fs2.x), mix(s01, s11, fs2.x), fs2.y);
   float anySnow = dot(isSnow, live);
   if (snowF > 0.0 || anySnow > 0.0) {
-    float cover = smoothstep(0.22, 0.78, snowF + (s.micro.r - 0.5) * 0.35 + (s.det.b - 0.5) * 0.25);
+    float cover = smoothstep(0.22, 0.78, snowF + (s.micro.r - 0.5) * 0.35 + (s.det.b - 0.5) * 0.25) * smoothstep(-0.04, 0.12, s.p.y);
     // warm ages / low frost: snow fields retreat up to the peaks
     if (uMeltH > 0.01) cover *= smoothstep(uMeltH - 2.0, uMeltH + 2.0, s.p.y + (s.det.r - 0.5) * 2.0);
     vec4 bn = b * (1.0 - isSnow);
@@ -776,7 +776,7 @@ void terrainSurface() {
   // (higher latitude, higher altitude) whitens first; noisy edges blend in.
   if (uSnowT > -0.15) {
     float sv = uSnowT - s.temp + (s.det.b - 0.5) * 0.05 + (s.meso.r - 0.5) * 0.08;
-    float sn = smoothstep(-0.03, 0.03, sv) * smoothstep(-0.1, 0.35, s.p.y) * (1.0 - lavaRaw);
+    float sn = smoothstep(-0.03, 0.03, sv) * smoothstep(-0.02, 0.3, s.p.y) * (1.0 - lavaRaw);
     sn *= mix(1.0, smoothstep(0.55, 0.78, nrm.y), cliff);
     if (sn > 0.001) {
       albedo = mix(albedo, matSnow(s).albedo, sn);
