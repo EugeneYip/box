@@ -244,6 +244,13 @@ export const ISLAND_SPINES = [
   { w: 0.36, pts: [[121.6, 25.0], [121.05, 23.6], [120.8, 22.3]] }, // Taiwan
 ];
 
+// Low coastal terraces at the foot of coastal ranges (the Atacama coast):
+// land within ~2.5 tiles of the sea is held low, so a desert strip shows
+// between the surf and the mountain front.
+export const COAST_PLAINS = [
+  { w: 2.2, pts: [[-71.2, -17.8], [-70.3, -21.0], [-70.4, -24.5], [-71.0, -27.5]] }, // Atacama coast
+];
+
 // ----------------------------------------------------------------- plateaus
 // Flat-topped uplands: h is the table height, w the half-width of the flat
 // part; `edge` (degrees) is the width of the falloff around it.
@@ -368,6 +375,7 @@ export const MOISTURE = [
   { m: 0.05, k: 1, edge: 2, w: 3.5, pts: [[79.0, 38.8], [84.0, 39.4], [88.0, 40.0]] }, // Taklamakan
   { m: 0.08, k: 1, edge: 3, w: 4, pts: [[96.0, 41.5], [103.0, 42.0], [109.0, 43.0], [112.0, 43.5]] }, // Gobi
   { m: 0.25, k: 0.8, edge: 2, w: 3, pts: [[82.0, 33.5], [88.0, 34.0]] }, // dry western Tibet
+  { m: 0.32, k: 0.75, edge: 1.5, w: 3.5, pts: [[80.0, 33.5], [86.0, 32.6], [92.0, 32.6], [97.0, 32.4]] }, // Tibetan high steppe
   { m: 0.07, k: 0.95, edge: 6, pts: [[120.5, -24.0, 0, 6], [127.0, -24.5, 0, 7], [133.0, -25.5, 0, 7], [138.0, -28.0, 0, 5]] }, // Australian
   { m: 0.05, k: 1, edge: 1.5, pts: [[12.8, -17.0, 0, 1.5], [14.5, -22.0, 0, 2.2], [15.6, -26.5, 0, 2], [16.8, -29.0, 0, 1.4]] }, // Namib
   { m: 0.26, k: 0.8, edge: 3, w: 3.5, pts: [[21.0, -22.0], [22.0, -25.0]] }, // Kalahari

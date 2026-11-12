@@ -85,7 +85,8 @@ export class Fleet {
     const area = (w.w * w.h) / (256 * 256);
     // budgets: vessels and land vehicles in the whole world (scaled with the map)
     this.budget = {
-      sea: Math.round(Math.min(220, 70 * Math.pow(area, 0.6))),
+      sea: Math.round(Math.min(220, 70 * Math.pow(area, 0.6))), // ships (fishing boats apart)
+      fishing: Math.round(Math.min(200, 60 * Math.pow(area, 0.6))),
       land: Math.round(Math.min(120, 36 * Math.pow(area, 0.55))),
       debris: 240,
     };
@@ -292,9 +293,15 @@ export class Fleet {
   get(id) {
     return this.byId.get(id) || null;
   }
+  // ships against the sea budget (fishing boats have a budget of their own)
   seaCount() {
     let n = 0;
-    for (const v of this.list) if (v.alive && v.cls === 'sea') n++;
+    for (const v of this.list) if (v.alive && v.cls === 'sea' && v.kind !== 'fishing') n++;
+    return n;
+  }
+  fishCount() {
+    let n = 0;
+    for (const v of this.list) if (v.alive && v.kind === 'fishing') n++;
     return n;
   }
   landCount() {
@@ -309,13 +316,13 @@ export class Fleet {
     const villages = k?.villages?.length || 1;
     switch (kind) {
       case 'fishing':
-        return Math.min(10, 2 + villages);
+        return Math.min(18, 3 + villages * 2);
       case 'cog':
         return 2 + (this.hasTech(kid, 'banking') ? 1 : 0) + Math.min(2, villages >> 2);
       case 'transport':
         return 2;
       case 'galley':
-        return Math.min(4, 1 + (villages >> 2) + (this.hasTech(kid, 'navigation') ? 1 : 0));
+        return Math.min(3, 1 + (villages >> 3) + (this.hasTech(kid, 'navigation') ? 1 : 0));
       case 'explorer':
         return 1;
       case 'carrack':
@@ -550,14 +557,20 @@ export class Fleet {
   }
 
   _buildHash() {
-    const H = this._hash;
-    H.clear();
-    for (const v of this.list) {
+    const gw = (this._gw = Math.ceil(this.world.w / 8) + 1),
+      gh = (this._gh = Math.ceil(this.world.h / 8) + 1);
+    if (!this._hHead || this._hHead.length !== gw * gh) this._hHead = new Int32Array(gw * gh);
+    this._hHead.fill(-1);
+    const L = this.list;
+    if (!this._hNext || this._hNext.length < L.length) this._hNext = new Int32Array(Math.max(64, L.length * 2));
+    this._hList = L;
+    for (let i = 0; i < L.length; i++) {
+      const v = L[i];
+      this._hNext[i] = -1;
       if (!v.alive || v.state === 'sinking') continue;
-      const key = ((v.x >> 3) << 12) | (v.z >> 3);
-      let a = H.get(key);
-      if (!a) H.set(key, (a = []));
-      a.push(v);
+      const c = Math.min(gh - 1, Math.max(0, v.z >> 3)) * gw + Math.min(gw - 1, Math.max(0, v.x >> 3));
+      this._hNext[i] = this._hHead[c];
+      this._hHead[c] = i;
     }
   }
   // Hulls never sit inside one another: neighbours drift apart (on water only).
@@ -620,16 +633,21 @@ export class Fleet {
 
   // vehicles within r of a point (from the per-tick hash)
   near(x, z, r, fn) {
-    const H = this._hash;
-    const x0 = Math.floor((x - r) / 8),
-      x1 = Math.floor((x + r) / 8),
-      z0 = Math.floor((z - r) / 8),
-      z1 = Math.floor((z + r) / 8);
-    for (let cx = x0; cx <= x1; cx++)
-      for (let cz = z0; cz <= z1; cz++) {
-        const a = H.get((cx << 12) | cz);
-        if (!a) continue;
-        for (const v of a) {
+    const head = this._hHead,
+      next = this._hNext,
+      L = this._hList;
+    if (!head) return;
+    const gw = this._gw,
+      gh = this._gh;
+    const x0 = Math.max(0, Math.floor((x - r) / 8)),
+      x1 = Math.min(gw - 1, Math.floor((x + r) / 8)),
+      z0 = Math.max(0, Math.floor((z - r) / 8)),
+      z1 = Math.min(gh - 1, Math.floor((z + r) / 8));
+    for (let cz = z0; cz <= z1; cz++)
+      for (let cx = x0; cx <= x1; cx++) {
+        for (let i = head[cz * gw + cx]; i >= 0; i = next[i]) {
+          const v = L[i];
+          if (!v || !v.alive) continue;
           const d = Math.hypot(v.x - x, v.z - z);
           if (d <= r + v.def.size) fn(v, d);
         }
@@ -809,8 +827,16 @@ export class Fleet {
     }
     if (cause === 'battle' && by && v.kind === 'fishing') {
       this.history(`${Who}'s fishing boat is sunk by galleys of ${this.kname(by.kingdom)}`, 'war', pos);
+    } else if (cause === 'battle' && by && (v.kind === 'galley' || v.kind === 'cog')) {
+      const key = 'sunkh' + v.kingdom + '-' + by.kingdom;
+      const now = this.game.time.total;
+      this._histT = this._histT || new Map();
+      if (now - (this._histT.get(key) ?? -1e9) > 300) {
+        this._histT.set(key, now);
+        this.history(`${nm[0].toUpperCase() + nm.slice(1)} of ${who} is sunk by galleys of ${this.kname(by.kingdom)}`, 'war', pos);
+      }
     } else if (cause === 'battle' && by) {
-      this.note(`⚓ ${nm[0].toUpperCase() + nm.slice(1)} of ${who} is sunk by galleys of ${this.kname(by.kingdom)}`, 'war', pos, 'sunk' + v.kingdom + '-' + by.kingdom, 150);
+      this.note(`⚓ ${nm[0].toUpperCase() + nm.slice(1)} of ${who} is sunk by galleys of ${this.kname(by.kingdom)}`, 'war', pos, 'sunk' + v.kingdom + '-' + by.kingdom, 400);
     } else if (cause === 'storm' || cause === 'lightning') {
       this.note(`🌊 ${nm[0].toUpperCase() + nm.slice(1)} of ${who} founders in the storm`, 'disaster', pos, 'stormsink' + v.kingdom, 60);
     } else if (cause === 'serpent' || cause === 'monster') {

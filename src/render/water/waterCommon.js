@@ -212,7 +212,7 @@ vec3 waterIrradiance() { return waterIrradianceV(1.0); }
 
 // In-scattered colour of an infinitely deep column (deep sapphire / polar slate), lit.
 vec3 waterDeepColorV(float vis) {
-  return mix(vec3(0.0055, 0.034, 0.105), vec3(0.010, 0.024, 0.038), gCold) * waterIrradianceV(vis);
+  return mix(vec3(0.0055, 0.034, 0.105), vec3(0.010, 0.032, 0.066), gCold) * waterIrradianceV(vis);
 }
 vec3 waterDeepColor() { return waterDeepColorV(1.0); }
 // Lighter scatter colour of the shallow shelf haze (turquoise / cold teal-grey).

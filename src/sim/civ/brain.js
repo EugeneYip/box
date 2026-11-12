@@ -535,6 +535,7 @@ export const brain = {
       if (!f || !FLORA_INFO[f].isTree || w.floraGrowth[i] < 0.6) continue;
       // keep shade trees in town and never strip the last of a grove
       if (dd < 5 && this.use[i] !== USE.PLOT) continue;
+      if ((v.trees ?? 99) < 30 && this.use[i] !== USE.PLOT && w.floraGrowth[i] < 0.95) continue;
       if (this._reservedByOther(i, u)) continue;
       if (this.use[i] === USE.PLOT && u.job !== 'farmer') continue;
       if (w.owner[i] >= 0 && w.owner[i] !== v.kingdom) continue;

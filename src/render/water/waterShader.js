@@ -104,7 +104,7 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   float narrow = (1.0 - smoothstep(1.2, 3.6, wide)) * (1.0 - outK) * smoothstep(0.0, 0.22, depth);
 
   // ---- climate: polar water is slate-teal, not tropical turquoise
-  float temp = texture2D(uClimTex, p / uWorldSize).g;
+  float temp = texture2D(uClimTex, p / uWorldSize).g + (texture2D(uNoise, p * (1.0 / 120.0) + 0.61).r - 0.5) * 0.12;
   // near the map border the cold slate tint fades out, so polar seas meet the
   // endless outer ocean without a darker band outlining the map rectangle
   vec2 inB = min(p, uWorldSize - p);

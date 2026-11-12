@@ -97,7 +97,7 @@ export const unlocks = {
       if (m) upgrade(m);
     }
     // masonry: a paved square before the hall
-    if (has('masonry') && pop >= 14 && !v.squarePaved && v.hall && !v.hall.constructing) this._paveSquare(v, K);
+    if (has('masonry') && pop >= 14 && !v.squarePaved && v.hall && !v.hall.constructing && v.policy?.buildings !== false) this._paveSquare(v, K);
   },
 
   // A small building on the bank of a river or lake near the fields.

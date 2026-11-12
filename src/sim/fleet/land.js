@@ -135,45 +135,58 @@ export const land = {
     void civ;
   },
 
-  // Ox carts even out a realm's stores: goods go from the town whose store is
-  // fullest (relative to what it can keep) to the one that has least, the
-  // capital first. Relative fill, not fixed amounts: late in the game towns
-  // spend their wood and stone on arms and great works and rarely sit above
-  // a fixed mark, yet one is always richer than another.
+  // Ox carts even out a realm's stores. Food goes by need: from the town with
+  // most to eat per head to the one with least (hungry towns first). Wood,
+  // stone and ore go from the fullest store (relative to what a town can keep)
+  // to the emptiest, the capital first: late in the game towns spend those on
+  // arms and great works and rarely sit above a fixed mark, yet one is always
+  // richer than another.
   _sendCart(k) {
     const civ = this.game.civ;
     const vs = k.villages.map((id) => civ.villages[id]).filter((v) => v?.alive);
     if (vs.length < 2) return;
     const cap = civ.villages[k.capital];
-    const capOf = (v, r) => (r === 'food' ? v.foodCap || 160 : r === 'wood' ? v.woodCap || 120 : r === 'stone' ? v.stoneCap || 100 : 60);
+    const capOf = (v, r) => (r === 'wood' ? v.woodCap || 120 : r === 'stone' ? v.stoneCap || 100 : 60);
     const fill = (v, r) => (v[r] || 0) / Math.max(1, capOf(v, r));
+    const perHead = (v) => (v.food || 0) / Math.max(4, v.pop || 0);
     let best = null,
       bs = 0;
-    // food only moves when someone is short of it (it is the plentiful good)
-    const want = ['wood', 'stone', 'ore', 'food'];
-    for (const r of want)
-      for (const from of vs) {
-        const have = from[r] || 0;
-        if (have < (r === 'food' ? from.pop * 3 + 30 : 18)) continue;
-        for (const to of vs) {
-          if (to === from || to.landId !== from.landId) continue;
-          const d = Math.hypot(to.cx - from.cx, to.cz - from.cz);
-          if (d < 8 || d > 110) continue;
-          let gap = fill(from, r) - fill(to, r) + (to === cap ? 0.15 : 0);
-          if (r === 'food') gap = to.starving || to.food < to.pop * 2.5 + 6 ? gap + 0.3 : gap - 0.35;
+    for (const from of vs) {
+      for (const to of vs) {
+        if (to === from || to.landId !== from.landId) continue;
+        const d = Math.hypot(to.cx - from.cx, to.cz - from.cz);
+        if (d < 8 || d > 110) continue;
+        // food: days of bread per mouth, the hungry and the low first
+        const reserve = (from.pop || 0) * 3 + 25;
+        if ((from.food || 0) > reserve + 10) {
+          const ph = perHead(from),
+            pt = perHead(to);
+          let need = (ph - pt) / Math.max(1, ph);
+          if (to.starving) need += 0.8;
+          if ((to.food || 0) < (to.pop || 0) * 2.5 + 6) need += 0.4;
+          if ((to.food || 0) > (to.foodCap || 200) * 0.85) need -= 1;
+          const sc = need * 1.2 - d * 0.002 + this.rng() * 0.08;
+          if (need > 0.3 && sc > bs) {
+            bs = sc;
+            best = { from, to, r: 'food', amt: Math.min(30, ((from.food || 0) - reserve) * 0.5, Math.max(8, ((from.foodCap || 200) - (to.food || 0)) * 0.5)) };
+          }
+        }
+        for (const r of ['wood', 'stone', 'ore']) {
+          if ((from[r] || 0) < 18) continue;
+          const gap = fill(from, r) - fill(to, r) + (to === cap ? 0.15 : 0);
           if (gap < 0.22) continue;
-          const sc = gap * (r === 'food' ? 0.8 : 1) - d * 0.002 + this.rng() * 0.08;
+          const sc = gap - d * 0.002 + this.rng() * 0.08;
           if (sc > bs) {
             bs = sc;
-            best = { from, to, r, gap };
+            best = { from, to, r, amt: Math.min(24, (from[r] || 0) * 0.4, gap * 0.5 * capOf(to, r)) };
           }
         }
       }
+    }
     if (!best) return;
-    const { from, to, r, gap } = best;
-    const amt = Math.floor(Math.min(24, (from[r] || 0) * 0.4, gap * 0.5 * capOf(to, r)));
+    const amt = Math.floor(best.amt);
     if (amt < 4) return;
-    this.requestCart({ kingdom: k.id, from: from.id, to: to.id, cargo: { [r]: amt } });
+    this.requestCart({ kingdom: k.id, from: best.from.id, to: best.to.id, cargo: { [best.r]: amt } });
   },
 
   _sendCaravan(k) {

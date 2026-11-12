@@ -747,6 +747,10 @@ void terrainSurface() {
   vec3 nrm = s.n;
   float slopeN = s.n.y + (s.meso.b - 0.5) * 0.10 + (s.det.r - 0.5) * 0.06;
   float cliff = smoothstep(0.745, 0.665, slopeN) * (1.0 - lavaRaw) * (1.0 - iceB);
+  // rock ground takes the triplanar rock from moderate slopes up: projected
+  // top-down, its detail stretched into a grey smear on any steeper face
+  float rockT = dot(vec4(equal(vec4(t0, t1, t2, t3), vec4(8.0))) * live, b);
+  cliff = max(cliff, rockT * smoothstep(0.96, 0.82, slopeN) * (1.0 - lavaRaw) * (1.0 - iceB));
   // a darker, lusher lip of turf along the top of every rock face
   float lip = smoothstep(0.83, 0.75, slopeN) * (1.0 - cliff) * (1.0 - snowB) * (1.0 - dot(vec4(equal(vec4(t0, t1, t2, t3), vec4(0.0))) * live, b));
   albedo = mix(albedo, albedo * vec3(0.72, 0.84, 0.70), lip * 0.8);
@@ -789,6 +793,7 @@ void terrainSurface() {
     albedo *= mix(1.0, (0.76 + 0.44 * hs) * mix(0.68, 1.0, smoothstep(0.55, 0.98, nrm.y)), farR * 0.85);
     albedo = mix(albedo, albedo * vec3(0.96, 1.0, 1.08) * 1.14, smoothstep(6.0, 16.0, s.p.y) * 0.5 * farR);
     // biome distinctiveness at map scale: deep blue-green forests, brighter meadows
+    albedo = mix(albedo, albedo * vec3(0.80, 0.84, 0.90), snowB * farR * (0.6 + 0.4 * smoothstep(0.4, 0.7, s.macro.g)));
     float forestB = dot(vec4(equal(vec4(t0, t1, t2, t3), vec4(2.0))) * live, b) + 0.6 * dot(vec4(equal(vec4(t0, t1, t2, t3), vec4(3.0))) * live, b);
     float grassB = dot(vec4(equal(vec4(t0, t1, t2, t3), vec4(1.0))) * live, b);
     albedo = mix(albedo, albedo * vec3(0.72, 0.85, 0.92), forestB * farR * 0.6 * (1.0 - snowB));

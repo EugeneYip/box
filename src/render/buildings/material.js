@@ -14,6 +14,7 @@ export function createBuildingMaterial(uniforms, { clip = false } = {}) {
   mat.onBeforeCompile = (sh) => {
     sh.uniforms.uTime = uniforms.uTime;
     sh.uniforms.uNight = uniforms.uNight;
+    sh.uniforms.uSnow = uniforms.uSnow || { value: 0 };
     sh.vertexShader = sh.vertexShader
       .replace(
         '#include <common>',
@@ -41,6 +42,7 @@ vTint = aTint; vGlow = aGlow; vKCol = iColor; vState = iState; vLocal = position
         `#include <common>
 uniform float uTime;
 uniform float uNight;
+uniform float uSnow;
 varying float vTint;
 varying float vGlow;
 varying vec3 vKCol;
@@ -83,6 +85,8 @@ if (vRoof.x > 0.5) {
   float wear = wsHash(vec3(floor(along * 2.5), floor(v * 3.0), vState.z * 9.0));
   diffuseColor.rgb *= m * (0.92 + 0.1 * wear);
   if (kind < 1.5 || kind > 3.5) diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.8, 0.92, 0.62), 0.3 * (1.0 - v) * wear);
+  // winter: snow settles on sod and slate roofs (the northern styles)
+  if (kind > 2.5 && uSnow > 0.001) diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.9, 0.93, 0.97), uSnow * (kind > 3.5 ? 0.88 : 0.62) * (0.75 + 0.25 * wear));
 }
 {
   float lum = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
