@@ -228,9 +228,10 @@ export const tech = {
     this._techFirst.add(id);
     this._history(`📜 ${this._kn(k)} learns ${t.name}`, 'info', this._kingdomPos(k));
     if (first && !silent) this._note(`📜 ${this._kn(k)} is first to master ${t.name}`, 'good', this._kingdomPos(k), 'tech' + id, 1);
-    // era advance: two technologies of the next era
+    // era advance: two technologies of the next era, one of them its defining art
     const inEra = (e) => TECHS.filter((x) => x.era === e && k.techs.has(x.id)).length;
-    while (k.era < 3 && inEra(k.era + 1) >= 2) {
+    const KEY = { 1: 'bronzeworking', 2: 'ironworking' };
+    while (k.era < 3 && inEra(k.era + 1) >= 2 && (!KEY[k.era + 1] || k.techs.has(KEY[k.era + 1]))) {
       k.era++;
       if (!silent) this._note(`🏛 ${this._kn(k)} enters the ${ERAS[k.era].name} Era`, 'good', this._kingdomPos(k), 'era' + k.id + k.era, 1);
       this.version++;

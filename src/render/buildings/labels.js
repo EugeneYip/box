@@ -256,7 +256,7 @@ export class Labels {
     }
     for (const [id, s] of this.kLabels) {
       const k = civ.kingdoms[id];
-      const v = civ.villages[k?.capital];
+      const v = k && k.alive && k.villages.length ? civ.villages[k.capital] : null; // no names for fallen realms
       const kAk = mid > 0.01 && this._focusSet?.size && !this._focusSet.has(id) ? kA * (1 - mid) : kA;
       if (!v || !v.alive || kAk < 0.01) {
         s.visible = false;

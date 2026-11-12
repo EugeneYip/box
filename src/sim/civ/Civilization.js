@@ -1407,7 +1407,7 @@ export class Civilization {
     if (atWar) give('soldier', Math.max(3, n * Math.min(0.55, (drafting ? 0.32 : 0.2) * lean)) + (v.hasBarracks ? 3 : 0));
     give('builder', sites ? Math.min(Math.max(1, Math.ceil(sites * 1.1)), 1 + Math.floor(n / 6)) : repairs ? 1 : 0);
     // an empty woodshed stops all building: send more hands to the woods
-    const woodsCap = (v.trees ?? 99) < 25 ? 1 : (v.trees ?? 99) < 50 ? 2 : 9;
+    const woodsCap = (v.trees ?? 99) < 15 ? 1 : (v.trees ?? 99) < 35 ? 2 : (v.trees ?? 99) < 60 ? 3 : 9;
     give('woodcutter', Math.min(woodsCap, woodFull ? (n >= 6 ? 1 : 0) : v.wood < 15 ? 1 + Math.floor(n / 7) : v.wood < 40 + v.tier * 30 ? 1 + Math.floor(n / 9) : n >= 4 ? 1 + Math.floor(n / 16) : 0));
     if (!atWar && n >= 5) give('soldier', Math.max(1, n * 0.11 * lean) + (v.hasBarracks ? 2 : 0) + (ctr('Martial') && v.tier >= 1 ? 2 : 0));
     if (v.hasRock !== false || v.quarry >= 0) give('miner', stoneFull ? 0 : v.stone < 12 ? 2 + Math.floor(n / 7) : v.stone < 30 + v.tier * 50 ? 1 + Math.floor(n / (ctr('Masons') ? 6 : 9)) : ctr('Masons') ? 2 : 1);
@@ -1833,6 +1833,7 @@ export class Civilization {
 
   _finishBuilding(b) {
     b.era = Math.max(b.era ?? 0, this.kingdoms[b.kingdom]?.era ?? 0);
+    b.builtEra = this.kingdoms[b.kingdom]?.era ?? 0;
     b.constructing = false;
     b.progress = 1;
     b.hp = b.maxHp;
@@ -2269,9 +2270,12 @@ export class Civilization {
       const sx = new Float64Array(this.kingdoms.length),
         sz = new Float64Array(this.kingdoms.length),
         cnt = new Float64Array(this.kingdoms.length);
+      // only the land the capital stands on counts (colonies across the sea
+      // would pull the centre out into the ocean)
+      const capLand = this.kingdoms.map((k) => (k.alive && this.villages[k.capital] ? this.villages[k.capital].landId : -2));
       for (let i = 0; i < w.size; i++) {
         const o = own[i];
-        if (o < 0) continue;
+        if (o < 0 || (capLand[o] >= 0 && this.landId?.[i] !== capLand[o])) continue;
         sx[o] += i % W;
         sz[o] += (i / W) | 0;
         cnt[o]++;
@@ -2280,7 +2284,7 @@ export class Civilization {
       const at = new Int32Array(this.kingdoms.length).fill(-1);
       for (let i = 0; i < w.size; i++) {
         const o = own[i];
-        if (o < 0 || !cnt[o] || H[i] < SEA_LEVEL + 0.1) continue;
+        if (o < 0 || !cnt[o] || H[i] < SEA_LEVEL + 0.1 || (capLand[o] >= 0 && this.landId?.[i] !== capLand[o])) continue;
         const d = (i % W - sx[o] / cnt[o]) ** 2 + (((i / W) | 0) - sz[o] / cnt[o]) ** 2;
         if (d < best[o]) (best[o] = d), (at[o] = i);
       }
@@ -2429,7 +2433,8 @@ export class Civilization {
       if (def.housing && b.alive) stats.push(['Houses', `${def.housing[b.level - 1]} people`]);
       if (def.levels > 1) stats.push(['Level', `${b.level} / ${def.levels}`]);
       // the building's own era (the realm's era is shown by the UI separately)
-      stats.push(['Built in', (b.era ?? 0) >= 4 ? 'Age of mastery (gilded)' : `${ERAS[b.era ?? 0]?.name || 'Hearth'} era`]);
+      const be = Math.min(b.builtEra ?? b.era ?? 0, k?.era ?? 3);
+      stats.push(['Built in', `${ERAS[be]?.name || 'Hearth'} era${(b.era ?? 0) >= 4 ? ', since gilded' : ''}`]);
       if (b.type === 'hall' && v) {
         // wood / stone / gold / ore appear in the UI's "Village stores" section
         stats.push(['Population', v.pop], ['Food', `${Math.floor(v.food)} / ${v.foodCap}`]);
