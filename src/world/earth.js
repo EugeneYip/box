@@ -592,6 +592,9 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
   }
   for (let i = 0; i < N; i++) {
     if (land[i]) hgt[i] = Math.max(hgt[i], 0.24);
+    // lone islets (a tile or two in open ocean) rise as small volcanic hills,
+    // not flat sand discs that read as foam rings
+    if (land[i] && landW[i] <= 1.01) hgt[i] = Math.max(hgt[i], 1.1 + hash2(i % W, (i / W) | 0, seed + 9) * 0.6);
     else hgt[i] = Math.min(-0.2, Math.max(hgt[i], MIN_HEIGHT));
   }
   // terraced benches on the flanks and plateau rims; crests stay sharp
