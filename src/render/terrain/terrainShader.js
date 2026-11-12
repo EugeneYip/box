@@ -514,22 +514,23 @@ Mat matCliff(NS s, float volc, out vec3 facetN) {
   float jg = mix(jZ.g, jX.g, wxz);
   // joint width never below ~2 px (edge distance unit = 0.75 world units here)
   float jW = max(0.2, s.fw * 3.6);
-  float joint = (1.0 - smoothstep(0.0, jW, jg)) * near * mix(0.45, 1.0, smoothstep(0.3, 0.6, d.b)) * (1.0 - smoothstep(0.25, 0.5, jW));
+  float vf = smoothstep(0.25, 0.65, 1.0 - bw.y); // 0 on moderate slopes .. 1 on true faces
+  float joint = (1.0 - smoothstep(0.0, jW, jg)) * near * mix(0.45, 1.0, smoothstep(0.3, 0.6, d.b)) * (1.0 - smoothstep(0.25, 0.5, jW)) * vf;
   // erosion gullies (ridged noise along the fall line) and dark runoff streaks
   vec4 gX = nz(vec2(p.z * 0.06, p.y * 0.016) + 0.31);
   vec4 gZ = nz(vec2(p.x * 0.06, p.y * 0.016) + 0.73);
   vec4 gv = mix(gZ, gX, wxz);
-  float gully = smoothstep(0.55, 0.85, gv.b) * mix(0.7, 1.0, volc);
-  float streak = smoothstep(0.56, 0.80, gv.g) * (1.0 - hotK * 0.5);
+  float gully = smoothstep(0.55, 0.85, gv.b) * mix(0.7, 1.0, volc) * vf;
+  float streak = smoothstep(0.56, 0.80, gv.g) * (1.0 - hotK * 0.5) * vf;
   // fine grit: crisp micro relief so faces never look moulded
-  vec4 e = nz(uvD * 0.45 + 0.43);
+  vec4 e = mix(nz(ROT1 * uvY * 0.45 + 0.43), nz(uvD * 0.45 + 0.43), vf);
   c *= 0.90 + 0.20 * mix(0.5, e.g, fineK);
   c *= 1.0 - 0.18 * joint;
   c *= 1.0 - 0.30 * gully;
   c = mix(c, c * vec3(0.80, 0.82, 0.87), streak * 0.75);
 
   // volcanic rock: dark basalt with rusty oxidised patches and scoria pits
-  vec4 sc = cz(uvD * 0.11 + 0.47);
+  vec4 sc = cz(mix(uvY, uvD, step(0.5, vf)) * 0.11 + 0.47);
   {
     vec3 bas = mix(vec3(0.150, 0.138, 0.130), vec3(0.250, 0.175, 0.135), smoothstep(0.45, 0.8, s.meso.g * 0.6 + d.g * 0.4));
     float pit = smoothstep(0.32, 0.12, sc.r) * step(0.35, sc.b) * fineK;
@@ -539,14 +540,15 @@ Mat matCliff(NS s, float volc, out vec3 facetN) {
 
   // facets: geometric (per-triangle) normal plus nearest-sampled facet cells on
   // both vertical planes, blended by the triplanar weights (no hard plane switch)
-  vec4 fX = texelFetch(uCells, ivec2(floor(fract(vec2(p.z * 0.055, p.y * 0.085 + p.x * 0.02)) * 256.0)), 0);
-  vec4 fZ = texelFetch(uCells, ivec2(floor(fract(vec2(p.x * 0.055, p.y * 0.085 + p.z * 0.02)) * 256.0)), 0);
+  vec4 fX = cz(vec2(p.z * 0.055, p.y * 0.085 + p.x * 0.02));
+  vec4 fZ = cz(vec2(p.x * 0.055, p.y * 0.085 + p.z * 0.02));
   vec2 ft = mix(fZ.ba, fX.ba, wxz);
+  float facetK = near * vf * smoothstep(0.03, 0.08, s.fw);
   vec3 tA = normalize(cross(n, vec3(0.0, 1.0, 0.0)) + vec3(1e-4, 0.0, 0.0));
   vec3 tB = normalize(cross(tA, n));
   vec3 base = normalize(mix(n, s.fn, 0.25 * near));
-  facetN = normalize(base + (tA * (ft.x - 0.5) * 0.20 + tB * (ft.y - 0.5) * 0.15) * near);
-  c *= mix(1.0, 0.95 + 0.10 * ft.x, near);
+  facetN = normalize(base + (tA * (ft.x - 0.5) * 0.20 + tB * (ft.y - 0.5) * 0.15) * facetK);
+  c *= mix(1.0, 0.96 + 0.08 * ft.x, facetK);
   // relief for the derivative bump: grooved joints and gullies, ledge steps, grit
   float hgt = 0.55 + 0.20 * (lr - 0.5) * bandK + 0.16 * (d.r - 0.5) + 0.14 * (e.g - 0.5) * fineK
             - 0.18 * joint - 0.30 * gully + 0.04 * led * bandK;
@@ -750,7 +752,7 @@ void terrainSurface() {
   // rock ground takes the triplanar rock from moderate slopes up: projected
   // top-down, its detail stretched into a grey smear on any steeper face
   float rockT = dot(vec4(equal(vec4(t0, t1, t2, t3), vec4(8.0))) * live, b);
-  cliff = max(cliff, rockT * smoothstep(0.96, 0.82, slopeN) * (1.0 - lavaRaw) * (1.0 - iceB));
+  cliff = max(cliff, rockT * smoothstep(0.98, 0.78, slopeN + (s.meso.g - 0.5) * 0.08) * (1.0 - lavaRaw) * (1.0 - iceB));
   // a darker, lusher lip of turf along the top of every rock face
   float lip = smoothstep(0.83, 0.75, slopeN) * (1.0 - cliff) * (1.0 - snowB) * (1.0 - dot(vec4(equal(vec4(t0, t1, t2, t3), vec4(0.0))) * live, b));
   albedo = mix(albedo, albedo * vec3(0.72, 0.84, 0.70), lip * 0.8);
