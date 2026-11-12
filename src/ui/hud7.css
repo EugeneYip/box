@@ -646,3 +646,9 @@
     height: 44px;
   }
 }
+.ws-egive__preview.is-worn {
+  box-shadow: inset 0 0 0 1px rgba(155, 227, 168, 0.45);
+}
+.ws-egive__preview.is-worn small {
+  color: #9be3a8;
+}

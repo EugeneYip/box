@@ -566,7 +566,16 @@ export class Editor {
     const st = { slot: slots[0], kind: kindsFor(slots[0])[0] || '', material: mats[Math.min(3, mats.length - 1)], quality: quals[Math.min(2, quals.length - 1)] };
     const prevBox = el('div', { class: 'ws-egive__preview', 'aria-live': 'polite' });
     const spec = () => ({ slot: st.slot, material: st.material, quality: st.quality, ...(st.kind ? { kind: st.kind } : {}) });
+    let given = null; // the item just bestowed (the preview then shows it worn)
     const drawPreview = () => {
+      const cur0 = u.equipment?.[st.slot] || null;
+      const sameSpec = given && cur0 === given && given.slot === st.slot && given.material === st.material && given.quality === st.quality && (!st.kind || given.kind === st.kind);
+      if (sameSpec) {
+        prevBox.innerHTML = `<span class="ws-egive__ico">${uiIcon({ weapon: 'sword', armor: 'shield', tool: 'job-builder', trinket: 'sparkle' }[st.slot] || 'sparkle')}</span><span class="ws-egive__txt"><b>${esc(given.name)}</b><small>Now worn · Power ${given.power}</small></span>`;
+        prevBox.classList.add('is-worn');
+        return;
+      }
+      prevBox.classList.remove('is-worn');
       const mk = REG.items?.makeItem;
       const it = mk ? safe(() => mk({ ...spec(), name: '…' }, () => 0.5), null) : null;
       const cur = u.equipment?.[st.slot] || null;
@@ -607,6 +616,7 @@ export class Editor {
           const prev = u.equipment?.[slot] || null;
           if (!safe(() => U.giveItem(u, spec()), false)) return;
           const it = u.equipment?.[slot];
+          given = it || null;
           this.applied(`Gave ${it?.name || prettyId(slot)}`, () => {
             if (prev) {
               // the replaced item went to the armoury: take it back out
