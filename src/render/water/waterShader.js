@@ -260,7 +260,8 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   vec3 foamCol = vec3(0.90, 0.95, 1.0) * (waterIrradianceV(lightVis) * 0.78 + vec3(0.02));
 
   // ---- frozen water (ICE tiles under the surface) - opaque sheet, soft edges
-  vec2 iq = p + (fn.rg - 0.5) * 2.0 + (fc.gb - 0.5) * 0.3 - 0.5;
+  vec4 iw = texture2D(uNoise, p * (1.0 / 4.3) + 0.19);
+  vec2 iq = p + (fn.rg - 0.5) * 2.0 + (iw.rg - 0.5) * 0.9 - 0.5;
   ivec2 ic = ivec2(floor(iq));
   vec2 ifr = smoothstep(0.0, 1.0, fract(iq));
   ivec2 isz = ivec2(uWorldSize) - 1;
@@ -269,7 +270,7 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   float i01 = isIceAt(ic + ivec2(0, 1), isz);
   float i11 = isIceAt(ic + ivec2(1, 1), isz);
   float iceF = mix(mix(i00, i10, ifr.x), mix(i01, i11, ifr.x), ifr.y);
-  float ice = smoothstep(0.25, 0.75, iceF + (fn.g - 0.5) * 0.35 + (fn.b - 0.5) * 0.2) * (1.0 - outK) * step(0.001, depth);
+  float ice = smoothstep(0.30, 0.70, iceF + (fn.g - 0.5) * 0.35 + (iw.b - 0.5) * 0.25) * (1.0 - outK) * step(0.001, depth);
   // seasonal freeze: lakes, rivers and calm shallows at the coldest latitudes
   if (uFreezeT > -0.1) {
     // coherent: the shelf grows out from the shore as the cold deepens (smooth
@@ -300,7 +301,7 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   // a few loose floes drift just beyond the edge
   // irregular plates: the cell lookup is warped so leads never form a regular net
   vec4 fl = texture2D(uCells, WROT2 * (p + (fn.rg - 0.5) * 7.0 + (fc.rg - 0.5) * 1.6) * (1.0 / 38.0) + 0.37);
-  float iceW = iceF + (fc.b - 0.5) * 0.3 + (fn.g - 0.5) * 0.25;
+  float iceW = iceF + (fn.g - 0.5) * 0.35 + (iw.b - 0.5) * 0.25;
   float edgeZone = 1.0 - smoothstep(0.55, 0.95, max(iceW, fastI));
   float gapW = max(mix(0.05, 0.12, edgeZone), fw * 1.4);
   float lead = 1.0 - smoothstep(gapW * 0.45, gapW, fl.g);
@@ -309,24 +310,26 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   float nearIce = max(smoothstep(0.0, 0.05, iceF), fastI);
   // margin zone: how much sheet ice lies within ~2-4 tiles (exact fetches, cold water only)
   float margin = 0.0;
-  if (gCold > 0.4 && iceF < 0.5 && outK < 0.9) {
-    ivec2 mc = ivec2(floor(p));
-    for (int k = 0; k < 8; k++) {
-      float a = float(k) * 0.785 + 0.3;
-      vec2 o = vec2(cos(a), sin(a));
-      margin += isIceAt(mc + ivec2(o * 2.2), isz) * 0.09 + isIceAt(mc + ivec2(o * 4.0), isz) * 0.035;
-    }
+  if (gCold > 0.4 && outK < 0.9) {
+    vec2 mq = (p + (fn.rg - 0.5) * 3.0) / 3.0 - 0.5;
+    vec2 mf = smoothstep(0.0, 1.0, fract(mq));
+    ivec2 m0 = ivec2(floor(mq)) * 3 + 1;
+    float a0 = isIceAt(m0, isz), a1 = isIceAt(m0 + ivec2(3, 0), isz), a2 = isIceAt(m0 + ivec2(0, 3), isz), a3 = isIceAt(m0 + ivec2(3, 3), isz);
+    margin = mix(mix(a0, a1, mf.x), mix(a2, a3, mf.x), mf.y);
   }
-  float driftK = max(nearIce * smoothstep(0.06, 0.2, iceW), clamp(margin * 1.4, 0.0, 1.0));
-  // floes are whole cells with a gap (polygonal plates), fewer farther out
-  float floeDrift = smoothstep(0.05, 0.08, fl.g) * step(1.0 - 0.35 * driftK, fl.b) * step(0.08, driftK) * (1.0 - outK) * step(0.001, depth);
+  float driftK = clamp(margin * 1.3, 0.0, 1.0) * (1.0 - smoothstep(0.3, 0.6, iceF));
+  vec4 fd = texture2D(uCells, WROT1 * (p + (fn.gb - 0.5) * 3.0) * (1.0 / 64.0) + 0.71);
+  float floeR = 0.26 + 0.24 * fd.a;
+  float floeE = fd.r + (fn.b - 0.5) * 0.10 + (iw.g - 0.5) * 0.06;
+  // round floes, fewer farther out
+  float floeDrift = smoothstep(floeR + 0.03, floeR - 0.02, floeE) * step(1.0 - 0.5 * driftK, fd.b) * step(0.06, driftK) * (1.0 - outK) * step(0.001, depth);
   // leads open to dark water only at the margin; inside the sheet they are lighter
   // refrozen seams (thin ice) instead of a black crack net
-  float openLead = lead * smoothstep(0.15, 0.6, edgeZone);
-  float thinLead = lead * (1.0 - smoothstep(0.15, 0.6, edgeZone));
-  ice = max(ice * (1.0 - openLead * smoothstep(0.05, 0.4, ice)), floeDrift * (1.0 - lead));
+  float openLead = lead * smoothstep(0.3, 0.8, edgeZone) * 0.6;
+  float thinLead = lead * (1.0 - smoothstep(0.3, 0.8, edgeZone));
+  ice = max(ice * (1.0 - openLead * smoothstep(0.05, 0.4, ice)), floeDrift);
   float iceRim = (1.0 - smoothstep(gapW, gapW * 2.4, fl.g)) * (1.0 - lead);
-  iceRim = max(iceRim, floeDrift * (1.0 - smoothstep(0.08, 0.14, fl.g)));
+  iceRim = max(iceRim, floeDrift * smoothstep(floeR - 0.07, floeR - 0.01, floeE));
   // icebergs: rare faceted bergs in cold open water
   vec2 bgUV = p * (1.0 / 150.0) + (fn.gb - 0.5) * 0.012 + 0.53;
   vec4 bg = texture2D(uCells, bgUV);
