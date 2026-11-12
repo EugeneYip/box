@@ -293,7 +293,9 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
     leadFrac *= smoothstep(0.30, 0.46, fn.r);
     float halfW = max(wide, 0.6);
     float rag = ((fc.g - 0.5) * 0.35 + (fn.b - 0.5) * 0.5 + (fcl.r - 0.5) * 0.15) * (0.6 + 0.35 * halfW);
-    float rlead = smoothstep(halfW * (1.0 - leadFrac) - 0.12, halfW * (1.0 - leadFrac) + 0.12, shoreD + rag);
+    // measured with the tile distance field (edt peaks at ~wide on the centreline);
+    // the depth-based shore distance overshoots mid-channel and always opened a lane
+    float rlead = smoothstep(halfW * (1.0 - leadFrac) + 0.05, halfW * (1.0 - leadFrac) + 0.3, edt + rag * 0.6) * step(0.02, leadFrac);
     fastI = mix(fastI, 1.0 - rlead, rivIce);
   }
   ice = max(ice, fastI);
