@@ -306,12 +306,14 @@ Mat matRock(NS s) {
   // no rounded pebbles), each block a slightly different tone
   vec4 bk = cz(ROT2 * (s.p.xz + (s.det.rg - 0.5) * 2.2) * (1.0 / 26.0) + 0.29);
   float crackM = smoothstep(0.38, 0.62, s.meso.r * 0.55 + s.det.b * 0.45);
-  float blockC = (1.0 - smoothstep(0.0, 0.05, bk.g + (s.micro.b - 0.5) * 0.03)) * crackM * fineK;
+  float cW = max(0.06, s.fw * 1.9);
+  float blockC = (1.0 - smoothstep(cW * 0.3, cW, bk.g + (s.micro.b - 0.5) * 0.03)) * crackM * fineK * (1.0 - smoothstep(0.12, 0.25, cW));
   c *= mix(1.0, 0.88 + 0.22 * bk.b, crackM);
   c *= 1.0 - 0.38 * blockC;
   // weathered stone: irregular (noise-warped) fissures, grain and mottling
   vec4 cr = cz((s.p.xz + (s.meso.gb - 0.5) * 6.0 + (s.det.rg - 0.5) * 1.5) * (1.0 / 29.0));
-  float seam = smoothstep(0.0, 0.06, cr.g + (s.det.b - 0.5) * 0.08);
+  float sW = max(0.07, s.fw * 1.7);
+  float seam = smoothstep(sW * 0.2, sW, cr.g + (s.det.b - 0.5) * 0.08);
   c *= 0.88 + 0.16 * cr.b;
   c *= 0.84 + 0.16 * mix(1.0, seam, smoothstep(0.35, 0.65, s.meso.r));
   c *= 0.80 + 0.30 * s.det.r;
@@ -325,7 +327,7 @@ Mat matRock(NS s) {
   float turf = flatK * smoothstep(0.36, 0.60, s.meso.g * 0.55 + s.det.r * 0.30 + s.micro.r * 0.15) * (1.0 - smoothstep(0.1, 0.3, 0.4 - s.temp));
   vec3 turfC = mix(vec3(0.10, 0.20, 0.055), vec3(0.20, 0.22, 0.10), s.det.g) * (0.85 + 0.3 * s.micro.r);
   c = mix(c, turfC, turf * 0.92);
-  float hgt = 0.30 + 0.20 * s.det.r + 0.18 * s.meso.b + 0.14 * stone - 0.40 * blockC - 0.25 * (1.0 - seam) + 0.12 * (s.micro.g - 0.5) * fineK;
+  float hgt = 0.30 + 0.20 * s.det.r + 0.18 * s.meso.b + 0.14 * stone - 0.12 * blockC - 0.08 * (1.0 - seam) + 0.05 * (s.micro.g - 0.5) * fineK;
   return mk(c, 0.80, mix(clamp(hgt, 0.0, 1.0), 0.32 + 0.22 * s.det.r, turf), mix(0.10, 0.05, turf));
 }
 Mat matLava(NS s) {
@@ -523,8 +525,8 @@ Mat matCliff(NS s, float volc, out vec3 facetN) {
   float gully = smoothstep(0.55, 0.85, gv.b) * mix(0.7, 1.0, volc) * vf;
   float streak = smoothstep(0.56, 0.80, gv.g) * (1.0 - hotK * 0.5) * vf;
   // fine grit: crisp micro relief so faces never look moulded
-  vec4 e = mix(nz(ROT1 * uvY * 0.45 + 0.43), nz(uvD * 0.45 + 0.43), vf);
-  c *= 0.90 + 0.20 * mix(0.5, e.g, fineK);
+  vec4 e = mix(nz(ROT1 * uvY * 0.25 + 0.43), nz(uvD * 0.25 + 0.43), vf);
+  c *= 0.92 + 0.16 * mix(0.5, e.g, fineK);
   c *= 1.0 - 0.18 * joint;
   c *= 1.0 - 0.30 * gully;
   c = mix(c, c * vec3(0.80, 0.82, 0.87), streak * 0.75);
@@ -550,7 +552,7 @@ Mat matCliff(NS s, float volc, out vec3 facetN) {
   facetN = normalize(base + (tA * (ft.x - 0.5) * 0.20 + tB * (ft.y - 0.5) * 0.15) * facetK);
   c *= mix(1.0, 0.96 + 0.08 * ft.x, facetK);
   // relief for the derivative bump: grooved joints and gullies, ledge steps, grit
-  float hgt = 0.55 + 0.20 * (lr - 0.5) * bandK + 0.16 * (d.r - 0.5) + 0.14 * (e.g - 0.5) * fineK
+  float hgt = 0.55 + 0.20 * (lr - 0.5) * bandK + 0.16 * (d.r - 0.5) + 0.06 * (e.g - 0.5) * fineK
             - 0.18 * joint - 0.30 * gully + 0.04 * led * bandK;
   return mk(c, 0.84 + 0.08 * volc, hgt, 0.13 * near + 0.03 * volc);
 }
