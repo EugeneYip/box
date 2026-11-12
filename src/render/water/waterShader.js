@@ -285,7 +285,7 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   float fastI = smoothstep(0.72, 0.92, gCold) * (1.0 - smoothstep(1.3 + 0.9 * fn.r, 2.4 + 0.9 * fn.r, shoreD)) * (1.0 - outK) * step(0.001, depth);
   // cold rivers: not two parallel shelves with a median; ice reaches across in
   // places, the open lead wanders, narrows, widens and closes, edges are ragged
-  float rivIce = (1.0 - smoothstep(5.0, 10.0, wide)) * smoothstep(0.72, 0.92, gCold) * (1.0 - outK) * step(0.001, depth);
+  float rivIce = (1.0 - smoothstep(5.0, 10.0, wide)) * smoothstep(0.60, 0.80, gCold) * (1.0 - outK) * step(0.001, depth);
   if (rivIce > 0.0) {
     vec4 rl = texture2D(uNoise, p * (1.0 / 31.0) + 0.57);
     float leadFrac = clamp((rl.r - 0.60) * 2.4 + (fn.g - 0.5) * 0.5, 0.0, 0.6);
