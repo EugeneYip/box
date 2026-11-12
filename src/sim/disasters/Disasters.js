@@ -32,11 +32,11 @@ function miasmaPuff(fx, x, y, z, s, bank = false) {
   P.spin = rand(-0.2, 0.2);
   P.frame = Math.random() < 0.35 ? PF.WISP : PF.SMOKE0 + ((Math.random() * 4) | 0);
   P.ramp = RAMP.MIASMA;
-  P.lit = 0.55;
-  P.bright = 1.25;
-  P.glow = 0.4;
+  P.lit = 0.5;
+  P.bright = 1.3;
+  P.glow = 0.55;
   P.soft = 0.7;
-  P.a = bank ? 0.9 : 1;
+  P.a = bank ? 1.25 : 1.1;
   fx.pSmoke();
 }
 
@@ -154,14 +154,14 @@ export class Disasters {
           c.z += u.z;
         }
         for (const c of cells.values()) {
-          let e = 0.25 * (2 + Math.sqrt(c.n) * 1.4) * pb;
+          let e = 0.25 * (4 + Math.sqrt(c.n) * 2.6) * pb;
           const s = Math.min(1.6, 0.8 + c.n * 0.08);
           while (e > 0) {
             if (e < 1 && Math.random() > e) break;
             e -= 1;
-            const cx = c.x / c.n + rand(-2.5, 2.5),
-              cz = c.z / c.n + rand(-2.5, 2.5);
-            miasmaPuff(fx, cx, w.heightAt(cx, cz), cz, rand(3.0, 4.4) * s, true);
+            const cx = c.x / c.n + rand(-4, 4),
+              cz = c.z / c.n + rand(-4, 4);
+            miasmaPuff(fx, cx, w.heightAt(cx, cz), cz, rand(4.0, 6.0) * s, true);
           }
         }
       }
@@ -243,14 +243,14 @@ export class Disasters {
     const n = this.plagueSim.infectArea(x, z, radius);
     // the curse lands as a rolling green-yellow pall over the whole area
     const w = g.world;
-    const nb = Math.round(10 + radius * 3);
+    const nb = Math.round(16 + radius * 5);
     for (let k = 0; k < nb; k++) {
       const a = Math.random() * Math.PI * 2,
         r = Math.sqrt(Math.random()) * radius;
       const px = x + Math.cos(a) * r,
         pz = z + Math.sin(a) * r;
       if (!w.inBounds(Math.floor(px), Math.floor(pz))) continue;
-      miasmaPuff(g.fx, px, w.heightAt(px, pz), pz, rand(2.8, 4.2), true);
+      miasmaPuff(g.fx, px, w.heightAt(px, pz), pz, rand(3.6, 5.6), true);
     }
     g.fx.emit('miasma', { x, z }, { count: 6, scale: 1.4 + radius * 0.2 });
     // (no ground stain: the sickness is shown by miasma drifting with the sick)
