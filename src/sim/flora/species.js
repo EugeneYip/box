@@ -282,6 +282,9 @@ export function misfitAs(world, f, i, tOff = 0) {
   return 0;
 }
 
+// Steepest ground (height step to a neighbour, in tiles) a tree takes root on.
+export const TREE_MAX_SLOPE = 1.25;
+
 // tOff: climate offset of the current World Age (-0.5 cold .. +0.5 hot).
 export function suitAt(world, f, tx, ty, i, tOff = 0) {
   const t = world.type[i];
@@ -291,6 +294,8 @@ export function suitAt(world, f, tx, ty, i, tOff = 0) {
   if (f === FLORA.CACTUS && !cactusOK(world, i)) return 0;
   if (f === FLORA.SNOW_PINE && !snowPineOK(world, i, tOff)) return 0;
   if (SMALL[f] && f !== FLORA.REEDS && world.slopeAt(tx, ty) > 1.15) s = 0;
+  // no trees on cliff faces
+  if (isTreeId(f) && world.slopeAt(tx, ty) > TREE_MAX_SLOPE) return 0;
   if (f === FLORA.REEDS) {
     if (world.height[i] < SEA_LEVEL) return world.height[i] > SEA_LEVEL - 0.7 ? 1 : 0;
     if (t !== T.SWAMP && world.isCoastal(tx, ty)) s = Math.max(s, t === T.ROCK || t === T.SNOW || t === T.LAVA ? 0 : 0.9);

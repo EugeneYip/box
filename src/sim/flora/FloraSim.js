@@ -15,6 +15,7 @@ import {
   climateFactor,
   flowerDrift,
   misfitAs,
+  TREE_MAX_SLOPE,
 } from './species.js';
 
 // Flora simulation (Nature).
@@ -107,7 +108,11 @@ export class FloraSim {
       const tx = i % W,
         ty = (i / W) | 0;
       const mis = misfitAs(world, f, i);
-      if (mis) {
+      if (isTreeId(f) && world.slopeAt(tx, ty) > TREE_MAX_SLOPE) {
+        // trees do not cling to cliff faces
+        world.flora[i] = FLORA.NONE;
+        world.floraGrowth[i] = 0;
+      } else if (mis) {
         // cacti on meadow or by cottages, snowy spruce in green valleys
         world.flora[i] = mis;
       } else if (isTreeId(f) && (climateFactor(f, world.temperature[i]) < 0.5 || (f === FLORA.PALM && suitAt(world, f, tx, ty, i) <= 0))) {
@@ -306,6 +311,13 @@ export class FloraSim {
     const mis = misfitAs(world, f, i, this._tOff);
     if (mis) {
       world.setFlora(tx, ty, mis, world.floraGrowth[i]);
+      return;
+    }
+    // ground raised into a sheer face: the tree slides off (gentler slopes
+    // just stress it, see suitAt)
+    if (isTreeId(f) && world.slopeAt(tx, ty) > TREE_MAX_SLOPE + 0.4) {
+      world.setFlora(tx, ty, FLORA.NONE);
+      this.stress[i] = 0;
       return;
     }
 
