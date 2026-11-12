@@ -446,7 +446,7 @@ export const politics = {
           const hungry = border > 6 && ratio > 1.3 / Math.sqrt(wa) && now - att.lastWar > YEAR * 8 / wa && r.opinion < 30 + (wa - 1) * 15 && crowd > 0.5 / wa;
           if (!hostile && !ambitious && !hungry) continue;
           if (ratio < 0.6) continue;
-          let p = 0.03 + att.aggression * 0.08 + (ambitious ? 0.05 : 0) + (hungry ? 0.04 + crowd * 0.05 : 0);
+          let p = 0.045 + att.aggression * 0.09 + (ambitious ? 0.05 : 0) + (hungry ? 0.04 + crowd * 0.05 : 0);
           p *= Math.pow(wl, 1.7) * (g.age?.mods?.warlike ?? 1);
           if (this._rulerTrait(att, 'cruel', 'valiant')) p *= 1.6;
           if (this._rulerTrait(att, 'gentle', 'silver-tongued', 'silvertongued')) p *= 0.55;

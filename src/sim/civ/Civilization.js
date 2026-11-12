@@ -1407,7 +1407,7 @@ export class Civilization {
     if (atWar) give('soldier', Math.max(3, n * Math.min(0.55, (drafting ? 0.32 : 0.2) * lean)) + (v.hasBarracks ? 3 : 0));
     give('builder', sites ? Math.min(Math.max(1, Math.ceil(sites * 1.1)), 1 + Math.floor(n / 6)) : repairs ? 1 : 0);
     // an empty woodshed stops all building: send more hands to the woods
-    const woodsCap = (v.trees ?? 99) < 25 ? 1 : (v.trees ?? 99) < 50 ? 2 : 9;
+    const woodsCap = (v.trees ?? 99) < 15 ? 1 : (v.trees ?? 99) < 35 ? 2 : (v.trees ?? 99) < 60 ? 3 : 9;
     give('woodcutter', Math.min(woodsCap, woodFull ? (n >= 6 ? 1 : 0) : v.wood < 15 ? 1 + Math.floor(n / 7) : v.wood < 40 + v.tier * 30 ? 1 + Math.floor(n / 9) : n >= 4 ? 1 + Math.floor(n / 16) : 0));
     if (!atWar && n >= 5) give('soldier', Math.max(1, n * 0.11 * lean) + (v.hasBarracks ? 2 : 0) + (ctr('Martial') && v.tier >= 1 ? 2 : 0));
     if (v.hasRock !== false || v.quarry >= 0) give('miner', stoneFull ? 0 : v.stone < 12 ? 2 + Math.floor(n / 7) : v.stone < 30 + v.tier * 50 ? 1 + Math.floor(n / (ctr('Masons') ? 6 : 9)) : ctr('Masons') ? 2 : 1);
