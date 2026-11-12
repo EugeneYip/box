@@ -71,7 +71,7 @@ float tnoise(vec2 q, float p) {
 void main() {
   // twist with height, rotate with time (never multiply time by height:
   // that would make the streak frequency grow without bound)
-  float a = vUv.x + vH * 0.9 - uTime * uSpin * 0.8 + 0.05 * sin(vH * 6.0 + uTime * 2.0);
+  float a = vUv.x + vH * 1.9 - uTime * uSpin * 0.8 + 0.05 * sin(vH * 6.0 + uTime * 2.0);
   // streaks run along the twist (low frequency in height): horizontal
   // bands would read as concentric rings from the god-view camera
   float n1 = tnoise(vec2(a * 10.0, vH * 2.5 - uTime * 1.2), 10.0);
@@ -82,15 +82,16 @@ void main() {
   float facing = abs(dot(N, V));
   float rim = pow(1.0 - facing, 1.6);
   float ends = smoothstep(0.0, 0.04, vH) * (1.0 - smoothstep(0.86, 1.0, vH));
-  float dens = smoothstep(0.3, 0.85, streak) * (0.35 + 0.9 * rim) * uDensity;
+  float dens = (0.2 + 0.8 * smoothstep(0.3, 0.8, streak)) * (0.45 + 0.9 * rim) * uDensity;
   // the core layer has an opacity floor so the vortex reads as solid mass
   dens = max(dens, uFloor * (0.9 + 0.1 * streak)) * ends;
   float alpha = clamp(dens * uAlpha, 0.0, 0.99);
   if (alpha < 0.004) discard;
   float ndl = dot(N, uSunDir) * 0.5 + 0.5;
-  vec3 col = uColor * (uAmbient + uSunCol * ndl) * (0.75 + 0.4 * streak);
+  vec3 grad = mix(vec3(0.78, 0.64, 0.48), vec3(1.08, 1.06, 1.06), smoothstep(0.05, 0.9, vH));
+  vec3 col = uColor * grad * (uAmbient + uSunCol * ndl) * (0.62 + 0.6 * streak);
   // darker toward the silhouette edge for a rounded, solid read
-  col *= mix(0.65, 1.0, vH) * mix(1.0, 0.7, rim);
+  col *= mix(0.8, 1.0, vH) * mix(1.0, 0.75, rim);
   float fog = smoothstep(fogNear, fogFar, length(cameraPosition - vWorld));
   col = mix(col, fogColor, fog);
   gl_FragColor = vec4(col, 1.0);
@@ -193,10 +194,10 @@ export class TornadoFunnel {
       this.layers.push({ mesh: m, u, r0, r1, base: u.uColor.value.clone() });
     };
     // dark opaque core + lighter churning dust sleeve (radii doubled)
-    mk(THREE.BackSide, 16, 0x221c18, 1.6, 0.32, 2.2, 1.1, 0.95);
-    mk(THREE.FrontSide, 17, 0x221c18, 1.6, 0.32, 2.2, 1.1, 0.95);
-    mk(THREE.BackSide, 18, 0x6a6258, 0.45, 0.55, 3.0, 0.75);
-    mk(THREE.FrontSide, 19, 0x6a6258, 0.45, 0.55, 3.0, 0.75);
+    mk(THREE.BackSide, 16, 0x3e342a, 1.4, 0.2, 0.95, 1.1, 0.9);
+    mk(THREE.FrontSide, 17, 0x3e342a, 1.4, 0.2, 0.95, 1.1, 0.9);
+    mk(THREE.BackSide, 18, 0x9a8a72, 0.8, 0.5, 2.6, 0.75);
+    mk(THREE.FrontSide, 19, 0x9a8a72, 0.8, 0.5, 2.6, 0.75);
     // rotating cloud cap (what a top-down camera mostly sees)
     this.capU = {
       uTime: { value: 0 },

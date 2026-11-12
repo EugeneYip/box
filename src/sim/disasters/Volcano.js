@@ -232,7 +232,6 @@ export class Volcano {
       const a = Math.random() * Math.PI * 2,
         len = rand(4, 8);
       fx.beams.bolt(ox + Math.cos(a) * len * 0.5, h0 + rand(1, 4), oz + Math.sin(a) * len * 0.5, ox - Math.cos(a) * len * 0.5, h0 - rand(2, 5), oz - Math.sin(a) * len * 0.5, { width: 0.26, life: 0.55, color: 0xc8d8ff, branches: 3, detail: 6, intensity: 2.2 });
-      glowFlash(fx, ox, h0, oz, 7, { life: 0.4, bright: 1.1, color: 0x9fb4ff, from: 0.7, soft: 0 });
       fx.addLight({ x: ox, y: h0, z: oz }, 0xb0c8ff, 4, 0.35);
       if (Math.random() < 0.4) play(g, 'thunder', { x, z }, 0.4, 1.2);
     }

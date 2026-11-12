@@ -141,21 +141,23 @@ export class Smite {
     fx.beams.segment(x, top, z, x, y, z, { color: gold, width: r * 0.95, life: 3.0, intensity: 0.8, flicker: 0.35, taper: 1.1 });
     fx.beams.segment(x, top, z, x, y, z, { color: white, width: r * 0.32, life: 2.7, intensity: 1.4, flicker: 0.6, taper: 1.2 });
     fx.beams.segment(x, top, z, x, y, z, { color: gold, width: r * 2.4, life: 3.2, intensity: 0.14, flicker: 0.1, taper: 1.3 });
-    fx.screenFlash(0xffe6b0, 0.45);
-    fx.addLight({ x, y: y + 4, z }, 0xffd890, 8, 1.1);
+    fx.screenFlash(0xfff0d0, 0.75);
+    fx.addLight({ x, y: y + 4, z }, 0xffe0a0, 12, 0.9);
     fx.hitStop(0.06);
     fx.shake(x, z, 1.3);
     fx.shockwave(x, z, r * 5, { color: 0xffd890, life: 0.8, intensity: 1.6 });
     // volumetric impact flash (no flat star decals): a white-hot core and a
     // wide soft golden sphere of light, flares climbing the beam, sparks
     // sprayed low and thrown up, and one brief shock ring
-    glowFlash(fx, x, y + 0.8, z, r * 3.4, { life: 0.7, bright: 2.2, color: 0xfff6e0, from: 0.5, soft: 0 });
+    // a hard white bloom burst, brief, then the softer golden sphere
+    glowFlash(fx, x, y + 1.0, z, r * 4.4, { life: 0.5, bright: 5, color: 0xfffaf0, from: 0.35, soft: 0 });
+    glowFlash(fx, x, y + 0.8, z, r * 3.0, { life: 0.8, bright: 2.6, color: 0xfff6e0, from: 0.5, soft: 0 });
     glowFlash(fx, x, y + 2.2, z, r * 6.2, { life: 1.2, bright: 0.9, color: 0xffd890, from: 0.4, soft: 0 });
     // a lingering hot glow at the foot of the beam
     glowFlash(fx, x, y + 1.2, z, r * 4.2, { life: 2.2, bright: 0.7, color: 0xffc870, from: 0.9, soft: 0 });
     for (let k = 1; k <= 3; k++) glowFlash(fx, x, y + 2 + k * 2.6, z, r * (2.6 - k * 0.45), { life: 0.55 + k * 0.1, bright: 1.3, color: 0xfff0c8, from: 0.6, soft: 0, delay: k * 0.03 });
-    sparks(fx, x, y + 0.3, z, fx.k(46), { speed: 12, ramp: RAMP.GOLD, bright: 2.2, size: 1.4, gravity: 10, stretch: 0.08 });
-    sparks(fx, x, y + 0.6, z, fx.k(26), { speed: 9, up: true, ramp: RAMP.GOLD, bright: 2.0, size: 1.2, gravity: 12, stretch: 0.07 });
+    sparks(fx, x, y + 0.3, z, fx.k(80), { speed: 14, ramp: RAMP.GOLD, bright: 3.2, size: 1.5, gravity: 10, stretch: 0.09 });
+    sparks(fx, x, y + 0.6, z, fx.k(40), { speed: 11, up: true, ramp: RAMP.GOLD, bright: 3.0, size: 1.3, gravity: 12, stretch: 0.08 });
     // outward debris
     for (let k = 0; k < 26; k++) {
       const a = (k / 26) * Math.PI * 2 + rand(-0.15, 0.15),
