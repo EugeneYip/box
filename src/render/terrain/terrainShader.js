@@ -91,7 +91,7 @@ vec3 seasonal(vec3 c, float k, float temp) {
   // hue shift toward the season's colour at this surface's own luminance
   vec3 tgt = uSeasonTint.rgb * (lc / max(dot(uSeasonTint.rgb, LW), 1e-3));
   // warm seasons (autumn gold) glow a little brighter than the green they replace
-  tgt *= 1.0 + 0.22 * smoothstep(0.0, 0.2, uSeasonTint.r - uSeasonTint.g);
+  tgt *= 1.0 + 0.30 * smoothstep(0.0, 0.2, uSeasonTint.r - uSeasonTint.g);
   vec3 t = mix(c, tgt, uSeasonTint.w);
   vec3 dryC = vec3(0.45, 0.34, 0.10) * (lc / 0.33) * 1.05;
   t = mix(t, dryC, uDry * 0.6);
