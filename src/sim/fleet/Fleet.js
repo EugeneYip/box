@@ -783,7 +783,7 @@ export class Fleet {
   _sailFill(v) {
     const wind = this.game.env?.wind || { x: 1, z: 0, strength: 0.3 };
     const along = Math.cos(v.heading) * (wind.x || 0) + Math.sin(v.heading) * (wind.z || 0);
-    return Math.max(0.15, Math.min(1, (0.45 + along * 0.35) * (0.5 + (wind.strength ?? 0.3))));
+    return Math.max(0.4, Math.min(1, (0.55 + along * 0.35) * (0.6 + (wind.strength ?? 0.3))));
   }
 
   // ------------------------------------------------------------------ damage

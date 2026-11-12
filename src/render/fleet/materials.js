@@ -33,7 +33,7 @@ void wsAnim(inout vec3 p, inout vec3 n) {
     float furl = iState.z;
     float b = sin(3.14159 * aAnim.y) * sin(3.14159 * clamp(aAnim.z * 0.85 + 0.15, 0.0, 1.0));
     float h = max(0.2, aAnim.w);
-    p.x += b * fill * 0.09 * h * (1.0 - furl);
+    p.x += b * fill * 0.14 * h * (1.0 - furl);
     p.x += sin(uTime * 5.0 + aAnim.y * 6.0 + iAnim.x) * 0.012 * (1.0 - fill) * (1.0 - furl);
     p.y = mix(p.y, aAnim.w - 0.03, furl * 0.94);
     float sg = n.x >= 0.0 ? 1.0 : -1.0;
@@ -69,7 +69,7 @@ void wsAnim(inout vec3 p, inout vec3 n) {
     float fill = iAnim.w;
     float furl = iState.z;
     float b = sin(3.14159 * aAnim.y) * sin(3.14159 * clamp(aAnim.z, 0.0, 1.0));
-    p.z += b * fill * 0.16 * iAnim.y * (1.0 - furl);
+    p.z += b * fill * 0.24 * iAnim.y * (1.0 - furl);
     p.y = mix(p.y, aAnim.w - 0.02, furl * 0.92);
     return;
   }

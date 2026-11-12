@@ -179,7 +179,7 @@ function squareSail(g, x, yTop, hw, h, o = {}) {
         v0 = j / nv,
         v1 = (j + 1) / nv;
       const zA = (u, v) => -hw + u * 2 * hw * (1 - taper * v) + hw * taper * v;
-      const belly = 0.03 + h * 0.07;
+      const belly = 0.06 + h * 0.16;
       const P = (u, v) => [x + belly * Math.sin(Math.PI * u) * Math.sin(Math.PI * (0.15 + 0.85 * v)), yTop - v * h, zA(u, v)];
       const t = cell(i, j);
       const c = t ? SAIL : shade(SAIL, 0.97 + ((i + j) % 2) * 0.03);
@@ -209,7 +209,7 @@ function lateenSail(g, x0, y0, x1, y1, xFoot, yFoot, o = {}) {
     const a = 1 - i / nu - j / nu,
       b = i / nu,
       c = j / nu;
-    const belly = 0.05 + Math.abs(y1 - yFoot) * 0.05;
+    const belly = 0.08 + Math.abs(y1 - yFoot) * 0.12;
     return [A[0] * a + B[0] * b + C[0] * c, A[1] * a + B[1] * b + C[1] * c, belly * 4 * b * (1 - b) * Math.min(1, c * 3) * (1 - c)];
   };
   for (let j = 0; j < nu; j++)
