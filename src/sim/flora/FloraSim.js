@@ -16,6 +16,7 @@ import {
   flowerDrift,
   misfitAs,
   TREE_MAX_SLOPE,
+  isSmallPlant,
 } from './species.js';
 
 // Flora simulation (Nature).
@@ -108,7 +109,7 @@ export class FloraSim {
       const tx = i % W,
         ty = (i / W) | 0;
       const mis = misfitAs(world, f, i);
-      if (isTreeId(f) && world.slopeAt(tx, ty) > TREE_MAX_SLOPE) {
+      if ((isTreeId(f) && world.slopeAt(tx, ty) > TREE_MAX_SLOPE) || (isSmallPlant(f) && f !== FLORA.REEDS && world.slopeAt(tx, ty) > TREE_MAX_SLOPE + 0.1)) {
         // trees do not cling to cliff faces
         world.flora[i] = FLORA.NONE;
         world.floraGrowth[i] = 0;
