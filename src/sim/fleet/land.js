@@ -1,4 +1,4 @@
-import { TILE } from '../../world/constants.js';
+import { TILE, FLORA_INFO } from '../../world/constants.js';
 import { civPath } from '../civ/pathing.js';
 import { BUILDING_TYPES } from '../civ/catalog.js';
 import { USE } from '../civ/util.js';
@@ -430,7 +430,7 @@ export const land = {
       const d = Math.hypot(b.x - v.x, b.z - v.z);
       const edge = Math.max(b.w, b.h) * 0.5;
       if (v.kind === 'catapult') {
-        if (d <= 11 && d >= 3.5) {
+        if (d <= 11 && d >= 3.5 && (this._openGround(v.x, v.z) || d < 5.5)) {
           v.speed *= Math.exp(-step * 3);
           v.heading = turnTo(v.heading, Math.atan2(b.z - v.z, b.x - v.x), step * 1.5);
           if ((v.fireT = (v.fireT ?? 1) - step) <= 0) {
@@ -496,6 +496,20 @@ export const land = {
     v.z += Math.sin(want) * s;
   },
 
+  // Clear, level ground (no trees close by): where a catapult can work and be seen.
+  _openGround(x, z) {
+    const w = this.world;
+    const tx = Math.floor(x),
+      tz = Math.floor(z);
+    if (w.slopeAt(tx, tz) > 0.6) return false;
+    for (let dz = -1; dz <= 1; dz++)
+      for (let dx = -1; dx <= 1; dx++) {
+        if (!w.inBounds(tx + dx, tz + dz)) continue;
+        if (FLORA_INFO[w.flora[w.idx(tx + dx, tz + dz)]]?.isTree) return false;
+      }
+    return true;
+  },
+
   _siegePick(v, village) {
     let best = null,
       bs = Infinity;
@@ -525,7 +539,7 @@ export const land = {
       jz = (this.rng() - 0.5) * 0.8;
     const d = Math.hypot(b.x - ax, b.z - az);
     v.anim.arm = 1;
-    this.stones.push({ x0: ax, z0: az, y0: w.heightAt(ax, az) + 0.9, x1: b.x + jx, z1: b.z + jz, y1: (b.y ?? w.heightAt(b.x, b.z)) + 0.6, t: 0, dur: 1.3 + d * 0.07, peak: 2.5 + d * 0.35, b: b.id, kingdom: v.kingdom, dmg: Math.max(38, (b.maxHp || 100) * (BUILDING_TYPES[b.type]?.wall ? 0.24 : 0.14)) * (civ.techMod?.(v.kingdom, 'siege') ?? 1), from: v.id });
+    this.stones.push({ x0: ax, z0: az, y0: w.heightAt(ax, az) + 0.9, x1: b.x + jx, z1: b.z + jz, y1: (b.y ?? w.heightAt(b.x, b.z)) + 0.6, t: 0, dur: 1.7 + d * 0.09, peak: 4 + d * 0.5, b: b.id, kingdom: v.kingdom, dmg: Math.max(38, (b.maxHp || 100) * (BUILDING_TYPES[b.type]?.wall ? 0.24 : 0.14)) * (civ.techMod?.(v.kingdom, 'siege') ?? 1), from: v.id });
     this.totals.stones++;
     this._sfx('chop', v.x, v.z, 0.5);
   },
@@ -545,7 +559,8 @@ export const land = {
         civ.damageBuilding?.(b, s.dmg, 'siege');
         this._siegeBreach({ kingdom: s.kingdom, kind: 'catapult' }, b);
       }
-      this._fx('debris', s.x1, s.z1, 1.1);
+      this._fx('explosion', s.x1, s.z1, 0.55, { y: s.y1 });
+      this._fx('debris', s.x1, s.z1, 1.2);
       this._fx('dust', s.x1, s.z1, 1.6);
       this._fx('dust', s.x1 + (this.rng() - 0.5), s.z1 + (this.rng() - 0.5), 1.1);
       this.game.fx?.shake?.(s.x1, s.z1, 0.15);

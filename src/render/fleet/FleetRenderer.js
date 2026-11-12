@@ -580,14 +580,15 @@ export class FleetRenderer {
           const uk = u - k * 0.045;
           if (uk < 0) break;
           const [x, y, z] = at(st, uk);
-          const sc = k === 0 ? 1 : 0.42 - k * 0.07;
+          const sc = k === 0 ? 1.6 : 0.6 - k * 0.1;
           this._q.setFromAxisAngle(this._up, uk * 9);
           this._m.compose(this._p.set(x, y, z), this._q, this._s.setScalar(sc));
           mesh.setMatrixAt(n++, this._m);
         }
-        if (this.game.fx?.emit && (st._puff = (st._puff || 0) + 1) % 6 === 0) {
+        if (this.game.fx?.emit && (st._puff = (st._puff || 0) + 1) % 2 === 0) {
           const [x, y, z] = at(st, u);
-          this.game.fx.emit('dust', { x, y, z }, { scale: 0.35 });
+          this.game.fx.emit('smoke', { x, y, z }, { scale: 0.45 });
+          if (st._puff % 4 === 0) this.game.fx.emit('fire', { x, y, z }, { scale: 0.3 });
         }
       }
       mesh.instanceMatrix.needsUpdate = true;
