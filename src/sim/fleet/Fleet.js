@@ -684,7 +684,8 @@ export class Fleet {
     this._missionTick(v, step, night);
     if (!v.alive) return;
     if (v.state === 'moored') {
-      // at rest: sails furled, oars shipped, nothing to steer
+      // at rest: sails furled, oars shipped, nothing to steer, no wake
+      v.track = null;
       a.furl += (1 - a.furl) * Math.min(1, step * 1.2);
       a.oar *= Math.exp(-step * 2);
       a.fill = 0;
@@ -752,6 +753,13 @@ export class Fleet {
           else if (v.state !== 'moored') this._failMission(v);
         }
       }
+    }
+    // the recent track, for the wake that follows the course
+    const T = v.track || (v.track = []);
+    const tl = T.length;
+    if (!tl || Math.hypot(v.x - T[tl - 2], v.z - T[tl - 1]) > Math.max(0.15, def.length * 0.12)) {
+      T.push(v.x, v.z);
+      if (T.length > 48) T.splice(0, 2);
     }
     // animation state
     const sailing = v.state === 'sail' || v.state === 'patrol';

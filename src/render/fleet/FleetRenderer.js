@@ -424,14 +424,7 @@ export class FleetRenderer {
       for (const w of wakes) {
         const v = w.v;
         const L = v.def.length;
-        let T = H.get(v.id);
-        if (!T) H.set(v.id, (T = []));
-        const lx = T[T.length - 2],
-          lz = T[T.length - 1];
-        if (lx == null || Math.hypot(w.x - lx, w.z - lz) > Math.max(0.15, L * 0.12)) {
-          T.push(w.x, w.z);
-          if (T.length > 64) T.splice(0, 2);
-        }
+        const T = v.track || [];
         const spd = Math.min(1, v.speed / v.def.speed);
         const beam = (v.def.beam || 0.4) / L;
         const fx = Math.cos(w.h),
@@ -449,7 +442,7 @@ export class FleetRenderer {
           quad(c0x + px * hw, c0z + pz * hw, c1x + px * hw, c1z + pz * hw, c1x - px * hw, c1z - pz * hw, c0x - px * hw, c0z - pz * hw, -0.62, hw / L, hl / L, hw / L, hl / L, -hw / L, -0.62, -hw / L, 2, spd, spd, beam, 0, 0, 0.022);
         }
         // the wake: walk back along the track from the stern
-        const maxS = L * 3.2;
+        const maxS = L * 2.1;
         let px0 = w.x - fx * L * 0.5,
           pz0 = w.z - fz * L * 0.5;
         let dirx = fx,
@@ -464,9 +457,11 @@ export class FleetRenderer {
             // points ahead of the stern are skipped
             if ((qx - px0) * fx + (qz - pz0) * fz > -0.05 && prev == null) continue;
           } else {
-            // no more history: run straight back to finish the fade
-            qx = px0 - dirx * (maxS - s0);
-            qz = pz0 - dirz * (maxS - s0);
+            // no more track: a short straight tail, not a long rigid beam
+            const rest = Math.min(maxS - s0, L * 0.35);
+            if (rest < 0.05) break;
+            qx = px0 - dirx * rest;
+            qz = pz0 - dirz * rest;
           }
           const sl = Math.hypot(qx - px0, qz - pz0);
           if (sl < 1e-3) continue;
@@ -480,9 +475,9 @@ export class FleetRenderer {
             ez = pz0 - ndz * sl * t1;
           const nx = -ndz,
             nz = ndx;
-          const fade = (s) => Math.pow(Math.max(0, 1 - s / maxS), 2.4) * spd;
+          const fade = (s) => Math.pow(Math.max(0, 1 - s / maxS), 1.5) * spd;
           const arm = (s) => (v.def.beam || 0.4) * 0.45 + s * 0.34;
-          const bw = (s) => 0.07 + s * 0.11;
+          const bw = (s) => 0.035 + s * 0.045;
           const a0 = fade(s0),
             a1 = fade(s1);
           for (const side of [1, -1]) {
@@ -492,8 +487,8 @@ export class FleetRenderer {
               o1 = arm(s1) + bw(s1);
             quad(px0 + nx * side * i0, pz0 + nz * side * i0, px0 + nx * side * o0, pz0 + nz * side * o0, ex + nx * side * o1, ez + nz * side * o1, ex + nx * side * i1, ez + nz * side * i1, s0, 0, s0, 1, s1, 1, s1, 0, 0, a0, a1, beam, s0, s1);
           }
-          const cw0 = (v.def.beam || 0.4) * 0.3 + s0 * 0.08,
-            cw1 = (v.def.beam || 0.4) * 0.3 + s1 * 0.08;
+          const cw0 = (v.def.beam || 0.4) * 0.25 + s0 * 0.05,
+            cw1 = (v.def.beam || 0.4) * 0.25 + s1 * 0.05;
           quad(px0 + nx * cw0, pz0 + nz * cw0, px0 - nx * cw0, pz0 - nz * cw0, ex - nx * cw1, ez - nz * cw1, ex + nx * cw1, ez + nz * cw1, s0, 0, s0, 1, s1, 1, s1, 0, 1, a0 * (v.anim.oar > 0.3 ? 1 : 0.8), a1, beam, s0, s1);
           prev = [ex, ez];
           px0 = ex;

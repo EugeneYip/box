@@ -197,7 +197,7 @@ void main() {
     float rip = 0.72 + 0.28 * sin(vK.w * 9.0 - uTime * 3.0);
     float al = band * rip * a;
     if (al < 0.01) discard;
-    gl_FragColor = vec4(foamCol, al * 0.48);
+    gl_FragColor = vec4(foamCol, al * 0.55);
   } else if (kind < 1.5) {
     float v = abs(vUV.y * 2.0 - 1.0);
     float band = 1.0 - v * v;
