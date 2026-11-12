@@ -171,9 +171,9 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   // crisp sparkles only up close and with some wind; beyond that the sun's
   // reflection is a broad soft sheen (sharp lobes on the chop clumped into a
   // white "rash" at mid zoom)
-  float sharpK = (1.0 - smoothstep(0.03, 0.10, fw)) * (0.25 + 0.75 * smoothstep(0.15, 0.6, uWind));
+  float sharpK = (1.0 - smoothstep(0.02, 0.05, fw)) * (0.25 + 0.75 * smoothstep(0.15, 0.6, uWind));
   // roughness widens with the pixel footprint: a soft sheen far away, crisp glints up close
-  float rgh = mix(0.08, 0.45, smoothstep(0.02, 0.16, fw));
+  float rgh = mix(0.10, 0.45, smoothstep(0.012, 0.09, fw));
   float Fs = 0.02 + 0.98 * pow(1.0 - max(dot(V, Hs), 0.0), 5.0);
   float glint = ggxD(nh, rgh) * Fs * mix(1.0, 0.45, smoothstep(0.04, 0.4, fw)) + pow(nh, 1400.0) * 4.0 * sharpK;
   // rivers, channels and calm shallow flats are not mirrors: never flare to white
@@ -204,7 +204,7 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   spec *= mix(1.0, 1.0 - smoothstep(0.22, 0.45, tiltNeed), lowSun);
   spec += keyL * pathK * 0.8 * lowSun * lightVis * (1.0 - narrow * 0.7) * pathMask * mirrorK;
   // the far sheen never burns to white: capped lower with distance
-  spec = min(spec, vec3(mix(1.0, 0.42, smoothstep(0.03, 0.2, fw))));
+  spec = min(spec, vec3(mix(0.8, 0.38, smoothstep(0.02, 0.12, fw))));
 
   // ---- water body veil (the seabed below is already tinted by the terrain)
   vec3 scat = mix(waterShallowColorV(lightVis), waterDeepColorV(lightVis), smoothstep(0.6, 6.0, depth));
