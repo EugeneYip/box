@@ -215,6 +215,8 @@ export class RigModel {
     }
     const mesh = this.mesh;
     mesh.count = this.n;
+    // empty batches skip the renderer entirely (no program or state setup)
+    mesh.visible = this.n > 0;
     if (!this.n) return;
     mesh.instanceMatrix.clearUpdateRanges();
     mesh.instanceMatrix.addUpdateRange(0, this.n * 16);
