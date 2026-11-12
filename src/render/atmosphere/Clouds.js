@@ -250,12 +250,12 @@ float sheetDensity(vec2 xz, vec2 drift, float cov) {
   vec2 w = vec2(0.906, 0.423);                      // street orientation
   vec2 x = xz - drift;
   vec2 q = vec2(dot(x, w), dot(x, vec2(-w.y, w.x)));
-  vec2 p = vec2(q.x / 58.0, q.y / 30.0);
-  float field = cNoise(p * 0.13 + 7.3) * 0.62 + cNoise(p * 0.31 + 1.7) * 0.38;
-  float fm = smoothstep(0.78 - 0.5 * cov, 0.93 - 0.42 * cov, field);
+  vec2 p = vec2(q.x / 44.0, q.y / 24.0);
+  float field = cNoise(p * 0.11 + 7.3) * 0.62 + cNoise(p * 0.27 + 1.7) * 0.38;
+  float fm = smoothstep(0.86 - 0.45 * cov, 0.98 - 0.4 * cov, field);
   if (fm < 0.001) return 0.0;
   float cells = cFbm(p + 3.1);
-  return fm * smoothstep(0.52 - 0.12 * fm, 0.7, cells);
+  return fm * smoothstep(0.56 - 0.1 * fm, 0.7, cells);
 }
 `;
 const SHEET_VERT = /* glsl */ `
@@ -298,17 +298,18 @@ void main() {
     cS = uShade * (0.62 + 0.3 * thick) + uLit * lit * (0.42 + 0.5 * thick);
     cS *= mix(1.0, 0.45, uDark);
     cS += uFlash * thick;
-    aS = smoothstep(0.0, 0.55, d) * 0.82;
+    aS = smoothstep(0.0, 0.5, d) * 0.72;
   }
   // thin cirrus streaks, sparse and fine
   float aC = 0.0;
   if (uCirrus > 0.003) {
     vec2 wc = vec2(0.62, 0.785);
     vec2 qc = vec2(dot(xz, wc), dot(xz, vec2(-wc.y, wc.x)));
-    vec2 pc = vec2(qc.x / 240.0 + uCirOff, qc.y / 15.0);
+    float bend = cNoise(qc * 0.006 + 4.0) * 3.0;          // curved, not ruled
+    vec2 pc = vec2(qc.x / 100.0 + uCirOff, qc.y / 9.0 + bend);
     float n = cFbm(pc + 9.1);
-    float m = cNoise(vec2(pc.x * 0.7, pc.y * 0.05) + 2.0);
-    aC = smoothstep(0.6, 0.84, n) * smoothstep(0.4, 0.75, m) * uCirrus;
+    float m = cNoise(qc * 0.011 + 2.0) * 0.6 + cNoise(qc * 0.03 + 8.0) * 0.4;
+    aC = smoothstep(0.62, 0.86, n) * smoothstep(0.55, 0.8, m) * uCirrus * 0.45;
   }
   float a = aC + aS * (1.0 - aC);
   if (a * uAmt * radial < 0.003) discard;
