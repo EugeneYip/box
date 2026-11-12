@@ -207,7 +207,18 @@ function buildOak(b, v, lod) {
   }
   // fuller crowns: lobes larger and spread wider so trees read at mid zoom
   blobs = blobs.map((bl) => ({ ...bl, r: bl.r * 1.2, p: V(bl.p.x * 1.14, bl.p.y + 0.06, bl.p.z * 1.14) }));
+  // a low outlying cluster on a bare limb, in the gap between side lobes,
+  // breaks the round outline and shows the bough structure
+  const OUT = [V(0.76, 1.08, -0.52), V(0.36, 1.0, 0.76), V(-0.12, 1.06, 0.66), V(0.22, 1.12, -0.66)][v];
+  const outR = [0.3, 0.29, 0.27, 0.29][v];
   if (lod) blobs = blobs.slice(0, 3).map((bl, i) => ({ ...bl, r: bl.r * (i === 0 ? 1.18 : 1.1) }));
+  else {
+    blobs.push({ p: OUT, r: outR, sq: 0.8 });
+    const from = V(lean.x * 0.7, th * 0.72, lean.z * 0.7);
+    const to = from.clone().lerp(OUT, 0.84);
+    to.y -= outR * 0.25;
+    limb(b, from, to, 0.046, 0.018, 5, P.oakBark, 2, { bend: 0.08 });
+  }
   // branches into the main blobs
   if (!lod) {
     const n = v === 1 ? 4 : 3;
@@ -443,24 +454,55 @@ function buildBirch(b, v, lod) {
   trunk(b, pts, pts.map((_, i) => 0.065 - (0.032 * i) / (pts.length - 1)), lod ? 5 : 6, null, { color: bark, faceColor: true, yTop: H });
   const pal = v === 3 ? P.birchGold : P.birch;
   const top = pts[pts.length - 1];
-  let blobs = [
-    { p: V(top.x, H + 0.05, top.z), r: 0.34 },
-    { p: V(top.x + 0.2, H - 0.22, top.z + 0.08), r: 0.29 },
-    { p: V(top.x - 0.17, H - 0.3, top.z - 0.12), r: 0.28 },
-    { p: V(top.x + 0.02, H + 0.38, top.z - 0.03), r: 0.24 },
-  ];
-  if (v === 1) blobs.push({ p: V(top.x - 0.06, H - 0.55, top.z + 0.16), r: 0.22 });
-  if (v === 2) blobs = blobs.slice(0, 4).map((bl) => ({ ...bl, r: bl.r * 1.12, p: bl.p.clone().multiply(V(1.15, 1, 1.15)) }));
-  blobs = blobs.map((bl) => ({ ...bl, r: bl.r * 1.22, p: V(top.x + (bl.p.x - top.x) * 1.15, bl.p.y, top.z + (bl.p.z - top.z) * 1.15) }));
-  if (lod) blobs = [{ p: V(top.x, H - 0.05, top.z), r: 0.4, sq: 1.25 }, { p: V(top.x, H + 0.32, top.z), r: 0.26 }];
-  if (!lod) {
-    for (let k = 1; k < 4; k++) {
-      const bl = blobs[k];
-      const from = pts[Math.min(pts.length - 1, Math.floor(pts.length * 0.7))];
-      limb(b, from, V(bl.p.x * 0.8, bl.p.y - 0.1, bl.p.z * 0.8), 0.022, 0.01, 4, { base: C(0xd8d2c4), top: C(0xe8e4da) }, H);
+  const at = (t) => {
+    const f = clamp01(t) * (pts.length - 1);
+    const k = Math.min(pts.length - 2, Math.floor(f));
+    return pts[k].clone().lerp(pts[k + 1], f - k);
+  };
+  // an open, irregular crown: leaf clusters on short side branches that
+  // spiral up the upper half of the trunk (lower ones reach further out), so
+  // the trunk and limbs show between them; all random draws come first so
+  // every LOD shares one layout
+  const n = [6, 7, 5, 6][v];
+  let ang = b.r(0, TAU);
+  const lobes = [];
+  for (let k = 0; k < n; k++) {
+    const u = k / (n - 1);
+    const t = 0.46 + 0.5 * u + b.r(-0.03, 0.03);
+    ang += 2.3 + b.r(-0.45, 0.45);
+    const reach = (0.26 + 0.3 * (1 - u)) * b.r(0.85, 1.15);
+    const base = at(t - 0.1);
+    const p = V(base.x + Math.cos(ang) * reach, H * t + 0.06 + b.r(-0.06, 0.05), base.z + Math.sin(ang) * reach);
+    const r = (0.19 + 0.09 * Math.sin(Math.PI * (0.25 + 0.6 * u))) * b.r(0.9, 1.1) * 1.22;
+    lobes.push({ p, r, sq: 0.82 + b.r(0, 0.12), base });
+  }
+  lobes.push({ p: V(top.x, H + 0.2, top.z), r: 0.24, sq: 1.2, base: top });
+  let blobs = lobes;
+  if (lod) {
+    // three lobes keep the lopsided outline at mid zoom
+    const lo = lobes[1],
+      mi = lobes[Math.min(n - 1, 3)];
+    blobs = [
+      { p: lo.p.clone().lerp(V(top.x, lo.p.y, top.z), 0.25), r: lo.r * 1.35, sq: 0.9 },
+      { p: mi.p.clone().lerp(V(top.x, mi.p.y, top.z), 0.3), r: mi.r * 1.3, sq: 0.95 },
+      { p: V(top.x, H + 0.08, top.z), r: 0.34, sq: 1.15 },
+    ];
+  } else {
+    const twig = { base: C(0xcfc7b9), top: C(0x8c8174) };
+    for (let k = 0; k < n; k++) {
+      const bl = lobes[k];
+      const to = bl.base.clone().lerp(bl.p, 0.86);
+      to.y -= bl.r * 0.2;
+      limb(b, bl.base, to, 0.026, 0.01, 4, twig, H, { bend: 0.05, segs: 2 });
     }
   }
-  foliage(b, blobs.map((bl) => ({ ...bl, d: lod ? 'd' : 1, lump: 0.26 })), pal, { lump: 0.26, freq: 2.0, mat: MAT.DLEAF });
+  // the two biggest clusters at full detail, the rest as 36-triangle lobes
+  const big = blobs
+    .map((bl, k) => [bl.r, k])
+    .sort((a, c) => c[0] - a[0])
+    .slice(0, 2)
+    .map((e) => e[1]);
+  foliage(b, blobs.map((bl, k) => ({ p: bl.p, r: bl.r, sq: bl.sq, d: lod || !big.includes(k) ? 'd' : 1, lump: 0.26 })), pal, { lump: 0.26, freq: 2.0, mat: MAT.DLEAF });
   return { bendScale: 1.25, height: H + 0.4 };
 }
 
@@ -484,11 +526,25 @@ function buildBirchClump(b, lod) {
       return mul3(c, (0.7 + 0.3 * smooth(0, 0.25, p.y)) * (0.9 + 0.12 * clamp01(n.y * 0.5 + 0.5)));
     };
     trunk(b, pts, pts.map((_, i) => 0.05 - (0.026 * i) / (pts.length - 1)), lod ? 4 : 5, null, { color: bark, faceColor: true, yTop: H });
-    blobs.push({ p: V(top.x, H + (lod ? -0.06 : 0.04), top.z), r: lod ? 0.33 : 0.27, sq: lod ? 1.3 : 1 });
-    if (!lod) blobs.push({ p: V(top.x * 1.15, H - 0.24, top.z * 1.15), r: 0.22 });
-    if (!lod) blobs.push({ p: V(top.x * 0.9, H + 0.3, top.z * 0.9), r: 0.18 });
+    // clusters hang off the outer side of each stem, down its upper third
+    const out = V(dir.x, 0, dir.z).normalize();
+    const side = V(-out.z, 0, out.x);
+    const sa = b.r(-1, 1) < 0 ? -1 : 1;
+    const c1 = V(top.x + out.x * 0.22 + side.x * 0.12 * sa, H * 0.74, top.z + out.z * 0.22 + side.z * 0.12 * sa);
+    const c2 = V(top.x - side.x * 0.16 * sa + out.x * 0.08, H * 0.88, top.z - side.z * 0.16 * sa + out.z * 0.08);
+    if (lod) blobs.push({ p: V(top.x * 1.05, H - 0.12, top.z * 1.05), r: 0.34, sq: 1.35 });
+    else {
+      blobs.push({ p: V(top.x, H + 0.1, top.z), r: 0.25, sq: 1.15 });
+      blobs.push({ p: c1, r: 0.22, sq: 0.85 });
+      blobs.push({ p: c2, r: 0.2, sq: 0.9 });
+      const twig = { base: C(0xcfc7b9), top: C(0x8c8174) };
+      const j1 = pts[Math.floor(pts.length * 0.62)],
+        j2 = pts[Math.floor(pts.length * 0.8)];
+      limb(b, j1, j1.clone().lerp(c1, 0.85), 0.02, 0.009, 4, twig, H, { bend: 0.04, segs: 2 });
+      limb(b, j2, j2.clone().lerp(c2, 0.85), 0.018, 0.008, 4, twig, H, { bend: 0.04, segs: 2 });
+    }
   }
-  foliage(b, blobs.map((bl) => ({ ...bl, d: lod ? 'd' : 1, lump: 0.28 })), pal, { lump: 0.28, freq: 2.0, mat: MAT.DLEAF });
+  foliage(b, blobs.map((bl, k) => ({ ...bl, d: lod || k !== 0 ? 'd' : 1, lump: 0.28 })), pal, { lump: 0.28, freq: 2.0, mat: MAT.DLEAF });
   return { bendScale: 1.25, height: 2.1 };
 }
 
