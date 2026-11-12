@@ -462,9 +462,13 @@ export class Atmosphere {
     const prev = renderer.getRenderTarget();
     const rt = this.game.pipeline?.composer?.inputBuffer || null;
     renderer.setRenderTarget(rt);
+    const c = this.clouds;
+    const hidden = [c?.sheet, c?.cirrus, c?.scud].filter((m) => m && !m.visible);
+    for (const m of hidden) m.visible = true;
     try {
       renderer.compile(this.game.scene, this.game.cameraRig.camera);
     } finally {
+      for (const m of hidden) m.visible = false;
       renderer.setRenderTarget(prev);
     }
   }
