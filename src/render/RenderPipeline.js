@@ -29,12 +29,14 @@ import { GradeEffect } from './atmosphere/post/GradeEffect.js';
 // Detail by zoom and power saving (round 5): as game.view.zoom01 rises the
 // pipeline drops AO (and DOF, via the atmosphere's focus params);
 // game.settings.powerSaver (event 'powersaver') disables AO and DOF, the
-// atmosphere halves the shadow map, and the 3D view renders at 0.75x pixel
-// ratio (the DOM UI stays sharp). The toggle itself never resizes anything (a
-// drawing-buffer resize stalls the GPU): the new resolution is applied once,
-// a few seconds later, at a moment the camera is still (or right away on a
-// window resize, which reallocates anyway). Dynamic resolution scaling is
-// opt-in via game.settings.dynamicResolution.
+// atmosphere halves the shadow map, and the 3D view renders at 0.75x
+// resolution. The canvas (drawing buffer) is never resized for this:
+// resizing it stalls for seconds on some GPUs and drivers. Only the
+// composer's render targets shrink, and the final pass upscales into the
+// full-size canvas, so the DOM UI stays sharp. The switch is applied shortly
+// after the toggle, once the camera is still. Dynamic resolution scaling
+// (opt-in via game.settings.dynamicResolution) uses the same composer scale.
+// The low tier (no composer) keeps its full resolution.
 //
 // Frame (medium and up):
 //   Render (HDR half-float) -> linear depth -> N8AO (high+) -> aerial haze /
@@ -80,6 +82,7 @@ export class RenderPipeline {
     this._saverT = 0; // seconds since the saver was toggled
     this._stillT = 0; // seconds the camera has not moved
     this._camSig = new Float32Array(7);
+    this._appliedScale = 1;
     this._dt = [];
     this._drsT = 0;
     renderer.setPixelRatio(this.targetPixelRatio());
@@ -131,12 +134,31 @@ export class RenderPipeline {
     return !!this.game.settings?.powerSaver;
   }
 
+  // canvas pixel ratio: only the tier and the device (never the saver or
+  // dynamic resolution, which scale the composer's targets instead)
   targetPixelRatio() {
-    let pr = Math.min(devicePixelRatio || 1, this.tier.pixelRatio);
-    // (the power saver no longer changes the pixel ratio: resizing the
-    // drawing buffer forces a full GPU sync, which stalled the toggle for
-    // seconds; the saver sheds AO, DOF, shadow resolution and frame rate)
-    return Math.max(0.5, pr * this.dynScale * this.saverScale);
+    return Math.max(0.5, Math.min(devicePixelRatio || 1, this.tier.pixelRatio));
+  }
+
+  // composer resolution factor (power saver x dynamic resolution)
+  get renderScale() {
+    return this.saverScale * this.dynScale;
+  }
+
+  // Size the composer's targets to the drawing buffer times renderScale.
+  // The canvas keeps its size; the final pass upscales into it.
+  sizeComposer() {
+    const C = this.composer;
+    if (!C) return;
+    const db = this.renderer.getDrawingBufferSize(this._db || (this._db = new THREE.Vector2()));
+    const s = this.renderScale;
+    const w = Math.max(1, Math.round(db.x * s));
+    const h = Math.max(1, Math.round(db.y * s));
+    this._appliedScale = s;
+    if (C.inputBuffer.width === w && C.inputBuffer.height === h) return;
+    C.inputBuffer.setSize(w, h);
+    C.outputBuffer.setSize(w, h);
+    for (const pass of C.passes) pass.setSize(w, h);
   }
 
   // Power-saver resolution, applied off the toggle: once the saver has been
@@ -159,18 +181,15 @@ export class RenderPipeline {
     }
     this._saverT += dt;
     if (want === this.saverScale) return;
-    const wait = want < 1 ? 3 : 1.5; // getting sharp again is wanted sooner
-    if (this._saverT < wait || this._stillT < 0.6) return;
+    const wait = want < 1 ? 1.5 : 0.5; // getting sharp again is wanted sooner
+    if (this._saverT < wait || this._stillT < 0.3) return;
     this.saverScale = want;
     this.applyPixelRatio();
   }
 
+  // apply the composer scale (only the composer's targets are reallocated)
   applyPixelRatio() {
-    const pr = this.targetPixelRatio();
-    if (Math.abs(this.renderer.getPixelRatio() - pr) < 0.01) return;
-    this.renderer.setPixelRatio(pr);
-    this.renderer.setSize(this.size.x, this.size.y);
-    this.composer?.setSize(this.size.x, this.size.y);
+    if (this.composer && this._appliedScale !== this.renderScale) this.sizeComposer();
   }
 
   // Dynamic resolution: keep the rolling frame time inside the budget.
@@ -324,6 +343,7 @@ export class RenderPipeline {
     this.composer = composer;
     this.passes = p;
     composer.setSize(this.size.x, this.size.y);
+    this.sizeComposer();
     // the composer owns tone mapping and fog in this mode
     renderer.toneMapping = THREE.NoToneMapping;
     if (scene.fog === this._fog) scene.fog = null;
@@ -350,9 +370,11 @@ export class RenderPipeline {
     this.size.set(w, h);
     // a resize reallocates every target anyway: settle the saver scale now
     this.saverScale = this.powerSaver ? SAVER_SCALE : 1;
-    this.renderer.setPixelRatio(this.targetPixelRatio());
     this.renderer.setSize(w, h);
-    if (this.composer) this.composer.setSize(w, h);
+    if (this.composer) {
+      this.composer.setSize(w, h);
+      this.sizeComposer();
+    }
   }
 
   // Push the atmosphere's per-frame look parameters into the passes.
@@ -362,7 +384,7 @@ export class RenderPipeline {
     if (!P || !p) return;
     const cam = this.game.cameraRig.camera;
     p.atmos.sync(cam, P.sky, P);
-    const H = this.renderer.getDrawingBufferSize(this._v2 || (this._v2 = new THREE.Vector2())).y;
+    const H = this.renderer.getDrawingBufferSize(this._v2 || (this._v2 = new THREE.Vector2())).y * (this._appliedScale || 1);
     const ps = this.powerSaver;
     const zoom = this.game.view?.zoom01 ?? 0.5;
     if (p.dof) {
