@@ -1833,6 +1833,7 @@ export class Civilization {
 
   _finishBuilding(b) {
     b.era = Math.max(b.era ?? 0, this.kingdoms[b.kingdom]?.era ?? 0);
+    b.builtEra = this.kingdoms[b.kingdom]?.era ?? 0;
     b.constructing = false;
     b.progress = 1;
     b.hp = b.maxHp;
@@ -2429,7 +2430,8 @@ export class Civilization {
       if (def.housing && b.alive) stats.push(['Houses', `${def.housing[b.level - 1]} people`]);
       if (def.levels > 1) stats.push(['Level', `${b.level} / ${def.levels}`]);
       // the building's own era (the realm's era is shown by the UI separately)
-      stats.push(['Built in', (b.era ?? 0) >= 4 ? 'Age of mastery (gilded)' : `${ERAS[b.era ?? 0]?.name || 'Hearth'} era`]);
+      const be = Math.min(b.builtEra ?? b.era ?? 0, k?.era ?? 3);
+      stats.push(['Built in', `${ERAS[be]?.name || 'Hearth'} era${(b.era ?? 0) >= 4 ? ', since gilded' : ''}`]);
       if (b.type === 'hall' && v) {
         // wood / stone / gold / ore appear in the UI's "Village stores" section
         stats.push(['Population', v.pop], ['Food', `${Math.floor(v.food)} / ${v.foodCap}`]);
