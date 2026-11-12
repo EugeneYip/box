@@ -522,7 +522,7 @@ Mat matCliff(NS s, float volc, out vec3 facetN) {
   vec4 gX = nz(vec2(p.z * 0.06, p.y * 0.016) + 0.31);
   vec4 gZ = nz(vec2(p.x * 0.06, p.y * 0.016) + 0.73);
   vec4 gv = mix(gZ, gX, wxz);
-  float gully = smoothstep(0.55, 0.85, gv.b) * mix(0.7, 1.0, volc) * vf;
+  float gully = smoothstep(0.50, 0.92, gv.b) * mix(0.7, 1.0, volc) * vf;
   float streak = smoothstep(0.56, 0.80, gv.g) * (1.0 - hotK * 0.5) * vf;
   // fine grit: crisp micro relief so faces never look moulded
   vec4 e = mix(nz(ROT1 * uvY * 0.25 + 0.43), nz(uvD * 0.25 + 0.43), vf);
@@ -553,7 +553,7 @@ Mat matCliff(NS s, float volc, out vec3 facetN) {
   c *= mix(1.0, 0.96 + 0.08 * ft.x, facetK);
   // relief for the derivative bump: grooved joints and gullies, ledge steps, grit
   float hgt = 0.55 + 0.20 * (lr - 0.5) * bandK + 0.16 * (d.r - 0.5) + 0.06 * (e.g - 0.5) * fineK
-            - 0.18 * joint - 0.30 * gully + 0.04 * led * bandK;
+            - 0.10 * joint - 0.10 * gully + 0.04 * led * bandK;
   return mk(c, 0.84 + 0.08 * volc, hgt, 0.13 * near + 0.03 * volc);
 }
 
