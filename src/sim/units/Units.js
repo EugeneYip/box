@@ -88,6 +88,8 @@ const DCELL = 16; // danger grid cell (tiles): where predators, monsters or figh
 const OVERVIEW_DIST = 110; // camera farther than this: every creature takes the cheap path
 const WILD_TARGET = 620; // wild creatures on a 256 x 256 map with no people
 const WILD_FLOOR = 420; // ...and however large the realms grow
+const WILD_FLOOR_BIG = 330; // ...on maps larger than Medium, where the total cap rules
+const UNIT_CAP = 1000; // all creatures on a big map, per unit of popScale (1,600 on Huge 512)
 const HEALTHY = 0.35; // a wild grazer below this share of its capacity gets migrant herds
 
 const KIND_ORDER = { humanoid: 0, animal: 1, monster: 2 };
@@ -165,7 +167,12 @@ export class Units {
   // only a small share of it, so the wilds stay alive beside big kingdoms.
   faunaBudget() {
     const humans = this._counts.get('human') || 0;
-    return Math.round(Math.max(WILD_FLOOR * this.popScale, WILD_TARGET * this.popScale - 0.15 * humans));
+    const ps = this.popScale;
+    let b = Math.max(WILD_FLOOR * ps, WILD_TARGET * ps - 0.15 * humans);
+    // big maps: all creatures together stay near the performance budget
+    // (~1,600 on a Huge 512 map); the wilds keep a smaller floor there
+    if (this.areaScale > 1.01) b = Math.min(b, Math.max(WILD_FLOOR_BIG * ps, UNIT_CAP * ps - humans - this.herds.totalTended));
+    return Math.round(b);
   }
 
   // Positional, throttled, guarded sound effect (only near the camera).

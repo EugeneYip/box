@@ -14,7 +14,10 @@ import { MATERIALS, WEAPON_TOOL } from '../../sim/units/items.js';
 import { STATUS_BY_ID } from '../../sim/units/statuses.js';
 const HAT_TINT = [null, 0xe6c870, 0xc4ccd6, 0xf2c14e, 0x5d5a3a, 0x5b3a26, null, 0xf0c030];
 const SHADOW_RANGE = 60; // creatures farther than this from the camera target cast no shadow-map shadow
-const LOD_HI = 52, LOD_LO = 22; // on-screen height (px) thresholds for hi / lo / tiny models
+const LOD_HI = 64, LOD_LO = 30; // on-screen height (px) thresholds for hi / lo / tiny models
+const HI_CAP = 16; // at most this many full-detail rigs per frame (the rest use the mid model)
+const DOTS_DIST = 190;
+const SHADOW_ZOOM = 70; // creatures cast shadow-map shadows only when the camera is closer than this // camera distance beyond which creatures are dots on any map size
 
 // Creature renderer (Life module). Every species is one instanced, shader-rigged
 // model (see RigMaterial.js): one draw call per species plus its shadow pass.
@@ -171,6 +174,11 @@ export class UnitRenderer {
       lv = pxH > hiT ? 0 : pxH > loT ? 1 : 2;
       rs.lv = lv;
     } else lv = pxH > LOD_HI ? 0 : pxH > LOD_LO ? 1 : 2;
+    // a crowd close up: only the first HI_CAP get the full rig each frame
+    if (lv === 0) {
+      if (this._hiN >= HI_CAP) lv = 1;
+      else this._hiN++;
+    }
     const id = m.def.id;
     if (lv === 2) return this.tiny.get(id) || this.lo.get(id) || m;
     return lv === 1 ? this.mid.get(id) || this.lo.get(id) || m : m;
@@ -555,7 +563,9 @@ export class UnitRenderer {
     const tinyEvery = (spd >= 8 ? 5 : spd >= 4 ? 4 : 3) * (saver ? 2 : 1);
     const hiEvery = saver ? 2 : 1;
     // far zoom (game.view): creatures are drawn as dots only - no posing, no shadows
-    const dotsOnly = !!(g.view?.far || (g.view?.zoom01 ?? 0) > 0.82);
+    const dotsOnly = !!(g.view?.far || (g.view?.zoom01 ?? 0) > 0.82 || (g.cameraRig.cur?.dist ?? 0) > DOTS_DIST);
+    this._hiN = 0;
+    const shadowsOn = camDist < SHADOW_ZOOM;
     this.dotsOnly = dotsOnly;
     const camT = g.cameraRig.target;
     // held weapons and tools grow as the camera pulls back so they read at play zoom
@@ -706,7 +716,9 @@ export class UnitRenderer {
         if (rs.legendary) glow = Math.max(glow, 0.28 + 0.06 * Math.sin(now * 2 + rs.seed * 7));
         if (rs.starborn) glow = Math.max(glow, 0.12 + 0.1 * Math.sin(now * 1.7 + rs.seed * 11));
         const pm = this.pick(rm, pxH, rs);
-        const near = (ix - camT.x) ** 2 + (iz - camT.z) ** 2 < SHADOW_RANGE * SHADOW_RANGE;
+        // shadow-map casters: near the camera target at close zoom, never the tiny
+        // models (from mid zoom out the ground blob shadow carries it)
+        const near = shadowsOn && rs.lv !== 2 && (ix - camT.x) ** 2 + (iz - camT.z) ** 2 < SHADOW_RANGE * SHADOW_RANGE;
         const apUse = pm.tiny ? (pm.mesh.name.endsWith(':mid') ? rs.apMid : rs.apTiny) || rs.ap : rs.ap;
         pm.write(this._m, Ps, apUse, Math.min(1, flash), lod, glow, near);
         if (hrs) {
