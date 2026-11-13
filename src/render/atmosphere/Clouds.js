@@ -249,10 +249,14 @@ const SHEET_FN = /* glsl */ `
 uniform sampler2D tHeight;  // world heights (game.terrain.heightTexture)
 uniform vec3 uWorld;        // world w, h, has-height-texture
 uniform float uLandAvoid;   // 0 .. 1: fields keep to the sea (map zoom)
-// soft land fraction around xz (5 taps over ~50 units, so the fields thin
-// out well before a coast instead of tracing it)
+uniform vec3 uEye;          // main camera position (also for the shadow splat)
+// soft land fraction around the ground the sheet hides from the eye at xz
+// (5 taps over ~50 units, so the fields thin out well before a coast
+// instead of tracing it)
 float landNear(vec2 xz) {
   if (uWorld.z < 0.5 || uLandAvoid < 0.01) return 0.0;
+  // the sheet floats at y = 50: seen at a slant it covers the ground beyond it
+  if (uEye.y > 58.0) xz += (xz - uEye.xz) * (50.0 / (uEye.y - 50.0));
   float s = 0.0;
   for (int i = 0; i < 5; i++) {
     vec2 o = i == 0 ? vec2(0.0) : vec2(i == 1 ? 26.0 : i == 2 ? -26.0 : 0.0, i == 3 ? 26.0 : i == 4 ? -26.0 : 0.0);
@@ -333,6 +337,9 @@ void main() {
   gl_FragColor = vec4(a, a, a, a);
 }
 `;
+
+// footprint taps for the land test (along, across), in cloud half-extents
+const FOOT = [0, 0, 0.5, 0, -0.5, 0, 1, 0, -1, 0, 0, 1, 0, -1, 0.6, 0.7, -0.6, 0.7, 0.6, -0.7, -0.6, -0.7];
 
 export class Clouds {
   constructor(atmosphere) {
@@ -473,6 +480,7 @@ export class Clouds {
       tHeight: { value: null },
       uWorld: { value: new THREE.Vector3(256, 256, 0) },
       uLandAvoid: { value: 0 },
+      uEye: { value: new THREE.Vector3(0, 1000, 0) },
       uDark: { value: 0 },
       uLit: { value: new THREE.Color(1, 1, 1) },
       uShade: { value: new THREE.Color(0.6, 0.65, 0.8) },
@@ -558,7 +566,7 @@ export class Clouds {
     this.splatScene.add(this.stormShadow);
     this.sheetSplat = new THREE.Mesh(
       new THREE.PlaneGeometry(f.sx, f.sz).rotateX(-Math.PI / 2).translate(f.x0 + f.sx / 2, 50, f.z0 + f.sz / 2),
-      new THREE.ShaderMaterial({ uniforms: { uDrift: this.sheetU.uDrift, uCov: this.sheetU.uCov, uAmt: this.sheetU.uAmt, tHeight: this.sheetU.tHeight, uWorld: this.sheetU.uWorld, uLandAvoid: this.sheetU.uLandAvoid }, vertexShader: SHEET_VERT, fragmentShader: SHEET_SPLAT_FRAG, ...maxBlend }),
+      new THREE.ShaderMaterial({ uniforms: { uDrift: this.sheetU.uDrift, uCov: this.sheetU.uCov, uAmt: this.sheetU.uAmt, tHeight: this.sheetU.tHeight, uWorld: this.sheetU.uWorld, uLandAvoid: this.sheetU.uLandAvoid, uEye: this.sheetU.uEye }, vertexShader: SHEET_VERT, fragmentShader: SHEET_SPLAT_FRAG, ...maxBlend }),
     );
     this.sheetSplat.frustumCulled = false;
     this.sheetSplat.visible = false;
@@ -583,6 +591,35 @@ export class Clouds {
     this._first = true;
     this._v = new THREE.Vector3();
     this._c = new THREE.Color();
+    this._eye = new THREE.Vector3();
+  }
+
+  // Fraction (0..1, soft) of a cloud's footprint that lies over land, taken
+  // where the cloud actually hides the ground from the eye: a cloud at
+  // height y seen at a slant covers ground beyond it and looks bigger, by
+  // the same parallax factor.
+  landHidden(c, x, z, scale, eye) {
+    const world = this.game.world;
+    const cy = c.y + c.size * 0.3 * scale;
+    const k = eye.y > cy + 8 ? cy / (eye.y - cy) : 0;
+    const gx = x + (x - eye.x) * k;
+    const gz = z + (z - eye.z) * k;
+    const m = 1 + k;
+    const L = c.size * (0.48 * c.stretch + 0.6) * scale * m; // along the cloud
+    const Wd = c.size * 0.75 * scale * m; // across it
+    const cs = Math.cos(c.rot),
+      sn = Math.sin(c.rot);
+    const W = world.w,
+      H = world.h;
+    let s = 0;
+    for (let i = 0; i < FOOT.length; i += 2) {
+      const ox = FOOT[i] * L,
+        oz = FOOT[i + 1] * Wd;
+      const px = gx + ox * cs - oz * sn,
+        pz = gz + ox * sn + oz * cs;
+      if (px > 0 && pz > 0 && px < W && pz < H) s += THREE.MathUtils.smoothstep(world.heightAt(px, pz), -0.2, 0.6);
+    }
+    return s / (FOOT.length / 2);
   }
 
   update(dt, model, weather, env) {
@@ -599,12 +636,28 @@ export class Clouds {
     const grow = 1 + 0.3 * weather.storm + 0.12 * weather.overcast;
     const raw = this._raw;
     let k = 0;
+    const ss = THREE.MathUtils.smoothstep;
     const camDist = rig.cur.dist;
-    const ovK = THREE.MathUtils.smoothstep(game.view?.zoom01 ?? 0.5, 0.62, 0.88);
-    const landAvoid = 0.85 * THREE.MathUtils.smoothstep(game.view?.zoom01 ?? 0.5, 0.55, 0.85);
-    const world = game.world;
+    const z01 = game.view?.zoom01 ?? 0.5;
+    // Map readability. "Far" has two measures: the absolute camera distance
+    // (on a big map a distance of 250 already frames whole continents) and
+    // the zoom relative to the map (a small map reaches its overview sooner).
+    // Both ramp continuously, so the cover thins all the way out instead of
+    // only at the far limit. Close and mid zoom are untouched.
+    const farAbs = ss(camDist, 170, 600);
+    const far = Math.max(farAbs, ss(z01, 0.6, 1.0));
+    const ovK = Math.max(ss(z01, 0.62, 0.88), ss(camDist, 220, 420));
+    // from about 250 out, clouds keep off the land they would hide
+    const landAvoid = 0.96 * Math.max(ss(z01, 0.55, 0.85), ss(camDist, 160, 250));
+    // fewer clouds as the camera climbs (by rank, so the ones left stay whole)
+    const keepLim = cover * (1 - 0.5 * far * (1 - 0.5 * weather.storm));
+    const keepOn = ss(far, 0, 0.15); // (no change at all below the ramp)
+    const eye = cam.position;
+    const camJump = this._eye.distanceToSquared(eye) > 40 * 40; // teleport, not a glide
+    this._eye.copy(eye);
+    const snapLand = this._first || camJump;
     for (const c of this.clouds) {
-      const target = THREE.MathUtils.smoothstep(cover, c.rank - 0.06, c.rank + 0.06);
+      const target = ss(cover, c.rank - 0.06, c.rank + 0.06);
       if (this._first) c.presence = target;
       else c.presence += (target - c.presence) * Math.min(1, dt * 0.35);
       let x = c.x + this.drift.x;
@@ -614,12 +667,14 @@ export class Clouds {
       const ex = Math.min(x - f.x0, f.x0 + f.sx - x) / 50;
       const ez = Math.min(z - f.z0, f.z0 + f.sz - z) / 50;
       const edge = THREE.MathUtils.clamp(Math.min(ex, ez), 0, 1);
-      // land under the cloud (smoothed, so a cloud drifting over a coast fades)
-      const onLand = x > 0 && z > 0 && x < world.w && z < world.h && world.heightAt(x, z) > 0.3 ? 1 : 0;
-      if (this._first || c.landK === undefined) c.landK = onLand;
-      else c.landK += (onLand - c.landK) * Math.min(1, dt * 0.6);
-      const pres = c.presence * edge * (c.small ? 1 - 0.9 * ovK : 1) * (1 - landAvoid * c.landK);
+      const keep = 1 - ss(c.rank, keepLim - 0.05, keepLim + 0.05) * keepOn;
       const scale = (0.55 + 0.45 * Math.sqrt(c.presence)) * grow;
+      // land the cloud would hide from this eye (smoothed, so a cloud
+      // drifting toward a coast, or a pan, fades it rather than popping)
+      const landT = landAvoid > 0.01 && c.presence * edge > 0.003 ? this.landHidden(c, x, z, scale, eye) : 0;
+      if (snapLand || c.landK === undefined) c.landK = landT;
+      else c.landK += (landT - c.landK) * Math.min(1, dt * 3);
+      const pres = c.presence * edge * keep * (c.small ? 1 - 0.9 * ovK : 1) * (1 - landAvoid * ss(c.landK, 0.03, 0.3));
       const cs = Math.cos(c.rot),
         sn = Math.sin(c.rot);
       const cy = c.y;
@@ -679,8 +734,8 @@ export class Clouds {
     // In storms the low structured deck carries the drama; the high puffs
     // keep their normal zoom fade so they never become a milky veil right
     // under the lens at mid zoom.
-    const z01 = game.view?.zoom01 ?? 0.5;
-    const vis = THREE.MathUtils.smoothstep(camDist, 70, 150) * (1 - 0.72 * THREE.MathUtils.smoothstep(z01, 0.8, 1.0));
+    const ovFade = ss(z01, 0.8, 1.0);
+    const vis = ss(camDist, 70, 150) * (1 - 0.72 * ovFade) * (1 - 0.3 * farAbs * (1 - ovFade));
     u.uOpacity.value = vis * (0.82 + 0.18 * weather.overcast) * (1 - 0.35 * weather.storm);
     u.uNearFade.value = 70 + camDist * 0.45; // never a wash right under the lens
     u.uWisp.value = THREE.MathUtils.smoothstep(game.view?.zoom01 ?? 0.5, 0.55, 1.0);
@@ -710,7 +765,6 @@ export class Clouds {
     // scattered clusters that keep to the sea, so the map stays readable.
     {
       const SU = this.sheetU;
-      const ss = THREE.MathUtils.smoothstep;
       const sv = this.sheetOn
         ? ss(z01, 0.45, 0.65) * (1 - 0.55 * ss(z01, 0.72, 1.0)) * (1 - 0.85 * weather.storm) * ss(cam.position.y, 80, 120)
         : 0;
@@ -724,8 +778,9 @@ export class Clouds {
         this.sheet.scale.set(size, 1, size);
         SU.uCenter.value.set(t.x, 50, t.z);
         SU.uRadius.value = size * 0.5;
-        SU.uCov.value = Math.min(1, cover * 0.9 + weather.overcast * 0.25) * (1 - 0.4 * ss(z01, 0.7, 1.0));
+        SU.uCov.value = Math.min(1, cover * 0.9 + weather.overcast * 0.25) * (1 - 0.4 * Math.max(ss(z01, 0.7, 1.0), farAbs));
         SU.uLandAvoid.value = landAvoid;
+        SU.uEye.value.copy(eye);
         const ht = game.terrain?.heightTexture || null;
         SU.tHeight.value = ht;
         SU.uWorld.value.set(game.world.w, game.world.h, ht ? 1 : 0);
