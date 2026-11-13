@@ -7,6 +7,7 @@ import { VillageHerds } from './herds.js';
 import { installDepth } from './depth.js';
 import { installEditing } from './edit.js';
 import { installRoles, ROLE_NAMES } from './roles.js';
+import { installNeeds } from './needs.js';
 
 // Core creature simulation (owned by the Life module; the Civilization module
 // programs humanoid behaviour through registerBrain / unit.job).
@@ -287,10 +288,13 @@ export class Units {
     if (!this._forage) this._initForage();
     const f = this._forage,
       cap = this._forageCap;
-    const k = FORAGE_REGROW * dt * (this.game.age?.mods?.fertility ?? 1);
+    // pasture regrows with the seasons: lush in spring, all but stops in winter
+    const season = this.game.time.season;
+    const sk = season == null ? 1 : [1.35, 1.0, 0.65, 0.25][Math.floor(season) % 4];
+    const k = FORAGE_REGROW * dt * sk * (this.game.age?.mods?.fertility ?? 1);
     for (let c = 0; c < f.length; c++) {
       const cp = cap[c];
-      if (f[c] < cp) f[c] = Math.min(cp, f[c] + cp * k + 0.02 * dt);
+      if (f[c] < cp) f[c] = Math.min(cp, f[c] + cp * k + 0.02 * sk * dt);
     }
   }
   // Graze: convert forage into reduced hunger. Returns hunger gained back.
@@ -303,8 +307,10 @@ export class Units {
     const cost = want * Math.pow(u.def.mass, 0.7) * FORAGE_COST;
     const take = Math.min(this._forage[c], cost);
     this._forage[c] -= take;
-    // bare pasture still yields a little (roots, weeds): overgrazing mostly halts breeding
-    return Math.max(0.3, take / cost) * want;
+    // bare pasture still yields a little (roots, weeds; less under winter snow)
+    const season = this.game.time.season;
+    const floor = season != null && Math.floor(season) % 4 === 3 ? 0.2 : 0.3;
+    return Math.max(floor, take / cost) * want;
   }
 
   registerBrain(speciesId, fn) {
@@ -531,6 +537,10 @@ export class Units {
       _aboardSince: 0,
       _rs: null,
       _rm: null,
+      _nap: false,
+      _homeB: null,
+      _forager: null,
+      _foraged: false,
     };
     if (def.habitat === 'air') {
       u.alt = opts.alt ?? 6;
@@ -573,6 +583,7 @@ export class Units {
     if (cause === 'old age' || cause === 'starvation') g.fx.emit?.('death', { x: u.x, y: u.y + 0.2, z: u.z }, { scale: u.def.size * 0.6 });
     this._depthDeath(u, cause, killer);
     if (cause !== 'slaughter') this.sfx('death', u.x, u.z, { volume: u.def.kind === 'humanoid' ? 0.75 : 0.55, pitch: 1 / Math.sqrt(Math.max(0.4, u.def.mass)) });
+    if (killer && killer._forager != null && u.def.kind === 'animal') this._foragerKill(killer, u);
     g.events.emit('unit:death', { unit: u, cause, killer });
   }
 
@@ -1644,9 +1655,20 @@ export class Units {
   }
 
   // Sleep / wake logic shared by brains. Returns true while asleep.
+  // Daylight 0..1 from the hour of day (the sim's own clock: the sky's value is
+  // only updated while frames render, not during fast-forward).
+  daylight() {
+    const t = this.game.time;
+    if (this._dlT === t.total) return this._dl;
+    const s = Math.sin((((t.hour ?? 12) - 6) / 12) * Math.PI);
+    const x = Math.min(1, Math.max(0, (s + 0.1) / 0.32));
+    this._dl = x * x * (3 - 2 * x);
+    this._dlT = t.total;
+    return this._dl;
+  }
   sleepLogic(u) {
     const g = this.game;
-    const day = g.env?.daylight ?? 1;
+    const day = this.daylight();
     const noct = u.def.nocturnal;
     if (u.sleeping) {
       const wake = noct ? day < 0.35 && u.energy > 0.5 : day > 0.3 && u.energy > 0.55;
@@ -1768,7 +1790,8 @@ export class Units {
     const brain = this.brains.get(u.species);
     const elapsed = u._lastThink < 0 ? THINK_INTERVAL : Math.min(6, Math.max(0.05, now - u._lastThink));
     u._lastThink = now;
-    // tech roles (healers, messengers, riders) act before the registered brain
+    // tiredness, sleep and famine foraging, then tech roles, act before the village brain
+    if (u.species === 'human' && u._ext && this._needsThink(u, now)) return;
     if (u.species === 'human' && this._roleThink(u, now)) return;
     // a patient keeps still while a healer comes to them
     if (u._nurseWait > now && !u.combat && u.state !== 'flee') {
@@ -1854,6 +1877,11 @@ export class Units {
         this._aboardTick(u, now);
         continue;
       }
+      // asleep at home: resting, out of the world until dawn or danger
+      if (u.data.inside === true) {
+        this._insideTick(u, dt, now, tickN);
+        continue;
+      }
       if (def.kind !== 'animal' || def.diet !== 'herbivore' || u.combat || u.mad > now) {
         const cx = u.x < 0 ? 0 : Math.min(dw - 1, Math.floor(u.x / DCELL)),
           cz = u.z < 0 ? 0 : Math.min(dh - 1, Math.floor(u.z / DCELL));
@@ -1864,12 +1892,13 @@ export class Units {
       const lean = MVP[u.species] && (this._counts.get(u.species) || 0) < MVP[u.species] * 2 ? 0.6 : 1;
       if (this.law('lifeHunger')) u.hunger = Math.min(1, u.hunger + dt * def.hungerRate * lean * (u.sleeping ? 0.5 : active ? 1.6 : 1));
       else if (u.hunger > 0) u.hunger = Math.max(0, u.hunger - dt * 0.02);
-      if (u.sleeping || u.state === 'sleep' || u.data.inside) u.energy = Math.min(1, u.energy + dt * 0.0075);
+      if (u.sleeping || u.state === 'sleep') u.energy = Math.min(1, u.energy + dt * (u._ext ? 0.012 : 0.0075));
       else if (u._ext) {
-        // brain-driven villagers: tire while busy, recover when idle and at night
-        const night = (g.env?.daylight ?? 1) < 0.2;
-        const rest = !u.moving && u.state !== 'work' && !u.combat;
-        u.energy = Math.min(1, Math.max(0, u.energy + dt * (rest || night ? 0.006 : -def.energyRate * (active ? 1.2 : 0.35))));
+        // village people: a working day wears them down; idling only rests a little
+        // (the real rest is the night's sleep at home, see needs.js)
+        const st = u.state;
+        const k = u.combat || st === 'run' || st === 'attack' || st === 'flee' ? 1.5 : st === 'work' ? 1 : u.moving ? 0.55 : -0.7;
+        u.energy = Math.min(1, Math.max(0, u.energy - dt * def.energyRate * k));
       } else u.energy = Math.max(0, u.energy - dt * def.energyRate * (active ? 2.5 : 1) * (u.swimming ? 4 : 1));
       if (u.pregnant > 0) {
         u.pregnant -= yearDt;
@@ -2321,5 +2350,6 @@ export class Units {
 installDepth(Units);
 installEditing(Units);
 installRoles(Units);
+installNeeds(Units);
 
 export { FLORA, FLORA_INFO };
