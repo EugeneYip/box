@@ -24,11 +24,11 @@ import { stageName, isTreeId, isMineral } from '../../sim/flora/species.js';
 //   per tile and written to the texture, so plants grow smoothly instead of
 //   popping, and burning forests char without any CPU geometry work.
 // * Ground cover (grass, ferns, pebbles) lives in GroundCover.js.
-export const CHUNK = 32;
+export const CHUNK = 16; // fine enough that LOD and frustum culling track the view closely
 // Distances are from the camera to the nearest point of a chunk.
 const LOD1_DIST = 34; // full detail inside, LOD1 beyond
 const LOD2_DIST = 175; // ultra-cheap shared stand-ins beyond
-const LOD_HYST = 8;
+const LOD_HYST = 6;
 const SKIP_FAR = 72; // tiny props (mushrooms, stones, reeds, stumps) culled
 export const SHADOW_LAYER = 7; // shadow-only proxy meshes
 const FLOWER_CULL = 41; // petals have fully closed (shader fade 28..40)
@@ -51,6 +51,8 @@ const _n = new THREE.Vector3();
 const _e = new THREE.Euler();
 const _col = new THREE.Color();
 const _box = new THREE.Box3();
+
+const PINE_PICK = [0, 1, 0, 1, 3, 0, 1, 2]; // 1 in 8 pines is the snapped old pine
 
 export class Vegetation {
   constructor(game) {
@@ -320,7 +322,10 @@ export class Vegetation {
 
   // ---- chunk building ----------------------------------------------------
   variantOf(tx, ty, f) {
-    return Math.floor(hash2(tx, ty, 71 + f) * this.models[f].variants.length);
+    const h = hash2(tx, ty, 71 + f);
+    // pines: spruce and fir are common, the snapped old pine and the Scots pine rarer
+    if (f === FLORA.PINE) return PINE_PICK[Math.floor(h * PINE_PICK.length)];
+    return Math.floor(h * this.models[f].variants.length);
   }
 
   rebuildChunk(c) {
@@ -423,7 +428,18 @@ export class Vegetation {
     let y = ground - cfg.sink - slope * 0.12;
     if (f === FLORA.REEDS) y = Math.max(y, SEA_LEVEL - 0.25);
     const yaw = cfg.snapYaw ? Math.floor(h3 * 4) * (Math.PI / 2) : h3 * Math.PI * 2;
-    const sc = cfg.scale[0] + (cfg.scale[1] - cfg.scale[0]) * h4;
+    let sc = cfg.scale[0] + (cfg.scale[1] - cfg.scale[0]) * h4;
+    if (isTreeId(f) && f !== FLORA.DEAD_TREE) {
+      // stands of older, taller trees beside young groves (low frequency), and
+      // a soft edge profile: trees with few neighbours stand a little lower
+      const W = world.w;
+      const i = ty * W + tx;
+      let nb = 0;
+      if (tx > 0 && tx < W - 1 && ty > 0 && ty < world.h - 1)
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if ((dx || dy) && isTreeId(world.flora[i + dy * W + dx])) nb++;
+      const stand = Math.sin(tx * 0.13 + ty * 0.071) * Math.cos(tx * 0.057 - ty * 0.12);
+      sc *= 0.9 + 0.12 * stand + 0.026 * nb;
+    }
     _q.setFromAxisAngle(_up, yaw);
     if (cfg.tilt > 0) {
       world.normalAt(x, z, _n);
@@ -451,11 +467,13 @@ export class Vegetation {
   tintInstance(tx, ty, f, arr, off) {
     const a = hash2(tx, ty, 91),
       b = hash2(tx, ty, 97);
-    // brightness and a gentle warm/cool hue drift
-    const br = 0.88 + 0.22 * a;
-    const warm = (b - 0.5) * (isTreeId(f) ? 0.14 : 0.1);
-    // regional drift so forests show patches of slightly different greens
-    const reg = Math.sin(tx * 0.071 + ty * 0.043) * Math.cos(tx * 0.033 - ty * 0.061) * 0.06;
+    // brightness and a warm/cool hue drift; trees vary more, so neighbours in
+    // a stand read as individuals at mid zoom
+    const tree = isTreeId(f);
+    const br = tree ? 0.83 + 0.32 * a : 0.88 + 0.22 * a;
+    const warm = (b - 0.5) * (tree ? 0.24 : 0.1);
+    // regional drift so forests show patches of different greens
+    const reg = Math.sin(tx * 0.071 + ty * 0.043) * Math.cos(tx * 0.033 - ty * 0.061) * (tree ? 0.1 : 0.06);
     arr[off] = br * (1 + warm + reg);
     arr[off + 1] = br * (1 + reg * 0.3);
     arr[off + 2] = br * (1 - warm * 1.4 - reg);
