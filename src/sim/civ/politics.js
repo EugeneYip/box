@@ -272,9 +272,11 @@ export const politics = {
     if (!this.law('civRebellions')) return;
     const now = this.game.time.total;
     for (const k of this.kingdoms) {
-      if (!k.alive || k.villages.length < 8 || !this._kLaw(k.id, 'civRebellions')) continue;
+      if (!k.alive || k.villages.length < 8) continue;
+      const share = k.villages.length / Math.max(1, this.villages.filter((v) => v.alive).length);
+      if (!this._kLaw(k.id, 'civRebellions') && share < 0.35) continue;
       if (now - (k.crackT ?? k.founded) < YEAR * 25) continue;
-      if (!this.rng.chance(0.004 * (k.villages.length - 7) * (0.5 + (this._crowd?.() || 0)))) continue;
+      if (!this.rng.chance(0.004 * (k.villages.length - 7) * (0.5 + (this._crowd?.() || 0)) * (1 + Math.max(0, now - k.founded) / (YEAR * 150)))) continue;
       const cap = this.villages[k.capital];
       if (!cap) continue;
       let far = null,
@@ -434,6 +436,7 @@ export const politics = {
         ]) {
           if (now - att.founded < YEAR * 6 || now - def.founded < YEAR * 5) continue;
           if (this.warCount(att.id) >= 2) continue;
+          if (att.villages.length > 0.33 * this.villages.filter((v) => v.alive).length) continue; // a hegemon is sated
           const ratio = att.strength / Math.max(1, def.strength);
           const crowd = this._crowd?.() || 0;
           const wl = this._kLaw(att.id, 'diploWarlike', 1);

@@ -461,7 +461,7 @@ export class Civilization {
     const k = this.kingdoms[v.kingdom];
     if (!k || now - (k.lastExpand || -999) < YEAR * (2.5 + crowd * 6)) return false;
     const aliveVillages = this.villages.filter((o) => o.alive).length;
-    if (aliveVillages >= this.budget.villages || k.villages.length >= 14) return false;
+    if (aliveVillages >= this.budget.villages || k.villages.length >= 14 || k.villages.length > 0.33 * aliveVillages) return false;
     if (this.expeditions.some((e) => e.from === v.id)) return false;
     v.lastExpand = now;
     const site = this._findExpansionSite(v);
