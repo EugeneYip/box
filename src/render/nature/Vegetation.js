@@ -24,11 +24,11 @@ import { stageName, isTreeId, isMineral } from '../../sim/flora/species.js';
 //   per tile and written to the texture, so plants grow smoothly instead of
 //   popping, and burning forests char without any CPU geometry work.
 // * Ground cover (grass, ferns, pebbles) lives in GroundCover.js.
-export const CHUNK = 32;
+export const CHUNK = 16; // fine enough that LOD and frustum culling track the view closely
 // Distances are from the camera to the nearest point of a chunk.
 const LOD1_DIST = 34; // full detail inside, LOD1 beyond
 const LOD2_DIST = 175; // ultra-cheap shared stand-ins beyond
-const LOD_HYST = 8;
+const LOD_HYST = 6;
 const SKIP_FAR = 72; // tiny props (mushrooms, stones, reeds, stumps) culled
 export const SHADOW_LAYER = 7; // shadow-only proxy meshes
 const FLOWER_CULL = 41; // petals have fully closed (shader fade 28..40)
