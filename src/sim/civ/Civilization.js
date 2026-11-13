@@ -36,7 +36,7 @@ import { culture, TRAIT_INFO } from './culture.js';
 // Budgets scale with map area (a = w*h / 256^2): a Huge 512 map tops out near
 // 900 people and 900 buildings.
 const VILLAGE_MAX_POP = 64; // legacy reference size (a town)
-const TIER_POP = [40, 70, 115]; // village, town, city
+const TIER_POP = [40, 70, 115]; // village, town, city (capitals and ports grow larger)
 // What each finished monument gives its realm (techMod / techAdd keys).
 const MONUMENT_FX = {
   vale: { mods: { 'loyalty+': 6, build: 1.15 }, text: 'its provinces hold fast to the crown' },
@@ -847,7 +847,7 @@ export class Civilization {
     const crowd = this._crowd();
     const popCrowd = this._popCrowd || 0;
     const fullWorld = humans > this._humanCap() * 0.85;
-    if (pop < v.housing && pop < this._popCap(v) && !(fullWorld && pop > 45) && v.food > pop * 1.2 + 8 && !v.starving && humans < this._humanCap() && this.rng.chance(Math.min(1, (1 - popCrowd * 0.85) * this._kLaw(v.kingdom, 'civGrowth', 1) * (v.policy?.growth ?? 1)))) {
+    if (pop < v.housing && pop < this._popCap(v) && !(fullWorld && pop > (v.tier >= 2 && (this.kingdoms[v.kingdom]?.capital === v.id || v.coastal) ? 170 : 45)) && v.food > pop * 1.2 + 8 && !v.starving && humans < this._humanCap() && this.rng.chance(Math.min(1, (1 - popCrowd * 0.85) * this._kLaw(v.kingdom, 'civGrowth', 1) * (v.policy?.growth ?? 1)))) {
       let father = false;
       for (const u of v.members) if (u.sex === 'm' && u.age >= 18 && u.age < 60) father = true;
       if (father) {
@@ -1335,7 +1335,8 @@ export class Civilization {
   }
   _popCap(v) {
     const m = this._easedMods();
-    return Math.round(TIER_POP[v.tier || 0] * Math.max(1, Math.min(1.35, m.birth * 0.6 + m.fertility * 0.4)));
+    const great = v.tier >= 2 && (this.kingdoms[v.kingdom]?.capital === v.id || v.coastal || v.buildings.some((b) => b.alive && b.type === 'market' && b.level >= 2)) ? 1.6 : 1;
+    return Math.round(TIER_POP[v.tier || 0] * great * Math.max(1, Math.min(1.35, m.birth * 0.6 + m.fertility * 0.4)));
   }
   _humanCap() {
     const b = this._easedMods().birth;
