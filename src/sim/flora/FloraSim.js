@@ -150,6 +150,22 @@ export class FloraSim {
         }
       }
     }
+    // forest edges: a fringe of shrubs and berry bushes where woodland meets
+    // open ground, so stands do not end in a hard line
+    const H = world.h;
+    for (let ty = 1; ty < H - 1; ty++)
+      for (let tx = 1; tx < W - 1; tx++) {
+        const i = ty * W + tx;
+        if (world.flora[i] || world.building[i] >= 0 || world.height[i] < SEA_LEVEL + 0.2) continue;
+        const t = world.type[i];
+        if (t !== TILE.GRASS && t !== TILE.FOREST && t !== TILE.JUNGLE && t !== TILE.TUNDRA && t !== TILE.SWAMP) continue;
+        if (this.hash(i * 17 + 9) > 0.2) continue;
+        let n = 0;
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if ((dx || dy) && isTreeId(world.flora[i + dy * W + dx])) n++;
+        if (n < 2 || n > 5 || world.slopeAt(tx, ty) > 1.0) continue;
+        world.flora[i] = t !== TILE.SWAMP && t !== TILE.TUNDRA && this.hash(i * 19 + 2) < 0.28 ? FLORA.BERRY_BUSH : FLORA.BUSH;
+        world.floraGrowth[i] = 0.6 + this.hash(i * 23) * 0.4;
+      }
     world.markDirty('flora', 0, 0, world.w - 1, world.h - 1);
   }
 
