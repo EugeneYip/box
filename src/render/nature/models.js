@@ -50,8 +50,13 @@ function foliage(b, blobs, pal, o = {}) {
   if (o.center) cc.copy(o.center);
   for (const bl of blobs) {
     const geo = blobGeo(b, bl.r, bl.d ?? 1, { lump: bl.lump ?? o.lump ?? 0.2, squash: bl.sq ?? 1, freq: o.freq ?? 1.6, flatBottom: bl.fb ?? 0 });
+    // o.irregular: each lobe stretched and tipped a little, so clusters are
+    // lopsided rather than balls
+    const ir = o.irregular || 0;
+    const sx = 1 + b.r(-ir, ir),
+      sz = 1 + b.r(-ir, ir);
     b.add(geo, {
-      matrix: M(bl.p.x, bl.p.y, bl.p.z, 0, b.r(0, TAU), 0),
+      matrix: M(bl.p.x, bl.p.y, bl.p.z, b.r(-ir, ir), b.r(0, TAU), b.r(-ir, ir), sx, 1 + b.r(-ir, ir) * 0.6, sz),
       normals: 'blend',
       blend: o.smooth ?? 0.6,
       center: bl.p,
@@ -231,7 +236,8 @@ function buildOak(b, v, lod) {
     if (v === 3) limb(b, V(0.02, 0.8, 0), V(-0.42, 1.25, 0.1), 0.04, 0.012, 4, P.oakBark, 2, { bend: 0.06 });
   }
   // main lobe at full detail; side lobes as rounder 36-tri dodecahedra
-  foliage(b, blobs.map((bl, k) => ({ ...bl, d: lod || k > 1 ? 'd' : d })), pal, { lump: 0.22, mat: MAT.DLEAF });
+  // LOD1: 20-face lobes, faceted and cheap at mid zoom
+  foliage(b, blobs.map((bl, k) => ({ ...bl, d: lod ? 0 : k > 1 ? 'd' : d })), pal, { lump: 0.3, mat: MAT.DLEAF, smooth: 0.3, irregular: 0.16 });
   return { bendScale: 1, height: 2.2 };
 }
 
@@ -342,39 +348,65 @@ function recolorRange(b, start, col, center, blend = 0) {
   }
 }
 
+// Conifer varieties, each with its own silhouette:
+//  0 spruce   tall and narrow, dense regular whorls
+//  1 fir      broad, layered, the classic cone
+//  2 old pine leaning, ragged uneven tiers, the leader snapped off
+//  3 Scots    a long bare (orange-topped) trunk under a flat, lopsided crown
+const PINES = [
+  { tiers: 6, R: 0.5, H: 3.3, base: 0.4, taper: 0.8, lean: 0.025, ragged: 0.08, n: 8 },
+  { tiers: 5, R: 0.7, H: 2.55, base: 0.36, taper: 0.8, lean: 0.02, ragged: 0.1, n: 8 },
+  { tiers: 5, R: 0.62, H: 2.45, base: 0.55, taper: 0.66, lean: 0.12, ragged: 0.32, n: 7, broken: true },
+  { tiers: 3, R: 0.6, H: 3.0, base: 1.55, taper: 0.42, lean: 0.07, ragged: 0.2, n: 7, flat: true },
+];
 function buildPine(b, v, lod, snowy = false) {
-  const base = [
-    { tiers: 5, R: 0.6, H: 2.7, base: 0.42 },
-    { tiers: 6, R: 0.46, H: 3.05, base: 0.45 },
-    { tiers: 4, R: 0.74, H: 2.35, base: 0.36 },
-    { tiers: 4, R: 0.5, H: 2.2, base: 0.55 },
-  ][v];
-  // snow-laden spruce: narrower and taller than lowland pines
-  const cfg = snowy ? { ...base, R: base.R * 0.84, H: base.H * 1.12 } : base;
-  const segs = lod ? 5 : v === 1 ? 8 : 9;
+  // snow country grows spruce and fir (narrower and taller under the snow)
+  const vv = snowy ? [0, 1, 2, 0][v] : v;
+  const base = PINES[vv];
+  const cfg = snowy ? { ...base, R: base.R * 0.86, H: base.H * 1.08 } : base;
+  const segs = lod ? 5 : vv === 0 ? 8 : 9;
   const tiers = lod ? Math.min(3, Math.max(2, cfg.tiers - 2)) : cfg.tiers;
   const pal = v % 2 ? P.pineB : P.pine;
-  trunk(b, [V(0, 0, 0), V(0, cfg.H * 0.55, 0)], [0.085, 0.05], lod ? 5 : 6, P.pineBark, { flare: lod ? 0 : 0.35, roots: 2, yTop: cfg.H });
+  // the lean and the per-tier raggedness are drawn first, so every LOD
+  // shares one layout
+  const la = b.r(0, TAU);
+  const lean = V(Math.cos(la) * cfg.lean, 0, Math.sin(la) * cfg.lean);
+  const rag = [];
+  for (let t = 0; t < cfg.tiers; t++) rag.push({ r: 1 + b.r(-cfg.ragged, cfg.ragged), rot: b.r(0, TAU), ox: b.r(-1, 1), oz: b.r(-1, 1), tx: b.r(-1, 1), tz: b.r(-1, 1) });
+  const axis = (y) => V(lean.x * y, y, lean.z * y);
+  const trunkTop = cfg.flat ? cfg.H * 0.8 : cfg.broken ? cfg.H * 0.92 : cfg.H * 0.55;
+  const bark = cfg.flat ? { base: C(0x4a3022), top: C(0xb2683a) } : P.pineBark;
+  const tp = lod ? [V(0, 0, 0), axis(trunkTop)] : bezier(V(0, 0, 0), axis(trunkTop * 0.5).add(V(lean.x * 0.6, 0, lean.z * 0.6)), axis(trunkTop), 3);
+  trunk(b, tp, tp.map((_, i) => (cfg.flat ? 0.08 : 0.085) - (0.035 * i) / (tp.length - 1)), lod ? 5 : 6, bark, { flare: lod ? 0 : 0.35, roots: 2, yTop: cfg.H });
   const span = cfg.H - cfg.base;
   for (let t = 0; t < tiers; t++) {
+    const tt = lod ? Math.round((t / Math.max(1, tiers - 1)) * (cfg.tiers - 1)) : t;
     const f = t / tiers;
-    const y0 = cfg.base + span * Math.pow(f, 0.92) * 0.82;
-    const r = cfg.R * (1 - f * 0.78) * (v === 3 && t % 2 ? 0.82 : 1);
-    const h = Math.max(r * 1.35, (span / tiers) * 1.7);
-    const rot = b.r(0, TAU);
+    const g = rag[tt];
+    const y0 = cfg.base + span * Math.pow(f, 0.92) * (cfg.flat ? 0.7 : 0.82);
+    const r = cfg.R * (1 - f * cfg.taper) * g.r * (lod ? 1.06 : 1);
+    const last = t === tiers - 1;
+    let h = Math.max(r * (cfg.flat ? 0.7 : 1.35), (span / tiers) * (cfg.flat ? 1.2 : 1.7));
+    if (last) h *= cfg.broken ? 0.55 : cfg.flat ? 0.8 : 1.25;
     const tierStart = b.count;
-    // close up, tiers are fans of drooping branches; the leader and LOD1 stay conical
-    if (!lod && t < tiers - 1) pineBranches(b, y0, h, r, v === 1 ? 7 : 8, pal, rot, { shade: 0.86 + 0.14 * f });
-    else pineTier(b, y0, t === tiers - 1 ? h * 1.25 : h, r, segs, pal, rot, { shade: 0.86 + 0.14 * f, lod });
-    if (snowy) snowCap(b, y0, t === tiers - 1 ? h * 1.25 : h, r, segs, rot, lod);
-    if (!lod && t < tiers - 1) {
-      // irregular silhouette: tiers lean and drift off the axis a little
-      const off = r * 0.12;
-      const m = M(b.r(-off, off), 0, b.r(-off, off), b.r(-0.12, 0.12), 0, b.r(-0.12, 0.12));
-      transformRange(b, tierStart, m, V(0, y0, 0));
-    }
+    // close up, tiers are fans of drooping branches; the leader and LOD1 stay
+    // conical (a snapped leader ends in a branch whorl, not a point)
+    if (!lod && (!last || cfg.broken)) pineBranches(b, y0, h, r, cfg.n, pal, g.rot, { shade: 0.86 + 0.14 * f });
+    else pineTier(b, y0, h, r, segs, pal, g.rot, { shade: 0.86 + 0.14 * f, lod });
+    if (snowy) snowCap(b, y0, h, r, segs, g.rot, lod);
+    // follow the leaning trunk; tiers drift and tilt off the axis a little
+    const off = r * (0.1 + cfg.ragged * 0.4);
+    const tilt = 0.1 + cfg.ragged * 0.35;
+    const a = axis(y0);
+    const m = M(a.x + g.ox * off, 0, a.z + g.oz * off, g.tx * tilt, 0, g.tz * tilt);
+    transformRange(b, tierStart, m, V(0, y0, 0));
   }
-  return { bendScale: 0.8, height: cfg.H };
+  if (cfg.broken && !lod) {
+    // the snapped leader: a short grey spike above the top whorl
+    const top = axis(cfg.H * 0.92);
+    limb(b, top.clone().add(V(0, -0.1, 0)), top.clone().add(V(lean.x * 2 + 0.04, 0.32, lean.z * 2)), 0.032, 0.012, 4, P.deadBark, cfg.H, { bend: 0.04, segs: 2 });
+  }
+  return { bendScale: cfg.flat ? 0.9 : 0.8, height: cfg.H };
 }
 
 // A conifer tier as a whorl of drooping branches: each branch arches out of
@@ -415,7 +447,7 @@ function snowCap(b, y0, h, r, segs, rot, lod) {
   const col = (p, n) => mul3(mix3(pal.dark, pal.light, clamp01(n.y * 0.85 + 0.2)), 0.95 + 0.08 * hashV(p));
   const piv = V(0, y0 + h * 0.5, 0);
   const slope = Math.atan2(h, r);
-  const clumps = lod ? 1 : 4 + Math.floor(b.rng() * 3);
+  const clumps = lod ? 0 : 4 + Math.floor(b.rng() * 3); // mid zoom: the caps carry the snow
   for (let k = 0; k < clumps; k++) {
     const a = rot + (k / clumps) * TAU + b.r(-0.5, 0.5);
     const rho = r * b.r(0.25, 0.75);
@@ -503,7 +535,7 @@ function buildBirch(b, v, lod) {
     .sort((a, c) => c[0] - a[0])
     .slice(0, 2)
     .map((e) => e[1]);
-  foliage(b, blobs.map((bl, k) => ({ p: bl.p, r: bl.r, sq: bl.sq, d: lod || !big.includes(k) ? 'd' : 1, lump: 0.26 })), pal, { lump: 0.26, freq: 2.0, mat: MAT.DLEAF });
+  foliage(b, blobs.map((bl, k) => ({ p: bl.p, r: bl.r, sq: bl.sq, d: lod ? 0 : !big.includes(k) ? 'd' : 1, lump: 0.32 })), pal, { lump: 0.32, freq: 2.0, mat: MAT.DLEAF, smooth: 0.3, irregular: 0.18 });
   return { bendScale: 1.25, height: H + 0.4 };
 }
 
@@ -545,7 +577,7 @@ function buildBirchClump(b, lod) {
       limb(b, j2, j2.clone().lerp(c2, 0.85), 0.018, 0.008, 4, twig, H, { bend: 0.04, segs: 2 });
     }
   }
-  foliage(b, blobs.map((bl, k) => ({ ...bl, d: lod || k !== 0 ? 'd' : 1, lump: 0.28 })), pal, { lump: 0.28, freq: 2.0, mat: MAT.DLEAF });
+  foliage(b, blobs.map((bl, k) => ({ ...bl, d: lod ? 0 : k !== 0 ? 'd' : 1, lump: 0.32 })), pal, { lump: 0.32, freq: 2.0, mat: MAT.DLEAF, smooth: 0.3, irregular: 0.18 });
   return { bendScale: 1.25, height: 2.1 };
 }
 
@@ -901,7 +933,7 @@ function buildBush(b, v, lod) {
   // shrub lobes: one smooth main lobe, rounder dodecahedra for the rest
   for (let k = 0; k < cfg.length; k += 2) blobs.push({ p: cfg[k], r: cfg[k + 1], sq: 0.86, d: lod || k > 0 ? 'd' : 1, fb: 0.3 });
   if (lod) blobs = blobs.slice(0, 2);
-  foliage(b, blobs, pal, { lump: 0.24, freq: 2.2, aoMin: 0.45, flutter: 0.6, mat: MAT.DLEAF });
+  foliage(b, blobs, pal, { lump: 0.28, freq: 2.2, aoMin: 0.45, flutter: 0.6, mat: MAT.DLEAF, smooth: 0.38, irregular: 0.14 });
   // flowering shrub: tiny blossoms
   if (v === 3 && !lod) blossoms(b, blobs, [C(0xfff4f0), C(0xffd0e0)], 14);
   // a few stems peeking out at the base
@@ -1419,7 +1451,7 @@ function kind(id, variants, build, o = {}) {
   KINDS[id] = { id, variants, build, far: 'lod', castShadow: true, jitter: 0.22, scale: [0.88, 1.12], tilt: 0, sink: 0.04, ...o };
 }
 kind(FLORA.OAK, 4, buildOak, { scale: [1.0, 1.25], far2: true });
-kind(FLORA.PINE, 4, (b, v, l) => buildPine(b, v, l, false), { far2: 'cone' });
+kind(FLORA.PINE, 4, (b, v, l) => buildPine(b, v, l, false), { far2: 'cone', scale: [0.82, 1.2] });
 kind(FLORA.SNOW_PINE, 4, (b, v, l) => buildPine(b, v, l, true), { far2: 'cone' });
 kind(FLORA.BIRCH, 4, buildBirch, { far2: true, scale: [0.95, 1.2] });
 kind(FLORA.PALM, 4, buildPalm, { jitter: 0.25, far2: true });
