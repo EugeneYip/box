@@ -436,7 +436,7 @@ export const politics = {
         ]) {
           if (now - att.founded < YEAR * 6 || now - def.founded < YEAR * 5) continue;
           if (this.warCount(att.id) >= 2) continue;
-          if (att.villages.length > 0.33 * this.villages.filter((v) => v.alive).length) continue; // a hegemon is sated
+          { const alive = this.villages.filter((v) => v.alive).length; if (alive >= 12 && att.villages.length >= 5 && att.villages.length > 0.33 * alive) continue; } // a hegemon is sated (only in a settled world)
           const ratio = att.strength / Math.max(1, def.strength);
           const crowd = this._crowd?.() || 0;
           const wl = this._kLaw(att.id, 'diploWarlike', 1);
