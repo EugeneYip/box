@@ -1835,6 +1835,7 @@ export class Units {
     const budgetOn = ++this._ticksThisFrame <= 64;
     if (this._tickN % 75 === 0) this.herds.tick(now);
     if (this._tickN % 150 === 7) this._rolesTick();
+    if (this._tickN % 900 === 450) this._championsTick();
     this._ridePaths = 0;
     this._landingsTick();
     // the danger grid is rebuilt inside the unit loop (one pass over the list):
