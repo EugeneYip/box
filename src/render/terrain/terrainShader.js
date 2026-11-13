@@ -304,16 +304,18 @@ Mat matRock(NS s) {
   c *= 0.84 + 0.28 * s.meso.b;
   // angular blocks (warped cells): joints show only in places (no paving net,
   // no rounded pebbles), each block a slightly different tone
-  vec4 bk = cz(ROT2 * (s.p.xz + (s.det.rg - 0.5) * 2.2) * (1.0 / 26.0) + 0.29);
+  vec4 bk = cz(ROT2 * (s.p.xz + (s.det.rg - 0.5) * 1.2) * (1.0 / 11.0) + 0.29);
   float crackM = smoothstep(0.38, 0.62, s.meso.r * 0.55 + s.det.b * 0.45);
-  float blockC = (1.0 - smoothstep(0.0, 0.05, bk.g + (s.micro.b - 0.5) * 0.03)) * crackM * fineK;
+  float cW = max(0.06, s.fw * 1.9);
+  float blockC = (1.0 - smoothstep(cW * 0.3, cW, bk.g + (s.micro.b - 0.5) * 0.03)) * crackM * fineK * (1.0 - smoothstep(0.12, 0.25, cW));
   c *= mix(1.0, 0.88 + 0.22 * bk.b, crackM);
   c *= 1.0 - 0.38 * blockC;
   // weathered stone: irregular (noise-warped) fissures, grain and mottling
   vec4 cr = cz((s.p.xz + (s.meso.gb - 0.5) * 6.0 + (s.det.rg - 0.5) * 1.5) * (1.0 / 29.0));
-  float seam = smoothstep(0.0, 0.06, cr.g + (s.det.b - 0.5) * 0.08);
+  float sW = max(0.07, s.fw * 1.7);
+  float seam = smoothstep(sW * 0.2, sW, cr.g + (s.det.b - 0.5) * 0.08);
   c *= 0.88 + 0.16 * cr.b;
-  c *= 0.84 + 0.16 * mix(1.0, seam, smoothstep(0.35, 0.65, s.meso.r));
+  c *= 0.84 + 0.16 * mix(1.0, seam, smoothstep(0.35, 0.65, s.meso.r) * smoothstep(0.02, 0.06, s.fw));
   c *= 0.80 + 0.30 * s.det.r;
   c *= 0.90 + 0.18 * s.micro.r;
   float stone = bk.b * crackM;
@@ -325,7 +327,7 @@ Mat matRock(NS s) {
   float turf = flatK * smoothstep(0.36, 0.60, s.meso.g * 0.55 + s.det.r * 0.30 + s.micro.r * 0.15) * (1.0 - smoothstep(0.1, 0.3, 0.4 - s.temp));
   vec3 turfC = mix(vec3(0.10, 0.20, 0.055), vec3(0.20, 0.22, 0.10), s.det.g) * (0.85 + 0.3 * s.micro.r);
   c = mix(c, turfC, turf * 0.92);
-  float hgt = 0.30 + 0.20 * s.det.r + 0.18 * s.meso.b + 0.14 * stone - 0.40 * blockC - 0.25 * (1.0 - seam) + 0.12 * (s.micro.g - 0.5) * fineK;
+  float hgt = 0.30 + 0.20 * s.det.r + 0.18 * s.meso.b + 0.14 * stone - 0.12 * blockC - 0.08 * (1.0 - seam) + 0.05 * (s.micro.g - 0.5) * fineK;
   return mk(c, 0.80, mix(clamp(hgt, 0.0, 1.0), 0.32 + 0.22 * s.det.r, turf), mix(0.10, 0.05, turf));
 }
 Mat matLava(NS s) {
@@ -409,12 +411,15 @@ Mat matFarm(NS s) {
 Mat matRoad(NS s) {
   vec3 c = vec3(0.330, 0.250, 0.160);
   c *= 0.86 + 0.24 * s.det.r;
-  // worn ruts & scattered cobbles
-  float cob = smoothstep(0.02, 0.10, s.cellS.g);
-  float hasCob = smoothstep(0.55, 0.70, s.meso.g);
-  vec3 stone = vec3(0.36, 0.33, 0.29) * (0.8 + 0.4 * s.cellS.b);
-  c = mix(c, mix(c * 0.6, stone, cob), hasCob * 0.75);
-  return mk(c, 0.95, 0.25 + 0.2 * cob * hasCob, 0.03 + 0.05 * cob * hasCob);
+  // worn ruts & scattered cobbles: joints never thinner than ~2 px (they
+  // stair-stepped into a grey pixel mosaic up close), softer joint contrast,
+  // and no cobbles on sloping ground (they stretch there) - just worn earth
+  float cw = max(0.10, s.fw * 3.5);
+  float cob = smoothstep(cw * 0.25, cw, s.cellS.g);
+  float hasCob = smoothstep(0.55, 0.70, s.meso.g) * smoothstep(0.86, 0.95, s.n.y) * (1.0 - smoothstep(0.3, 0.6, cw));
+  vec3 stone = vec3(0.36, 0.33, 0.29) * (0.85 + 0.3 * s.cellS.b);
+  c = mix(c, mix(c * 0.78, stone, cob), hasCob * 0.7);
+  return mk(c, 0.95, 0.25 + 0.1 * cob * hasCob, 0.03 + 0.02 * cob * hasCob);
 }
 Mat matIce(NS s) {
   vec3 c = vec3(0.28, 0.36, 0.44);
@@ -514,22 +519,23 @@ Mat matCliff(NS s, float volc, out vec3 facetN) {
   float jg = mix(jZ.g, jX.g, wxz);
   // joint width never below ~2 px (edge distance unit = 0.75 world units here)
   float jW = max(0.2, s.fw * 3.6);
-  float joint = (1.0 - smoothstep(0.0, jW, jg)) * near * mix(0.45, 1.0, smoothstep(0.3, 0.6, d.b)) * (1.0 - smoothstep(0.25, 0.5, jW));
+  float vf = smoothstep(0.25, 0.65, 1.0 - bw.y); // 0 on moderate slopes .. 1 on true faces
+  float joint = (1.0 - smoothstep(0.0, jW, jg)) * near * mix(0.45, 1.0, smoothstep(0.3, 0.6, d.b)) * (1.0 - smoothstep(0.25, 0.5, jW)) * vf;
   // erosion gullies (ridged noise along the fall line) and dark runoff streaks
   vec4 gX = nz(vec2(p.z * 0.06, p.y * 0.016) + 0.31);
   vec4 gZ = nz(vec2(p.x * 0.06, p.y * 0.016) + 0.73);
   vec4 gv = mix(gZ, gX, wxz);
-  float gully = smoothstep(0.55, 0.85, gv.b) * mix(0.7, 1.0, volc);
-  float streak = smoothstep(0.56, 0.80, gv.g) * (1.0 - hotK * 0.5);
+  float gully = smoothstep(0.50, 0.92, gv.b) * mix(0.7, 1.0, volc) * vf;
+  float streak = smoothstep(0.56, 0.80, gv.g) * (1.0 - hotK * 0.5) * vf;
   // fine grit: crisp micro relief so faces never look moulded
-  vec4 e = nz(uvD * 0.45 + 0.43);
-  c *= 0.90 + 0.20 * mix(0.5, e.g, fineK);
+  vec4 e = mix(nz(ROT1 * uvY * 0.25 + 0.43), nz(uvD * 0.25 + 0.43), vf);
+  c *= 0.92 + 0.16 * mix(0.5, e.g, fineK);
   c *= 1.0 - 0.18 * joint;
   c *= 1.0 - 0.30 * gully;
   c = mix(c, c * vec3(0.80, 0.82, 0.87), streak * 0.75);
 
   // volcanic rock: dark basalt with rusty oxidised patches and scoria pits
-  vec4 sc = cz(uvD * 0.11 + 0.47);
+  vec4 sc = cz(mix(uvY, uvD, step(0.5, vf)) * 0.11 + 0.47);
   {
     vec3 bas = mix(vec3(0.150, 0.138, 0.130), vec3(0.250, 0.175, 0.135), smoothstep(0.45, 0.8, s.meso.g * 0.6 + d.g * 0.4));
     float pit = smoothstep(0.32, 0.12, sc.r) * step(0.35, sc.b) * fineK;
@@ -539,17 +545,18 @@ Mat matCliff(NS s, float volc, out vec3 facetN) {
 
   // facets: geometric (per-triangle) normal plus nearest-sampled facet cells on
   // both vertical planes, blended by the triplanar weights (no hard plane switch)
-  vec4 fX = texelFetch(uCells, ivec2(floor(fract(vec2(p.z * 0.055, p.y * 0.085 + p.x * 0.02)) * 256.0)), 0);
-  vec4 fZ = texelFetch(uCells, ivec2(floor(fract(vec2(p.x * 0.055, p.y * 0.085 + p.z * 0.02)) * 256.0)), 0);
+  vec4 fX = cz(vec2(p.z * 0.055, p.y * 0.085 + p.x * 0.02));
+  vec4 fZ = cz(vec2(p.x * 0.055, p.y * 0.085 + p.z * 0.02));
   vec2 ft = mix(fZ.ba, fX.ba, wxz);
+  float facetK = near * vf * smoothstep(0.03, 0.08, s.fw);
   vec3 tA = normalize(cross(n, vec3(0.0, 1.0, 0.0)) + vec3(1e-4, 0.0, 0.0));
   vec3 tB = normalize(cross(tA, n));
   vec3 base = normalize(mix(n, s.fn, 0.25 * near));
-  facetN = normalize(base + (tA * (ft.x - 0.5) * 0.20 + tB * (ft.y - 0.5) * 0.15) * near);
-  c *= mix(1.0, 0.95 + 0.10 * ft.x, near);
+  facetN = normalize(base + (tA * (ft.x - 0.5) * 0.20 + tB * (ft.y - 0.5) * 0.15) * facetK);
+  c *= mix(1.0, 0.96 + 0.08 * ft.x, facetK);
   // relief for the derivative bump: grooved joints and gullies, ledge steps, grit
-  float hgt = 0.55 + 0.20 * (lr - 0.5) * bandK + 0.16 * (d.r - 0.5) + 0.14 * (e.g - 0.5) * fineK
-            - 0.18 * joint - 0.30 * gully + 0.04 * led * bandK;
+  float hgt = 0.55 + 0.20 * (lr - 0.5) * bandK + 0.16 * (d.r - 0.5) + 0.06 * (e.g - 0.5) * fineK
+            - 0.10 * joint - 0.10 * gully + 0.04 * led * bandK;
   return mk(c, 0.84 + 0.08 * volc, hgt, 0.13 * near + 0.03 * volc);
 }
 
@@ -718,6 +725,7 @@ void terrainSurface() {
   vec4 isSnow = vec4(equal(vec4(t0, t1, t2, t3), vec4(7.0))) * live;
   vec4 isIce = vec4(equal(vec4(t0, t1, t2, t3), vec4(15.0))) * live;
   float lavaRaw = dot(isLava, w);
+  float rockB0 = dot(vec4(equal(vec4(t0, t1, t2, t3), vec4(8.0))) * live, b);
   float snowB = dot(isSnow, b);
   float iceB = dot(isIce, b);
 
@@ -745,15 +753,26 @@ void terrainSurface() {
 
   // ---- slope driven cliffs
   vec3 nrm = s.n;
-  float slopeN = s.n.y + (s.meso.b - 0.5) * 0.10 + (s.det.r - 0.5) * 0.06;
-  float cliff = smoothstep(0.745, 0.665, slopeN) * (1.0 - lavaRaw) * (1.0 - iceB);
+  float slopeN = s.n.y + (s.meso.b - 0.5) * 0.14 + (s.det.r - 0.5) * 0.10 + (s.micro.g - 0.5) * 0.03;
+  float cliff = smoothstep(0.78, 0.65, slopeN) * (1.0 - lavaRaw) * (1.0 - iceB);
   // rock ground takes the triplanar rock from moderate slopes up: projected
   // top-down, its detail stretched into a grey smear on any steeper face
   float rockT = dot(vec4(equal(vec4(t0, t1, t2, t3), vec4(8.0))) * live, b);
-  cliff = max(cliff, rockT * smoothstep(0.96, 0.82, slopeN) * (1.0 - lavaRaw) * (1.0 - iceB));
+  cliff = max(cliff, rockT * smoothstep(0.98, 0.78, slopeN + (s.meso.g - 0.5) * 0.08) * (1.0 - lavaRaw) * (1.0 - iceB));
   // a darker, lusher lip of turf along the top of every rock face
   float lip = smoothstep(0.83, 0.75, slopeN) * (1.0 - cliff) * (1.0 - snowB) * (1.0 - dot(vec4(equal(vec4(t0, t1, t2, t3), vec4(0.0))) * live, b));
   albedo = mix(albedo, albedo * vec3(0.72, 0.84, 0.70), lip * 0.8);
+  // rock tiles bleed into their surroundings as scree and bare soil (smooth
+  // bilinear weight, noise-broken), and the ground darkens at the rock's foot
+  float rockW = dot(vec4(equal(vec4(t0, t1, t2, t3), vec4(8.0))) * vec4(1.0), w);
+  float screeN = s.det.g * 0.6 + s.micro.r * 0.4;
+  float scree = smoothstep(0.05, 0.35, rockW + (screeN - 0.5) * 0.25) * (1.0 - smoothstep(0.55, 0.9, rockB0)) * (1.0 - snowB);
+  vec3 screeC = mix(vec3(0.27, 0.24, 0.20), vec3(0.36, 0.33, 0.29), s.micro.g) * (0.85 + 0.3 * s.det.b);
+  albedo = mix(albedo, albedo * 0.78, scree * 0.6);
+  albedo = mix(albedo, screeC, scree * smoothstep(0.45, 0.7, screeN) * 0.55);
+  // the cliff ramp itself: a band of broken scree between turf and face
+  float cBand = cliff * (1.0 - cliff) * 4.0 * (1.0 - snowB);
+  albedo = mix(albedo, screeC * 0.9, cBand * smoothstep(0.35, 0.65, screeN) * 0.45);
   vec3 facetN = nrm;
   if (cliff > 0.001) {
     // ash / lava around: basalt cone rock instead of layered sediment
@@ -792,16 +811,17 @@ void terrainSurface() {
     float hs = dot(nrm, normalize(vec3(-0.5, 0.8, -0.35)));
     albedo *= mix(1.0, (0.76 + 0.44 * hs) * mix(0.68, 1.0, smoothstep(0.55, 0.98, nrm.y)), farR * 0.85);
     albedo = mix(albedo, albedo * vec3(0.96, 1.0, 1.08) * 1.14, smoothstep(6.0, 16.0, s.p.y) * 0.5 * farR);
+    albedo *= mix(1.0, mix(0.90, 1.08, smoothstep(0.6, 5.5, s.p.y)), farR * (1.0 - snowB));
     // biome distinctiveness at map scale: deep blue-green forests, brighter meadows
     albedo = mix(albedo, albedo * vec3(0.80, 0.84, 0.90), snowB * farR * (0.6 + 0.4 * smoothstep(0.4, 0.7, s.macro.g)));
     float forestB = dot(vec4(equal(vec4(t0, t1, t2, t3), vec4(2.0))) * live, b) + 0.6 * dot(vec4(equal(vec4(t0, t1, t2, t3), vec4(3.0))) * live, b);
     float grassB = dot(vec4(equal(vec4(t0, t1, t2, t3), vec4(1.0))) * live, b);
-    albedo = mix(albedo, albedo * vec3(0.72, 0.85, 0.92), forestB * farR * 0.6 * (1.0 - snowB));
+    albedo = mix(albedo, albedo * vec3(0.58, 0.74, 0.76), forestB * farR * 0.75 * (1.0 - snowB));
     // map-scale variety: dry uplands and drier climates toward ochre-khaki,
     // wet lowlands deep green (and a neutral, not olive, desaturation)
     float gv = s.macro.b * 0.6 + s.macro.r * 0.4;
-    float dryv = clamp(smoothstep(0.55, 0.25, s.moist) * 0.7 + smoothstep(0.5, 0.75, gv) * 0.5 + smoothstep(2.5, 6.0, s.p.y) * 0.3, 0.0, 1.0);
-    vec3 gTint = mix(vec3(0.78, 0.90, 0.80), vec3(1.24, 1.06, 0.68), dryv);
+    float dryv = clamp(smoothstep(0.62, 0.30, s.moist) * 0.8 + smoothstep(0.42, 0.72, gv) * 0.45 + smoothstep(1.8, 5.0, s.p.y) * 0.6, 0.0, 1.0);
+    vec3 gTint = mix(vec3(0.72, 0.88, 0.78), vec3(1.32, 1.08, 0.60), dryv);
     vec3 gAlb = mix(albedo * gTint, vec3(lum(albedo)) * vec3(1.02, 1.0, 0.9), 0.15);
     albedo = mix(albedo, gAlb, grassB * farR * (1.0 - snowB));
   }
