@@ -303,13 +303,13 @@ export const politics = {
     if (now - (this._unionT || 0) < YEAR * 2) return;
     this._unionT = now;
     for (const r of this.relations.values()) {
-      if (!r.ally || r.war || this._relLocked?.(r) || r.opinion < 45) continue;
+      if (!r.ally || r.war || this._relLocked?.(r) || r.opinion < 30) continue;
       const A = this.kingdoms[r.a],
         B = this.kingdoms[r.b];
       if (!A?.alive || !B?.alive || baseCulture(A.culture) !== baseCulture(B.culture)) continue;
       const [small, big] = A.villages.length <= B.villages.length ? [A, B] : [B, A];
       if (small.villages.length > 2 || big.villages.length < small.villages.length + 1 || small.player?.name) continue;
-      if (!this.rng.chance(0.25)) continue;
+      if (!this.rng.chance(0.4)) continue;
       const name = this._kn(small);
       for (const vid of [...small.villages]) {
         const v = this.villages[vid];
@@ -950,7 +950,7 @@ export const politics = {
     L += (v.loyaltyBoost || 0);
     v.loyaltyBoost = Math.max(0, (v.loyaltyBoost || 0) - 1);
     v.loyalty = clamp(v.loyalty + (L - v.loyalty) * 0.2, 0, 100);
-    if (v.loyalty < 36 && v.pop >= 8) v.unrest = (v.unrest || 0) + 1;
+    if (v.loyalty < 36 && v.pop >= (this.world.size > 100000 ? 14 : 8)) v.unrest = (v.unrest || 0) + 1;
     else v.unrest = Math.max(0, (v.unrest || 0) - 1);
     if (v.unrest >= 3 && this._kLaw(k.id, 'civRebellions') && this.rng.chance(alive < 3 ? 0.3 : 0.2)) this.rebel(v);
   },
