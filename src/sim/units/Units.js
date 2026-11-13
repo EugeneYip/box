@@ -352,7 +352,7 @@ export class Units {
 
   // Spawn a herd / pack / single creature in suitable habitat. With x/z null a
   // random suitable spot is chosen. Returns the spawned units.
-  spawnGroup(speciesId, x = null, z = null, rng = this.game.rng, size = null) {
+  spawnGroup(speciesId, x = null, z = null, rng = this.game.rng, size = null, young = false) {
     const def = SPECIES[speciesId];
     const w = this.game.world;
     if (!def) return [];
@@ -388,7 +388,9 @@ export class Units {
         pz = cz;
       }
       const adult = j < 2 || rng.chance(0.7);
-      const age = adult ? rng.float(def.maturity * 1.1, Math.max(def.maturity * 1.2, def.lifespan * 0.6)) : rng.float(0.1, def.maturity * 0.8);
+      // migrant herds arrive as young adults with their years ahead of them
+      const top = young ? Math.max(def.maturity * 1.2, def.lifespan * 0.32) : Math.max(def.maturity * 1.2, def.lifespan * 0.6);
+      const age = adult ? rng.float(def.maturity * 1.05, top) : rng.float(0.1, def.maturity * 0.8);
       const u = this.spawn(speciesId, px, pz, {
         age,
         sex: n === 1 ? (rng.chance(0.5) ? 'f' : 'm') : j === 0 ? 'f' : j === 1 ? 'm' : undefined,
@@ -1692,6 +1694,13 @@ export class Units {
     return false;
   }
 
+  // People busy away from their brain (riding, healing, walking home) still eat
+  // while their town has food, as the village brain would feed them.
+  _fedFromStore(u) {
+    if (u.hunger <= 0.3) return;
+    const v = this.game.civ?.villages?.[u.village];
+    if (v && v.alive && !v.starving) u.hunger = 0.12 + Math.random() * 0.1;
+  }
   _shoreTile(x, z, r) {
     const w = this.game.world;
     return this.findNearestTile(x, z, r, (tx, ty, i) => w.height[i] >= SEA_LEVEL && TILE_INFO[w.type[i]].walkable && !FLORA_INFO[w.flora[i]].blocksMovement && w.building[i] < 0);
@@ -1791,8 +1800,11 @@ export class Units {
     const elapsed = u._lastThink < 0 ? THINK_INTERVAL : Math.min(6, Math.max(0.05, now - u._lastThink));
     u._lastThink = now;
     // tiredness, sleep and famine foraging, then tech roles, act before the village brain
-    if (u.species === 'human' && u._ext && this._needsThink(u, now)) return;
-    if (u.species === 'human' && this._roleThink(u, now)) return;
+    // (whoever they take over still eats from the town's store, as the brain would feed them)
+    if (u.species === 'human' && ((u._ext && this._needsThink(u, now)) || this._roleThink(u, now))) {
+      this._fedFromStore(u);
+      return;
+    }
     // a patient keeps still while a healer comes to them
     if (u._nurseWait > now && !u.combat && u.state !== 'flee') {
       u.target = null;
@@ -2154,10 +2166,12 @@ export class Units {
       if (n >= mvp && !thin) continue;
       // rare migrants arrive from the map edge (spawnRate law scales how often)
       const rate = typeof this.game.laws?.spawnRate === 'number' ? Math.max(0.1, this.game.laws.spawnRate) : 1;
-      if (now - (this._rescueAt.get(def.id) ?? -1e9) < (n === 0 ? 30 : n < mvp ? 75 : 50) / rate) continue;
+      // on a big world herds arrive more often (the same flow per stretch of land)
+      const wide = Math.sqrt(Math.max(1, this.areaScale));
+      if (now - (this._rescueAt.get(def.id) ?? -1e9) < (n === 0 ? 30 : n < mvp ? 75 : 50 / wide) / rate) continue;
       const spot = this._edgeSpot(def);
       if (!spot) continue;
-      const grp = this.spawnGroup(def.id, spot.x, spot.z, this.game.rng, def.pack ? 3 : def.solitary ? 2 : null);
+      const grp = this.spawnGroup(def.id, spot.x, spot.z, this.game.rng, def.pack ? 3 : def.solitary ? 2 : null, true);
       if (grp.length) {
         this._rescueAt.set(def.id, now);
         if (grp.length >= 2 && !grp.some((g) => g.sex === 'm')) grp[1].sex = 'm';
