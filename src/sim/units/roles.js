@@ -537,6 +537,7 @@ export function installRoles(Units) {
     if (u.combat) this.disengage(u);
     this.stop(u);
     u.data.aboard = id;
+    u._away = true;
     u._aboardSince = this.game.time.total;
     u.sleeping = false;
     u.state = 'idle';
