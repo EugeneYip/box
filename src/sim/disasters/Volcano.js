@@ -82,7 +82,10 @@ export class Volcano {
           if (p > 0.3) {
             const fl = w.flora[T.i];
             if (fl && T.d < 0.85) {
-              if (FLORA_INFO[fl].isTree && T.d > 0.55) this.ds.ignite(T.tx, T.ty, 0.8);
+              // the rising cone sheds its woods (a few trunks smoulder):
+              // burning trees all over the flanks read as a glowing crack
+              // net; the glow belongs to the crater and the lava rivers
+              if (FLORA_INFO[fl].isTree && T.d > 0.6 && hash2(T.tx, T.ty, this.seed + 9) < 0.1) this.ds.ignite(T.tx, T.ty, 0.6);
               else w.flora[T.i] = FLORA.NONE;
             }
             const hh = hash2(T.tx, T.ty, this.seed + 5);
@@ -170,9 +173,9 @@ export class Volcano {
           if (!w.inBounds(tx, ty)) return;
           if (w.isWater(tx, ty)) return;
           fx.emit('lavaPop', { x: lx, y: ly, z: lz }, { scale: 1.2 + sz });
-          fx.decal({ frame: DF.LAVASPLAT, x: lx, z: lz, size: 1.2 + sz * 2, life: 20, additive: true, color: 0xff8a30, intensity: 1.6, cool: 1.2, fadeIn: 0.005, fadeOut: 0.5 });
+          fx.decal({ frame: DF.LAVASPLAT, x: lx, z: lz, size: 1.2 + sz * 2, life: 9, additive: true, color: 0xff8a30, intensity: 1.2, cool: 1.2, fadeIn: 0.005, fadeOut: 0.5 });
           fx.decal({ frame: DF.SCORCH1, x: lx, z: lz, size: 1.6 + sz * 2, life: 80, color: 0x14100d, alpha: 0.75, fadeIn: 0.002, fadeOut: 0.8 });
-          if (sz > 0.5) this.ds.lava.pour(tx, ty, 0.08, 0.9);
+          if (sz > 0.5) this.ds.lava.pour(tx, ty, 0.03, 0.9); // a splash, never a molten tile
           if (Math.random() < 0.35) this.ds.ignite(tx, ty, 1);
           hurt(g, lx, lz, 1.2, 40, 30, 'volcano');
         },
@@ -212,6 +215,19 @@ export class Volcano {
     while (this._acc.jet >= 1) {
       this._acc.jet -= 1;
       smokePuff(fx, x + rand(-0.5, 0.5), top + rand(0.5, 1.5), z + rand(-0.5, 0.5), { size: rand(1.8, 2.5), grow: 2.4, ramp: RAMP.SMOKE_BLACK, glow: 0.6, rise: rand(6, 8), drift: 1.2, drag: 0.7, life: rand(3.5, 4.5) });
+    }
+    // the dark basalt flanks: sparse embers and thin smoke wisps rising from
+    // hot cracks scattered over the cone (no glow carpet)
+    this._acc.flank = (this._acc.flank || 0) + vt * 7 * k * fx.budget;
+    while (this._acc.flank >= 1) {
+      this._acc.flank -= 1;
+      const a = Math.random() * Math.PI * 2,
+        rr = this.R * rand(0.25, 0.85);
+      const px = x + Math.cos(a) * rr,
+        pz = z + Math.sin(a) * rr;
+      const py = w.heightAt(px, pz);
+      if (Math.random() < 0.6) fx.emit('ember', { x: px, y: py + 0.2, z: pz }, { count: 1, scale: 0.8 });
+      else smokePuff(fx, px, py + 0.3, pz, { size: rand(0.6, 1.0), grow: 2.4, ramp: RAMP.SMOKE_DARK, rise: 0.9, drift: 1.6, life: rand(3, 5), alpha: 0.6 });
     }
     // ash fall downwind
     this._acc.ash += vt * 6 * k;

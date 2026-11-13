@@ -59,6 +59,8 @@ export class FireSim {
     this._burned?.clear();
     this.natural = 0;
     this._natNote = null;
+    this._natP = 0;
+    this._natNext = null;
     this._recent = 0;
     this.version++;
   }
@@ -174,9 +176,15 @@ export class FireSim {
     const cap = 600 * area;
     if (this.count >= cap || (this._recent || 0) > 2800 * area) return;
     const season = g.time.seasonName;
-    const sf = season === 'Summer' ? 1.35 : season === 'Winter' ? 0.35 : 1;
+    const sf = season === 'Summer' ? 1.3 : season === 'Winter' ? 0.6 : 1;
     const rate = (1 / 600) * area * Math.pow(fireFactor(g), 2.6) * sf * (1 - this.count / cap);
-    if (this.rng.next() >= rate * step) return;
+    // a jittered renewal process instead of a coin flip per tick: the
+    // hazard is integrated (so a change of age applies at once) and the next
+    // fire comes after 0.6-1.4 mean intervals, so a fire age sets the land
+    // alight every few dozen seconds, every window, without long droughts
+    this._natP = (this._natP || 0) + rate * step;
+    if (this._natNext == null) this._natNext = 0.3 + this.rng.next() * 0.7;
+    if (this._natP < this._natNext) return;
     // pick the most combustible of many sampled spots (woods and dry scrub
     // first), so sparse forests still catch
     let best = -1,
@@ -197,6 +205,8 @@ export class FireSim {
     if (best >= 0) {
       const tx = best % w.w,
         ty = (best / w.w) | 0;
+      this._natP = 0;
+      this._natNext = 0.6 + this.rng.next() * 0.8;
       this.natural = (this.natural || 0) + 1;
       try {
         // a dry-lightning strike (bolt, scorch) that sets the spot alight
