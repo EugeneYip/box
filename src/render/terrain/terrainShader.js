@@ -327,7 +327,9 @@ Mat matRock(NS s) {
   float turf = flatK * smoothstep(0.36, 0.60, s.meso.g * 0.55 + s.det.r * 0.30 + s.micro.r * 0.15) * (1.0 - smoothstep(0.1, 0.3, 0.4 - s.temp));
   vec3 turfC = mix(vec3(0.10, 0.20, 0.055), vec3(0.20, 0.22, 0.10), s.det.g) * (0.85 + 0.3 * s.micro.r);
   c = mix(c, turfC, turf * 0.92);
-  float hgt = 0.30 + 0.20 * s.det.r + 0.18 * s.meso.b + 0.14 * stone - 0.12 * blockC - 0.08 * (1.0 - seam) + 0.05 * (s.micro.g - 0.5) * fineK;
+  // bump: broad block tones only (thin joints and grain in the per-quad
+  // derivative bump drew blocky pixel chains)
+  float hgt = 0.30 + 0.20 * s.det.r + 0.18 * s.meso.b + 0.14 * stone;
   return mk(c, 0.80, mix(clamp(hgt, 0.0, 1.0), 0.32 + 0.22 * s.det.r, turf), mix(0.10, 0.05, turf));
 }
 Mat matLava(NS s) {
@@ -451,10 +453,46 @@ Mat evalMat(float t, NS s) {
   return mk(c * (0.85 + 0.3 * s.det.r), 0.9, 0.4, 0.04);
 }
 
+// World distance to the 0.5 isoline of a smooth noise field, from its value and
+// forward differences one step (st world units) along each plane axis. Per pixel
+// and derivative free, so line widths never step on the 2x2 pixel-quad grid.
+float isoDist(float v, float vh, float vv, float st) {
+  return abs(v - 0.5) / max(length(vec2(vh - v, vv - v)) / st, 0.015);
+}
+// Antialiased line of world half-width hw at distance d for a pixel of world size
+// px: never drawn thinner than a pixel; a thinner line keeps its ink by fading,
+// and is dropped once it would be a tenth of a pixel (no shimmer, no stipple).
+float aaLine(float d, float hw, float px) {
+  float w = max(hw, 0.5 * px);
+  float ink = clamp(hw / (0.5 * px), 0.0, 1.0);
+  return (1.0 - smoothstep(w - 0.5 * px, w + 0.5 * px, d)) * ink * smoothstep(0.2, 0.5, ink);
+}
+// Relief lines on one vertical plane (q = horizontal, height): broad erosion
+// gullies (R isoline), the runoff stain around them, and fine fissures (G
+// isoline) broken into segments. x = gully, y = stain, z = fissure.
+vec3 faceLines(vec2 q, vec2 off, float px) {
+  const vec2 LS = vec2(0.030, 0.0095);
+  const float ST = 0.22;
+  vec2 u = q * LS + off;
+  vec4 a = nz(u);
+  vec4 ah = nz(u + vec2(ST * LS.x, 0.0));
+  vec4 av = nz(u + vec2(0.0, ST * LS.y));
+  float dg = isoDist(a.r, ah.r, av.r, ST);
+  float dc = isoDist(a.g, ah.g, av.g, ST);
+  float gully = 1.0 - smoothstep(0.0, 0.62, dg);
+  float stain = 1.0 - smoothstep(0.2, 2.4, dg);
+  float seg = smoothstep(0.42, 0.64, a.a * 0.6 + a.b * 0.4);
+  float crack = aaLine(dc, 0.026 * (0.6 + 0.8 * a.a), px) * seg;
+  return vec3(gully, stain, crack);
+}
+
 // Cliff rock: true triplanar blending (weights from the normal). Strata with
 // irregular spacing that pinch out along their length (never continuous rings),
-// vertical joints, erosion gullies and runoff streaks, per-bed mineral tints,
-// gritty micro relief and chiselled facets. volc: basalt / scoria on volcanoes.
+// fissures, erosion gullies and runoff stains, per-bed mineral tints, gritty
+// micro tone and chiselled facets. volc: basalt / scoria on volcanoes.
+// Every line is drawn analytically antialiased, and the bump relief carries only
+// features several pixels wide (the derivative bump is evaluated per 2x2 pixel
+// quad, so anything finer printed as blocky dark pixel chains on shaded faces).
 Mat matCliff(NS s, float volc, out vec3 facetN) {
   vec3 p = s.p;
   vec3 n = s.n;
@@ -481,10 +519,15 @@ Mat matCliff(NS s, float volc, out vec3 facetN) {
   float yy = p.y + (s.macro.r - 0.5) * 2.2 + (t.r - 0.5) * 0.45;
   float sy = yy * 0.75 + 0.30 * sin(yy * 0.29 + 1.3) + 0.17 * sin(yy * 0.71 + 4.1);
   float layer = floor(sy);
+  float fsy = fract(sy);
   float aa = clamp(s.fwy * 1.4, 0.02, 0.5);
-  float lt = smoothstep(1.0 - aa, 1.0, fract(sy));
+  float lt = smoothstep(1.0 - aa, 1.0, fsy);
   float lr = mix(hash12(vec2(layer, 3.7)), hash12(vec2(layer + 1.0, 3.7)), lt);
   float lh = mix(hash12(vec2(layer, 8.3)), hash12(vec2(layer + 1.0, 8.3)), lt);
+  // the same bed step for the bump, spread over >= ~8 px
+  float aaH = clamp(s.fwy * 6.0, 0.12, 0.6);
+  float ltH = smoothstep(1.0 - aaH, 1.0, fsy);
+  float lrH = mix(hash12(vec2(layer, 3.7)), hash12(vec2(layer + 1.0, 3.7)), ltH);
   float bandFade = 1.0 - smoothstep(0.25, 0.7, s.fwy * 0.95);
   // beds pinch out: their contrast comes and goes along each layer
   float lens = smoothstep(0.30, 0.70, t.g * 0.75 + lh * 0.5 - 0.1);
@@ -508,45 +551,48 @@ Mat matCliff(NS s, float volc, out vec3 facetN) {
   c *= mix(vec3(1.0), vec3(1.08, 1.00, 0.90), smoothstep(0.5, 0.8, s.meso.g) * 0.8);
   c *= mix(vec3(1.0), vec3(0.91, 0.96, 1.04), smoothstep(0.55, 0.85, s.macro.b) * (1.0 - hotK));
   c *= 0.78 + 0.32 * d.r;
-  // ledges: dark lip just above each layer boundary, lit top surface
-  float led = smoothstep(0.0, max(0.34, aa * 3.0), fract(sy));
+  // ledges: dark lip just above each layer boundary, lit top surface; the lip
+  // fades in over the antialiasing band below the boundary (it used to switch
+  // on in one pixel, a stair-stepped light/dark seam along every bed)
+  float led = smoothstep(0.0, max(0.34, aa * 3.0), fsy) * (1.0 - smoothstep(1.0 - aa, 1.0, fsy));
+  float ledH = smoothstep(0.0, max(0.34, aaH * 2.0), fsy) * (1.0 - ltH);
   c *= mix(1.0, mix(0.82, 1.05, led), bandK);
 
-  // vertical joints: cells stretched along the fall line on each vertical plane
-  vec2 jw = (d.gb - 0.5) * 0.9;
-  vec4 jX = cz(vec2((p.z + jw.x) * 0.042, (p.y + jw.y) * 0.0085) + 0.17);
-  vec4 jZ = cz(vec2((p.x + jw.x) * 0.042, (p.y + jw.y) * 0.0085) + 0.61);
-  float jg = mix(jZ.g, jX.g, wxz);
-  // joint width never below ~2 px (edge distance unit = 0.75 world units here)
-  float jW = max(0.2, s.fw * 3.6);
   float vf = smoothstep(0.25, 0.65, 1.0 - bw.y); // 0 on moderate slopes .. 1 on true faces
-  float joint = (1.0 - smoothstep(0.0, jW, jg)) * near * mix(0.45, 1.0, smoothstep(0.3, 0.6, d.b)) * (1.0 - smoothstep(0.25, 0.5, jW)) * vf;
-  // erosion gullies (ridged noise along the fall line) and dark runoff streaks
-  vec4 gX = nz(vec2(p.z * 0.06, p.y * 0.016) + 0.31);
-  vec4 gZ = nz(vec2(p.x * 0.06, p.y * 0.016) + 0.73);
-  vec4 gv = mix(gZ, gX, wxz);
-  float gully = smoothstep(0.50, 0.92, gv.b) * mix(0.7, 1.0, volc) * vf;
-  float streak = smoothstep(0.56, 0.80, gv.g) * (1.0 - hotK * 0.5) * vf;
-  // fine grit: crisp micro relief so faces never look moulded
+  // gullies, runoff stains and fissures on the vertical planes (dominant plane
+  // only in power saver)
+  vec3 fl;
+  if (uPower > 0.5) {
+    fl = bw.x > bw.z ? faceLines(uvX, vec2(0.17, 0.31), s.fw) : faceLines(uvZ, vec2(0.61, 0.73), s.fw);
+  } else {
+    fl = mix(faceLines(uvZ, vec2(0.61, 0.73), s.fw), faceLines(uvX, vec2(0.17, 0.31), s.fw), wxz);
+  }
+  float gully = fl.x * smoothstep(0.30, 0.60, t.g * 0.7 + s.meso.r * 0.3 + 0.1) * mix(0.75, 1.0, volc) * vf * near;
+  float stain = fl.y * smoothstep(0.45, 0.70, t.b * 0.6 + s.meso.g * 0.4) * (1.0 - hotK * 0.5) * vf * near;
+  float joint = fl.z * vf * near * mix(0.55, 1.0, smoothstep(0.3, 0.6, d.b));
+  // fine grit: mip-filtered tone only (in the bump it printed as pixel quads)
   vec4 e = mix(nz(ROT1 * uvY * 0.25 + 0.43), nz(uvD * 0.25 + 0.43), vf);
-  c *= 0.92 + 0.16 * mix(0.5, e.g, fineK);
-  c *= 1.0 - 0.18 * joint;
-  c *= 1.0 - 0.30 * gully;
-  c = mix(c, c * vec3(0.80, 0.82, 0.87), streak * 0.75);
+  c *= 0.93 + 0.13 * mix(0.5, e.g, fineK);
+  c *= 1.0 - 0.36 * joint;
+  c *= 1.0 - 0.22 * gully;
+  c = mix(c, c * vec3(0.80, 0.81, 0.84), stain * 0.55);
 
   // volcanic rock: dark basalt with rusty oxidised patches and scoria pits
   vec4 sc = cz(mix(uvY, uvD, step(0.5, vf)) * 0.11 + 0.47);
   {
     vec3 bas = mix(vec3(0.150, 0.138, 0.130), vec3(0.250, 0.175, 0.135), smoothstep(0.45, 0.8, s.meso.g * 0.6 + d.g * 0.4));
-    float pit = smoothstep(0.32, 0.12, sc.r) * step(0.35, sc.b) * fineK;
+    float pw = max(0.05, s.fw * 2.4);
+    float pit = (1.0 - smoothstep(0.22 - pw, 0.22 + pw, sc.r)) * smoothstep(0.30, 0.40, sc.b) * fineK;
     bas *= (0.80 + 0.40 * d.r) * (1.0 - 0.35 * pit) * (1.0 - 0.35 * joint);
     c = mix(c, bas, volc);
   }
 
-  // facets: geometric (per-triangle) normal plus nearest-sampled facet cells on
-  // both vertical planes, blended by the triplanar weights (no hard plane switch)
-  vec4 fX = cz(vec2(p.z * 0.055, p.y * 0.085 + p.x * 0.02));
-  vec4 fZ = cz(vec2(p.x * 0.055, p.y * 0.085 + p.z * 0.02));
+  // facets: geometric (per-triangle) normal plus facet cells on both vertical
+  // planes, blended by the triplanar weights (no hard plane switch). The cell
+  // tones are read a mip and a half blurred, so facet edges blend over ~3 px
+  // instead of stepping on single texels.
+  vec4 fX = texture2D(uCells, vec2(p.z * 0.055, p.y * 0.085 + p.x * 0.02), 1.5);
+  vec4 fZ = texture2D(uCells, vec2(p.x * 0.055, p.y * 0.085 + p.z * 0.02), 1.5);
   vec2 ft = mix(fZ.ba, fX.ba, wxz);
   float facetK = near * vf * smoothstep(0.03, 0.08, s.fw);
   vec3 tA = normalize(cross(n, vec3(0.0, 1.0, 0.0)) + vec3(1e-4, 0.0, 0.0));
@@ -554,9 +600,10 @@ Mat matCliff(NS s, float volc, out vec3 facetN) {
   vec3 base = normalize(mix(n, s.fn, 0.25 * near));
   facetN = normalize(base + (tA * (ft.x - 0.5) * 0.20 + tB * (ft.y - 0.5) * 0.15) * facetK);
   c *= mix(1.0, 0.96 + 0.08 * ft.x, facetK);
-  // relief for the derivative bump: grooved joints and gullies, ledge steps, grit
-  float hgt = 0.55 + 0.20 * (lr - 0.5) * bandK + 0.16 * (d.r - 0.5) + 0.06 * (e.g - 0.5) * fineK
-            - 0.10 * joint - 0.10 * gully + 0.04 * led * bandK;
+  // relief for the derivative bump: only broad features (bed steps spread over
+  // ~8 px, soft gully troughs, low-frequency swell); fissures and grit stay in
+  // the albedo
+  float hgt = 0.55 + 0.20 * (lrH - 0.5) * bandK + 0.12 * (t.r - 0.5) - 0.14 * gully + 0.03 * ledH * bandK;
   return mk(c, 0.84 + 0.08 * volc, hgt, 0.13 * near + 0.03 * volc);
 }
 
