@@ -327,7 +327,7 @@ function predator(u, U, g, now) {
       else U.wander(u, 9);
       if (rng.chance(0.1)) pack.home = { x: u.x, z: u.z };
     }
-    const day = g.env?.daylight ?? 1;
+    const day = U.daylight ? U.daylight() : g.env?.daylight ?? 1;
     if (day < 0.2 && rng.chance(0.02)) {
       U.emote(u, 'note', 2);
       U.sfx('growl', u.x, u.z, { volume: 0.3, pitch: 1.5 });
@@ -560,7 +560,7 @@ function golem(u, U, g, now) {
     U.engage(u, foe, { maxTime: 25 });
     return;
   }
-  const day = g.env?.daylight ?? 1;
+  const day = U.daylight ? U.daylight() : g.env?.daylight ?? 1;
   if (u.sleeping) {
     if (day > 0.3 && rng.chance(0.08)) U._wake(u);
     else return;
@@ -625,7 +625,7 @@ function skywyrm(u, U, g, now) {
   const w = g.world;
   const d = u.data;
   if (!d.nextBreath) d.nextBreath = now + rng.float(12, 22);
-  const day = g.env?.daylight ?? 1;
+  const day = U.daylight ? U.daylight() : g.env?.daylight ?? 1;
   if (u.sleeping) {
     if (day > 0.3 || u.hp < u.maxHp * 0.6) {
       U._wake(u);

@@ -7,6 +7,7 @@ import { VillageHerds } from './herds.js';
 import { installDepth } from './depth.js';
 import { installEditing } from './edit.js';
 import { installRoles, ROLE_NAMES } from './roles.js';
+import { installNeeds } from './needs.js';
 
 // Core creature simulation (owned by the Life module; the Civilization module
 // programs humanoid behaviour through registerBrain / unit.job).
@@ -171,7 +172,9 @@ export class Units {
     let b = Math.max(WILD_FLOOR * ps, WILD_TARGET * ps - 0.15 * humans);
     // big maps: all creatures together stay near the performance budget
     // (~1,600 on a Huge 512 map); the wilds keep a smaller floor there
-    if (this.areaScale > 1.01) b = Math.min(b, Math.max(WILD_FLOOR_BIG * ps, UNIT_CAP * ps - humans - this.herds.totalTended));
+    // (the World Map's wilds follow its land area: sqrt(area) rather than area^0.34)
+    const wide = this.game.world.meta?.budgetArea ? Math.sqrt(this.areaScale) : ps;
+    if (this.areaScale > 1.01) b = Math.min(b, Math.max(WILD_FLOOR_BIG * wide, UNIT_CAP * ps - humans - this.herds.totalTended));
     return Math.round(b);
   }
 
@@ -287,10 +290,13 @@ export class Units {
     if (!this._forage) this._initForage();
     const f = this._forage,
       cap = this._forageCap;
-    const k = FORAGE_REGROW * dt * (this.game.age?.mods?.fertility ?? 1);
+    // pasture regrows with the seasons: lush in spring, all but stops in winter
+    const season = this.game.time.season;
+    const sk = season == null ? 1 : [1.35, 1.0, 0.65, 0.25][Math.floor(season) % 4];
+    const k = FORAGE_REGROW * dt * sk * (this.game.age?.mods?.fertility ?? 1);
     for (let c = 0; c < f.length; c++) {
       const cp = cap[c];
-      if (f[c] < cp) f[c] = Math.min(cp, f[c] + cp * k + 0.02 * dt);
+      if (f[c] < cp) f[c] = Math.min(cp, f[c] + cp * k + 0.02 * sk * dt);
     }
   }
   // Graze: convert forage into reduced hunger. Returns hunger gained back.
@@ -303,8 +309,10 @@ export class Units {
     const cost = want * Math.pow(u.def.mass, 0.7) * FORAGE_COST;
     const take = Math.min(this._forage[c], cost);
     this._forage[c] -= take;
-    // bare pasture still yields a little (roots, weeds): overgrazing mostly halts breeding
-    return Math.max(0.3, take / cost) * want;
+    // bare pasture still yields a little (roots, weeds; less under winter snow)
+    const season = this.game.time.season;
+    const floor = season != null && Math.floor(season) % 4 === 3 ? 0.2 : 0.3;
+    return Math.max(floor, take / cost) * want;
   }
 
   registerBrain(speciesId, fn) {
@@ -346,7 +354,7 @@ export class Units {
 
   // Spawn a herd / pack / single creature in suitable habitat. With x/z null a
   // random suitable spot is chosen. Returns the spawned units.
-  spawnGroup(speciesId, x = null, z = null, rng = this.game.rng, size = null) {
+  spawnGroup(speciesId, x = null, z = null, rng = this.game.rng, size = null, young = false) {
     const def = SPECIES[speciesId];
     const w = this.game.world;
     if (!def) return [];
@@ -382,7 +390,9 @@ export class Units {
         pz = cz;
       }
       const adult = j < 2 || rng.chance(0.7);
-      const age = adult ? rng.float(def.maturity * 1.1, Math.max(def.maturity * 1.2, def.lifespan * 0.6)) : rng.float(0.1, def.maturity * 0.8);
+      // migrant herds arrive as young adults with their years ahead of them
+      const top = young ? Math.max(def.maturity * 1.2, def.lifespan * 0.32) : Math.max(def.maturity * 1.2, def.lifespan * 0.6);
+      const age = adult ? rng.float(def.maturity * 1.05, top) : rng.float(0.1, def.maturity * 0.8);
       const u = this.spawn(speciesId, px, pz, {
         age,
         sex: n === 1 ? (rng.chance(0.5) ? 'f' : 'm') : j === 0 ? 'f' : j === 1 ? 'm' : undefined,
@@ -531,6 +541,10 @@ export class Units {
       _aboardSince: 0,
       _rs: null,
       _rm: null,
+      _nap: false,
+      _homeB: null,
+      _forager: null,
+      _foraged: false,
     };
     if (def.habitat === 'air') {
       u.alt = opts.alt ?? 6;
@@ -573,6 +587,7 @@ export class Units {
     if (cause === 'old age' || cause === 'starvation') g.fx.emit?.('death', { x: u.x, y: u.y + 0.2, z: u.z }, { scale: u.def.size * 0.6 });
     this._depthDeath(u, cause, killer);
     if (cause !== 'slaughter') this.sfx('death', u.x, u.z, { volume: u.def.kind === 'humanoid' ? 0.75 : 0.55, pitch: 1 / Math.sqrt(Math.max(0.4, u.def.mass)) });
+    if (killer && killer._forager != null && u.def.kind === 'animal') this._foragerKill(killer, u);
     g.events.emit('unit:death', { unit: u, cause, killer });
   }
 
@@ -1644,9 +1659,20 @@ export class Units {
   }
 
   // Sleep / wake logic shared by brains. Returns true while asleep.
+  // Daylight 0..1 from the hour of day (the sim's own clock: the sky's value is
+  // only updated while frames render, not during fast-forward).
+  daylight() {
+    const t = this.game.time;
+    if (this._dlT === t.total) return this._dl;
+    const s = Math.sin((((t.hour ?? 12) - 6) / 12) * Math.PI);
+    const x = Math.min(1, Math.max(0, (s + 0.1) / 0.32));
+    this._dl = x * x * (3 - 2 * x);
+    this._dlT = t.total;
+    return this._dl;
+  }
   sleepLogic(u) {
     const g = this.game;
-    const day = g.env?.daylight ?? 1;
+    const day = this.daylight();
     const noct = u.def.nocturnal;
     if (u.sleeping) {
       const wake = noct ? day < 0.35 && u.energy > 0.5 : day > 0.3 && u.energy > 0.55;
@@ -1670,6 +1696,13 @@ export class Units {
     return false;
   }
 
+  // People busy away from their brain (riding, healing, walking home) still eat
+  // while their town has food, as the village brain would feed them.
+  _fedFromStore(u) {
+    if (u.hunger <= 0.3) return;
+    const v = this.game.civ?.villages?.[u.village];
+    if (v && v.alive && !v.starving) u.hunger = 0.12 + Math.random() * 0.1;
+  }
   _shoreTile(x, z, r) {
     const w = this.game.world;
     return this.findNearestTile(x, z, r, (tx, ty, i) => w.height[i] >= SEA_LEVEL && TILE_INFO[w.type[i]].walkable && !FLORA_INFO[w.flora[i]].blocksMovement && w.building[i] < 0);
@@ -1768,8 +1801,12 @@ export class Units {
     const brain = this.brains.get(u.species);
     const elapsed = u._lastThink < 0 ? THINK_INTERVAL : Math.min(6, Math.max(0.05, now - u._lastThink));
     u._lastThink = now;
-    // tech roles (healers, messengers, riders) act before the registered brain
-    if (u.species === 'human' && this._roleThink(u, now)) return;
+    // tiredness, sleep and famine foraging, then tech roles, act before the village brain
+    // (whoever they take over still eats from the town's store, as the brain would feed them)
+    if (u.species === 'human' && ((u._ext && this._needsThink(u, now)) || this._roleThink(u, now))) {
+      this._fedFromStore(u);
+      return;
+    }
     // a patient keeps still while a healer comes to them
     if (u._nurseWait > now && !u.combat && u.state !== 'flee') {
       u.target = null;
@@ -1812,6 +1849,7 @@ export class Units {
     const budgetOn = ++this._ticksThisFrame <= 64;
     if (this._tickN % 75 === 0) this.herds.tick(now);
     if (this._tickN % 150 === 7) this._rolesTick();
+    if (this._tickN % 900 === 450) this._championsTick();
     this._ridePaths = 0;
     this._landingsTick();
     // the danger grid is rebuilt inside the unit loop (one pass over the list):
@@ -1854,6 +1892,11 @@ export class Units {
         this._aboardTick(u, now);
         continue;
       }
+      // asleep at home: resting, out of the world until dawn or danger
+      if (u.data.inside === true) {
+        this._insideTick(u, dt, now, tickN);
+        continue;
+      }
       if (def.kind !== 'animal' || def.diet !== 'herbivore' || u.combat || u.mad > now) {
         const cx = u.x < 0 ? 0 : Math.min(dw - 1, Math.floor(u.x / DCELL)),
           cz = u.z < 0 ? 0 : Math.min(dh - 1, Math.floor(u.z / DCELL));
@@ -1864,12 +1907,13 @@ export class Units {
       const lean = MVP[u.species] && (this._counts.get(u.species) || 0) < MVP[u.species] * 2 ? 0.6 : 1;
       if (this.law('lifeHunger')) u.hunger = Math.min(1, u.hunger + dt * def.hungerRate * lean * (u.sleeping ? 0.5 : active ? 1.6 : 1));
       else if (u.hunger > 0) u.hunger = Math.max(0, u.hunger - dt * 0.02);
-      if (u.sleeping || u.state === 'sleep' || u.data.inside) u.energy = Math.min(1, u.energy + dt * 0.0075);
+      if (u.sleeping || u.state === 'sleep') u.energy = Math.min(1, u.energy + dt * (u._ext ? 0.012 : 0.0075));
       else if (u._ext) {
-        // brain-driven villagers: tire while busy, recover when idle and at night
-        const night = (g.env?.daylight ?? 1) < 0.2;
-        const rest = !u.moving && u.state !== 'work' && !u.combat;
-        u.energy = Math.min(1, Math.max(0, u.energy + dt * (rest || night ? 0.006 : -def.energyRate * (active ? 1.2 : 0.35))));
+        // village people: a working day wears them down; idling only rests a little
+        // (the real rest is the night's sleep at home, see needs.js)
+        const st = u.state;
+        const k = u.combat || st === 'run' || st === 'attack' || st === 'flee' ? 1.5 : st === 'work' ? 1 : u.moving ? 0.55 : -0.7;
+        u.energy = Math.min(1, Math.max(0, u.energy - dt * def.energyRate * k));
       } else u.energy = Math.max(0, u.energy - dt * def.energyRate * (active ? 2.5 : 1) * (u.swimming ? 4 : 1));
       if (u.pregnant > 0) {
         u.pregnant -= yearDt;
@@ -2120,14 +2164,17 @@ export class Units {
       const wn = wildN.get(def.id) || 0;
       const mvp = MVP[def.id] || 5;
       // grazers well below a healthy herd size are joined by wild herds from the edge
-      const thin = roomy && def.diet === 'herbivore' && def.kind === 'animal' && wn < this.capacity(def.id) * HEALTHY;
+      const thin = roomy && def.diet === 'herbivore' && def.kind === 'animal' && wn < this.capacity(def.id) * (this.game.world.meta?.budgetArea ? 0.5 : HEALTHY);
       if (n >= mvp && !thin) continue;
       // rare migrants arrive from the map edge (spawnRate law scales how often)
       const rate = typeof this.game.laws?.spawnRate === 'number' ? Math.max(0.1, this.game.laws.spawnRate) : 1;
-      if (now - (this._rescueAt.get(def.id) ?? -1e9) < (n === 0 ? 30 : n < mvp ? 75 : 50) / rate) continue;
+      // on a big world herds arrive more often (the same flow per stretch of land)
+      const wm = !!this.game.world.meta?.budgetArea;
+      const wide = wm ? Math.max(1, this.areaScale) : Math.sqrt(Math.max(1, this.areaScale));
+      if (now - (this._rescueAt.get(def.id) ?? -1e9) < (n === 0 ? 30 : n < mvp ? 75 : 50 / wide) / rate) continue;
       const spot = this._edgeSpot(def);
       if (!spot) continue;
-      const grp = this.spawnGroup(def.id, spot.x, spot.z, this.game.rng, def.pack ? 3 : def.solitary ? 2 : null);
+      const grp = this.spawnGroup(def.id, spot.x, spot.z, this.game.rng, def.pack ? 3 : def.solitary ? 2 : wm && def.seed ? this.game.rng.int(def.seed.size[0] + 1, def.seed.size[1] + 2) : null, true);
       if (grp.length) {
         this._rescueAt.set(def.id, now);
         if (grp.length >= 2 && !grp.some((g) => g.sex === 'm')) grp[1].sex = 'm';
@@ -2144,11 +2191,15 @@ export class Units {
     const spawnRate = typeof g.laws?.spawnRate === 'number' ? Math.max(0.1, g.laws.spawnRate) : 1;
     let monsters = 0;
     for (const sp of ['golem', 'serpent', 'skywyrm']) monsters += this.count(sp);
-    // ordinary ages (law on): a rare wanderer; a monstrous age: about (mod - 1)
-    // monsters per game minute across a medium map (this check runs every 15 s)
-    const perMin = ageM > 1.001 ? (ageM - 1) * this.popScale : 0.18 * ageM;
-    const cap = Math.round((ageM > 1.001 ? 4 + 2 * (ageM - 1) : 3) * this.popScale);
-    if (monsters >= cap || !g.rng.chance(Math.min(0.9, (perMin / 4) * spawnRate))) return;
+    // ordinary ages (law on): a wanderer every minute or two; a monstrous age:
+    // about (mod - 1) more per game minute across a medium map (checked every 15 s)
+    const perMin = (ageM > 1.001 ? 0.7 + (ageM - 1) : 0.7 * ageM) * this.popScale;
+    const cap = Math.round((ageM > 1.001 ? 5 + 2 * (ageM - 1) : 4) * this.popScale);
+    if (monsters >= cap) return;
+    // a steady cadence (an accumulator, not a coin toss per check), slightly jittered
+    this._monAcc = (this._monAcc || 0) + (perMin / 4) * spawnRate * (0.75 + g.rng.next() * 0.5);
+    if (this._monAcc < 1) return;
+    this._monAcc -= 1;
     const w = g.world;
     const roll = g.rng.next();
     const species = roll < 0.5 ? 'golem' : roll < 0.8 ? 'serpent' : 'skywyrm';
@@ -2321,5 +2372,6 @@ export class Units {
 installDepth(Units);
 installEditing(Units);
 installRoles(Units);
+installNeeds(Units);
 
 export { FLORA, FLORA_INFO };

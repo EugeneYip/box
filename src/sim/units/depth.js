@@ -216,8 +216,39 @@ export function installDepth(Units) {
     }
     return it;
   };
+  // More heroes on bigger, more populous worlds (about one per 250 people).
   P.heroCap = function () {
-    return Math.max(3, Math.round(2 + 2 * this.popScale));
+    const humans = this._counts?.get('human') || 0;
+    return Math.max(3, Math.round(2 + 2 * this.popScale + humans / 250));
+  };
+  // Every realm of some size raises a champion: when it has no living hero,
+  // its most seasoned veteran is hailed (checked about once a game minute).
+  P._championsTick = function () {
+    if (!this.law('lifeExperience')) return;
+    const g = this.game;
+    const L = this._legends();
+    if (L.heroes >= this.heroCap()) return;
+    const best = new Map(),
+      size = new Map(),
+      has = new Set();
+    for (const u of this.list) {
+      if (!u.alive || u.species !== 'human' || !(u.kingdom >= 0)) continue;
+      size.set(u.kingdom, (size.get(u.kingdom) || 0) + 1);
+      if (u.traits.includes('hero')) has.add(u.kingdom);
+      if (u.level < 7 || u.data.civ?.royal) continue;
+      const deeds = (u.kills || 0) * 2 + (u._battles || 0);
+      if (u.level < 8 && deeds < 14) continue;
+      const score = u.level * 10 + deeds;
+      const b = best.get(u.kingdom);
+      if (!b || score > b.s) best.set(u.kingdom, { u, s: score });
+    }
+    let n = L.heroes;
+    for (const [k, b] of best) {
+      if (n >= this.heroCap()) break;
+      if (has.has(k) || (size.get(k) || 0) < 30) continue;
+      const realm = g.civ?.kingdomName?.(k) || 'the realm';
+      if (this.tryHero(b.u, `Hailed as the champion of ${realm}`)) n++;
+    }
   };
   // Hero: a deed worthy of song (respecting a cap on living heroes).
   P.tryHero = function (u, deed) {
@@ -264,6 +295,8 @@ export function installDepth(Units) {
     return u.title;
   };
   P.addXP = function (u, n) {
+    // deeds weigh a little more on a bigger world (Medium x1, Huge x1.26, World Map up to x1.5)
+    if (n > 0 && u.def.kind === 'humanoid') n *= Math.min(1.5, Math.max(1, Math.sqrt(this.popScale)));
     if (!u || !u.alive || !(n > 0) || !this.law('lifeExperience')) return;
     u.xp = (u.xp || 0) + n;
     while ((u.level || 1) < MAX_LEVEL && u.xp >= xpForLevel((u.level || 1) + 1)) {
@@ -326,8 +359,14 @@ export function installDepth(Units) {
           }
         for (const [id, n] of seen) if (rng.chance(n >= 2 || parents.length === 1 ? 0.65 : 0.32)) this.addTrait(u, id, { silent: true });
         const pool = def.kind === 'humanoid' ? BORN_TRAITS : BORN_TRAITS.filter((t) => ANIMAL_TRAITS.includes(t.id));
-        // mutation, and most children are born with something of their own
-        if (rng.chance(0.17) || (!u.traits.length && rng.chance(def.kind === 'humanoid' ? 0.3 : 0.15))) {
+        // a child is born with something of its own as often as without inheritance
+        // (inheritance only ever adds the parents' gifts on top), plus a rare mutation
+        const own = def.kind === 'humanoid' ? [0.6, 0.25] : [0.22, 0];
+        if (!u.traits.length && rng.chance(own[0])) {
+          const id = pickTrait(rng, pool, u);
+          if (id) this.addTrait(u, id, { silent: true });
+        }
+        if (u.traits.length < 3 && rng.chance(Math.max(own[1], 0.12))) {
           const id = pickTrait(rng, pool, u);
           if (id) this.addTrait(u, id, { silent: true });
         }
