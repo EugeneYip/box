@@ -2192,7 +2192,11 @@ export class Units {
     // about (mod - 1) more per game minute across a medium map (checked every 15 s)
     const perMin = (ageM > 1.001 ? 0.7 + (ageM - 1) : 0.7 * ageM) * this.popScale;
     const cap = Math.round((ageM > 1.001 ? 5 + 2 * (ageM - 1) : 4) * this.popScale);
-    if (monsters >= cap || !g.rng.chance(Math.min(0.9, (perMin / 4) * spawnRate))) return;
+    if (monsters >= cap) return;
+    // a steady cadence (an accumulator, not a coin toss per check), slightly jittered
+    this._monAcc = (this._monAcc || 0) + (perMin / 4) * spawnRate * (0.75 + g.rng.next() * 0.5);
+    if (this._monAcc < 1) return;
+    this._monAcc -= 1;
     const w = g.world;
     const roll = g.rng.next();
     const species = roll < 0.5 ? 'golem' : roll < 0.8 ? 'serpent' : 'skywyrm';
