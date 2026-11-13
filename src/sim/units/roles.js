@@ -430,14 +430,27 @@ export function installRoles(Units) {
     const g = this.game;
     const w = g.world;
     const cost = g.civ?._walkCost?.();
-    if (cost && (this._ridePaths = (this._ridePaths || 0) + 1) <= 2) {
+    // long rides go in legs of up to ~56 tiles (a bounded search each), at most
+    // one leg planned every few ticks across the world
+    const dx = x - u.x,
+      dz = z - u.z;
+    const dist = Math.hypot(dx, dz);
+    if (dist > 60) {
+      const t = this._shoreTile(u.x + (dx / dist) * 56, u.z + (dz / dist) * 56, 8);
+      if (t) {
+        x = t.x;
+        z = t.z;
+      }
+    }
+    if (cost && this._tickN - (this._rideTick ?? -99) >= 3) {
+      this._rideTick = this._tickN;
       const sx = Math.min(w.w - 1, Math.max(0, Math.floor(u.x))),
         sy = Math.min(w.h - 1, Math.max(0, Math.floor(u.z)));
       const gx = Math.min(w.w - 1, Math.max(0, Math.floor(x))),
         gy = Math.min(w.h - 1, Math.max(0, Math.floor(z)));
       let p = null;
       try {
-        p = civPath(w, sx, sy, gx, gy, cost, 24000, 0.5);
+        p = civPath(w, sx, sy, gx, gy, cost, 7000, 0.5);
       } catch (err) {
         p = null;
       }

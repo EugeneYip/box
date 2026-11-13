@@ -1862,7 +1862,12 @@ export class Units {
     else DN.fill(0);
     // AI LOD at 8x and above: the coarse step would multiply thinking per tick;
     // distant creatures re-decide less often per game second instead
-    const fastFar = Math.min(2.5, Math.max(1, dt / TICK_DT));
+    // a coarse step must not multiply thinking: distant creatures keep about the
+    // same thinks per tick, nearby ones about half again (brains get the real
+    // elapsed time, so work and needs still advance in full)
+    const stepK = Math.max(1, dt / TICK_DT);
+    const fastFar = Math.min(4, stepK);
+    const fastNear = Math.sqrt(stepK);
     const overview = (g.cameraRig?.cur?.dist ?? 0) > OVERVIEW_DIST;
     const cam = g.cameraRig?.cur;
     const focus = this._focus;
@@ -1991,7 +1996,7 @@ export class Units {
         if (budgetOn && this._frameThinkMs > THINK_BUDGET_MS && !u.combat) {
           u.thinkT = 0.05 + g.rng.next() * 0.15; // over budget: think a little later
         } else {
-          let mul = u._far ? (FAR_THINK[def.kind] || 2) * fastFar : 1;
+          let mul = u._far ? (FAR_THINK[def.kind] || 2) * fastFar : u.combat ? 1 : fastNear;
           // calm grazers with no danger about re-decide less often
           if (def.kind === 'animal' && def.diet === 'herbivore' && !u.combat && u.hunger < 0.4 && !u.alarm && u.fleeUntil < now && !this.dangerNear(u.x, u.z, def.sight)) mul *= 1.6;
           u.thinkT = THINK_INTERVAL * (0.8 + g.rng.next() * 0.4) * mul;
