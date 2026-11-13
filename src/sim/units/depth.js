@@ -326,8 +326,14 @@ export function installDepth(Units) {
           }
         for (const [id, n] of seen) if (rng.chance(n >= 2 || parents.length === 1 ? 0.65 : 0.32)) this.addTrait(u, id, { silent: true });
         const pool = def.kind === 'humanoid' ? BORN_TRAITS : BORN_TRAITS.filter((t) => ANIMAL_TRAITS.includes(t.id));
-        // mutation, and most children are born with something of their own
-        if (rng.chance(0.17) || (!u.traits.length && rng.chance(def.kind === 'humanoid' ? 0.3 : 0.15))) {
+        // a child is born with something of its own as often as without inheritance
+        // (inheritance only ever adds the parents' gifts on top), plus a rare mutation
+        const own = def.kind === 'humanoid' ? [0.6, 0.25] : [0.22, 0];
+        if (!u.traits.length && rng.chance(own[0])) {
+          const id = pickTrait(rng, pool, u);
+          if (id) this.addTrait(u, id, { silent: true });
+        }
+        if (u.traits.length < 3 && rng.chance(Math.max(own[1], 0.12))) {
           const id = pickTrait(rng, pool, u);
           if (id) this.addTrait(u, id, { silent: true });
         }
