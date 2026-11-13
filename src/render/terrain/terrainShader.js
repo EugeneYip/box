@@ -95,7 +95,7 @@ vec3 screeStones(vec3 base, vec2 p, vec2 wp, float px, float amt, vec3 tone) {
   vec4 c1 = textureLod(uCells, ROT3 * vec2(q.x, q.y * 1.3) * (1.0 / 6.7) + 0.37, max(0.0, log2(px * 38.2)));
   vec4 c2 = textureLod(uCells, ROT1 * vec2(q.x * 1.25, q.y) * (1.0 / 3.2) + 0.81, max(0.0, log2(px * 80.0)));
   float k1 = 1.0 - smoothstep(0.12, 0.26, px);
-  float k2 = 1.0 - smoothstep(0.05, 0.11, px);
+  float k2 = 1.0 - smoothstep(0.045, 0.09, px);
   float aw1 = max(2.4 * px, 0.04);
   float aw2 = max(5.0 * px, 0.04);
   float r1 = 0.22 + 0.36 * fract(c1.b * 3.71);
@@ -176,7 +176,7 @@ vec3 reliefLines(vec2 q, vec2 off, float px, vec2 ls, float gw, float cw) {
   float dc = isoDist(a.g, ah.g, av.g, ST);
   float gully = 1.0 - smoothstep(0.0, gw, dg);
   float stain = 1.0 - smoothstep(0.2, gw * 3.9, dg);
-  float seg = smoothstep(0.38, 0.60, a.a * 0.6 + a.b * 0.4);
+  float seg = smoothstep(0.32, 0.55, a.a * 0.6 + a.b * 0.4);
   float crack = aaLine(dc, cw * (0.6 + 0.8 * a.a), px) * seg;
   return vec3(gully, stain, crack);
 }
@@ -912,7 +912,7 @@ void terrainSurface() {
   }
   // stones sit over the ground / rock blend, breaking the edge between them
   // (top-down cells: none on steep ground, where they would stretch and alias)
-  screeAmt *= (1.0 - smoothstep(0.75, 1.0, cliff)) * smoothstep(0.58, 0.78, s.n.y);
+  screeAmt *= (1.0 - smoothstep(0.5, 0.9, cliff)) * smoothstep(0.66, 0.84, s.n.y);
   if (fine && screeAmt > 0.01) {
     vec3 stoneC = mix(vec3(0.33, 0.315, 0.29), vec3(0.38, 0.34, 0.29), s.macro.g);
     albedo = screeStones(albedo, p, (s.micro.gb - 0.5) * 0.10 + (s.det.rg - 0.5) * 0.12, s.fw, screeAmt, stoneC);
@@ -939,18 +939,37 @@ void terrainSurface() {
     albedo *= mix(1.0, (0.76 + 0.44 * hs) * mix(0.68, 1.0, smoothstep(0.55, 0.98, nrm.y)), farR * 0.85);
     albedo = mix(albedo, albedo * vec3(0.96, 1.0, 1.08) * 1.14, smoothstep(6.0, 16.0, s.p.y) * 0.5 * farR);
     albedo *= mix(1.0, mix(0.90, 1.08, smoothstep(0.6, 5.5, s.p.y)), farR * (1.0 - snowB));
-    // biome distinctiveness at map scale: deep blue-green forests, brighter meadows
     albedo = mix(albedo, albedo * vec3(0.80, 0.84, 0.90), snowB * farR * (0.6 + 0.4 * smoothstep(0.4, 0.7, s.macro.g)));
+    // biome distinctiveness at map scale: a dark, cool forest floor under the woods
     float forestB = dot(vec4(equal(vec4(t0, t1, t2, t3), vec4(2.0))) * live, b) + 0.6 * dot(vec4(equal(vec4(t0, t1, t2, t3), vec4(3.0))) * live, b);
     float grassB = dot(vec4(equal(vec4(t0, t1, t2, t3), vec4(1.0))) * live, b);
-    albedo = mix(albedo, albedo * vec3(0.58, 0.74, 0.76), forestB * farR * 0.75 * (1.0 - snowB));
-    // map-scale variety: dry uplands and drier climates toward ochre-khaki,
-    // wet lowlands deep green (and a neutral, not olive, desaturation)
+    albedo = mix(albedo, albedo * vec3(0.46, 0.60, 0.62), forestB * farR * 0.85 * (1.0 - snowB));
+    // grassland in autumn (kept as it was): drier toward orange, wetter darker
     float gv = s.macro.b * 0.6 + s.macro.r * 0.4;
-    float dryv = clamp(smoothstep(0.62, 0.30, s.moist) * 0.8 + smoothstep(0.42, 0.72, gv) * 0.45 + smoothstep(1.8, 5.0, s.p.y) * 0.6, 0.0, 1.0);
-    vec3 gTint = mix(vec3(0.72, 0.88, 0.78), vec3(1.32, 1.08, 0.60), dryv);
-    vec3 gAlb = mix(albedo * gTint, vec3(lum(albedo)) * vec3(1.02, 1.0, 0.9), 0.15);
-    albedo = mix(albedo, gAlb, grassB * farR * (1.0 - snowB));
+    float dryA = clamp(smoothstep(0.62, 0.30, s.moist) * 0.8 + smoothstep(0.42, 0.72, gv) * 0.45 + smoothstep(1.8, 5.0, s.p.y) * 0.6, 0.0, 1.0);
+    vec3 gTint = mix(vec3(0.72, 0.88, 0.78), vec3(1.32, 1.08, 0.60), dryA);
+    vec3 gAut = mix(albedo * gTint, vec3(lum(albedo)) * vec3(1.02, 1.0, 0.9), 0.15);
+    // grassland in the green seasons: regional hue targets at the ground's own
+    // luminance - ochre steppe on dry and higher ground, sage meadow, deep green
+    // wet lowland, grey-green upland - so the map is no longer one lime sheet
+    vec4 rg = textureLod(uNoise, p * (1.0 / 240.0) + 5.3, 0.0);
+    float reg = rg.r * 0.55 + s.macro.b * 0.45;
+    float dryv = clamp(smoothstep(0.38, 0.24, s.moist + (rg.g - 0.5) * 0.20) * 0.85 + smoothstep(0.48, 0.74, reg) * 0.60 + smoothstep(3.2, 6.5, s.p.y) * 0.50, 0.0, 1.0);
+    float wetv = smoothstep(0.38, 0.52, s.moist + (rg.b - 0.5) * 0.25) * (1.0 - smoothstep(2.8, 5.0, s.p.y)) * (1.0 - dryv);
+    float highv = smoothstep(4.5, 9.0, s.p.y + (s.macro.g - 0.5) * 3.0);
+    vec3 hue = mix(vec3(0.30, 0.60, 0.17), vec3(0.84, 0.64, 0.27), smoothstep(0.15, 0.85, dryv));
+    hue = mix(hue, vec3(0.12, 0.52, 0.20), wetv);
+    hue = mix(hue, vec3(0.50, 0.56, 0.48), highv * 0.85);
+    vec3 gGreen = hue * (lum(albedo) / lum(hue)) * mix(1.0, 0.78, wetv) * mix(1.0, 1.08, dryv * (1.0 - highv));
+    gGreen = mix(albedo, gGreen, 0.9);
+    // autumn and winter keep their established look (the old path)
+    float sx = abs(uSeason - 3.5);
+    float winterK = 1.0 - smoothstep(0.3, 0.95, min(sx, 4.0 - sx));
+    float autumnK = smoothstep(0.0, 0.2, uSeasonTint.r - uSeasonTint.g);
+    vec3 gFar = mix(gGreen, gAut, max(autumnK, winterK));
+    albedo = mix(albedo, gFar, grassB * farR * (1.0 - snowB));
+    // cooler, greyer high ground (grass, heath, forest floor)
+    albedo = mix(albedo, vec3(lum(albedo)) * vec3(0.93, 1.0, 1.08), highv * 0.40 * farR * (1.0 - snowB) * (1.0 - cliff));
   }
 
   // ---- seabed & shore
