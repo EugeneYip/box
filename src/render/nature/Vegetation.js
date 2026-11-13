@@ -52,6 +52,8 @@ const _e = new THREE.Euler();
 const _col = new THREE.Color();
 const _box = new THREE.Box3();
 
+const PINE_PICK = [0, 1, 0, 1, 3, 0, 1, 2]; // 1 in 8 pines is the snapped old pine
+
 export class Vegetation {
   constructor(game) {
     this.game = game;
@@ -320,7 +322,10 @@ export class Vegetation {
 
   // ---- chunk building ----------------------------------------------------
   variantOf(tx, ty, f) {
-    return Math.floor(hash2(tx, ty, 71 + f) * this.models[f].variants.length);
+    const h = hash2(tx, ty, 71 + f);
+    // pines: spruce and fir are common, the snapped old pine and the Scots pine rarer
+    if (f === FLORA.PINE) return PINE_PICK[Math.floor(h * PINE_PICK.length)];
+    return Math.floor(h * this.models[f].variants.length);
   }
 
   rebuildChunk(c) {
