@@ -191,20 +191,29 @@ void main() {
   float a = vK.y;
   vec3 foamCol = vec3(0.92, 0.96, 1.0) * mix(0.3, 1.0, uLight);
   if (kind < 0.5) {
-    // a feathered arm: soft across the band, rippled along it
+    // a Kelvin arm of broken foam: clumps and flecks that stay put in the
+    // water (u runs with the water, not the ship), soft and ragged at the
+    // edges, a firmer crest near the stern that frays as it spreads
     float v = vUV.y;
-    float band = smoothstep(0.0, 0.45, v) * smoothstep(1.0, 0.55, v);
-    float rip = 0.72 + 0.28 * sin(vK.w * 9.0 - uTime * 3.0);
-    float al = band * rip * a;
+    float u = vUV.x;
+    float s = vK.w; // ship lengths behind the stern
+    float band = smoothstep(0.0, 0.42, v) * smoothstep(1.0, 0.58, v);
+    float n1 = vnoise(vec2(u * 2.6, v * 1.7 + 3.0));
+    float n2 = vnoise(vec2(u * 7.5 + 11.0, v * 4.0 - uTime * 0.15));
+    float crest = 0.22 * (1.0 - clamp(s * 0.8, 0.0, 1.0));
+    float foam = smoothstep(0.34, 0.8, n1 * 0.62 + n2 * 0.48 + crest);
+    float al = band * foam * a;
     if (al < 0.01) discard;
-    gl_FragColor = vec4(foamCol, al * 0.55);
+    gl_FragColor = vec4(foamCol, min(1.0, al * 0.85));
   } else if (kind < 1.5) {
+    // the churn behind the stern: boiling, bubbly, quick to settle
     float v = abs(vUV.y * 2.0 - 1.0);
     float band = 1.0 - v * v;
-    float n = 0.45 + 0.55 * vnoise(vec2(vK.w * 3.0 - uTime * 1.5, vUV.y * 6.0));
-    float al = band * n * a;
+    float u = vUV.x;
+    float n = vnoise(vec2(u * 3.0, vUV.y * 5.0 + uTime * 0.6)) * 0.6 + vnoise(vec2(u * 8.0 - uTime * 0.4, vUV.y * 9.0)) * 0.5;
+    float al = band * smoothstep(0.28, 0.85, n) * a;
     if (al < 0.01) discard;
-    gl_FragColor = vec4(foamCol, al * 0.42);
+    gl_FragColor = vec4(foamCol, al * 0.6);
   } else if (kind < 2.5) {
     // hull foam at the waterline and a short bow wave
     float x = vUV.x, z = vUV.y;

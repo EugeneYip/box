@@ -83,8 +83,13 @@ export const war = {
         // turn alongside
         const want = Math.atan2(tgt.z - v.z, tgt.x - v.x) + Math.PI / 2;
         v.heading += Math.max(-0.5, Math.min(0.5, ((want - v.heading + Math.PI * 3) % (Math.PI * 2)) - Math.PI)) * dt;
-      } else if ((m.repath = (m.repath || 0) - dt) <= 0) {
-        m.repath = 4;
+      } else {
+        // within bowshot: volleys of arrows and fire pots while closing
+        if (d <= 9 && nav.los(v.x, v.z, tgt.x, tgt.z, 0)) this._archery(v, tgt, dt, d);
+        if (!v.alive || v.state === 'sinking') return;
+      }
+      if (d > reach && (m.repath = (m.repath || 0) - dt) <= 0) {
+        m.repath = d < 14 ? 1.5 : 4;
         // close in, straight when the water allows
         const ax = tgt.x - Math.cos(tgt.heading) * 0.5,
           az = tgt.z - Math.sin(tgt.heading) * 0.5;
@@ -150,24 +155,54 @@ export const war = {
     }
   },
 
+  // Arrows and fire pots from one ship at another, seen in flight: longer
+  // shots fly longer and miss more often (into the sea, with a splash).
+  _volley(from, to, n, potP = 0.12) {
+    const d = Math.hypot(to.x - from.x, to.z - from.z);
+    for (let i = 0; i < n; i++) {
+      const pot = this.rng() < potP;
+      const hit = this.rng() < (pot ? 0.6 : 0.62) - Math.max(0, d - 3) * 0.035;
+      const ox = (this.rng() - 0.5) * from.def.length * 0.6,
+        oz = (this.rng() - 0.5) * from.def.length * 0.6;
+      const spread = 1.2 + d * 0.25;
+      const mx = hit ? (this.rng() - 0.5) * to.def.length * 0.5 : (this.rng() - 0.5) * spread * 2,
+        mz = hit ? (this.rng() - 0.5) * to.def.length * 0.5 : (this.rng() - 0.5) * spread * 2;
+      // lead the target a little: it sails on while the arrow flies
+      const dur = 0.5 + d * 0.085 + this.rng() * 0.25;
+      const lead = Math.min(1, to.speed || 0) * dur * 0.8;
+      if (this.shots.length > 160) this.shots.shift();
+      this.shots.push({ x0: from.x + ox, z0: from.z + oz, x1: to.x + Math.cos(to.heading) * lead + mx, z1: to.z + Math.sin(to.heading) * lead + mz, t: -this.rng() * 0.45, dur, pot, hit, target: to.id });
+    }
+  },
+
+  // Within bowshot but not yet alongside: both crews loose at each other.
+  _archery(a, b, dt, d) {
+    const crew = (v) => 0.45 + 0.55 * (v.hp / v.maxHp);
+    this._volley(a, b, 2 + Math.floor(this.rng() * 3), 0.07);
+    if (b.def.dps > 0 && d < 7.5) this._volley(b, a, 1 + Math.floor(this.rng() * 2), 0.05);
+    this.hurt(b, a.def.dps * 0.1 * this._matMod(a.kingdom) * crew(a) * dt, 'battle', a);
+    if (b.alive && b.state !== 'sinking' && b.def.dps > 0 && d < 7.5) this.hurt(a, b.def.dps * 0.1 * this._matMod(b.kingdom) * crew(b) * dt, 'battle', b);
+    a.lastFight = b.lastFight = this.game.time.total;
+  },
+
   // Volleys of arrows, grapples and rams: both crews trade blows.
   _fight(a, b, dt) {
     const crew = (v) => 0.45 + 0.55 * (v.hp / v.maxHp);
+    // first contact: the galley drives its ram home
+    if (a.kind === 'galley' && a.rammed !== b.id) {
+      a.rammed = b.id;
+      const mx = (a.x + b.x) / 2,
+        mz = (a.z + b.z) / 2;
+      this._fx('splash', mx, mz, 0.9);
+      this._fx('debris', mx, mz, 0.7, { y: 0.3 });
+      this._sfx('hit', mx, mz, 0.7);
+      for (let i = 0; i < 2; i++) this._addDebris(b.x + (this.rng() - 0.5) * b.def.length * 0.6, b.z + (this.rng() - 0.5) * b.def.length * 0.4, i);
+      this.hurt(b, b.maxHp * 0.1 * this._matMod(a.kingdom), 'battle', a);
+      if (!b.alive || b.state === 'sinking') return;
+    }
     // volleys of arrows and the odd fire pot, both ways (seen in flight)
-    const volley = (from, to, n) => {
-      for (let i = 0; i < n; i++) {
-        const pot = this.rng() < 0.12;
-        const hit = this.rng() < (pot ? 0.55 : 0.6);
-        const ox = (this.rng() - 0.5) * from.def.length * 0.6,
-          oz = (this.rng() - 0.5) * from.def.length * 0.6;
-        const mx = hit ? (this.rng() - 0.5) * to.def.length * 0.5 : (this.rng() - 0.5) * 3,
-          mz = hit ? (this.rng() - 0.5) * to.def.length * 0.5 : (this.rng() - 0.5) * 3;
-        if (this.shots.length > 160) this.shots.shift();
-        this.shots.push({ x0: from.x + ox, z0: from.z + oz, x1: to.x + mx, z1: to.z + mz, t: -this.rng() * 0.4, dur: 0.55 + this.rng() * 0.3, pot, hit, target: to.id });
-      }
-    };
-    volley(a, b, 2 + Math.floor(this.rng() * 3));
-    if (b.def.dps > 0) volley(b, a, 1 + Math.floor(this.rng() * 2));
+    this._volley(a, b, 2 + Math.floor(this.rng() * 3), 0.12);
+    if (b.def.dps > 0) this._volley(b, a, 1 + Math.floor(this.rng() * 2), 0.12);
     // grappled: both ships lose way and fight it out where they are
     a.grappled = b.grappled = this.game.time.total + 1.5;
     const da = a.def.dps * this._matMod(a.kingdom) * crew(a) * dt;

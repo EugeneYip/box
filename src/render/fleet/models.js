@@ -666,17 +666,48 @@ export function debrisGeometry() {
   return g.build();
 }
 
+// A rough, dark boulder (radius about 0.3, centred on the origin).
 export function stoneGeometry() {
-  const g = new VB(7);
-  g.bead(0, -0.2, 0, 0.22, 0x6e675c);
-  return g.build();
+  const g = new THREE.IcosahedronGeometry(0.3, 1);
+  const P = g.attributes.position;
+  const key = (x, y, z) => Math.round(x * 997 + y * 7919 + z * 104729);
+  const h = (k) => {
+    const s = Math.sin(k * 12.9898) * 43758.5453;
+    return s - Math.floor(s);
+  };
+  for (let i = 0; i < P.count; i++) {
+    const x = P.getX(i),
+      y = P.getY(i),
+      z = P.getZ(i);
+    const f = 0.82 + h(key(x, y, z)) * 0.32;
+    P.setXYZ(i, x * f, y * f * 0.9, z * f);
+  }
+  g.computeVertexNormals();
+  const col = new Float32Array(P.count * 3);
+  const c = new THREE.Color();
+  for (let i = 0; i < P.count; i += 3) {
+    c.setHex(0x3b3631).multiplyScalar(0.8 + h(i * 3.1) * 0.45);
+    for (let k = 0; k < 3; k++) col.set([c.r, c.g, c.b], (i + k) * 3);
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  return g;
 }
 
-// An arrow (or a fire pot's shaft) pointing along +X.
-export function arrowGeometry() {
-  const g = new VB(9);
-  g.box(0, -0.018, 0, 0.62, 0.036, 0.036, 0xfff0b8, { glow: 1 });
-  g.box(-0.3, -0.03, 0, 0.1, 0.06, 0.008, 0xffffff);
-  g.box(0.32, -0.022, 0, 0.06, 0.044, 0.044, 0xc8c8c8);
-  return g.build();
+// A tracer: a unit streak along -X from its head at the origin, white-hot
+// at the head, burning orange down the tail and fading out behind (scaled
+// per instance; drawn unlit and bright enough to bloom). RGBA vertex colours.
+export function tracerGeometry() {
+  const g = new THREE.BoxGeometry(1, 1, 1).translate(-0.5, 0, 0);
+  const P = g.attributes.position;
+  const col = new Float32Array(P.count * 4);
+  for (let i = 0; i < P.count; i++) col.set(P.getX(i) > -0.5 ? [1, 0.97, 0.85, 1] : [0.95, 0.45, 0.12, 0], i * 4);
+  g.setAttribute('color', new THREE.BufferAttribute(col, 4));
+  return g;
+}
+
+// A fire pot's blazing head (RGBA colours too: the tracer's program).
+export function potGeometry() {
+  const g = new THREE.IcosahedronGeometry(1, 0);
+  g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 4).fill(1), 4));
+  return g;
 }

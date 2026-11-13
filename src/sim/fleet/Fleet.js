@@ -758,7 +758,9 @@ export class Fleet {
     // the recent track, for the wake that follows the course
     const T = v.track || (v.track = []);
     const tl = T.length;
-    if (!tl || Math.hypot(v.x - T[tl - 2], v.z - T[tl - 1]) > Math.max(0.15, def.length * 0.12)) {
+    const td = tl ? Math.hypot(v.x - T[tl - 2], v.z - T[tl - 1]) : 0;
+    if (!tl || td > Math.max(0.15, def.length * 0.12)) {
+      if (td > 3) T.length = 0; // a jump (snapped off a shoal): start afresh
       T.push(v.x, v.z);
       if (T.length > 48) T.splice(0, 2);
     }
@@ -951,9 +953,9 @@ export class Fleet {
       if (s.hit) {
         const v = this.byId.get(s.target);
         if (s.pot && v && v.alive && v.state !== 'sinking') v.burning = Math.min(1, v.burning + 0.45);
-        if (s.pot) this._fx('fireball', s.x1, s.z1, 0.45, { y: 0.5 });
-        else this._fx('sparks', s.x1, s.z1, 0.45, { y: 0.5 });
-      } else if (this.nav.isWater(s.x1, s.z1)) this._fx('splash', s.x1, s.z1, s.pot ? 0.5 : 0.3);
+        if (s.pot) this._fx('fireball', s.x1, s.z1, 0.5, { y: 0.5 });
+        else this._fx('sparks', s.x1, s.z1, 0.5, { y: 0.5 });
+      } else if (this.nav.isWater(s.x1, s.z1)) this._fx('splash', s.x1, s.z1, s.pot ? 0.65 : 0.42);
     }
     this.shots = keep;
   }

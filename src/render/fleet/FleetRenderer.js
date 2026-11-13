@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { vehicleModel, debrisGeometry, stoneGeometry, arrowGeometry } from './models.js';
+import { vehicleModel, debrisGeometry, stoneGeometry, tracerGeometry, potGeometry } from './models.js';
 import { createVehicleMaterial, createVehicleDepthMaterial, createWaterFxMaterial } from './materials.js';
 import { bannerGeometry, bannerMaterial } from '../buildings/props.js';
 import { emblemAtlas, EMBLEM_IDS, FIELD_IDS } from '../buildings/emblems.js';
@@ -77,14 +77,24 @@ export class FleetRenderer {
     this.waterFx.visible = false;
     this.group.add(this.waterFx);
     this._fxMax = FXV;
-    this._hist = new Map(); // vessel id -> recent track [x, z, ...] (newest last)
+    this._hist = new Map(); // vessel id -> odometer {x, z, d}: wake foam stays put in the water
     this._histT = 0;
     // wreckage and catapult stones
     this.propMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 });
     this.debris = this._inst(debrisGeometry(), this.propMat, 64);
-    // stones, arrows and wreckage share one vertex-coloured material (one program)
+    // stones and wreckage share one vertex-coloured material (one program)
     this.stones = this._inst(stoneGeometry(), this.propMat, 32);
-    this.arrows = this._inst(arrowGeometry(), this.propMat, 64);
+    // arrows and fire pots fly as glowing tracers: unlit, bright enough to
+    // bloom, sized to stay a few pixels wide at any battle zoom
+    this.tracerMat = new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false, transparent: true, depthWrite: false });
+    this.arrows = this._inst(tracerGeometry(), this.tracerMat, 64);
+    this.arrows.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(64 * 3), 3);
+    this.pots = this._inst(potGeometry(), this.tracerMat, 16);
+    this.pots.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(16 * 3), 3);
+    // (yellow at the head, orange down the tail; luminance over 1 so they bloom)
+    this._cArrow = new THREE.Color(2.4, 1.2, 0.3);
+    this._cPotTail = new THREE.Color(3.0, 0.9, 0.15);
+    this._cPot = new THREE.Color(4.0, 1.7, 0.35);
     // trade lanes (dashed, faint, mid zoom): the same water-fx program as lines
     const MAXV = 6000;
     const lg = new THREE.BufferGeometry();
@@ -260,6 +270,12 @@ export class FleetRenderer {
           let y = Math.sin(ph * 1.5) * 0.025 * rough;
           let roll = Math.sin(ph * 1.1) * 0.03 * rough + (v.heading - (v.ph ?? v.heading)) * 1.5;
           let pitch = Math.sin(ph * 0.9 + 1) * 0.02 * rough;
+          if (dmg > 0.3) {
+            // holed: she lists and settles
+            const l = (dmg - 0.3) / 0.7;
+            roll += l * 0.22 * (v.seed > 0.5 ? 1 : -1);
+            y -= l * 0.08;
+          }
           if (v.sink > 0) {
             const s = v.sink;
             y -= s * s * (def.length * 0.35 + 0.8);
@@ -286,7 +302,7 @@ export class FleetRenderer {
           iS[k * 4 + 3] = a.oar;
           k++;
           if (flagsOn && b.model.flags.length && v.sink < 0.4) for (const f of b.model.flags) flagList.push({ f, m: this._m.clone(), v, h });
-          if (wakesOn && v.speed > 0.06 && v.sink < 0.3 && (v.state === 'sail' || v.state === 'patrol' || v.speed > 0.3)) wakeList.push({ x, z, h, v, beam: BEAM[kind] || 0.3 });
+          if (wakesOn && v.speed > 0.1 && !(v.sink > 0) && v.state !== 'moored' && (v.state === 'sail' || v.state === 'patrol' || v.speed > 0.3)) wakeList.push({ x, z, h, v, beam: BEAM[kind] || 0.3 });
         } else {
           // land: sit on the ground, tilt with the slope
           const y = W.heightAt(x, z);
@@ -417,7 +433,7 @@ export class FleetRenderer {
       const F = this.game.fleet;
       for (const id of H.keys()) {
         const v = F.byId.get(id);
-        if (!v || !v.alive || v.state === 'moored') H.delete(id);
+        if (!v || !v.alive || v.state === 'moored' || v.state === 'sinking') H.delete(id);
       }
     }
     if (wakesOn) {
@@ -441,59 +457,109 @@ export class FleetRenderer {
             c1z = w.z + fz * hl;
           quad(c0x + px * hw, c0z + pz * hw, c1x + px * hw, c1z + pz * hw, c1x - px * hw, c1z - pz * hw, c0x - px * hw, c0z - pz * hw, -0.62, hw / L, hl / L, hw / L, hl / L, -hw / L, -0.62, -hw / L, 2, spd, spd, beam, 0, 0, 0.022);
         }
-        // the wake: walk back along the track from the stern
-        const maxS = L * 2.1;
-        let px0 = w.x - fx * L * 0.5,
-          pz0 = w.z - fz * L * 0.5;
-        let dirx = fx,
+        // the wake: resample the track back from the stern at even steps,
+        // then lay the two Kelvin arms and the churn as seamless ribbons
+        let o = H.get(v.id);
+        if (!o) H.set(v.id, (o = { x: w.x, z: w.z, d: 0 }));
+        const mv = Math.hypot(w.x - o.x, w.z - o.z);
+        o.d = (o.d + (mv < 3 ? mv : 0)) % 256;
+        o.x = w.x;
+        o.z = w.z;
+        const odo = o.d;
+        const maxS = L * 1.7;
+        const ds = Math.max(0.1, L * 0.13);
+        const S = this._wk || (this._wk = new Float32Array(64 * 3));
+        let ns = 0;
+        let ax = w.x - fx * L * 0.5,
+          az = w.z - fz * L * 0.5;
+        S[0] = ax;
+        S[1] = az;
+        S[2] = 0;
+        ns = 1;
+        let acc = 0,
+          next = ds,
+          dirx = fx,
           dirz = fz;
-        let s0 = 0;
-        let prev = null;
-        for (let i = T.length - 2; i >= -2 && s0 < maxS && n < max - 18; i -= 2) {
-          let qx, qz;
+        let i = T.length - 2;
+        // points ahead of the stern are skipped
+        while (i >= 0 && (T[i] - ax) * fx + (T[i + 1] - az) * fz > -0.05) i -= 2;
+        let tail = false;
+        while (acc < maxS && ns < 63) {
+          let bx, bz;
           if (i >= 0) {
-            qx = T[i];
-            qz = T[i + 1];
-            // points ahead of the stern are skipped
-            if ((qx - px0) * fx + (qz - pz0) * fz > -0.05 && prev == null) continue;
-          } else {
-            // no more track: a short straight tail, not a long rigid beam
-            const rest = Math.min(maxS - s0, L * 0.35);
+            bx = T[i];
+            bz = T[i + 1];
+            i -= 2;
+          } else if (!tail) {
+            // the track runs out: a short straight tail, never a long beam
+            tail = true;
+            const rest = Math.min(maxS - acc, L * 0.3);
             if (rest < 0.05) break;
-            qx = px0 - dirx * rest;
-            qz = pz0 - dirz * rest;
-          }
-          const sl = Math.hypot(qx - px0, qz - pz0);
+            bx = ax - dirx * rest;
+            bz = az - dirz * rest;
+          } else break;
+          const sl = Math.hypot(bx - ax, bz - az);
           if (sl < 1e-3) continue;
-          const ndx = (px0 - qx) / sl,
-            ndz = (pz0 - qz) / sl;
-          dirx = ndx;
-          dirz = ndz;
-          const s1 = Math.min(maxS, s0 + sl);
-          const t1 = Math.min(1, (s1 - s0) / sl);
-          const ex = px0 - ndx * sl * t1,
-            ez = pz0 - ndz * sl * t1;
-          const nx = -ndz,
-            nz = ndx;
-          const fade = (s) => Math.pow(Math.max(0, 1 - s / maxS), 1.5) * spd;
-          const arm = (s) => (v.def.beam || 0.4) * 0.45 + s * 0.34;
-          const bw = (s) => 0.035 + s * 0.045;
+          if (sl > Math.max(3, L * 2)) break; // a jump in the track: end the wake here
+          dirx = (ax - bx) / sl;
+          dirz = (az - bz) / sl;
+          while (next <= acc + sl && next <= maxS && ns < 63) {
+            const k = (next - acc) / sl;
+            S[ns * 3] = ax + (bx - ax) * k;
+            S[ns * 3 + 1] = az + (bz - az) * k;
+            S[ns * 3 + 2] = next;
+            ns++;
+            next += ds;
+          }
+          acc += sl;
+          ax = bx;
+          az = bz;
+        }
+        if (ns < 2 || n >= max - 18 * ns) continue;
+        const hb = (v.def.beam || 0.4) * 0.5;
+        const fade = (s) => spd * Math.min(1, 0.45 + s / (L * 0.25)) * Math.pow(Math.max(0, 1 - s / maxS), 1.7);
+        const arm = (s) => hb * 0.9 + s * 0.3;
+        const bw = (s) => L * 0.025 + s * 0.07;
+        const churnS = L * 0.9;
+        const cw = (s) => hb * 0.55 + s * 0.06;
+        const cfade = (s) => spd * Math.pow(Math.max(0, 1 - s / churnS), 1.5) * (v.anim.oar > 0.3 ? 1 : 0.8);
+        // the normal at each sample, from its neighbours (smooth through turns)
+        const nrm = (j) => {
+          const j0 = Math.max(0, j - 1),
+            j1 = Math.min(ns - 1, j + 1);
+          let tx = S[j0 * 3] - S[j1 * 3],
+            tz = S[j0 * 3 + 1] - S[j1 * 3 + 1];
+          const tl = Math.hypot(tx, tz) || 1;
+          return [-tz / tl, tx / tl];
+        };
+        let [n0x, n0z] = nrm(0);
+        for (let j = 0; j < ns - 1; j++) {
+          const [n1x, n1z] = nrm(j + 1);
+          const x0 = S[j * 3],
+            z0 = S[j * 3 + 1],
+            s0 = S[j * 3 + 2],
+            x1 = S[j * 3 + 3],
+            z1 = S[j * 3 + 4],
+            s1 = S[j * 3 + 5];
           const a0 = fade(s0),
             a1 = fade(s1);
-          for (const side of [1, -1]) {
-            const i0 = arm(s0) - bw(s0),
-              o0 = arm(s0) + bw(s0),
-              i1 = arm(s1) - bw(s1),
-              o1 = arm(s1) + bw(s1);
-            quad(px0 + nx * side * i0, pz0 + nz * side * i0, px0 + nx * side * o0, pz0 + nz * side * o0, ex + nx * side * o1, ez + nz * side * o1, ex + nx * side * i1, ez + nz * side * i1, s0, 0, s0, 1, s1, 1, s1, 0, 0, a0, a1, beam, s0, s1);
+          const u0 = odo - s0,
+            u1 = odo - s1;
+          if (a0 > 0.003 || a1 > 0.003)
+            for (const side of [1, -1]) {
+              const i0 = arm(s0) - bw(s0),
+                o0 = arm(s0) + bw(s0),
+                i1 = arm(s1) - bw(s1),
+                o1 = arm(s1) + bw(s1);
+              quad(x0 + n0x * side * i0, z0 + n0z * side * i0, x0 + n0x * side * o0, z0 + n0z * side * o0, x1 + n1x * side * o1, z1 + n1z * side * o1, x1 + n1x * side * i1, z1 + n1z * side * i1, u0, 0, u0, 1, u1, 1, u1, 0, 0, a0, a1, beam, s0 / L, s1 / L);
+            }
+          if (s0 < churnS) {
+            const c0 = cw(s0),
+              c1 = cw(s1);
+            quad(x0 + n0x * c0, z0 + n0z * c0, x0 - n0x * c0, z0 - n0z * c0, x1 - n1x * c1, z1 - n1z * c1, x1 + n1x * c1, z1 + n1z * c1, u0, 0, u0, 1, u1, 1, u1, 0, 1, cfade(s0), cfade(s1), beam, s0 / L, s1 / L);
           }
-          const cw0 = (v.def.beam || 0.4) * 0.25 + s0 * 0.05,
-            cw1 = (v.def.beam || 0.4) * 0.25 + s1 * 0.05;
-          quad(px0 + nx * cw0, pz0 + nz * cw0, px0 - nx * cw0, pz0 - nz * cw0, ex - nx * cw1, ez - nz * cw1, ex + nx * cw1, ez + nz * cw1, s0, 0, s0, 1, s1, 1, s1, 0, 1, a0 * (v.anim.oar > 0.3 ? 1 : 0.8), a1, beam, s0, s1);
-          prev = [ex, ez];
-          px0 = ex;
-          pz0 = ez;
-          s0 = s1;
+          n0x = n1x;
+          n0z = n1z;
         }
       }
     }
@@ -561,13 +627,13 @@ export class FleetRenderer {
     void alpha;
   }
 
-  // Catapult stones on their arc, with a dotted trail of grit behind them
-  // and a puff of dust where they fly.
+  // Catapult stones: a big dark tumbling boulder on its arc, trailing smoke
+  // and the odd spark of fire.
   _stones(F, alpha) {
     let n = 0;
     const L = F.stones;
     if (L.length) {
-      const mesh = this._growProp('stones', L.length * 5);
+      const mesh = this._growProp('stones', L.length);
       const step = this.game.simStep || TICK;
       const at = (st, u) => {
         const x = st.x0 + (st.x1 - st.x0) * u,
@@ -576,21 +642,21 @@ export class FleetRenderer {
       };
       for (const st of L) {
         const u = Math.max(0, Math.min(1, (st.t + alpha * step) / st.dur));
-        for (let k = 0; k < 5; k++) {
-          const uk = u - k * 0.045;
-          if (uk < 0) break;
-          const [x, y, z] = at(st, uk);
-          const sc = k === 0 ? 1.6 : 0.6 - k * 0.1;
-          this._q.setFromAxisAngle(this._up, uk * 9);
-          this._m.compose(this._p.set(x, y, z), this._q, this._s.setScalar(sc));
-          mesh.setMatrixAt(n++, this._m);
-        }
-        // the trail is laid by distance flown (none while the game is paused)
-        if (this.game.fx?.emit && u - (st._pu ?? -1) >= 0.035) {
+        const [x, y, z] = at(st, u);
+        this._e.set(u * 7, u * 3, u * 5, 'XYZ');
+        this._q.setFromEuler(this._e);
+        this._m.compose(this._p.set(x, y, z), this._q, this._s.setScalar(1.55));
+        mesh.setMatrixAt(n++, this._m);
+        // the trail is laid by distance flown (none while the game is paused);
+        // a stone first seen in mid-flight gets the trail it has already left
+        if (this.game.fx?.emit && u - (st._pu ?? -1) >= 0.03) {
+          const from = st._pu == null ? Math.max(0, u - 0.45) : u;
+          for (let uu = from; uu <= u + 1e-6; uu += 0.03) {
+            const [x, y, z] = at(st, uu);
+            this.game.fx.emit('smoke', { x, y, z }, { scale: 0.85, count: 2 });
+            if ((st._puff = (st._puff || 0) + 1) % 3 === 0) this.game.fx.emit('fire', { x, y, z }, { scale: 0.25 });
+          }
           st._pu = u;
-          const [x, y, z] = at(st, u);
-          this.game.fx.emit('smoke', { x, y, z }, { scale: 0.45 });
-          if ((st._puff = (st._puff || 0) + 1) % 2 === 0) this.game.fx.emit('fire', { x, y, z }, { scale: 0.3 });
         }
       }
       mesh.instanceMatrix.needsUpdate = true;
@@ -599,13 +665,20 @@ export class FleetRenderer {
     this.stones.visible = n > 0;
   }
 
-  // Arrows and fire pots arcing between ships.
+  // Arrows and fire pots arcing between ships: glowing streaks (a blazing
+  // head for a pot) a few pixels wide from close up to the widest battle view.
   _shots(F, alpha, far) {
-    let n = 0;
+    let n = 0,
+      np = 0;
     const L = F.shots || [];
     if (L.length && !far) {
       const mesh = this._growProp('arrows', L.length);
+      const pm = this._growProp('pots', Math.min(L.length, 48));
       const step = this.game.simStep || TICK;
+      const dist = this.game.cameraRig?.cur?.dist ?? 30;
+      const th = Math.max(0.05, dist * 0.0032);
+      const len = 0.6 + dist * 0.04;
+      const fx = !this.game.paused && this.game.fx?.emit;
       for (const sh of L) {
         const u = (sh.t + alpha * step) / sh.dur;
         if (u < 0 || u > 1) continue;
@@ -619,14 +692,28 @@ export class FleetRenderer {
         const pitch = Math.atan2(4 * peak * (1 - 2 * u), d);
         this._e.set(0, -Math.atan2(dz, dx), pitch, 'YZX');
         this._q.setFromEuler(this._e);
-        this._m.compose(this._p.set(x, y, z), this._q, this._s.setScalar(sh.pot ? 2 : 1.5));
-        mesh.setMatrixAt(n++, this._m);
-        if (sh.pot && !this.game.paused && this.game.fx?.emit && Math.random() < 0.35) this.game.fx.emit('fire', { x, y, z }, { scale: 0.25 });
+        const ln = Math.min(len, d * u + 0.2);
+        this._m.compose(this._p.set(x, y, z), this._q, this._s.set(sh.pot ? ln * 0.8 : ln, sh.pot ? th * 1.5 : th, sh.pot ? th * 1.5 : th));
+        mesh.setMatrixAt(n, this._m);
+        mesh.setColorAt(n, sh.pot ? this._cPotTail : this._cArrow);
+        n++;
+        if (sh.pot && np < pm.instanceMatrix.count) {
+          this._m.compose(this._p, this._q, this._s.setScalar(Math.max(0.14, dist * 0.0075)));
+          pm.setMatrixAt(np, this._m);
+          pm.setColorAt(np, this._cPot);
+          np++;
+          if (fx && Math.random() < 0.35) this.game.fx.emit('fire', { x, y, z }, { scale: 0.25 });
+        }
       }
       mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+      pm.instanceMatrix.needsUpdate = true;
+      if (pm.instanceColor) pm.instanceColor.needsUpdate = true;
     }
     this.arrows.count = n;
     this.arrows.visible = n > 0;
+    this.pots.count = np;
+    this.pots.visible = np > 0;
   }
 
   // Faint dashed trade lanes at mid zoom (rebuilt twice a second).
