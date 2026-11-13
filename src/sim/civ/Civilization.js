@@ -61,11 +61,15 @@ function monumentTitle(type, style, variant) {
 
 function budgets(w, h, area = w * h) {
   const a = area / (256 * 256);
+  const humans = Math.round(Math.min(900, 850 * Math.pow(a, 0.04)));
   return {
     area: a,
-    humans: Math.round(Math.min(900, 850 * Math.pow(a, 0.04))),
+    humans,
     buildings: Math.round(Math.min(920, 300 * Math.pow(a, 0.8))),
-    villages: Math.round(30 * Math.pow(a, 0.55)),
+    // the people budget hardly grows with the map, so neither may the number
+    // of villages sharing it: about 26 people a village, as on a Medium map
+    // (the World Map had 55 villages of 15 and no cities)
+    villages: Math.round(Math.min(30 * Math.pow(a, 0.55), humans / 26)),
     startVillages: Math.max(1, Math.round(3 * Math.pow(a, 0.7))),
   };
 }
@@ -847,7 +851,7 @@ export class Civilization {
     const crowd = this._crowd();
     const popCrowd = this._popCrowd || 0;
     const fullWorld = humans > this._humanCap() * 0.85;
-    if (pop < v.housing && pop < this._popCap(v) && !(fullWorld && pop > (v.tier >= 2 && (this.kingdoms[v.kingdom]?.capital === v.id || v.coastal) ? 170 : 45)) && v.food > pop * 1.2 + 8 && !v.starving && humans < this._humanCap() && this.rng.chance(Math.min(1, (1 - popCrowd * 0.85) * this._kLaw(v.kingdom, 'civGrowth', 1) * (v.policy?.growth ?? 1)))) {
+    if (pop < v.housing && pop < this._popCap(v) && !(fullWorld && pop > this._fullWorldRoom(v)) && v.food > pop * 1.2 + 8 && !v.starving && humans < this._humanCap() && this.rng.chance(Math.min(1, (1 - popCrowd * 0.85) * this._kLaw(v.kingdom, 'civGrowth', 1) * (v.policy?.growth ?? 1)))) {
       let father = false;
       for (const u of v.members) if (u.sex === 'm' && u.age >= 18 && u.age < 60) father = true;
       if (father) {
@@ -890,7 +894,7 @@ export class Civilization {
       let src = null;
       for (const vid of this.kingdoms[v.kingdom]?.villages || []) {
         const o = this.villages[vid];
-        if (o?.alive && o !== v && o.pop > 40 && o.landId === v.landId && (!src || o.pop > src.pop)) src = o;
+        if (o?.alive && o !== v && o.pop > 60 && o.landId === v.landId && (!src || o.pop > src.pop)) src = o;
       }
       if (src) {
         let moved = 0;
@@ -901,6 +905,30 @@ export class Civilization {
           moved++;
         }
         if (moved) this._history(`Families from ${src.name} settle in ${v.name}`, 'info', { x: v.cx, z: v.cz });
+      }
+    }
+    // a dwindling hamlet in a full world gives up: its last families move to
+    // the nearest town of the realm (nothing comes to refill a hamlet once the
+    // world is full, and a dozen such remnants held the World Map's village
+    // places while its towns stayed small)
+    if (fullWorld && pop <= 6 && now - v.founded > YEAR * 15 && this._aliveVillageCount() >= this.budget.villages * 0.8 && this.kingdoms[v.kingdom]?.capital !== v.id && !(v.colony && now - v.founded < YEAR * 30) && this.rng.chance(0.012 * dt)) {
+      let to = null,
+        td = 70 * Math.sqrt(this.budget.area);
+      for (const vid of this.kingdoms[v.kingdom]?.villages || []) {
+        const o = this.villages[vid];
+        if (!o?.alive || o === v || o.landId !== v.landId || o.pop < 12 || o.starving) continue;
+        const d = Math.hypot(o.cx - v.cx, o.cz - v.cz);
+        if (d < td) (td = d), (to = o);
+      }
+      if (to) {
+        for (const u of [...v.members]) {
+          if (!u.alive) continue;
+          this._moveMember(u, to);
+          if (u.data.civ) u.data.civ.task = { kind: 'arrive' };
+        }
+        this._history(`The last families of ${v.name} move to ${to.name}`, 'info', { x: to.cx, z: to.cz });
+        this._abandon(v, 'silent');
+        return;
       }
     }
     // newcomers drawn to prosperous settlements
@@ -1337,6 +1365,26 @@ export class Civilization {
     const m = this._easedMods();
     const great = v.tier >= 2 && (this.kingdoms[v.kingdom]?.capital === v.id || v.coastal || v.buildings.some((b) => b.alive && b.type === 'market' && b.level >= 2)) ? 1.6 : 1;
     return Math.round(TIER_POP[v.tier || 0] * great * Math.max(1, Math.min(1.35, m.birth * 0.6 + m.fertility * 0.4)));
+  }
+  // How big a settlement may still grow once the world is full. The realm's
+  // capital and its port and market cities grow on (a capital already as a
+  // town: it could never reach the 50 people a city needs otherwise); other
+  // villages level off near their share of the people, which is 45 on a
+  // Medium map and less where many villages share them.
+  _fullWorldRoom(v) {
+    const k = this.kingdoms[v.kingdom];
+    if ((v.tier >= 1 && k?.capital === v.id) || (v.tier >= 2 && v.coastal)) return 170;
+    return clamp(Math.round((1.6 * this._humanCap()) / Math.max(1, this._aliveVillageCount())), 14, 45);
+  }
+  _aliveVillageCount() {
+    const t = this.game.time.total;
+    if (this._aliveVT !== t) {
+      this._aliveVT = t;
+      let n = 0;
+      for (const v of this.villages) if (v.alive) n++;
+      this._aliveVN = n;
+    }
+    return this._aliveVN;
   }
   _humanCap() {
     const b = this._easedMods().birth;
