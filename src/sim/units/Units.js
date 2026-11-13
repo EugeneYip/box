@@ -172,7 +172,9 @@ export class Units {
     let b = Math.max(WILD_FLOOR * ps, WILD_TARGET * ps - 0.15 * humans);
     // big maps: all creatures together stay near the performance budget
     // (~1,600 on a Huge 512 map); the wilds keep a smaller floor there
-    if (this.areaScale > 1.01) b = Math.min(b, Math.max(WILD_FLOOR_BIG * ps, UNIT_CAP * ps - humans - this.herds.totalTended));
+    // (the World Map's wilds follow its land area: sqrt(area) rather than area^0.34)
+    const wide = this.game.world.meta?.budgetArea ? Math.sqrt(this.areaScale) : ps;
+    if (this.areaScale > 1.01) b = Math.min(b, Math.max(WILD_FLOOR_BIG * wide, UNIT_CAP * ps - humans - this.herds.totalTended));
     return Math.round(b);
   }
 
@@ -2162,16 +2164,17 @@ export class Units {
       const wn = wildN.get(def.id) || 0;
       const mvp = MVP[def.id] || 5;
       // grazers well below a healthy herd size are joined by wild herds from the edge
-      const thin = roomy && def.diet === 'herbivore' && def.kind === 'animal' && wn < this.capacity(def.id) * HEALTHY;
+      const thin = roomy && def.diet === 'herbivore' && def.kind === 'animal' && wn < this.capacity(def.id) * (this.game.world.meta?.budgetArea ? 0.5 : HEALTHY);
       if (n >= mvp && !thin) continue;
       // rare migrants arrive from the map edge (spawnRate law scales how often)
       const rate = typeof this.game.laws?.spawnRate === 'number' ? Math.max(0.1, this.game.laws.spawnRate) : 1;
       // on a big world herds arrive more often (the same flow per stretch of land)
-      const wide = Math.sqrt(Math.max(1, this.areaScale));
+      const wm = !!this.game.world.meta?.budgetArea;
+      const wide = wm ? Math.max(1, this.areaScale) : Math.sqrt(Math.max(1, this.areaScale));
       if (now - (this._rescueAt.get(def.id) ?? -1e9) < (n === 0 ? 30 : n < mvp ? 75 : 50 / wide) / rate) continue;
       const spot = this._edgeSpot(def);
       if (!spot) continue;
-      const grp = this.spawnGroup(def.id, spot.x, spot.z, this.game.rng, def.pack ? 3 : def.solitary ? 2 : null, true);
+      const grp = this.spawnGroup(def.id, spot.x, spot.z, this.game.rng, def.pack ? 3 : def.solitary ? 2 : wm && def.seed ? this.game.rng.int(def.seed.size[0] + 1, def.seed.size[1] + 2) : null, true);
       if (grp.length) {
         this._rescueAt.set(def.id, now);
         if (grp.length >= 2 && !grp.some((g) => g.sex === 'm')) grp[1].sex = 'm';
