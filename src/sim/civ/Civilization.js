@@ -36,7 +36,7 @@ import { culture, TRAIT_INFO } from './culture.js';
 // Budgets scale with map area (a = w*h / 256^2): a Huge 512 map tops out near
 // 900 people and 900 buildings.
 const VILLAGE_MAX_POP = 64; // legacy reference size (a town)
-const TIER_POP = [40, 70, 115]; // village, town, city
+const TIER_POP = [40, 70, 115]; // village, town, city (capitals and ports grow larger)
 // What each finished monument gives its realm (techMod / techAdd keys).
 const MONUMENT_FX = {
   vale: { mods: { 'loyalty+': 6, build: 1.15 }, text: 'its provinces hold fast to the crown' },
@@ -461,7 +461,7 @@ export class Civilization {
     const k = this.kingdoms[v.kingdom];
     if (!k || now - (k.lastExpand || -999) < YEAR * (2.5 + crowd * 6)) return false;
     const aliveVillages = this.villages.filter((o) => o.alive).length;
-    if (aliveVillages >= this.budget.villages || k.villages.length >= 14) return false;
+    if (aliveVillages >= this.budget.villages || k.villages.length >= 14 || k.villages.length > 0.33 * aliveVillages) return false;
     if (this.expeditions.some((e) => e.from === v.id)) return false;
     v.lastExpand = now;
     const site = this._findExpansionSite(v);
@@ -847,7 +847,7 @@ export class Civilization {
     const crowd = this._crowd();
     const popCrowd = this._popCrowd || 0;
     const fullWorld = humans > this._humanCap() * 0.85;
-    if (pop < v.housing && pop < this._popCap(v) && !(fullWorld && pop > 45) && v.food > pop * 1.2 + 8 && !v.starving && humans < this._humanCap() && this.rng.chance(Math.min(1, (1 - popCrowd * 0.85) * this._kLaw(v.kingdom, 'civGrowth', 1) * (v.policy?.growth ?? 1)))) {
+    if (pop < v.housing && pop < this._popCap(v) && !(fullWorld && pop > (v.tier >= 2 && (this.kingdoms[v.kingdom]?.capital === v.id || v.coastal) ? 170 : 45)) && v.food > pop * 1.2 + 8 && !v.starving && humans < this._humanCap() && this.rng.chance(Math.min(1, (1 - popCrowd * 0.85) * this._kLaw(v.kingdom, 'civGrowth', 1) * (v.policy?.growth ?? 1)))) {
       let father = false;
       for (const u of v.members) if (u.sex === 'm' && u.age >= 18 && u.age < 60) father = true;
       if (father) {
@@ -965,12 +965,12 @@ export class Civilization {
         }
       });
       v.trees = mature;
-      const want = 75 + v.tier * 20;
+      const want = 95 + v.tier * 20;
       if (mature + young < want) {
         const species = { vale: [FLORA.OAK, FLORA.BIRCH], dune: [FLORA.PALM, FLORA.ACACIA], frost: [FLORA.PINE, FLORA.PINE], mire: [FLORA.JUNGLE_TREE, FLORA.SWAMP_TREE] }[baseCulture(v.culture)] || [FLORA.OAK];
         if (v.groveAngle == null) v.groveAngle = this.rng.float(0, Math.PI * 2);
         let planted = 0;
-        for (let k = 0; k < 60 && planted < 10; k++) {
+        for (let k = 0; k < 80 && planted < 14; k++) {
           const a = v.groveAngle + this.rng.float(-1.3, 1.3);
           const r = v.buildRadius + 2 + this.rng.next() * 9;
           const x = Math.floor(v.cx + Math.cos(a) * r),
@@ -1335,7 +1335,8 @@ export class Civilization {
   }
   _popCap(v) {
     const m = this._easedMods();
-    return Math.round(TIER_POP[v.tier || 0] * Math.max(1, Math.min(1.35, m.birth * 0.6 + m.fertility * 0.4)));
+    const great = v.tier >= 2 && (this.kingdoms[v.kingdom]?.capital === v.id || v.coastal || v.buildings.some((b) => b.alive && b.type === 'market' && b.level >= 2)) ? 1.6 : 1;
+    return Math.round(TIER_POP[v.tier || 0] * great * Math.max(1, Math.min(1.35, m.birth * 0.6 + m.fertility * 0.4)));
   }
   _humanCap() {
     const b = this._easedMods().birth;
@@ -1416,7 +1417,7 @@ export class Civilization {
     if (atWar) give('soldier', Math.max(3, n * Math.min(0.55, (drafting ? 0.32 : 0.2) * lean)) + (v.hasBarracks ? 3 : 0));
     give('builder', sites ? Math.min(Math.max(1, Math.ceil(sites * 1.1)), 1 + Math.floor(n / 6)) : repairs ? 1 : 0);
     // an empty woodshed stops all building: send more hands to the woods
-    const woodsCap = (v.trees ?? 99) < 15 ? 1 : (v.trees ?? 99) < 35 ? 2 : (v.trees ?? 99) < 60 ? 3 : 9;
+    const woodsCap = (v.trees ?? 99) < 20 ? 1 : (v.trees ?? 99) < 45 ? 2 : (v.trees ?? 99) < 75 ? 3 : 9;
     give('woodcutter', Math.min(woodsCap, woodFull ? (n >= 6 ? 1 : 0) : v.wood < 15 ? 1 + Math.floor(n / 7) : v.wood < 40 + v.tier * 30 ? 1 + Math.floor(n / 9) : n >= 4 ? 1 + Math.floor(n / 16) : 0));
     if (!atWar && n >= 5) give('soldier', Math.max(1, n * 0.11 * lean) + (v.hasBarracks ? 2 : 0) + (ctr('Martial') && v.tier >= 1 ? 2 : 0));
     if (v.hasRock !== false || v.quarry >= 0) give('miner', stoneFull ? 0 : v.stone < 12 ? 2 + Math.floor(n / 7) : v.stone < 30 + v.tier * 50 ? 1 + Math.floor(n / (ctr('Masons') ? 6 : 9)) : ctr('Masons') ? 2 : 1);
