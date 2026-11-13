@@ -7,6 +7,7 @@ import { USE } from '../civ/util.js';
 // its roads (The Wheel), trade caravans between realms at peace (Banking),
 // and battering rams and catapults that roll with armies (Siegecraft).
 const ROAD_NODES = 2500; // across country (the laid roads are searched first, cheaply)
+const BATTERY_RANGE = 10.5; // a catapult throws at most this far from its battery
 
 export const land = {
   // ------------------------------------------------------------------ API
@@ -431,7 +432,8 @@ export const land = {
       const edge = Math.max(b.w, b.h) * 0.5;
       if (v.kind === 'catapult') {
         if (this._battery(v, b, target, step)) return;
-        if (d <= 12 && d >= 3.5 && this._openGround(v.x, v.z)) {
+        // no battery to be had: shoot only from open ground fit for one
+        if (d <= 10 && d >= 3.5 && this._batteryGround(v.x, v.z, target, true) >= 3) {
           v.speed *= Math.exp(-step * 3);
           v.heading = turnTo(v.heading, Math.atan2(b.z - v.z, b.x - v.x), step * 1.5);
           if ((v.fireT = (v.fireT ?? 1) - step) <= 0) {
@@ -497,9 +499,12 @@ export const land = {
     v.z += Math.sin(want) * s;
   },
 
-  // A catapult works from a battery: open, level ground just outside the
-  // town (beyond its outermost houses and walls), within range of them,
-  // facing in. It rolls there, sets up and shoots at what lies in range.
+  // A catapult works from a battery: open, level ground before the town it
+  // besieges, a few houses' lengths from its nearest buildings (close enough
+  // that town and engine share one view), off every field, and clear of any
+  // house that is not the target's: never in its own realm's farms and
+  // streets, nor in a third realm's. It rolls there, sets up facing the town
+  // and shoots at what lies in range.
   // Returns false when no battery can be found (then the old way applies).
   _battery(v, b, village, step) {
     const w = this.world;
@@ -539,16 +544,19 @@ export const land = {
       }
       return true;
     }
-    // in battery: pick the nearest thing in range from here
+    // in battery: the chosen mark if it is in range, else the nearest
+    // building of the town in range (walls first)
     v.speed *= Math.exp(-step * 3);
-    let tgt = b && Math.hypot(b.x - v.x, b.z - v.z) <= 12.5 ? b : null;
+    const inRange = (o) => {
+      const od = Math.hypot(o.x - v.x, o.z - v.z);
+      return od <= BATTERY_RANGE && od >= 3.5;
+    };
+    let tgt = b && b.alive && b.village === village.id && inRange(b) ? b : null;
     if (!tgt) {
       let bs = Infinity;
       for (const o of village.buildings || []) {
-        if (!o.alive || o.constructing) continue;
-        const od = Math.hypot(o.x - v.x, o.z - v.z);
-        if (od > 12.5 || od < 3) continue;
-        const sc = od - (BUILDING_TYPES[o.type]?.wall ? 3 : 0);
+        if (!o.alive || o.constructing || !inRange(o)) continue;
+        const sc = Math.hypot(o.x - v.x, o.z - v.z) - (BUILDING_TYPES[o.type]?.wall ? 3 : 0);
         if (sc < bs) {
           bs = sc;
           tgt = o;
@@ -568,52 +576,89 @@ export const land = {
     return true;
   },
 
+  // The best battery before a town: candidates on rings round it, kept when
+  // the town's nearest building lies 4-8 tiles off (relaxed once if none
+  // is found), scored for the roll there, a good throwing distance, and not
+  // sitting on the attacker's own land.
   _batterySite(v, village) {
-    const w = this.world;
     const B = (village.buildings || []).filter((o) => o.alive);
     if (!B.length) return null;
+    const w = this.world;
     const cx = village.cx,
       cz = village.cz;
     let ext = 0;
     for (const o of B) ext = Math.max(ext, Math.hypot(o.x - cx, o.z - cz) + Math.max(o.w || 1, o.h || 1) * 0.5);
-    const base = Math.atan2(v.z - cz, v.x - cx);
-    let best = null,
-      bs = Infinity;
-    for (let k = 0; k < 17; k++) {
-      const ang = base + (k & 1 ? 1 : -1) * Math.ceil(k / 2) * 0.24;
-      for (const r of [ext + 2.5, ext + 4, ext + 6]) {
-        const x = cx + Math.cos(ang) * r,
-          z = cz + Math.sin(ang) * r;
-        const tx = Math.floor(x),
-          tz = Math.floor(z);
-        if (!w.inBounds(tx, tz) || !w.isWalkable(tx, tz) || !this._openGround(x, z)) continue;
-        let clear = true,
-          near = Infinity;
-        for (const o of B) {
-          const od = Math.hypot(o.x - x, o.z - z) - Math.max(o.w || 1, o.h || 1) * 0.5;
-          if (od < 1.8) {
-            clear = false;
-            break;
+    for (const [lo, hi, strict] of [
+      [4, 8, true],
+      [3.5, 10, false],
+    ]) {
+      let best = null,
+        bs = Infinity;
+      for (let r = 3; r <= ext + hi + 1; r += 1) {
+        const n = Math.max(12, Math.min(48, Math.round(r * 1.6)));
+        for (let k = 0; k < n; k++) {
+          const ang = (k / n) * Math.PI * 2 + r * 0.37;
+          const x = cx + Math.cos(ang) * r,
+            z = cz + Math.sin(ang) * r;
+          let near = Infinity;
+          for (const o of B) {
+            const od = Math.hypot(o.x - x, o.z - z) - Math.max(o.w || 1, o.h || 1) * 0.5;
+            if (od < near) near = od;
           }
-          if (od < near) near = od;
-        }
-        if (!clear || near > 10) continue;
-        // and clear of any other settlement's houses too
-        for (let dz = -2; dz <= 2 && clear; dz++)
-          for (let dx = -2; dx <= 2; dx++)
-            if (w.inBounds(tx + dx, tz + dz) && w.building[w.idx(tx + dx, tz + dz)] >= 0) {
-              clear = false;
-              break;
-            }
-        if (!clear) continue;
-        const sc = Math.ceil(k / 2) * 1.2 + Math.hypot(x - v.x, z - v.z) * 0.12 + (r - ext) * 0.4;
-        if (sc < bs) {
-          bs = sc;
-          best = { x, z, vid: village.id, stuck: 0 };
+          if (near < lo || near > hi) continue;
+          const g = this._batteryGround(x, z, village, strict);
+          if (g < 0) continue;
+          const tx = Math.floor(x),
+            tz = Math.floor(z);
+          const own = w.owner[tz * w.w + tx] === v.kingdom;
+          const sc = Math.hypot(x - v.x, z - v.z) * 0.15 + Math.abs(near - 6) * 0.8 + (own ? 5 : 0);
+          if (sc < bs) {
+            bs = sc;
+            best = { x, z, vid: village.id, stuck: 0 };
+          }
         }
       }
+      if (best) return best;
     }
-    return best;
+    return null;
+  },
+
+  // Is (x, z) fit for a battery before `village`? Open, level, walkable ground
+  // on the town's own land mass, off every field (strict) or at least off
+  // other towns' fields, with no house right beside it and no house of any
+  // other town (the attacker's own, a third realm's) within six tiles
+  // (five when not strict).
+  // Returns the edge distance to the town's nearest building, or -1.
+  _batteryGround(x, z, village, strict = true) {
+    const w = this.world;
+    const civ = this.game.civ;
+    const tx = Math.floor(x),
+      tz = Math.floor(z);
+    if (!w.inBounds(tx, tz) || !w.isWalkable(tx, tz) || !this._openGround(x, z)) return -1;
+    const i0 = tz * w.w + tx;
+    if (civ.landId && village.landId != null && civ.landId[i0] !== village.landId) return -1;
+    for (let dz = -6; dz <= 6; dz++)
+      for (let dx = -6; dx <= 6; dx++) {
+        const xx = tx + dx,
+          zz = tz + dz;
+        if (!w.inBounds(xx, zz)) continue;
+        const r2 = dx * dx + dz * dz;
+        if (r2 > 36) continue;
+        const i = zz * w.w + xx;
+        if (r2 <= 5 && civ.use?.[i] === USE.PLOT && (strict || civ.plotOf?.[i] !== village.id)) return -1;
+        const bid = w.building[i];
+        if (bid < 0) continue;
+        if (r2 <= 4) return -1;
+        const o = civ.buildingById?.(bid);
+        if (o && o.village !== village.id && (strict || r2 <= 25)) return -1;
+      }
+    let near = Infinity;
+    for (const o of village.buildings || []) {
+      if (!o.alive) continue;
+      const od = Math.hypot(o.x - x, o.z - z) - Math.max(o.w || 1, o.h || 1) * 0.5;
+      if (od < near) near = od;
+    }
+    return near === Infinity ? -1 : near;
   },
 
   // Clear, level ground (no trees close by): where a catapult can work and be seen.

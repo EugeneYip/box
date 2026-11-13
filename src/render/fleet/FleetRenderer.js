@@ -4,6 +4,7 @@ import { createVehicleMaterial, createVehicleDepthMaterial, createWaterFxMateria
 import { bannerGeometry, bannerMaterial } from '../buildings/props.js';
 import { emblemAtlas, EMBLEM_IDS, FIELD_IDS } from '../buildings/emblems.js';
 import { ALL_KINDS, KINDS } from '../../sim/fleet/kinds.js';
+import { smokePuff, RAMP } from '../fx/Effects.js';
 
 // Draws game.fleet: one instanced batch per vehicle kind (sails, oars, wheels
 // and legs animate in the vertex shader), realm flags with their emblems,
@@ -15,6 +16,7 @@ const TICK = 1 / 15;
 const DETAIL_DIST = 175; // beyond this camera distance vehicles draw as dots
 const FLAG_DIST = 115;
 const WAKE_DIST = 165;
+const STONE_SCALE = 0.62; // catapult stone: ~0.38 tiles across, a third of the arm
 const BEAM = { fishing: 0.36, cog: 0.35, transport: 0.37, galley: 0.19, explorer: 0.27, carrack: 0.31 };
 
 function lerpAngle(a, b, t) {
@@ -627,8 +629,7 @@ export class FleetRenderer {
     void alpha;
   }
 
-  // Catapult stones: a big dark tumbling boulder on its arc, trailing smoke
-  // and the odd spark of fire.
+  // Catapult stones: a dark tumbling stone on its arc, trailing a thin smoke.
   _stones(F, alpha) {
     let n = 0;
     const L = F.stones;
@@ -645,16 +646,19 @@ export class FleetRenderer {
         const [x, y, z] = at(st, u);
         this._e.set(u * 7, u * 3, u * 5, 'XYZ');
         this._q.setFromEuler(this._e);
-        this._m.compose(this._p.set(x, y, z), this._q, this._s.setScalar(1.55));
+        // a stone about a third of the arm's length (the arm is ~1.1 tiles)
+        this._m.compose(this._p.set(x, y, z), this._q, this._s.setScalar(STONE_SCALE));
         mesh.setMatrixAt(n++, this._m);
-        // the trail is laid by distance flown (none while the game is paused);
-        // a stone first seen in mid-flight gets the trail it has already left
-        if (this.game.fx?.emit && u - (st._pu ?? -1) >= 0.03) {
-          const from = st._pu == null ? Math.max(0, u - 0.45) : u;
-          for (let uu = from; uu <= u + 1e-6; uu += 0.03) {
+        // a thin grey thread of smoke behind it, laid by distance flown (none
+        // while paused) and only once it is well clear of the arm; a stone
+        // first seen in mid-flight gets the trail it has already left
+        const fx = this.game.fx;
+        if (fx?.k && !this.game.paused && u - (st._pu ?? -1) >= 0.025) {
+          const from = st._pu == null ? Math.max(0.1, u - 0.4) : u;
+          for (let uu = from; uu <= u + 1e-6; uu += 0.025) {
+            if (uu < 0.1 || uu > 0.92) continue;
             const [x, y, z] = at(st, uu);
-            this.game.fx.emit('smoke', { x, y, z }, { scale: 0.85, count: 2 });
-            if ((st._puff = (st._puff || 0) + 1) % 3 === 0) this.game.fx.emit('fire', { x, y, z }, { scale: 0.25 });
+            for (let i = fx.k(1); i > 0; i--) smokePuff(fx, x, y, z, { size: 0.16, ramp: RAMP.SMOKE_LIGHT, rise: 0.12, drift: 0.5, drag: 1.4, grow: 2.6, life: 1.1 + Math.random() * 0.6, lit: 0.9, alpha: 0.7 });
           }
           st._pu = u;
         }
