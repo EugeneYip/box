@@ -161,9 +161,28 @@ export const unlocks = {
         this._surveyRoad(k);
       }
       if (this.hasTech(k.id, 'horsemanship')) this._riders(k);
+      this._supplyColonies(k, now);
       if (this.hasTech(k.id, 'sailing') && now - (k.fleetT || 0) > 12) {
         k.fleetT = now;
         this._fleetDecisions(k);
+      }
+    }
+  },
+
+  // Young colonies are supplied for thirty years: families and grain from
+  // home while they are small, and a steady loyalty while they take root.
+  _supplyColonies(k, now) {
+    for (const vid of k.villages) {
+      const v = this.villages[vid];
+      if (!v?.alive || !v.colony || now - v.founded > YEAR * 30) continue;
+      v.loyaltyBoost = Math.max(v.loyaltyBoost || 0, 20);
+      if (v.food < 40) v.food += 1.5;
+      if (v.pop < 14 && now - (v.supplyT || 0) > YEAR * 3) {
+        v.supplyT = now;
+        for (let i = 0; i < 2; i++) {
+          const a = this.rng.float(0, Math.PI * 2);
+          this.spawnHuman(v, v.cx + Math.cos(a) * 2, v.cz + Math.sin(a) * 2, { age: this.rng.float(17, 28), sex: i ? 'f' : 'm' });
+        }
       }
     }
   },
