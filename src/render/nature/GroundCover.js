@@ -577,7 +577,17 @@ export class GroundCover {
     c.lists.clear();
     for (const [key, sc] of scratch) {
       if (!sc.n) continue;
-      c.lists.set(key, { k: sc.k, v: sc.v, n: sc.n, mats: sc.mats.slice(0, sc.n * 16), cols: sc.cols.slice(0, sc.n * 3) });
+      // even-indexed tufts first: any half-length prefix is an even thinning
+      const n = sc.n,
+        mats = new Float32Array(n * 16),
+        cols = new Float32Array(n * 3);
+      let o = 0;
+      for (let pass = 0; pass < 2; pass++)
+        for (let k = pass; k < n; k += 2, o++) {
+          mats.set(sc.mats.subarray(k * 16, k * 16 + 16), o * 16);
+          cols.set(sc.cols.subarray(k * 3, k * 3 + 3), o * 3);
+        }
+      c.lists.set(key, { k: sc.k, v: sc.v, n, mats, cols });
     }
     this._needCompact = true;
     c.count = total;
@@ -604,7 +614,7 @@ export class GroundCover {
     const cam = camObj.position;
     // dense near the camera, gone by mid-zoom distances (the terrain shader
     // carries the grass texture further out)
-    const far = Math.min(46, 10 + D * 0.7);
+    const far = D < 20 ? 10 + D * 0.7 : Math.min(40, 24 + (D - 20) * 0.32);
     const near = far * 0.62;
     this.veg.uniforms.uFade.value.set(near, far);
     const enabled = D < MAX_DIST * 0.95;
@@ -630,7 +640,7 @@ export class GroundCover {
       if (inRange) {
         c.awayT = 0;
         if (!c.built || c.dirty) want.push([d, c]);
-        else if (c.count && this._frustum.intersectsSphere(c.sphere)) state = 1;
+        else if (c.count && this._frustum.intersectsSphere(c.sphere)) state = d > near ? 2 : 1; // 2: wholly in the fade band, half density
       } else if (c.built) {
         c.awayT += dt;
         if (c.awayT > 8) this.freeChunk(c);
@@ -644,9 +654,9 @@ export class GroundCover {
       want.sort((a, b) => a[0] - b[0]);
       const t0 = performance.now();
       const firstFill = !this._filled;
-      for (const [, c] of want) {
+      for (const [dd, c] of want) {
         this.buildChunk(c);
-        c.state = c.count && this._frustum.intersectsSphere(c.sphere) ? 1 : 0;
+        c.state = c.count && this._frustum.intersectsSphere(c.sphere) ? (dd > near ? 2 : 1) : 0;
         changed = true;
         if (!firstFill && performance.now() - t0 > 3) break;
       }
@@ -660,7 +670,7 @@ export class GroundCover {
       if (!c.state) continue;
       for (const [key, list] of c.lists) {
         const kind = this.kinds[list.k];
-        B.add(key, list, { geo: kind.geos[list.v], material: this.mat.material, depth: null, castShadow: false, label: kind.id + '-' + list.v });
+        B.add(key, c.state === 2 ? { n: Math.ceil(list.n / 2), mats: list.mats, cols: list.cols } : list, { geo: kind.geos[list.v], material: this.mat.material, depth: null, castShadow: false, label: kind.id + '-' + list.v });
       }
     }
     B.end();
