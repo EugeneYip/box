@@ -246,6 +246,22 @@ void main() {
 // streaks. One flat layer under the cumulus puffs; it fades in as the camera
 // climbs to the overview, and its density also feeds the cloud shadows.
 const SHEET_FN = /* glsl */ `
+uniform sampler2D tHeight;  // world heights (game.terrain.heightTexture)
+uniform vec3 uWorld;        // world w, h, has-height-texture
+uniform float uLandAvoid;   // 0 .. 1: fields keep to the sea (map zoom)
+// soft land fraction around xz (5 taps over ~50 units, so the fields thin
+// out well before a coast instead of tracing it)
+float landNear(vec2 xz) {
+  if (uWorld.z < 0.5 || uLandAvoid < 0.01) return 0.0;
+  float s = 0.0;
+  for (int i = 0; i < 5; i++) {
+    vec2 o = i == 0 ? vec2(0.0) : vec2(i == 1 ? 26.0 : i == 2 ? -26.0 : 0.0, i == 3 ? 26.0 : i == 4 ? -26.0 : 0.0);
+    vec2 uv = (xz + o) / uWorld.xy;
+    bool inside = uv.x > 0.0 && uv.y > 0.0 && uv.x < 1.0 && uv.y < 1.0;
+    s += inside ? smoothstep(-0.4, 0.6, texture2D(tHeight, uv).r) : 0.0;
+  }
+  return s / 5.0;
+}
 float sheetDensity(vec2 xz, vec2 drift, float cov) {
   vec2 w = vec2(0.906, 0.423);                      // street orientation
   vec2 x = xz - drift;
@@ -253,6 +269,8 @@ float sheetDensity(vec2 xz, vec2 drift, float cov) {
   vec2 p = vec2(q.x / 44.0, q.y / 24.0);
   float field = cNoise(p * 0.11 + 7.3) * 0.62 + cNoise(p * 0.27 + 1.7) * 0.38;
   float fm = smoothstep(0.86 - 0.45 * cov, 0.98 - 0.4 * cov, field);
+  if (fm < 0.001) return 0.0;
+  fm *= 1.0 - uLandAvoid * smoothstep(0.05, 0.6, landNear(xz));
   if (fm < 0.001) return 0.0;
   float cells = cFbm(p + 3.1);
   return fm * smoothstep(0.56 - 0.1 * fm, 0.7, cells);
@@ -270,8 +288,6 @@ const SHEET_FRAG = /* glsl */ `
 uniform vec2 uDrift;
 uniform float uCov;
 uniform float uAmt;
-uniform float uCirrus;
-uniform float uCirOff;
 uniform float uDark;
 uniform vec3 uLit;
 uniform vec3 uShade;
@@ -300,22 +316,9 @@ void main() {
     cS += uFlash * thick;
     aS = smoothstep(0.0, 0.5, d) * 0.72;
   }
-  // thin cirrus streaks, sparse and fine
-  float aC = 0.0;
-  if (uCirrus > 0.003) {
-    vec2 wc = vec2(0.62, 0.785);
-    vec2 qc = vec2(dot(xz, wc), dot(xz, vec2(-wc.y, wc.x)));
-    float bend = cNoise(qc * 0.006 + 4.0) * 3.0;          // curved, not ruled
-    vec2 pc = vec2(qc.x / 100.0 + uCirOff, qc.y / 9.0 + bend);
-    float n = cFbm(pc + 9.1);
-    float m = cNoise(qc * 0.011 + 2.0) * 0.6 + cNoise(qc * 0.03 + 8.0) * 0.4;
-    aC = smoothstep(0.62, 0.86, n) * smoothstep(0.55, 0.8, m) * uCirrus * 0.45;
-  }
-  float a = aC + aS * (1.0 - aC);
-  if (a * uAmt * radial < 0.003) discard;
-  vec3 cC = uLit * 0.85 + uShade * 0.55;
-  vec3 col = (cC * aC + cS * aS * (1.0 - aC)) / max(a, 1e-4);
-  gl_FragColor = vec4(col, a * uAmt * radial);
+  float a = aS * uAmt * radial;
+  if (a < 0.003) discard;
+  gl_FragColor = vec4(cS, a);
 }
 `;
 const SHEET_SPLAT_FRAG = /* glsl */ `
@@ -467,8 +470,9 @@ export class Clouds {
       uDrift: { value: null }, // this.drift (set below)
       uCov: { value: 0.5 },
       uAmt: { value: 0 },
-      uCirrus: { value: 0 },
-      uCirOff: { value: 0 },
+      tHeight: { value: null },
+      uWorld: { value: new THREE.Vector3(256, 256, 0) },
+      uLandAvoid: { value: 0 },
       uDark: { value: 0 },
       uLit: { value: new THREE.Color(1, 1, 1) },
       uShade: { value: new THREE.Color(0.6, 0.65, 0.8) },
@@ -554,7 +558,7 @@ export class Clouds {
     this.splatScene.add(this.stormShadow);
     this.sheetSplat = new THREE.Mesh(
       new THREE.PlaneGeometry(f.sx, f.sz).rotateX(-Math.PI / 2).translate(f.x0 + f.sx / 2, 50, f.z0 + f.sz / 2),
-      new THREE.ShaderMaterial({ uniforms: { uDrift: this.sheetU.uDrift, uCov: this.sheetU.uCov, uAmt: this.sheetU.uAmt }, vertexShader: SHEET_VERT, fragmentShader: SHEET_SPLAT_FRAG, ...maxBlend }),
+      new THREE.ShaderMaterial({ uniforms: { uDrift: this.sheetU.uDrift, uCov: this.sheetU.uCov, uAmt: this.sheetU.uAmt, tHeight: this.sheetU.tHeight, uWorld: this.sheetU.uWorld, uLandAvoid: this.sheetU.uLandAvoid }, vertexShader: SHEET_VERT, fragmentShader: SHEET_SPLAT_FRAG, ...maxBlend }),
     );
     this.sheetSplat.frustumCulled = false;
     this.sheetSplat.visible = false;
@@ -597,6 +601,8 @@ export class Clouds {
     let k = 0;
     const camDist = rig.cur.dist;
     const ovK = THREE.MathUtils.smoothstep(game.view?.zoom01 ?? 0.5, 0.62, 0.88);
+    const landAvoid = 0.85 * THREE.MathUtils.smoothstep(game.view?.zoom01 ?? 0.5, 0.55, 0.85);
+    const world = game.world;
     for (const c of this.clouds) {
       const target = THREE.MathUtils.smoothstep(cover, c.rank - 0.06, c.rank + 0.06);
       if (this._first) c.presence = target;
@@ -608,7 +614,11 @@ export class Clouds {
       const ex = Math.min(x - f.x0, f.x0 + f.sx - x) / 50;
       const ez = Math.min(z - f.z0, f.z0 + f.sz - z) / 50;
       const edge = THREE.MathUtils.clamp(Math.min(ex, ez), 0, 1);
-      const pres = c.presence * edge * (c.small ? 1 - 0.9 * ovK : 1);
+      // land under the cloud (smoothed, so a cloud drifting over a coast fades)
+      const onLand = x > 0 && z > 0 && x < world.w && z < world.h && world.heightAt(x, z) > 0.3 ? 1 : 0;
+      if (this._first || c.landK === undefined) c.landK = onLand;
+      else c.landK += (onLand - c.landK) * Math.min(1, dt * 0.6);
+      const pres = c.presence * edge * (c.small ? 1 - 0.9 * ovK : 1) * (1 - landAvoid * c.landK);
       const scale = (0.55 + 0.45 * Math.sqrt(c.presence)) * grow;
       const cs = Math.cos(c.rot),
         sn = Math.sin(c.rot);
@@ -695,10 +705,15 @@ export class Clouds {
       C.uCol.value.copy(model.cloudLit).multiplyScalar(0.9).add(this._c.copy(model.cloudShade).multiplyScalar(0.8));
     }
 
-    // ---- map-zoom cloud fields + thin cirrus ------------------------------
+    // ---- map-zoom cloud fields --------------------------------------------
+    // Layered at mid zoom; as the camera keeps rising they thin to small
+    // scattered clusters that keep to the sea, so the map stays readable.
     {
       const SU = this.sheetU;
-      const sv = this.sheetOn ? THREE.MathUtils.smoothstep(z01, 0.5, 0.76) * (1 - 0.85 * weather.storm) : 0;
+      const ss = THREE.MathUtils.smoothstep;
+      const sv = this.sheetOn
+        ? ss(z01, 0.45, 0.65) * (1 - 0.55 * ss(z01, 0.72, 1.0)) * (1 - 0.85 * weather.storm) * ss(cam.position.y, 80, 120)
+        : 0;
       SU.uAmt.value = sv;
       this.sheet.visible = sv > 0.003;
       this.sheetSplat.visible = this.sheet.visible;
@@ -709,9 +724,11 @@ export class Clouds {
         this.sheet.scale.set(size, 1, size);
         SU.uCenter.value.set(t.x, 50, t.z);
         SU.uRadius.value = size * 0.5;
-        SU.uCov.value = Math.min(1, cover * 0.9 + weather.overcast * 0.25);
-        SU.uCirrus.value = (0.22 + 0.18 * Math.min(1, cover)) * (1 - weather.overcast) * camAbove;
-        SU.uCirOff.value -= (dt * (2 + 6 * wind.strength)) / 240;
+        SU.uCov.value = Math.min(1, cover * 0.9 + weather.overcast * 0.25) * (1 - 0.4 * ss(z01, 0.7, 1.0));
+        SU.uLandAvoid.value = landAvoid;
+        const ht = game.terrain?.heightTexture || null;
+        SU.tHeight.value = ht;
+        SU.uWorld.value.set(game.world.w, game.world.h, ht ? 1 : 0);
         SU.uDark.value = u.uDark.value;
         SU.uLit.value.copy(model.cloudLit);
         SU.uShade.value.copy(model.cloudShade);
