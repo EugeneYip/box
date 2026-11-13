@@ -100,6 +100,9 @@ export class Terrain {
       uOverlayOn: { value: 0 },
       uOverlaySize: { value: new THREE.Vector2(1, 1) },
       uTilePalette: { value: palette },
+      // 1 when the float height texture filters linearly (else the shader
+      // interpolates its four texels itself)
+      uHeightLin: { value: floatLinear ? 1 : 0 },
     };
     // make sure the cloud sampler always has a texture bound
     if (!shared.uCloudTex.value) shared.uCloudTex.value = blank;

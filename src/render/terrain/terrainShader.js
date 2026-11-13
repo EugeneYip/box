@@ -36,6 +36,8 @@ uniform sampler2D uOverlay;
 uniform float uOverlayOn;
 uniform vec2 uOverlaySize;
 uniform vec3 uTilePalette[32];
+uniform sampler2D uHeightTex;
+uniform float uHeightLin;
 ${WATER_PARS_GLSL}
 
 // global surface outputs (set in terrainSurface)
@@ -67,6 +69,50 @@ float tileTypeAt(ivec2 c) {
   return floor(texelFetch(uTypeTex, c, 0).r * 255.0 + 0.5);
 }
 
+// Ground height at a world position, bilinear between tile centres (hardware
+// filtering when float textures filter linearly, else four fetches).
+float heightTap(vec2 q) {
+  if (uHeightLin > 0.5) return textureLod(uHeightTex, q / uWorldSize, 0.0).r;
+  ivec2 sz = ivec2(uWorldSize) - 1;
+  vec2 g = q - 0.5;
+  ivec2 c = ivec2(floor(g));
+  vec2 f = g - floor(g);
+  float a = texelFetch(uHeightTex, clamp(c, ivec2(0), sz), 0).r;
+  float b = texelFetch(uHeightTex, clamp(c + ivec2(1, 0), ivec2(0), sz), 0).r;
+  float d = texelFetch(uHeightTex, clamp(c + ivec2(0, 1), ivec2(0), sz), 0).r;
+  float e = texelFetch(uHeightTex, clamp(c + ivec2(1, 1), ivec2(0), sz), 0).r;
+  return mix(mix(a, b, f.x), mix(d, e, f.x), f.y);
+}
+
+// Scree: two sizes of loose stones (Worley cells ~0.42 and ~0.2 units across)
+// whose number grows with amt, lumpy (noise-warped, squashed) rather than round,
+// each with a darker underside and a soft contact shadow on the ground around
+// it. Edges are antialiased from the known cell scale and the mip level comes
+// from the pixel footprint (no screen derivatives); small stones fade out
+// before they would drop below a pixel.
+vec3 screeStones(vec3 base, vec2 p, vec2 wp, float px, float amt, vec3 tone) {
+  vec2 q = p + wp;
+  vec4 c1 = textureLod(uCells, ROT3 * vec2(q.x, q.y * 1.3) * (1.0 / 6.7) + 0.37, max(0.0, log2(px * 38.2)));
+  vec4 c2 = textureLod(uCells, ROT1 * vec2(q.x * 1.25, q.y) * (1.0 / 3.2) + 0.81, max(0.0, log2(px * 80.0)));
+  float k1 = 1.0 - smoothstep(0.12, 0.26, px);
+  float k2 = 1.0 - smoothstep(0.05, 0.11, px);
+  float aw1 = max(2.4 * px, 0.04);
+  float aw2 = max(5.0 * px, 0.04);
+  float r1 = 0.22 + 0.36 * fract(c1.b * 3.71);
+  float r2 = 0.24 + 0.36 * fract(c2.b * 2.93);
+  float on1 = smoothstep(1.0 - amt * 0.70, 1.06 - amt * 0.70, c1.a) * k1;
+  float on2 = smoothstep(1.0 - amt * 0.90, 1.06 - amt * 0.90, c2.a) * k2;
+  float s1 = (1.0 - smoothstep(r1 - aw1, r1 + aw1, c1.r)) * on1;
+  float s2 = (1.0 - smoothstep(r2 - aw2, r2 + aw2, c2.r)) * on2 * (1.0 - s1);
+  float sh = (1.0 - smoothstep(r1, r1 + 0.34 + aw1, c1.r)) * on1 + (1.0 - smoothstep(r2, r2 + 0.26 + aw2, c2.r)) * on2 * 0.6;
+  vec3 g = base * (1.0 - 0.40 * clamp(sh, 0.0, 1.0));
+  // per-stone tone (pale to dark) and a shaded rim
+  vec3 st1 = tone * (0.62 + 0.55 * c1.b) * mix(1.05, 0.62, smoothstep(r1 - aw1 - 0.18, r1, c1.r));
+  vec3 st2 = tone * (0.58 + 0.55 * c2.b) * mix(1.03, 0.66, smoothstep(r2 - aw2 - 0.14, r2, c2.r));
+  g = mix(g, st1, s1);
+  return mix(g, st2, s2);
+}
+
 struct NS {
   vec3 p; vec3 n;
   vec4 macro; vec4 meso; vec4 det; vec4 micro;
@@ -96,6 +142,48 @@ vec3 seasonal(vec3 c, float k, float temp) {
   vec3 dryC = vec3(0.45, 0.34, 0.10) * (lc / 0.33) * 1.05;
   t = mix(t, dryC, uDry * 0.6);
   return mix(c, t, k);
+}
+
+// World distance to the 0.5 isoline of a smooth noise field, from its value and
+// forward differences one step (st world units) along each plane axis. Per pixel
+// and derivative free, so line widths never step on the 2x2 pixel-quad grid.
+float isoDist(float v, float vh, float vv, float st) {
+  return abs(v - 0.5) / max(length(vec2(vh - v, vv - v)) / st, 0.015);
+}
+// Antialiased line of world half-width hw at distance d for a pixel of world size
+// px: never drawn thinner than a pixel; a thinner line keeps its ink by fading,
+// and is dropped once it would be a tenth of a pixel (no shimmer, no stipple).
+float aaLine(float d, float hw, float px) {
+  float w = max(hw, 0.5 * px);
+  float ink = clamp(hw / (0.5 * px), 0.0, 1.0);
+  return (1.0 - smoothstep(w - 0.5 * px, w + 0.5 * px, d)) * ink * smoothstep(0.2, 0.5, ink);
+}
+// Relief lines from two smooth noise fields sampled at scale ls (plus forward
+// differences): broad soft channels along the R isoline (half-width gw), the
+// stain around them, and fine fissures along the G isoline (half-width cw)
+// broken into segments. x = channel, y = stain, z = fissure. The fields are read
+// from a blurred mip (never finer than level 1.5): their finest octaves made
+// the lines squiggle, and up close the magnified coarse mip turns each line into
+// short straight runs with angular turns, like real fractures.
+vec3 reliefLines(vec2 q, vec2 off, float px, vec2 ls, float gw, float cw) {
+  const float ST = 0.22;
+  vec2 u = q * ls + off;
+  float lod = max(1.5, log2(max(px * 256.0 * max(ls.x, ls.y), 1e-3)));
+  vec4 a = textureLod(uNoise, u, lod);
+  vec4 ah = textureLod(uNoise, u + vec2(ST * ls.x, 0.0), lod);
+  vec4 av = textureLod(uNoise, u + vec2(0.0, ST * ls.y), lod);
+  float dg = isoDist(a.r, ah.r, av.r, ST);
+  float dc = isoDist(a.g, ah.g, av.g, ST);
+  float gully = 1.0 - smoothstep(0.0, gw, dg);
+  float stain = 1.0 - smoothstep(0.2, gw * 3.9, dg);
+  float seg = smoothstep(0.38, 0.60, a.a * 0.6 + a.b * 0.4);
+  float crack = aaLine(dc, cw * (0.6 + 0.8 * a.a), px) * seg;
+  return vec3(gully, stain, crack);
+}
+// Cliff faces: one vertical plane (q = horizontal, height), lines stretched
+// along the fall line.
+vec3 faceLines(vec2 q, vec2 off, float px) {
+  return reliefLines(q, off, px, vec2(0.030, 0.0095), 0.62, 0.022);
 }
 
 // ---------------------------------------------------------------- materials
@@ -298,27 +386,24 @@ Mat matRock(NS s) {
   vec3 warm = vec3(0.330, 0.290, 0.245);
   vec3 cool = vec3(0.255, 0.262, 0.270);
   vec3 c = mix(warm, cool, s.macro.g);
-  float fineK = 1.0 - smoothstep(0.06, 0.30, s.fw);
   // broad variance: ochre weathering patches, brighter ridges, stained hollows
   c *= mix(vec3(1.0), vec3(1.08, 1.01, 0.90), smoothstep(0.5, 0.8, s.meso.g) * 0.8);
   c *= 0.84 + 0.28 * s.meso.b;
-  // angular blocks (warped cells): joints show only in places (no paving net,
-  // no rounded pebbles), each block a slightly different tone
-  vec4 bk = cz(ROT2 * (s.p.xz + (s.det.rg - 0.5) * 1.2) * (1.0 / 11.0) + 0.29);
+  // weathered pavement: soft seams and fine fissures along the isolines of
+  // smooth fields, drawn with exact antialiased widths (the Worley-texture
+  // joints were thresholded at about one texel and broke into dotted pixel
+  // chains up close), showing only in places; patchy block tones
   float crackM = smoothstep(0.38, 0.62, s.meso.r * 0.55 + s.det.b * 0.45);
-  float cW = max(0.06, s.fw * 1.9);
-  float blockC = (1.0 - smoothstep(cW * 0.3, cW, bk.g + (s.micro.b - 0.5) * 0.03)) * crackM * fineK * (1.0 - smoothstep(0.12, 0.25, cW));
-  c *= mix(1.0, 0.88 + 0.22 * bk.b, crackM);
-  c *= 1.0 - 0.38 * blockC;
-  // weathered stone: irregular (noise-warped) fissures, grain and mottling
-  vec4 cr = cz((s.p.xz + (s.meso.gb - 0.5) * 6.0 + (s.det.rg - 0.5) * 1.5) * (1.0 / 29.0));
-  float sW = max(0.07, s.fw * 1.7);
-  float seam = smoothstep(sW * 0.2, sW, cr.g + (s.det.b - 0.5) * 0.08);
-  c *= 0.88 + 0.16 * cr.b;
-  c *= 0.84 + 0.16 * mix(1.0, seam, smoothstep(0.35, 0.65, s.meso.r) * smoothstep(0.02, 0.06, s.fw));
+  vec3 rl = reliefLines(ROT2 * s.p.xz + (s.meso.gb - 0.5) * 2.0, vec2(0.29, 0.55), s.fw, vec2(0.05), 0.30, 0.024);
+  float blockC = rl.z * crackM;
+  float seam = rl.x * smoothstep(0.35, 0.65, s.meso.r);
+  float stone = smoothstep(0.3, 0.7, s.det.b * 0.7 + s.micro.g * 0.3) * crackM;
+  c *= mix(1.0, 0.90 + 0.20 * stone, crackM);
+  c *= 1.0 - 0.36 * blockC;
+  c *= 1.0 - 0.14 * seam;
+  c = mix(c, c * vec3(0.84, 0.84, 0.86), rl.y * 0.30 * smoothstep(0.4, 0.7, s.meso.g));
   c *= 0.80 + 0.30 * s.det.r;
   c *= 0.90 + 0.18 * s.micro.r;
-  float stone = bk.b * crackM;
   // lichen flecks
   float lich = smoothstep(0.72, 0.86, s.det.g) * (1.0 - smoothstep(0.3, 0.6, 1.0 - s.n.y));
   c = mix(c, vec3(0.30, 0.30, 0.16), lich * 0.5);
@@ -327,9 +412,9 @@ Mat matRock(NS s) {
   float turf = flatK * smoothstep(0.36, 0.60, s.meso.g * 0.55 + s.det.r * 0.30 + s.micro.r * 0.15) * (1.0 - smoothstep(0.1, 0.3, 0.4 - s.temp));
   vec3 turfC = mix(vec3(0.10, 0.20, 0.055), vec3(0.20, 0.22, 0.10), s.det.g) * (0.85 + 0.3 * s.micro.r);
   c = mix(c, turfC, turf * 0.92);
-  // bump: broad block tones only (thin joints and grain in the per-quad
-  // derivative bump drew blocky pixel chains)
-  float hgt = 0.30 + 0.20 * s.det.r + 0.18 * s.meso.b + 0.14 * stone;
+  // bump: broad tones and soft seams only (thin joints and grain in the
+  // per-quad derivative bump drew blocky pixel chains)
+  float hgt = 0.30 + 0.20 * s.det.r + 0.18 * s.meso.b + 0.14 * stone - 0.10 * seam;
   return mk(c, 0.80, mix(clamp(hgt, 0.0, 1.0), 0.32 + 0.22 * s.det.r, turf), mix(0.10, 0.05, turf));
 }
 Mat matLava(NS s) {
@@ -453,39 +538,6 @@ Mat evalMat(float t, NS s) {
   return mk(c * (0.85 + 0.3 * s.det.r), 0.9, 0.4, 0.04);
 }
 
-// World distance to the 0.5 isoline of a smooth noise field, from its value and
-// forward differences one step (st world units) along each plane axis. Per pixel
-// and derivative free, so line widths never step on the 2x2 pixel-quad grid.
-float isoDist(float v, float vh, float vv, float st) {
-  return abs(v - 0.5) / max(length(vec2(vh - v, vv - v)) / st, 0.015);
-}
-// Antialiased line of world half-width hw at distance d for a pixel of world size
-// px: never drawn thinner than a pixel; a thinner line keeps its ink by fading,
-// and is dropped once it would be a tenth of a pixel (no shimmer, no stipple).
-float aaLine(float d, float hw, float px) {
-  float w = max(hw, 0.5 * px);
-  float ink = clamp(hw / (0.5 * px), 0.0, 1.0);
-  return (1.0 - smoothstep(w - 0.5 * px, w + 0.5 * px, d)) * ink * smoothstep(0.2, 0.5, ink);
-}
-// Relief lines on one vertical plane (q = horizontal, height): broad erosion
-// gullies (R isoline), the runoff stain around them, and fine fissures (G
-// isoline) broken into segments. x = gully, y = stain, z = fissure.
-vec3 faceLines(vec2 q, vec2 off, float px) {
-  const vec2 LS = vec2(0.030, 0.0095);
-  const float ST = 0.22;
-  vec2 u = q * LS + off;
-  vec4 a = nz(u);
-  vec4 ah = nz(u + vec2(ST * LS.x, 0.0));
-  vec4 av = nz(u + vec2(0.0, ST * LS.y));
-  float dg = isoDist(a.r, ah.r, av.r, ST);
-  float dc = isoDist(a.g, ah.g, av.g, ST);
-  float gully = 1.0 - smoothstep(0.0, 0.62, dg);
-  float stain = 1.0 - smoothstep(0.2, 2.4, dg);
-  float seg = smoothstep(0.42, 0.64, a.a * 0.6 + a.b * 0.4);
-  float crack = aaLine(dc, 0.026 * (0.6 + 0.8 * a.a), px) * seg;
-  return vec3(gully, stain, crack);
-}
-
 // Cliff rock: true triplanar blending (weights from the normal). Strata with
 // irregular spacing that pinch out along their length (never continuous rings),
 // fissures, erosion gullies and runoff stains, per-bed mineral tints, gritty
@@ -528,7 +580,7 @@ Mat matCliff(NS s, float volc, out vec3 facetN) {
   float aaH = clamp(s.fwy * 6.0, 0.12, 0.6);
   float ltH = smoothstep(1.0 - aaH, 1.0, fsy);
   float lrH = mix(hash12(vec2(layer, 3.7)), hash12(vec2(layer + 1.0, 3.7)), ltH);
-  float bandFade = 1.0 - smoothstep(0.25, 0.7, s.fwy * 0.95);
+  float bandFade = 1.0 - smoothstep(0.18, 0.5, s.fwy * 0.95);
   // beds pinch out: their contrast comes and goes along each layer
   float lens = smoothstep(0.30, 0.70, t.g * 0.75 + lh * 0.5 - 0.1);
   // high alpine rock (crystalline cores) shows little bedding: no fortress courses
@@ -574,8 +626,8 @@ Mat matCliff(NS s, float volc, out vec3 facetN) {
   vec4 e = mix(nz(ROT1 * uvY * 0.25 + 0.43), nz(uvD * 0.25 + 0.43), vf);
   c *= 0.93 + 0.13 * mix(0.5, e.g, fineK);
   c *= 1.0 - 0.36 * joint;
-  c *= 1.0 - 0.22 * gully;
-  c = mix(c, c * vec3(0.80, 0.81, 0.84), stain * 0.55);
+  c *= 1.0 - 0.28 * gully;
+  c = mix(c, c * vec3(0.80, 0.81, 0.84), stain * 0.65);
 
   // volcanic rock: dark basalt with rusty oxidised patches and scoria pits
   vec4 sc = cz(mix(uvY, uvD, step(0.5, vf)) * 0.11 + 0.47);
@@ -604,7 +656,9 @@ Mat matCliff(NS s, float volc, out vec3 facetN) {
   // ~8 px, soft gully troughs, low-frequency swell); fissures and grit stay in
   // the albedo
   float hgt = 0.55 + 0.20 * (lrH - 0.5) * bandK + 0.12 * (t.r - 0.5) - 0.14 * gully + 0.03 * ledH * bandK;
-  return mk(c, 0.84 + 0.08 * volc, hgt, 0.13 * near + 0.03 * volc);
+  // (the bump fades where even these broad features shrink to a few pixels:
+  // grazing faces and mid zoom)
+  return mk(c, 0.84 + 0.08 * volc, hgt, (0.13 * near + 0.03 * volc) * (1.0 - smoothstep(0.09, 0.22, s.fw)));
 }
 
 // Seabed: rippled sand in the shallows, silt and rock in the deep.
@@ -800,8 +854,8 @@ void terrainSurface() {
 
   // ---- slope driven cliffs
   vec3 nrm = s.n;
-  float slopeN = s.n.y + (s.meso.b - 0.5) * 0.14 + (s.det.r - 0.5) * 0.10 + (s.micro.g - 0.5) * 0.03;
-  float cliff = smoothstep(0.78, 0.65, slopeN) * (1.0 - lavaRaw) * (1.0 - iceB);
+  float slopeN = s.n.y + (s.meso.b - 0.5) * 0.16 + (s.det.r - 0.5) * 0.12 + (s.micro.g - 0.5) * 0.05;
+  float cliff = smoothstep(0.79, 0.64, slopeN) * (1.0 - lavaRaw) * (1.0 - iceB);
   // rock ground takes the triplanar rock from moderate slopes up: projected
   // top-down, its detail stretched into a grey smear on any steeper face
   float rockT = dot(vec4(equal(vec4(t0, t1, t2, t3), vec4(8.0))) * live, b);
@@ -815,11 +869,30 @@ void terrainSurface() {
   float screeN = s.det.g * 0.6 + s.micro.r * 0.4;
   float scree = smoothstep(0.05, 0.35, rockW + (screeN - 0.5) * 0.25) * (1.0 - smoothstep(0.55, 0.9, rockB0)) * (1.0 - snowB);
   vec3 screeC = mix(vec3(0.27, 0.24, 0.20), vec3(0.36, 0.33, 0.29), s.micro.g) * (0.85 + 0.3 * s.det.b);
-  albedo = mix(albedo, albedo * 0.78, scree * 0.6);
-  albedo = mix(albedo, screeC, scree * smoothstep(0.45, 0.7, screeN) * 0.55);
+  // foot of rock: the coarse slope and concavity of the height field (taps 1.3
+  // tiles apart) find the ground just below steep faces, wherever the face is
+  float steepC = 0.0, footK = 0.0;
+  if (fine && s.p.y > -0.8) {
+    vec2 q = p + (s.meso.gb - 0.5) * 1.4;
+    float hC = heightTap(q);
+    float hL = heightTap(q - vec2(1.3, 0.0)), hR = heightTap(q + vec2(1.3, 0.0));
+    float hD = heightTap(q - vec2(0.0, 1.3)), hU = heightTap(q + vec2(0.0, 1.3));
+    steepC = length(vec2(hR - hL, hU - hD)) * (1.0 / 2.6);
+    float concave = (hL + hR + hD + hU) * 0.25 - hC;
+    footK = smoothstep(0.22, 0.72, steepC + (s.det.b - 0.5) * 0.30) * smoothstep(0.0, 0.24, concave + (s.micro.r - 0.5) * 0.10 + (s.det.g - 0.5) * 0.14);
+  }
+  float foot = max(footK, scree * 0.8) * (1.0 - snowB) * (1.0 - lavaRaw) * (1.0 - iceB);
+  // bare, darker soil and gravel there (darkest right under the rock, broken
+  // edge), instead of a pale fringe around a cut-out
+  vec3 soilC = vec3(0.150, 0.118, 0.085) * (0.85 + 0.3 * s.det.r);
+  float soilP = smoothstep(0.35, 0.75, foot + (s.meso.r - 0.5) * 0.40 + (screeN - 0.5) * 0.35);
+  albedo = mix(albedo, albedo * vec3(0.64, 0.58, 0.48), foot * 0.65);
+  albedo = mix(albedo, mix(soilC, screeC * 0.8, smoothstep(0.55, 0.8, screeN)), soilP * 0.72);
   // the cliff ramp itself: a band of broken scree between turf and face
   float cBand = cliff * (1.0 - cliff) * 4.0 * (1.0 - snowB);
-  albedo = mix(albedo, screeC * 0.9, cBand * smoothstep(0.35, 0.65, screeN) * 0.45);
+  albedo = mix(albedo, screeC * 0.9, cBand * smoothstep(0.35, 0.65, screeN) * 0.35);
+  // loose stones: densest at the foot of steep rock and on the ramp itself
+  float screeAmt = clamp(max(max(foot * mix(0.45, 1.0, smoothstep(0.4, 1.0, steepC)), scree * 0.85), cBand * 0.6), 0.0, 1.0);
   vec3 facetN = nrm;
   if (cliff > 0.001) {
     // ash / lava around: basalt cone rock instead of layered sediment
@@ -836,6 +909,13 @@ void terrainSurface() {
     rough = mix(rough, cm.rough, cliff);
     H = mix(H, cm.h * cm.bump, cliff);
     nrm = normalize(mix(nrm, facetN, cliff));
+  }
+  // stones sit over the ground / rock blend, breaking the edge between them
+  // (top-down cells: none on steep ground, where they would stretch and alias)
+  screeAmt *= (1.0 - smoothstep(0.75, 1.0, cliff)) * smoothstep(0.58, 0.78, s.n.y);
+  if (fine && screeAmt > 0.01) {
+    vec3 stoneC = mix(vec3(0.33, 0.315, 0.29), vec3(0.38, 0.34, 0.29), s.macro.g);
+    albedo = screeStones(albedo, p, (s.micro.gb - 0.5) * 0.10 + (s.det.rg - 0.5) * 0.12, s.fw, screeAmt, stoneC);
   }
 
   // ---- seasonal / climate snow: winter, Age of Rime, frost law. Colder ground
