@@ -1095,7 +1095,7 @@ export class Civilization {
         let smithy = null,
           ss = -1;
         for (const o of vs) {
-          if (!(o.hasForge || o.hasWorkshop) || o.wood < 30) continue;
+          if (!(o.hasForge || o.hasWorkshop) || o.wood < ((k.era || 0) < 2 ? 6 : 30)) continue; // early tools matter more than a full woodshed
           const sc = (o.ore || 0) * 3 + o.stone + (o.hasForge ? 10 : 0);
           if (sc > ss) (ss = sc), (smithy = o);
         }
@@ -1683,7 +1683,7 @@ export class Civilization {
     }
     const atWar = this.warCount(v.kingdom) > 0;
     if (room() && count('barracks') === 0 && (v.tier >= 1 || (atWar && pop >= 16))) build('barracks');
-    if (room() && this.law('civWalls') && v.tier >= 1 && count('watchtower') < v.tier + (atWar ? 1 : 0)) {
+    if (room() && this.law('civWalls') && v.policy?.walls !== false && v.tier >= 1 && count('watchtower') < v.tier + (atWar ? 1 : 0)) {
       const foe = this._nearestForeignVillage(v);
       build('watchtower', () => this._placeOutskirts(v, 'watchtower', v.radius * 0.55, v.radius * 0.85, foe?.cx, foe?.cz));
     }

@@ -256,7 +256,9 @@ export const politics = {
       u.data.civ.abdicated = true;
       u.data.civ.royal = false;
       u.job = null;
+      const ttl = rulerTitle(k.culture, u.sex);
       if (u.data.civ.given) u.name = u.data.civ.given;
+      else if (u.name?.startsWith(ttl + ' ')) u.name = u.name.slice(ttl.length + 1);
       const yrs = Math.round((now - since) / YEAR);
       if (this.game.units.log) this.game.units.log(u, `Laid down the crown of ${this._kn(k)} after ${yrs} years`);
       else this._bio(u, `Laid down the crown after ${yrs} years`);
