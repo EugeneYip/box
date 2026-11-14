@@ -928,8 +928,9 @@ export class Civilization {
     // a dwindling hamlet in a full world gives up: its last families move to
     // the nearest town of the realm (nothing comes to refill a hamlet once the
     // world is full, and a dozen such remnants held the World Map's village
-    // places while its towns stayed small)
-    if (fullWorld && pop <= 6 && now - v.founded > YEAR * 15 && this._aliveVillageCount() >= this.budget.villages * 0.8 && this.kingdoms[v.kingdom]?.capital !== v.id && !(v.colony && now - v.founded < YEAR * 30) && this.rng.chance(0.012 * dt)) {
+    // places while its towns stayed small); a village the player has named or
+    // given policies is left alone
+    if (fullWorld && pop <= 6 && now - v.founded > YEAR * 15 && this._aliveVillageCount() >= this.budget.villages * 0.8 && this.kingdoms[v.kingdom]?.capital !== v.id && !(v.colony && now - v.founded < YEAR * 30) && !v.player && !(v.policy && Object.keys(v.policy).length) && this.rng.chance(0.012 * dt)) {
       let to = null,
         td = 70 * Math.sqrt(this.budget.area);
       for (const vid of this.kingdoms[v.kingdom]?.villages || []) {
