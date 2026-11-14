@@ -57,9 +57,22 @@ export function installNeeds(Units) {
     // worn out by day: a nap on the spot
     if (u.energy < 0.07 && !guard && !army) return this._nap0(u);
     // famine: the hungry go hunting to feed their town
-    if (v.starving && u.hunger > 0.55 && u.age >= u.def.maturity && u.job !== 'king' && !d.civ?.royal) {
-      const prey = this.nearest(u.x, u.z, 18, (o) => o.def.kind === 'animal' && o.def.diet === 'herbivore' && o.data.tended == null && o.alive);
-      if (prey && this.engage(u, prey, { hunt: true, maxTime: 20 })) {
+    // (a few hunters per town at a time, and never the last of a herd)
+    if (v.starving && u.hunger > 0.55 && u.age >= u.def.maturity && u.job !== 'king' && !d.civ?.royal && (v._hunters?.t !== (now | 0) ? true : v._hunters.n < 2)) {
+      let herd = 0,
+        prey = null,
+        bd = Infinity;
+      this.forEachNear(u.x, u.z, 18, (o, d2) => {
+        if (o.def.kind !== 'animal' || o.def.diet !== 'herbivore' || o.data.tended != null) return;
+        herd++;
+        if (d2 < bd) {
+          bd = d2;
+          prey = o;
+        }
+      });
+      if (prey && herd >= 4 && this.engage(u, prey, { hunt: true, maxTime: 20 })) {
+        if (v._hunters?.t !== (now | 0)) v._hunters = { t: now | 0, n: 0 };
+        v._hunters.n++;
         u._forager = v.id;
         if (!u._foraged) {
           u._foraged = true;

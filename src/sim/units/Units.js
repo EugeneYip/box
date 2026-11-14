@@ -91,7 +91,7 @@ const WILD_TARGET = 620; // wild creatures on a 256 x 256 map with no people
 const WILD_FLOOR = 420; // ...and however large the realms grow
 const WILD_FLOOR_BIG = 330; // ...on maps larger than Medium, where the total cap rules
 const UNIT_CAP = 1000; // all creatures on a big map, per unit of popScale (1,600 on Huge 512)
-const HEALTHY = 0.35; // a wild grazer below this share of its capacity gets migrant herds
+const HEALTHY = 0.45; // a wild grazer below this share of its capacity gets migrant herds
 
 const KIND_ORDER = { humanoid: 0, animal: 1, monster: 2 };
 
