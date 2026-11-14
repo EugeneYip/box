@@ -444,7 +444,11 @@ export const politics = {
         ]) {
           if (now - att.founded < YEAR * 6 || now - def.founded < YEAR * 5) continue;
           if (this.warCount(att.id) >= 2) continue;
-          { const alive = this.villages.filter((v) => v.alive).length; if (alive >= 12 && att.villages.length >= 5 && att.villages.length > 0.33 * alive) continue; } // a hegemon is sated (only in a settled world)
+          // a hegemon is sated (only in a settled world of 12+ villages, and a
+          // realm of 5+): at two fifths of the villages, so a Medium realm of
+          // nine no longer stops making war (conquests had fallen to 6-8 a
+          // century in some centuries)
+          if (this._aliveVillageCount() >= 12 && att.villages.length >= 5 && att.villages.length > 0.4 * this._aliveVillageCount()) continue;
           const ratio = att.strength / Math.max(1, def.strength);
           const crowd = this._crowd?.() || 0;
           const wl = this._kLaw(att.id, 'diploWarlike', 1);
