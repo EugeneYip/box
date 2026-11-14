@@ -323,13 +323,20 @@ export class UI {
     const ovR = this.overviewBtn.getBoundingClientRect();
     const pillBottom = ovR.height && ovR.top < innerHeight * 0.4 ? ovR.bottom : 0;
     const dockR = this.toolbar.panel.getBoundingClientRect();
-    const top = Math.min(vh * 0.45, Math.max(topR.bottom, pillBottom) + 12);
+    // short screens (phone landscape) use tight margins: every pixel of height counts
+    const short = vh <= 500;
+    const top = Math.min(vh * 0.45, Math.max(topR.bottom, pillBottom) + (short ? 4 : 12));
     // on drawer layouts (phones, short landscape) and touch tablets the dock folds
     // away during Overview (hud5.css, hud7.css), so the map may use the full height
     const dockGone = matchMedia('(max-width: 720px), (max-height: 500px)').matches || this.root.classList.contains('is-touch');
-    const bottom = dockGone ? vh - 10 : Math.max(vh * 0.6, (dockR.top > vh * 0.5 ? dockR.top : vh) - 12);
-    const left = 12,
-      right = vw - 12;
+    const bottom = dockGone ? vh - (short ? 4 : 10) : Math.max(vh * 0.6, (dockR.top > vh * 0.5 ? dockR.top : vh) - 12);
+    const left = short ? 6 : 12,
+      right = vw - (short ? 6 : 12);
+    // the outline carries a shore margin; on short screens that margin may slip under the edges
+    const tol = short ? 16 : 0;
+    // the World Map stays north-up (Earth must look like Earth); on a tall screen its
+    // Atlantic edges may run a little past the sides so the continents fill more
+    const tolX = g.params?.preset === 'earth' && vh > vw * 1.15 ? vw * 0.09 : tol;
     const north = Math.round(rig.goal.yaw / (Math.PI * 2)) * Math.PI * 2;
     const bias = THREE.MathUtils.degToRad(innerHeight <= 500 ? 15 : 8);
     const pitch = THREE.MathUtils.degToRad(70) + bias;
@@ -358,7 +365,7 @@ export class UI {
         v.set(x, 0, z).project(cam);
         const sx = (v.x * 0.5 + 0.5) * vw,
           sy = (-v.y * 0.5 + 0.5) * vh;
-        if (v.z > 1 || sx < left || sx > right || sy < top || sy > bottom) return false;
+        if (v.z > 1 || sx < left - tolX || sx > right + tolX || sy < top - tol || sy > bottom + tol) return false;
       }
       return true;
     };
@@ -387,7 +394,8 @@ export class UI {
     // so its long axis runs down the screen, when that fills clearly more of it
     const bw = box.x1 - box.x0,
       bh = box.z1 - box.z0;
-    if ((vh > vw * 1.15 && bw > bh * 1.3) || (vw > vh * 1.15 && bh > bw * 1.3)) {
+    const earth = typeof g.params?.preset === 'string' && g.params.preset === 'earth';
+    if (!earth && ((vh > vw * 1.15 && bw > bh * 1.3) || (vw > vh * 1.15 && bh > bw * 1.3))) {
       const turned = solve(north + Math.PI / 2);
       if (turned && (!best || turned.d < best.d * 0.95)) best = turned;
     }
@@ -403,17 +411,8 @@ export class UI {
     rig.goal.dist = d;
     rig.goal.yaw = best.yaw;
     this._ovTurned = best.yaw !== north;
-    if (this._ovTurned) {
-      // say it once, in the north badge itself (a toast would sit under the Back pill on phones)
-      const b = this.northEl.querySelector('b');
-      b.textContent = 'North is to the right';
-      this.northEl.classList.add('is-wide');
-      clearTimeout(this._northT);
-      this._northT = setTimeout(() => {
-        b.textContent = 'N';
-        this.northEl.classList.remove('is-wide');
-      }, 3600);
-    }
+    // the badge explains a turned map once it is on screen (see updateOverview)
+    this._northHint = !!this._ovTurned;
     this._biasGoal = bias;
     this.syncOverviewBtn();
     g.audio?.play?.('ui-click', { volume: 0.45 });
@@ -550,12 +549,28 @@ export class UI {
     if (show !== this._northOn) {
       this._northOn = show;
       this.northEl.classList.toggle('is-shown', show);
+      const b = this.northEl.querySelector('b');
+      if (show && this._northHint) {
+        // the 3.6 s explanation starts when the badge appears, not when Overview was asked for
+        this._northHint = false;
+        b.textContent = 'North is to the right';
+        this.northEl.classList.add('is-wide');
+        clearTimeout(this._northT);
+        this._northT = setTimeout(() => {
+          b.textContent = 'N';
+          this.northEl.classList.remove('is-wide');
+        }, 3600);
+      } else if (!show) {
+        clearTimeout(this._northT);
+        b.textContent = 'N';
+        this.northEl.classList.remove('is-wide');
+      }
     }
     if (show) this.northEl.firstChild.style.transform = `rotate(${(yaw * 180) / Math.PI}deg)`;
   }
 
   updateOverviewLabels() {
-    const on = !!this._overview && this.root.classList.contains('is-touch') && !this.root.classList.contains('is-photo');
+    const on = !!this._overview && !this.root.classList.contains('is-photo') && !this.title?.active;
     this.ovLabels.classList.toggle('is-shown', on);
     if (!on) {
       if (this._ovLabOn) {
@@ -578,6 +593,7 @@ export class UI {
       const cap = g.civ.villages?.[k.capital];
       if (!cap || cap.alive === false) continue;
       seen.add(k.id);
+      const at = this.realmAnchor(k, cap);
       let e = this._ovLab.get(k.id);
       if (!e) {
         e = el('span', { class: 'ws-ovlabel' }, el('i'), el('b'));
@@ -590,12 +606,63 @@ export class UI {
         e.lastChild.textContent = name;
       }
       e.style.setProperty('--k', hexCss(k.color));
-      v.set(cap.cx, Math.max(0, g.world.heightAt(cap.cx, cap.cz)) + 2, cap.cz).project(cam);
+      v.set(at.x, Math.max(0, g.world.heightAt(at.x, at.z)) + 2, at.z).project(cam);
       const vis = v.z < 1 && Math.abs(v.x) < 1.1 && Math.abs(v.y) < 1.1;
       e.hidden = !vis;
-      if (vis) e.style.transform = `translate(${Math.round((v.x * 0.5 + 0.5) * innerWidth)}px, ${Math.round((-v.y * 0.5 + 0.5) * innerHeight)}px) translate(-50%, -100%)`;
+      if (vis) e.style.transform = `translate(${Math.round((v.x * 0.5 + 0.5) * innerWidth)}px, ${Math.round((-v.y * 0.5 + 0.5) * innerHeight)}px) translate(-50%, -50%)`;
     }
     for (const [id, e] of this._ovLab) if (!seen.has(id)) (e.remove(), this._ovLab.delete(id));
+  }
+
+  // Where a realm's name goes in Overview: the middle of its own land (the owned
+  // tiles' centroid, or the owned land tile nearest it), refreshed every 2 s.
+  realmAnchor(k, cap) {
+    const g = this.game;
+    const W = g.world;
+    const now = performance.now();
+    if (!this._anch || now - this._anch.t > 2000) {
+      const acc = new Map();
+      const own = W.owner;
+      if (own && own.length === W.w * W.h) {
+        const step = Math.max(2, Math.round(Math.max(W.w, W.h) / 160));
+        for (let ty = 0; ty < W.h; ty += step)
+          for (let tx = 0; tx < W.w; tx += step) {
+            const id = own[ty * W.w + tx];
+            if (id == null || id < 0) continue;
+            if (W.heightAt(tx + 0.5, ty + 0.5) <= SEA_LEVEL + 0.05) continue;
+            let a = acc.get(id);
+            if (!a) acc.set(id, (a = { x: 0, z: 0, n: 0, pts: [] }));
+            a.x += tx + 0.5;
+            a.z += ty + 0.5;
+            a.n++;
+            if (a.pts.length < 600) a.pts.push(tx + 0.5, ty + 0.5);
+          }
+      }
+      const out = new Map();
+      for (const [id, a] of acc) {
+        let x = a.x / a.n,
+          z = a.z / a.n;
+        if (W.heightAt(x, z) <= SEA_LEVEL + 0.05) {
+          // a crescent realm: its centroid is at sea, so take its land nearest that point
+          let bd = Infinity,
+            bx = x,
+            bz = z;
+          for (let i = 0; i < a.pts.length; i += 2) {
+            const d = (a.pts[i] - x) ** 2 + (a.pts[i + 1] - z) ** 2;
+            if (d < bd) {
+              bd = d;
+              bx = a.pts[i];
+              bz = a.pts[i + 1];
+            }
+          }
+          x = bx;
+          z = bz;
+        }
+        out.set(id, { x, z });
+      }
+      this._anch = { t: now, map: out };
+    }
+    return this._anch.map.get(k.id) || { x: cap.cx, z: cap.cz };
   }
 
   togglePhoto() {
