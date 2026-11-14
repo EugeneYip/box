@@ -1410,6 +1410,19 @@ export class Civilization {
     if (v.tier >= 1 && seat && big) return 170;
     return clamp(Math.round((1.6 * this._humanCap()) / Math.max(1, this._aliveVillageCount())), 14, 45);
   }
+  // May a village add a new house (rather than only enlarge old ones)? In a
+  // crowded world towns may, and so may a hamlet up to 26 places while the
+  // building budget has room (it was stuck at 16, so it never became a town).
+  // On a Medium map a city at the building budget only builds up: its new
+  // houses used to take every free place, draining the middle into three
+  // cities of 170 and twenty hamlets.
+  _maySprawl(v, crowded) {
+    if (crowded < 0.97 || v.housing < 16) return true;
+    const bc = this._bldCrowd || 0;
+    if (v.tier === 0) return v.housing < 26 && bc < 1;
+    if (v.tier >= 2 && this.budget.area <= 1.5) return bc < 0.9 || v.housing < v.pop;
+    return true;
+  }
   _aliveVillageCount() {
     const t = this.game.time.total;
     if (this._aliveVT !== t) {
@@ -1680,7 +1693,7 @@ export class Civilization {
       // a crowded world builds up, not out: cottages become timber houses
       const full = crowded >= 0.6;
       const cand = v.tier >= 1 || full ? v.buildings.find((b) => b.alive && b.type === 'house' && !b.constructing && !b.upgrading && b.level < Math.min(3, v.tier + 2)) : null;
-      if (!(cand && (full || this.rng.chance(0.5)) && upgrade(cand)) && (crowded < 0.97 || v.tier >= 1 || v.housing < 16 || (v.housing < 26 && (this._bldCrowd || 0) < 0.9))) build('house'); // (a full world of people, not of buildings, still lets a village house enough to become a town)
+      if (!(cand && (full || this.rng.chance(0.5)) && upgrade(cand)) && this._maySprawl(v, crowded)) build('house');
     }
     // 2 fields (no cost)
     const targetFields = 8 + pop * 1.1;
