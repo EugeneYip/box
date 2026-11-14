@@ -220,12 +220,22 @@ void main() {
     float az = abs(z);
     float beam = vK.z;
     float e = length(vec2(x / 0.5, z / max(0.05, beam * 0.55)));
-    float foam = smoothstep(0.24, 0.0, abs(e - 1.0)) * (0.3 + 0.7 * a) * step(x, 0.5);
+    float foam = smoothstep(0.24, 0.0, abs(e - 1.0)) * (0.3 + 0.7 * a) * smoothstep(0.58, 0.4, x); // soft at the stem, no hard chord
+    // the bow wave: two soft fans of broken foam that peel off the stem,
+    // curl aft and outward, widen and die away within half a length (no
+    // crisp lines; the noise runs aft past the hull with the ship's way)
     float bx = 0.5 - x;
-    if (bx > 0.0) {
-      float arm = bx * 0.55 + beam * 0.25;
-      float w = 0.03 + bx * 0.04;
-      foam += smoothstep(w, 0.0, abs(az - arm)) * exp(-bx * 4.0) * (0.25 + 0.75 * a);
+    if (bx > -0.06 && bx < 0.55 && a > 0.02) {
+      float t = clamp(bx / 0.55, 0.0, 1.0);
+      float c = beam * 0.3 + 0.36 * bx - 0.22 * bx * bx;
+      float wdt = 0.02 + 0.1 * t;
+      float d = (az - c) / wdt;
+      float prof = exp(-d * d * 1.4);
+      float n = vnoise(vec2(bx * 13.0 - uTime * 1.3 * a, az * 17.0)) * 0.6 + vnoise(vec2(bx * 29.0 - uTime * 2.1 * a, az * 31.0 + 5.0)) * 0.5;
+      float broken = smoothstep(0.3, 0.9, n + (1.0 - t) * 0.3);
+      float fade = (1.0 - t) * (1.0 - t) * smoothstep(-0.06, 0.05, bx);
+      float edge = beam * 0.5 + 0.38;
+      foam += prof * broken * fade * smoothstep(edge, edge - 0.08, az) * (0.15 + 0.85 * a) * 0.8;
     }
     foam = clamp(foam, 0.0, 1.0);
     if (foam < 0.01) discard;

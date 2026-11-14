@@ -450,7 +450,7 @@ export class FleetRenderer {
         // hull foam and bow wave
         if (n < max) {
           const hl = L * 0.72,
-            hw = (v.def.beam || 0.4) * 0.5 + L * 0.3;
+            hw = (v.def.beam || 0.4) * 0.5 + L * 0.4;
           const px = -fz,
             pz = fx;
           const c0x = w.x - fx * L * 0.62,
