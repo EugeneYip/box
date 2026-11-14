@@ -85,7 +85,6 @@ const MVP = { wolf: 6, fox: 5, bear: 3, sheep: 10, cow: 8 };
 const FAR_THINK = { humanoid: 2.6, animal: 2.3, monster: 1.4 };
 const SFX_GAP = { hit: 0.07, death: 0.18, birth: 0.6, growl: 0.5, bleat: 1.4 };
 const THINK_BUDGET_MS = 5; // per rendered frame (high game speeds defer the rest)
-const THINK_TICK_MS = 6; // per tick when ticks run back to back (fast-forward)
 const DCELL = 16; // danger grid cell (tiles): where predators, monsters or fights are
 const OVERVIEW_DIST = 110; // camera farther than this: every creature takes the cheap path
 const WILD_TARGET = 620; // wild creatures on a 256 x 256 map with no people
@@ -954,6 +953,9 @@ export class Units {
         u.path = null;
         u.target = null;
         u.moving = false;
+        // arrived: a village brain decides what to do next right away, so long
+        // think intervals (distant people, coarse steps) do not leave them idle
+        if (u._ext && u.thinkT > 0.05) u.thinkT = 0.05;
       }
       return;
     }
@@ -1870,6 +1872,7 @@ export class Units {
     // elapsed time, so work and needs still advance in full)
     const stepK = Math.max(1, dt / TICK_DT);
     const fastFar = Math.min(4, stepK);
+    const fastFarPeople = Math.min(2, stepK); // people also re-think on arrival
     const fastNear = Math.sqrt(stepK);
     const overview = (g.cameraRig?.cur?.dist ?? 0) > OVERVIEW_DIST;
     const cam = g.cameraRig?.cur;
@@ -1886,14 +1889,11 @@ export class Units {
     const lawHunger = this.law('lifeHunger'),
       lawAging = this.law('lifeAging');
     const tickN = this._tickN;
-    // thinking has a time budget: per rendered frame in live play, per tick when
-    // ticks run back to back (fast-forward); the walk starts at a rotating offset
-    // so a busy world defers thinking fairly instead of starving the list's tail
+    // (thinking has a time budget per rendered frame in live play only: back-to-back
+    // ticks stay deterministic and independent of machine load)
     const nList = list.length;
-    const off = budgetOn || !nList ? 0 : (tickN * 7919) % nList;
-    let tickThinkMs = 0;
     for (let j = 0; j < nList; j++) {
-      const u = list[off ? (j + off) % nList : j];
+      const u = list[j];
       if (!u.alive) continue;
       const def = u.def;
       u.px = u.x;
@@ -2007,19 +2007,17 @@ export class Units {
       u._far = (overview || fdx * fdx + fdz * fdz > focus.r2) && !u.combat;
       u.thinkT -= dt;
       if (u.thinkT <= 0) {
-        if (!u.combat && (budgetOn ? this._frameThinkMs > THINK_BUDGET_MS : tickThinkMs > THINK_TICK_MS)) {
-          u.thinkT = (budgetOn ? 0.05 : 0.2) + g.rng.next() * 0.15; // over budget: think a little later
+        if (budgetOn && this._frameThinkMs > THINK_BUDGET_MS && !u.combat) {
+          u.thinkT = 0.05 + g.rng.next() * 0.15; // over budget: think a little later
         } else {
-          let mul = u._far ? (FAR_THINK[def.kind] || 2) * fastFar : u.combat ? 1 : fastNear;
+          let mul = u._far ? (FAR_THINK[def.kind] || 2) * (def.kind === 'humanoid' ? fastFarPeople : fastFar) : u.combat ? 1 : fastNear;
           // calm grazers with no danger about re-decide less often
           if (def.kind === 'animal' && def.diet === 'herbivore' && !u.combat && u.hunger < 0.4 && !u.alarm && u.fleeUntil < now && !this.dangerNear(u.x, u.z, def.sight)) mul *= 1.6;
           u.thinkT = THINK_INTERVAL * (0.8 + g.rng.next() * 0.4) * mul;
           u._ext = this.brains.has(u.species);
-          const t0 = performance.now();
+          const t0 = budgetOn ? performance.now() : 0;
           this._think(u, now);
-          const tt = performance.now() - t0;
-          if (budgetOn) this._frameThinkMs += tt;
-          else tickThinkMs += tt;
+          if (budgetOn) this._frameThinkMs += performance.now() - t0;
           if (!u.alive) continue;
         }
       }
