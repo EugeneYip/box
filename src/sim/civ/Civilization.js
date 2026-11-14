@@ -821,7 +821,8 @@ export class Civilization {
     // famine strikes hard but never wipes out a settlement: relief caravans and
     // foraging keep the last families alive
     // (enough to end the famine in a few years, not just to linger in it)
-    if (v.starving && pop <= 12) v.food += (pop * 3 / YEAR) * dt;
+    // (a larger town forages too, if not enough to feed everyone)
+    if (v.starving) v.food += ((pop <= 12 ? 3 : 1.5) * pop / YEAR) * dt;
 
     // crops ripen (farmers plant and harvest; growth is helped along here)
     const rain = g.env.weather?.type === 'rain' || g.env.weather?.type === 'storm';
@@ -1362,7 +1363,7 @@ export class Civilization {
       if (!needy.length) continue;
       const rich = vs.filter((v) => v.food > v.pop * 5 + 30).sort((a, b) => b.food - a.food);
       for (const to of needy) {
-        const from = rich.find((r) => r.landId === to.landId && Math.hypot(r.cx - to.cx, r.cz - to.cz) < 90);
+        const from = rich.find((r) => r.landId === to.landId && Math.hypot(r.cx - to.cx, r.cz - to.cz) < 90 * Math.sqrt(Math.max(1, this.budget.area))); // (towns lie further apart on a big map)
         if (!from) continue;
         const amt = Math.min(from.food - (from.pop * 5 + 20), to.pop * 4 + 20);
         if (amt <= 4) continue;

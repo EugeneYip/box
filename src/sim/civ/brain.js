@@ -1531,7 +1531,7 @@ export const brain = {
         best = v;
       }
     }
-    if (best && bd < 90) {
+    if (best && bd < 90 * Math.sqrt(Math.max(1, this.budget.area))) {
       this._moveMember(u, best);
       d.task = { kind: 'arrive' };
     } else if (!u.target) this.game.units.wander?.(u, 5);
