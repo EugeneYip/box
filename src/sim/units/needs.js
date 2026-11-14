@@ -94,6 +94,7 @@ export function installNeeds(Units) {
   P._goInside = function (u, b) {
     this.stop(u);
     u.data.inside = true;
+    u._away = true;
     u._homeB = b.id;
     u.sleeping = true;
     u.state = 'sleep';
@@ -107,6 +108,7 @@ export function installNeeds(Units) {
   P._comeOut = function (u) {
     const b = this.game.civ?._bById?.get(u._homeB);
     u.data.inside = false;
+    u._away = false;
     u.sleeping = false;
     u.state = 'idle';
     if (b) {

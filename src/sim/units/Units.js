@@ -82,7 +82,7 @@ const FORAGE_COST = 7; // forage per unit of hunger per unit of body mass
 const MVP = { wolf: 6, fox: 5, bear: 3, sheep: 10, cow: 8 };
 // AI level of detail: creatures far from the camera (or off-screen) think less
 // often and steer more cheaply; the brain always receives the real elapsed time.
-const FAR_THINK = { humanoid: 1.7, animal: 2.3, monster: 1.4 };
+const FAR_THINK = { humanoid: 2.6, animal: 2.3, monster: 1.4 };
 const SFX_GAP = { hit: 0.07, death: 0.18, birth: 0.6, growl: 0.5, bleat: 1.4 };
 const THINK_BUDGET_MS = 5; // per rendered frame (high game speeds defer the rest)
 const DCELL = 16; // danger grid cell (tiles): where predators, monsters or fights are
@@ -542,6 +542,8 @@ export class Units {
       _rs: null,
       _rm: null,
       _nap: false,
+      _away: false,
+      flags: null,
       _homeB: null,
       _forager: null,
       _foraged: false,
@@ -951,6 +953,9 @@ export class Units {
         u.path = null;
         u.target = null;
         u.moving = false;
+        // arrived: a village brain decides what to do next right away, so long
+        // think intervals (distant people, coarse steps) do not leave them idle
+        if (u._ext && u.thinkT > 0.05) u.thinkT = 0.05;
       }
       return;
     }
@@ -1862,7 +1867,13 @@ export class Units {
     else DN.fill(0);
     // AI LOD at 8x and above: the coarse step would multiply thinking per tick;
     // distant creatures re-decide less often per game second instead
-    const fastFar = Math.min(2.5, Math.max(1, dt / TICK_DT));
+    // a coarse step must not multiply thinking: distant creatures keep about the
+    // same thinks per tick, nearby ones about half again (brains get the real
+    // elapsed time, so work and needs still advance in full)
+    const stepK = Math.max(1, dt / TICK_DT);
+    const fastFar = Math.min(4, stepK);
+    const fastFarPeople = Math.min(2, stepK); // people also re-think on arrival
+    const fastNear = Math.sqrt(stepK);
     const overview = (g.cameraRig?.cur?.dist ?? 0) > OVERVIEW_DIST;
     const cam = g.cameraRig?.cur;
     const focus = this._focus;
@@ -1875,9 +1886,14 @@ export class Units {
     const yearDt = dt / YEAR;
     const list = this.list;
     const lifeLaw = typeof g.laws?.lifeLifespan === 'number' ? g.laws.lifeLifespan : 1;
+    const lawHunger = this.law('lifeHunger'),
+      lawAging = this.law('lifeAging');
     const tickN = this._tickN;
-    for (let k = 0; k < list.length; k++) {
-      const u = list[k];
+    // (thinking has a time budget per rendered frame in live play only: back-to-back
+    // ticks stay deterministic and independent of machine load)
+    const nList = list.length;
+    for (let j = 0; j < nList; j++) {
+      const u = list[j];
       if (!u.alive) continue;
       const def = u.def;
       u.px = u.x;
@@ -1887,15 +1903,18 @@ export class Units {
       if (!u.flags?.frozenAge) u.age += yearDt;
       u.attackCd -= dt;
       u.stateTime += dt;
-      // aboard a vessel: carried along, out of the world until it lands
-      if (u.data.aboard != null) {
-        this._aboardTick(u, now);
-        continue;
-      }
-      // asleep at home: resting, out of the world until dawn or danger
-      if (u.data.inside === true) {
-        this._insideTick(u, dt, now, tickN);
-        continue;
+      // away from the world: aboard a vessel (carried along until it lands) or
+      // asleep at home (resting until dawn or danger)
+      if (u._away) {
+        if (u.data.aboard != null) {
+          this._aboardTick(u, now);
+          continue;
+        }
+        if (u.data.inside === true) {
+          this._insideTick(u, dt, now, tickN);
+          continue;
+        }
+        u._away = false;
       }
       if (def.kind !== 'animal' || def.diet !== 'herbivore' || u.combat || u.mad > now) {
         const cx = u.x < 0 ? 0 : Math.min(dw - 1, Math.floor(u.x / DCELL)),
@@ -1905,7 +1924,7 @@ export class Units {
       // ---- needs
       const active = u.state === 'run' || u.state === 'flee' || u.state === 'hunt' || u.state === 'attack';
       const lean = MVP[u.species] && (this._counts.get(u.species) || 0) < MVP[u.species] * 2 ? 0.6 : 1;
-      if (this.law('lifeHunger')) u.hunger = Math.min(1, u.hunger + dt * def.hungerRate * lean * (u.sleeping ? 0.5 : active ? 1.6 : 1));
+      if (lawHunger) u.hunger = Math.min(1, u.hunger + dt * def.hungerRate * lean * (u.sleeping ? 0.5 : active ? 1.6 : 1));
       else if (u.hunger > 0) u.hunger = Math.max(0, u.hunger - dt * 0.02);
       if (u.sleeping || u.state === 'sleep') u.energy = Math.min(1, u.energy + dt * (u._ext ? 0.012 : 0.0075));
       else if (u._ext) {
@@ -1926,7 +1945,7 @@ export class Units {
           if (!u.alive) continue;
         }
       }
-      if (u.age > u.lifespan * lifeLaw && this.law('lifeAging') && !u.flags?.immortal && !u.flags?.frozenAge) {
+      if (u.age > u.lifespan * lifeLaw && lawAging && !u.flags?.immortal && !u.flags?.frozenAge) {
         this.kill(u, 'old age');
         continue;
       }
@@ -1991,7 +2010,7 @@ export class Units {
         if (budgetOn && this._frameThinkMs > THINK_BUDGET_MS && !u.combat) {
           u.thinkT = 0.05 + g.rng.next() * 0.15; // over budget: think a little later
         } else {
-          let mul = u._far ? (FAR_THINK[def.kind] || 2) * fastFar : 1;
+          let mul = u._far ? (FAR_THINK[def.kind] || 2) * (def.kind === 'humanoid' ? fastFarPeople : fastFar) : u.combat ? 1 : fastNear;
           // calm grazers with no danger about re-decide less often
           if (def.kind === 'animal' && def.diet === 'herbivore' && !u.combat && u.hunger < 0.4 && !u.alarm && u.fleeUntil < now && !this.dangerNear(u.x, u.z, def.sight)) mul *= 1.6;
           u.thinkT = THINK_INTERVAL * (0.8 + g.rng.next() * 0.4) * mul;
@@ -2011,10 +2030,12 @@ export class Units {
       const sepEvery = (u._far ? 8 : 4) * (u.moving || u.target ? 1 : 2);
       if ((tickN + u.id) % sepEvery === 0) this._separate(u);
       // ---- locomotion
+      // distant creatures out of a fight step every other tick (twice as far)
       if (def.habitat === 'air') {
         this._flyTick(u, dt);
         this._flyLocomote(u, dt, now);
-      } else this._locomote(u, dt, now);
+      } else if (!u._far || u.combat) this._locomote(u, dt, now);
+      else if (((tickN + u.id) & 1) === 0) this._locomote(u, dt * 2, now);
       if (u.x < 0.01) u.x = 0.01;
       else if (u.x > w.w - 0.01) u.x = w.w - 0.01;
       if (u.z < 0.01) u.z = 0.01;

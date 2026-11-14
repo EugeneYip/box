@@ -78,6 +78,12 @@ const DEATH_WORDS = {
   damage: 'of their wounds',
 };
 
+// Odds of being born with a gift of one's own (one, then a second): about half
+// the people carry a trait from birth, a little more where traits are inherited;
+// deeds and hardships add the rest over a lifetime (~60-70% in all).
+const BORN_ONE = 0.46,
+  BORN_TWO = 0.15;
+
 export function installDepth(Units) {
   const P = Units.prototype;
   P.TRAITS = TRAITS;
@@ -357,25 +363,25 @@ export function installDepth(Units) {
             const t = TRAIT_BY_ID[id];
             if (t && t.category !== 'scar') seen.set(id, (seen.get(id) || 0) + 1);
           }
-        for (const [id, n] of seen) if (rng.chance(n >= 2 || parents.length === 1 ? 0.65 : 0.32)) this.addTrait(u, id, { silent: true });
+        for (const [id, n] of seen) if (rng.chance(n >= 2 || parents.length === 1 ? 0.42 : 0.18)) this.addTrait(u, id, { silent: true });
         const pool = def.kind === 'humanoid' ? BORN_TRAITS : BORN_TRAITS.filter((t) => ANIMAL_TRAITS.includes(t.id));
         // a child is born with something of its own as often as without inheritance
         // (inheritance only ever adds the parents' gifts on top), plus a rare mutation
-        const own = def.kind === 'humanoid' ? [0.6, 0.25] : [0.22, 0];
+        const own = def.kind === 'humanoid' ? [BORN_ONE, BORN_TWO] : [0.2, 0];
         if (!u.traits.length && rng.chance(own[0])) {
           const id = pickTrait(rng, pool, u);
           if (id) this.addTrait(u, id, { silent: true });
         }
-        if (u.traits.length < 3 && rng.chance(Math.max(own[1], 0.12))) {
+        if (u.traits.length < 2 && rng.chance(Math.max(own[1], 0.06))) {
           const id = pickTrait(rng, pool, u);
           if (id) this.addTrait(u, id, { silent: true });
         }
       } else if (def.kind === 'humanoid') {
-        if (rng.chance(0.6)) {
+        if (rng.chance(BORN_ONE)) {
           const id = pickTrait(rng, BORN_TRAITS, u);
           if (id) this.addTrait(u, id, { silent: true });
         }
-        if (rng.chance(0.25)) {
+        if (rng.chance(BORN_TWO)) {
           const id = pickTrait(rng, BORN_TRAITS, u);
           if (id) this.addTrait(u, id, { silent: true });
         }

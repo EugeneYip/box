@@ -1,4 +1,4 @@
-import { SEA_LEVEL } from '../../world/constants.js';
+import { SEA_LEVEL, TILE } from '../../world/constants.js';
 import { mulberry32 } from '../../core/Random.js';
 import { WaterNav, pathLength } from './nav.js';
 import { KINDS, SEA_KINDS, shipName, craftName, cargoText } from './kinds.js';
@@ -64,6 +64,17 @@ export class Fleet {
       this.nav?.markDirty(r);
       this._heightDirty = true;
     });
+    // ice painted on the water (or thawed off it) closes or opens it to ships
+    game.events.on('world:type', (r) => {
+      const R = this._typeRect;
+      if (!R) this._typeRect = { x0: r.x0, y0: r.y0, x1: r.x1, y1: r.y1 };
+      else {
+        R.x0 = Math.min(R.x0, r.x0);
+        R.y0 = Math.min(R.y0, r.y0);
+        R.x1 = Math.max(R.x1, r.x1);
+        R.y1 = Math.max(R.y1, r.y1);
+      }
+    });
     game.events.on('laws', ({ key }) => this._onLaw(key));
     this._wrapDamage();
   }
@@ -73,7 +84,11 @@ export class Fleet {
     this.nav = new WaterNav(w, 4);
     this.rng = mulberry32(((this.game.params?.seed ?? 1) * 7919 + 101) >>> 0);
     this._nextId = 1;
-    this._timers = { sched: 0.5, war: 0, hazard: 0, land: 1, siege: 0.3, debris: 0 };
+    this._timers = { sched: 0.5, war: 0, hazard: 0, land: 1, siege: 0.3, debris: 0, ice: 0 };
+    // which water tiles are frozen over (ice sheets the ships keep out of)
+    this._ice = new Uint8Array(w.w * w.h);
+    for (let i = 0; i < this._ice.length; i++) this._ice[i] = w.height[i] < SEA_LEVEL && w.type[i] === TILE.ICE ? 1 : 0;
+    this._typeRect = null;
     this.firsts = new Set();
     this.charts = new Map(); // kingdom -> Set of charted cells
     this._berths = new Map();
@@ -509,6 +524,10 @@ export class Fleet {
       }
     }
     const T = this._timers;
+    if ((T.ice += step) >= 1) {
+      T.ice = 0;
+      this._iceCheck();
+    }
     this._roadBudget = 1;
     // per-tick shared state (night, storm, who sails by the stars)
     this._nightNow = this.isNight() && g.settings?.dayNight !== false;
@@ -554,6 +573,33 @@ export class Fleet {
     this._debrisTick(step);
     // drop the dead
     if (this.list.some((v) => !v.alive)) this.list = this.list.filter((v) => v.alive);
+  }
+
+  // Tiles whose surface changed since the last look: where water froze over
+  // or thawed, the water graph is patched (land edits are ignored).
+  _iceCheck() {
+    const r = this._typeRect;
+    if (!r) return;
+    this._typeRect = null;
+    const w = this.world,
+      M = this._ice;
+    if (!M || M.length !== w.w * w.h) return;
+    let x0 = Infinity,
+      y0 = Infinity,
+      x1 = -1,
+      y1 = -1;
+    for (let y = Math.max(0, r.y0); y <= Math.min(w.h - 1, r.y1); y++)
+      for (let x = Math.max(0, r.x0); x <= Math.min(w.w - 1, r.x1); x++) {
+        const i = y * w.w + x;
+        const ice = w.height[i] < SEA_LEVEL && w.type[i] === TILE.ICE ? 1 : 0;
+        if (ice === M[i]) continue;
+        M[i] = ice;
+        if (x < x0) x0 = x;
+        if (y < y0) y0 = y;
+        if (x > x1) x1 = x;
+        if (y > y1) y1 = y;
+      }
+    if (x1 >= 0) this.nav.markDirty({ x0, y0, x1, y1 });
   }
 
   _buildHash() {
@@ -814,7 +860,8 @@ export class Fleet {
       const n = Math.round(4 + v.def.length * 3);
       for (let i = 0; i < n; i++) this._addDebris(v.x + (this.rng() - 0.5) * v.def.length, v.z + (this.rng() - 0.5) * v.def.length * 0.6, i);
       this._fx('splash', v.x, v.z, 0.8 + v.def.length * 0.4);
-      if (cause === 'fire' || cause === 'battle' || cause === 'meteor' || cause === 'lightning') this._fx('smoke', v.x, v.z, 1.2);
+      // a grey-white pall over the water (the dark land smoke reads as brown there)
+      if (cause === 'fire' || cause === 'battle' || cause === 'meteor' || cause === 'lightning') this._fx('smoke', v.x, v.z, 1.1, { dark: false, count: 2, y: 0.5 });
       this._sfx('splash', v.x, v.z);
     } else {
       v.state = 'wrecked';

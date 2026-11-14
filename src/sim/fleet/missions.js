@@ -150,17 +150,24 @@ export const missions = {
     return !!p;
   },
 
-  // How many ships a jetty can berth (a harbour more), and how many it has.
+  // How many ships a jetty can berth (a harbour more), and how many it has:
+  // every ship (its own or a visitor) lying at, or bound for, a berth at the
+  // end of this pier. Ships riding in the roads do not count.
   harbourCap(h) {
     const seafaring = this.game.civ?.hasCultureTrait?.(this.kingdom(h.kingdom)?.culture, 'Seafaring');
-    return (h.level >= 2 ? 5 : 3) + (seafaring ? 1 : 0);
+    return (h.level >= 2 ? 4 : 2) + (seafaring ? 1 : 0);
   },
   berthed(h, self = null) {
+    const ex = h.x + h.dirX * 3.4,
+      ez = h.z + h.dirZ * 3.4;
     let n = 0;
     for (const o of this.list) {
-      if (!o.alive || o === self || o.cls !== 'sea' || o.state === 'sinking' || o.kind === 'fishing') continue;
-      if (o.state === 'moored' && o.harbour === h.id) n++;
-      else if (o.state === 'sail' && o.mission?.phase === 'home' && o.harbour === h.id && o.dest?.berth) n++;
+      if (!o.alive || o === self || o.cls !== 'sea' || o.state === 'sinking' || o.kind === 'fishing' || o.roads) continue;
+      let ox, oz;
+      if (o.state === 'moored') (ox = o.x), (oz = o.z);
+      else if (o.state === 'sail' && o.dest?.berth && (o.mission?.phase === 'home' || o.mission?.phase === 'out')) (ox = o.dest.x), (oz = o.dest.z);
+      else continue;
+      if (Math.hypot(ox - ex, oz - ez) < 5.5) n++;
     }
     return n;
   },
@@ -180,7 +187,7 @@ export const missions = {
           tz = Math.floor(qz);
         if (!w.inBounds(tx, tz)) return false;
         const h = w.height[tz * w.w + tx];
-        if (h >= 0 || -h < (sd === 0 ? D : D * 0.6)) return false;
+        if (h >= 0 || -h < (sd === 0 ? D : D * 0.6) || w.type[tz * w.w + tx] === TILE.ICE) return false;
       }
     return true;
   },
@@ -234,27 +241,39 @@ export const missions = {
     }
     return null;
   },
-  // Fishing boats tie up beside the pier itself, out of the ships' way.
+  // Fishing boats tie up beside the pier itself, out of the ships' way (one
+  // each side); the rest lie off the shore either side of the jetty, well
+  // apart, so a small jetty never has more than a few craft at it.
   _boatSlot(h, self) {
     const px = -h.dirZ,
       pz = h.dirX;
     const def = KINDS.fishing;
-    for (const f of [1.3, 2.3, 3.2, 4.0, 1.0, 2.8])
-      for (const sd of [0.62, -0.62, 1.25, -1.25]) {
+    const taken = (x, z, r) => {
+      for (const o of this.list) {
+        if (!o.alive || o === self || o.cls !== 'sea' || o.state === 'sinking') continue;
+        const ox = o.state === 'moored' ? o.x : o.dest?.x,
+          oz = o.state === 'moored' ? o.z : o.dest?.z;
+        if (ox != null && Math.hypot(ox - x, oz - z) < r + (o.kind === 'fishing' ? 0 : o.def.length * 0.5)) return true;
+      }
+      return false;
+    };
+    for (const f of [2.2])
+      for (const sd of [0.7, -0.7]) {
         const x = h.x + h.dirX * f + px * sd,
           z = h.z + h.dirZ * f + pz * sd;
         if (!this._hullFits(x, z, h.dirX, h.dirZ, def)) continue;
-        let taken = false;
-        for (const o of this.list) {
-          if (!o.alive || o === self || o.kind !== 'fishing') continue;
-          const ox = o.state === 'moored' ? o.x : o.dest?.x,
-            oz = o.state === 'moored' ? o.z : o.dest?.z;
-          if (ox != null && Math.hypot(ox - x, oz - z) < 0.72) {
-            taken = true;
-            break;
-          }
-        }
-        if (!taken) return { x, z, berth: true };
+        if (!taken(x, z, 1.05)) return { x, z, berth: true };
+      }
+    // off the shore beside the jetty, in the shallows either side of it
+    const nav = this.nav;
+    for (const r of [3.2, 4.2, 5.2])
+      for (const a of [1.15, -1.15, 1.4, -1.4, 0.85, -0.85]) {
+        const ang = Math.atan2(h.dirZ, h.dirX) + a;
+        const x = h.x + Math.cos(ang) * r,
+          z = h.z + Math.sin(ang) * r;
+        if (!this._hullFits(x, z, Math.cos(ang), Math.sin(ang), def)) continue;
+        if (nav.comp(x, z) !== h.water || !nav.los(h.berth.x, h.berth.z, x, z, 0)) continue;
+        if (!taken(x, z, 1.5)) return { x, z, berth: true };
       }
     return null;
   },
@@ -270,8 +289,16 @@ export const missions = {
         if (nav.clearAt(x, z) < Math.max(1.5, def.clear || 0)) continue;
         if (!this._hullFits(x, z, Math.cos(a), Math.sin(a), def)) continue;
         if (nav.comp(x, z) !== h.water) continue;
+        // spread out: well clear of other hulls and of where they are bound
         let busy = false;
-        for (const o of this.list) if (o.alive && o.cls === 'sea' && Math.hypot(o.x - x, o.z - z) < (o.def.length + def.length) * 0.6) busy = true;
+        for (const o of this.list) {
+          if (!o.alive || o.cls !== 'sea' || o.state === 'sinking') continue;
+          const gap = (o.def.length + def.length) * 0.8 + 0.4;
+          if (Math.hypot(o.x - x, o.z - z) < gap || (o.dest && o.state === 'sail' && Math.hypot(o.dest.x - x, o.dest.z - z) < gap)) {
+            busy = true;
+            break;
+          }
+        }
         if (!busy) return { x, z };
       }
     }
@@ -298,16 +325,38 @@ export const missions = {
       this.remove(v);
       return false;
     }
+    let spot = this._mooringSpot(h, v);
+    if (!spot && v.kind !== 'fishing') {
+      // this jetty is full: another of the realm's jetties close by on these waters
+      for (const o of this.harbours(v.kingdom)) {
+        if (o.id === h.id || o.water !== h.water || Math.hypot(o.berth.x - h.berth.x, o.berth.z - h.berth.z) > 18) continue;
+        const s2 = this._mooringSpot(o, v);
+        if (s2) {
+          h = o;
+          spot = s2;
+          break;
+        }
+      }
+    }
     v.harbour = h.id;
     v.home = h.village;
     v.village = h.village;
     if (!v.mission) v.mission = { type: 'home', phase: 'home' };
     v.mission.phase = 'home';
-    let spot = this._mooringSpot(h, v);
+    v.roads = false;
     if (!spot) {
-      // the harbour is full: fishing boats wait in the roads, others are laid up there
-      spot = this._anchorage(h, v.def) || h.berth;
-      if (v.kind !== 'fishing') v.layup = true;
+      // every berth is taken: she rides at anchor in the roads off the harbour
+      // a while (then is laid up); fishing boats wait there for a berth. On
+      // water too narrow to anchor in (a river port), a ship is laid up as
+      // soon as she comes in, so ships never pile up at the pier head.
+      const anch = this._anchorage(h, v.def);
+      if (anch) {
+        spot = anch;
+        v.roads = true;
+      } else {
+        spot = h.berth;
+        if (v.kind !== 'fishing') v.layup = true;
+      }
     }
     if (!this._sail(v, spot)) {
       this.remove(v);
@@ -361,6 +410,7 @@ export const missions = {
       if (v.hp < v.maxHp) v.hp = Math.min(v.maxHp, v.hp + v.maxHp * 0.025);
       v.burning = 0;
       if (v.layup && v.idleT > 4) this.remove(v);
+      else if (v.roads && v.kind !== 'fishing' && v.idleT > 45) this.remove(v); // laid up after a spell in the roads
       else if (v.kind !== 'fishing' && (v.idleT > 420 || (v.idleT > 120 && this.count(v.kingdom, v.kind) > 1))) this.remove(v); // idle ships are laid up
       else if (v.harbour != null && !this.harbourInfo(v.harbour)) this.remove(v);
       return;
