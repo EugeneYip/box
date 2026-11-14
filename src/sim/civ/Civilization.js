@@ -1492,16 +1492,22 @@ export class Civilization {
     give('messenger', members.filter((u) => u.job === 'messenger').length);
     if (n >= 8 && v.buildings.some((b) => b.alive && b.type === 'healer' && !b.constructing)) give('healer', 1);
     give('farmer', v.fieldCount ? Math.max(1, Math.min(Math.ceil(v.fieldCount / (foodFull ? 14 : ctr('Pastoral') ? 7 : 9)), n * 0.5)) : 0);
+    // a martial people keeps its warband before any other trade but the fields
+    // (on the World Map's big farming towns the woodcutters and builders took
+    // the hands first, and Martial towns kept no more soldiers than others)
+    const lean = ctr('Martial') ? 2.1 : ctr('Pastoral') || ctr('Scholarly') ? 0.6 : 1;
+    const peaceGuard = () => Math.max(1, n * 0.11 * lean) + (v.hasBarracks ? 2 : 0) + (ctr('Martial') && v.tier >= 1 ? 2 : 0);
+    const martialFirst = ctr('Martial') && !atWar && n >= 5;
+    if (martialFirst) give('soldier', peaceGuard());
     give('fisher', v.docks ? Math.min(v.docks * (ctr('Seafaring') ? 3 : 2), 1 + n * (ctr('Seafaring') ? 0.25 : 0.15)) : foodLow && n >= 5 && v.coastal ? 1 : 0);
     const drafting = this.game.time.total - (v.draft ?? -99) < 45;
     // a people's ways show in its trades: martial folk keep many under arms
-    const lean = ctr('Martial') ? 2.1 : ctr('Pastoral') || ctr('Scholarly') ? 0.6 : 1;
     if (atWar) give('soldier', Math.max(3, n * Math.min(0.55, (drafting ? 0.32 : 0.2) * lean)) + (v.hasBarracks ? 3 : 0));
     give('builder', sites ? Math.min(Math.max(1, Math.ceil(sites * 1.1)), 1 + Math.floor(n / 6)) : repairs ? 1 : 0);
     // an empty woodshed stops all building: send more hands to the woods
     const woodsCap = (v.trees ?? 99) < 20 ? 1 : (v.trees ?? 99) < 45 ? 2 : (v.trees ?? 99) < 75 ? 3 : 9;
     give('woodcutter', Math.min(woodsCap, woodFull ? (n >= 6 ? 1 : 0) : v.wood < 15 ? 1 + Math.floor(n / 7) : v.wood < 40 + v.tier * 30 ? 1 + Math.floor(n / 9) : n >= 4 ? 1 + Math.floor(n / 16) : 0));
-    if (!atWar && n >= 5) give('soldier', Math.max(1, n * 0.11 * lean) + (v.hasBarracks ? 2 : 0) + (ctr('Martial') && v.tier >= 1 ? 2 : 0));
+    if (!atWar && n >= 5 && !martialFirst) give('soldier', peaceGuard());
     if (v.hasRock !== false || v.quarry >= 0) give('miner', stoneFull ? 0 : v.stone < 12 ? 2 + Math.floor(n / 7) : v.stone < 30 + v.tier * 50 ? 1 + Math.floor(n / (ctr('Masons') ? 6 : 9)) : ctr('Masons') ? 2 : 1);
     // the rest go where they are most useful; anyone left over keeps the town lively
     let guard = 0;
