@@ -1033,7 +1033,7 @@ export class Civilization {
       }
     }
     // shrinking towns let empty houses crumble rather than stand as ghost towns
-    if (v.housing > pop * 1.6 + 8 && now - (v.lastDecay || 0) > 12) {
+    if (v.housing > pop * 1.6 + 8 && now - (v.lastDecay || 0) > 12 && v.policy?.buildings !== false) { // (a village closed to new building keeps its houses)
       v.lastDecay = now;
       let far = null,
         fd = -1;
@@ -1607,8 +1607,16 @@ export class Civilization {
       return;
     }
     const frozen = v.policy?.buildings === false; // the gods forbid new building here
-    if (frozen && v.frozenHousing == null) v.frozenHousing = v.housing;
-    if (!frozen) v.frozenHousing = null;
+    if (frozen && v.frozenHousing == null) {
+      v.frozenHousing = v.housing;
+      // what stood when building was forbidden may be raised again if lost
+      v.frozenCounts = {};
+      for (const b of v.buildings) if (b.alive && !b.constructing && !BUILDING_TYPES[b.type].wall) v.frozenCounts[b.type] = (v.frozenCounts[b.type] || 0) + 1;
+    }
+    if (!frozen) v.frozenHousing = v.frozenCounts = null;
+    // a site the builders cannot reach is given up (it held a building slot
+    // for ever: a frozen village showed one construction always pending)
+    for (const b of v.buildings) if (b.alive && b.constructing && (b.unreachable || 0) > 6 && !BUILDING_TYPES[b.type].monument && b.type !== 'hall') this.destroyBuilding(b, 'abandoned');
     let sites = 0;
     for (const b of v.buildings) if (b.alive && (b.constructing || b.upgrading) && !BUILDING_TYPES[b.type].wall) sites++;
     const maxSites = 1 + Math.floor(v.adults / 7);
@@ -1620,7 +1628,7 @@ export class Civilization {
     let actions = 0;
     const room = () => sites < maxSites && actions < 2;
     const build = (type, placer) => {
-      if (frozen && !(type === 'house' && v.housing < (v.frozenHousing ?? 0)) && !(type === 'granary' && count('granary') === 0)) return false;
+      if (frozen && !(type === 'house' && v.housing < (v.frozenHousing ?? 0)) && !(type === 'granary' && count('granary') === 0) && !(count(type) < (v.frozenCounts?.[type] || 0))) return false;
       const cost = costOf(type, 1, v.culture);
       if (!canAfford(v, cost)) {
         v.need = type;

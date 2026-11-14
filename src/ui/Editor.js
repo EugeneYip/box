@@ -417,7 +417,7 @@ export class Editor {
       this.section('Policies', [
         this.toggle('Walls', () => pol().walls ?? true, okP, (val) => setPol('walls', val, !val, val ? 'Walls may be raised' : 'No walls')),
         this.slider('Growth', () => pol().growth ?? 1, 0.25, 3, 0.25, okP, (val, prev) => setPol('growth', val, prev, `Growth ×${val}`)),
-        this.toggle('New buildings', () => pol().buildings ?? true, okP, (val) => setPol('buildings', val, !val, val ? 'Building allowed' : 'Building halted')),
+        this.toggle('New buildings', () => pol().buildings ?? true, okP, (val) => setPol('buildings', val, !val, val ? 'Building allowed' : 'Building halted'), 'Off: nothing new is built. Builders still repair, and a house or building that is lost is raised again.'),
         this.capitalRow(v, okP),
         okP ? null : this.missing(),
       ]),

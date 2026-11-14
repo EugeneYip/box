@@ -29,7 +29,7 @@ recoloured kingdom keeps its colour).
 |---|---|
 | `civ.renameVillage(id, name)` | As above; the label updates. |
 | `civ.transferVillage(id, kingdomId)` | Moves a village (and its territory and people) to another kingdom, or to a new independent realm when `kingdomId` is `null`. Chronicle line. |
-| `civ.setVillagePolicy(id, key, value)` | `walls` (bool), `growth` (0.25–3), `buildings` (bool: allow new construction), `capital` (true makes it its kingdom's capital). `civ.villagePolicies(id)` returns current values. |
+| `civ.setVillagePolicy(id, key, value)` | `walls` (bool), `growth` (0.25–3), `buildings` (bool: allow new construction; when off, builders still repair, a lost building or house is raised again up to what stood when it was switched off, and houses no longer crumble), `capital` (true makes it its kingdom's capital). `civ.villagePolicies(id)` returns current values. |
 
 ## Creatures (Life: `src/sim/units`)
 
