@@ -241,8 +241,9 @@ export const missions = {
     }
     return null;
   },
-  // Fishing boats tie up beside the pier itself, out of the ships' way, a
-  // boat's length apart (four at most); the rest lie off the shore nearby.
+  // Fishing boats tie up beside the pier itself, out of the ships' way (one
+  // each side); the rest lie off the shore either side of the jetty, well
+  // apart, so a small jetty never has more than a few craft at it.
   _boatSlot(h, self) {
     const px = -h.dirZ,
       pz = h.dirX;
@@ -256,7 +257,7 @@ export const missions = {
       }
       return false;
     };
-    for (const f of [1.5, 2.9])
+    for (const f of [2.2])
       for (const sd of [0.7, -0.7]) {
         const x = h.x + h.dirX * f + px * sd,
           z = h.z + h.dirZ * f + pz * sd;
@@ -265,14 +266,14 @@ export const missions = {
       }
     // off the shore beside the jetty, in the shallows either side of it
     const nav = this.nav;
-    for (const r of [2.6, 3.6, 4.6])
-      for (const a of [0.9, -0.9, 1.25, -1.25, 0.55, -0.55]) {
+    for (const r of [3.2, 4.2, 5.2])
+      for (const a of [1.15, -1.15, 1.4, -1.4, 0.85, -0.85]) {
         const ang = Math.atan2(h.dirZ, h.dirX) + a;
         const x = h.x + Math.cos(ang) * r,
           z = h.z + Math.sin(ang) * r;
         if (!this._hullFits(x, z, Math.cos(ang), Math.sin(ang), def)) continue;
         if (nav.comp(x, z) !== h.water || !nav.los(h.berth.x, h.berth.z, x, z, 0)) continue;
-        if (!taken(x, z, 1.3)) return { x, z, berth: true };
+        if (!taken(x, z, 1.5)) return { x, z, berth: true };
       }
     return null;
   },
@@ -345,9 +346,17 @@ export const missions = {
     v.roads = false;
     if (!spot) {
       // every berth is taken: she rides at anchor in the roads off the harbour
-      // a while (then is laid up); fishing boats wait there for a berth
-      spot = this._anchorage(h, v.def) || h.berth;
-      v.roads = true;
+      // a while (then is laid up); fishing boats wait there for a berth. On
+      // water too narrow to anchor in (a river port), a ship is laid up as
+      // soon as she comes in, so ships never pile up at the pier head.
+      const anch = this._anchorage(h, v.def);
+      if (anch) {
+        spot = anch;
+        v.roads = true;
+      } else {
+        spot = h.berth;
+        if (v.kind !== 'fishing') v.layup = true;
+      }
     }
     if (!this._sail(v, spot)) {
       this.remove(v);
