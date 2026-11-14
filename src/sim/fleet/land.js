@@ -577,9 +577,10 @@ export const land = {
   },
 
   // The best battery before a town: candidates on rings round it, kept when
-  // the town's nearest building lies 4-8 tiles off (relaxed once if none
-  // is found), scored for the roll there, a good throwing distance, and not
-  // sitting on the attacker's own land.
+  // the town's nearest building lies 4-7 tiles off and the ground is about
+  // level with it (relaxed once if none is found), scored for the roll
+  // there, a throw of about five tiles, level ground, and not sitting on the
+  // attacker's own land.
   _batterySite(v, village) {
     const B = (village.buildings || []).filter((o) => o.alive);
     if (!B.length) return null;
@@ -589,8 +590,8 @@ export const land = {
     let ext = 0;
     for (const o of B) ext = Math.max(ext, Math.hypot(o.x - cx, o.z - cz) + Math.max(o.w || 1, o.h || 1) * 0.5);
     for (const [lo, hi, strict] of [
-      [4, 8, true],
-      [3.5, 10, false],
+      [4, 7, true],
+      [3.5, 9, false],
     ]) {
       let best = null,
         bs = Infinity;
@@ -600,18 +601,22 @@ export const land = {
           const ang = (k / n) * Math.PI * 2 + r * 0.37;
           const x = cx + Math.cos(ang) * r,
             z = cz + Math.sin(ang) * r;
-          let near = Infinity;
+          let near = Infinity,
+            nb = null;
           for (const o of B) {
             const od = Math.hypot(o.x - x, o.z - z) - Math.max(o.w || 1, o.h || 1) * 0.5;
-            if (od < near) near = od;
+            if (od < near) (near = od), (nb = o);
           }
           if (near < lo || near > hi) continue;
+          // on a level with the town, not up on a crag above it or down below
+          const dh = Math.abs(w.heightAt(x, z) - w.heightAt(nb.x, nb.z));
+          if (strict && dh > 2.5) continue;
           const g = this._batteryGround(x, z, village, strict);
           if (g < 0) continue;
           const tx = Math.floor(x),
             tz = Math.floor(z);
           const own = w.owner[tz * w.w + tx] === v.kingdom;
-          const sc = Math.hypot(x - v.x, z - v.z) * 0.15 + Math.abs(near - 6) * 0.8 + (own ? 5 : 0);
+          const sc = Math.hypot(x - v.x, z - v.z) * 0.15 + Math.abs(near - 5) * 0.8 + dh * 0.6 + (own ? 5 : 0);
           if (sc < bs) {
             bs = sc;
             best = { x, z, vid: village.id, stuck: 0 };
@@ -667,9 +672,10 @@ export const land = {
     const tx = Math.floor(x),
       tz = Math.floor(z);
     if (w.slopeAt(tx, tz) > 0.6) return false;
-    for (let dz = -1; dz <= 1; dz++)
-      for (let dx = -1; dx <= 1; dx++) {
-        if (!w.inBounds(tx + dx, tz + dz)) continue;
+    // no tree within two tiles (the engine is nearly two tiles long)
+    for (let dz = -2; dz <= 2; dz++)
+      for (let dx = -2; dx <= 2; dx++) {
+        if (!w.inBounds(tx + dx, tz + dz) || dx * dx + dz * dz > 5) continue;
         if (FLORA_INFO[w.flora[w.idx(tx + dx, tz + dz)]]?.isTree) return false;
       }
     return true;
