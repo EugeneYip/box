@@ -1,6 +1,10 @@
-import { SEA_LEVEL } from '../../world/constants.js';
+import { SEA_LEVEL, TILE } from '../../world/constants.js';
+
+const ICE = TILE.ICE; // frozen water: no keel crosses it
 
 // Coarse water navigation for the Fleets module (no three.js: runs headless).
+// Open water is a tile below SEA_LEVEL that is not frozen (TILE.ICE): ships
+// never sail through, moor in or berth on an ice sheet.
 //
 // The map is cut into C x C tile cells. Each cell that holds water gets one
 // node, placed on its most open water tile (farthest from land), so routes
@@ -124,14 +128,15 @@ export class WaterNav {
   _distRect(x0, y0, x1, y1, inner = null) {
     const w = this.world;
     const W = this.W;
-    const h = w.height;
+    const h = w.height,
+      ty = w.type;
     const bw = x1 - x0 + 1,
       bh = y1 - y0 + 1;
     const f = new Float32Array(bw * bh);
     for (let y = 0; y < bh; y++)
       for (let x = 0; x < bw; x++) {
         const i = (y0 + y) * W + x0 + x;
-        f[y * bw + x] = h[i] < SEA_LEVEL ? DMAX : 0;
+        f[y * bw + x] = h[i] < SEA_LEVEL && ty[i] !== ICE ? DMAX : 0;
       }
     // forward
     for (let y = 0; y < bh; y++)
@@ -317,14 +322,16 @@ export class WaterNav {
     const tx = Math.floor(x),
       tz = Math.floor(z);
     if (tx < 0 || tz < 0 || tx >= this.W || tz >= this.H) return false;
-    return this.world.height[tz * this.W + tx] < SEA_LEVEL;
+    const i = tz * this.W + tx;
+    return this.world.height[i] < SEA_LEVEL && this.world.type[i] !== ICE;
   }
   clearAt(x, z) {
     const tx = Math.floor(x),
       tz = Math.floor(z);
     if (tx < 0 || tz < 0 || tx >= this.W || tz >= this.H) return 0;
-    if (this.world.height[tz * this.W + tx] >= SEA_LEVEL) return 0;
-    return this.dist[tz * this.W + tx];
+    const i = tz * this.W + tx;
+    if (this.world.height[i] >= SEA_LEVEL || this.world.type[i] === ICE) return 0;
+    return this.dist[i];
   }
   cellAt(x, z) {
     const cx = Math.min(this.cw - 1, Math.max(0, Math.floor(x / this.C))),
@@ -341,6 +348,7 @@ export class WaterNav {
     const W = this.W,
       H = this.H;
     const h = this.world.height,
+      ty = this.world.type,
       d = this.dist;
     for (let s = 0; s <= n; s++) {
       const t = s / n;
@@ -348,7 +356,7 @@ export class WaterNav {
         tz = Math.floor(az + dz * t);
       if (tx < 0 || tz < 0 || tx >= W || tz >= H) return false;
       const i = tz * W + tx;
-      if (h[i] >= SEA_LEVEL) return false;
+      if (h[i] >= SEA_LEVEL || ty[i] === ICE) return false;
       if (clear > 0 && d[i] < clear && s > 0 && s < n) return false;
     }
     return true;
@@ -393,8 +401,10 @@ export class WaterNav {
     const tx0 = Math.floor(x),
       tz0 = Math.floor(z);
     if (tx0 < 0 || tz0 < 0 || tx0 >= W || tz0 >= H) return null;
-    const h = this.world.height;
-    if (h[tz0 * W + tx0] >= SEA_LEVEL) return null;
+    const h = this.world.height,
+      ty = this.world.type;
+    const dry = (i) => h[i] >= SEA_LEVEL || ty[i] === ICE;
+    if (dry(tz0 * W + tx0)) return null;
     const S = R * 2 + 1;
     const prev = new Int32Array(S * S).fill(-2);
     const q = new Int32Array(S * S);
@@ -429,10 +439,10 @@ export class WaterNav {
         const ttx = tx0 + nx - R,
           ttz = tz0 + nz - R;
         if (ttx < 0 || ttz < 0 || ttx >= W || ttz >= H) continue;
-        if (h[ttz * W + ttx] >= SEA_LEVEL) continue;
+        if (dry(ttz * W + ttx)) continue;
         if (dd & 1) {
           // no diagonal squeeze between two land tiles
-          if (h[tz * W + ttx] >= SEA_LEVEL && h[ttz * W + tx] >= SEA_LEVEL) continue;
+          if (dry(tz * W + ttx) && dry(ttz * W + tx)) continue;
         }
         prev[nk] = k;
         q[qt++] = nk;
@@ -627,7 +637,7 @@ export class WaterNav {
           tz = cz + dz;
         if (tx < 1 || tz < 1 || tx >= W - 1 || tz >= H - 1) continue;
         const i = tz * W + tx;
-        if (h[i] >= SEA_LEVEL || this.dist[i] > 1.5) continue;
+        if (h[i] >= SEA_LEVEL || this.dist[i] > 1.5 || this.dist[i] <= 0) continue;
         cand.push(dx * dx + dz * dz, tx, tz);
       }
     // nearest first; the (costly) water-body test runs on as few as possible
@@ -672,7 +682,7 @@ export class WaterNav {
           tz = cz + dz;
         if (tx < 0 || tz < 0 || tx >= W || tz >= H) continue;
         const i = tz * W + tx;
-        if (this.world.height[i] >= SEA_LEVEL || this.dist[i] < minClear) continue;
+        if (this.world.height[i] >= SEA_LEVEL || this.dist[i] < minClear || this.dist[i] <= 0) continue;
         const d = Math.hypot(tx + 0.5 - x, tz + 0.5 - z);
         if (d < bd) {
           bd = d;

@@ -51,15 +51,14 @@ export const war = {
   _galley(v, enemies, dt, now) {
     const nav = this.nav;
     let tgt = v.target != null ? this.byId.get(v.target) : null;
-    if (tgt && (!tgt.alive || tgt.state === 'sinking' || tgt.state === 'moored' || !enemies.includes(tgt.kingdom) || Math.hypot(tgt.x - v.x, tgt.z - v.z) > 40)) tgt = null;
-    const blockade = v.mission?.blockade ?? null;
+    if (tgt && (!tgt.alive || tgt.state === 'sinking' || tgt.state === 'moored' || tgt.kind === 'fishing' || !enemies.includes(tgt.kingdom) || Math.hypot(tgt.x - v.x, tgt.z - v.z) > 40)) tgt = null;
     if (!tgt) {
-      // nearest enemy ship: warships and transports first; fishermen are left
-      // alone unless they sail from the harbour this galley blockades
+      // nearest enemy ship: warships and transports first. Fishermen are
+      // never hunted, at any map size: a blockade drives them home instead
+      // (below), and a blockaded harbour sends none out.
       let bs = Infinity;
       this.near(v.x, v.z, 30, (o, d) => {
-        if (o.cls !== 'sea' || o.state === 'sinking' || o.state === 'moored' || !enemies.includes(o.kingdom)) return;
-        if (o.kind === 'fishing' && (blockade == null || o.harbour !== blockade)) return;
+        if (o.cls !== 'sea' || o.state === 'sinking' || o.state === 'moored' || o.kind === 'fishing' || !enemies.includes(o.kingdom)) return;
         const sc = d - (o.kind === 'galley' ? 8 : o.kind === 'transport' ? 7 : o.kind === 'carrack' || o.kind === 'cog' ? 3 : 0);
         if (sc < bs) {
           bs = sc;
@@ -147,6 +146,12 @@ export const war = {
       v.state = 'patrol';
       if (bh) {
         this.blockades.set(bh.id, now + 4);
+        // the harbour's fishing boats put about and run for home
+        this.near(v.x, v.z, 10, (o) => {
+          if (o.kind !== 'fishing' || o.harbour !== bh.id || o.state === 'sinking' || o.state === 'moored' || o.mission?.phase === 'home') return;
+          o.cargo = { fish: Math.round(1 + this.rng() * 2) };
+          this._goHome(o);
+        });
         if (!m.announced) {
           m.announced = true;
           this.note(`⚓ Galleys of ${this.kname(v.kingdom)} blockade the harbour of ${bh.name}`, 'war', { x: bh.x, z: bh.z }, 'blockade' + v.kingdom + '-' + bh.kingdom, 1200);
