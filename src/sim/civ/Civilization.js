@@ -61,11 +61,15 @@ function monumentTitle(type, style, variant) {
 
 function budgets(w, h, area = w * h) {
   const a = area / (256 * 256);
+  const humans = Math.round(Math.min(900, 850 * Math.pow(a, 0.04)));
   return {
     area: a,
-    humans: Math.round(Math.min(900, 850 * Math.pow(a, 0.04))),
+    humans,
     buildings: Math.round(Math.min(920, 300 * Math.pow(a, 0.8))),
-    villages: Math.round(30 * Math.pow(a, 0.55)),
+    // the people budget hardly grows with the map, so neither may the number
+    // of villages sharing it: about 26 people a village, as on a Medium map
+    // (the World Map had 55 villages of 15 and no cities)
+    villages: Math.round(Math.min(30 * Math.pow(a, 0.55), humans / 26)),
     startVillages: Math.max(1, Math.round(3 * Math.pow(a, 0.7))),
   };
 }
@@ -762,7 +766,14 @@ export class Civilization {
     const winter = season >= 3;
     const mods = g.age?.mods || {};
     // winter: hearths burn and nothing grows, the granaries carry the village
-    const eat = ((adults * 2 + kids * 1.3) / YEAR) * dt * (winter ? 1.2 : 1);
+    const yearNeed = (adults * 2 + kids * 1.3) * (winter ? 1.2 : 1);
+    // rationing: the cooks keep a reserve of a year and a half of food, more
+    // through the long winter, in a war or a lean age; below it meals are
+    // smaller (hunger settles higher, up to about 0.6) and the store lasts
+    // longer. Nobody starves until the store is empty.
+    const reserve = 1.5 + (winter ? 1.5 : 0) + (v.jobCount.soldier && this.warCount(v.kingdom) > 0 ? 1 : 0) + (this._easedMods().fertility < 0.9 ? 1 : 0);
+    v.ration = Math.max(0.45, Math.min(1, 0.45 + (0.55 * v.food) / Math.max(1, yearNeed * reserve)));
+    const eat = (yearNeed / YEAR) * dt * (0.4 + 0.6 * v.ration);
     v.food -= eat;
     // upkeep: firewood for every hearth and timber to keep roofs mended
     const nb = v.buildings.length;
@@ -809,7 +820,8 @@ export class Civilization {
     }
     // famine strikes hard but never wipes out a settlement: relief caravans and
     // foraging keep the last families alive
-    if (v.starving && pop <= 8) v.food += (pop * 2.2 / YEAR) * dt;
+    // (enough to end the famine in a few years, not just to linger in it)
+    if (v.starving && pop <= 12) v.food += (pop * 3 / YEAR) * dt;
 
     // crops ripen (farmers plant and harvest; growth is helped along here)
     const rain = g.env.weather?.type === 'rain' || g.env.weather?.type === 'storm';
@@ -820,9 +832,19 @@ export class Civilization {
     const fert = 1 + (this._easedMods().fertility - 1) * 0.5;
     const growRate = (dt / 42) * (golden ? 1.3 : 1) * (rain ? 1.25 : 1) * seasonGrow * fert * this.techMod(v.kingdom, 'harvest');
     if (winter) v.food += (v.jobCount.farmer || 0) * 0.6 * dt * fert;
+    // spring sowing: seed is broadcast on the bare tilled fields of the village
+    // (a handful of farmers could never resow every field one by one after the
+    // winter, and a small town with wide fields went hungry until summer)
+    const sow = season < 1.8 && !winter ? 0.05 * dt : 0;
     for (const p of v.plots) {
       let dirty = false;
       for (const i of p.tiles) {
+        if (sow && w.flora[i] === FLORA.NONE && w.type[i] === TILE.FARMLAND && this.use[i] === USE.PLOT && this.rng.chance(sow)) {
+          w.flora[i] = FLORA.WHEAT;
+          w.floraGrowth[i] = 0.04;
+          dirty = true;
+          continue;
+        }
         if (w.flora[i] !== FLORA.WHEAT) continue;
         if (winter && w.floraGrowth[i] < 0.98) {
           // unripe stalks wither: the field lies bare
@@ -847,7 +869,7 @@ export class Civilization {
     const crowd = this._crowd();
     const popCrowd = this._popCrowd || 0;
     const fullWorld = humans > this._humanCap() * 0.85;
-    if (pop < v.housing && pop < this._popCap(v) && !(fullWorld && pop > (v.tier >= 2 && (this.kingdoms[v.kingdom]?.capital === v.id || v.coastal) ? 170 : 45)) && v.food > pop * 1.2 + 8 && !v.starving && humans < this._humanCap() && this.rng.chance(Math.min(1, (1 - popCrowd * 0.85) * this._kLaw(v.kingdom, 'civGrowth', 1) * (v.policy?.growth ?? 1)))) {
+    if (pop < v.housing && pop < this._popCap(v) && !(fullWorld && pop > this._fullWorldRoom(v)) && v.food > pop * 1.2 + 8 && !v.starving && humans < this._humanCap() && this.rng.chance(Math.min(1, (1 - popCrowd * 0.85) * this._kLaw(v.kingdom, 'civGrowth', 1) * (v.policy?.growth ?? 1)))) {
       let father = false;
       for (const u of v.members) if (u.sex === 'm' && u.age >= 18 && u.age < 60) father = true;
       if (father) {
@@ -890,7 +912,7 @@ export class Civilization {
       let src = null;
       for (const vid of this.kingdoms[v.kingdom]?.villages || []) {
         const o = this.villages[vid];
-        if (o?.alive && o !== v && o.pop > 40 && o.landId === v.landId && (!src || o.pop > src.pop)) src = o;
+        if (o?.alive && o !== v && o.pop > 90 && o.landId === v.landId && (!src || o.pop > src.pop)) src = o;
       }
       if (src) {
         let moved = 0;
@@ -901,6 +923,31 @@ export class Civilization {
           moved++;
         }
         if (moved) this._history(`Families from ${src.name} settle in ${v.name}`, 'info', { x: v.cx, z: v.cz });
+      }
+    }
+    // a dwindling hamlet in a full world gives up: its last families move to
+    // the nearest town of the realm (nothing comes to refill a hamlet once the
+    // world is full, and a dozen such remnants held the World Map's village
+    // places while its towns stayed small); a village the player has named or
+    // given policies is left alone
+    if (fullWorld && pop <= 6 && now - v.founded > YEAR * 15 && this._aliveVillageCount() >= this.budget.villages * 0.8 && this.kingdoms[v.kingdom]?.capital !== v.id && !(v.colony && now - v.founded < YEAR * 30) && !v.player && !(v.policy && Object.keys(v.policy).length) && this.rng.chance(0.012 * dt)) {
+      let to = null,
+        td = 70 * Math.sqrt(this.budget.area);
+      for (const vid of this.kingdoms[v.kingdom]?.villages || []) {
+        const o = this.villages[vid];
+        if (!o?.alive || o === v || o.landId !== v.landId || o.pop < 12 || o.starving) continue;
+        const d = Math.hypot(o.cx - v.cx, o.cz - v.cz);
+        if (d < td) (td = d), (to = o);
+      }
+      if (to) {
+        for (const u of [...v.members]) {
+          if (!u.alive) continue;
+          this._moveMember(u, to);
+          if (u.data.civ) u.data.civ.task = { kind: 'arrive' };
+        }
+        this._history(`The last families of ${v.name} move to ${to.name}`, 'info', { x: to.cx, z: to.cz });
+        this._abandon(v, 'silent');
+        return;
       }
     }
     // newcomers drawn to prosperous settlements
@@ -1337,6 +1384,26 @@ export class Civilization {
     const m = this._easedMods();
     const great = v.tier >= 2 && (this.kingdoms[v.kingdom]?.capital === v.id || v.coastal || v.buildings.some((b) => b.alive && b.type === 'market' && b.level >= 2)) ? 1.6 : 1;
     return Math.round(TIER_POP[v.tier || 0] * great * Math.max(1, Math.min(1.35, m.birth * 0.6 + m.fertility * 0.4)));
+  }
+  // How big a settlement may still grow once the world is full. The realm's
+  // capital and its port and market cities grow on (a capital already as a
+  // town: it could never reach the 50 people a city needs otherwise); other
+  // villages level off near their share of the people, which is 45 on a
+  // Medium map and less where many villages share them.
+  _fullWorldRoom(v) {
+    const k = this.kingdoms[v.kingdom];
+    if ((v.tier >= 1 && k?.capital === v.id) || (v.tier >= 2 && v.coastal)) return 170;
+    return clamp(Math.round((1.6 * this._humanCap()) / Math.max(1, this._aliveVillageCount())), 14, 45);
+  }
+  _aliveVillageCount() {
+    const t = this.game.time.total;
+    if (this._aliveVT !== t) {
+      this._aliveVT = t;
+      let n = 0;
+      for (const v of this.villages) if (v.alive) n++;
+      this._aliveVN = n;
+    }
+    return this._aliveVN;
   }
   _humanCap() {
     const b = this._easedMods().birth;
@@ -2141,7 +2208,8 @@ export class Civilization {
   // still runs every 30 s for the slow incumbency drift).
   _territoryIfChanged() {
     let sig = this.villages.length * 7919;
-    for (const v of this.villages) if (v.alive) sig = (Math.imul(sig, 31) + v.id * 131 + v.kingdom * 977 + Math.round(v.radius) * 17 + v.tier * 5) | 0;
+    // (radius in two-tile steps: a birth or a death no longer redraws the map)
+    for (const v of this.villages) if (v.alive) sig = (Math.imul(sig, 31) + v.id * 131 + v.kingdom * 977 + Math.round(v.radius / 2) * 17 + v.tier * 5) | 0;
     for (const b of this.buildings) if (b.alive && !b.constructing && (b.type === 'watchtower' || b.type === 'tower')) sig = (Math.imul(sig, 31) + b.id) | 0;
     const now = this.game.time.total;
     if (sig === this._terrSig && !this._terrDirty && now - (this._terrT ?? -1e9) < 30) return;

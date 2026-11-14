@@ -90,7 +90,8 @@ export const unlocks = {
     if (room() && has('medicine') && (town || pop >= 24) && count('healer') === 0) build('healer');
     if (room() && has('shipbuilding') && v.coastal && count('docks') > 0 && !realmHas('shipyard')) build('shipyard', () => this._placeDocks(v, 'shipyard'));
     if (room() && has('steelworking') && (isCap || v.tier >= 2) && !realmHas('foundry')) build('foundry');
-    if (room() && has('philosophy') && isCap && count('forum') === 0 && v.stone > 60) build('forum', () => this._placeOutskirts(v, 'forum', 3, v.buildRadius, null, null));
+    // (a capital short of stone leaves the forum to one of the realm's cities)
+    if (room() && has('philosophy') && count('forum') === 0 && v.stone > 52 && (isCap || (v.tier >= 2 && !realmHas('forum')))) build('forum', () => this._placeOutskirts(v, 'forum', 3, v.buildRadius, null, null));
     if (room() && has('engineering') && town && count('watermill') === 0) build('watermill', () => this._placeByWater(v, 'watermill'));
     if (room() && has('banking')) {
       const m = v.buildings.find((b) => b.alive && b.type === 'market' && !b.constructing && !b.upgrading && b.level < 2);
@@ -171,12 +172,19 @@ export const unlocks = {
 
   // Young colonies are supplied for thirty years: families and grain from
   // home while they are small, and a steady loyalty while they take root.
+  // Their charter keeps them loyal for long after: +30 for thirty years,
+  // fading to +10 at seventy (World Map colonies used to rise within a few
+  // years of reaching 14 people: 24 founded, 3 held by Year 300).
   _supplyColonies(k, now) {
     for (const vid of k.villages) {
       const v = this.villages[vid];
-      if (!v?.alive || !v.colony || now - v.founded > YEAR * 30) continue;
-      v.loyaltyBoost = Math.max(v.loyaltyBoost || 0, 20);
-      if (v.food < 40) v.food += 1.5;
+      if (!v?.alive || !v.colony || (v.colonyOf != null && v.colonyOf !== k.id)) continue;
+      const age = (now - v.founded) / YEAR;
+      if (age > 70) continue;
+      v.loyaltyBoost = Math.max(v.loyaltyBoost || 0, age < 30 ? 30 : 30 - ((age - 30) / 40) * 20);
+      if (age > 30) continue;
+      // grain from home covers what the colony eats while its fields come in
+      if (v.food < 40 + v.pop * 2) v.food += 1 + v.pop * 0.15;
       if (v.pop < 14 && now - (v.supplyT || 0) > YEAR * 3) {
         v.supplyT = now;
         for (let i = 0; i < 2; i++) {
@@ -199,7 +207,7 @@ export const unlocks = {
       const v = this.villages[vid];
       if (!v?.alive || v === cap || linked.has(vid) || v.landId !== cap.landId) continue;
       const d = Math.hypot(v.cx - cap.cx, v.cz - cap.cz);
-      if (d < bd && d < 80) (bd = d), (best = v);
+      if (d < bd && d < 80 * Math.sqrt(Math.max(1, this.budget.area))) (bd = d), (best = v); // (towns lie further apart on a big map)
     }
     if (!best) return;
     linked.add(best.id);
@@ -353,6 +361,7 @@ export const unlocks = {
     if (!v) v = this.foundVillage(Math.floor(x), Math.floor(z), { ...opts, searchR: 16 });
     if (!v) return null;
     v.colony = true;
+    v.colonyOf = kingdomId;
     this._firstUse(K, 'colony', { x: v.cx, z: v.cz });
     this._note(`⛵ Settlers of ${this._kn(K)} found ${v.name} across the sea`, 'good', { x: v.cx, z: v.cz }, 'colony' + v.id, 1);
     return v.id;

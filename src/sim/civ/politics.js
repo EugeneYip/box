@@ -311,6 +311,9 @@ export const politics = {
       if (!A?.alive || !B?.alive || baseCulture(A.culture) !== baseCulture(B.culture)) continue;
       const [small, big] = A.villages.length <= B.villages.length ? [A, B] : [B, A];
       if (small.villages.length > 2 || big.villages.length < small.villages.length + 1 || small.player?.name) continue;
+      // a union is made over land: an island or a far continent keeps its own
+      // crown (the World Map's Australia lost its last realms to unions abroad)
+      if (this.villages[small.capital]?.landId !== this.villages[big.capital]?.landId) continue;
       if (!this.rng.chance(0.4)) continue;
       const name = this._kn(small);
       for (const vid of [...small.villages]) {
@@ -337,10 +340,13 @@ export const politics = {
     if (!k.alive) return;
     k.alive = false;
     this._noteCollapse?.((k.council ? 'heirless/' : '') + cause);
-    for (const r of this.relations.values()) {
+    // a fallen realm's relations go with it: every war query walks the whole
+    // table, and by Year 600 the dead outnumbered the living seven to one
+    for (const [key, r] of this.relations) {
       if (r.a === k.id || r.b === k.id) {
         r.war = false;
         r.ally = false;
+        this.relations.delete(key);
       }
     }
     for (const a of this.armies) if (a.kingdom === k.id) this._disbandArmy(a);
@@ -930,7 +936,10 @@ export const politics = {
     const cap = this.villages[k.capital];
     const alive = this._aliveKingdoms();
     let L = 74;
-    if (cap) L -= Math.max(0, Math.hypot(cap.cx - v.cx, cap.cz - v.cz) / Math.max(1, Math.sqrt(this.world.size / 65536)) - 28) * 0.75;
+    // distance from the crown; a colony over the sea is governed by ship, so
+    // the open water counts for little (otherwise every World Map colony
+    // rose the day it reached 14 people)
+    if (cap) L -= Math.max(0, (Math.hypot(cap.cx - v.cx, cap.cz - v.cz) * (v.colony && (v.colonyOf ?? v.kingdom) === v.kingdom && v.landId !== cap.landId ? 0.3 : 1)) / Math.max(1, Math.sqrt(this.world.size / 65536)) - 28) * 0.75;
     if (v.culture !== k.culture) L -= 18;
     if (v.conqueredAt) L -= Math.max(0, 34 - ((now - v.conqueredAt) / YEAR) * 3);
     if (v.starving && this.law('harmonyUnrest')) L -= 22;

@@ -55,10 +55,14 @@ export const brain = {
     if (!u.data.culture) u.data.culture = v.culture;
     if (u.kingdom !== v.kingdom) u.kingdom = v.kingdom;
 
-    // hunger is managed by the village store
+    // hunger is managed by the village store: full meals while it holds,
+    // smaller ones while it is rationed (hunger settles higher), none in famine
     if (v.starving) {
       if (u.hunger >= 0.97 && !d.royal && v.pop > 8) g.units.damage(u, dt * 0.25);
-    } else if (u.hunger > 0.3) u.hunger = 0.12 + this.rng.next() * 0.1;
+    } else {
+      const meal = 0.12 + (1 - (v.ration ?? 1)) * 0.8;
+      if (u.hunger > Math.max(0.3, meal + 0.1)) u.hunger = meal + this.rng.next() * 0.1;
+    }
     if (!u.alive) return;
 
     // migrations / arrivals have priority
