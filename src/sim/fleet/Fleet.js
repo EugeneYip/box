@@ -860,7 +860,8 @@ export class Fleet {
       const n = Math.round(4 + v.def.length * 3);
       for (let i = 0; i < n; i++) this._addDebris(v.x + (this.rng() - 0.5) * v.def.length, v.z + (this.rng() - 0.5) * v.def.length * 0.6, i);
       this._fx('splash', v.x, v.z, 0.8 + v.def.length * 0.4);
-      if (cause === 'fire' || cause === 'battle' || cause === 'meteor' || cause === 'lightning') this._fx('smoke', v.x, v.z, 1.2);
+      // a grey-white pall over the water (the dark land smoke reads as brown there)
+      if (cause === 'fire' || cause === 'battle' || cause === 'meteor' || cause === 'lightning') this._fx('smoke', v.x, v.z, 1.1, { dark: false, count: 2, y: 0.5 });
       this._sfx('splash', v.x, v.z);
     } else {
       v.state = 'wrecked';

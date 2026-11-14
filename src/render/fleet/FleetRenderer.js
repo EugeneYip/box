@@ -16,6 +16,7 @@ const TICK = 1 / 15;
 const DETAIL_DIST = 175; // beyond this camera distance vehicles draw as dots
 const FLAG_DIST = 115;
 const WAKE_DIST = 165;
+const PLUME_TINT = 0xeceff3; // a cool near-white: smoke over the sea reads grey, not brown
 const STONE_SCALE = 0.62; // catapult stone: ~0.38 tiles across, a third of the arm
 const BEAM = { fishing: 0.36, cog: 0.35, transport: 0.37, galley: 0.19, explorer: 0.27, carrack: 0.31 };
 
@@ -783,10 +784,12 @@ export class FleetRenderer {
       if (!v.alive || budget <= 0) continue;
       if (Math.abs(v.x - cx) > R || Math.abs(v.z - cz) > R) continue;
       if (v.burning > 0.15 || (v.sink > 0 && v.sink < 0.5)) {
-        // a burning ship trails smoke and throws embers
-        // (one thin puff at the deck, the column above it, so the hull stays readable)
-        fx.emit('smoke', { x: v.x, y: (v.y || 0) + 0.9, z: v.z }, { scale: 0.6 + v.def.length * 0.2, count: 1 });
-        if (v.burning > 0.4) fx.emit('smoke', { x: v.x, y: (v.y || 0) + 2.2, z: v.z }, { scale: 0.9 + v.def.length * 0.25, count: 2 });
+        // a burning ship trails a grey-white plume that leans downwind and
+        // thins out (one thin puff at the deck, the plume above it, so the
+        // hull stays readable) and throws embers
+        const L = v.def.length;
+        this._plume(fx, v.x, (v.y || 0) + 0.9, v.z, 0.45 + L * 0.15, 0.75);
+        if (v.burning > 0.4) for (let i = 0; i < 2; i++) this._plume(fx, v.x, (v.y || 0) + 1.8 + i * 0.6, v.z, 0.7 + L * 0.18, 0.5);
         if (v.burning > 0.2) {
           fx.emit('fire', { x: v.x + (Math.random() - 0.5) * 0.5, y: (v.y || 0) + 0.4, z: v.z }, { scale: 0.5 });
           if (Math.random() < 0.4) fx.emit('embers', { x: v.x, y: (v.y || 0) + 0.8, z: v.z }, { count: 2 });
@@ -800,6 +803,13 @@ export class FleetRenderer {
         budget--;
       }
     }
+  }
+
+  // One puff of a combat plume over the water: light grey-white (never the
+  // warm dark land smoke, which reads as brown over the sea), carried off
+  // with the wind more than it rises, swelling and fading as it goes.
+  _plume(fx, x, y, z, size, alpha) {
+    for (let i = fx.k(1); i > 0; i--) smokePuff(fx, x, y, z, { size, ramp: RAMP.SMOKE_LIGHT, color: PLUME_TINT, alpha, rise: 0.75, drift: 2.8, drag: 0.7, grow: 2.9, life: 3.2 + Math.random() * 1.6, lit: 0.9 });
   }
 
   // fleet draw calls (for the performance overlay and tests)
