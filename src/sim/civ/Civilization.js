@@ -1106,7 +1106,7 @@ export class Civilization {
         ore += v.ore || 0;
         gold += v.gold;
         if (v.hasForge) forges += 1;
-        else if (v.hasWorkshop) forges += 0.5;
+        else if (v.hasWorkshop) forges += 0.75; // (an early workshop smith keeps both soldiers and workers in kit)
       }
       // what the realm's people still lack
       let needW = 0,
@@ -1161,7 +1161,12 @@ export class Civilization {
           a = needA - stockOf('armor'),
           t = Math.min(needT, 12) - stockOf('tool');
         const metalOK = (smithy.ore || 0) >= 2 && topMat !== 'wood' && topMat !== 'stone';
-        if (w > 0 && w >= a) slot = 'weapon';
+        // every third order goes to tools while workers lack them (tools came
+        // only after every soldier had arms and armour: 54 of 363 workers had
+        // one at Year 48); at peace, armed soldiers wait for armour behind tools
+        k.forgeN = (k.forgeN || 0) + 1;
+        if (t > 0 && (k.forgeN % 3 === 0 || (w <= 0 && !this.warCount(k.id)))) slot = 'tool';
+        else if (w > 0 && w >= a) slot = 'weapon';
         else if (a > 0) slot = 'armor';
         else if (t > 0) slot = 'tool';
         else if (metalOK && Math.min(upW, 10) - freshOf('weapon') > 0) slot = 'weapon';
@@ -1170,6 +1175,7 @@ export class Civilization {
         else if (stockOf('weapon') < 3) slot = 'weapon';
         else if (stockOf('armor') < 3) slot = 'armor';
         else break;
+        if (slot === 'tool') k.forgeT += 3.5; // a tool takes half the work of a blade or a mail shirt
         // ore for metal, stone for the humble early kit
         let mat = slot === 'trinket' ? (k.era >= 3 ? 'steel' : 'bronze') : this.bestMaterial(k.id);
         const metal = mat === 'bronze' || mat === 'iron' || mat === 'steel';
