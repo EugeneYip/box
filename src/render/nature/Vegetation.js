@@ -563,17 +563,20 @@ export class Vegetation {
         if (L === 1 && cfg.far2 && cfg.farEarly) L = 2;
         // Distant chunks fold variants together: LOD1 keeps two silhouettes
         // per species, LOD2 is one shared stand-in -> few draw calls.
-        let vv = L === 2 ? 0 : L === 1 ? list.v % 2 : list.v;
+        // (minor species keep a single LOD1 silhouette)
+        let vv = L === 2 ? 0 : L === 1 ? (FOLD_L1[list.f] ? 0 : list.v % 2) : list.v;
         // tiny props share two silhouettes even up close (glowcaps keep theirs)
         if (L === 0 && FOLD_SMALL[list.f] && !(list.f === FLORA.MUSHROOM && list.v === 4)) vv = list.v % 2;
         const lods = model.variants[vv];
         const base = list.f * 8 + vv;
         B.add(base * 4 + L, list, { geo: lods[L], material: this.mat.material, depth: null, castShadow: false, label: FLORA_INFO[list.f].name + (L === 2 ? '' : '-' + vv) + '-L' + L });
         if (cfg.castShadow && c.shadow) {
+          // shadow proxies: one silhouette per species and LOD (LOD1 near the
+          // camera, the stand-in further out), so shadow-map refreshes stay cheap
           const all = model.variants[list.v];
           const Ls = c.lod === 0 && all[1] ? 1 : all[2] ? 2 : all[1] ? 1 : 0;
-          const vs = Ls === 2 ? 0 : Ls === 1 ? list.v % 2 : list.v;
-          S.add((list.f * 8 + vs) * 4 + Ls, list, { geo: model.variants[vs][Ls], material: this.mat.material, depth: this.mat.depth, castShadow: true, layer: SHADOW_LAYER, label: FLORA_INFO[list.f].name + '-shadow-L' + Ls });
+          const vs = Ls === 0 ? list.v : 0;
+          S.add((list.f * 8 + vs) * 4 + Ls, list, { geo: (model.variants[vs][Ls] || all[Ls]), material: this.mat.material, depth: this.mat.depth, castShadow: true, layer: SHADOW_LAYER, label: FLORA_INFO[list.f].name + '-shadow-L' + Ls });
         }
       }
     }
@@ -927,7 +930,10 @@ export class Vegetation {
 
 // tiny props whose LOD0 variants fold to two batches
 const FOLD_SMALL = new Uint8Array(32);
-for (const f of [FLORA.FLOWERS, FLORA.ROCK_SMALL, FLORA.REEDS, FLORA.STUMP, FLORA.MUSHROOM, FLORA.BERRY_BUSH]) FOLD_SMALL[f] = 1;
+for (const f of [FLORA.FLOWERS, FLORA.ROCK_SMALL, FLORA.REEDS, FLORA.STUMP, FLORA.MUSHROOM, FLORA.BERRY_BUSH, FLORA.BUSH]) FOLD_SMALL[f] = 1;
+// species whose LOD1 (mid zoom) uses one silhouette instead of two
+const FOLD_L1 = new Uint8Array(32);
+for (const f of [FLORA.CACTUS, FLORA.DEAD_TREE, FLORA.BOULDER, FLORA.WHEAT, FLORA.ACACIA, FLORA.SWAMP_TREE, FLORA.BUSH, FLORA.BERRY_BUSH]) FOLD_L1[f] = 1;
 
 // contact-shadow blob diameter per species (world units)
 const AO_SIZE = new Float32Array(32);

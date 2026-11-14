@@ -250,16 +250,18 @@ export class GroundCover {
     this.game.scene.add(this.group);
     this.mat = veg.groundMat;
     // geometry kinds
+    // one or two shapes per kind (random yaw, scale and tint vary them):
+    // every shape is its own draw call
     this.kinds = [
-      { id: 'grass', geos: [0, 1, 2].map((s) => grassTuft(101 + s)) },
-      { id: 'grassTall', geos: [0, 1].map((s) => grassTuft(201 + s, { blades: 8, hMin: 0.18, hMax: 0.32, spread: 0.1, width: 0.02, curve: 0.45 })) },
-      { id: 'grassShort', geos: [0, 1].map((s) => grassTuft(301 + s, { blades: 6, hMin: 0.07, hMax: 0.15, spread: 0.08, width: 0.024, curve: 0.3 })) },
-      { id: 'meadow', geos: [0, 1].map((s) => meadowTuft(401 + s)) },
-      { id: 'fern', geos: [0, 1].map((s) => fernTuft(501 + s)) },
-      { id: 'broad', geos: [0, 1].map((s) => broadleafTuft(601 + s)) },
+      { id: 'grass', geos: [0, 1].map((s) => grassTuft(101 + s)) },
+      { id: 'grassTall', geos: [0].map((s) => grassTuft(201 + s, { blades: 8, hMin: 0.18, hMax: 0.32, spread: 0.1, width: 0.02, curve: 0.45 })) },
+      { id: 'grassShort', geos: [0].map((s) => grassTuft(301 + s, { blades: 6, hMin: 0.07, hMax: 0.15, spread: 0.08, width: 0.024, curve: 0.3 })) },
+      { id: 'meadow', geos: [0].map((s) => meadowTuft(401 + s)) },
+      { id: 'fern', geos: [0].map((s) => fernTuft(501 + s)) },
+      { id: 'broad', geos: [0].map((s) => broadleafTuft(601 + s)) },
       { id: 'sedge', geos: [grassTuft(701, { blades: 9, hMin: 0.18, hMax: 0.34, spread: 0.07, width: 0.016, curve: 0.2 })] },
-      { id: 'tumble', geos: [tumbleweed(901), tumbleweed(902)], fixedTint: true },
-      { id: 'pebble', geos: [pebbles(801, 4, 0.025, 0.06), pebbles(802, 3, 0.035, 0.075), pebbles(803, 6, 0.02, 0.045)], rock: true },
+      { id: 'tumble', geos: [tumbleweed(901)], fixedTint: true },
+      { id: 'pebble', geos: [pebbles(801, 4, 0.025, 0.06), pebbles(803, 6, 0.02, 0.045)], rock: true },
     ];
     this.kindIndex = {};
     this.kinds.forEach((k, i) => (this.kindIndex[k.id] = i));
