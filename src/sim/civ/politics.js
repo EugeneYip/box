@@ -340,10 +340,13 @@ export const politics = {
     if (!k.alive) return;
     k.alive = false;
     this._noteCollapse?.((k.council ? 'heirless/' : '') + cause);
-    for (const r of this.relations.values()) {
+    // a fallen realm's relations go with it: every war query walks the whole
+    // table, and by Year 600 the dead outnumbered the living seven to one
+    for (const [key, r] of this.relations) {
       if (r.a === k.id || r.b === k.id) {
         r.war = false;
         r.ally = false;
+        this.relations.delete(key);
       }
     }
     for (const a of this.armies) if (a.kingdom === k.id) this._disbandArmy(a);

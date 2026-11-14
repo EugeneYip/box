@@ -2207,7 +2207,8 @@ export class Civilization {
   // still runs every 30 s for the slow incumbency drift).
   _territoryIfChanged() {
     let sig = this.villages.length * 7919;
-    for (const v of this.villages) if (v.alive) sig = (Math.imul(sig, 31) + v.id * 131 + v.kingdom * 977 + Math.round(v.radius) * 17 + v.tier * 5) | 0;
+    // (radius in two-tile steps: a birth or a death no longer redraws the map)
+    for (const v of this.villages) if (v.alive) sig = (Math.imul(sig, 31) + v.id * 131 + v.kingdom * 977 + Math.round(v.radius / 2) * 17 + v.tier * 5) | 0;
     for (const b of this.buildings) if (b.alive && !b.constructing && (b.type === 'watchtower' || b.type === 'tower')) sig = (Math.imul(sig, 31) + b.id) | 0;
     const now = this.game.time.total;
     if (sig === this._terrSig && !this._terrDirty && now - (this._terrT ?? -1e9) < 30) return;
