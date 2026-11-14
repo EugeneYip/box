@@ -90,7 +90,8 @@ export const unlocks = {
     if (room() && has('medicine') && (town || pop >= 24) && count('healer') === 0) build('healer');
     if (room() && has('shipbuilding') && v.coastal && count('docks') > 0 && !realmHas('shipyard')) build('shipyard', () => this._placeDocks(v, 'shipyard'));
     if (room() && has('steelworking') && (isCap || v.tier >= 2) && !realmHas('foundry')) build('foundry');
-    if (room() && has('philosophy') && isCap && count('forum') === 0 && v.stone > 60) build('forum', () => this._placeOutskirts(v, 'forum', 3, v.buildRadius, null, null));
+    // (a capital short of stone leaves the forum to one of the realm's cities)
+    if (room() && has('philosophy') && count('forum') === 0 && v.stone > 52 && (isCap || (v.tier >= 2 && !realmHas('forum')))) build('forum', () => this._placeOutskirts(v, 'forum', 3, v.buildRadius, null, null));
     if (room() && has('engineering') && town && count('watermill') === 0) build('watermill', () => this._placeByWater(v, 'watermill'));
     if (room() && has('banking')) {
       const m = v.buildings.find((b) => b.alive && b.type === 'market' && !b.constructing && !b.upgrading && b.level < 2);
@@ -206,7 +207,7 @@ export const unlocks = {
       const v = this.villages[vid];
       if (!v?.alive || v === cap || linked.has(vid) || v.landId !== cap.landId) continue;
       const d = Math.hypot(v.cx - cap.cx, v.cz - cap.cz);
-      if (d < bd && d < 80) (bd = d), (best = v);
+      if (d < bd && d < 80 * Math.sqrt(Math.max(1, this.budget.area))) (bd = d), (best = v); // (towns lie further apart on a big map)
     }
     if (!best) return;
     linked.add(best.id);

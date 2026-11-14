@@ -311,6 +311,9 @@ export const politics = {
       if (!A?.alive || !B?.alive || baseCulture(A.culture) !== baseCulture(B.culture)) continue;
       const [small, big] = A.villages.length <= B.villages.length ? [A, B] : [B, A];
       if (small.villages.length > 2 || big.villages.length < small.villages.length + 1 || small.player?.name) continue;
+      // a union is made over land: an island or a far continent keeps its own
+      // crown (the World Map's Australia lost its last realms to unions abroad)
+      if (this.villages[small.capital]?.landId !== this.villages[big.capital]?.landId) continue;
       if (!this.rng.chance(0.4)) continue;
       const name = this._kn(small);
       for (const vid of [...small.villages]) {
