@@ -1676,8 +1676,11 @@ export class Civilization {
     const ct = (t) => this.hasCultureTrait(v.culture, t);
     if (room() && pop >= (ct('Mystic') ? 14 : 26) && count('temple') === 0) build('temple');
     if (room() && pop >= (ct('Scholarly') ? 12 : 20) && this.hasTech(kid, 'writing') && count('library') === 0) build('library');
-    if (room() && pop >= 30 && this.hasTech(kid, 'astronomy') && count('observatory') === 0) build('observatory', () => this._placeOutskirts(v, 'observatory', 4, v.buildRadius, null, null));
-    if (room() && pop >= 34 && this.hasTech(kid, 'architecture') && count('aqueduct') === 0) build('aqueduct', () => this._placeOutskirts(v, 'aqueduct', 5, v.buildRadius + 3, null, null));
+    // a realm's first observatory and aqueduct rise in its capital as soon as it
+    // is a town (World Map capitals of 20-30 waited decades for 30 and 34 people)
+    const firstWork = (type) => this.kingdoms[kid]?.capital === v.id && v.tier >= 1 && !this.buildings.some((b) => b.alive && b.kingdom === kid && b.type === type);
+    if (room() && (pop >= 30 || firstWork('observatory')) && this.hasTech(kid, 'astronomy') && count('observatory') === 0) build('observatory', () => this._placeOutskirts(v, 'observatory', 4, v.buildRadius, null, null));
+    if (room() && (pop >= 34 || firstWork('aqueduct')) && this.hasTech(kid, 'architecture') && count('aqueduct') === 0) build('aqueduct', () => this._placeOutskirts(v, 'aqueduct', 5, v.buildRadius + 3, null, null));
     const K = this.kingdoms[kid];
     this._planUnlocks(v, K, room, build, upgrade, count, crowded);
     // monuments: the realm's great works rise stage by stage; masters raise more

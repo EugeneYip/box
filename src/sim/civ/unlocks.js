@@ -231,7 +231,7 @@ export const unlocks = {
       const wet = w.height[i] < SEA_LEVEL;
       if (wet) {
         water.push(i);
-        if (water.length > 5 || !bridges || w.height[i] < SEA_LEVEL - 2.6) return; // no fords or bridges here
+        if (water.length > (this.budget.area > 1.5 ? 8 : 5) || !bridges || w.height[i] < SEA_LEVEL - 2.6) return; // no fords or bridges here (the World Map's rivers run wider)
         line.push({ i, x, y, wet: true });
         continue;
       }
