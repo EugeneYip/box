@@ -373,6 +373,9 @@ export class Inspector {
     const ic = this.iconFor(r);
     const u = r.unit;
     const craft = isCraft(r) ? r.vessel || r.building : null;
+    // names on a craft's route ("Ruareva → Oromoku"): shown there, so not again
+    const vrow = craft ? (r.stats || []).find((s) => /^voyage$/i.test(String(s?.[0]))) : null;
+    const routeNames = new Set(vrow ? String(vrow[1]).split('→').map((x) => x.trim().toLowerCase()) : []);
     const dead = (u && u.alive === false) || (craft && (craft.alive === false || craft.state === 'sinking'));
     const kTint = this.kingdomTint(r);
     // a building's own era only matters when it differs from its realm's
@@ -385,6 +388,7 @@ export class Inspector {
       .filter((s) => Array.isArray(s) && s.length >= 2 && !HIDE_STATS.test(String(s[0])))
       .filter((s) => !(realmEraName && /^built in$/i.test(String(s[0])) && String(s[1]).toLowerCase() === realmEraName))
       .filter((s) => !(craft && /^(voyage|cargo)$/i.test(String(s[0]))))
+      .filter((s) => !(craft && /^home( port)?$/i.test(String(s[0])) && routeNames.has(String(s[1]).toLowerCase())))
       .map((s, i) => [s, i])
       .sort((a, b) => rankOf(a[0][0]) - rankOf(b[0][0]) || a[1] - b[1])
       .map(([s]) => s);
@@ -419,6 +423,8 @@ export class Inspector {
       .filter(({ o, i }) => {
         if (i === this.index || seenTitles.has(o.title)) return false;
         if (occIds && o.unit && occIds.has(o.unit.id)) return false;
+        // a cart's realm and home town are not things standing here
+        if (craft && (kindOf(o) === 'kingdom' || kindOf(o) === 'village')) return false;
         seenTitles.add(o.title);
         return true;
       })
@@ -427,6 +433,10 @@ export class Inspector {
         return `<button class="ws-chip2" type="button" data-i="${i}" style="--tint:${c.tint}" title="${esc(KIND_LABEL[kindOf(o)] || '')}"><span class="ws-chip2__ico">${c.svg}</span><span>${esc(o.title || KIND_LABEL[kindOf(o)])}</span></button>`;
       })
       .join('');
+    // each fact once: names shown as chips leave the subtitle and the realm line
+    this._chipNames = new Set([...this.el.ownerDocument.createRange().createContextualFragment(`<div>${chips}</div>`).querySelectorAll('.ws-chip2 > span:last-child')].map((e) => e.textContent.trim().toLowerCase()));
+    this._routeNames = routeNames;
+    const subShown = r.subtitle ? this.subText(r) : '';
     const following = (u || craft) && this.game.cameraRig.follow === (u || craft);
     const actions = [];
     if ((u || craft) && !dead) actions.push(`<button class="ws-btn ws-btn--sm ${following ? 'is-on' : ''}" type="button" data-act="follow">${uiIcon('follow')}<span>${following ? 'Following' : 'Follow'}</span><kbd class="ws-key">F</kbd></button>`);
@@ -456,7 +466,7 @@ export class Inspector {
         <div class="ws-insp__titles">
           <div class="ws-insp__kind">${esc(kindLabel)}${dead ? ` <em class="ws-insp__dead">${craft ? 'Lost' : 'Fallen'}</em>` : ''}</div>
           <h3 class="ws-insp__title">${esc(this.titleOf(r) || 'Unknown')}${epithet ? ` <span class="ws-insp__epithet">${esc(epithet)}</span>` : ''}</h3>
-          ${r.subtitle ? `<div class="ws-insp__sub" data-sub>${craft && ownerK?.banner ? `<img class="ws-crest ws-crest--banner" alt="" src="${bannerURL(ownerK.banner, ownerK.color, 28)}">` : kTint ? `<i class="ws-crest" style="--k:${kTint}"></i>` : ''}<span>${esc(this.subText(r))}</span></div>` : ''}
+          ${subShown ? `<div class="ws-insp__sub" data-sub>${craft && ownerK?.banner ? `<img class="ws-crest ws-crest--banner" alt="" src="${bannerURL(ownerK.banner, ownerK.color, 28)}">` : kTint ? `<i class="ws-crest" style="--k:${kTint}"></i>` : ''}<span>${esc(subShown)}</span></div>` : ''}
         </div>
         ${editable ? `<button class="ws-iconbtn ws-iconbtn--sm ws-insp__edit${editing ? ' is-on' : ''}" type="button" aria-label="${editing ? 'Done editing' : 'Edit'}" data-tip="${editing ? 'Done editing' : 'Edit name, colours and more'}" data-act="${editing ? 'edit-done' : 'edit'}">${uiIcon(editing ? 'check' : 'edit')}</button>` : ''}
         ${u ? `<button class="ws-iconbtn ws-iconbtn--sm ws-insp__fav${fav ? ' is-on' : ''}" type="button" aria-label="${fav ? 'Unstar' : 'Star this creature'}" data-tip="${fav ? 'Favourite' : 'Mark as favourite'}" data-act="fav">${uiIcon(fav ? 'star-on' : 'star')}</button>` : ''}
@@ -467,6 +477,14 @@ export class Inspector {
       <div class="ws-insp__actions">${actions.join('')}</div>`}`;
     const th = this.el.querySelector('.ws-insp__title');
     if (th) this.sizeTitle(th, this.titleOf(r));
+    // a sideways-scrolling chip row drops its edge fade once scrolled to the end (or when it all fits)
+    const also = this.el.querySelector('.ws-insp__also');
+    if (also) {
+      const end = () => also.classList.toggle('is-end', also.scrollLeft + also.clientWidth >= also.scrollWidth - 2);
+      also.addEventListener('scroll', end, { passive: true });
+      end();
+      requestAnimationFrame(end);
+    }
     if (editing) {
       this.el.querySelector('.ws-insp__also')?.remove();
       this.el.querySelector('.ws-insp__editwrap').append(this.editor.build(r));
@@ -759,7 +777,7 @@ export class Inspector {
     if (isKingdom && k.motto && !(r.stats || []).some((s) => /motto/i.test(String(s[0])))) html += `<p class="ws-motto">“${esc(String(k.motto))}”</p>`;
     if (k && !isKingdom) {
       const era = eraOf(g, k);
-      html += `<section class="ws-dsec"><h5>Realm</h5><div class="ws-realm__line"><span class="ws-era is-era${era}">${uiIcon(['house', 'build', 'job-soldier', 'chronicle'][era])}<span>Realm · ${esc(eraNames()[era] || '')} era</span></span><span class="ws-realm__of">${esc(String(k.name || ''))}</span></div></section>`;
+      html += `<section class="ws-dsec"><h5>Realm</h5><div class="ws-realm__line"><span class="ws-era is-era${era}">${uiIcon(['house', 'build', 'job-soldier', 'chronicle'][era])}<span>Realm · ${esc(eraNames()[era] || '')} era</span></span>${this._chipNames?.has(String(k.name || '').toLowerCase()) ? '' : `<span class="ws-realm__of">${esc(String(k.name || ''))}</span>`}</div></section>`;
     }
     if (k && isKingdom) {
       const era = eraOf(g, k);
@@ -987,11 +1005,21 @@ export class Inspector {
   // subtitle with a custom realm colour named plainly ("banner of deep teal")
   subText(r) {
     const k = typeof r.kingdom === 'object' && r.kingdom ? r.kingdom : null;
-    if (k) return realmColourText(r.subtitle, k.color);
     // carts and caravans rest in a village; only ships lie in port
     const c = isCraft(r) ? r.vessel || r.building : null;
-    if (c && c.cls === 'land') return String(r.subtitle || '').replace(' · in port at ', ' · resting at ');
-    return r.subtitle;
+    let text = k ? realmColourText(r.subtitle, k.color) : String(r.subtitle || '');
+    if (c && c.cls === 'land') text = text.replace(' · in port at ', ' · resting at ');
+    // each fact once: drop parts the chips or the route already show
+    const chips = this._chipNames || new Set();
+    const route = this._routeNames || new Set();
+    const parts = text.split(' · ').filter((seg) => {
+      const low = seg.trim().toLowerCase();
+      if (chips.has(low)) return false;
+      const m = low.match(/^(?:returning to|bound for)\s+(.+)$/);
+      if (m && route.has(m[1])) return false;
+      return true;
+    });
+    return parts.join(' · ');
   }
   // long names step down a size instead of breaking mid-word
   sizeTitle(h, title) {
