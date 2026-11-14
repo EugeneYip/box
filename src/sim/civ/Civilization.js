@@ -766,7 +766,14 @@ export class Civilization {
     const winter = season >= 3;
     const mods = g.age?.mods || {};
     // winter: hearths burn and nothing grows, the granaries carry the village
-    const eat = ((adults * 2 + kids * 1.3) / YEAR) * dt * (winter ? 1.2 : 1);
+    const yearNeed = (adults * 2 + kids * 1.3) * (winter ? 1.2 : 1);
+    // rationing: the cooks keep a reserve of a year and a half of food, more
+    // through the long winter, in a war or a lean age; below it meals are
+    // smaller (hunger settles higher, up to about 0.6) and the store lasts
+    // longer. Nobody starves until the store is empty.
+    const reserve = 1.5 + (winter ? 1.5 : 0) + (v.jobCount.soldier && this.warCount(v.kingdom) > 0 ? 1 : 0) + (this._easedMods().fertility < 0.9 ? 1 : 0);
+    v.ration = Math.max(0.45, Math.min(1, 0.45 + (0.55 * v.food) / Math.max(1, yearNeed * reserve)));
+    const eat = (yearNeed / YEAR) * dt * (0.4 + 0.6 * v.ration);
     v.food -= eat;
     // upkeep: firewood for every hearth and timber to keep roofs mended
     const nb = v.buildings.length;
