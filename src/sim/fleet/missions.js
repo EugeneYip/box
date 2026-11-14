@@ -37,6 +37,8 @@ export const missions = {
     if (typeof to === 'number' || (to && typeof to === 'object' && to.x == null)) {
       toH = this.resolveHarbour(to);
       if (!toH) return refuse('no such harbour');
+      // no merchant sails into an enemy blockade
+      if (cargo.trade && this.blockaded(toH)) return refuse('the harbour is blockaded');
       dest = this._mooringSpot(toH, null, kind) || this._anchorage(toH, KINDS[kind] || KINDS.cog) || toH.berth;
       deliver = { x: toH.x, z: toH.z };
       toName = toH.name;
@@ -141,6 +143,7 @@ export const missions = {
 
   _sail(v, dest, path = null) {
     v.dest = { x: dest.x, z: dest.z, berth: !!dest.berth };
+    v._way = null;
     const p = path || this.seaPath(v, dest.x, dest.z);
     this.setPath(v, p);
     if (p) {
@@ -444,6 +447,47 @@ export const missions = {
         return;
       }
       if (m && m.type === 'patrol') return;
+      // a voyage that makes no headway (circling a crowded berth, caught in a
+      // channel) gives up within a couple of years instead of wandering for
+      // thirty and holding a place in the crowded seas: close by, it counts
+      // as arrived; else one fresh route, then home (or laid up)
+      // (headway is measured along the route still to sail, so rounding a
+      // cape away from the goal is not taken for being stuck)
+      if (v.dest && v.path && !v.chase && !night && ((v._wayT = (v._wayT || 0) + step) >= 2)) {
+        const dt = v._wayT;
+        v._wayT = 0;
+        const P = v.path;
+        let px = v.x,
+          pz = v.z,
+          rest = 0;
+        for (let i = v.pi; i < P.length; i += 2) {
+          rest += Math.hypot(P[i] - px, P[i + 1] - pz);
+          px = P[i];
+          pz = P[i + 1];
+        }
+        const d = Math.hypot(v.dest.x - v.x, v.dest.z - v.z);
+        const w = v._way || (v._way = { best: rest, t: 0, tries: 0 });
+        if (rest < w.best - 1.5) {
+          w.best = rest;
+          w.t = 0;
+        } else if ((w.t += dt) > 60) {
+          w.t = 0;
+          w.best = rest;
+          if (d < 3) {
+            v.path = null;
+            this._arrive(v);
+            return;
+          }
+          const p = w.tries++ < 1 ? this.seaPath(v, v.dest.x, v.dest.z) : null;
+          if (p) {
+            this.setPath(v, p);
+            w.best = Infinity;
+          } else {
+            this._failMission(v);
+            return;
+          }
+        }
+      }
       if (v.stateT > 900) this._failMission(v); // lost its way
     }
   },
@@ -710,7 +754,7 @@ export const missions = {
         if (op < -5) continue;
       }
       for (const h of this.harbours(o.id)) {
-        if (h.id === from.id || h.water !== from.water) continue;
+        if (h.id === from.id || h.water !== from.water || this.blockaded(h)) continue;
         const d = Math.hypot(h.berth.x - from.berth.x, h.berth.z - from.berth.z);
         if (d < 22) continue;
         const sc = op + (h.landId !== from.landId ? 25 : 0) + (o.id !== kid ? 10 : 0) - d * 0.15 + this.rng() * 15;
@@ -853,6 +897,7 @@ export const missions = {
       return;
     }
     v.dest = { x: nav.nx[best], z: nav.nz[best] };
+    v._way = null;
     this.setPath(v, p);
     v.state = 'sail';
   },
