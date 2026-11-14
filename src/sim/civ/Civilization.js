@@ -813,7 +813,8 @@ export class Civilization {
     }
     // famine strikes hard but never wipes out a settlement: relief caravans and
     // foraging keep the last families alive
-    if (v.starving && pop <= 8) v.food += (pop * 2.2 / YEAR) * dt;
+    // (enough to end the famine in a few years, not just to linger in it)
+    if (v.starving && pop <= 12) v.food += (pop * 3 / YEAR) * dt;
 
     // crops ripen (farmers plant and harvest; growth is helped along here)
     const rain = g.env.weather?.type === 'rain' || g.env.weather?.type === 'storm';
@@ -824,9 +825,19 @@ export class Civilization {
     const fert = 1 + (this._easedMods().fertility - 1) * 0.5;
     const growRate = (dt / 42) * (golden ? 1.3 : 1) * (rain ? 1.25 : 1) * seasonGrow * fert * this.techMod(v.kingdom, 'harvest');
     if (winter) v.food += (v.jobCount.farmer || 0) * 0.6 * dt * fert;
+    // spring sowing: seed is broadcast on the bare tilled fields of the village
+    // (a handful of farmers could never resow every field one by one after the
+    // winter, and a small town with wide fields went hungry until summer)
+    const sow = season < 1.8 && !winter ? 0.05 * dt : 0;
     for (const p of v.plots) {
       let dirty = false;
       for (const i of p.tiles) {
+        if (sow && w.flora[i] === FLORA.NONE && w.type[i] === TILE.FARMLAND && this.use[i] === USE.PLOT && this.rng.chance(sow)) {
+          w.flora[i] = FLORA.WHEAT;
+          w.floraGrowth[i] = 0.04;
+          dirty = true;
+          continue;
+        }
         if (w.flora[i] !== FLORA.WHEAT) continue;
         if (winter && w.floraGrowth[i] < 0.98) {
           // unripe stalks wither: the field lies bare
