@@ -485,12 +485,26 @@ export class Atmosphere {
     const sig = this._shadowSig || (this._shadowSig = new Float32Array(10));
     const lp = L.position,
       tp = L.target.position;
-    const now = [lp.x, lp.y, lp.z, tp.x, tp.y, tp.z, c.right - c.left, c.top - c.bottom, c.near, c.far];
+    // Compare against the state of the last re-render. The light direction
+    // (1.2 degree steps), window size (6% steps) and depth range (whole
+    // units) are already quantised in fitShadow and must match exactly: the
+    // cached map and the units composited into it share the shadow camera.
+    // Only the window's slide while the camera pans gets a tolerance (1.5% of
+    // its width, well inside the fitted margin), so panning no longer
+    // re-renders every static caster each frame.
+    const dx = lp.x - tp.x,
+      dy = lp.y - tp.y,
+      dz = lp.z - tp.z;
+    const w = c.right - c.left,
+      h = c.top - c.bottom;
+    const now = [dx, dy, dz, tp.x, tp.y, tp.z, w, h, c.near, c.far];
     let changed = !this._shadowInit;
-    for (let i = 0; i < 10; i++) {
-      if (Math.abs(now[i] - sig[i]) > 1e-3) changed = true;
-      sig[i] = now[i];
+    if (!changed) {
+      for (const i of [0, 1, 2, 6, 7, 8, 9]) if (Math.abs(now[i] - sig[i]) > 1e-3) changed = true;
+      const span = Math.max(1e-3, Math.abs(w), Math.abs(h));
+      if (!changed && Math.hypot(now[3] - sig[3], now[4] - sig[4], now[5] - sig[5]) > 0.015 * span) changed = true;
     }
+    if (changed) for (let i = 0; i < 10; i++) sig[i] = now[i];
     this._shadowInit = true;
     // zoomed far out the shadow window may trail the camera by two frames:
     // re-render at most every third frame while moving
