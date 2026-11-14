@@ -49,7 +49,7 @@ function foliage(b, blobs, pal, o = {}) {
   cc.multiplyScalar(1 / wsum);
   if (o.center) cc.copy(o.center);
   for (const bl of blobs) {
-    const geo = blobGeo(b, bl.r, bl.d ?? 1, { lump: bl.lump ?? o.lump ?? 0.2, squash: bl.sq ?? 1, freq: o.freq ?? 1.6, flatBottom: bl.fb ?? 0 });
+    const geo = blobGeo(b, bl.r, bl.d ?? 1, { lump: bl.lump ?? o.lump ?? 0.2, squash: bl.sq ?? 1, freq: o.freq ?? 1.6, flatBottom: bl.fb ?? o.fb ?? 0 });
     // o.irregular: each lobe stretched and tipped a little, so clusters are
     // lopsided rather than balls
     const ir = o.irregular || 0;
@@ -237,7 +237,7 @@ function buildOak(b, v, lod) {
   }
   // main lobe at full detail; side lobes as rounder 36-tri dodecahedra
   // LOD1: 20-face lobes, faceted and cheap at mid zoom
-  foliage(b, blobs.map((bl, k) => ({ ...bl, d: lod ? 0 : k > 0 ? 'd' : d })), pal, { lump: 0.3, mat: MAT.DLEAF, smooth: 0.3, irregular: 0.16 });
+  foliage(b, blobs.map((bl, k) => ({ ...bl, d: lod ? 0 : k > 0 ? 'd' : d })), pal, { lump: 0.36, freq: 1.3, mat: MAT.DLEAF, smooth: 0.3, irregular: 0.26, fb: 0.4 });
   return { bendScale: 1, height: 2.2 };
 }
 
@@ -536,7 +536,7 @@ function buildBirch(b, v, lod) {
     .sort((a, c) => c[0] - a[0])
     .slice(0, 1)
     .map((e) => e[1]);
-  foliage(b, blobs.map((bl, k) => ({ p: bl.p, r: bl.r, sq: bl.sq, d: lod ? 0 : !big.includes(k) ? 'd' : 1, lump: 0.32 })), pal, { lump: 0.32, freq: 2.0, mat: MAT.DLEAF, smooth: 0.3, irregular: 0.18 });
+  foliage(b, blobs.map((bl, k) => ({ p: bl.p, r: bl.r, sq: bl.sq, d: lod ? 0 : !big.includes(k) ? 'd' : 1, lump: 0.38 })), pal, { lump: 0.38, freq: 1.5, mat: MAT.DLEAF, smooth: 0.3, irregular: 0.28, fb: 0.38 });
   return { bendScale: 1.25, height: H + 0.4 };
 }
 
@@ -578,7 +578,7 @@ function buildBirchClump(b, lod) {
       limb(b, j2, j2.clone().lerp(c2, 0.85), 0.018, 0.008, 3, twig, H, { bend: 0.04, segs: 2 });
     }
   }
-  foliage(b, blobs.map((bl, k) => ({ ...bl, d: lod ? 0 : k !== 0 ? 'd' : 1, lump: 0.32 })), pal, { lump: 0.32, freq: 2.0, mat: MAT.DLEAF, smooth: 0.3, irregular: 0.18 });
+  foliage(b, blobs.map((bl, k) => ({ ...bl, d: lod ? 0 : k !== 0 ? 'd' : 1, lump: 0.38 })), pal, { lump: 0.38, freq: 1.5, mat: MAT.DLEAF, smooth: 0.3, irregular: 0.28, fb: 0.38 });
   return { bendScale: 1.25, height: 2.1 };
 }
 
