@@ -912,7 +912,7 @@ export class Civilization {
       let src = null;
       for (const vid of this.kingdoms[v.kingdom]?.villages || []) {
         const o = this.villages[vid];
-        if (o?.alive && o !== v && o.pop > 90 && o.landId === v.landId && (!src || o.pop > src.pop)) src = o;
+        if (o?.alive && o !== v && o.pop > (this.budget.area > 1.5 ? 90 : 40) && o.landId === v.landId && (!src || o.pop > src.pop)) src = o;
       }
       if (src) {
         let moved = 0;
@@ -1070,7 +1070,8 @@ export class Civilization {
     this._crowdT = t;
     const hc = this._humanCap();
     this._popCrowd = clamp((humans - hc * 0.55) / (hc * 0.45), 0, 1);
-    this._crowdV = clamp(Math.max(this._popCrowd, (blds - this.budget.buildings * 0.5) / (this.budget.buildings * 0.5)), 0, 1);
+    this._bldCrowd = clamp((blds - this.budget.buildings * 0.5) / (this.budget.buildings * 0.5), 0, 1);
+    this._crowdV = Math.max(this._popCrowd, this._bldCrowd);
     return this._crowdV;
   }
 
@@ -1390,9 +1391,16 @@ export class Civilization {
   // town: it could never reach the 50 people a city needs otherwise); other
   // villages level off near their share of the people, which is 45 on a
   // Medium map and less where many villages share them.
+  // On a Medium map ports stop at 120 and a capital must be a city first, so
+  // the people stay spread over a middle of towns (with the World Map's rules
+  // Medium polarised into three cities of 170 and twenty hamlets).
   _fullWorldRoom(v) {
     const k = this.kingdoms[v.kingdom];
-    if ((v.tier >= 1 && k?.capital === v.id) || (v.tier >= 2 && v.coastal)) return 170;
+    const seat = k?.capital === v.id;
+    const big = this.budget.area > 1.5;
+    if (v.tier >= 2 && seat) return 170;
+    if (v.tier >= 2 && v.coastal) return big ? 170 : 120;
+    if (v.tier >= 1 && seat && big) return 170;
     return clamp(Math.round((1.6 * this._humanCap()) / Math.max(1, this._aliveVillageCount())), 14, 45);
   }
   _aliveVillageCount() {
@@ -1651,7 +1659,7 @@ export class Civilization {
       // a crowded world builds up, not out: cottages become timber houses
       const full = crowded >= 0.6;
       const cand = v.tier >= 1 || full ? v.buildings.find((b) => b.alive && b.type === 'house' && !b.constructing && !b.upgrading && b.level < Math.min(3, v.tier + 2)) : null;
-      if (!(cand && (full || this.rng.chance(0.5)) && upgrade(cand)) && (crowded < 0.97 || v.tier >= 1 || v.housing < 16)) build('house');
+      if (!(cand && (full || this.rng.chance(0.5)) && upgrade(cand)) && (crowded < 0.97 || v.tier >= 1 || v.housing < 16 || (v.housing < 26 && (this._bldCrowd || 0) < 0.9))) build('house'); // (a full world of people, not of buildings, still lets a village house enough to become a town)
     }
     // 2 fields (no cost)
     const targetFields = 8 + pop * 1.1;
