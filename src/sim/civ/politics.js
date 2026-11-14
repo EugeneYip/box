@@ -152,6 +152,17 @@ export const politics = {
     return u.name || k.rulerName;
   },
 
+  // A former ruler goes back to the given name and loses the royal standing.
+  _uncrown(u) {
+    const d = u?.data?.civ;
+    if (!d) return;
+    // (only "<Title> <name>" is undone: a name the player gave is kept)
+    if (d.given && u.name !== d.given && u.name?.endsWith(' ' + d.given)) u.name = d.given;
+    d.given = undefined;
+    d.royal = false;
+    if (u.job === 'king') u.job = null;
+  },
+
   crown(k, u) {
     if (!u) return;
     const title = rulerTitle(k.culture, u.sex);

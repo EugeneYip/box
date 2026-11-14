@@ -51,6 +51,9 @@ export const brain = {
         return;
       }
     }
+    // a crown lost by any road (an heir crowned, the capital conquered, a
+    // rebellion, a union, the realm fallen): the title and the royal standing go
+    if ((d.royal || (d.given && u.name !== d.given)) && this.kingdoms[u.kingdom]?.ruler !== u.id) this._uncrown(u);
     if (!v || !v.alive) return this._homeless(u, d, dt);
     if (!u.data.culture) u.data.culture = v.culture;
     if (u.kingdom !== v.kingdom) u.kingdom = v.kingdom;
