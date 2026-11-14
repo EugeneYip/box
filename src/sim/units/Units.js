@@ -1872,7 +1872,7 @@ export class Units {
     // elapsed time, so work and needs still advance in full)
     const stepK = Math.max(1, dt / TICK_DT);
     const fastFar = Math.min(4, stepK);
-    const fastFarPeople = Math.min(2, stepK); // people also re-think on arrival
+    const fastFarPeople = stepK; // people also re-think on arrival, so they can wait longer
     const fastNear = Math.sqrt(stepK);
     const overview = (g.cameraRig?.cur?.dist ?? 0) > OVERVIEW_DIST;
     const cam = g.cameraRig?.cur;
