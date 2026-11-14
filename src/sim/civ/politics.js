@@ -930,7 +930,10 @@ export const politics = {
     const cap = this.villages[k.capital];
     const alive = this._aliveKingdoms();
     let L = 74;
-    if (cap) L -= Math.max(0, Math.hypot(cap.cx - v.cx, cap.cz - v.cz) / Math.max(1, Math.sqrt(this.world.size / 65536)) - 28) * 0.75;
+    // distance from the crown; a colony over the sea is governed by ship, so
+    // the open water counts for little (otherwise every World Map colony
+    // rose the day it reached 14 people)
+    if (cap) L -= Math.max(0, (Math.hypot(cap.cx - v.cx, cap.cz - v.cz) * (v.colony && (v.colonyOf ?? v.kingdom) === v.kingdom && v.landId !== cap.landId ? 0.3 : 1)) / Math.max(1, Math.sqrt(this.world.size / 65536)) - 28) * 0.75;
     if (v.culture !== k.culture) L -= 18;
     if (v.conqueredAt) L -= Math.max(0, 34 - ((now - v.conqueredAt) / YEAR) * 3);
     if (v.starving && this.law('harmonyUnrest')) L -= 22;
