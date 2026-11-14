@@ -763,7 +763,8 @@ export class Vegetation {
             if (x < 0 || y < 0 || x >= W || y >= H) continue;
             const g = src[y * W + x];
             if (!g) continue;
-            const k = Math.max(0, 1 - Math.hypot(dx, dy) / 3.4);
+            // reach matches the glow pool decal (radius ~1.7 tiles) plus a soft rim
+            const k = Math.max(0, 1 - Math.hypot(dx, dy) / 2.4);
             if (k * k > best) (best = k * k), (hue = g - 1);
           }
         const o = (ty * W + tx) * 4;

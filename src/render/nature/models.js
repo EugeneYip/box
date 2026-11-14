@@ -375,7 +375,8 @@ function buildPine(b, v, lod, snowy = false) {
   for (let t = 0; t < cfg.tiers; t++) rag.push({ r: 1 + b.r(-cfg.ragged, cfg.ragged), rot: b.r(0, TAU), ox: b.r(-1, 1), oz: b.r(-1, 1), tx: b.r(-1, 1), tz: b.r(-1, 1) });
   const axis = (y) => V(lean.x * y, y, lean.z * y);
   const trunkTop = cfg.flat ? cfg.H * 0.8 : cfg.broken ? cfg.H * 0.92 : cfg.H * 0.55;
-  const bark = cfg.flat ? { base: C(0x4a3022), top: C(0xb2683a) } : P.pineBark;
+  // Scots pine: the upper trunk warms to a muted orange-tan (not red)
+  const bark = cfg.flat ? { base: C(0x45301f), top: C(0x9a6a46) } : P.pineBark;
   const tp = lod ? [V(0, 0, 0), axis(trunkTop)] : bezier(V(0, 0, 0), axis(trunkTop * 0.5).add(V(lean.x * 0.6, 0, lean.z * 0.6)), axis(trunkTop), 3);
   trunk(b, tp, tp.map((_, i) => (cfg.flat ? 0.08 : 0.085) - (0.035 * i) / (tp.length - 1)), lod ? 5 : 6, bark, { flare: lod ? 0 : 0.35, roots: 2, yTop: cfg.H });
   const span = cfg.H - cfg.base;

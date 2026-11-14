@@ -67,6 +67,7 @@ varying float vFIH;
 varying float vFWSnow;
 varying vec2 vFGlow;
 varying vec3 vFRest;
+varying float vFHgt;
 #endif
 float fHash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
 // Season weights (spring, summer, autumn, winter) for a continuous season t in [0,4).
@@ -159,6 +160,7 @@ vFWorld = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;
 vFWNormal = normalize(mat3(modelMatrix) * (fIM * objectNormal));
 // rest pose in world units: surface patterns (blossom) do not swim in the wind
 vFRest = (modelMatrix * instanceMatrix * vec4(position, 1.0)).xyz;
+vFHgt = vFRest.y - (modelMatrix * vec4(fOrigin, 1.0)).y;
 #endif
 `;
 
@@ -192,6 +194,7 @@ vFInfo = vec3(aInfo.z, aInfo.w, fK);
 vFWorld = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;
 vFWNormal = normalize(mat3(modelMatrix) * (fIM * objectNormal));
 vFRest = vFWorld;
+vFHgt = 0.0;
 #endif
 `;
 
@@ -227,6 +230,7 @@ varying float vFIH;
 varying float vFWSnow;
 varying vec2 vFGlow;
 varying vec3 vFRest;
+varying float vFHgt;
 uniform float uFungiGlow;
 vec3 fGlowPal(float hue) { return hue < 0.25 ? vec3(0.05, 0.85, 0.6) : hue < 0.75 ? vec3(0.55, 0.22, 1.0) : vec3(1.0, 0.55, 0.08); }
 float fVHash(vec3 p) { return fract(sin(dot(p, vec3(12.9898, 78.233, 45.164))) * 43758.5453); }
@@ -364,10 +368,16 @@ if (abs(fMat - 11.0) < 0.5) {
   float gDist = smoothstep(16.0, 42.0, distance(vFWorld, cameraPosition));
   totalEmissiveRadiance += fGlowPal(vFGlow.y) * (0.05 + 0.85 * night) * pulse * uFungiGlow * (1.0 - gDist);
 }
-// light from nearby glowcap groves falls on trunks, caps, bushes and grass
+// light from nearby glowcap groves falls on the ground layer: grass, caps,
+// bushes and the foot of trunks. It fades with height above the ground, is
+// weaker on bark and a little desaturated, so trunks are touched by the pool
+// rather than lit up in its colour.
 if (vFGlow.x > 0.01 && uFungiGlow > 0.001) {
   float night = clamp(1.0 - uDaylight * 1.2, 0.0, 1.0);
-  totalEmissiveRadiance += fGlowPal(vFGlow.y) * vFGlow.x * night * uFungiGlow * (0.06 + 0.9 * diffuseColor.rgb);
+  float low = 1.0 - smoothstep(0.12, 1.0, vFHgt);
+  float onWood = 1.0 - 0.6 * (1.0 - step(0.5, abs(fMat - 0.0)));
+  vec3 gl = mix(fGlowPal(vFGlow.y), vec3(0.75), 0.25);
+  totalEmissiveRadiance += gl * vFGlow.x * night * uFungiGlow * low * onWood * (0.03 + 0.85 * diffuseColor.rgb);
 }
 float fBack = clamp(-dot(fWN, uSunDir), 0.0, 1.0);
 float fTrans = fLeafM * (1.0 - fChar) * (1.0 - fSnowAmt) * uDaylight * (1.0 - fIsSnow);
