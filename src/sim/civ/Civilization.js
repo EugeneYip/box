@@ -912,7 +912,7 @@ export class Civilization {
       let src = null;
       for (const vid of this.kingdoms[v.kingdom]?.villages || []) {
         const o = this.villages[vid];
-        if (o?.alive && o !== v && o.pop > 60 && o.landId === v.landId && (!src || o.pop > src.pop)) src = o;
+        if (o?.alive && o !== v && o.pop > 90 && o.landId === v.landId && (!src || o.pop > src.pop)) src = o;
       }
       if (src) {
         let moved = 0;
