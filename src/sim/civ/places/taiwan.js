@@ -67,7 +67,7 @@ export default [
   R('Hualien', ['Hualien', 121.6, 23.98], [
     ['Yuli', 121.31, 23.33], ['Fenglin', 121.45, 23.74], ['Ji\'an', 121.57, 23.96], ['Shoufeng', 121.51, 23.86],
     ['Guangfu', 121.42, 23.67], ['Ruisui', 121.38, 23.5], ['Fuli', 121.25, 23.18], ['Fengbin', 121.52, 23.6],
-    ['Xincheng', 121.6, 24.04], ['Xiulin', 121.62, 24.12], ['Chongde', 121.66, 24.17],
+    ['Xincheng', 121.64, 24.13], ['Chongde', 121.66, 24.17],
   ]),
   R('Taitung', ['Taitung', 121.15, 22.76], [
     ['Chenggong', 121.38, 23.1], ['Guanshan', 121.16, 23.05], ['Chishang', 121.21, 23.1], ['Taimali', 121.0, 22.61],
