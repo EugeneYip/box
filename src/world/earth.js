@@ -509,8 +509,12 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
       if (!land[i]) return;
       const k = falloff(d, w, edge, i);
       if (k <= 0) return;
-      const r = REG ? fbm(nRough, U(i) / 3.2, V(i) / 3.2, 3) * (0.5 + h * 0.06) + (ridged(nRidge, U(i) / 1.7 + 5, V(i) / 1.7 - 2) - 0.45) * (0.3 + h * 0.05) : fbm(nRough, U(i) / 1.6, V(i) / 1.6, 3) * (0.25 + h * 0.03);
-      const val = h * platH * k + r * k;
+      // (high plateaus such as Tibet roll in broad swells and low ridged hills
+      // on every map, instead of lying flat as a table)
+      const high = !REG && h >= 9; // Tibet, Pamir, Altiplano on the whole Earth
+      const r = REG || high ? (fbm(nRough, U(i) / 3.2, V(i) / 3.2, 3) * (0.5 + h * 0.06) + (ridged(nRidge, U(i) / 1.7 + 5, V(i) / 1.7 - 2) - 0.45) * (0.3 + h * 0.05)) * (high ? 1.6 : 1) : fbm(nRough, U(i) / 1.6, V(i) / 1.6, 3) * (0.25 + h * 0.03);
+      // (and stand a little lower, leaving their great peaks room to rise above)
+      const val = h * (high ? 0.6 : platH) * k + r * k;
       if (val > plat[i]) plat[i] = val;
       if (k > platK[i]) platK[i] = k;
     });
@@ -553,6 +557,7 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
   // mountain ranges: ridged crests, several summits along each range
   const rng = new Float32Array(N);
   const iceR = new Uint8Array(REG ? N : 0);
+  const peakK = new Float32Array(N); // 0..1 inside `peaks` ranges (whole Earth)
   // ranges keep at least ~2 tiles of half-width on any map size, so narrow
   // ones (Taiwan, the Cascades) are not single-tile spikes the blur flattens
   const minRangeW = (REG ? 3 : 2.2) / tpd,
@@ -626,7 +631,8 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
         bump = Math.pow(1 - t, 1.9) * (1 + 0.9 * t);
         const r1 = ridged(nRidge, u * 0.7 + 13, v * 0.7),
           r2 = ridged(nRidge, u * 1.15 - 7, v * 1.15 + 3);
-        crest = 0.68 + 0.55 * (0.6 * r1 + 0.4 * r2);
+        // (f.peaks: separate summits over deep saddles, a field of peaks)
+        crest = f.peaks ? 0.4 + 0.9 * Math.pow(0.55 * r1 + 0.45 * r2, 1.35) : 0.68 + 0.55 * (0.6 * r1 + 0.4 * r2);
         // spurs and gullies running down the flanks, across the range: noise
         // in (distance along the range, distance from the crest) space
         const g = ridged(nWarp, sAl * 0.9 + (f0.pts[0][0] % 7), t * 0.7 + 4.3);
@@ -638,6 +644,7 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
       const val = Math.min(19, h * (f.cone ? RELIEF : RANGE_RELIEF) * bump * crest * coastK);
       if (val > rng[i]) rng[i] = val;
       if (bump > rangeMask[i]) rangeMask[i] = bump;
+      if (f.peaks && bump > peakK[i]) peakK[i] = bump;
     });
   }
   // smooth the range layer on its own (tile-to-tile spikes), then merge
@@ -683,7 +690,9 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
     for (let i = 0; i < N; i++) {
       if (!land[i] || !rangeMask[i] || cap[i] >= hgt[i]) continue;
       const c = cap[i] + fbm(nRough, U(i) / 0.9 + 21, V(i) / 0.9 - 4, 2) * 1.0;
-      if (c < hgt[i]) hgt[i] = c;
+      // (summits of `peaks` ranges keep part of their height above the ramp,
+      // so a great front reads as a field of peaks over spurs, not a wall)
+      if (c < hgt[i]) hgt[i] = c + (hgt[i] - c) * 0.55 * peakK[i];
     }
   };
   limitSlopes();
@@ -759,20 +768,41 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
         const i = y * W + x;
         if (land[i]) continue;
         const k = (1 - smoothstep(ringY, ringY + 56, edgeDist(x, y) + fbm(nBank, x / 41, y / 41, 2) * 14)) * smoothstep(1.5, 8, dSea[i]);
-        if (k > 0) hgt[i] = Math.min(hgt[i], hgt[i] + (-6 - hgt[i]) * k);
+        if (k > 0) hgt[i] = Math.min(hgt[i], hgt[i] + (-7.6 - hgt[i]) * k);
       }
   for (let i = 0; i < N; i++) {
     if (land[i]) hgt[i] = Math.max(hgt[i], 0.24);
     else hgt[i] = Math.min(-0.2, Math.max(hgt[i], MIN_HEIGHT));
     // lone islets (a tile or two in open ocean) rise as small volcanic hills,
     // not flat sand discs that read as foam rings
-    if (land[i] && landW[i] <= 1.01) hgt[i] = Math.max(hgt[i], 1.1 + hash2(i % W, (i / W) | 0, seed + 9) * 0.6);
+    if (land[i] && landW[i] <= 1.01) hgt[i] = Math.max(hgt[i], 0.85 + hash2(i % W, (i / W) | 0, seed + 9) * 0.45);
   }
+  // ...standing in a shallow ring of seabed, so they read as small islands
+  // rather than needles rising from deep water
+  for (let y = 1; y < H - 1; y++)
+    for (let x = 1; x < W - 1; x++) {
+      const i = y * W + x;
+      if (land[i] || dSea[i] > 1.5) continue;
+      let near = false;
+      for (let dy = -1; dy <= 1 && !near; dy++) for (let dx = -1; dx <= 1; dx++) if (land[i + dy * W + dx] && landW[i + dy * W + dx] <= 1.01) near = true;
+      if (near) hgt[i] = Math.max(hgt[i], -0.45 - hash2(x, y, seed + 13) * 0.3);
+    }
+  // narrow islands and peninsulas (Japan, the Philippines, Italy) rise gently
+  // from their shores: green slopes and beaches instead of a rock spine
+  // walled by sea cliffs
+  if (!REG)
+    for (let i = 0; i < N; i++) {
+      if (!land[i] || landW[i] > 3.2 * scale768 || landW[i] <= 1.01) continue;
+      const d = dLand[i] / scale768;
+      const cap = 0.35 + d * 0.9 + Math.max(0, d - 1.4) * 1.1;
+      if (hgt[i] > cap) hgt[i] = cap + (hgt[i] - cap) * 0.25;
+    }
   // terraced benches on the flanks and plateau rims; crests stay sharp
   const benchMask = new Float32Array(N);
   for (let i = 0; i < N; i++) {
     let m = 0;
-    if (plat[i] > 4 && !REG) m = platK[i] * 0.25 * (1 - smoothstep(0.15, 0.4, rangeMask[i]));
+    // (not on the high plateaus: Tibet's rim read as a terraced fortress wall)
+    if (plat[i] > 4 && plat[i] < 6.5 && !REG) m = platK[i] * 0.25 * (1 - smoothstep(0.15, 0.4, rangeMask[i]));
     benchMask[i] = m;
   }
   H_.terraceMountains(hgt, benchMask, W, H);
@@ -949,9 +979,16 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
       const i = y * W + x;
       // open sea below Antarctica's far coast: a short shelf, then deep water
       if (!land[i] && latY[y] < southCut[x] - 0.2) hgt[i] = Math.min(hgt[i], -Math.min(6, 1.0 + 1.3 * dSea[i] / Math.max(0.7, scale768)));
+      // the sea deepens over a broad band toward the border, so the map's
+      // ocean meets the deep water beyond it without a visible box edge
+      // (the Arctic shelf and the sea below Antarctica used to end in a line)
+      if (!land[i] && !REG) {
+        const ek = (1 - smoothstep(ringY, ringY + 28 * scale768, edgeDist(x, y) + fbm(nBank, x / NT / 2.5, y / NT / 2.5, 2) * 5 * scale768)) * smoothstep(1, 4 * scale768, dSea[i]);
+        if (ek > 0) hgt[i] = Math.min(hgt[i], hgt[i] + (-8.6 - hgt[i]) * ek);
+      }
       if (!inRing(x, y)) continue;
       const k = Math.min(1, edgeDist(x, y) / ringY); // 0 at the border
-      hgt[i] = Math.min(hgt[i], -(6.2 - 2.4 * k) + fbm(nBank, x / NT / 3, y / NT / 3, 2) * 0.5);
+      hgt[i] = Math.min(hgt[i], -(REG ? 8 - 3 * k : 8.6 - 4 * k) + fbm(nBank, x / NT / 3, y / NT / 3, 2) * 0.5);
     }
   // ----------------------------------------------------------------- 6. climate
   const wet = new Uint8Array(N);
