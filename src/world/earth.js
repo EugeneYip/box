@@ -664,7 +664,6 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
         }
     }
   }
-  options.debug?.({ rng: rng.slice(), base: hgt.slice() });
   for (let i = 0; i < N; i++) if (rng[i] > 0 && land[i]) hgt[i] = smax(hgt[i], rng[i], 1.0);
   // no sheer ramparts: inland, the ground may rise at most ~2.4 units per tile
   // (chamfer passes over land neighbours only, so sea cliffs keep their drop).
