@@ -179,7 +179,7 @@ export const politics = {
     k.ruler = u.id;
     k.rulerName = u.name;
     k.council = false;
-    this._bio(u, `Crowned ${title} of the ${k.name}`);
+    this._bio(u, `Crowned ${title} of ${this._theK(k)}`);
     // name an heir straight away so the realm never drifts without one
     let heir = null;
     const v = this.villages[u.village];
@@ -305,7 +305,7 @@ export const politics = {
       this._civilWar = true;
       const R = this.rebel(far, true, true);
       this._civilWar = false;
-      if (R) this._note(`✊ Overstretched, ${this._kn(k)} cracks: ${far.name} leads its far provinces away as the ${R.name}`, 'war', { x: far.cx, z: far.cz });
+      if (R) this._note(`✊ Overstretched, ${this._kn(k)} cracks: ${far.name} leads its far provinces away as ${this._theK(R)}`, 'war', { x: far.cx, z: far.cz });
     }
   },
 
@@ -322,6 +322,8 @@ export const politics = {
       if (!A?.alive || !B?.alive || baseCulture(A.culture) !== baseCulture(B.culture)) continue;
       const [small, big] = A.villages.length <= B.villages.length ? [A, B] : [B, A];
       if (small.villages.length > 2 || big.villages.length < small.villages.length + 1 || small.player?.name) continue;
+      // a real country on the World Map keeps its own crown for its first decades
+      if (small.plain && now - small.founded < YEAR * 30) continue;
       // a union is made over land: an island or a far continent keeps its own
       // crown (the World Map's Australia lost its last realms to unions abroad)
       if (this.villages[small.capital]?.landId !== this.villages[big.capital]?.landId) continue;
@@ -1022,8 +1024,8 @@ export const politics = {
     if (r.war && this.rng.chance(0.55)) {
       this.makePeace(K.id, old.id, true);
       r.truceUntil = now + YEAR * 4;
-      this._note(`👑 ${far.name} secedes peacefully from ${this._kn(old)} as the ${K.name}`, 'info', { x: far.cx, z: far.cz });
-    } else this._note(`✊ ${far.name} breaks away from ${this._kn(old)}: the ${K.name}`, 'war', { x: far.cx, z: far.cz });
+      this._note(`👑 ${far.name} secedes peacefully from ${this._kn(old)} as ${this._theK(K)}`, 'info', { x: far.cx, z: far.cz });
+    } else this._note(`✊ ${far.name} breaks away from ${this._kn(old)}: ${this._theK(K)}`, 'war', { x: far.cx, z: far.cz });
   },
 
   _rulerTrait(k, ...ids) {
@@ -1056,7 +1058,7 @@ export const politics = {
     let leader = null;
     for (const u of v.members) if (u.alive && u.age >= ADULT_AGE + 2 && (!leader || (u.job === 'soldier') > (leader.job === 'soldier') || u.age > leader.age)) leader = u;
     if (leader) this.crown(K, leader);
-    if (!silent) this._note(`✊ ${v.name} rebels against ${oldName}: the ${K.name}`, 'war', { x: v.cx, z: v.cz });
+    if (!silent) this._note(`✊ ${v.name} rebels against ${oldName}: ${this._theK(K)}`, 'war', { x: v.cx, z: v.cz });
     // discontented neighbours join
     for (const vid of [...old.villages]) {
       const o = this.villages[vid];

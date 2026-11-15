@@ -41,3 +41,11 @@ never real flags.
 - **Growth keeps real names:** a new village founded inside a preloaded realm takes the nearest unused real city name of that realm (within a sensible distance), falling back to generated names.
 - Realm names are shown as given (e.g. "Japan", "Mainland Region", "ROC", "Kanto"), without "Kingdom of". Colours stay distinct from neighbours; banners use the game's own emblems.
 - Square presets keep their generated names and random starts.
+
+### Implementation notes (Civ, `src/sim/civ/realms.js`)
+
+- Realms are listed most important first; `country(id, opts)` in `places/countries.js` builds a region's copy of a shared country (`first` reorders its cities for that map, `edge: true` seats a realm whose capital lies outside the window at its first city inside it, e.g. Russia at Vladivostok on Great East Asia or Korea at Busan on Japan). `color` is matched to the nearest heraldic tincture unless a neighbour wears one too close; `culture` overrides the culture read from the land.
+- Counts: up to 20 realms and 26 starting villages on Vast and the regional maps (never more than three quarters of the village budget), scaled by the square root of the tile count on smaller maps (Large: 10 realms, 13 villages; Huge: 15 and 20). An explicit `?civs=` caps both. Extra cities go to the bigger realms first (the first two realms share alike).
+- Spacing at the start: 9 tiles within a realm, 10 between realms on one landmass, 7 across water. A city whose real position already has a neighbour that close is skipped rather than pushed elsewhere. A capital may move up to 6 tiles on the whole Earth (more on the regional maps, up to 16) to find ground; on rugged or narrow land (Taiwan or Japan on the whole Earth) a small pad is levelled.
+- Naming: a village founded later takes the nearest real name not held by a living village: its own realm's cities within about 4.5 degrees (9 to 20 tiles), else any listed place within about 3.5 degrees (7 to 16 tiles), else a generated name. Settlers of an independent colony still look among their parent realm's cities. Conquered villages keep their names; a razed city's name can be taken again.
+- Real realms carry `plain: true` (notes and labels say "Japan", never "the Japan") and `realm` (their index in the region's list). A real realm cannot be absorbed in a union during its first 30 years.

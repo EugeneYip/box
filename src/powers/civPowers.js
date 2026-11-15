@@ -13,6 +13,10 @@ const CULTURE_POWERS = [
   ['found-mire', 'Tikari Village', 'mire', 'Found a Tikari village of stilt houses and saddle-shaped roofs. Masters of swamp and jungle.'],
 ];
 
+// "the Kingdom of Thornholm", but "Japan": real realms on the World Map carry plain names
+const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+const theK = (civ, id) => civ.theKingdomName?.(id) ?? 'the ' + civ.kingdomName(id);
+
 function landOk(g, c) {
   if (!g.world.isLand(c.tx, c.ty)) {
     g.notify('Settlers need dry land to build on.', 'bad', { x: c.x, z: c.z });
@@ -87,7 +91,7 @@ function pairPower(id, name, description, verb, act) {
       if (!picking || picking.power !== id) {
         picking = { power: id, first: k.id };
         g.civ.powerPick = { kingdom: k.id, t: g.time.realTime };
-        g.notify(`The ${k.name} is chosen. Now click the kingdom it will ${verb}.`, 'info', g.civ._kingdomPos?.(k));
+        g.notify(`${cap(g.civ.theKingdomName?.(k.id) ?? 'The ' + k.name)} is chosen. Now click the kingdom it will ${verb}.`, 'info', g.civ._kingdomPos?.(k));
         return;
       }
       const a = picking.first;
@@ -113,7 +117,7 @@ pairPower('declare-war', 'Declare War', 'Pit two kingdoms against each other: cl
 
 pairPower('make-peace', 'Make Peace', 'Force two warring kingdoms to lay down their arms: click one, then the other.', 'make peace with', (g, a, b) => {
   const civ = g.civ;
-  if (!civ.atWar(a, b)) return g.notify(`The ${civ.kingdomName(a)} and the ${civ.kingdomName(b)} are not at war.`, 'info');
+  if (!civ.atWar(a, b)) return g.notify(`${cap(theK(civ, a))} and ${theK(civ, b)} are not at war.`, 'info');
   civ.makePeace(a, b);
   g.audio?.play?.('bell', {});
 });
@@ -124,7 +128,7 @@ pairPower('forge-alliance', 'Forge Alliance', 'Bind two kingdoms in friendship: 
   const r = civ.rel(a, b);
   r.ally = true;
   r.opinion = Math.max(r.opinion, 70);
-  g.notify(`The ${civ.kingdomName(a)} and the ${civ.kingdomName(b)} swear an alliance.`, 'good', civ._kingdomPos?.(civ.kingdoms[a]));
+  g.notify(`${cap(theK(civ, a))} and ${theK(civ, b)} swear an alliance.`, 'good', civ._kingdomPos?.(civ.kingdoms[a]));
 });
 
 // ------------------------------------------------------------------ single-target
