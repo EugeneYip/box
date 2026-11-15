@@ -43,9 +43,10 @@ export class Game {
     this.events = new Events();
     this.rng = new Random(params.seed);
     // square worlds are size x size; the World Map preset is a 2:1 rectangle
-    const dims = worldDims(params.size, params.preset);
+    // or a regional map (params.region) with its own dimensions
+    const dims = worldDims(params.size, params.preset, params.region);
     this.world = new World(dims.w, dims.h, this.events);
-    generateWorld(this.world, params.seed, { preset: params.preset });
+    generateWorld(this.world, params.seed, { preset: params.preset, region: params.region });
 
     this.scene = new THREE.Scene();
     this.clock = new THREE.Clock();
@@ -240,12 +241,14 @@ export class Game {
   regenerate(seed = Math.floor(Math.random() * 1e9), preset = this.params.preset, civs = this.params.civs) {
     // The world's dimensions are fixed at construction: a preset that needs a
     // different shape (the 2:1 World Map vs. square maps) reloads the page.
-    const want = worldDims(sizeForPreset(this.params.size, this.params.preset, preset), preset);
-    if (want.w !== this.world.w || want.h !== this.world.h) return this._reloadWorld(seed, preset, civs, want.size);
+    // (a World Map region stays while the preset does; another preset drops it)
+    const region = preset === this.params.preset ? this.params.region || null : null;
+    const want = worldDims(sizeForPreset(this.params.size, this.params.preset, preset), preset, region);
+    if (want.w !== this.world.w || want.h !== this.world.h || region !== (this.params.region || null)) return this._reloadWorld(seed, preset, civs, want.size, region);
     this.params.seed = seed;
     this.params.preset = preset;
     this.rng = new Random(seed);
-    generateWorld(this.world, seed, { preset });
+    generateWorld(this.world, seed, { preset, region });
     this.ages.reset();
     for (const s of this.allSystems) s.reset?.();
     this.world.flushDirty();
@@ -254,11 +257,17 @@ export class Game {
     this.units.seedInitial?.();
   }
 
-  _reloadWorld(seed, preset, civs, size) {
+  _reloadWorld(seed, preset, civs, size, region = null) {
     const q = new URLSearchParams(location.search);
     q.set('seed', seed);
     q.set('preset', preset);
-    q.set('size', size);
+    if (region) {
+      q.set('region', region);
+      q.delete('size');
+    } else {
+      q.set('size', size);
+      q.delete('region');
+    }
     // the default of three starting villages scales with the map; keep it implicit
     if (civs != null && civs !== 3) q.set('civs', civs);
     else q.delete('civs');

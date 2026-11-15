@@ -23,6 +23,7 @@ import { Popover } from './Popover.js';
 import { AgeChip, AgeBanner } from './Ages.js';
 import { loadRegistries } from './depth.js';
 import { lawDef } from '../core/laws.js';
+import { earthLabel, earthChoice } from '../core/params.js';
 import { uiIcon } from './icons.js';
 
 const PREF_KEY = 'worldseed.ui.v1';
@@ -275,7 +276,9 @@ export class UI {
   regenerate(seed, preset, civs, { quiet = false, after = null } = {}) {
     const g = this.game;
     const label = this.veil.querySelector('.ws-veil__label');
-    label.textContent = preset === 'earth' ? 'Shaping the World Map' : `Seeding ${/^[aeiou]/i.test(PRESET_NAMES[preset] || '') ? 'an' : 'a'} ${PRESET_NAMES[preset] || 'new'} world`;
+    // (a World Map region stays while the preset does: "Shaping Japan")
+    const region = preset === g.params.preset ? g.params.region || null : null;
+    label.textContent = preset === 'earth' ? earthLabel(region ? 1024 : null, region).replace(/ · .*$/, '') : `Seeding ${/^[aeiou]/i.test(PRESET_NAMES[preset] || '') ? 'an' : 'a'} ${PRESET_NAMES[preset] || 'new'} world`;
     this.veil.classList.add('is-shown');
     setTimeout(() => {
       requestAnimationFrame(() => {
@@ -283,7 +286,7 @@ export class UI {
         this._regenN = (this._regenN || 0) + 1; // new land: the overview frame is measured again
         g.params.civs = civs;
         after?.();
-        if (!quiet) setTimeout(() => g.notify(preset === 'earth' ? `The World Map rises from the deep. Seed ${seed}.` : `A new ${(PRESET_NAMES[preset] || 'world').toLowerCase()} rises from the deep. Seed ${seed}.`, 'good'), 400);
+        if (!quiet) setTimeout(() => g.notify(preset === 'earth' ? `${region ? earthChoice(1024, region)?.name || 'The World Map' : 'The World Map'} rises from the deep. Seed ${seed}.` : `A new ${(PRESET_NAMES[preset] || 'world').toLowerCase()} rises from the deep. Seed ${seed}.`, 'good'), 400);
         setTimeout(() => this.veil.classList.remove('is-shown'), 120);
       });
     }, 360);
@@ -421,7 +424,7 @@ export class UI {
   // Bounding box of the land (above sea level) plus a small shore margin, cached per world.
   landBox() {
     const W = this.game.world;
-    const key = `${W.w}x${W.h}:${this.game.params?.seed}:${this.game.params?.preset}:${this._regenN || 0}`;
+    const key = `${W.w}x${W.h}:${this.game.params?.seed}:${this.game.params?.preset}:${this.game.params?.region || ''}:${this._regenN || 0}`;
     if (this._landBox?.key === key) {
       this._landOutline = this._landBox.outline;
       return this._landBox.box;

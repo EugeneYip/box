@@ -1,6 +1,7 @@
 import { uiIcon } from './icons.js';
 import { el, fmtNum, safe, titleCase } from './dom.js';
 import { seasonOf } from './Chronicle.js';
+import { earthRegion } from '../world/data/regions.js';
 
 const SEASON_TINT = { Spring: '#9fe08a', Summer: '#ffd36a', Autumn: '#f0a050', Winter: '#bfe0ff' };
 const SEASON_GLYPH = { Spring: 'plant-flowers', Summer: 'sun', Autumn: 'clear-flora', Winter: 'weather-snow' };
@@ -241,7 +242,8 @@ export class TopBar {
 
   refreshWorld() {
     const p = this.game.params;
-    const preset = PRESET_NAMES[p.preset] || titleCase(p.preset || 'world');
+    // (a regional World Map shows its region: "Japan · Seed 7")
+    const preset = (p.preset === 'earth' && p.region && earthRegion(p.region)?.name) || PRESET_NAMES[p.preset] || titleCase(p.preset || 'world');
     this.worldLine.textContent = `${preset} · Seed ${p.seed}`;
   }
 

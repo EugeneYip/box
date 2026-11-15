@@ -116,7 +116,8 @@
         // Name what is being built (a reload from New World or the title leaves a
         // note) and pace the bar by how long this preset and size took last time.
         var q = new URLSearchParams(location.search);
-        var key = 'worldseed.bootms.' + (q.get('preset') || 'continent') + ':' + (q.get('size') || 'auto');
+        var region = q.get('preset') === 'earth' ? q.get('region') : null;
+        var key = 'worldseed.bootms.' + (q.get('preset') || 'continent') + ':' + (region || q.get('size') || 'auto');
         var est = 0,
           note = null;
         try {
@@ -125,13 +126,19 @@
           est = +localStorage.getItem(key) || 0;
         } catch (e) {}
         if (!est) {
-          var sz = +q.get('size') || 256;
+          var sz = region ? 1024 : +q.get('size') || 256;
           var wide = q.get('preset') === 'earth';
           est = 2500 + ((sz * (wide ? sz / 2 : sz)) / 65536) * 2600;
         }
         var sub = document.getElementById('boot-sub');
         var bar = document.getElementById('boot-bar');
         if (note && note.label && Date.now() - note.t < 120000) sub.textContent = note.label;
+        else if (region && /^[a-z-]+$/.test(region))
+          sub.textContent =
+            'Shaping ' +
+            region.replace(/(^|-)([a-z])/g, function (m, d, c) {
+              return (d ? ' ' : '') + c.toUpperCase();
+            });
         bar.style.animation = 'boot-fill ' + Math.round(est) + 'ms cubic-bezier(.25,.7,.35,1) forwards';
         (function poll() {
           if (window.__ready || window.__error || Date.now() - t0 > 30000) {
