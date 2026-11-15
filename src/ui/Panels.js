@@ -553,7 +553,9 @@ export class Modals {
       return el(
         'button',
         { class: 'ws-size', type: 'button', role: 'radio', 'data-size': z.size, 'data-id': z.id, onclick: () => pickSize(wide ? z.id : z.size) },
-        el('span', { class: 'ws-size__box', style: `--s:${s.toFixed(3)}${wide ? `;aspect-ratio:${ar.toFixed(3)}` : ''}` }, el('i')),
+        z.region
+          ? el('span', { class: 'ws-size__box' }, el('i', { style: `width:${(26 * Math.min(1, ar)).toFixed(1)}px;height:${(26 * Math.min(1, 1 / ar)).toFixed(1)}px` }))
+          : el('span', { class: 'ws-size__box', style: `--s:${s.toFixed(3)}${wide ? ';aspect-ratio:2' : ''}` }, el('i')),
         el('b', { text: z.name }),
         el('small', { text: wide ? `${z.w}×${z.h}` : `${z.size}²` }),
       );
