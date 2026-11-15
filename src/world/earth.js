@@ -947,7 +947,14 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
   // scaled from habitable land (typical presets are ~30% habitable land).
   let habitable = 0;
   for (let i = 0; i < N; i++) if (hgt[i] >= SEA_LEVEL && type[i] !== TILE.SNOW && type[i] !== TILE.ICE && type[i] !== TILE.ROCK) habitable++;
-  world.meta = { preset: 'earth', lon0: EARTH_LON0, projection: 'plate-carree', spreadStarts: true, budgetArea: Math.round(habitable / 0.3) };
+  world.meta = {
+    preset: 'earth',
+    lon0: EARTH_LON0,
+    projection: 'plate-carree',
+    spreadStarts: true,
+    budgetArea: Math.round(habitable / 0.3),
+    geo: { region: 'world', lonMin: LEFT, lonMax: LEFT + 360, latMin: -90, latMax: 90, wrap: true }, // see src/world/geo.js
+  };
   world.owner.fill(-1);
   world.building.fill(-1);
   world.fire.fill(0);
