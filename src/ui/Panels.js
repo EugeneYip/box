@@ -527,6 +527,10 @@ export class Modals {
       // (World Map worlds: the real countries and cities, up to this many villages)
       const real = isWidePreset(state.preset);
       civAuto.textContent = real ? 'Auto (real places)' : 'Auto';
+      // (the longer label takes its room from the slider, not from beyond the panel)
+      civ.style.flex = real ? '1 1 auto' : '';
+      civ.style.width = real ? 'auto' : '';
+      civ.style.minWidth = real ? '56px' : '';
       civAuto.dataset.tip = real ? 'Back to the real countries and cities this map starts with' : 'Back to the count this size starts with';
       civAuto.setAttribute('aria-label', state.civsSet ? `Use the automatic count (${real ? 'real places, up to ' : ''}${auto})` : real ? `Real countries and cities, up to ${auto} villages` : 'Automatic count for this size');
     };
