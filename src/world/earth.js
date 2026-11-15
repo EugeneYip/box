@@ -797,7 +797,7 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
   // walled by sea cliffs
   if (!REG)
     for (let i = 0; i < N; i++) {
-      if (!land[i] || landW[i] > 3.2 * scale768 || landW[i] <= 1.01) continue;
+      if (!land[i] || landW[i] > 5 * scale768 || landW[i] <= 1.01) continue;
       const d = dLand[i] / scale768;
       const cap = 0.35 + d * 0.9 + Math.max(0, d - 1.4) * 1.1;
       if (hgt[i] > cap) hgt[i] = cap + (hgt[i] - cap) * 0.25;
@@ -1135,8 +1135,10 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
       else if (icecap[i] || h > snowLine || t < 0.11 + bn * 0.02) tt = TILE.SNOW;
       else if ((h > rockLine && slope > 0.6 + bn * 0.2) || slope > 2.2 + bn * 0.4) tt = TILE.ROCK;
       else if (h > rockLine) tt = t > 0.17 ? TILE.TUNDRA : TILE.SNOW; // alpine meadow, high plateaus
-      else if (dOcT <= beachW + bn * 0.6 && h < 0.9 + bn * 0.3 && slope < 0.7 && t > 0.3) tt = TILE.SAND;
-      else if (dOcT <= 1.5 && slope >= 1.3 && h > 1.2) tt = TILE.ROCK; // sea cliffs
+      // (lone islets are green, not pale sand discs; narrow islands on the
+      // whole Earth keep green shores rather than sea cliffs)
+      else if (dOcT <= beachW + bn * 0.6 && h < 0.9 + bn * 0.3 && slope < 0.7 && t > 0.3 && landW[i] > 1.01) tt = TILE.SAND;
+      else if (dOcT <= 1.5 && slope >= 1.3 && h > 1.2 && (REG || landW[i] > 5 * scale768)) tt = TILE.ROCK; // sea cliffs
       else if (wetland[i] && h < 3.2 && t > 0.24 && m > 0.35) tt = TILE.SWAMP;
       else if (m > 0.86 && h < 1.2 && dWater[i] < 3 && t > 0.3) tt = TILE.SWAMP;
       else tt = biome(t + bn * 0.02 + (hash2(x, y, seed) - 0.5) * 0.01, m - bn * 0.04);
