@@ -17,7 +17,7 @@ const REGION_MASKS = { 'great-east-asia': MASK_GEA, 'asia-mainland': MASK_AM, ja
 // (the whole Earth's 22-unit Everest). Regional maps keep that scale, a
 // little taller where the zoom is finest so Taiwan's and Japan's ranges still
 // stand up as mountains; climate reads heights divided by this factor.
-const REGION_VK = { taiwan: 1.6, japan: 1.25 };
+const REGION_VK = { taiwan: 1.4, japan: 1.35 };
 const KM_UNITS = 2.7;
 
 // World Map preset ('earth'): the real Earth on a 2:1 plate carree world,
@@ -587,16 +587,18 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
       m = 0.84 + 0.16 * ridged(nRidge, x / 5 + 3, y / 5 - 1);
     } else {
       env = Math.pow(1 - t, 1.3) * (1 + 1.3 * t);
-      // spurs and valleys running down each flank from the crest: ridged
-      // noise in (along the range, out from the crest) space, stretched
-      // across the range and warped so the valleys wander
-      const lam = Math.max(6, Math.min(16, wt * 0.24)); // valley spacing (tiles)
-      const along = sAl * tpd + nWarp(x / 23 + 5, y / 23 - 3) * lam * 0.55,
+      // spurs and valleys running down each flank from the crest: a comb of
+      // rounded spurs across the range (warped so they bend and branch),
+      // roughened by ridged noise in (along the range, out from the crest)
+      // space; spacing grows with the range's width
+      const lam = Math.max(7, Math.min(20, wt * 0.28)); // valley spacing (tiles)
+      const along = sAl * tpd + nWarp(x / 23 + 5, y / 23 - 3) * lam * 0.45,
         across = t * wt;
       const sOff = (f0.pts[0][0] % 7) + (side > 0 ? 0 : 31.7);
+      const ph = (along + nWarp(along / (1.8 * lam) + sOff, across / (2.4 * lam) - 3.7) * lam * 0.9) / lam;
+      const comb = Math.pow(0.5 + 0.5 * Math.cos(ph * Math.PI * 2), 0.8);
       const sp = ridged(nWarp, along / lam + sOff, across / (lam * 2.6) + 4.3);
-      const sp2 = ridged(nRough, along / (lam * 0.6) - sOff, across / (lam * 1.3) + 8.1);
-      const spur = clamp01(0.72 * sp + 0.28 * sp2);
+      const spur = clamp01(0.62 * comb + 0.38 * sp);
       // summits and saddles along the crest, and broad massifs
       const crest = 0.68 + 0.32 * ridged(nRidge, along / (lam * 1.6) + 13, sOff * 0.3 + across / (lam * 4));
       const mass = 0.82 + 0.18 * fbm(nHills, x / (lam * 5) + 7, y / (lam * 5) - 2, 2);
@@ -654,7 +656,7 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
   // smooth the range layer on its own (tile-to-tile spikes), then merge
   {
     const src = rng.slice();
-    for (let pass = 0; pass < (REG ? 0 : 2); pass++) {
+    for (let pass = 0; pass < (REG ? 1 : 2); pass++) {
       const a = pass ? rng.slice() : src;
       for (let y = 1; y < H - 1; y++)
         for (let x = 1; x < W - 1; x++) {
