@@ -50,7 +50,7 @@ export const unlocks = {
     if (f.has(key)) return false;
     f.add(key);
     const what = FIRST[key];
-    if (what) this._note(`✨ ${/^the /i.test(k.name) ? k.name : 'The ' + k.name} ${what}`, 'good', pos || this._kingdomPos?.(k), 'first' + k.id + key, 1);
+    if (what) this._note(`✨ ${k.plain || /^the /i.test(k.name) ? k.name : 'The ' + k.name} ${what}`, 'good', pos || this._kingdomPos?.(k), 'first' + k.id + key, 1);
     return true;
   },
 

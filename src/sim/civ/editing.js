@@ -68,7 +68,7 @@ export const editing = {
     k.name = n;
     k.base = n;
     this._mark(k, 'name');
-    this._history(`${/^the /i.test(old) ? old : 'The ' + old} shall now be known as ${n}.`, 'info', this._kingdomPos?.(k));
+    this._history(`${k.plain || /^the /i.test(old) ? old : 'The ' + old} shall now be known as ${n}.`, 'info', this._kingdomPos?.(k));
     return this._edited('kingdom', id, 'name', n);
   },
 
@@ -276,7 +276,7 @@ export const editing = {
       let leader = null;
       for (const u of vil.members) if (u.alive && u.age >= ADULT_AGE + 2 && (!leader || u.age > leader.age)) leader = u;
       if (leader) this.crown(K, leader);
-      this._note(`⚡ By divine will, ${vil.name} is freed from ${this._kn(old)}: the ${K.name}`, 'info', { x: vil.cx, z: vil.cz });
+      this._note(`⚡ By divine will, ${vil.name} is freed from ${this._kn(old)}: ${this._theK(K)}`, 'info', { x: vil.cx, z: vil.cz });
     } else {
       const K = this._liveKingdom(kid);
       if (!K || K.id === vil.kingdom) return false;

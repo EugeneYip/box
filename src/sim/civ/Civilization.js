@@ -9,6 +9,7 @@ import { editing } from './editing.js';
 import { unlocks } from './unlocks.js';
 import { tech, ERAS, TECHS, techById } from './tech.js';
 import { culture, TRAIT_INFO } from './culture.js';
+import { realms } from './realms.js';
 
 // Civilization simulation: villages that grow from hamlets into walled
 // cities, kingdoms with rulers, borders, diplomacy and war.
@@ -20,7 +21,7 @@ import { culture, TRAIT_INFO } from './culture.js';
 //   game.civ.kingdomName(id) -> string
 //   game.civ.kingdomColor(id) -> hex number
 //   game.civ.foundVillage(tx, ty, opts?) -> village|null   (spawns settlers)
-//       opts: {culture, kingdom, settlers, starter, silent}
+//       opts: {culture, kingdom, settlers, starter, silent, name}
 //   game.civ.damageArea(x, z, radius, amount, cause)       (buildings take damage / burn)
 //   game.civ.seedInitial(n)              create n starting settlements
 // Building object fields read by BuildingRenderer:
@@ -123,6 +124,7 @@ export class Civilization {
     this.rockHits = new Map();
     this.regrow = [];
     this.usedNames = new Set();
+    this._places = null; // real places on a World Map world (realms.js)
     this._nextBid = 1;
     this._nextPlot = 1;
     this._nextArmy = 1;
@@ -336,8 +338,17 @@ export class Civilization {
     const culture = opts.culture || this._cultureAt(hx + 1, hy + 1);
     let k = opts.kingdom != null ? this.kingdoms[opts.kingdom] : null;
     const newKingdom = !k || !k.alive;
-    const vname = placeName(culture, this.rng, this.usedNames);
-    if (newKingdom) k = this.createKingdom(culture, { baseName: vname, x: hx + 1.5, z: hy + 1.5 });
+    // World Map: villages take the real names of the cities around them
+    const vname = opts.name || placeName(culture, this.rng, this.usedNames);
+    if (opts.name) this.usedNames.add(opts.name);
+    if (newKingdom) {
+      // a real realm (World Map) keeps its plain name: "Japan", not "Kingdom of Japan"
+      k = this.createKingdom(culture, { baseName: opts.realmName || vname, name: opts.realmName, color: opts.color, x: hx + 1.5, z: hy + 1.5 });
+      if (opts.realmName) {
+        k.plain = true;
+        k.realm = opts.realmIdx ?? -1;
+      }
+    }
     const v = this._newVillage(k, culture, hx, hy, vname);
 
     // hall faces the most open direction
@@ -412,7 +423,7 @@ export class Civilization {
       let ruler = null;
       for (const u of v.members) if (u.age >= ADULT_AGE + 2 && (!ruler || u.age > ruler.age)) ruler = u;
       if (ruler) this.crown(k, ruler);
-      if (!opts.silent) this._note(`The ${k.name} rises at ${v.name}`, 'good', { x: v.cx, z: v.cz });
+      if (!opts.silent) this._note(`${k.plain ? k.name : 'The ' + k.name} rises at ${v.name}`, 'good', { x: v.cx, z: v.cz });
       if (!opts.silent) this._sfx('bell', v.cx, v.cz, 0, true);
     }
     this._assignJobs(v);
@@ -447,6 +458,12 @@ export class Civilization {
     n = n ?? 3;
     if (!(n > 0)) return;
     this._computeLand();
+    // World Map: real countries at their capitals and largest cities
+    if (this.seedRealRealms(explicit ? n : null)) {
+      this._territory();
+      this.world.flushDirty?.();
+      return;
+    }
     const sites = this._pickStartSites(n);
     for (const s of sites) {
       this.foundVillage(s.tx, s.ty, { culture: s.culture, starter: true, settlers: 10 + this.rng.int(0, 2), silent: true });
@@ -581,7 +598,7 @@ export class Civilization {
     const kk = this.kingdoms[nv.kingdom];
     if (independent && kk) {
       kk.parent = exp.kingdom;
-      this._note(`Settlers from ${from?.name || 'afar'} found the ${kk.name}`, 'good', { x: nv.cx, z: nv.cz });
+      this._note(`Settlers from ${from?.name || 'afar'} found ${this._theK(kk)}`, 'good', { x: nv.cx, z: nv.cz });
       this._noteT.set('settle' + exp.kingdom, this.game.time.total);
     } else this._note(`Settlers found ${nv.name}`, 'good', { x: nv.cx, z: nv.cz }, 'settle' + nv.kingdom, 150);
   }
@@ -2667,5 +2684,5 @@ export class Civilization {
   }
 }
 
-Object.assign(Civilization.prototype, planner, brain, politics, tech, culture, editing, unlocks);
+Object.assign(Civilization.prototype, planner, brain, politics, tech, culture, editing, unlocks, realms);
 export { ERAS, TECHS, techById, TRAIT_INFO };

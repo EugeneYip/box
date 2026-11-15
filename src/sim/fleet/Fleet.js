@@ -134,7 +134,7 @@ export class Fleet {
     const k = this.kingdom(kid);
     if (!k) return 'a lost realm';
     const n = k.name || 'Kingdom';
-    return /^the /i.test(n) ? n : 'the ' + n;
+    return k.plain || /^the /i.test(n) ? n : 'the ' + n; // real realms (World Map) carry plain names
   }
   atWar(a, b) {
     return a !== b && a >= 0 && b >= 0 && !!this.game.civ?.atWar?.(a, b);
