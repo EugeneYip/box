@@ -693,10 +693,12 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
     }
     for (let i = 0; i < N; i++) {
       if (!land[i] || !rangeMask[i] || cap[i] >= hgt[i]) continue;
-      const c = cap[i] + fbm(nRough, U(i) / 0.9 + 21, V(i) / 0.9 - 4, 2) * 1.0;
-      // (summits of `peaks` ranges keep part of their height above the ramp,
-      // so a great front reads as a field of peaks over spurs, not a wall)
-      if (c < hgt[i]) hgt[i] = c + (hgt[i] - c) * 0.55 * peakK[i];
+      // (on `peaks` ranges the capped face is scored by spurs and gullies,
+      // and summits keep part of their height above the ramp, so a great
+      // front reads as a field of peaks over spurs, not one wall)
+      const pk = peakK[i];
+      const c = cap[i] + fbm(nRough, U(i) / 0.9 + 21, V(i) / 0.9 - 4, 2) * 1.0 + (pk ? (ridged(nRidge, U(i) / 0.6 + 3, V(i) / 0.6 - 8) - 0.42) * 3.2 * pk : 0);
+      if (c < hgt[i]) hgt[i] = c + (hgt[i] - c) * 0.55 * pk;
     }
   };
   limitSlopes();
@@ -1049,6 +1051,17 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
         const ek = 1 - smoothstep(ringY, ringY + 10 * scale768, Math.min(edgeDist(x, y), Math.min(x, W - 1 - x)));
         if (ek > 0) temp[y * W + x] = Math.max(temp[y * W + x], 0.42 * ek + temp[y * W + x] * (1 - ek));
       }
+  // The water's cold slate tint follows temperature: over open sea it fades
+  // out gradually across a broad band toward the border, so the polar seas
+  // meet the outer ocean beyond the map without a straight line where the
+  // tint used to stop (the top and bottom of the whole Earth)
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++) {
+      const i = y * W + x;
+      if (hgt[i] >= SEA_LEVEL) continue;
+      const ek = Math.pow(1 - smoothstep(ringY, ringY + (REG ? 90 : 70 * scale768), edgeDist(x, y)), 1.5);
+      if (ek > 0) temp[i] = Math.max(temp[i], temp[i] + (0.52 - temp[i]) * ek);
+    }
   // rivers and lakes water their banks (green valleys through dry land)
   for (let i = 0; i < N; i++) {
     if (hgt[i] < SEA_LEVEL) continue;
