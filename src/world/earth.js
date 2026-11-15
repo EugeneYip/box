@@ -241,11 +241,12 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
   // detail sets for this zoom (which may replace the whole-Earth ranges)
   const SETS = REG ? REGION_SETS.filter((s) => kmTile <= s.maxKm && s.box[2] >= GEO.lonMin && s.box[0] <= GEO.lonMax && s.box[3] >= GEO.latMin && s.box[1] <= GEO.latMax) : [];
   const inBox = (b, p) => p[0] >= b[0] && p[0] <= b[2] && p[1] >= b[1] && p[1] <= b[3];
-  const kmPts = (f) => ({ ...f, h: (f.km ?? 0) * KM_UNITS, pts: f.pts.map((p) => (p.length > 2 ? [p[0], p[1], p[2] * KM_UNITS, ...p.slice(3)] : p)) });
-  const fromSets = (key, km = false) => SETS.flatMap((s) => (s[key] || []).map((f) => (km ? kmPts(f) : f)));
-  const WORLD_RANGES = REG ? RANGES.filter((f) => !SETS.some((s) => s.skipWorld && inBox(s.box, f.pts[0]))) : RANGES;
-  const F_RANGES = [...WORLD_RANGES, ...fromSets('ranges', true)];
-  const F_PLATEAUS = [...PLATEAUS, ...fromSets('plateaus', true)];
+  // (km heights become game units at the set's scale: `ku` units per km)
+  const kmPts = (f, ku) => ({ ...f, h: (f.km ?? 0) * ku, pts: f.pts.map((p) => (p.length > 2 ? [p[0], p[1], p[2] * ku, ...p.slice(3)] : p)) });
+  const fromSets = (key, km = false) => SETS.flatMap((s) => (s[key] || []).map((f) => (km ? kmPts(f, s.ku ?? KM_UNITS) : f)));
+  const keepWorld = (f) => !SETS.some((s) => s.skipWorld && inBox(s.box, f.pts[0]));
+  const F_RANGES = [...(REG ? RANGES.filter(keepWorld) : RANGES), ...fromSets('ranges', true)];
+  const F_PLATEAUS = [...(REG ? PLATEAUS.filter(keepWorld) : PLATEAUS), ...fromSets('plateaus', true)];
   const F_BASINS = [...BASINS, ...fromSets('basins')];
   const F_SHELVES = [...SHELVES, ...fromSets('shelves')];
   const F_MOISTURE = [...MOISTURE, ...fromSets('moisture')];
@@ -551,6 +552,7 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
   }
   // mountain ranges: ridged crests, several summits along each range
   const rng = new Float32Array(N);
+  const iceR = new Uint8Array(REG ? N : 0);
   // ranges keep at least ~2 tiles of half-width on any map size, so narrow
   // ones (Taiwan, the Cascades) are not single-tile spikes the blur flattens
   const minRangeW = (REG ? 3 : 2.2) / tpd,
@@ -579,12 +581,12 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
       // spurs and valleys running down each flank from the crest: ridged
       // noise in (along the range, out from the crest) space, stretched
       // across the range and warped so the valleys wander
-      const lam = Math.max(5, Math.min(16, wt * 0.24)); // valley spacing (tiles)
+      const lam = Math.max(6, Math.min(16, wt * 0.24)); // valley spacing (tiles)
       const along = sAl * tpd + nWarp(x / 23 + 5, y / 23 - 3) * lam * 0.55,
         across = t * wt;
       const sOff = (f0.pts[0][0] % 7) + (side > 0 ? 0 : 31.7);
       const sp = ridged(nWarp, along / lam + sOff, across / (lam * 2.6) + 4.3);
-      const sp2 = ridged(nRough, along / (lam * 0.45) - sOff, across / (lam * 1.1) + 8.1);
+      const sp2 = ridged(nRough, along / (lam * 0.6) - sOff, across / (lam * 1.3) + 8.1);
       const spur = clamp01(0.72 * sp + 0.28 * sp2);
       // summits and saddles along the crest, and broad massifs
       const crest = 0.68 + 0.32 * ridged(nRidge, along / (lam * 1.6) + 13, sOff * 0.3 + across / (lam * 4));
@@ -597,6 +599,7 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
     const val = Math.min(21.5, h * VK * env * m * coastK * (0.3 + 0.7 * edgeCut[i]));
     if (val > rng[i]) rng[i] = val;
     if (env > rangeMask[i]) rangeMask[i] = env;
+    if (f.ice && env > 0.3) iceR[i] = 1; // ice caps (Iceland's glaciers)
   };
   for (const f0 of F_RANGES) {
     const mw = f0.cone ? minConeW : minRangeW;
@@ -640,7 +643,7 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
   // smooth the range layer on its own (tile-to-tile spikes), then merge
   {
     const src = rng.slice();
-    for (let pass = 0; pass < (REG ? 1 : 2); pass++) {
+    for (let pass = 0; pass < (REG ? 0 : 2); pass++) {
       const a = pass ? rng.slice() : src;
       for (let y = 1; y < H - 1; y++)
         for (let x = 1; x < W - 1; x++) {
@@ -650,13 +653,14 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
         }
     }
   }
+  options.debug?.({ rng: rng.slice(), base: hgt.slice() });
   for (let i = 0; i < N; i++) if (rng[i] > 0 && land[i]) hgt[i] = smax(hgt[i], rng[i], 1.0);
   // no sheer ramparts: inland, the ground may rise at most ~2.4 units per tile
   // (chamfer passes over land neighbours only, so sea cliffs keep their drop).
   // Great fronts (the Himalaya above the Ganges) become stepped slopes of spurs
   // and summits instead of one wall hundreds of pixels tall.
   const limitSlopes = () => {
-    const S = REG ? 1.6 : 1.5 / Math.max(0.6, scale768),
+    const S = REG ? 2.8 : 1.5 / Math.max(0.6, scale768),
       SD = S * 1.414;
     const minDL = REG ? 4 : 4 * scale768;
     const cap = new Float32Array(N).fill(1e9);
@@ -702,6 +706,7 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
     return c;
   };
   const icecap = new Uint8Array(N);
+  if (REG) for (let i = 0; i < N; i++) if (iceR[i] && land[i]) icecap[i] = 1;
   for (let y = 0; y < H; y++) {
     const lat = latY[y];
     if (lat > -60 && lat < 59) continue;
