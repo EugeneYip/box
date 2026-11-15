@@ -8,6 +8,7 @@
 //              lies in the box (the set redraws them in detail)
 //   ku:        game units per km of elevation (default 2.7; the high Asian
 //              sets use the whole-Earth Himalaya's 2.1)
+//   widen:     factor on the half-widths of the set's ranges (not cones)
 // Ranges may carry ice: true (an ice cap: snow-covered whatever its height).
 // Units: points are [lon, lat] or [lon, lat, km] or [lon, lat, km, halfWidth]
 // with km the real elevation in kilometres (the generator converts it to game
@@ -80,6 +81,7 @@ export const REGION_SETS = [
     maxKm: 4,
     box: [127.5, 29.5, 147.5, 46.5],
     skipWorld: true,
+    widen: 1.6, // ranges a little broader than life, so the Alps have room for spurs and valleys
     ranges: [
       // Hokkaido: Hidaka, Daisetsu and Tokachi, Kitami, Shiretoko, Oshima, Yotei, Akan
       { w: 0.13, pts: [[142.5, 43.1, 1.2], [142.72, 42.75, 2.05], [143.05, 42.3, 1.6], [143.25, 41.97, 0.5]] },

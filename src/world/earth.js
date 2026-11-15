@@ -242,8 +242,12 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
   const SETS = REG ? REGION_SETS.filter((s) => kmTile <= s.maxKm && s.box[2] >= GEO.lonMin && s.box[0] <= GEO.lonMax && s.box[3] >= GEO.latMin && s.box[1] <= GEO.latMax) : [];
   const inBox = (b, p) => p[0] >= b[0] && p[0] <= b[2] && p[1] >= b[1] && p[1] <= b[3];
   // (km heights become game units at the set's scale: `ku` units per km)
-  const kmPts = (f, ku) => ({ ...f, h: (f.km ?? 0) * ku, pts: f.pts.map((p) => (p.length > 2 ? [p[0], p[1], p[2] * ku, ...p.slice(3)] : p)) });
-  const fromSets = (key, km = false) => SETS.flatMap((s) => (s[key] || []).map((f) => (km ? kmPts(f, s.ku ?? KM_UNITS) : f)));
+  // (and a set's `widen` broadens its ranges, not its volcano cones)
+  const kmPts = (f, ku, wk = 1) => {
+    const k = f.cone ? 1 : wk;
+    return { ...f, h: (f.km ?? 0) * ku, w: f.w != null ? f.w * k : f.w, pts: f.pts.map((p) => (p.length > 2 ? [p[0], p[1], p[2] * ku, ...(p.length > 3 ? [p[3] * k] : [])] : p)) };
+  };
+  const fromSets = (key, km = false) => SETS.flatMap((s) => (s[key] || []).map((f) => (km ? kmPts(f, s.ku ?? KM_UNITS, s.widen ?? 1) : f)));
   const keepWorld = (f) => !SETS.some((s) => s.skipWorld && inBox(s.box, f.pts[0]));
   const F_RANGES = [...(REG ? RANGES.filter(keepWorld) : RANGES), ...fromSets('ranges', true)];
   const F_PLATEAUS = [...(REG ? PLATEAUS.filter(keepWorld) : PLATEAUS), ...fromSets('plateaus', true)];
@@ -430,9 +434,9 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
           edgeCut[i] = 1;
           continue;
         }
-        // 6-32 tiles in: broad bays and headlands, with smaller coves
+        // 6-22 tiles in: broad bays and headlands, with smaller coves
         const bay = clamp01(fbm(nWarp, x / 53 + 3.1, y / 53 - 8.3, 3) * 0.9 + 0.5);
-        const cut = ringX + 2 + bay * bay * 26 + nWarp(x / 11 - 4, y / 11 + 2) * 2.2;
+        const cut = ringX + 2 + bay * bay * 16 + nWarp(x / 11 - 4, y / 11 + 2) * 2.2;
         if (e < cut) land[i] = 0;
         edgeCut[i] = smoothstep(cut, cut + 28, e);
       }

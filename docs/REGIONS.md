@@ -13,23 +13,27 @@ never real flags.
 | Large | `large` | whole Earth 512 × 256 | kept, not the default |
 | Huge | `huge` | whole Earth 768 × 384 | kept, not the default |
 | **Vast** | `vast` | whole Earth 1024 × 512 | **default on desktop** |
-| Great East Asia | `great-east-asia` | regional, Vast-class | East and Southeast Asia |
-| Asia Mainland | `asia-mainland` | regional, Vast-class | continental Asia |
-| Japan | `japan` | regional, Vast-class | the Japanese archipelago (south coast of Korea at the edge) |
-| Taiwan | `taiwan` | regional, Vast-class | Taiwan, Penghu, Green Island and Orchid Island |
-| Europe | `europe` | regional, Vast-class | Iceland to the Urals, Scandinavia to the North African coast |
-| North America | `north-america` | regional, Vast-class | Alaska and Canada to Panama and the Caribbean |
+| Great East Asia | `great-east-asia` | 768 × 704, 73–150°E, 11.3°S–54.3°N, ~10 km tiles | East and Southeast Asia |
+| Asia Mainland | `asia-mainland` | 896 × 576, 44.3–145.7°E, 5–60°N, ~11 km tiles | continental Asia |
+| Japan | `japan` | 704 × 768, 128–146.5°E, 29.9–45.9°N, ~2.3 km tiles | the Japanese archipelago (south coast of Korea at the edge) |
+| Taiwan | `taiwan` | 640 × 832 (portrait), 119–122.4°E, 21.6–25.7°N, ~0.5 km tiles | Taiwan, Penghu, Green Island and Orchid Island (a corner of the Fujian coast at the top left) |
+| Europe | `europe` | 832 × 640, 26.5°W–63.5°E, 32.2–73.8°N, ~7 km tiles | Iceland to the Urals, Scandinavia to the North African coast |
+| North America | `north-america` | 832 × 640, 170–50°W, 6.2–75.8°N, ~12 km tiles | Alaska and Canada to Panama and the Caribbean |
+
+The windows and sizes live in `src/world/data/regions.js` (shared by the game and the mask tool).
 
 - "Vast-class": about the same tile count as Vast (1024 × 512 ≈ 524k tiles). Each regional map picks its own width and height so that, at the window's middle latitude, one tile spans about the same distance east–west as north–south (so Europe and Japan keep their real shapes). A tall region such as Taiwan gets a portrait map. Dimensions must suit the terrain chunking.
-- Vast and the regional maps keep Vast's "desktop only" rule on touch devices. Touch devices default to the largest whole-Earth size they allow.
-- URL: `?preset=earth&size=1024` for whole-Earth sizes; `?preset=earth&region=<id>` for a regional map (size is then implied). New World and the title screen write these and reload as they do today. Loading labels say e.g. "Shaping Japan".
+- Vast and the regional maps keep Vast's "desktop only" rule on touch devices. Touch devices keep Large as their default (a regional URL on a touch device falls back to it).
+- URL: `?preset=earth&size=1024` for whole-Earth sizes; `?preset=earth&region=<id>` for a regional map (size is then implied: `params.size` is 1024 and `params.region` the id). New World and the title screen write these and reload as they do today; a change of region always reloads, even between maps of the same dimensions (Europe and North America). Loading labels say e.g. "Shaping Japan"; the top bar reads "Japan · Seed 7".
 
 ## 2. Geography (owner: Geography — `src/world/earth.js`, `src/world/geo.js`, `src/world/data/*`, `tools/*`)
 
-- `world.meta.geo = { region, lonMin, lonMax, latMin, latMax, wrap }` on every World Map world (`region: 'world'` for the whole Earth, `wrap: true` only there). `src/world/geo.js` exports `geoInfo(world)`, `geoRegion(world)`, `geoLonLat(world, x, z) → [lon, lat]` and `geoTile(world, lon, lat) → {x, z} | null` (null outside the window). Other modules use only these.
-- Regional coastlines come from Natural Earth 1:10m land (public domain; npm package `@geo-maps/earth-lands-10m`), rasterised by a build tool into compact per-region masks under `src/world/data/`, like `earthMask.js`. The game never ships the raw GeoJSON.
+- `world.meta.geo = { region, lonMin, lonMax, latMin, latMax, wrap }` on every World Map world (`region: 'world'` for the whole Earth, `wrap: true` only there); `world.meta.region` repeats the id and `world.meta.kmPerTile` gives the tile size. `src/world/geo.js` exports `geoInfo(world)`, `geoRegion(world)`, `geoLonLat(world, x, z) → [lon, lat]`, `geoTile(world, lon, lat) → {x, z} | null` (null outside the window) and `geoKmPerTile(world, x?, z?)`. Other modules use only these.
+- Land that runs off a regional window ends in a ragged coast 6–22 tiles inside the border (the map keeps a deep-sea ring all round, as the whole Earth does), so a city very close to a window's edge may have no land under it.
+- `world.meta.budgetArea` on regional maps is habitable land / 0.3, capped at 440k (the Vast whole Earth is about 345k), so a map of mostly land does not run several times Vast's population.
+- Regional coastlines come from Natural Earth 1:10m (public domain): the union of the 1:10m admin-0 countries (npm `which-country-ne-10m`), with the larger 1:50m lakes (npm `sane-topojson`), rasterised at twice the tile resolution by `tools/region-masks.mjs` into `src/world/data/mask-<id>.js` (11–39 KB each). (`@geo-maps/earth-lands-10m` turned out to be OpenStreetMap data under the ODbL, so it was not used.) The game never ships the source data.
 - Relief and climate reuse the World Map pipeline (`earthFeatures.js` is authored in longitude and latitude), scaled for the regional zoom so that ranges read as mountains, not cliffs or bumps, with extra regional detail where the whole-Earth data is too coarse (for example Taiwan's Central Mountain Range and western plain; the Japanese Alps; the Alps, Pyrenees, Carpathians and Scandinavian mountains; the Rockies, Sierra Nevada, Appalachians and Sierra Madre; the Himalaya, a rolling Tibetan plateau, Tian Shan and Altai).
-- Lakes and rivers at regional scale: the major ones only, carved as today.
+- Lakes and rivers at regional scale: the major ones only, carved as today (lakes from the mask plus a few the 1:50m data lacks, such as Biwa; rivers from earthFeatures.js plus regional ones in `src/world/data/regionFeatures.js`, which also holds the regional relief detail).
 - The camera, minimap and Overview fit any aspect, including portrait maps; the World Map is never rotated.
 
 ## 3. Real realms and villages (owner: Civ — `src/sim/civ/*`, data in `src/sim/civ/places/*`)
