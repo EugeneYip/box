@@ -6,7 +6,8 @@ import { LAWS, LAW_CATEGORIES, lawDef } from '../core/laws.js';
 import { agesPanel } from './Ages.js';
 import { techPanel } from './TechPanel.js';
 import { eraNames, traitDef } from './depth.js';
-import { WORLD_SIZES, EARTH_SIZES, EARTH_DEFAULT_SIZE, IS_TOUCH, isWidePreset, worldDims, sizeForPreset } from '../core/params.js';
+import { WORLD_SIZES, EARTH_DEFAULT_SIZE, isWidePreset, worldDims, sizeForPreset, earthChoices, earthChoice, earthLabel } from '../core/params.js';
+import { earthRegion } from '../world/data/regions.js';
 import { WORLD_PRESET_IDS } from '../world/worldgen.js';
 
 const SIZE_NOTES = {
@@ -16,23 +17,45 @@ const SIZE_NOTES = {
   384: 'Room for many rival realms.',
   512: 'Epic scale. Best on desktop.',
 };
-// World Map sizes (2:1, keyed by width)
+// World Map choices (keyed by id): the whole Earth at three sizes, then the regional maps
 const EARTH_SIZE_NOTES = {
-  512: 'Large: 512 × 256 tiles. Lighter, and quicker to fill.',
-  768: 'Huge: 768 × 384 tiles. The recommended World Map.',
-  1024: 'Vast: 1024 × 512 tiles. Desktop only, about twice the work of Huge.',
+  large: 'Large: 512 × 256 tiles. Lighter, and quicker to fill.',
+  huge: 'Huge: 768 × 384 tiles. A lighter whole Earth.',
+  vast: 'Vast: 1024 × 512 tiles. The recommended World Map. Desktop only.',
+  'great-east-asia': 'East and Southeast Asia, from Japan to Java.',
+  'asia-mainland': 'Continental Asia, from the Caucasus to Japan.',
+  japan: 'The Japanese archipelago, with the coast of Korea.',
+  taiwan: 'Taiwan, Penghu, Green Island and Orchid Island.',
+  europe: 'Iceland to the Urals, Scandinavia to the North African coast.',
+  'north-america': 'Alaska and Canada to Panama and the Caribbean.',
 };
+function earthNote(z) {
+  const r = z.region ? earthRegion(z.region) : null;
+  if (!r) return EARTH_SIZE_NOTES[z.id] || `${z.w} × ${z.h} tiles`;
+  const km = r.km >= 2 ? Math.round(r.km) : r.km.toFixed(1);
+  return `${z.name}: ${EARTH_SIZE_NOTES[z.id] || ''} ${z.w} × ${z.h} tiles, about ${km} km each. Desktop only.`;
+}
 // The starting-village count Civ picks when none is given (Civilization budgets():
 // 3 x (area / 256²)^0.7). The World Map counts habitable land only: its ratio
 // is read from the current World Map when there is one, else about 0.83 of the rectangle.
-export function autoStartVillages(game, size, preset) {
-  const d = worldDims(size, preset);
+// World Map worlds start with real countries at their capitals and largest
+// cities instead (src/sim/civ/realms.js seedRealRealms): at most
+// max(realms, min(0.75 x the village budget, 26 x scale)) villages, where
+// scale is 1 on Vast and the regional maps; fewer when a region has fewer
+// places that land on this map.
+export function autoStartVillages(game, size, preset, region = null) {
+  const d = worldDims(size, preset, region);
   let area = d.w * d.h;
   if (isWidePreset(preset)) {
     const W = game?.world;
     const meta = W?.meta;
     const k = meta?.budgetArea && W.w && W.h && isWidePreset(meta.preset || game?.params?.preset) ? meta.budgetArea / (W.w * W.h) : 0.83;
     area *= k;
+    const a = area / 65536;
+    const humans = Math.min(900, Math.round(850 * Math.pow(a, 0.04)));
+    const villages = Math.round(Math.min(30 * Math.pow(a, 0.55), humans / 26));
+    const s = Math.sqrt((d.w * d.h) / (1024 * 512));
+    return Math.max(Math.max(4, Math.round(20 * s)), Math.round(Math.min(0.75 * villages, 26 * s)));
   }
   return Math.max(1, Math.round(3 * Math.pow(area / 65536, 0.7)));
 }
@@ -185,7 +208,7 @@ export const PRESETS = [
   { id: 'pangaea', name: 'Pangaea', blurb: 'A single vast supercontinent' },
   { id: 'archipelago', name: 'Archipelago', blurb: 'Chains of scattered islands' },
   { id: 'islands', name: 'Islands', blurb: 'A few lonely island realms' },
-  { id: 'earth', name: 'World Map', blurb: 'Our planet, Pacific-centred · Huge 2:1', size: EARTH_DEFAULT_SIZE },
+  { id: 'earth', name: 'World Map', blurb: 'Our planet, whole or by region', size: EARTH_DEFAULT_SIZE },
 ].filter((p) => WORLD_PRESET_IDS.includes(p.id)); // hide presets the generator cannot build yet
 const LAND = {
   continent:
@@ -433,7 +456,10 @@ export class Modals {
   newWorld() {
     const g = this.game;
     const explicitCivs = !!g.params.raw?.has?.('civs');
-    const state = this.nwState && this.reopenNW ? this.nwState : { seed: String(g.params.seed), preset: g.params.preset || 'continent', civs: clamp(g.params.civs ?? 3, 0, 12), civsSet: explicitCivs, size: g.world.w };
+    const state =
+      this.nwState && this.reopenNW
+        ? this.nwState
+        : { seed: String(g.params.seed), preset: g.params.preset || 'continent', civs: clamp(g.params.civs ?? 3, 0, 12), civsSet: explicitCivs, size: isWidePreset(g.params.preset) ? g.params.size : g.world.w, earth: earthChoice(g.params.size, g.params.region)?.id || null };
     this.reopenNW = false;
     const seedIn = el('input', { class: 'ws-input', type: 'text', inputmode: 'numeric', value: state.seed, 'aria-label': 'World seed', autofocus: true, spellcheck: 'false' });
     seedIn.addEventListener('input', () => (state.seed = seedIn.value));
@@ -470,8 +496,10 @@ export class Modals {
             });
             // the World Map has its own 2:1 sizes: swap the size cards, mapping the
             // size the same way the game does (Huge World Map <-> Huge square)
-            if (isWidePreset(from) !== isWidePreset(p.id)) buildSizes(sizeForPreset(state.size, from, p.id));
-            else syncCivs();
+            if (isWidePreset(from) !== isWidePreset(p.id)) {
+              const size = sizeForPreset(state.size, from, p.id);
+              buildSizes(isWidePreset(p.id) ? earthChoice(size)?.id : size);
+            } else syncCivs();
           },
         },
         el('span', { class: 'ws-preset__thumb', html: presetThumb(p.id) }),
@@ -484,8 +512,10 @@ export class Modals {
     const civOut = el('output', { class: 'ws-row__val' });
     const civ = el('input', { type: 'range', class: 'ws-range', min: 0, max: 8, step: 1, 'aria-label': 'Starting villages' });
     const civAuto = el('button', { class: 'ws-civauto', type: 'button', 'data-tip': 'Back to the count this size starts with', text: 'Auto' });
+    const earthZ = () => earthChoices().find((z) => z.id === state.earth) || earthChoice(EARTH_DEFAULT_SIZE);
     const syncCivs = () => {
-      const auto = autoStartVillages(g, state.size, state.preset);
+      const ez = isWidePreset(state.preset) ? earthZ() : null;
+      const auto = autoStartVillages(g, ez ? ez.size : state.size, state.preset, ez?.region);
       const max = Math.max(8, auto, state.civsSet ? state.civs : 0);
       civ.max = max;
       const v = state.civsSet ? state.civs : auto;
@@ -494,7 +524,15 @@ export class Modals {
       civOut.textContent = String(v);
       civAuto.classList.toggle('is-on', !state.civsSet);
       civAuto.disabled = !state.civsSet;
-      civAuto.setAttribute('aria-label', state.civsSet ? `Use the automatic count (${auto})` : 'Automatic count for this size');
+      // (World Map worlds: the real countries and cities, up to this many villages)
+      const real = isWidePreset(state.preset);
+      civAuto.textContent = real ? 'Auto (real places)' : 'Auto';
+      // (the longer label takes its room from the slider, not from beyond the panel)
+      civ.style.flex = real ? '1 1 auto' : '';
+      civ.style.width = real ? 'auto' : '';
+      civ.style.minWidth = real ? '56px' : '';
+      civAuto.dataset.tip = real ? 'Back to the real countries and cities this map starts with' : 'Back to the count this size starts with';
+      civAuto.setAttribute('aria-label', state.civsSet ? `Use the automatic count (${real ? 'real places, up to ' : ''}${auto})` : real ? `Real countries and cities, up to ${auto} villages` : 'Automatic count for this size');
     };
     civ.addEventListener('input', () => {
       state.civs = +civ.value;
@@ -507,43 +545,63 @@ export class Modals {
     });
     const sizeNote = el('span', { class: 'ws-row__desc ws-size__note' });
     const sizeCards = el('div', { class: 'ws-sizes', role: 'radiogroup', 'aria-label': 'World size' });
+    // the World Map's regional maps get their own row of cards under the whole-Earth sizes
+    const regionCards = el('div', { class: 'ws-sizes', role: 'radiogroup', 'aria-label': 'Regional map', style: 'grid-template-columns:repeat(3,1fr)' });
+    const regionLabel = el('label', { class: 'ws-field__label', text: 'Regional maps', style: 'margin-top:10px' });
     const pickSize = (v) => {
-      state.size = v;
-      sizeCards.querySelectorAll('.ws-size').forEach((b) => b.classList.toggle('is-on', +b.dataset.size === v));
       const wide = isWidePreset(state.preset);
-      sizeNote.textContent = (wide ? EARTH_SIZE_NOTES[v] : SIZE_NOTES[v]) || (wide ? `${v} × ${v / 2} tiles` : `${v} × ${v} tiles`);
-      // Vast is slow to build: say so before the player commits to it
-      const slow = wide && v >= 1024;
-      sizeNote.classList.toggle('is-warn', slow);
-      if (slow) sizeNote.textContent = 'Vast: 1024 × 512 tiles. Takes about twice as long as Huge to create, and runs heavier. Desktop only.';
+      if (wide) {
+        const z = earthChoices().find((c) => c.id === v) || earthChoice(EARTH_DEFAULT_SIZE);
+        state.earth = z.id;
+        state.size = z.size;
+        for (const b of [...sizeCards.children, ...regionCards.children]) b.classList.toggle('is-on', b.dataset.id === z.id);
+        sizeNote.textContent = earthNote(z);
+      } else {
+        state.size = v;
+        sizeCards.querySelectorAll('.ws-size').forEach((b) => b.classList.toggle('is-on', +b.dataset.size === v));
+        sizeNote.textContent = SIZE_NOTES[v] || `${v} × ${v} tiles`;
+      }
+      sizeNote.classList.remove('is-warn');
       syncCivs();
+    };
+    const card = (z, wide) => {
+      // the little map card keeps the map's shape (2:1, or the region's own)
+      const ar = wide ? z.w / z.h : 1;
+      const s = wide ? (z.region ? 0.9 : 0.42 + 0.58 * (z.size / 1024)) : 0.42 + 0.58 * (z.size / 512);
+      return el(
+        'button',
+        { class: 'ws-size', type: 'button', role: 'radio', 'data-size': z.size, 'data-id': z.id, onclick: () => pickSize(wide ? z.id : z.size) },
+        z.region
+          ? el('span', { class: 'ws-size__box' }, el('i', { style: `width:${(26 * Math.min(1, ar)).toFixed(1)}px;height:${(26 * Math.min(1, 1 / ar)).toFixed(1)}px` }))
+          : el('span', { class: 'ws-size__box', style: `--s:${s.toFixed(3)}${wide ? ';aspect-ratio:2' : ''}` }, el('i')),
+        el('b', { text: z.name }),
+        el('small', { text: wide ? `${z.w}×${z.h}` : `${z.size}²` }),
+      );
     };
     const buildSizes = (want) => {
       const wide = isWidePreset(state.preset);
-      const list = wide ? EARTH_SIZES.filter((z) => !(IS_TOUCH && z.desktopOnly)) : WORLD_SIZES;
-      sizeCards.replaceChildren(
-        ...list.map((z) =>
-          el(
-            'button',
-            { class: 'ws-size' + (wide && z.size >= 1024 ? ' is-slow' : ''), type: 'button', role: 'radio', 'data-size': z.size, onclick: () => pickSize(z.size) },
-            el('span', { class: 'ws-size__box', style: wide ? `--s:${(0.42 + 0.58 * (z.size / 1024)).toFixed(3)};aspect-ratio:2` : `--s:${(0.42 + 0.58 * (z.size / 512)).toFixed(3)}` }, el('i')),
-            el('b', { text: z.name }),
-            el('small', { text: wide ? `${z.w}×${z.h}` : `${z.size}²` }),
-          ),
-        ),
-      );
-      const v = want ?? state.size;
-      pickSize(list.some((z) => z.size === v) ? v : wide ? EARTH_DEFAULT_SIZE : 256);
+      const list = wide ? earthChoices() : WORLD_SIZES;
+      sizeCards.replaceChildren(...list.filter((z) => !z.region).map((z) => card(z, wide)));
+      const regs = list.filter((z) => z.region);
+      regionCards.replaceChildren(...regs.map((z) => card(z, true)));
+      regionCards.hidden = regionLabel.hidden = !regs.length;
+      if (wide) pickSize(want && list.some((z) => z.id === want) ? want : earthChoice(EARTH_DEFAULT_SIZE).id);
+      else pickSize(list.some((z) => z.size === want) ? want : 256);
     };
-    buildSizes(state.size);
-    const sizes = el('div', { class: 'ws-field' }, el('label', { class: 'ws-field__label', text: 'World size' }), sizeCards, sizeNote);
+    buildSizes(isWidePreset(state.preset) ? state.earth : state.size);
+    const sizes = el('div', { class: 'ws-field' }, el('label', { class: 'ws-field__label', text: 'World size' }), sizeCards, regionLabel, regionCards, sizeNote);
     this.nwState = state;
     const create = () => {
       const n = parseInt(String(state.seed).replace(/[^0-9]/g, ''), 10);
       const seed = Number.isFinite(n) ? n : hashSeed(state.seed);
       this.close();
-      const dims = worldDims(state.size, state.preset);
-      if (dims.w !== g.world.w || dims.h !== g.world.h) {
+      const wide = isWidePreset(state.preset);
+      const ez = wide ? earthZ() : null;
+      const region = ez?.region || null;
+      const dims = worldDims(ez ? ez.size : state.size, state.preset, region);
+      // a different shape, or another region of the same shape, needs a reload
+      const curRegion = isWidePreset(g.params.preset) ? g.params.region || null : null;
+      if (dims.w !== g.world.w || dims.h !== g.world.h || (wide && region !== curRegion)) {
         // world size is fixed at construction: reload with the new parameters
         const q = new URLSearchParams(location.search);
         q.set('seed', seed);
@@ -551,11 +609,18 @@ export class Modals {
         // the starting-village count scales with the map unless the player chose one
         if (state.civsSet) q.set('civs', state.civs);
         else q.delete('civs');
-        q.set('size', state.size);
+        // a regional map is named by ?region= (its size is implied)
+        if (region) {
+          q.set('region', region);
+          q.delete('size');
+        } else {
+          q.set('size', ez ? ez.size : state.size);
+          q.delete('region');
+        }
         q.set('title', '0');
         for (const k of ['cam', 'hour', 'ff']) q.delete(k);
-        const z = (isWidePreset(state.preset) ? EARTH_SIZES : WORLD_SIZES).find((s) => s.size === state.size);
-        const label = `${isWidePreset(state.preset) ? 'Shaping the World Map' : `Seeding ${/^[aeiou]/i.test(PRESET_NAMES[state.preset] || '') ? 'an' : 'a'} ${PRESET_NAMES[state.preset] || 'new'} world`}${z ? ` · ${z.name}` : ''}`;
+        const z = WORLD_SIZES.find((s) => s.size === state.size);
+        const label = wide ? earthLabel(ez.size, region) : `Seeding ${/^[aeiou]/i.test(PRESET_NAMES[state.preset] || '') ? 'an' : 'a'} ${PRESET_NAMES[state.preset] || 'new'} world${z ? ` · ${z.name}` : ''}`;
         bootNote(label);
         const vl = this.ui.veil.querySelector('.ws-veil__label');
         if (vl) vl.textContent = label;
@@ -563,7 +628,7 @@ export class Modals {
         setTimeout(() => (location.search = q.toString()), 300);
         return;
       }
-      this.ui.regenerate(seed, state.preset, state.civsSet ? state.civs : (g.civ?.budget?.startVillages ?? autoStartVillages(g, state.size, state.preset)));
+      this.ui.regenerate(seed, state.preset, state.civsSet ? state.civs : (g.civ?.budget?.startVillages ?? autoStartVillages(g, ez ? ez.size : state.size, state.preset, region)));
     };
     const body = el(
       'div',

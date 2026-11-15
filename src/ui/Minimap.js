@@ -71,6 +71,9 @@ export class Minimap {
     // the frame keeps the world's aspect (2:1 for the World Map)
     if (this.w !== this.h) this.frame.style.aspectRatio = `${this.w} / ${this.h}`;
     this.el = el('div', { class: 'ws-map ws-glass ws-orn' }, this.frame, this.collapseBtn, this.compass);
+    // a portrait map (Taiwan) keeps the panel's height, not its width, so it
+    // grows no taller than a square one
+    if (this.h > this.w) this.el.style.width = `calc((var(--ws-map) - 14px) * ${(this.w / this.h).toFixed(4)} + 14px)`;
     this.wrap = el('div', { class: 'ws-mapwrap' }, this.el, this.openBtn);
 
     this.dirty = { x0: 0, y0: 0, x1: this.w - 1, y1: this.h - 1 };

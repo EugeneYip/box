@@ -51,3 +51,17 @@ export function geoTile(world, lon, lat) {
   else if (dl < 0 || dl > span) return null;
   return { x: (dl / span) * world.w, z: ((g.latMax - lat) / (g.latMax - g.latMin)) * world.h };
 }
+
+// Approximate size of one tile in kilometres at a world position (east-west
+// and north-south are equal at a regional map's middle latitude; on the whole
+// Earth the east-west size shrinks toward the poles). Without a position, the
+// north-south size, which is the same everywhere on the map.
+export function geoKmPerTile(world, x = null, z = null) {
+  const g = geoInfo(world);
+  if (!g) return null;
+  const ns = ((g.latMax - g.latMin) / world.h) * 111.2;
+  if (x == null || z == null) return ns;
+  const lat = g.latMax - (z / world.h) * (g.latMax - g.latMin);
+  const ew = ((g.lonMax - g.lonMin) / world.w) * 111.32 * Math.cos((lat * Math.PI) / 180);
+  return (ns + ew) / 2;
+}
