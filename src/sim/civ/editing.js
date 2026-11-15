@@ -68,7 +68,7 @@ export const editing = {
     k.name = n;
     k.base = n;
     this._mark(k, 'name');
-    this._history(`${/^the /i.test(old) ? old : 'The ' + old} shall now be known as ${n}.`, 'info', this._kingdomPos?.(k));
+    this._history(`${k.plain || /^the /i.test(old) ? old : 'The ' + old} shall now be known as ${n}.`, 'info', this._kingdomPos?.(k));
     return this._edited('kingdom', id, 'name', n);
   },
 
@@ -251,9 +251,10 @@ export const editing = {
     v.name = n;
     this.usedNames?.add?.(n);
     this._mark(v, 'name');
-    // a realm named after its seat follows it
+    // a realm named after its seat follows it (a real realm keeps its own
+    // name: renaming the city of Taipei leaves the Taipei realm as it is)
     const k = this.kingdoms[v.kingdom];
-    if (k && k.capital === v.id && !k.player?.name && k.base === old) {
+    if (k && k.capital === v.id && !k.player?.name && !k.plain && k.base === old) {
       k.base = n;
       if (k.name.includes(old)) k.name = k.name.replace(old, n);
     }
@@ -276,7 +277,7 @@ export const editing = {
       let leader = null;
       for (const u of vil.members) if (u.alive && u.age >= ADULT_AGE + 2 && (!leader || u.age > leader.age)) leader = u;
       if (leader) this.crown(K, leader);
-      this._note(`⚡ By divine will, ${vil.name} is freed from ${this._kn(old)}: the ${K.name}`, 'info', { x: vil.cx, z: vil.cz });
+      this._note(`⚡ By divine will, ${vil.name} is freed from ${this._kn(old)}: ${this._theK(K)}`, 'info', { x: vil.cx, z: vil.cz });
     } else {
       const K = this._liveKingdom(kid);
       if (!K || K.id === vil.kingdom) return false;

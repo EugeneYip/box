@@ -160,7 +160,7 @@ export class Inspector {
       kind: 'tile',
       tile: { tx, ty, type: W.type[i], water, owner: o },
       title: water ? (hh < SEA_LEVEL - SHALLOW_DEPTH ? 'Deep Ocean' : 'Shallow Water') : info.name,
-      subtitle: kname ? `Territory of the ${kname.replace(/^the\s+/i, '')}` : water ? 'Open waters' : 'Unclaimed wilds',
+      subtitle: kname ? `Territory of ${g.civ.kingdoms?.[o]?.plain ? kname : 'the ' + kname.replace(/^the\s+/i, '')}` : water ? 'Open waters' : 'Unclaimed wilds',
       stats,
       x: tx + 0.5,
       z: ty + 0.5,
