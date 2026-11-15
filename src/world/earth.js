@@ -874,7 +874,7 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
     const target = new Float32Array(N).fill(1e9);
     const TRIM = 6.2;
     // regional maps: valleys a little wider, meanders at the Huge map's scale
-    const VW = REG ? 1.7 : 1,
+    const VW = REG ? 2.6 : 1,
       MZ = REG ? 2.2 : Math.max(0.6, scale768);
     for (const R of F_RIVERS) {
       // authored points -> tile space -> Catmull-Rom, sampled ~2 per tile
