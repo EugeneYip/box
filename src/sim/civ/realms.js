@@ -56,9 +56,9 @@ export const realms = {
       }
     });
     // a new village takes a real name from this far (tiles): its own realm's
-    // cities within about 4.5 degrees, any real place within about 2.5, but
+    // cities within about 4.5 degrees, any real place within about 3.5, but
     // never less than a village's own reach on the smaller whole-Earth maps
-    this._placeReach = { own: clamp(4.5 * tpd, 9, 20), any: clamp(2.5 * tpd, 6, 10), bonus: 4 };
+    this._placeReach = { own: clamp(4.5 * tpd, 9, 20), any: clamp(3.5 * tpd, 7, 16), bonus: 4 };
 
     // 1. capitals, most important realm first
     const seated = [];
