@@ -46,9 +46,11 @@ export class TitleScreen {
         z.name,
       ),
     );
+    // (one wrapping group, the regional maps after a thin divider, so the card
+    // stays short enough for a 720-pixel-high screen)
     const regionBtns = this.sizeBtns.filter((b, k) => sizeList[k].region);
-    const sizeRows = [el('div', { class: 'ws-chips ws-chips--sizes', role: 'radiogroup', 'aria-label': 'World size' }, ...this.sizeBtns.filter((b, k) => !sizeList[k].region))];
-    if (regionBtns.length) sizeRows.push(el('div', { class: 'ws-title__label ws-title__label--sub', text: 'Regional maps' }), el('div', { class: 'ws-chips ws-chips--sizes', role: 'radiogroup', 'aria-label': 'Regional map' }, ...regionBtns));
+    const divider = regionBtns.length ? [el('span', { 'aria-hidden': 'true', style: 'align-self:center;width:1px;height:18px;margin:0 4px;background:rgba(255,240,210,0.25)' })] : [];
+    const sizeRows = [el('div', { class: 'ws-chips ws-chips--sizes', role: 'radiogroup', 'aria-label': regionBtns.length ? 'World size or regional map' : 'World size' }, ...this.sizeBtns.filter((b, k) => !sizeList[k].region), ...divider, ...regionBtns)];
     this.el = el(
       'div',
       { class: 'ws-title', role: 'dialog', 'aria-label': 'Worldseed' },
