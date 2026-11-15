@@ -38,6 +38,11 @@ function earthNote(z) {
 // The starting-village count Civ picks when none is given (Civilization budgets():
 // 3 x (area / 256²)^0.7). The World Map counts habitable land only: its ratio
 // is read from the current World Map when there is one, else about 0.83 of the rectangle.
+// World Map worlds start with real countries at their capitals and largest
+// cities instead (src/sim/civ/realms.js seedRealRealms): at most
+// max(realms, min(0.75 x the village budget, 26 x scale)) villages, where
+// scale is 1 on Vast and the regional maps; fewer when a region has fewer
+// places that land on this map.
 export function autoStartVillages(game, size, preset, region = null) {
   const d = worldDims(size, preset, region);
   let area = d.w * d.h;
@@ -46,6 +51,11 @@ export function autoStartVillages(game, size, preset, region = null) {
     const meta = W?.meta;
     const k = meta?.budgetArea && W.w && W.h && isWidePreset(meta.preset || game?.params?.preset) ? meta.budgetArea / (W.w * W.h) : 0.83;
     area *= k;
+    const a = area / 65536;
+    const humans = Math.min(900, Math.round(850 * Math.pow(a, 0.04)));
+    const villages = Math.round(Math.min(30 * Math.pow(a, 0.55), humans / 26));
+    const s = Math.sqrt((d.w * d.h) / (1024 * 512));
+    return Math.max(Math.max(4, Math.round(20 * s)), Math.round(Math.min(0.75 * villages, 26 * s)));
   }
   return Math.max(1, Math.round(3 * Math.pow(area / 65536, 0.7)));
 }
@@ -514,7 +524,11 @@ export class Modals {
       civOut.textContent = String(v);
       civAuto.classList.toggle('is-on', !state.civsSet);
       civAuto.disabled = !state.civsSet;
-      civAuto.setAttribute('aria-label', state.civsSet ? `Use the automatic count (${auto})` : 'Automatic count for this size');
+      // (World Map worlds: the real countries and cities, up to this many villages)
+      const real = isWidePreset(state.preset);
+      civAuto.textContent = real ? 'Auto (real places)' : 'Auto';
+      civAuto.dataset.tip = real ? 'Back to the real countries and cities this map starts with' : 'Back to the count this size starts with';
+      civAuto.setAttribute('aria-label', state.civsSet ? `Use the automatic count (${real ? 'real places, up to ' : ''}${auto})` : real ? `Real countries and cities, up to ${auto} villages` : 'Automatic count for this size');
     };
     civ.addEventListener('input', () => {
       state.civs = +civ.value;
