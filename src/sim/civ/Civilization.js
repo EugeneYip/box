@@ -339,7 +339,7 @@ export class Civilization {
     let k = opts.kingdom != null ? this.kingdoms[opts.kingdom] : null;
     const newKingdom = !k || !k.alive;
     // World Map: villages take the real names of the cities around them
-    const vname = opts.name || placeName(culture, this.rng, this.usedNames);
+    const vname = opts.name || this._realPlaceName(newKingdom ? null : k, hx + 1, hy + 1, opts.nameFrom) || placeName(culture, this.rng, this.usedNames);
     if (opts.name) this.usedNames.add(opts.name);
     if (newKingdom) {
       // a real realm (World Map) keeps its plain name: "Japan", not "Kingdom of Japan"
@@ -572,6 +572,7 @@ export class Civilization {
     }
     const nv = this.foundVillage(Math.floor(u.x), Math.floor(u.z), {
       kingdom: independent ? null : k.id,
+      nameFrom: exp.kingdom,
       culture: from?.culture,
       units: members,
       hallProgress: 0.12,
