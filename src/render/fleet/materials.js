@@ -146,10 +146,11 @@ export function createVehicleDepthMaterial(uniforms) {
 }
 
 // Water effects, one program and one draw call for every vessel and vehicle:
-//   kind 0  Kelvin wake arm: a soft band laid along the ship's own track
-//           (path history), fading within a few ship lengths
-//   kind 1  churned water straight behind the stern, along the track
-//   kind 2  hull foam and the bow wave (local quad, uv in ship lengths)
+//   kind 0  (unused) a band of broken foam laid along a track
+//   kind 1  churned water behind the stern, along the ship's own track,
+//           settling within a hull length or two
+//   kind 2  waterline foam and the short bow V (local quad, uv in ship
+//           lengths; aK.w = how far aft the V reaches)
 //   kind 3  contact shadow under a land vehicle
 //   kind 4  far-zoom dot in the realm's colour (aC), dark rim
 //   kind 5  dashed trade lane (LineSegments; aUV.x = distance along)
@@ -215,31 +216,33 @@ void main() {
     if (al < 0.01) discard;
     gl_FragColor = vec4(foamCol, al * 0.6);
   } else if (kind < 2.5) {
-    // hull foam at the waterline and a short bow wave
+    // waterline foam and a short V of foam off the bow (local quad, in ship
+    // lengths: x forward with the stem at +0.5, z across; a = speed share,
+    // vK.w = how far aft of the stem the arms reach)
     float x = vUV.x, z = vUV.y;
     float az = abs(z);
     float beam = vK.z;
+    float vlen = max(0.2, vK.w);
     float e = length(vec2(x / 0.5, z / max(0.05, beam * 0.55)));
-    float foam = smoothstep(0.24, 0.0, abs(e - 1.0)) * (0.3 + 0.7 * a) * smoothstep(0.58, 0.4, x); // soft at the stem, no hard chord
-    // the bow wave: two soft fans of broken foam that peel off the stem,
-    // curl aft and outward, widen and die away within half a length (no
-    // crisp lines; the noise runs aft past the hull with the ship's way)
+    float foam = smoothstep(0.22, 0.0, abs(e - 1.0)) * a * 0.75 * smoothstep(0.58, 0.38, x); // soft at the stem, no hard chord
+    // the V: two thin arms of broken foam peel off the stem, flare aft and
+    // out at the Kelvin angle, widen, fray and are gone within vlen; the
+    // noise runs aft with the ship's way, so it never reads as a rod
     float bx = 0.5 - x;
-    if (bx > -0.06 && bx < 0.55 && a > 0.02) {
-      float t = clamp(bx / 0.55, 0.0, 1.0);
-      float c = beam * 0.3 + 0.36 * bx - 0.22 * bx * bx;
-      float wdt = 0.02 + 0.1 * t;
+    if (bx > -0.04 && bx < vlen) {
+      float t = clamp(bx / vlen, 0.0, 1.0);
+      float c = beam * 0.22 + 0.34 * bx;
+      float wdt = 0.016 + 0.06 * t;
       float d = (az - c) / wdt;
-      float prof = exp(-d * d * 1.4);
-      float n = vnoise(vec2(bx * 13.0 - uTime * 1.3 * a, az * 17.0)) * 0.6 + vnoise(vec2(bx * 29.0 - uTime * 2.1 * a, az * 31.0 + 5.0)) * 0.5;
-      float broken = smoothstep(0.3, 0.9, n + (1.0 - t) * 0.3);
-      float fade = (1.0 - t) * (1.0 - t) * smoothstep(-0.06, 0.05, bx);
-      float edge = beam * 0.5 + 0.38;
-      foam += prof * broken * fade * smoothstep(edge, edge - 0.08, az) * (0.15 + 0.85 * a) * 0.8;
+      float prof = exp(-d * d * 1.6);
+      float n = vnoise(vec2(bx * 14.0 - uTime * 1.3 * a, az * 18.0)) * 0.6 + vnoise(vec2(bx * 31.0 - uTime * 2.1 * a, az * 33.0 + 5.0)) * 0.5;
+      float broken = smoothstep(0.3 + 0.3 * t, 0.9, n + (1.0 - t) * 0.35);
+      float fade = pow(1.0 - t, 1.6) * smoothstep(-0.04, 0.04, bx);
+      foam += prof * broken * fade * a * 0.95;
     }
     foam = clamp(foam, 0.0, 1.0);
     if (foam < 0.01) discard;
-    gl_FragColor = vec4(foamCol, foam * 0.78);
+    gl_FragColor = vec4(foamCol, foam * 0.8);
   } else if (kind < 3.5) {
     float r = length(vUV * 2.0 - 1.0);
     float al = (1.0 - smoothstep(0.25, 1.0, r)) * 0.42 * a;
