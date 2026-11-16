@@ -808,11 +808,68 @@ export const COUNTRIES = {
   ]),
 };
 
+// The naming style for a country's land when its real names run out (see
+// realStyleName in cultures.js): Japanese, Korean, Chinese pinyin,
+// Vietnamese, Thai, Malay, Russian and Hindustani forms. Countries not
+// listed fall back to the culture of the land.
+const LANG = {
+  japan: 'ja',
+  'south-korea': 'ko',
+  'north-korea': 'ko',
+  mainland: 'zh',
+  roc: 'zh',
+  mongolia: 'zh',
+  vietnam: 'vi',
+  thailand: 'th',
+  laos: 'th',
+  cambodia: 'th',
+  myanmar: 'th',
+  malaysia: 'ms',
+  indonesia: 'ms',
+  brunei: 'ms',
+  singapore: 'ms',
+  philippines: 'ms',
+  russia: 'ru',
+  belarus: 'ru',
+  ukraine: 'ru',
+  kazakhstan: 'ru',
+  india: 'hi',
+  pakistan: 'hi',
+  bangladesh: 'hi',
+  nepal: 'hi',
+};
+
+// Ruler titles where a region-appropriate one reads naturally; every other
+// real realm has a neutral Lord or Lady (REAL_TITLE in cultures.js).
+const KING = { m: 'King', f: 'Queen' };
+const TITLE = {
+  japan: { m: 'Emperor', f: 'Empress' },
+  'south-korea': KING,
+  thailand: KING,
+  cambodia: KING,
+  'united-kingdom': KING,
+  spain: KING,
+  netherlands: KING,
+  belgium: KING,
+  denmark: KING,
+  norway: KING,
+  sweden: KING,
+  morocco: KING,
+  jordan: KING,
+  'saudi-arabia': KING,
+  russia: { m: 'Tsar', f: 'Tsarina' },
+  iran: { m: 'Shah', f: 'Shahbanu' },
+  turkey: { m: 'Sultan', f: 'Sultana' },
+  mongolia: { m: 'Khan', f: 'Khatun' },
+  india: { m: 'Maharaja', f: 'Maharani' },
+};
+
 // Copy of a country definition for one region: `first` lists city names to
 // move to the front (the cities that should be seeded first on that map),
 // `edge: true` lets a realm whose capital lies outside the window take its
 // first city inside the window as its seat, and `only` keeps just the named
-// cities.
+// cities. `seed: false` lists a country's places for naming only (its land
+// lies at the window's edge; a realm may still rise there later).
 export function country(id, opts = {}) {
   const c = COUNTRIES[id];
   if (!c) throw new Error('unknown country ' + id);
@@ -827,6 +884,11 @@ export function country(id, opts = {}) {
   if (opts.edge) out.edge = true;
   if (opts.color != null) out.color = opts.color;
   if (opts.culture) out.culture = opts.culture;
+  if (opts.seed === false) out.seed = false;
+  const lang = opts.lang || LANG[id];
+  if (lang) out.lang = lang;
+  const title = opts.title || TITLE[id];
+  if (title) out.title = title;
   return out;
 }
 
