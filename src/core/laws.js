@@ -97,7 +97,7 @@ export const LAWS = [
   B('calamityNatural', 'calamities', 'Natural disasters', 'Earthquakes, tornadoes, meteors and eruptions strike at random.', false, 'effects'),
   N('calamityFrequency', 'calamities', 'Disaster frequency', 'How often random disasters strike.', 1, 0.25, 4, 0.25, 'effects'),
   B('calamityPlague', 'calamities', 'Contagion', 'Plague spreads between people.', true, 'effects'),
-  B('calamityLightning', 'calamities', 'Lightning fires', 'Storm lightning can set the land alight.', true, 'effects'),
+  B('calamityLightning', 'calamities', 'Lightning fires', 'Lightning from storms and dry skies strikes the land and can set it alight.', true, 'effects'),
   B('natureFireSpread', 'calamities', 'Spreading fire', 'Flames spread to neighbouring land.', true, 'effects'),
   B('natureLavaFlow', 'calamities', 'Flowing lava', 'Lava runs downhill and cools to stone.', true, 'effects'),
   // ---- Ages -------------------------------------------------------------

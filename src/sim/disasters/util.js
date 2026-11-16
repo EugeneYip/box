@@ -1,5 +1,6 @@
 import { TILE, FLORA, FLORA_INFO, SEA_LEVEL, MIN_HEIGHT, MAX_HEIGHT } from '../../world/constants.js';
 import { hash2 } from '../../core/Random.js';
+import { ageDef, effectiveMods } from '../../core/ages.js';
 
 // Shared helpers for disasters. Every cross-module call is guarded.
 
@@ -131,9 +132,33 @@ export function ageMod(game, key, fallback = 1) {
 // Fire behaviour factor for the current age: fireRisk, and a cold age
 // (negative temperature offset) slows fire, a hot one quickens it.
 export function fireFactor(game) {
-  const temp = ageMod(game, 'temperature', 0);
-  return Math.max(0.05, ageMod(game, 'fireRisk', 1) * Math.max(0.25, 1 + temp * 1.2));
+  return fireFactorOf(game.age?.mods);
 }
+function fireFactorOf(mods) {
+  const temp = typeof mods?.temperature === 'number' ? mods.temperature : 0;
+  const risk = typeof mods?.fireRisk === 'number' ? mods.fireRisk : 1;
+  return Math.max(0.05, risk * Math.max(0.25, 1 + temp * 1.2));
+}
+
+// The fire factor of the Age of Embers as written (about 3): the reference
+// for "a fire age". Background wildfire is tuned so this age keeps its full
+// strength while ordinary ages (factor 1) see only the odd, contained fire.
+export const HOT_FIRE = fireFactorOf(effectiveMods(ageDef('embers'), 1));
+
+// How much an age lets ordinary (unattended) fires run, 0..1: 1 in a fire
+// age, about 0.4 in a temperate one and almost nothing in a cold one.
+export function wildfireDamp(game) {
+  return Math.min(1, Math.pow(fireFactor(game) / HOT_FIRE, 0.8));
+}
+
+// Fire lineage (FireSim.cause, per burning tile; spread inherits it):
+//   0           fires the player set (god powers, volcanoes, meteors...): full
+//   FIRE_WILD   unattended fires (dry lightning, burning buildings, monsters):
+//               they spread as the age allows (wildfireDamp)
+//   FIRE_SKY    started by lightning: no new ones while the calamityLightning
+//               law is off (and those already burning die down)
+export const FIRE_WILD = 1;
+export const FIRE_SKY = 2;
 
 // Which ages make which disasters notable: notices then open with
 // "In the Age of …," when the current age is relevant to the event.

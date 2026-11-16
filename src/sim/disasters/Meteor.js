@@ -290,7 +290,7 @@ export class Meteor {
         life: rand(10, 18),
         onLand: hot
           ? (lx, ly, lz, heat) => {
-              if (heat > 0.4 && Math.random() < 0.5) g.disasters?.ignite(Math.floor(lx), Math.floor(lz), 0.8);
+              if (heat > 0.4 && Math.random() < 0.5) g.disasters?.ignite(Math.floor(lx), Math.floor(lz), 0.8, {});
             }
           : null,
       });

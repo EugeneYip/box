@@ -1,5 +1,5 @@
 import { TILE, TILE_INFO, FLORA, FLORA_INFO, SEA_LEVEL, DIRS8 } from '../../world/constants.js';
-import { law, fireFactor, regionName, yearLabel, withAge } from './util.js';
+import { law, fireFactor, regionName, yearLabel, withAge, wildfireDamp, HOT_FIRE, FIRE_WILD, FIRE_SKY } from './util.js';
 
 // Wildfire simulation on world.fire (0 = not burning, (0..1] intensity).
 //
@@ -15,13 +15,26 @@ import { law, fireFactor, regionName, yearLabel, withAge } from './util.js';
 // damaged by the core unit sim.
 // Cost is bounded: at most BUDGET burning tiles are processed per tick
 // (round-robin, with the time step scaled so the fire behaves the same).
+// Lineage: every burning tile remembers what started its fire (cause, see
+// FIRE_WILD / FIRE_SKY in util.js) and passes it on as the fire spreads.
+// Fires the player set behave the same in every age; unattended ones
+// (dry lightning, burning buildings, monsters) only run wild in a fire age
+// and stay small, contained burns in ordinary times. Fires started by
+// lightning obey the calamityLightning law even once they have spread into
+// buildings: a building set alight by one throws no new fires while the law
+// is off.
 
 const BUDGET = 2600;
+// natExp: natural ignition falls off as factor^natExp below the Embers
+// factor; skyOff: spread of lightning fires still burning while the
+// calamityLightning law is off; wild: override of wildfireDamp (tooling)
+const TUNE = { natExp: 3.4, skyOff: 0.4, wild: null };
 const ASH_THRESHOLD = 0.35; // ground flammability that leaves ash behind
 
 export class FireSim {
   constructor(game) {
     this.game = game;
+    this.tune = TUNE;
     const n = game.world.size;
     this.n = n;
     this.fuel = new Float32Array(n);
@@ -35,6 +48,9 @@ export class FireSim {
     this.smList = new Int32Array(n);
     this.smCount = 0;
     this.bTimer = new Float32Array(n); // building damage cadence
+    this.cause = new Uint8Array(n); // lineage of each burning tile
+    this.bCause = new Map(); // building id -> {c, t}: what set it alight
+    this._spreadOpts = { cause: 0, spread: true };
     this.version = 0;
     this._dirty = null;
     this._external = null;
@@ -54,6 +70,8 @@ export class FireSim {
     this.inSm.fill(0);
     this.smCount = 0;
     this.bTimer.fill(0);
+    this.cause.fill(0);
+    this.bCause.clear();
     this._external = null;
     this._scan = null;
     this._burned?.clear();
@@ -99,16 +117,24 @@ export class FireSim {
   }
 
   // Start (or feed) a fire. Returns true if the tile is now burning.
+  // opts.cause: lineage (0 = set by the player; FIRE_WILD / FIRE_SKY bits),
+  // opts.spread: the flames of a fire already burning reaching this tile.
   ignite(tx, ty, intensity = 1, opts = {}) {
     const w = this.game.world;
     if (!w.inBounds(tx, ty)) return false;
     const i = w.idx(tx, ty);
     if (w.height[i] < SEA_LEVEL) return false;
     if (w.type[i] === TILE.LAVA && !opts.force) return false;
+    const cause = opts.cause | 0;
+    // World Law calamityLightning: no lightning fire may start while it is
+    // off, whatever path the spark took
+    if (cause & FIRE_SKY && !opts.spread && !law(this.game, 'calamityLightning', true)) return false;
     const fl = this.flammability(i);
     if (this.inList[i]) {
       w.fire[i] = Math.min(1, Math.max(w.fire[i], intensity * 0.8));
       if (opts.fuelBoost) this.fuel[i] += opts.fuelBoost;
+      // a fire the player feeds becomes theirs
+      if (!opts.spread && !cause) this.cause[i] = 0;
       return true;
     }
     let fuel = this.fuelFor(i) + (opts.fuelBoost || 0);
@@ -119,10 +145,36 @@ export class FireSim {
     }
     this.fuel[i] = fuel;
     this.fuel0[i] = fuel;
+    this.cause[i] = cause;
     w.fire[i] = Math.max(0.15, Math.min(1, intensity * (0.4 + 0.6 * Math.max(fl, 0.3))));
     this._add(i);
     this._mark(i);
     return true;
+  }
+
+  // An ignition from outside the disasters module (a burning building
+  // throwing sparks, a monster's breath): an unattended fire. Next to a
+  // building, it carries on the lineage of the fire that set the building
+  // alight (so a house lit by lightning cannot rekindle the land while the
+  // calamityLightning law is off, and one lit by the player stays theirs).
+  igniteExternal(tx, ty, intensity = 1) {
+    const w = this.game.world;
+    if (!w.inBounds(tx, ty)) return false;
+    let cause = FIRE_WILD;
+    if (this.bCause.size) {
+      let best = null;
+      for (let dy = -1; dy <= 1; dy++)
+        for (let dx = -1; dx <= 1; dx++) {
+          const x = tx + dx,
+            y = ty + dy;
+          if (!w.inBounds(x, y)) continue;
+          const b = w.building[y * w.w + x];
+          const rec = b >= 0 ? this.bCause.get(b) : null;
+          if (rec && (!best || rec.t > best.t)) best = rec;
+        }
+      if (best) cause = best.c;
+    }
+    return this.ignite(tx, ty, intensity, { cause });
   }
 
   extinguish(tx, ty) {
@@ -162,10 +214,11 @@ export class FireSim {
 
   // Natural wildfires: dry lightning and heat start fires by themselves,
   // far more often in a hot, fire-prone age (Embers: one every half minute or
-  // so on a medium map) than in a temperate one (one in ten minutes),
-  // and almost never in a cold one. Runs on game time (works when fast-
-  // forwarding), gated by the calamityLightning law, and held back while a
-  // large fire is already burning, so it never runs away across the map.
+  // so on a medium map) than in a temperate one (one in about twenty-five
+  // minutes, and it stays a small burn: see wildfireDamp), and almost never
+  // in a cold one. Runs on game time (works when fast-forwarding), gated by
+  // the calamityLightning law, and held back while a large fire is already
+  // burning, so it never runs away across the map.
   _natural(step) {
     const g = this.game;
     const w = g.world;
@@ -177,7 +230,11 @@ export class FireSim {
     if (this.count >= cap || (this._recent || 0) > 2800 * area) return;
     const season = g.time.seasonName;
     const sf = season === 'Summer' ? 1.3 : season === 'Winter' ? 0.6 : 1;
-    const rate = (1 / 600) * area * Math.pow(fireFactor(g), 2.6) * sf * (1 - this.count / cap);
+    // the Embers rate as before (1/600 x factor^2.6), falling off steeply
+    // below it: ordinary ages see an occasional fire, not a steady drizzle
+    const ff = fireFactor(g);
+    const ageRate = Math.pow(HOT_FIRE, 2.6) * Math.pow(ff / HOT_FIRE, ff < HOT_FIRE ? TUNE.natExp : 2.6);
+    const rate = (1 / 600) * area * ageRate * sf * (1 - this.count / cap);
     // a jittered renewal process instead of a coin flip per tick: the
     // hazard is integrated (so a change of age applies at once) and the next
     // fire comes after 0.6-1.4 mean intervals, so a fire age sets the land
@@ -210,14 +267,14 @@ export class FireSim {
       this.natural = (this.natural || 0) + 1;
       try {
         // a dry-lightning strike (bolt, scorch) that sets the spot alight
-        if (g.disasters?.lightning) g.disasters.lightning(tx + 0.5, ty + 0.5, { natural: true, ignite: true });
-        else this.ignite(tx, ty, 1);
+        if (g.disasters?.lightning) g.disasters.lightning(tx + 0.5, ty + 0.5, { natural: true, ignite: true, cause: FIRE_WILD | FIRE_SKY });
+        else this.ignite(tx, ty, 1, { cause: FIRE_WILD | FIRE_SKY });
         if (g.time.total - (this._natNote ?? -1e9) > 45) {
           this._natNote = g.time.total;
           g.notify?.(withAge(g, 'wildfire', `Dry lightning sparks a wildfire in ${regionName(g, tx + 0.5, ty + 0.5)}.`), 'disaster', { x: tx + 0.5, z: ty + 0.5 });
         }
       } catch (err) {
-        this.ignite(tx, ty, 1);
+        this.ignite(tx, ty, 1, { cause: FIRE_WILD | FIRE_SKY });
       }
     }
   }
@@ -227,6 +284,13 @@ export class FireSim {
     const w = g.world;
     this._dry = Math.max(0.6, Math.min(1.4, Math.pow(fireFactor(g), 0.25)));
     this._natural(step);
+    // forget buildings whose fire is long out (a burning building can
+    // smoulder for minutes after the flames around it have passed)
+    if (this.bCause.size && (this._bcT = (this._bcT || 0) - step) <= 0) {
+      this._bcT = 30;
+      const now = g.time.total;
+      for (const [b, rec] of this.bCause) if (now - rec.t > 900) this.bCause.delete(b);
+    }
     this._recent = (this._recent || 0) * Math.exp(-step / 60);
     // adopt fires started by other modules through world.setFire(); the
     // dirty rect (which also covers our own changes) is swept in row slices
@@ -268,6 +332,10 @@ export class FireSim {
     const W = w.w;
 
     const spreadOn = law(g, "natureFireSpread", true);
+    // unattended fires spread as the age allows; lightning fires already
+    // burning when the calamityLightning law is switched off die down
+    const wildF = TUNE.wild != null ? TUNE.wild : wildfireDamp(g);
+    const skyOk = law(g, 'calamityLightning', true);
     // World Age: fireRisk scales spread; a cold age slows fire, a hot one quickens it
     const n = this.count;
     // a very large fire spreads more slowly (it has burnt its easy fuel and
@@ -326,7 +394,11 @@ export class FireSim {
       this.cursor++;
       // ---- spread ----
       const hi = w.height[i];
-      const sp = f * dtEff * 0.45 * (1 - Math.min(0.92, rain * 0.85)) * (1 - Math.min(0.9, wet));
+      const cause = this.cause[i];
+      const lineF = (cause & FIRE_WILD ? wildF : 1) * (cause & FIRE_SKY && !skyOk ? TUNE.skyOff : 1);
+      const sp = f * dtEff * 0.45 * (1 - Math.min(0.92, rain * 0.85)) * (1 - Math.min(0.9, wet)) * lineF;
+      const spreadOpts = this._spreadOpts;
+      spreadOpts.cause = cause;
       // World Law natureFireSpread: when off, fires burn in place only
       for (let d = 0; spreadOn && d < 8; d++) {
         const dx = DIRS8[d][0],
@@ -345,18 +417,29 @@ export class FireSim {
         const slopeF = Math.exp(slope * 0.55);
         const p = sp * Math.pow(flam, 1.6) * windF * slopeF * diag * ageF;
         if (rng.next() < p) {
-          if (this.ignite(nx, ny, f * 0.7)) changed = true;
+          if (this.ignite(nx, ny, f * 0.7, spreadOpts)) changed = true;
         }
       }
       // spotting: burning trees throw embers downwind in strong wind
-      if (spreadOn && fl && FLORA_INFO[fl].isTree && ws > 0.3 && f > 0.6 && rain < 0.2 && rng.next() < dtEff * 0.04 * ws * ageF) {
+      // (a lightning fire dying down under the law throws none: a spot fire
+      // far from the flames would read as a new fire)
+      if (spreadOn && fl && FLORA_INFO[fl].isTree && ws > 0.3 && f > 0.6 && rain < 0.2 && !(cause & FIRE_SKY && !skyOk) && rng.next() < dtEff * 0.04 * ws * ageF * lineF) {
         const dist = 2 + rng.next() * 4 * ws * 2;
         const sx = Math.round(x + wdx * dist + (rng.next() - 0.5) * 2),
           sy = Math.round(y + wdz * dist + (rng.next() - 0.5) * 2);
-        if (w.inBounds(sx, sy) && this.flammability(sy * W + sx) > 0.45) this.ignite(sx, sy, 0.5);
+        if (w.inBounds(sx, sy) && this.flammability(sy * W + sx) > 0.45) this.ignite(sx, sy, 0.5, spreadOpts);
       }
       // ---- buildings in the flames ----
       if (w.building[i] >= 0) {
+        // remember what set the building alight (its sparks carry it on);
+        // the player's fire wins, otherwise the latest lineage
+        const bid = w.building[i];
+        const rec = this.bCause.get(bid);
+        if (!rec) this.bCause.set(bid, { c: cause, t: g.time.total });
+        else {
+          if (rec.c !== 0) rec.c = cause;
+          rec.t = g.time.total;
+        }
         this.bTimer[i] -= dtEff;
         if (this.bTimer[i] <= 0) {
           this.bTimer[i] = 0.5;

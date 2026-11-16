@@ -8,7 +8,7 @@ import { Earthquake } from './Earthquake.js';
 import { Tornado } from './Tornado.js';
 import { Volcano } from './Volcano.js';
 import { Tsunami } from './Tsunami.js';
-import { play, law, ageMod, fireFactor, rand } from './util.js';
+import { play, law, ageMod, fireFactor, rand, FIRE_WILD, FIRE_SKY } from './util.js';
 import { Calamities } from './Calamities.js';
 import { PF, RAMP } from '../../render/fx/Effects.js';
 
@@ -43,7 +43,8 @@ function miasmaPuff(fx, x, y, z, s, bank = false) {
 // Disasters & hazards (Effects & Disasters owner).
 //
 // PUBLIC CONTRACT
-//   game.disasters.ignite(tx, ty, intensity=1)   start a fire at a tile
+//   game.disasters.ignite(tx, ty, intensity=1)   start a fire at a tile (an
+//     unattended fire: it runs wild only in a fire age, see FireSim)
 // Additional API (used by the disaster powers; safe for other modules):
 //   extinguish(tx, ty), meteor(x, z, opts), meteorShower(x, z, radius, n),
 //   lightning(x, z), smite(x, z, opts), earthquake(x, z, radius),
@@ -195,10 +196,14 @@ export class Disasters {
     const w = this.game.world;
     if (!law(this.game, "calamityLightning", true)) return;
     const [tx, ty] = w.tileOf(x, z);
-    if (w.isLand(tx, ty) && Math.random() < Math.min(1, 0.6 * ageMod(this.game, "lightning", 1) * fireFactor(this.game))) this.ignite(tx, ty, 0.9);
+    if (w.isLand(tx, ty) && Math.random() < Math.min(1, 0.6 * ageMod(this.game, "lightning", 1) * fireFactor(this.game))) this.fire.ignite(tx, ty, 0.9, { cause: FIRE_WILD | FIRE_SKY });
   }
-  ignite(tx, ty, intensity = 1) {
-    return this.fire.ignite(tx, ty, intensity);
+  // Without opts (other modules: a burning building's sparks, a monster's
+  // breath) the fire is an unattended one that follows the age and, next to
+  // a building, the lineage of the fire that set it alight (FireSim).
+  // The disasters' own set pieces pass opts ({} = the player's fire).
+  ignite(tx, ty, intensity = 1, opts) {
+    return opts ? this.fire.ignite(tx, ty, intensity, opts) : this.fire.igniteExternal(tx, ty, intensity);
   }
   extinguish(tx, ty) {
     this.fire.extinguish(tx, ty);
