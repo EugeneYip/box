@@ -28,9 +28,10 @@ const BUDGET = 2600;
 // natExp: natural ignition falls off as factor^natExp below the Embers
 // factor; skyOff: spread of lightning fires still burning while the
 // calamityLightning law is off; spark: most a fire from sparks (burning
-// buildings, monsters) may spread in any age (an ordinary age's damping);
+// buildings, monsters) may spread in any age (below an ordinary age's
+// wildfire: a few tiles around the burning houses);
 // wild: override of wildfireDamp (tooling)
-const TUNE = { natExp: 3.4, skyOff: 0.2, spark: 0.42, wild: null };
+const TUNE = { natExp: 3.4, skyOff: 0.2, spark: 0.25, wild: null };
 const ASH_THRESHOLD = 0.35; // ground flammability that leaves ash behind
 const SCARRED = 8; // scar bit: a fire has burnt this tile
 
