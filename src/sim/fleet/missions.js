@@ -400,6 +400,10 @@ export const missions = {
       }
     }
     if (!o) return;
+    // (one fresh choice every few seconds at most)
+    const now = this.game.time.total;
+    if (now - (v._rbT ?? -99) < 5) return;
+    v._rbT = now;
     if (out && h) {
       // a visitor unloads in the roads instead
       const s = this._mooringSpot(h, v) || this._anchorage(h, v.def);
