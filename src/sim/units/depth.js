@@ -227,11 +227,11 @@ export function installDepth(Units) {
     const humans = this._counts?.get('human') || 0;
     return Math.max(3, Math.round(2 + 2 * this.popScale + humans / 250));
   };
-  // How many living heroes the world's people look for: about one per 160
-  // people (never fewer than three), within the cap.
+  // How many living heroes the world's people look for: about one per 150
+  // people (five or six on a World Map world at its height), within the cap.
   P.heroWant = function () {
     const humans = this._counts?.get('human') || 0;
-    return Math.min(this.heroCap(), Math.max(3, Math.round(humans / 160)));
+    return Math.min(this.heroCap(), Math.round(humans / 150));
   };
   // Every realm of some size raises a champion: when it has no living hero,
   // its most seasoned veteran is hailed (checked once a game minute). While
