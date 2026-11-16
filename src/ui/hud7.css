@@ -811,3 +811,30 @@
 .ws-ovlabel.is-pin b {
   display: none;
 }
+
+/* Overview leader lines from a displaced realm name to its realm's centre */
+.ws-ovlines {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.ws-ovlines__under {
+  fill: none;
+  stroke: rgba(10, 12, 19, 0.6);
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+.ws-ovlines__line {
+  fill: none;
+  stroke: rgba(255, 246, 226, 0.85);
+  stroke-width: 1.2;
+  stroke-linecap: round;
+}
+.ws-ovlines__dot {
+  fill: #fff6e2;
+  stroke: rgba(10, 12, 19, 0.85);
+  stroke-width: 1.2;
+}

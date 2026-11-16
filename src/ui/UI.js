@@ -35,6 +35,10 @@ const OV_SPOTS = [
   [0, -2.24], [0, 2.24], [-0.3, -2.24], [0.3, -2.24], [-0.3, 2.24], [0.3, 2.24],
 ];
 const OV_ORDER = OV_SPOTS.map((_, i) => i);
+// Where a name with no room beside its realm may go instead (joined by a
+// leader line): rings in label heights from the centre, and directions.
+const OV_RINGS = [2.2, 3.2, 4.4, 6, 8];
+const OV_ANGLES = [-90, 90, 0, 180, -45, -135, 45, 135, -65, -115, 65, 115, -20, -160, 20, 160].map((d) => [Math.cos((d * Math.PI) / 180), Math.sin((d * Math.PI) / 180)]);
 
 const PREF_KEY = 'worldseed.ui.v1';
 
@@ -694,53 +698,135 @@ export class UI {
       for (const h of this._ovHud) if (l < h.right && r > h.left && t < h.bottom && b > h.top) return false;
       return true;
     };
+    // is (x, y) nearer this realm's centre than any other realm's? (a name
+    // nudged aside must not come to rest over a neighbour)
+    const ownNearest = (it, x, y) => {
+      const d0 = (x - it.sx) ** 2 + (y - it.sy) ** 2;
+      for (const o of items) if (o !== it && (x - o.sx) ** 2 + (y - o.sy) ** 2 < d0) return false;
+      return true;
+    };
+    const coversOther = (it, l, t, r, b) => {
+      for (const o of items) if (o !== it && o.sx > l - 3 && o.sx < r + 3 && o.sy > t - 3 && o.sy < b + 3) return true;
+      return false;
+    };
+    const put = (it, hit, mode) => {
+      it.hit = hit;
+      it.mode = mode;
+      placed.push({ l: hit.x - hit.w / 2, t: hit.y - hit.h / 2, r: hit.x + hit.w / 2, b: hit.y + hit.h / 2 });
+    };
+    // 1. names that fit on or just beside their realm's centre, largest
+    // realms first, each on its own side of its neighbours
     for (const it of items) {
       const e = it.e;
-      let hit = null;
-      // the spot it held last frame first, so names do not hop about
-      const order = e._spot != null ? [e._spot, ...OV_ORDER.filter((i) => i !== e._spot)] : OV_ORDER;
+      it.hit = null;
+      const order = e._mode === 'near' && e._spot != null ? [e._spot, ...OV_ORDER.filter((i) => i !== e._spot)] : OV_ORDER;
       for (const sc of [1, 0.84]) {
         const w = e._w * sc,
           h = e._h * sc;
         for (const i of order) {
           const [dx, dy] = OV_SPOTS[i];
-          let x = it.sx + dx * w;
-          const y = it.sy + dy * h;
           // a name at a screen edge slides inward rather than vanishing
-          x = Math.min(W - M - w / 2, Math.max(M + w / 2, x));
+          const x = Math.min(W - M - w / 2, Math.max(M + w / 2, it.sx + dx * w));
+          const y = it.sy + dy * h;
           if (Math.abs(x - it.sx) > w * 0.62) continue;
+          if (i !== 0 && !ownNearest(it, x, y)) continue;
           if (free(x - w / 2, y - h / 2, x + w / 2, y + h / 2)) {
-            hit = { x, y, w, h, sc, i };
+            put(it, { x, y, w, h, sc, i }, 'near');
             break;
           }
         }
-        if (hit) break;
+        if (it.hit) break;
       }
-      let pin = false;
-      if (!hit) {
-        // no room for the name: its banner pin still marks the realm
-        const w = 18,
-          h = 18;
-        for (const [dx, dy] of [[0, 0], [0, -1], [0, 1], [-1, 0], [1, 0]]) {
-          const x = it.sx + dx * w,
-            y = it.sy + dy * h;
-          if (free(x - w / 2, y - h / 2, x + w / 2, y + h / 2)) {
-            hit = { x, y, w, h, sc: 1, i: null };
-            pin = true;
-            break;
+    }
+    // 2. the rest go out into open ground or sea nearby, joined to their
+    // realm's centre by a thin leader line; never over another realm's centre
+    for (const it of items) {
+      if (it.hit) continue;
+      const e = it.e;
+      let best = null;
+      for (const sc of [0.84, 1]) {
+        const w = e._w * sc,
+          h = e._h * sc;
+        for (let ri = 0; ri < OV_RINGS.length; ri++) {
+          const r = OV_RINGS[ri] * h;
+          for (let ai = 0; ai < OV_ANGLES.length; ai++) {
+            const [c, sn] = OV_ANGLES[ai];
+            const x = it.sx + c * (r + (w / 2) * Math.abs(c)),
+              y = it.sy + sn * (r + (h / 2) * Math.abs(sn));
+            const l = x - w / 2,
+              t = y - h / 2,
+              rr = x + w / 2,
+              bb = y + h / 2;
+            if (!free(l, t, rr, bb) || coversOther(it, l, t, rr, bb)) continue;
+            // shortest leader wins; resting nearer a neighbour costs extra,
+            // and the spot held last frame is kept unless clearly beaten
+            let cost = r + (ownNearest(it, x, y) ? 0 : 40) + (sc === 1 ? 0 : 6);
+            if (e._mode === 'far' && e._spot === ri * 100 + ai && e._sc === sc) cost -= 12;
+            if (!best || cost < best.cost) best = { x, y, w, h, sc, i: ri * 100 + ai, cost };
           }
+          if (best && best.cost < OV_RINGS[Math.min(ri + 1, OV_RINGS.length - 1)] * h) break;
         }
       }
+      if (best) put(it, best, 'far');
+    }
+    // 3. still no room: the realm's banner pin marks it
+    for (const it of items) {
+      if (it.hit) continue;
+      const w = 18,
+        h = 18;
+      for (const [dx, dy] of [[0, 0], [0, -1], [0, 1], [-1, 0], [1, 0]]) {
+        const x = it.sx + dx * w,
+          y = it.sy + dy * h;
+        if (free(x - w / 2, y - h / 2, x + w / 2, y + h / 2)) {
+          put(it, { x, y, w, h, sc: 1, i: null }, 'pin');
+          break;
+        }
+      }
+    }
+    // draw: names, and leader lines with a dot on each displaced realm's centre
+    let lines = '',
+      dots = '';
+    for (const it of items) {
+      const e = it.e,
+        hit = it.hit;
       if (!hit) {
         e.hidden = true;
         e._spot = null;
+        e._mode = null;
         continue;
       }
+      const pin = it.mode === 'pin';
       if (e.classList.contains('is-pin') !== pin) e.classList.toggle('is-pin', pin);
       e._spot = hit.i;
       e._sc = hit.sc;
-      placed.push({ l: hit.x - hit.w / 2, t: hit.y - hit.h / 2, r: hit.x + hit.w / 2, b: hit.y + hit.h / 2 });
+      e._mode = it.mode;
       e.style.transform = `translate(${Math.round(hit.x)}px, ${Math.round(hit.y)}px) translate(-50%, -50%)${hit.sc !== 1 ? ` scale(${hit.sc})` : ''}`;
+      if (it.mode === 'far') {
+        // from the centre to the nearest point of the name's plate
+        const ex = Math.min(hit.x + hit.w / 2, Math.max(hit.x - hit.w / 2, it.sx)),
+          ey = Math.min(hit.y + hit.h / 2, Math.max(hit.y - hit.h / 2, it.sy));
+        lines += `M${it.sx.toFixed(1)} ${it.sy.toFixed(1)}L${ex.toFixed(1)} ${ey.toFixed(1)}`;
+        dots += `M${(it.sx + 2.6).toFixed(1)} ${it.sy.toFixed(1)}a2.6 2.6 0 1 0 -5.2 0a2.6 2.6 0 1 0 5.2 0`;
+      }
+    }
+    if (!this._ovSvg) {
+      const NS = 'http://www.w3.org/2000/svg';
+      const svg = document.createElementNS(NS, 'svg');
+      svg.setAttribute('class', 'ws-ovlines');
+      for (const c of ['ws-ovlines__under', 'ws-ovlines__line', 'ws-ovlines__dot']) {
+        const pth = document.createElementNS(NS, 'path');
+        pth.setAttribute('class', c);
+        svg.append(pth);
+      }
+      this.ovLabels.prepend(svg);
+      this._ovSvg = svg;
+    }
+    if (this._ovLines !== lines + dots) {
+      this._ovLines = lines + dots;
+      const [under, line, dot] = this._ovSvg.children;
+      under.setAttribute('d', lines);
+      line.setAttribute('d', lines);
+      dot.setAttribute('d', dots);
     }
   }
 
