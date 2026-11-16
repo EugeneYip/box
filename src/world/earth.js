@@ -1331,18 +1331,23 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
       const treeKm = table(TREE_LAT, Math.abs(lat)) + 0.8 * cont + bn * 0.12;
       // (dry interiors such as Tibet keep their snow higher; snowy maritime
       // mountains such as Japan's carry it lower)
-      const snowKm = treeKm + 0.9 + 1.3 * clamp01((0.5 - m) / 0.3) - 0.35 * clamp01((m - 0.6) / 0.25) - (REG ? 0.2 : 0.5) * smoothstep(0.6, 0.95, rangeMask[i]) - 0.8 * smoothstep(0.5, 0.9, coneK[i]);
+      // (off the crests of the ranges: plateaus and interior basins, where
+      // dryness and continental summers lift the snow line well above them)
+      const core = smoothstep(0.55, 0.9, rangeMask[i]);
+      const snowKm = treeKm + 0.9 + (1.3 * clamp01((0.5 - m) / 0.3) + 0.5 * cont) * (1 - core) - 0.35 * clamp01((m - 0.6) / 0.25) - (REG ? 0.2 : 0.5) * core - 0.8 * smoothstep(0.5, 0.9, coneK[i]);
       treeM[i] = treeKm - ekm;
       snowM[i] = snowKm - ekm;
       const dOcT = dOcean[i]; // tiles to the open sea
       let tt;
       if (icecap[i] && dLand[i] >= 1 && dLand[i] < 9 * scale768 && ridged(nRidge, x / tpd / 1.3 + 7, y / tpd / 1.3 - 3) > 0.86) tt = TILE.ROCK; // nunataks
       else if (marsh[i]) tt = TILE.SWAMP; // lakes on high ground: flat marshes
-      else if (icecap[i] || ekm > snowKm || t < 0.11 + bn * 0.02) tt = TILE.SNOW;
+      // (polar cold makes snow at any height; on mountains and plateaus the
+      // snow line decides, so the dry Tibetan plateau is steppe, not snowfield)
+      else if (icecap[i] || ekm > snowKm || baseT[i] < 0.11 + bn * 0.02) tt = TILE.SNOW;
       // above the tree line: alpine grass, with bare rock on steep ground and
       // more of it toward the snow
       else if ((ekm > treeKm && slope > 0.55 + bn * 0.15 + 0.6 * (1 - smoothstep(treeKm, snowKm, ekm))) || slope > 2.2 + bn * 0.4) tt = TILE.ROCK;
-      else if (ekm > treeKm) tt = t > 0.17 ? TILE.TUNDRA : TILE.SNOW; // alpine meadow, high plateaus
+      else if (ekm > treeKm) tt = baseT[i] > 0.17 || snowM[i] > 0.25 ? TILE.TUNDRA : TILE.SNOW; // alpine meadow, high plateaus
       // (lone islets are green, not pale sand discs; narrow islands on the
       // whole Earth keep green shores rather than sea cliffs)
       else if (dOcT <= beachW + bn * 0.6 && h < 0.9 + bn * 0.3 && slope < 0.7 && t > 0.3 && landW[i] > 1.01 && !(REG && edgeDist(x, y) < 8)) tt = TILE.SAND;
