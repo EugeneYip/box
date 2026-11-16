@@ -367,7 +367,7 @@ export const politics = {
       if (this.villages[small.capital]?.landId !== this.villages[big.capital]?.landId) continue;
       if (!this.rng.chance(0.4)) continue;
       const name = this._kn(small);
-      const home = small.parent === big.id;
+      const home = small.parent === big.id || (big.realm >= 0 && small.placesFrom === big.realm);
       for (const vid of [...small.villages]) {
         const v = this.villages[vid];
         if (v?.alive) this._transferVillage(v, big.id, 'union');
@@ -380,12 +380,13 @@ export const politics = {
   // Unions on a World Map world, as [small, big] or null. A real country is
   // never folded into a generated realm: when the two unite, the real one
   // is the crown that stays, whatever their sizes. A country seeded at the
-  // start keeps its own crown for sixty years (France, the Netherlands and
+  // start keeps its own crown for seventy years (France, the Netherlands and
   // Poland had all been folded into neighbours by Year 55) and then joins
   // only a firm ally three times its size; any other real country keeps its
   // crown for thirty years. A breakaway long at peace with the country it
-  // left goes back to it, and a small realm long at peace beside a real
-  // country joins it: fewer one-town crowns on the regional maps.
+  // left, or with the real country whose land it stands in, goes back to it,
+  // and a small realm long at peace beside a real country joins it: fewer
+  // one-town crowns on the regional maps.
   _realUnion(A, B, r, now) {
     const ra = A.realm >= 0,
       rb = B.realm >= 0;
@@ -394,7 +395,7 @@ export const politics = {
     const ns = small.villages.length,
       nb = big.villages.length;
     if (small.realm >= 0) {
-      if (!(big.realm >= 0) || now - small.founded < YEAR * (small.seeded ? 60 : 30)) return null;
+      if (!(big.realm >= 0) || now - small.founded < YEAR * (small.seeded ? 70 : 30)) return null;
       if (small.seeded) return r.ally && r.opinion >= 40 && ns <= 1 && nb >= 3 ? [small, big] : null;
       return r.ally && r.opinion >= 30 && ns <= 2 && nb >= ns + 1 ? [small, big] : null;
     }
@@ -403,9 +404,10 @@ export const politics = {
     if (ns > (regional ? 3 : 2)) return null;
     if (big.realm >= 0 ? nb < ns - 1 : nb < ns + 1) return null;
     const peace = r.peaceT || 0;
-    if (r.ally && r.opinion >= (big.realm >= 0 ? 15 : 30)) return [small, big];
-    if (small.parent === big.id && peace >= YEAR * 8 && r.opinion >= -15) return [small, big];
-    if (big.realm >= 0 && r.border > 0 && peace >= YEAR * 12 && r.opinion >= 5) return [small, big];
+    const kin = small.parent === big.id || (big.realm >= 0 && small.placesFrom === big.realm);
+    if (r.ally && r.opinion >= (big.realm >= 0 ? 10 : 25)) return [small, big];
+    if (kin && peace >= YEAR * (regional ? 6 : 8) && r.opinion >= -20) return [small, big];
+    if (big.realm >= 0 && r.border > 0 && peace >= YEAR * (regional ? 10 : 12) && r.opinion >= 0) return [small, big];
     return null;
   },
 
@@ -551,7 +553,7 @@ export const politics = {
           const youngReal = def.seeded && now - def.founded < YEAR * 40;
           if (def.seeded && this.warCount(def.id) >= (def.villages.length <= 1 ? 1 : 2)) continue;
           let p = 0.045 + att.aggression * 0.09 + (ambitious ? 0.05 : 0) + (hungry ? 0.04 + crowd * 0.05 : 0);
-          if (def.seeded) p *= (youngReal ? 0.8 : 1) * (def.villages.length <= 1 ? 0.7 : 1);
+          if (def.seeded) p *= (youngReal ? 0.85 : 1) * (def.villages.length <= 1 ? 0.85 : 1);
           p *= Math.pow(wl, 1.7) * (g.age?.mods?.warlike ?? 1);
           if (this._rulerTrait(att, 'cruel', 'valiant')) p *= 1.6;
           if (this._rulerTrait(att, 'gentle', 'silver-tongued', 'silvertongued')) p *= 0.55;
