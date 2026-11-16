@@ -562,7 +562,7 @@ export class Civilization {
     // far-flung colonies sometimes strike out on their own as a new realm
     const cap = k ? this.villages[k.capital] : null;
     const far = cap ? Math.hypot(cap.cx - u.x, cap.cz - u.z) : 0;
-    const independent = !k || !k.alive || (this.law('civNewKingdoms') && ((far > 55 && this.rng.chance(0.45)) || this.rng.chance(0.12)));
+    const independent = !k || !k.alive || (this.law('civNewKingdoms') && this.rng.chance(this._splinterOdds(k, far)));
     if (exp.site.resettle != null) {
       const old = this.villages[exp.site.resettle];
       if (old) {

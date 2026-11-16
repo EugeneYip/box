@@ -114,6 +114,80 @@ export function placeName(culture, rng, used = null) {
   return joinName(pick(rng, c.syl.place[0]), pick(rng, c.syl.place[1])) + ' ' + rng.int(2, 9);
 }
 
+// World Map worlds: when no real place name is left near a new village, a
+// name in the style of the land it stands in (never an English-sounding one
+// in East Asia). Two parts, joined (Japanese "Naka" + "gawa") or spaced
+// (Vietnamese "Phu" + "Yen"); pinyin takes an apostrophe before a vowel
+// ("Xin'an").
+const REAL_STYLES = {
+  ja: {
+    a: ['Kami', 'Shimo', 'Naka', 'Kita', 'Minami', 'Higashi', 'Nishi', 'Taka', 'Hira', 'Matsu', 'Fuji', 'Ishi', 'Kuro', 'Shira', 'Yoshi', 'Mori', 'Tsuru', 'Asa', 'Oka', 'Sawa', 'Ichi', 'Mizu', 'Iwa', 'Sakura', 'Kiri', 'Hino', 'Toyo', 'Naga', 'Fuka', 'Aki', 'Tama'],
+    b: ['yama', 'kawa', 'gawa', 'hara', 'shima', 'mura', 'saki', 'moto', 'da', 'ta', 'no', 'oka', 'zawa', 'hama', 'ura', 'tsu', 'mori', 'bashi', 'kubo', 'numa', 'sato', 'machi', 'izumi'],
+  },
+  ko: {
+    a: ['Cheong', 'Dong', 'Nam', 'Seo', 'Buk', 'Sin', 'Gwang', 'Hwa', 'Yang', 'Jin', 'Hae', 'Geum', 'Mun', 'Bo', 'Gang', 'Yeong', 'Ok', 'Sang', 'Jang', 'Mi', 'Hong', 'Mil', 'Gim'],
+    b: ['ju', 'san', 'cheon', 'won', 'po', 'do', 'jin', 'dong', 'chang', 'seong', 'gok', 'hae', 'yang', 'nam', 'gye', 'pyeong'],
+  },
+  zh: {
+    a: ['Xin', 'Dong', 'Nan', 'Xi', 'Bei', 'Shang', 'Xia', 'Long', 'Jin', 'Fu', 'Bai', 'Da', 'Gu', 'Hong', 'Huang', 'Qing', 'Shi', 'Song', 'Tai', 'Yong', 'Zhong', 'Ping', 'He', 'Lin', 'Yun', 'Chang', 'Guang'],
+    b: ['zhou', 'shan', 'cheng', 'ning', 'yang', 'an', 'ping', 'kou', 'he', 'jiang', 'tian', 'men', 'tang', 'qiao', 'zhuang', 'ling', 'quan', 'pu', 'feng', 'xian', 'yuan'],
+  },
+  // Taiwan: township names in the pinyin spellings used there
+  tw: {
+    a: ['Xin', 'Dong', 'Nan', 'Xi', 'Bei', 'Da', 'Zhu', 'Shui', 'Lin', 'Ping', 'Fu', 'Long', 'Jin', 'Bai', 'Hu', 'Wan', 'Yong', 'Fang', 'Zhong', 'Shi', 'He', 'Gang', 'Ren', 'Tou', 'Ji', 'Yu', 'Mei', 'San', 'Liu', 'Qing'],
+    b: ['shan', 'pu', 'zhuang', 'xi', 'tian', 'li', 'kou', 'liao', 'cuo', 'tou', 'wei', 'gang', 'lin', 'he', 'feng', 'hu', 'qiao', 'dun', 'yuan', 'shui', 'cheng', 'ding'],
+  },
+  vi: {
+    sep: ' ',
+    a: ['Tan', 'Long', 'Phu', 'An', 'Binh', 'Hoa', 'Thanh', 'Vinh', 'Duc', 'Ha', 'Quang', 'Hai', 'Tam', 'Kim', 'Son', 'Dong', 'Nam', 'Bac', 'Tay', 'Cam'],
+    b: ['An', 'Binh', 'Thanh', 'Hoa', 'Long', 'Phu', 'Son', 'Giang', 'Ninh', 'Dien', 'Hung', 'Lam', 'Tien', 'Xuyen', 'Duong', 'Yen', 'Lac', 'Thuy'],
+  },
+  th: {
+    sep: ' ',
+    a: ['Ban', 'Nong', 'Mae', 'Wang', 'Nakhon', 'Si', 'Phra', 'Chai', 'Khok', 'Tha', 'Huai', 'Don', 'Pak', 'Bang', 'Sam', 'Lam'],
+    b: ['Khao', 'Kaeng', 'Sai', 'Na', 'Thong', 'Phai', 'Daeng', 'Nam', 'Kham', 'Bua', 'Pho', 'Yai', 'Noi', 'Chan', 'Phrao', 'Sawang'],
+  },
+  ms: {
+    sep: ' ',
+    a: ['Kota', 'Kuala', 'Sungai', 'Tanjung', 'Batu', 'Bukit', 'Pulau', 'Teluk', 'Muara', 'Kampung', 'Padang', 'Tanah', 'Ulu', 'Air'],
+    b: ['Baru', 'Besar', 'Kecil', 'Jaya', 'Indah', 'Raya', 'Bharu', 'Pinang', 'Lama', 'Tinggi', 'Merah', 'Putih', 'Hitam', 'Panjang', 'Kuning', 'Mas'],
+  },
+  ru: {
+    a: ['Novo', 'Staro', 'Belo', 'Krasno', 'Verkhne', 'Nizhne', 'Sredne', 'Zlato', 'Sosno', 'Pervo', 'Yasno', 'Lesno', 'Zheleznogo', 'Kamensko', 'Ozyorno'],
+    b: ['gorsk', 'sibirsk', 'yarsk', 'ozersk', 'polye', 'dar', 'grad', 'reche', 'vodsk', 'lesye', 'zavodsk', 'kamensk', 'uralsk', 'bereznik', 'dolsk'],
+  },
+  hi: {
+    a: ['Ram', 'Shiv', 'Chandra', 'Hari', 'Krishna', 'Raj', 'Gopal', 'Sita', 'Durga', 'Lakshmi', 'Bhim', 'Dev', 'Indra', 'Sur', 'Moti', 'Anand', 'Kesh', 'Bhavani'],
+    b: ['pur', 'nagar', 'abad', 'garh', 'ganj', 'kot', 'pura', 'gaon', 'wadi', 'patnam'],
+  },
+};
+
+export function realStyleName(lang, rng, used = null) {
+  const s = REAL_STYLES[lang];
+  if (!s) return null;
+  const make = () => {
+    const a = pick(rng, s.a),
+      b = pick(rng, s.b);
+    if (s.sep) return a === b ? null : a + s.sep + b;
+    if (a.toLowerCase() === b) return null;
+    if ((lang === 'zh' || lang === 'tw') && 'aeo'.includes(b[0])) return a + "'" + b;
+    return cap(a + b);
+  };
+  for (let k = 0; k < 40; k++) {
+    const n = make();
+    if (n && (!used || !used.has(n))) {
+      used?.add(n);
+      return n;
+    }
+  }
+  return null;
+}
+
+// Ruler titles on World Map worlds: a realm's own (from the place data), the
+// map's (Japan's regions are held by daimyo, Taiwan's cities and counties by
+// magistrates) or a neutral one: never a jarl in Kyoto.
+export const REAL_TITLE = { m: 'Lord', f: 'Lady' };
+
 export function kingdomName(culture, base, rng) {
   const c = CULTURES[baseCulture(culture)];
   return pick(rng, c.forms).replace('{n}', base);

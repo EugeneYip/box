@@ -1,8 +1,8 @@
 import { TILE, TILE_INFO, FLORA, SEA_LEVEL } from '../../world/constants.js';
 import { geoInfo, geoRegion, geoTile } from '../../world/geo.js';
-import { HERALDRY, colorDist } from './cultures.js';
-import { realmsFor } from './places/index.js';
-import { USE, SPIRAL, spiralCount, clamp } from './util.js';
+import { HERALDRY, colorDist, realStyleName, REAL_TITLE } from './cultures.js';
+import { realmsFor, regionStyle } from './places/index.js';
+import { USE, SPIRAL, spiralCount, clamp, YEAR } from './util.js';
 
 // Real realms on World Map worlds (contract: docs/REGIONS.md section 3).
 // A map of the Earth (or of one of its regions) starts with real countries
@@ -64,6 +64,7 @@ export const realms = {
     const seated = [];
     for (let i = 0; i < data.length && seated.length < maxRealms && seated.length < maxVillages; i++) {
       const r = data[i];
+      if (r.seed === false) continue; // listed for its place names only
       const seats = r.edge ? [r.capital, ...r.cities] : [r.capital];
       let site = null,
         seat = null,
@@ -90,7 +91,11 @@ export const realms = {
         realmIdx: i,
         color: r.color != null ? this._nearestTincture(r.color, site.x, site.y) : null,
       });
-      if (v) seated.push({ k: this.kingdoms[v.kingdom], r, seat, next: 0, given: 0 });
+      if (v) {
+        const k = this.kingdoms[v.kingdom];
+        k.seeded = true; // a real country of the start (sturdier: politics.js)
+        seated.push({ k, r, seat, next: 0, given: 0 });
+      }
     }
     if (!seated.length) return false;
 
@@ -303,31 +308,203 @@ export const realms = {
 
   // The real name for a village founded at (tx, ty) by realm k (or by
   // settlers from realm `fromId`): the nearest unused city of that realm
-  // within reach, or else any real place right there; null when there is
-  // none (the caller then makes up a name).
+  // within reach, or else any real place right there; failing both, the
+  // search widens (twice, then three times as far: a neighbouring realm's
+  // towns). When every real name nearby is taken, a name in the style of the
+  // land (Japanese, Korean, pinyin, ...); null only where the land has no
+  // such style (the caller then makes up a name in the people's language).
   _realPlaceName(k, tx, ty, fromId = null) {
     const places = this._places;
     if (!places || !places.length) return null;
-    const own = k?.realm ?? this.kingdoms[fromId]?.realm ?? -1;
+    const src = k || this.kingdoms[fromId];
+    const own = src?.realm ?? src?.placesFrom ?? -1;
     const taken = new Set();
     for (const v of this.villages) if (v.alive) taken.add(v.name);
     const R = this._placeReach;
+    for (const m of [1, 2, 3]) {
+      let best = null,
+        bs = Infinity;
+      for (const p of places) {
+        if (taken.has(p.name)) continue;
+        const mine = p.realm === own;
+        const d = Math.hypot(p.x - tx, p.z - ty);
+        if (d > (mine ? R.own : R.any) * m) continue;
+        const sc = d - (mine ? R.bonus * m : 0);
+        if (sc < bs) {
+          bs = sc;
+          best = p;
+        }
+      }
+      if (best) {
+        this.usedNames.add(best.name);
+        return best.name;
+      }
+    }
+    const lang = this._langAt(tx, ty);
+    return lang ? realStyleName(lang, this.rng, this.usedNames) : null;
+  },
+
+  // ------------------------------------------------------------ realms that rise later
+  // True on a World Map world (real places were laid out at the start).
+  _realMapOn() {
+    return !!(this._places && this._places.length);
+  },
+
+  // The place-data realm (index) whose land a tile lies in: the realm of the
+  // place called `name` when there is one near, else of the nearest place
+  // within reach; -1 when no real place is near.
+  _placeRealmAt(x, z, name = null) {
+    const places = this._places;
+    if (!places || x == null) return -1;
+    const R = this._placeReach;
     let best = null,
-      bs = Infinity;
+      bd = Infinity;
     for (const p of places) {
-      const mine = p.realm === own;
-      const d = Math.hypot(p.x - tx, p.z - ty);
-      if (d > (mine ? R.own : R.any)) continue;
-      if (taken.has(p.name)) continue;
-      const sc = d - (mine ? R.bonus : 0);
-      if (sc < bs) {
-        bs = sc;
+      const d = Math.hypot(p.x - x, p.z - z);
+      if (name && p.name === name && d < R.own * 2) return p.realm;
+      if (d < bd) {
+        bd = d;
         best = p;
       }
     }
-    if (!best) return null;
-    this.usedNames.add(best.name);
-    return best.name;
+    return best && bd < R.any * 2 ? best.realm : -1;
+  },
+
+  // The naming style of the land at a tile: that of the real realm whose
+  // places lie nearest, else the map's own (East Asian maps), else none.
+  _langAt(x, z) {
+    const data = this._realmData();
+    if (!data) return null;
+    const R = this._placeReach;
+    let best = null,
+      bd = Infinity;
+    for (const p of this._places || []) {
+      const d = Math.hypot(p.x - x, p.z - z);
+      if (d < bd) {
+        bd = d;
+        best = p;
+      }
+    }
+    const lang = best && bd < R.any * 6 ? data[best.realm]?.lang : null;
+    return lang || regionStyle(geoRegion(this.world)).lang || null;
+  },
+
+  // The ruler's title in a realm on a World Map world: the realm's own (from
+  // the place data: Emperor of Japan, Tsar of Russia, a daimyo in Kyushu, a
+  // magistrate in Taipei), else the map's (a daimyo in a rebel city on the
+  // Japan map), else a neutral Lord or Lady. Null on square maps (the
+  // culture's own title applies there).
+  _realTitle(k) {
+    if (!this._realMapOn()) return null;
+    if (k?.title) return k.title;
+    const data = this._realmData();
+    const idx = k?.realm ?? -1;
+    const d = idx >= 0 ? data?.[idx] : null;
+    if (d && d.title !== undefined) return d.title || REAL_TITLE;
+    return regionStyle(geoRegion(this.world)).title || REAL_TITLE;
+  },
+
+  // The name of a realm that rises on a World Map world (a rebellion, a
+  // splinter colony, wanderers, a town freed by a god): no "Kingdom of" or
+  // "Duchy of" on a map of the real world. In order:
+  //  1. the fallen real realm the seat belonged to (France rises again);
+  //  2. the real realm whose land the seat stands in, when no living realm
+  //     carries its name (a country or region not seeded at the start, or one
+  //     that has fallen: Austria breaks away from Germany around Vienna);
+  //  3. the seat city's own name ("Kumamoto");
+  //  4. the nearest real place no living realm is called by.
+  // Returns { name, realm (place-data index or -1), placesFrom, color }.
+  _newRealmName(base, opts = {}) {
+    const data = this._realmData() || [];
+    const living = new Set();
+    for (const k of this.kingdoms) if (k.alive && k.villages.length) living.add(k.name);
+    const d = this._placeRealmAt(opts.x, opts.z, base);
+    const fallen = (idx) => {
+      // the colours of the realm that fell, so it reads as the same country
+      for (let i = this.kingdoms.length - 1; i >= 0; i--) {
+        const k = this.kingdoms[i];
+        if (k.realm === idx && !(k.alive && k.villages.length)) return k;
+      }
+      return null;
+    };
+    const real = (idx) => {
+      const old = fallen(idx);
+      return { name: data[idx].name, realm: idx, placesFrom: idx, color: old?.color ?? null, banner: old?.banner ?? null };
+    };
+    const H = this.kingdoms[opts.home];
+    if (H && H.realm >= 0 && data[H.realm] && !living.has(data[H.realm].name)) return real(H.realm);
+    if (d >= 0 && data[d] && !living.has(data[d].name)) return real(d);
+    if (base && !living.has(base)) return { name: base, realm: -1, placesFrom: d };
+    let best = null,
+      bd = Infinity;
+    for (const p of this._places || []) {
+      if (living.has(p.name)) continue;
+      const dd = Math.hypot(p.x - (opts.x ?? 0), p.z - (opts.z ?? 0));
+      if (dd < bd) {
+        bd = dd;
+        best = p;
+      }
+    }
+    return { name: best ? best.name : base, realm: -1, placesFrom: d };
+  },
+
+  // The real realm a town belongs to (World Map): the first real realm that
+  // held it (its seed, its founder, or the first real crown to take it),
+  // while that realm still stands. A town held by someone else longs for it
+  // and, when it rises, goes back to it instead of crowning a realm of its own.
+  _homeRealm(v) {
+    if (!this._realMapOn() || v.home == null) return null;
+    const H = this.kingdoms[v.home];
+    return H && H.alive && H.villages.length && H.realm >= 0 ? H : null;
+  },
+
+  // A real realm whose last town falls is not wiped from the map at once: the
+  // court flees with the townsfolk who escape and raises a new seat at one of
+  // the realm's own real cities on free land (once in fifteen years).
+  // Returns the new seat, or null (the realm then falls).
+  _courtInExile(k, lost) {
+    if (!this._realMapOn() || !(k.realm >= 0) || !lost) return null;
+    const now = this.game.time.total;
+    if (now - (k.exileT ?? -1e9) < YEAR * 15) return null;
+    if (this._aliveVillageCount() >= this.budget.villages + 2) return null;
+    const w = this.world;
+    const taken = new Set();
+    for (const v of this.villages) if (v.alive) taken.add(v.name);
+    const cands = [];
+    for (const p of this._places) {
+      if (p.realm !== k.realm || taken.has(p.name)) continue;
+      const d = Math.hypot(p.x - lost.cx, p.z - lost.cz);
+      if (d < 14 || d > 150) continue;
+      const x = Math.floor(p.x),
+        z = Math.floor(p.z);
+      if (!w.inBounds(x, z)) continue;
+      const o = w.owner[z * w.w + x];
+      if (o >= 0 && o !== k.id) continue;
+      if (this.villages.some((v) => v.alive && Math.hypot(v.cx - p.x, v.cz - p.z) < 13)) continue;
+      cands.push({ p, d });
+    }
+    cands.sort((a, b) => a.d - b.d);
+    // the townsfolk who escape follow the court (soldiers stay to be taken)
+    const folk = [...lost.members].filter((u) => u.alive && u.job !== 'soldier' && u.job !== 'king' && !u.data.civ?.army).slice(0, 9);
+    for (const { p } of cands.slice(0, 4)) {
+      const v = this.foundVillage(Math.floor(p.x), Math.floor(p.z), {
+        kingdom: k.id,
+        culture: k.culture,
+        name: p.name,
+        units: folk.length >= 5 ? folk : undefined,
+        settlers: folk.length >= 5 ? undefined : 7,
+        starter: true,
+        houses: 2,
+        searchR: 8,
+        silent: true,
+      });
+      if (!v) continue;
+      k.exileT = now;
+      k.capital = v.id;
+      v.home = k.id;
+      return v;
+    }
+    return null;
   },
 
   // "the Kingdom of Thornholm", but "Japan" (real realms carry plain names).

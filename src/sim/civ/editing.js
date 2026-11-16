@@ -252,9 +252,10 @@ export const editing = {
     this.usedNames?.add?.(n);
     this._mark(v, 'name');
     // a realm named after its seat follows it (a real realm keeps its own
-    // name: renaming the city of Taipei leaves the Taipei realm as it is)
+    // name: renaming the city of Taipei leaves the Taipei realm as it is,
+    // while a rebel realm called after its city, "Kumamoto", follows it)
     const k = this.kingdoms[v.kingdom];
-    if (k && k.capital === v.id && !k.player?.name && !k.plain && k.base === old) {
+    if (k && k.capital === v.id && !k.player?.name && !(k.realm >= 0) && k.base === old) {
       k.base = n;
       if (k.name.includes(old)) k.name = k.name.replace(old, n);
     }

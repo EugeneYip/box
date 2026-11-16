@@ -1,6 +1,7 @@
 import { CULTURES, HERALDRY, HERALDRY_AVOID, colorDist, baseCulture, placeName, kingdomName as makeKingdomName, rulerTitle } from './cultures.js';
 import { BUILDING_TYPES, buildingLabel } from './catalog.js';
 import { YEAR, ADULT_AGE, clamp } from './util.js';
+import { geoRegion } from '../../world/geo.js';
 
 // Kingdoms, rulers, diplomacy (opinion, alliances, war), armies, conquest,
 // rebellion and collapse. Mixed into Civilization.prototype.
@@ -12,14 +13,18 @@ export const politics = {
   createKingdom(culture, opts = {}) {
     const rng = this.rng;
     const id = this.kingdoms.length;
+    const base = opts.baseName || placeName(culture, rng, this.usedNames);
+    // World Map: a realm that rises later takes a plain real name (its fallen
+    // country's, its land's, or its seat's), never "Duchy of Kumamoto"
+    const real = !opts.name && this._realMapOn?.() ? this._newRealmName(base, opts) : null;
     let her = this._pickTincture(culture, opts.x, opts.z, -1);
     if (opts.color != null) her = HERALDRY.find((h) => h.color === opts.color) || her;
+    else if (real?.color != null && this._tinctureFree(real.color, opts.x, opts.z)) her = HERALDRY.find((h) => h.color === real.color) || her;
     if (!her) her = HERALDRY[id % HERALDRY.length];
-    const base = opts.baseName || placeName(culture, rng, this.usedNames);
     const k = {
       id,
-      name: opts.name || makeKingdomName(culture, base, rng),
-      base,
+      name: opts.name || real?.name || makeKingdomName(culture, base, rng),
+      base: real ? real.name : base,
       color: her.color,
       colorName: her.name,
       culture,
@@ -41,8 +46,13 @@ export const politics = {
       parent: opts.parent ?? -1,
       lastWar: -999,
     };
+    if (real) {
+      k.plain = true;
+      if (real.realm >= 0) k.realm = real.realm;
+      if (real.placesFrom >= 0) k.placesFrom = real.placesFrom;
+    }
     this._initTech(k);
-    k.banner = this._defaultBanner ? this._defaultBanner(k, opts.x, opts.z) : null;
+    k.banner = real?.banner && real.color === k.color ? { ...real.banner } : this._defaultBanner ? this._defaultBanner(k, opts.x, opts.z) : null;
     k.inventory = { food: 0, wood: 0, stone: 0, ore: 0, gold: 0, tools: 0, weapons: 0, armor: 0 };
     // a breakaway realm inherits what its parent knew
     const par = this.kingdoms[opts.parent];
@@ -84,6 +94,18 @@ export const politics = {
       }
     }
     return her;
+  },
+
+  // A tincture no realm near (x, z) wears or nearly wears (a country that
+  // rises again keeps its old colours when they are free).
+  _tinctureFree(color, x, z) {
+    for (const k of this.kingdoms) {
+      if (!k.alive || !k.villages.length) continue;
+      const v = this.villages[k.capital];
+      if (x != null && v && Math.hypot(v.cx - x, v.cz - z) > 130) continue;
+      if (colorDist(k.color, color) < 0.15) return false;
+    }
+    return true;
   },
 
   // Neighbours whose colours read as one (after a conquest or a rising moved
@@ -163,9 +185,16 @@ export const politics = {
     if (u.job === 'king') u.job = null;
   },
 
+  // The title a realm's ruler bears: on a World Map world the realm's own
+  // or a neutral one (realms.js _realTitle), elsewhere the culture's.
+  _rulerTitle(k, sex) {
+    const t = this._realTitle?.(k);
+    return t ? t[sex === 'f' ? 'f' : 'm'] : rulerTitle(k.culture, sex);
+  },
+
   crown(k, u) {
     if (!u) return;
-    const title = rulerTitle(k.culture, u.sex);
+    const title = this._rulerTitle(k, u.sex);
     const base = u.data.civ?.given || u.name || 'Nameless';
     u.data.civ = u.data.civ || {};
     u.data.civ.given = base;
@@ -229,7 +258,7 @@ export const politics = {
       this.crown(k, heir);
       this._note(abdicated ? `${deadName} abdicates; ${heir.name} rules ${this._kn(k)}` : `${deadName} dies; ${heir.name} rules ${this._kn(k)}`, 'info', { x: heir.x, z: heir.z }, 'succ' + k.id, 20);
       // a contested succession can split a large realm
-      if (k.villages.length >= 3 && this._kLaw(k.id, 'civRebellions') && !abdicated && this.rng.chance(Math.min(0.75, 0.3 + (k.villages.length - 3) * 0.06))) {
+      if (k.villages.length >= 3 && this._kLaw(k.id, 'civRebellions') && !abdicated && this.rng.chance(Math.min(0.75, 0.3 + (k.villages.length - 3) * 0.06) * (k.seeded ? 0.5 : 1))) {
         let claimant = null;
         for (const vid of k.villages) {
           const v = this.villages[vid];
@@ -267,7 +296,7 @@ export const politics = {
       u.data.civ.abdicated = true;
       u.data.civ.royal = false;
       u.job = null;
-      const ttl = rulerTitle(k.culture, u.sex);
+      const ttl = this._rulerTitle(k, u.sex);
       if (u.data.civ.given) u.name = u.data.civ.given;
       else if (u.name?.startsWith(ttl + ' ')) u.name = u.name.slice(ttl.length + 1);
       const yrs = Math.round((now - since) / YEAR);
@@ -310,32 +339,72 @@ export const politics = {
   },
 
   // A one- or two-town realm long allied with a greater realm of its own
-  // people joins it in union (fewer splinters on big maps).
+  // people joins it in union (fewer splinters on big maps). On a World Map
+  // world the real country is the crown that stays (see _realUnion).
   _unions() {
     const now = this.game.time.total;
     if (now - (this._unionT || 0) < YEAR * 2) return;
     this._unionT = now;
+    const realMap = this._realMapOn?.();
     for (const r of this.relations.values()) {
-      if (!r.ally || r.war || this._relLocked?.(r) || r.opinion < 30) continue;
+      if (r.war || this._relLocked?.(r)) continue;
       const A = this.kingdoms[r.a],
         B = this.kingdoms[r.b];
-      if (!A?.alive || !B?.alive || baseCulture(A.culture) !== baseCulture(B.culture)) continue;
-      const [small, big] = A.villages.length <= B.villages.length ? [A, B] : [B, A];
-      if (small.villages.length > 2 || big.villages.length < small.villages.length + 1 || small.player?.name) continue;
-      // a real country on the World Map keeps its own crown for its first decades
-      if (small.plain && now - small.founded < YEAR * 30) continue;
+      if (!A?.alive || !B?.alive || !A.villages.length || !B.villages.length) continue;
+      let small, big;
+      if (realMap) {
+        const u = this._realUnion(A, B, r, now);
+        if (!u) continue;
+        [small, big] = u;
+      } else {
+        if (!r.ally || r.opinion < 30 || baseCulture(A.culture) !== baseCulture(B.culture)) continue;
+        [small, big] = A.villages.length <= B.villages.length ? [A, B] : [B, A];
+        if (small.villages.length > 2 || big.villages.length < small.villages.length + 1) continue;
+      }
+      if (small.player?.name) continue;
       // a union is made over land: an island or a far continent keeps its own
       // crown (the World Map's Australia lost its last realms to unions abroad)
       if (this.villages[small.capital]?.landId !== this.villages[big.capital]?.landId) continue;
       if (!this.rng.chance(0.4)) continue;
       const name = this._kn(small);
+      const home = small.parent === big.id;
       for (const vid of [...small.villages]) {
         const v = this.villages[vid];
         if (v?.alive) this._transferVillage(v, big.id, 'union');
       }
-      this._note(`🤝 ${name} joins ${this._kn(big)} in union`, 'good', this._kingdomPos(big), 'union' + small.id, 1);
+      this._note(`🤝 ${name} ${home ? 'rejoins' : 'joins'} ${this._kn(big)} in union`, 'good', this._kingdomPos(big), 'union' + small.id, 1);
       return;
     }
+  },
+
+  // Unions on a World Map world, as [small, big] or null. A real country is
+  // never folded into a generated realm: when the two unite, the real one
+  // is the crown that stays, whatever their sizes. A country seeded at the
+  // start keeps its own crown for a century (France, the Netherlands and
+  // Poland had all been folded into neighbours by Year 55), and any real
+  // country for thirty years. A breakaway long at peace with the country it
+  // left goes back to it, and a small realm long at peace beside a real
+  // country joins it: fewer one-town crowns on the regional maps.
+  _realUnion(A, B, r, now) {
+    const ra = A.realm >= 0,
+      rb = B.realm >= 0;
+    let [small, big] = A.villages.length <= B.villages.length ? [A, B] : [B, A];
+    if (ra !== rb) [small, big] = ra ? [B, A] : [A, B];
+    const ns = small.villages.length,
+      nb = big.villages.length;
+    if (small.realm >= 0) {
+      if (!(big.realm >= 0) || now - small.founded < YEAR * (small.seeded ? 100 : 30)) return null;
+      return r.ally && r.opinion >= 30 && ns <= 2 && nb >= ns + 1 ? [small, big] : null;
+    }
+    if (now - small.founded < YEAR * 8) return null; // a young crown fights for its freedom first
+    const regional = geoRegion(this.world) !== 'world';
+    if (ns > (regional ? 3 : 2)) return null;
+    if (big.realm >= 0 ? nb < ns - 1 : nb < ns + 1) return null;
+    const peace = r.peaceT || 0;
+    if (r.ally && r.opinion >= (big.realm >= 0 ? 15 : 30)) return [small, big];
+    if (small.parent === big.id && peace >= YEAR * 8 && r.opinion >= -15) return [small, big];
+    if (big.realm >= 0 && r.border > 0 && peace >= YEAR * 12 && r.opinion >= 5) return [small, big];
+    return null;
   },
 
   _chooseCapital(k) {
@@ -474,7 +543,13 @@ export const politics = {
           const hungry = border > 6 && ratio > 1.3 / Math.sqrt(wa) && now - att.lastWar > YEAR * 8 / wa && r.opinion < 30 + (wa - 1) * 15 && crowd > 0.5 / wa;
           if (!hostile && !ambitious && !hungry) continue;
           if (ratio < 0.6) continue;
+          // a real country seeded at the start is not set upon by every
+          // neighbour in its first decades, nor beaten down to its last town
+          // by two wars at once
+          const youngReal = def.seeded && now - def.founded < YEAR * 40;
+          if (def.seeded && this.warCount(def.id) >= (youngReal || def.villages.length <= 1 ? 1 : 2)) continue;
           let p = 0.045 + att.aggression * 0.09 + (ambitious ? 0.05 : 0) + (hungry ? 0.04 + crowd * 0.05 : 0);
+          if (def.seeded) p *= (youngReal ? 0.6 : 0.85) * (def.villages.length <= 1 ? 0.6 : 1);
           p *= Math.pow(wl, 1.7) * (g.age?.mods?.warlike ?? 1);
           if (this._rulerTrait(att, 'cruel', 'valiant')) p *= 1.6;
           if (this._rulerTrait(att, 'gentle', 'silver-tongued', 'silvertongued')) p *= 0.55;
@@ -887,6 +962,8 @@ export const politics = {
     const old = this.kingdoms[v.kingdom];
     const K = this.kingdoms[kid];
     if (!K) return;
+    // World Map: the first real country to hold a town is its home
+    if (old && v.home == null && old.realm >= 0) v.home = old.id;
     if (old) {
       old.villages = old.villages.filter((id) => id !== v.id);
     }
@@ -930,7 +1007,9 @@ export const politics = {
     this.colorVersion++;
     if (old && old.alive) {
       if (!old.villages.length) {
-        this._killKingdom(old, cause);
+        const seat = cause === 'conquest' && old !== K ? this._courtInExile?.(old, v) : null;
+        if (seat) this._exiled(old, K, v, seat);
+        else this._killKingdom(old, cause);
       } else if (old.capital === v.id) {
         const nc = this._chooseCapital(old);
         if (nc) this._note(`${this._kn(old)} moves its capital to ${nc.name}`, 'info', { x: nc.cx, z: nc.cz });
@@ -939,6 +1018,27 @@ export const politics = {
       }
     }
     if (K.capital < 0 || !this.villages[K.capital]?.alive) this._chooseCapital(K);
+  },
+
+  // A real country's court has fled its fallen seat (realms.js
+  // _courtInExile): a ruler is found at the new seat, and the conqueror,
+  // sated, makes a long peace.
+  _exiled(k, K, lost, seat) {
+    this._note(`👑 ${lost.name} falls; the court of ${this._kn(k)} flees to ${seat.name}`, 'war', { x: seat.cx, z: seat.cz });
+    const ru = this.game.units.byId.get(k.ruler);
+    if (!ru || !ru.alive || ru.kingdom !== k.id) {
+      if (ru?.alive) this._uncrown(ru);
+      k.ruler = -1;
+      this._succession(k, k.rulerName || 'The ruler');
+    }
+    if (this.atWar(K.id, k.id)) {
+      this.makePeace(K.id, k.id, true);
+      this.rel(K.id, k.id).truceUntil = this.game.time.total + YEAR * 12;
+    }
+    for (const e of this.enemiesOf(k.id)) {
+      const r = this.rel(e, k.id);
+      if (this.game.time.total - r.warSince > YEAR * 3) this.makePeace(e, k.id, true);
+    }
   },
 
   // ---------------------------------------------------------------- loyalty & rebellion
@@ -975,6 +1075,10 @@ export const politics = {
     L += (this.law('harmonyLoyalty', 1) * (this.game.age?.mods?.harmony ?? 1) - 1) * 35;
     L += this.techAdd(k.id, 'loyalty');
     if (this.hasCultureTrait(v.culture, 'Mystic')) L += 5;
+    // World Map: a real country's own towns hold to it; a town taken from a
+    // real country that still stands longs to go back
+    if (k.realm >= 0 && (v.home == null || v.home === k.id)) L += k.seeded ? 12 : 8;
+    else if (v.home != null && v.home !== k.id && this._homeRealm?.(v)) L -= 8;
     L += (v.loyaltyBoost || 0);
     v.loyaltyBoost = Math.max(0, (v.loyaltyBoost || 0) - 1);
     v.loyalty = clamp(v.loyalty + (L - v.loyalty) * 0.2, 0, 100);
@@ -1047,10 +1151,19 @@ export const politics = {
     // longer after every rising, though deep grievance shortens the wait
     const wait = YEAR * Math.min(24, 6 + 4 * (v.rebellions || 0)) * (v.loyalty < 12 ? 0.5 : 1);
     if (!forced && now - (v.lastRebel ?? -1e9) < wait) return null;
+    // World Map: a town taken from a real country that still stands rises to
+    // go back to it rather than to crown a realm of its own
+    const home = forced ? null : this._homeRealm?.(v);
+    if (home && home.id !== old.id) return this._riseHome(v, old, home, silent);
+    // a real country seeded at the start rides out one rising at a time
+    if (!forced && old.seeded && now - (old.rebelT ?? -1e9) < YEAR * 6) return null;
+    old.rebelT = now;
     v.lastRebel = now;
     v.rebellions = (v.rebellions || 0) + 1;
-    const K = this.createKingdom(v.culture, { baseName: v.name, parent: old.id, x: v.cx, z: v.cz });
+    const fallen = this._realMapOn?.() && this.kingdoms.some((k) => k.realm >= 0 && !k.alive);
+    const K = this.createKingdom(v.culture, { baseName: v.name, parent: old.id, x: v.cx, z: v.cz, home: v.home });
     const oldName = old.base || old.name;
+    const again = fallen && K.realm >= 0 && this.kingdoms.some((k) => k !== K && k.realm === K.realm && !k.alive);
     this._transferVillage(v, K.id, 'rebellion');
     K.capital = v.id;
     v.unrest = 0;
@@ -1058,7 +1171,7 @@ export const politics = {
     let leader = null;
     for (const u of v.members) if (u.alive && u.age >= ADULT_AGE + 2 && (!leader || (u.job === 'soldier') > (leader.job === 'soldier') || u.age > leader.age)) leader = u;
     if (leader) this.crown(K, leader);
-    if (!silent) this._note(`✊ ${v.name} rebels against ${oldName}: ${this._theK(K)}`, 'war', { x: v.cx, z: v.cz });
+    if (!silent) this._note(again ? `✊ ${v.name} rebels against ${oldName}: ${K.name} rises again` : `✊ ${v.name} rebels against ${oldName}: ${this._theK(K)}`, 'war', { x: v.cx, z: v.cz });
     // discontented neighbours join
     for (const vid of [...old.villages]) {
       const o = this.villages[vid];
@@ -1070,6 +1183,43 @@ export const politics = {
     }
     if (old.alive) this.declareWar(K.id, old.id, 'rebellion', true);
     return K;
+  },
+
+  // A taken town rises and goes back to the real country it belongs to;
+  // towns of the same country nearby may follow it.
+  _riseHome(v, old, home, silent) {
+    const now = this.game.time.total;
+    v.lastRebel = now;
+    v.rebellions = (v.rebellions || 0) + 1;
+    const oldName = this._kn(old);
+    this._transferVillage(v, home.id, 'rebellion');
+    v.unrest = 0;
+    if (!silent) this._note(`✊ ${v.name} rebels against ${oldName} and returns to ${this._kn(home)}`, 'war', { x: v.cx, z: v.cz });
+    // a country's own capital, won back, is its seat again
+    if (this._realmData?.()?.[home.realm]?.capital?.name === v.name && home.capital !== v.id) home.capital = v.id;
+    for (const vid of [...old.villages]) {
+      const o = this.villages[vid];
+      if (!o?.alive || o.id === old.capital || o.home !== home.id) continue;
+      if (Math.hypot(o.cx - v.cx, o.cz - v.cz) < 34 && o.loyalty < 45 && this.rng.chance(0.6)) {
+        this._transferVillage(o, home.id, 'rebellion');
+        this._note(`${o.name} follows it back to ${this._kn(home)}`, 'war', { x: o.cx, z: o.cz }, 'joinhome' + home.id, 60);
+      }
+    }
+    if (old.alive) {
+      const r = this.rel(home.id, old.id);
+      r.grievance = Math.min(80, r.grievance + 20);
+    }
+    return home;
+  },
+
+  // The odds that settlers strike out as a realm of their own
+  // (Civilization._settleExpedition): more often far from the capital. On a
+  // World Map world a real country's settlers mostly stay loyal, so its own
+  // towns, not a dozen splinter crowns, fill its land.
+  _splinterOdds(k, far) {
+    const p = far > 55 ? 0.52 : 0.12;
+    if (!this._realMapOn?.()) return p;
+    return p * (k?.realm >= 0 ? 0.3 : 0.6);
   },
 
   goldenAge(kid, years = 6) {
