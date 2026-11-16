@@ -1940,19 +1940,21 @@ export class Units {
         DN[cz * dw + cx] = 1;
       }
       // AI level of detail: a calm creature far from the camera runs its whole
-      // update every other tick (every fourth in the overview at the fine
-      // step) with the time since its last update, so needs, work, sleep,
-      // statuses and walking advance at the same rate per game second for a
-      // fraction of the cost; its steps are never longer than the distant
-      // walk already took at 8x. Fights, flyers and creatures with
-      // fine-timed brains (fire breath, surfacing) run every tick.
+      // update every other tick with the time since its last update (its walk
+      // already stepped every other tick at twice the step), so needs, work,
+      // sleep, statuses and walking keep the same pace per game second for
+      // half the cost. One standing still (working, grazing, idling, asleep)
+      // in the overview at the fine step updates every fourth tick. A creature
+      // about to decide is updated on the next tick, as before. Fights, flyers
+      // and creatures with fine-timed brains (fire breath, surfacing) run
+      // every tick.
       const slot = tickN + u.id;
       const fdx0 = u.x - focus.x,
         fdz0 = u.z - focus.z;
       const fd2 = fdx0 * fdx0 + fdz0 * fdz0;
       let lod = 0;
-      if (!u.combat && (overview || fd2 > focus.r2) && def.habitat !== 'air' && !BRAIN_TICKS[def.brain]) lod = lodFar && (overview || fd2 > focus.r2 * 4) ? 2 : 1;
-      if (lod && (slot & ((1 << lod) - 1)) !== 0) {
+      if (!u.combat && (overview || fd2 > focus.r2) && def.habitat !== 'air' && !BRAIN_TICKS[def.brain]) lod = lodFar && !u.target && !u.path && (overview || fd2 > focus.r2 * 4) ? 2 : 1;
+      if (lod && (slot & ((1 << lod) - 1)) !== 0 && u.thinkT > 0.05) {
         u.anim += dt * (u.moving ? 1 : 0.35);
         continue;
       }
