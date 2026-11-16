@@ -545,6 +545,8 @@ export class Units {
       _away: false,
       flags: null,
       _homeB: null,
+      _homeT: -99,
+      _simT: g.time.total, // game time of its last full update (level of detail)
       _forager: null,
       _foraged: false,
     };
@@ -795,9 +797,11 @@ export class Units {
     for (let r = 0; r <= maxR; r++) {
       let best = null,
         bd = Infinity;
-      for (let dy = -r; dy <= r; dy++)
-        for (let dx = -r; dx <= r; dx++) {
-          if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+      for (let dy = -r; dy <= r; dy++) {
+        // only the ring's edge (top and bottom rows whole, the sides two cells)
+        const edge = dy === -r || dy === r;
+        const step = edge || r === 0 ? 1 : 2 * r;
+        for (let dx = -r; dx <= r; dx += step) {
           const tx = cx + dx,
             ty = cz + dy;
           if (!w.inBounds(tx, ty)) continue;
@@ -809,6 +813,7 @@ export class Units {
             best = { x: tx + 0.5, z: ty + 0.5, tx, ty, i };
           }
         }
+      }
       if (best) return best;
     }
     return null;
@@ -1706,7 +1711,10 @@ export class Units {
   _fedFromStore(u) {
     if (u.hunger <= 0.3) return;
     const v = this.game.civ?.villages?.[u.village];
-    if (v && v.alive && !v.starving) u.hunger = 0.12 + Math.random() * 0.1;
+    if (v && v.alive && !v.starving) {
+      u.hunger = 0.12 + Math.random() * 0.1;
+      this._leanFloor(u);
+    }
   }
   _shoreTile(x, z, r) {
     const w = this.game.world;
@@ -1822,6 +1830,8 @@ export class Units {
     if (brain) {
       try {
         brain(u, elapsed, g);
+        // a village meal fills less in lean times (needs.js)
+        if (u.alive && u.species === 'human' && u.village >= 0) this._leanFloor(u);
       } catch (err) {
         console.error('[brain]', u.species, err);
         this.brains.delete(u.species);
@@ -1854,7 +1864,11 @@ export class Units {
     const budgetOn = ++this._ticksThisFrame <= 64;
     if (this._tickN % 75 === 0) this.herds.tick(now);
     if (this._tickN % 150 === 7) this._rolesTick();
-    if (this._tickN % 900 === 450) this._championsTick();
+    // champions once a game minute (at any game speed)
+    if (!(now - this._champT < 60) || now < this._champT) {
+      this._champT = now;
+      if (now >= 30) this._championsTick();
+    }
     this._ridePaths = 0;
     this._landingsTick();
     // the danger grid is rebuilt inside the unit loop (one pass over the list):
@@ -1906,6 +1920,7 @@ export class Units {
       // away from the world: aboard a vessel (carried along until it lands) or
       // asleep at home (resting until dawn or danger)
       if (u._away) {
+        u._simT = now;
         if (u.data.aboard != null) {
           this._aboardTick(u, now);
           continue;
@@ -1921,25 +1936,47 @@ export class Units {
           cz = u.z < 0 ? 0 : Math.min(dh - 1, Math.floor(u.z / DCELL));
         DN[cz * dw + cx] = 1;
       }
+      // AI level of detail: a calm creature far from the camera runs its whole
+      // update every other tick with the time since its last update (its walk
+      // already stepped every other tick at twice the step), so needs, work,
+      // sleep, statuses and walking keep the same pace per game second for
+      // half the cost. One standing still (working, grazing, idling, asleep)
+      // in the overview (or very far off) updates every fourth tick. A creature
+      // about to decide is updated on the next tick, as before. Fights, flyers
+      // and creatures with fine-timed brains (fire breath, surfacing) run
+      // every tick.
+      const slot = tickN + u.id;
+      const fdx0 = u.x - focus.x,
+        fdz0 = u.z - focus.z;
+      const fd2 = fdx0 * fdx0 + fdz0 * fdz0;
+      let lod = 0;
+      if (!u.combat && (overview || fd2 > focus.r2) && def.habitat !== 'air' && !BRAIN_TICKS[def.brain]) lod = !u.target && !u.path && (overview || fd2 > focus.r2 * 4) ? 2 : 1;
+      if (lod && (slot & ((1 << lod) - 1)) !== 0 && u.thinkT > 0.05) {
+        u.anim += dt * (u.moving ? 1 : 0.35);
+        continue;
+      }
+      const el = now - u._simT;
+      const udt = el > 1e-4 ? (el < 1.2 ? el : 1.2) : dt;
+      u._simT = now;
       // ---- needs
       const active = u.state === 'run' || u.state === 'flee' || u.state === 'hunt' || u.state === 'attack';
       const lean = MVP[u.species] && (this._counts.get(u.species) || 0) < MVP[u.species] * 2 ? 0.6 : 1;
-      if (lawHunger) u.hunger = Math.min(1, u.hunger + dt * def.hungerRate * lean * (u.sleeping ? 0.5 : active ? 1.6 : 1));
-      else if (u.hunger > 0) u.hunger = Math.max(0, u.hunger - dt * 0.02);
-      if (u.sleeping || u.state === 'sleep') u.energy = Math.min(1, u.energy + dt * (u._ext ? 0.012 : 0.0075));
+      if (lawHunger) u.hunger = Math.min(1, u.hunger + udt * def.hungerRate * lean * (u.sleeping ? 0.5 : active ? 1.6 : 1));
+      else if (u.hunger > 0) u.hunger = Math.max(0, u.hunger - udt * 0.02);
+      if (u.sleeping || u.state === 'sleep') u.energy = Math.min(1, u.energy + udt * (u._ext ? 0.012 : 0.0075));
       else if (u._ext) {
         // village people: a working day wears them down; idling only rests a little
         // (the real rest is the night's sleep at home, see needs.js)
         const st = u.state;
         const k = u.combat || st === 'run' || st === 'attack' || st === 'flee' ? 1.5 : st === 'work' ? 1 : u.moving ? 0.55 : -0.7;
-        u.energy = Math.min(1, Math.max(0, u.energy - dt * def.energyRate * k));
-      } else u.energy = Math.max(0, u.energy - dt * def.energyRate * (active ? 2.5 : 1) * (u.swimming ? 4 : 1));
+        u.energy = Math.min(1, Math.max(0, u.energy - udt * def.energyRate * k));
+      } else u.energy = Math.max(0, u.energy - udt * def.energyRate * (active ? 2.5 : 1) * (u.swimming ? 4 : 1));
       if (u.pregnant > 0) {
-        u.pregnant -= yearDt;
+        u.pregnant -= udt / YEAR;
         if (u.pregnant <= 0) this._giveBirth(u);
       }
       if (u.hunger >= 1 && def.starves) {
-        u.hp -= dt * def.hp * 0.025;
+        u.hp -= udt * def.hp * 0.025;
         if (u.hp <= 0) {
           this.kill(u, 'starvation');
           if (!u.alive) continue;
@@ -1964,22 +2001,22 @@ export class Units {
         u.wading = !deck && !deep && h < SEA_LEVEL - 0.02;
         if (deep && Math.abs(u.x - u._ex) + Math.abs(u.z - u._ez) > 2 && this._ashore(u)) u.swimming = false;
         else if (deep) {
-          if (u._ext && u._farSea) u.energy = Math.max(0, u.energy - dt * 0.012);
-          if (!def.canSwim || u.energy <= 0.01) this.damage(u, dt * (def.canSwim ? 2 : 12), null, { cause: 'drowned' });
+          if (u._ext && u._farSea) u.energy = Math.max(0, u.energy - udt * 0.012);
+          if (!def.canSwim || u.energy <= 0.01) this.damage(u, udt * (def.canSwim ? 2 : 12), null, { cause: 'drowned' });
         }
         const fire = w.fire[ti];
         if (fire > 0.2) {
-          this.damage(u, dt * 8 * fire, null, { cause: 'fire' });
-          if ((tickN + u.id) % 5 === 0) g.fx.emit?.('fire', { x: u.x, y: u.y + def.height * 0.5, z: u.z }, { scale: 0.35 });
+          this.damage(u, udt * 8 * fire, null, { cause: 'fire' });
+          if ((slot >> lod) % (5 >> lod) === 0) g.fx.emit?.('fire', { x: u.x, y: u.y + def.height * 0.5, z: u.z }, { scale: 0.35 });
         }
-        if (w.type[ti] === TILE.LAVA) this.damage(u, dt * 60, null, { cause: 'lava' });
+        if (w.type[ti] === TILE.LAVA) this.damage(u, udt * 60, null, { cause: 'lava' });
         if (!u.alive) continue;
       } else if (def.habitat === 'water') {
-        if (w.height[ti] >= SEA_LEVEL) this.damage(u, dt * 10, null, { cause: 'stranded' });
+        if (w.height[ti] >= SEA_LEVEL) this.damage(u, udt * 10, null, { cause: 'stranded' });
         if (!u.alive) continue;
       }
       // natural regeneration
-      if (u.hp < u.maxHp && u.hunger < 0.7 && now - u.lastHurt > 5) u.hp = Math.min(u.maxHp, u.hp + dt * u.maxHp * (u.blessed > now ? 0.05 : 0.006));
+      if (u.hp < u.maxHp && u.hunger < 0.7 && now - u.lastHurt > 5) u.hp = Math.min(u.maxHp, u.hp + udt * u.maxHp * (u.blessed > now ? 0.05 : 0.006));
       // activities (eating at a carcass or grazing)
       if (u.busyUntil > 0 && now >= u.busyUntil) {
         u.busyUntil = 0;
@@ -1987,11 +2024,11 @@ export class Units {
         if (u.state === 'eat' || u.state === 'work' || (u.state === 'idle' && u.activity)) u.state = 'idle';
       }
       if (u.state === 'eat') {
-        let gain = dt * 0.09;
-        if (!u._carcass && def.kind === 'animal' && def.diet !== 'carnivore' && u.activity !== 'fish') gain = this._graze(u, dt);
+        let gain = udt * 0.09;
+        if (!u._carcass && def.kind === 'animal' && def.diet !== 'carnivore' && u.activity !== 'fish') gain = this._graze(u, udt);
         if (u._carcass) {
           const c = u._carcass;
-          gain = Math.min(c.food, dt * 0.12);
+          gain = Math.min(c.food, udt * 0.12);
           c.food -= gain;
           if (c.food <= 0) {
             u._carcass = null;
@@ -2001,11 +2038,9 @@ export class Units {
         u.hunger = Math.max(0, u.hunger - gain);
       }
       // ---- combat & thinking
-      if (u.combat) this._combatTick(u, dt, now);
-      const fdx = u.x - focus.x,
-        fdz = u.z - focus.z;
-      u._far = (overview || fdx * fdx + fdz * fdz > focus.r2) && !u.combat;
-      u.thinkT -= dt;
+      if (u.combat) this._combatTick(u, udt, now);
+      u._far = (overview || fdx0 * fdx0 + fdz0 * fdz0 > focus.r2) && !u.combat;
+      u.thinkT -= udt;
       if (u.thinkT <= 0) {
         if (budgetOn && this._frameThinkMs > THINK_BUDGET_MS && !u.combat) {
           u.thinkT = 0.05 + g.rng.next() * 0.15; // over budget: think a little later
@@ -2023,26 +2058,28 @@ export class Units {
       }
       const bt = BRAIN_TICKS[def.brain];
       if (bt) bt(u, dt, this, g, now);
-      if ((tickN + u.id) % 15 === 0) {
-        this._depthStatusTick(u, dt * 15, now);
+      // statuses every 16th tick (a tick every level of detail runs)
+      if ((slot & 15) === 0) {
+        this._depthStatusTick(u, dt * 16, now);
         if (!u.alive) continue;
       }
-      const sepEvery = (u._far ? 8 : 4) * (u.moving || u.target ? 1 : 2);
-      if ((tickN + u.id) % sepEvery === 0) this._separate(u);
+      // personal space: less often the farther away (the overview LOD most rarely)
+      const sepEvery = (lod === 2 ? 16 : u._far ? 8 : 4) * (u.moving || u.target ? 1 : 2);
+      if (slot % sepEvery === 0) this._separate(u);
       // ---- locomotion
       // distant creatures out of a fight step every other tick (twice as far)
       if (def.habitat === 'air') {
         this._flyTick(u, dt);
         this._flyLocomote(u, dt, now);
-      } else if (!u._far || u.combat) this._locomote(u, dt, now);
-      else if (((tickN + u.id) & 1) === 0) this._locomote(u, dt * 2, now);
+      } else if (lod || !u._far || u.combat) this._locomote(u, udt, now);
+      else if ((slot & 1) === 0) this._locomote(u, dt * 2, now);
       if (u.x < 0.01) u.x = 0.01;
       else if (u.x > w.w - 0.01) u.x = w.w - 0.01;
       if (u.z < 0.01) u.z = 0.01;
       else if (u.z > w.h - 0.01) u.z = w.h - 0.01;
       u.y = this._groundY(u);
-      const moved = Math.hypot(u.x - u.px, u.z - u.pz) / dt;
-      u.speedNow += (moved - u.speedNow) * Math.min(1, dt * 8);
+      const moved = Math.hypot(u.x - u.px, u.z - u.pz) / udt;
+      u.speedNow += (moved - u.speedNow) * Math.min(1, udt * 8);
       u.anim += dt * (u.moving ? 1 : 0.35);
       if (u.state === 'walk' && !u.moving && !u.target) u.state = 'idle';
       if (u.swimming && u.state !== 'attack' && u.state !== 'flee') u.state = 'swim';
@@ -2328,7 +2365,12 @@ export class Units {
     const def = u.def;
     const g = this.game;
     const pct = (v) => Math.round(v * 100) + '%';
-    const hungerL = u.hunger < 0.3 ? 'Well fed' : u.hunger < 0.6 ? 'Peckish' : u.hunger < 0.85 ? 'Hungry' : 'Starving';
+    let hungerL = u.hunger < 0.3 ? 'Well fed' : u.hunger < 0.45 ? 'Peckish' : u.hunger < 0.6 ? 'Going short' : u.hunger < 0.85 ? 'Hungry' : 'Starving';
+    // village people: why the times are lean (a hard winter, a siege, a famine)
+    if (u.hunger >= 0.3 && def.kind === 'humanoid' && u.village >= 0) {
+      const why = this.leanOf(g.civ?.villages?.[u.village])?.why;
+      if (why) hungerL += ', ' + why;
+    }
     const energyL = u.energy > 0.7 ? 'Rested' : u.energy > 0.35 ? 'Tired' : 'Exhausted';
     const ageY = u.age < 1 ? Math.max(1, Math.round(u.age * 12)) + ' months' : Math.floor(u.age) + ' yrs';
     const stage = u.age < def.maturity ? (def.kind === 'humanoid' ? 'Child' : 'Young') : u.age > u.lifespan * 0.8 ? 'Elder' : 'Adult';

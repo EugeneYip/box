@@ -47,6 +47,7 @@ export function landscapeUniforms(game) {
       uDry: { value: 0 }, // sun-baked grass (warm ages)
       uDetail: { value: 1 }, // 1 = full close-up detail .. 0 = far / power-saver path
       uPower: { value: 0 }, // 1 = power saver: fewer texture taps, no triplanar
+      uMapZoom: { value: 0 }, // 0 close / mid zoom .. 1 map overview (camera zoom only, not power saver)
     };
     shared.set(game, u);
   }
@@ -87,6 +88,8 @@ export function refreshLandscapeUniforms(game, dt) {
   if (env.ambientColor) u.uAmbCol.value.copy(env.ambientColor);
   else u.uAmbCol.value.copy(u.uSkyCol.value).multiplyScalar(0.3 + 0.5 * u.uDay.value);
   u.uCamDist.value = game.cameraRig?.cur?.dist ?? 100;
+  const z01 = Math.max(0, Math.min(1, ((game.view?.zoom01 ?? 0.3) - 0.5) / 0.3));
+  u.uMapZoom.value = z01 * z01 * (3 - 2 * z01);
   updateSeasonUniforms(game, u, dt);
   // cloud shadows from Atmosphere (applied per material to direct light)
   const cs = env.cloudShadow;
@@ -183,6 +186,7 @@ uniform float uWind;
 uniform float uCamDist;
 uniform float uDetail;
 uniform float uPower;
+uniform float uMapZoom;
 uniform vec4 uSeasonTint;
 uniform float uSeason;
 uniform float uSnowT;
@@ -216,9 +220,16 @@ vec3 waterDeepColorV(float vis) {
 }
 vec3 waterDeepColor() { return waterDeepColorV(1.0); }
 // Lighter scatter colour of the shallow shelf haze (turquoise / cold teal-grey).
+// At map zoom the shelf haze turns a quieter sea teal-blue: wide continental
+// shelves read as shallow sea, not as a glowing cyan ring around every coast.
 vec3 waterShallowColorV(float vis) {
-  return mix(vec3(0.018, 0.150, 0.165), vec3(0.022, 0.048, 0.056), gCold) * waterIrradianceV(vis);
+  vec3 c = mix(vec3(0.018, 0.150, 0.165), vec3(0.022, 0.048, 0.056), gCold);
+  c = mix(c, mix(vec3(0.016, 0.115, 0.145), vec3(0.018, 0.042, 0.058), gCold), uMapZoom);
+  return c * waterIrradianceV(vis);
 }
+// Shallow -> deep scatter ramp; from afar it runs over the shelf itself, so the
+// sea darkens steadily from the coast instead of a pale plateau and a drop-off.
+float waterDeepMix(float depth) { return smoothstep(mix(0.6, 0.15, uMapZoom), mix(6.0, 4.5, uMapZoom), depth); }
 vec3 waterShallowColor() { return waterShallowColorV(1.0); }
 
 float cloudShadowAt(vec2 xz) {
@@ -235,9 +246,14 @@ vec3 applyWaterColumn(vec3 seabed, float depth, float viewY, float vis) {
   float up = depth / vy;
   float down = depth / sy;
   vec3 ab = waterAbsorb();
-  vec3 T = exp(-ab * (up + down * 0.6));
-  vec3 Tv = exp(-ab * up * 1.15);
-  vec3 scat = mix(waterShallowColorV(vis), waterDeepColorV(vis), smoothstep(0.6, 6.0, depth));
+  // map zoom: a neutral haze (plankton, silt) hides the shelf floor within a
+  // unit or two, so bright sand shows only right at the shore
+  float turb = (depth + 0.30) * 0.55 * uMapZoom;
+  vec3 T = exp(-ab * (up + down * 0.6) - turb * (1.0 / vy + 0.6 / sy));
+  vec3 Tv = exp(-ab * up * 1.15 - turb / vy);
+  vec3 scat = mix(waterShallowColorV(vis), waterDeepColorV(vis), waterDeepMix(depth));
+  // (map zoom: wide flats only a few tenths deep read turquoise, not white)
+  T *= 1.0 - 0.32 * uMapZoom * smoothstep(0.0, 0.3, depth);
   return seabed * T + scat * (1.0 - Tv);
 }
 `;

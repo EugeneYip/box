@@ -207,12 +207,12 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   spec = min(spec, vec3(mix(0.8, 0.38, smoothstep(0.02, 0.12, fw))));
 
   // ---- water body veil (the seabed below is already tinted by the terrain)
-  vec3 scat = mix(waterShallowColorV(lightVis), waterDeepColorV(lightVis), smoothstep(0.6, 6.0, depth));
+  vec3 scat = mix(waterShallowColorV(lightVis), waterDeepColorV(lightVis), waterDeepMix(depth));
   // broad colour variation so open water is never a flat slab
   float mac = texture2D(uNoise, p * (1.0 / 190.0) + vec2(t * 0.0015, 0.0)).r;
   scat *= 0.82 + 0.36 * mac;
   float vy = max(abs(V.y), 0.12);
-  float veil = 1.0 - exp(-depth / vy * 0.16);
+  float veil = 1.0 - exp(-depth / vy * mix(0.16, 0.22, uMapZoom));
   veil = clamp(veil * 0.85, 0.0, 0.92);
   veil = mix(veil, 1.0, outK);
   // deep open water is opaque, exactly like the endless ocean beyond the map,
@@ -228,6 +228,17 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   rivTeal = mix(rivTeal, vec3(0.014, 0.200, 0.180), overcastK * (1.0 - gCold)) * irrR;
   scat = mix(scat, rivTeal, narrow);
   veil = max(veil, 0.64 * narrow);
+  // map zoom: rivers are quiet lines close to the sea's own blue, not bright
+  // canals. Toward the banks the water clears to the riparian strip the
+  // terrain draws there, so a river thins out with distance, and channels only
+  // a pixel or two wide keep less ink instead of a fixed bright band.
+  float mzR = uMapZoom * narrow;
+  float relC = clamp(edt / max(wide, 0.6), 0.0, 1.0);
+  float rivPx = max(wide, 0.5) * 2.0 / max(fw, 1e-3);
+  float rivCore = smoothstep(mix(0.30, 0.55, uMapZoom), 0.98, relC) * mix(0.7, 1.0, smoothstep(1.5, 5.0, rivPx));
+  vec3 rivFar = waterDeepColorV(lightVis) * vec3(2.4, 2.0, 1.45);
+  scat = mix(scat, rivFar, mzR);
+  veil = mix(veil, 0.94 * rivCore, mzR);
   float crest = smoothstep(0.10, 0.30, length(sl)) * open * 0.25;
 
   // ---- foam
@@ -241,7 +252,7 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   float breath = 0.5 + 0.5 * sin(t * 0.9 + fn.g * 6.0);
   float contactW = 0.30 + 0.25 * breath + 0.15 * fn.b;
   float contact = 1.0 - smoothstep(contactW * 0.25, contactW * 1.15, shoreD);
-  contact *= (0.45 + 0.55 * breakup) * mix(0.08, 1.0, open);
+  contact *= (0.45 + 0.55 * breakup) * mix(0.08, 1.0, open) * (1.0 - 0.5 * uMapZoom);
   float wash = (1.0 - smoothstep(0.0, 1.6 + 0.6 * breath, shoreD)) * 0.30 * open * smoothstep(0.08, 0.40, uKeyDir.y) * (1.0 - gCold * 0.7);
   float ph = shoreD * 0.95 - t * 0.32 + (fn.r - 0.5) * 1.3;
   float bandWave = fract(ph);
@@ -257,6 +268,7 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   foam *= 1.0 - outK;
   foam *= smoothstep(0.0, 0.02, depth + 0.02);
   foam *= 1.0 - gCold * 0.35;
+  foam *= 1.0 - 0.85 * mzR;
   vec3 foamCol = vec3(0.90, 0.95, 1.0) * (waterIrradianceV(lightVis) * 0.78 + vec3(0.02));
 
   // ---- frozen water (ICE tiles under the surface) - opaque sheet, soft edges
@@ -348,14 +360,14 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   vec3 refl = sky * F * mix(1.0, 0.22, max(narrow, narrowW) * overcastK);
   float a = 1.0 - (1.0 - veil) * (1.0 - F);
   vec3 col = scat * veil * (1.0 - F) + refl + scat * crest;
-  col += waterShallowColorV(lightVis) * 1.6 * wash * (1.0 - outK);
+  col += waterShallowColorV(lightVis) * 1.6 * wash * (1.0 - outK) * (1.0 - 0.75 * uMapZoom);
   a = clamp(a + wash * 0.25, 0.0, 1.0);
   // river streaks: lighter, sky-tinted bands moving downstream
   // flow streaks: rivers, plus steep enclosed water (gorge lakes, rapids)
   float flowK = max(narrow, (1.0 - outK) * smoothstep(1.5, 4.0, dl) * (1.0 - smoothstep(4.0, 9.0, wide)) * 0.75);
   col += flowK * streak * (mix(waterShallowColorV(lightVis), rivTeal * 1.6, overcastK * narrow) * 0.9 + sky * 0.05 * (1.0 - overcastK * 0.8));
   // from afar, rivers read as bright teal ribbons with a sky sheen, not dark roads
-  float farR = smoothstep(60.0, 220.0, uCamDist);
+  float farR = smoothstep(60.0, 220.0, uCamDist) * (1.0 - uMapZoom);
   col += narrow * farR * (rivTeal * 1.3 + sky * 0.14 * (1.0 - overcastK * 0.7));
   // steep channels: stylised cascades = brighter streaks running downhill, never solid white
   float cascade = flowK * smoothstep(1.2, 3.5, dl);
