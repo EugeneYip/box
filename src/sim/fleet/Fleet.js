@@ -1198,8 +1198,8 @@ export class Fleet {
       for (const d of this.debris) {
         const h = this._inBerth(d.x, d.z);
         if (h) {
-          d.vx = d.vx * 0.5 + h.dirX * 0.45;
-          d.vz = d.vz * 0.5 + h.dirZ * 0.45;
+          d.vx = d.vx * 0.3 + h.dirX * 1.1;
+          d.vz = d.vz * 0.3 + h.dirZ * 1.1;
         }
       }
     }
