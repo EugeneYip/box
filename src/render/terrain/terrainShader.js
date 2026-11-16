@@ -38,6 +38,7 @@ uniform vec2 uOverlaySize;
 uniform vec3 uTilePalette[32];
 uniform sampler2D uHeightTex;
 uniform float uHeightLin;
+uniform sampler2D uShoreTex;
 ${WATER_PARS_GLSL}
 
 // global surface outputs (set in terrainSurface)
@@ -49,6 +50,7 @@ float tAO;
 float tCloud;
 float tSpecK;
 float tCold;
+float tRivBed;
 
 const mat2 ROT1 = mat2(0.80, -0.60, 0.60, 0.80);
 const mat2 ROT2 = mat2(0.28, 0.96, -0.96, 0.28);
@@ -989,6 +991,20 @@ void terrainSurface() {
   float wetShore = smoothstep(0.55, 0.0, s.p.y - swash) * (1.0 - under);
   albedo *= mix(1.0, 0.62, wetShore);
   rough = mix(rough, 0.35, wetShore);
+  // map zoom: the bed and low banks of rivers and small lakes (water no wider
+  // than a few tiles nearby) become a dark riparian green strip instead of
+  // brown soil under a bright water column, so a river reads as a thin line
+  // of water in a green valley rather than a wide pale canal
+  tRivBed = 0.0;
+  if (uMapZoom > 0.001 && s.p.y < 0.9) {
+    float wideT = texture2D(uShoreTex, p / uWorldSize).g * 16.0;
+    tRivBed = uMapZoom * (1.0 - smoothstep(1.4, 3.8, wideT)) * smoothstep(0.15, 0.6, wideT) * (1.0 - smoothstep(0.35, 0.9, s.p.y)) * (1.0 - snowB) * (1.0 - lavaRaw);
+    vec3 rip = mix(vec3(0.050, 0.110, 0.040), vec3(0.075, 0.130, 0.050), s.meso.g) * (0.85 + 0.3 * s.det.r);
+    rip = seasonal(rip, 0.5, s.temp);
+    rip = mix(rip, vec3(0.10, 0.11, 0.08), 1.0 - smoothstep(0.15, 0.40, s.temp));
+    albedo = mix(albedo, rip, tRivBed * 0.9);
+    rough = mix(rough, 0.85, tRivBed);
+  }
 
   // ---- weather wetness (rain): darker, glossier, puddles in hollows
   float wet = uWet * (1.0 - under) * (1.0 - lavaRaw);
@@ -1051,7 +1067,8 @@ export const TERRAIN_FRAGMENT_POST = /* glsl */ `
     float sunVis = clamp(lum(uKeyCol * KEYN), 0.0, 1.0) * smoothstep(0.0, 0.2, uKeyDir.y) * tCloud;
     gCold = tCold;
     outgoingLight *= 1.0 + cs * 0.45 * sunVis;
-    outgoingLight = applyWaterColumn(outgoingLight, depthW, viewY, tCloud);
+    // (map zoom river beds: the riparian strip shows through, not a water column)
+    outgoingLight = applyWaterColumn(outgoingLight, depthW * (1.0 - 0.85 * tRivBed), viewY, tCloud);
   }
 }
 `;

@@ -228,6 +228,17 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   rivTeal = mix(rivTeal, vec3(0.014, 0.200, 0.180), overcastK * (1.0 - gCold)) * irrR;
   scat = mix(scat, rivTeal, narrow);
   veil = max(veil, 0.64 * narrow);
+  // map zoom: rivers are quiet lines close to the sea's own blue, not bright
+  // canals. Toward the banks the water clears to the riparian strip the
+  // terrain draws there, so a river thins out with distance, and channels only
+  // a pixel or two wide keep less ink instead of a fixed bright band.
+  float mzR = uMapZoom * narrow;
+  float relC = clamp(edt / max(wide, 0.6), 0.0, 1.0);
+  float rivPx = max(wide, 0.5) * 2.0 / max(fw, 1e-3);
+  float rivCore = smoothstep(mix(0.30, 0.55, uMapZoom), 0.98, relC) * mix(0.7, 1.0, smoothstep(1.5, 5.0, rivPx));
+  vec3 rivFar = mix(waterShallowColorV(lightVis), waterDeepColorV(lightVis), 0.35) * vec3(1.05, 1.10, 1.08);
+  scat = mix(scat, rivFar, mzR);
+  veil = mix(veil, 0.94 * rivCore, mzR);
   float crest = smoothstep(0.10, 0.30, length(sl)) * open * 0.25;
 
   // ---- foam
@@ -257,6 +268,7 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   foam *= 1.0 - outK;
   foam *= smoothstep(0.0, 0.02, depth + 0.02);
   foam *= 1.0 - gCold * 0.35;
+  foam *= 1.0 - 0.85 * mzR;
   vec3 foamCol = vec3(0.90, 0.95, 1.0) * (waterIrradianceV(lightVis) * 0.78 + vec3(0.02));
 
   // ---- frozen water (ICE tiles under the surface) - opaque sheet, soft edges
