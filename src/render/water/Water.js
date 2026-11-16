@@ -46,6 +46,8 @@ export class Water {
       uCamFar: { value: 2000 },
       uClimTex: { value: terrain?.climTexture || null },
     };
+    // the terrain reads the same shore field (river banks at map zoom)
+    if (terrain?.uniforms?.uShoreTex) terrain.uniforms.uShoreTex.value = this.shoreTexture;
     if (!this.uniforms.uClimTex.value) {
       const t = new THREE.DataTexture(new Uint8Array([128, 128, 255, 0]), 1, 1);
       t.needsUpdate = true;
