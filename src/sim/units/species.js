@@ -59,6 +59,14 @@ export function registerSpecies(def) {
     retaliate: true,
     seed: null, // {tiles:[TILE...], groups, size:[min,max]} initial placement on a 256 map
     sound: null, // ambient voice for game.audio
+    // optional fields, declared so every species shares one object shape
+    // (the per-tick creature loop reads def fields for every creature)
+    predRatio: null, // predators: prey mass per predator (default 9)
+    crowd: null, // grazers: neighbours within 5 tiles that stop breeding (default 12)
+    livestock: false,
+    mouses: false,
+    id: def.id,
+    _wade: null, // cached wading depth (Units.js)
     ...def,
   };
   if (!base.brain) {

@@ -395,9 +395,27 @@ export function installRoles(Units) {
       m.until = now + 35 + Math.random() * 45;
       return false;
     }
-    if ((!u.target && !u.path) || now > m.repath) {
+    if ((!u.target && !u.path && now > (m.failT || 0)) || now > m.repath) {
       m.repath = now + 25;
-      this._ride(u, p.x, p.z);
+      // a road that cannot be found (across water, walled off) is tried a few
+      // times with growing pauses, then the trip is given up
+      if (this._ride(u, p.x, p.z) && u.target) m.fails = 0;
+      else {
+        m.fails = (m.fails || 0) + 1;
+        m.failT = now + 3 * m.fails;
+        if (m.fails >= 4) {
+          m.fails = 0;
+          if (m.phase === 'out') {
+            m.phase = 'back';
+            m.repath = 0;
+            m.since = now;
+          } else {
+            m.phase = 'home';
+            m.until = now + 30;
+            return false;
+          }
+        }
+      }
     }
     if (u.state !== 'run') u.state = 'walk';
     u.data.workAnim = null;
