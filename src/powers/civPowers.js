@@ -33,7 +33,7 @@ function found(g, c, culture) {
   if (v) {
     g.fx?.burst?.('spawn', { x: v.cx, z: v.cz }, 10, { scale: 1.5 });
     g.audio?.play?.('bell', { pos: { x: v.cx, z: v.cz } });
-    if (owner) g.notify(`${v.name} is founded within the ${owner.name}.`, 'good', { x: v.cx, z: v.cz });
+    if (owner) g.notify(`${v.name} is founded within ${theK(g.civ, owner.id)}.`, 'good', { x: v.cx, z: v.cz });
   }
 }
 
