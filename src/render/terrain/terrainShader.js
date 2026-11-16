@@ -187,6 +187,66 @@ vec3 reliefLines(vec2 q, vec2 off, float px, vec2 ls, float gw, float cw) {
 vec3 faceLines(vec2 q, vec2 off, float px) {
   return reliefLines(q, off, px, vec2(0.030, 0.0095), 0.62, 0.022);
 }
+// Joint blocks on one vertical plane (q = horizontal, height). sy = warped bed
+// coordinate (one unit per bed). Sub-vertical joints every ~1.6-3.6 units run
+// through a group of three beds and are staggered between groups, so the face
+// breaks into tall, irregular blocks rather than courses of masonry; bedding
+// planes show as crevices of varying strength. Returns x = crevice ink, y =
+// block tone (-0.5..0.5, blended across each joint over >= 1.5 px and faded to
+// 0 where the joint pattern changes, so no tone step aliases), z = bevel (0 at a
+// block edge .. 1 inside, spread over >= 8 px for the per-quad derivative bump),
+// w = runoff streak below each ledge. Every line has an exact antialiased width
+// and the whole pattern fades before the joints crowd closer than a few pixels.
+vec4 rockBlocks(vec2 q, float sy, float bedK, float px, vec2 off) {
+  float fsy = fract(sy);
+  float dBed = min(fsy, 1.0 - fsy) / 0.75;
+  float gs = (sy + 1.0) * (1.0 / 3.0);
+  float grp = floor(gs);
+  float fg = gs - grp;
+  float dGrp = min(fg, 1.0 - fg) * 4.0;
+  float hb = hash12(vec2(grp, 17.1) + off);
+  float freq = mix(0.26, 0.55, hb);
+  float lean = (hash12(vec2(grp, 5.3) + off) - 0.5) * 0.30;
+  float lodW = max(1.0, log2(max(px * 256.0 * 0.12, 1e-3)));
+  vec4 wn = textureLod(uNoise, q * vec2(0.12, 0.06) + off, lodW);
+  float u = (q.x + q.y * lean + (wn.r - 0.5) * 1.1) * freq + hb * 7.0;
+  float id = floor(u);
+  float f = u - id;
+  float dE = min(f, 1.0 - f) / freq;
+  float side = f > 0.5 ? 1.0 : -1.0;
+  float edge = id + max(side, 0.0);
+  // not every joint runs through: some neighbouring blocks merge; the open
+  // ones differ in width and depth, and each comes and goes along its length
+  float hj = hash12(vec2(grp * 3.1 + edge, 9.7) + off);
+  float jOn = step(0.35, hj);
+  float jStr = mix(0.55, 1.0, smoothstep(0.50, 0.90, hj));
+  float lodJ = max(1.0, log2(max(px * 256.0 * 0.16, 1e-3)));
+  float segJ = smoothstep(0.32, 0.58, textureLod(uNoise, vec2(edge * 0.173 + off.x, q.y * 0.16), lodJ).b);
+  float jK = 1.0 - smoothstep(0.10, 0.28, px * freq);
+  float hw = mix(0.022, 0.060, smoothstep(0.6, 1.0, hj));
+  float crev = aaLine(dE, hw, px) * jOn * jStr * mix(0.45, 1.0, segJ);
+  // a soft shadow on one side of each open joint reads as depth
+  float occl = (1.0 - smoothstep(hw, hw * 5.0 + 2.0 * px, dE)) * 0.40 * jOn * jStr * (side < 0.0 ? 1.0 : 0.35);
+  // bedding planes: the group boundaries open in broken runs, inner beds faint
+  float bnd = fsy > 0.5 ? floor(sy) + 1.0 : floor(sy);
+  float isG = step(dGrp, dBed + 0.01);
+  float segB = smoothstep(0.30, 0.62, textureLod(uNoise, vec2(q.x * 0.07 + bnd * 0.31, bnd * 0.13) + off, lodJ).r);
+  float bedS = mix(0.15 * step(0.6, hash12(vec2(bnd, 2.9) + off)), 0.85, isG) * segB * mix(0.4, 1.0, bedK);
+  float bedCrev = aaLine(dBed, 0.032, px) * bedS;
+  crev = max(crev, max(occl, bedCrev));
+  float tA = hash12(vec2(grp, id) + off * 3.7) - 0.5;
+  float tB = hash12(vec2(grp, id + side) + off * 3.7) - 0.5;
+  float bw0 = mix(0.45 / freq, max(1.5 * px, 0.04), jOn);
+  float tone = mix(tA, tB, 0.5 * (1.0 - smoothstep(0.0, bw0, dE)));
+  tone *= smoothstep(0.0, max(1.5 * px, 0.06), dGrp);
+  float bevW = max(0.32, 8.0 * px);
+  float bev = mix(1.0, smoothstep(0.0, bevW, dE), jOn * jStr) * smoothstep(0.0, bevW, dGrp);
+  // dark runoff streaks hanging from each ledge, fading down the bed
+  float lodS = max(1.0, log2(max(px * 256.0 * 0.6, 1e-3)));
+  float sn = textureLod(uNoise, vec2(q.x * 0.6, q.y * 0.05) + off * 1.3 + vec2(0.0, grp * 0.37), lodS).g;
+  float streak = smoothstep(0.52, 0.78, sn) * smoothstep(0.0, 0.9, fg);
+  return vec4(crev * jK, tone * jK, mix(1.0, bev, jK), streak);
+}
 
 // ---------------------------------------------------------------- materials
 Mat matSand(NS s) {
@@ -630,6 +690,20 @@ Mat matCliff(NS s, float volc, out vec3 facetN) {
   c *= 1.0 - 0.36 * joint;
   c *= 1.0 - 0.28 * gully;
   c = mix(c, c * vec3(0.80, 0.81, 0.84), stain * 0.65);
+  // joint blocks: sub-vertical joints cut each bed into blocks, every block a
+  // little lighter or darker, with dark crevices along the joints and bedding
+  // planes, bevelled edges and runoff streaks below the ledges (no more big
+  // smooth faces with a single hairline crack)
+  vec4 jb;
+  if (uPower > 0.5) {
+    jb = bw.x > bw.z ? rockBlocks(uvX, sy, bandK, s.fw, vec2(0.17, 0.31)) : rockBlocks(uvZ, sy, bandK, s.fw, vec2(0.61, 0.73));
+  } else {
+    jb = mix(rockBlocks(uvZ, sy, bandK, s.fw, vec2(0.61, 0.73)), rockBlocks(uvX, sy, bandK, s.fw, vec2(0.17, 0.31)), wxz);
+  }
+  float blockK = vf * (1.0 - 0.4 * volc);
+  c *= 1.0 + jb.y * blockK * vec3(0.68, 0.60, 0.50);
+  c = mix(c, c * vec3(0.70, 0.68, 0.66), jb.w * 0.75 * vf * near);
+  c *= 1.0 - 0.66 * jb.x * blockK;
 
   // volcanic rock: dark basalt with rusty oxidised patches and scoria pits
   vec4 sc = cz(mix(uvY, uvD, step(0.5, vf)) * 0.11 + 0.47);
@@ -657,7 +731,7 @@ Mat matCliff(NS s, float volc, out vec3 facetN) {
   // relief for the derivative bump: only broad features (bed steps spread over
   // ~8 px, soft gully troughs, low-frequency swell); fissures and grit stay in
   // the albedo
-  float hgt = 0.55 + 0.20 * (lrH - 0.5) * bandK + 0.12 * (t.r - 0.5) - 0.14 * gully + 0.03 * ledH * bandK;
+  float hgt = 0.55 + 0.20 * (lrH - 0.5) * bandK + 0.12 * (t.r - 0.5) - 0.14 * gully + 0.03 * ledH * bandK + 0.24 * (jb.z - 1.0) * blockK;
   // (the bump fades where even these broad features shrink to a few pixels:
   // grazing faces and mid zoom)
   return mk(c, 0.84 + 0.08 * volc, hgt, (0.13 * near + 0.03 * volc) * (1.0 - smoothstep(0.09, 0.22, s.fw)));
