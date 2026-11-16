@@ -703,42 +703,76 @@ export class Fleet {
     }
   }
 
-  // A ship under way gives way to any hull it is closing on (moored, at anchor
-  // or moving; not the enemy it is closing to grapple, nor a wreck): it eases
-  // off with the room left ahead and bears away from the other's side (to
-  // starboard when they meet bow to bow). Returns the share of speed to keep.
-  _giveWay(v, step) {
-    const ux = Math.cos(v.heading),
-      uz = Math.sin(v.heading);
+  // A ship under way gives way to any hull she is closing on (moored, at
+  // anchor or moving; not the enemy she is closing to grapple, nor a wreck):
+  // when her course (`want`) runs into another hull she bears away to the
+  // first free heading on the far side of it (two ships meeting bow to bow
+  // both turn the same way and pass), and she eases off with the room left
+  // ahead on her present heading. Coming in to her own spot (a berth or a
+  // place in the roads, chosen free), she creeps on past ships lying still
+  // and lets them shoulder her into place. Returns {want, f}: the course to
+  // steer and the share of speed to keep.
+  _giveWay(v, want) {
+    const G = this._gwOut || (this._gwOut = { want: 0, f: 1 });
+    G.want = want;
+    G.f = 1;
+    const look = Math.max(0.35, v.speed * 0.9) + 0.15;
+    const foe = v.chase ? v.target : null;
+    const home = !!v.dest && v.state === 'sail' && Math.hypot(v.dest.x - v.x, v.dest.z - v.z) < 2.5;
+    const O = this._gwList || (this._gwList = []);
+    O.length = 0;
+    this.near(v.x, v.z, v.def.length * 0.5 + look + 1.4, (o) => {
+      if (o === v || o.cls !== 'sea' || o.id === foe || o.state === 'sinking') return;
+      if (home && (o.state === 'moored' || o.state === 'fish' || o.speed < 0.1)) return;
+      O.push(o);
+    });
+    if (!O.length) return G;
     const ra = hullR(v),
       ha = hullHalf(v);
-    const look = Math.max(0.35, v.speed * 0.9) + 0.1;
-    const foe = v.chase ? v.target : null;
-    let f = 1,
-      steer = 0,
-      worst = Infinity;
-    this.near(v.x + ux * look * 0.5, v.z + uz * look * 0.5, v.def.length * 0.5 + look + 1.4, (o) => {
-      if (o === v || o.cls !== 'sea' || o.id === foe || o.state === 'sinking') return;
-      const rb = hullR(o),
-        hb = hullHalf(o);
-      const min = ra + rb + HULL_GAP + 0.06;
-      const wx = Math.cos(o.heading),
-        wz = Math.sin(o.heading);
-      const d0 = segDist(v.x, v.z, ux, uz, ha, o.x, o.z, wx, wz, hb, _SD);
-      if (d0 > min + look) return;
-      const d1 = segDist(v.x + ux * look, v.z + uz * look, ux, uz, ha, o.x, o.z, wx, wz, hb, _SD);
-      if (d1 >= min || d1 >= d0 - 1e-4) return; // not closing on it
-      // ease off with the room left (stop when touching, creep otherwise)
-      const keep = d0 <= min ? 0 : Math.max(0.2, Math.min(1, (d0 - min) / look) * 0.85);
-      if (keep < f) f = keep;
-      if (d0 < worst) {
-        worst = d0;
-        const across = (o.x - v.x) * -uz + (o.z - v.z) * ux;
-        steer = across > 0.12 ? -1 : across < -0.12 ? 1 : -1;
+    // room left on heading h: how far she may sail before she is closing
+    // on a hull (Infinity when it is clear), and the hull in the way
+    let block = null;
+    const room = (h) => {
+      const ux = Math.cos(h),
+        uz = Math.sin(h);
+      let best = Infinity;
+      block = null;
+      for (const o of O) {
+        const wx = Math.cos(o.heading),
+          wz = Math.sin(o.heading),
+          hb = hullHalf(o);
+        const min = ra + hullR(o) + HULL_GAP + 0.06;
+        const d0 = segDist(v.x, v.z, ux, uz, ha, o.x, o.z, wx, wz, hb, _SD);
+        if (d0 > min + look) continue;
+        const d1 = segDist(v.x + ux * look, v.z + uz * look, ux, uz, ha, o.x, o.z, wx, wz, hb, _SD);
+        if (d1 >= min || d1 >= d0 - 1e-4) continue; // not closing on it
+        const r = Math.max(0, d0 - min);
+        if (r < best) {
+          best = r;
+          block = o;
+        }
       }
-    });
-    if (steer) v.heading += steer * v.def.turn * 0.8 * step;
-    return f;
+      return best;
+    };
+    // the course: straight on if it is clear, else bear away
+    if (room(want) < Infinity && block) {
+      const across = (block.x - v.x) * -Math.sin(want) + (block.z - v.z) * Math.cos(want);
+      const side = across > 0.12 ? -1 : across < -0.12 ? 1 : -1;
+      let pick = null;
+      for (const off of [0.55, 1.0, -0.55, 1.5, -1.0, 2.1]) {
+        const h = want + side * off;
+        if (room(h) === Infinity) {
+          pick = h;
+          break;
+        }
+      }
+      G.want = pick ?? want + side * 2.1;
+      if (pick == null) G.f = 0; // boxed in: wait for the other to move off
+    }
+    // the pace: by the room ahead on her present heading
+    const r = room(v.heading);
+    if (r < Infinity) G.f = Math.min(G.f, r <= 0 ? 0 : Math.max(0.2, Math.min(1, r / look) * 0.85));
+    return G;
   }
 
   // vehicles within r of a point (from the per-tick hash)
@@ -823,7 +857,8 @@ export class Fleet {
       return;
     }
     if (!v.alive) return;
-    let target = 0;
+    let target = 0,
+      give = 1;
     if (v.state === 'sail' && v.path) {
       // next waypoint
       const P = v.path;
@@ -841,7 +876,10 @@ export class Fleet {
         this._arrive(v);
         if (!v.alive) return;
       } else {
-        const want = Math.atan2(tz - v.z, tx - v.x);
+        // (bearing away from any hull in the way)
+        const gw = this._giveWay(v, Math.atan2(tz - v.z, tx - v.x));
+        const want = gw.want;
+        give = gw.f;
         let diff = angDiff(want, v.heading);
         const turn = def.turn * (v.speed < 0.5 ? 1.6 : 1) * step;
         v.heading += Math.max(-turn, Math.min(turn, diff));
@@ -861,9 +899,13 @@ export class Fleet {
     } else if (v.state === 'patrol') {
       v.heading += step * 0.35;
       target = def.speed * (v.grappled > this.game.time.total ? 0.08 : 0.3);
+      const gw = this._giveWay(v, v.heading);
+      const turn = def.turn * step;
+      v.heading += Math.max(-turn, Math.min(turn, angDiff(gw.want, v.heading)));
+      give = gw.f;
     }
-    // keep clear of other hulls: ease off and bear away from a ship ahead
-    if (target > 0 && v.state !== 'fish') target *= this._giveWay(v, step);
+    // keep clear of other hulls: ease off with the room ahead
+    target *= give;
     // accelerate / brake
     const acc = target > v.speed ? 0.7 : 1.4;
     v.speed += Math.max(-acc * step, Math.min(acc * step, target - v.speed));
