@@ -1035,8 +1035,19 @@ void terrainSurface() {
     float highv = smoothstep(4.5, 9.0, s.p.y + (s.macro.g - 0.5) * 3.0);
     vec3 hue = mix(vec3(0.30, 0.60, 0.17), vec3(0.84, 0.64, 0.27), smoothstep(0.15, 0.85, dryv));
     hue = mix(hue, vec3(0.12, 0.52, 0.20), wetv);
-    hue = mix(hue, vec3(0.50, 0.56, 0.48), highv * 0.85);
-    vec3 gGreen = hue * (lum(albedo) / lum(hue)) * mix(1.0, 0.78, wetv) * mix(1.0, 1.08, dryv * (1.0 - highv));
+    // land-use patchwork at island scale (~15-60 units, soft-edged): sunny open
+    // meadow, deep green pasture, wet hollows and dry exposed ridges, so the
+    // land reads as a pattern from afar instead of one green sheet
+    float luN = s.macro.r * 0.55 + rg.g * 0.30 + s.macro.g * 0.15;
+    float meadowK = smoothstep(0.52, 0.68, luN) * (1.0 - wetv) * (1.0 - highv);
+    float pastK = (1.0 - smoothstep(0.30, 0.45, luN)) * (1.0 - dryv * 0.7);
+    float hollow = smoothstep(0.75, 0.40, s.ao) * (1.0 - highv);
+    float ridge = smoothstep(0.90, 0.99, s.ao) * smoothstep(1.5, 3.5, s.p.y) * (1.0 - wetv) * (1.0 - highv);
+    hue = mix(hue, vec3(0.50, 0.64, 0.19), meadowK * 0.80);
+    hue = mix(hue, vec3(0.13, 0.45, 0.17), max(pastK * 0.65, hollow * 0.45));
+    hue = mix(hue, vec3(0.70, 0.62, 0.30), ridge * 0.30);
+    float luV = (1.0 + 0.20 * meadowK + 0.08 * ridge) * (1.0 - 0.20 * pastK) * (1.0 - 0.14 * hollow);
+    vec3 gGreen = hue * (lum(albedo) / lum(hue)) * luV * mix(1.0, 0.78, wetv) * mix(1.0, 1.08, dryv * (1.0 - highv));
     gGreen = mix(albedo, gGreen, 0.9);
     // autumn and winter keep their established look (the old path)
     float sx = abs(uSeason - 3.5);
