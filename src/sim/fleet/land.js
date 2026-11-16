@@ -45,7 +45,9 @@ export const land = {
       b = civ?.villages?.[o.to];
     if (!a?.alive || !b?.alive || a === b) return null;
     if (this.landCount() >= this.budget.land) return null;
-    const path = this._roadPath(a, b, 5000);
+    // (a big map's towns lie further apart: the caravan masters look further)
+    const reach = this._landReach();
+    const path = this._roadPath(a, b, Math.round(5000 * reach * reach));
     if (!path) return null;
     const kid = o.kingdom ?? a.kingdom;
     const v = this.spawn('caravan', kid, path[0], path[1], { home: a.id, state: 'move', heading: Math.atan2(path[3] - path[1], path[2] - path[0]) });
@@ -58,6 +60,12 @@ export const land = {
     this.setPath(v, path);
     this.totals.caravans++;
     return v;
+  },
+
+  // How much further apart towns lie than on a Medium map (1 there; Civ
+  // spreads a big map's villages wider).
+  _landReach() {
+    return this.game.civ?._villageSpread?.() ?? 1;
   },
 
   // ------------------------------------------------------------------ roads
@@ -192,6 +200,7 @@ export const land = {
 
   _sendCaravan(k) {
     const civ = this.game.civ;
+    const reach = this._landReach();
     let best = null,
       bd = Infinity;
     for (const o of civ.kingdoms) {
@@ -205,7 +214,7 @@ export const land = {
           const b = civ.villages[vb];
           if (!b?.alive || b.landId !== a.landId) continue;
           const d = Math.hypot(a.cx - b.cx, a.cz - b.cz) - (r?.ally ? 20 : 0);
-          if (d < bd && d < 120) {
+          if (d < bd && d < 120 * reach) {
             bd = d;
             best = { a, b };
           }

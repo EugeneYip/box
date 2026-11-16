@@ -512,8 +512,8 @@ export const missions = {
       // the rest once a second is plenty for a ship at rest
       if ((v._mt = (v._mt || 0) + step) < 1) return;
       v._mt = 0;
-      // shipwrights patch her up in port
-      if (v.hp < v.maxHp) v.hp = Math.min(v.maxHp, v.hp + v.maxHp * 0.025);
+      // shipwrights patch her up in port (not under a blockade's fire)
+      if (v.hp < v.maxHp && !(this.blockades.get(v.harbour) > this.game.time.total)) v.hp = Math.min(v.maxHp, v.hp + v.maxHp * 0.025);
       v.burning = 0;
       if (v.layup && v.idleT > 4) this.remove(v);
       else if (v.roads && v.kind !== 'fishing' && v.idleT > 45) this.remove(v); // laid up after a spell in the roads
