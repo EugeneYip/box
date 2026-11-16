@@ -1888,9 +1888,6 @@ export class Units {
     const fastFar = Math.min(4, stepK);
     const fastFarPeople = stepK; // people also re-think on arrival, so they can wait longer
     const fastNear = Math.sqrt(stepK);
-    // the overview LOD (every fourth tick) only while its steps stay at or
-    // under what the distant walk takes at 8x (two coarse steps)
-    const lodFar = dt * 4 <= TICK_DT * 8 + 1e-9;
     const overview = (g.cameraRig?.cur?.dist ?? 0) > OVERVIEW_DIST;
     const cam = g.cameraRig?.cur;
     const focus = this._focus;
@@ -1944,7 +1941,7 @@ export class Units {
       // already stepped every other tick at twice the step), so needs, work,
       // sleep, statuses and walking keep the same pace per game second for
       // half the cost. One standing still (working, grazing, idling, asleep)
-      // in the overview at the fine step updates every fourth tick. A creature
+      // in the overview (or very far off) updates every fourth tick. A creature
       // about to decide is updated on the next tick, as before. Fights, flyers
       // and creatures with fine-timed brains (fire breath, surfacing) run
       // every tick.
@@ -1953,13 +1950,13 @@ export class Units {
         fdz0 = u.z - focus.z;
       const fd2 = fdx0 * fdx0 + fdz0 * fdz0;
       let lod = 0;
-      if (!u.combat && (overview || fd2 > focus.r2) && def.habitat !== 'air' && !BRAIN_TICKS[def.brain]) lod = lodFar && !u.target && !u.path && (overview || fd2 > focus.r2 * 4) ? 2 : 1;
+      if (!u.combat && (overview || fd2 > focus.r2) && def.habitat !== 'air' && !BRAIN_TICKS[def.brain]) lod = !u.target && !u.path && (overview || fd2 > focus.r2 * 4) ? 2 : 1;
       if (lod && (slot & ((1 << lod) - 1)) !== 0 && u.thinkT > 0.05) {
         u.anim += dt * (u.moving ? 1 : 0.35);
         continue;
       }
       const el = now - u._simT;
-      const udt = el > 1e-4 ? (el < 0.6 ? el : 0.6) : dt;
+      const udt = el > 1e-4 ? (el < 1.2 ? el : 1.2) : dt;
       u._simT = now;
       // ---- needs
       const active = u.state === 'run' || u.state === 'flee' || u.state === 'hunt' || u.state === 'attack';
