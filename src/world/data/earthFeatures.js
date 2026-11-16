@@ -379,7 +379,7 @@ export const MOISTURE = [
   { m: 0.1, k: 0.95, edge: 2, w: 2.8, pts: [[70.5, 26.5], [72.5, 27.8]] }, // Thar
   { m: 0.12, k: 0.85, edge: 3, w: 4, pts: [[58.0, 39.5], [62.0, 41.0], [65.0, 42.5]] }, // Karakum and Kyzylkum
   { m: 0.05, k: 1, edge: 2, w: 3.5, pts: [[79.0, 38.8], [84.0, 39.4], [88.0, 40.0]] }, // Taklamakan
-  { m: 0.08, k: 1, edge: 3, w: 4, pts: [[96.0, 41.5], [103.0, 42.0], [109.0, 43.0], [112.0, 43.5]] }, // Gobi
+  { m: 0.08, k: 1, edge: 2.5, w: 3.6, pts: [[96.0, 41.5], [103.0, 42.0], [109.0, 43.0], [111.5, 43.8]] }, // Gobi
   { m: 0.25, k: 0.8, edge: 2, w: 3, pts: [[82.0, 33.5], [88.0, 34.0]] }, // dry western Tibet
   { m: 0.32, k: 0.75, edge: 1.5, w: 3.5, pts: [[80.0, 33.5], [86.0, 32.6], [92.0, 32.6], [97.0, 32.4]] }, // Tibetan high steppe
   { m: 0.07, k: 0.95, edge: 6, pts: [[120.5, -24.0, 0, 6], [127.0, -24.5, 0, 7], [133.0, -25.5, 0, 7], [138.0, -28.0, 0, 5]] }, // Australian
@@ -423,6 +423,10 @@ export const MOISTURE = [
   { m: 0.55, k: 0.6, edge: 3, w: 4, pts: [[77.0, 22.0], [81.0, 21.0], [85.0, 21.5]] }, // central India
   { m: 0.6, k: 0.5, edge: 3, w: 4, pts: [[-58.0, -12.0], [-50.0, -12.0], [-45.0, -10.0]] }, // cerrado edge
   { m: 0.62, k: 0.5, edge: 3, w: 6, pts: [[85.0, 60.0], [105.0, 60.0], [125.0, 62.0]] }, // Siberian taiga
+  // (after the Gobi: the plain around Beijing is temperate farmland, the desert lies far to the north-west)
+  { m: 0.5, k: 0.9, edge: 1.5, w: 2.0, pts: [[114.8, 40.4], [116.2, 38.5], [116.6, 36.0], [117.3, 33.5]] }, // North China Plain
+  { m: 0.42, k: 0.6, edge: 1.5, w: 1.5, pts: [[110.5, 36.0], [113.0, 37.5]] }, // Loess plateau and Shanxi (dry farmland)
+  { m: 0.52, k: 0.7, edge: 2, w: 2.5, pts: [[123.5, 42.0], [125.5, 45.0], [127.0, 47.5]] }, // Manchurian plain
   { m: 0.62, k: 0.5, edge: 3, w: 5, pts: [[-122.0, 59.0], [-102.0, 58.0], [-82.0, 53.5], [-65.0, 52.0]] }, // Canadian boreal forest
 ];
 

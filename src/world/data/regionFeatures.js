@@ -61,7 +61,10 @@ export const REGION_SETS = [
       { m: 0.5, k: 0.8, edge: 0.12, w: 0.12, pts: [[120.4, 24.0], [120.22, 23.35], [120.25, 22.9], [120.5, 22.6]] }, // farmed western plain
     ],
     shelves: [
-      { d: 0.8, edge: 0.4, w: 0.5, pts: [[119.8, 25.0], [119.6, 24.0], [119.6, 23.0]] }, // Taiwan Strait
+      // Taiwan Strait: shallow near Taiwan and Penghu, deepening toward the
+      // map's edges (no flat slab with a straight edge)
+      { d: 1.7, edge: 0.6, w: 0.3, pts: [[120.0, 25.3], [119.8, 24.2], [119.75, 23.2], [119.85, 22.4]] },
+      { d: 0.9, edge: 0.35, w: 0.12, pts: [[120.2, 24.7], [120.05, 23.9], [119.95, 23.1]] },
       { d: 0.5, edge: 0.15, w: 0.25, pts: [[119.55, 23.55]] }, // Penghu bank
     ],
     rivers: [

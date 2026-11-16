@@ -830,7 +830,8 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
       for (let x = 0; x < W; x++) {
         const i = y * W + x;
         if (land[i]) continue;
-        const k = (1 - smoothstep(ringY, ringY + 56, edgeDist(x, y) + fbm(nBank, x / 41, y / 41, 2) * 14)) * smoothstep(1.5, 8, dSea[i]);
+        const band = Math.max(56, Math.min(W, H) * 0.18); // (wider on the finest maps)
+        const k = (1 - smoothstep(ringY, ringY + band, edgeDist(x, y) + fbm(nBank, x / 41, y / 41, 2) * band * 0.25)) * smoothstep(1.5, 8, dSea[i]);
         if (k > 0) hgt[i] = Math.min(hgt[i], hgt[i] + (-7.6 - hgt[i]) * k);
       }
   for (let i = 0; i < N; i++) {
@@ -990,7 +991,7 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
         // shores rise quickly: a lake only shapes the land a few tiles around
         // it (a broad bowl around a large upland lake)
         const d = dOut[i];
-        const shore = bowl[i] ? 0.3 + d * 0.42 + d * d * 0.045 : 0.3 + d * 0.8 + d * d * 0.28;
+        const shore = bowl[i] ? 0.3 + d * 0.42 + d * d * 0.045 : 0.3 + d * 0.6 + d * d * 0.18;
         if (shore < hgt[i]) hgt[i] = shore;
       }
     }
