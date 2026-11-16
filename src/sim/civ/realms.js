@@ -470,17 +470,21 @@ export const realms = {
     const w = this.world;
     const taken = new Set();
     for (const v of this.villages) if (v.alive) taken.add(v.name);
+    // (a small country on the whole Earth spans only a dozen tiles)
+    const R = this._placeReach;
+    const near = clamp(0.8 * R.any, 6, 14),
+      gap = clamp(R.any, 8, 13);
     const cands = [];
     for (const p of this._places) {
       if (p.realm !== k.realm || taken.has(p.name)) continue;
       const d = Math.hypot(p.x - lost.cx, p.z - lost.cz);
-      if (d < 14 || d > 150) continue;
+      if (d < near || d > 150) continue;
       const x = Math.floor(p.x),
         z = Math.floor(p.z);
       if (!w.inBounds(x, z)) continue;
       const o = w.owner[z * w.w + x];
       if (o >= 0 && o !== k.id) continue;
-      if (this.villages.some((v) => v.alive && Math.hypot(v.cx - p.x, v.cz - p.z) < 13)) continue;
+      if (this.villages.some((v) => v.alive && Math.hypot(v.cx - p.x, v.cz - p.z) < gap)) continue;
       cands.push({ p, d });
     }
     cands.sort((a, b) => a.d - b.d);

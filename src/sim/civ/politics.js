@@ -258,7 +258,7 @@ export const politics = {
       this.crown(k, heir);
       this._note(abdicated ? `${deadName} abdicates; ${heir.name} rules ${this._kn(k)}` : `${deadName} dies; ${heir.name} rules ${this._kn(k)}`, 'info', { x: heir.x, z: heir.z }, 'succ' + k.id, 20);
       // a contested succession can split a large realm
-      if (k.villages.length >= 3 && this._kLaw(k.id, 'civRebellions') && !abdicated && this.rng.chance(Math.min(0.75, 0.3 + (k.villages.length - 3) * 0.06) * (k.seeded ? 0.5 : 1))) {
+      if (k.villages.length >= 3 && this._kLaw(k.id, 'civRebellions') && !abdicated && this.rng.chance(Math.min(0.75, 0.3 + (k.villages.length - 3) * 0.06) * (k.seeded ? 0.7 : 1))) {
         let claimant = null;
         for (const vid of k.villages) {
           const v = this.villages[vid];
@@ -380,9 +380,10 @@ export const politics = {
   // Unions on a World Map world, as [small, big] or null. A real country is
   // never folded into a generated realm: when the two unite, the real one
   // is the crown that stays, whatever their sizes. A country seeded at the
-  // start keeps its own crown for a century (France, the Netherlands and
-  // Poland had all been folded into neighbours by Year 55), and any real
-  // country for thirty years. A breakaway long at peace with the country it
+  // start keeps its own crown for sixty years (France, the Netherlands and
+  // Poland had all been folded into neighbours by Year 55) and then joins
+  // only a firm ally three times its size; any other real country keeps its
+  // crown for thirty years. A breakaway long at peace with the country it
   // left goes back to it, and a small realm long at peace beside a real
   // country joins it: fewer one-town crowns on the regional maps.
   _realUnion(A, B, r, now) {
@@ -393,7 +394,8 @@ export const politics = {
     const ns = small.villages.length,
       nb = big.villages.length;
     if (small.realm >= 0) {
-      if (!(big.realm >= 0) || now - small.founded < YEAR * (small.seeded ? 100 : 30)) return null;
+      if (!(big.realm >= 0) || now - small.founded < YEAR * (small.seeded ? 60 : 30)) return null;
+      if (small.seeded) return r.ally && r.opinion >= 40 && ns <= 1 && nb >= 3 ? [small, big] : null;
       return r.ally && r.opinion >= 30 && ns <= 2 && nb >= ns + 1 ? [small, big] : null;
     }
     if (now - small.founded < YEAR * 8) return null; // a young crown fights for its freedom first
@@ -547,9 +549,9 @@ export const politics = {
           // neighbour in its first decades, nor beaten down to its last town
           // by two wars at once
           const youngReal = def.seeded && now - def.founded < YEAR * 40;
-          if (def.seeded && this.warCount(def.id) >= (youngReal || def.villages.length <= 1 ? 1 : 2)) continue;
+          if (def.seeded && this.warCount(def.id) >= (def.villages.length <= 1 ? 1 : 2)) continue;
           let p = 0.045 + att.aggression * 0.09 + (ambitious ? 0.05 : 0) + (hungry ? 0.04 + crowd * 0.05 : 0);
-          if (def.seeded) p *= (youngReal ? 0.6 : 0.85) * (def.villages.length <= 1 ? 0.6 : 1);
+          if (def.seeded) p *= (youngReal ? 0.8 : 1) * (def.villages.length <= 1 ? 0.7 : 1);
           p *= Math.pow(wl, 1.7) * (g.age?.mods?.warlike ?? 1);
           if (this._rulerTrait(att, 'cruel', 'valiant')) p *= 1.6;
           if (this._rulerTrait(att, 'gentle', 'silver-tongued', 'silvertongued')) p *= 0.55;
@@ -1077,7 +1079,7 @@ export const politics = {
     if (this.hasCultureTrait(v.culture, 'Mystic')) L += 5;
     // World Map: a real country's own towns hold to it; a town taken from a
     // real country that still stands longs to go back
-    if (k.realm >= 0 && (v.home == null || v.home === k.id)) L += k.seeded ? 12 : 8;
+    if (k.realm >= 0 && (v.home == null || v.home === k.id)) L += k.seeded ? 5 : 3;
     else if (v.home != null && v.home !== k.id && this._homeRealm?.(v)) L -= 8;
     L += (v.loyaltyBoost || 0);
     v.loyaltyBoost = Math.max(0, (v.loyaltyBoost || 0) - 1);
@@ -1156,7 +1158,7 @@ export const politics = {
     const home = forced ? null : this._homeRealm?.(v);
     if (home && home.id !== old.id) return this._riseHome(v, old, home, silent);
     // a real country seeded at the start rides out one rising at a time
-    if (!forced && old.seeded && now - (old.rebelT ?? -1e9) < YEAR * 6) return null;
+    if (!forced && old.seeded && now - (old.rebelT ?? -1e9) < YEAR * 4) return null;
     old.rebelT = now;
     v.lastRebel = now;
     v.rebellions = (v.rebellions || 0) + 1;
