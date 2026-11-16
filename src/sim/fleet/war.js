@@ -73,7 +73,8 @@ export const war = {
       v.chase = true;
       m.blockade = null;
       const d = Math.hypot(tgt.x - v.x, tgt.z - v.z);
-      const reach = 1.6 + (v.def.size + tgt.def.size) * 0.5;
+      // (hulls keep a hand's breadth apart: bow to stern still counts as alongside)
+      const reach = Math.max(1.6 + (v.def.size + tgt.def.size) * 0.5, (v.def.length + tgt.def.length) * 0.5 + 0.45);
       if (d <= reach) {
         this._fight(v, tgt, dt);
         if (!v.alive || v.state === 'sinking') return;
@@ -133,6 +134,10 @@ export const war = {
       px = sp.x;
       pz = sp.z;
     }
+    // each galley of the squadron keeps its own station, line abreast
+    const st = this._station(v, px, pz, bh || (v.harbour != null ? this.harbourInfo(v.harbour) : null));
+    px = st.x;
+    pz = st.z;
     const dd = Math.hypot(px - v.x, pz - v.z);
     if (dd > 3.5) {
       if (v.state !== 'sail' || !v.dest || Math.hypot(v.dest.x - px, v.dest.z - pz) > 2) {
@@ -158,6 +163,33 @@ export const war = {
         }
       }
     }
+  },
+
+  // A galley's own station off a harbour: its squadron (the realm's galleys
+  // keeping the same watch) lies line abreast across the approach, a few
+  // hull lengths apart, instead of piling onto one point.
+  _station(v, px, pz, h) {
+    const key = (v.mission.station = h ? h.id : -1);
+    let i = 0,
+      n = 0;
+    for (const o of this.list) {
+      if (!o.alive || o.kind !== 'galley' || o.kingdom !== v.kingdom || o.state === 'sinking' || o.mission?.type !== 'patrol' || o.target != null) continue;
+      if (o !== v && o.mission.station !== key) continue;
+      if (o.id < v.id) i++;
+      n++;
+    }
+    if (n <= 1 || !h) return { x: px, z: pz };
+    const ax = -h.dirZ,
+      az = h.dirX;
+    const slot = i - (n - 1) / 2;
+    const gap = v.def.length + 2.2;
+    for (const f of [1, 0.6, -1]) {
+      const x = px + ax * slot * gap * f,
+        z = pz + az * slot * gap * f;
+      const p = this.nav.waterNear(x, z, 2, 1.2);
+      if (p && this.nav.comp(p.x, p.z) === this.nav.comp(px, pz)) return p;
+    }
+    return { x: px, z: pz };
   },
 
   // Arrows and fire pots from one ship at another, seen in flight: longer
