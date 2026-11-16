@@ -510,10 +510,13 @@ export class Civilization {
       }
     }
     if (best) return best;
-    const reach = this._crowd() > 0.6 ? 70 : 44; // a full realm looks further afield
+    // (a big map's settlers go further: the same villages cover wider land)
+    const spread = this._villageSpread();
+    const reach = (this._crowd() > 0.6 ? 70 : 44) * spread; // a full realm looks further afield
+    const gap = 18 * spread;
     for (let k = 0; k < 90; k++) {
       const a = rng.float(0, Math.PI * 2),
-        r = rng.float(20, reach);
+        r = rng.float(20 * spread, reach);
       const tx = Math.floor(v.cx + Math.cos(a) * r),
         ty = Math.floor(v.cz + Math.sin(a) * r);
       if (!w.inBounds(tx, ty)) continue;
@@ -521,13 +524,13 @@ export class Civilization {
       if (this.landId[i] !== v.landId) continue;
       if (w.owner[i] >= 0 && w.owner[i] !== v.kingdom) continue;
       let tooClose = false;
-      for (const o of this.villages) if (o.alive && Math.hypot(o.cx - tx, o.cz - ty) < 18) tooClose = true;
-      for (const e of this.expeditions) if (Math.hypot(e.site.tx - tx, e.site.ty - ty) < 18) tooClose = true;
+      for (const o of this.villages) if (o.alive && Math.hypot(o.cx - tx, o.cz - ty) < gap) tooClose = true;
+      for (const e of this.expeditions) if (Math.hypot(e.site.tx - tx, e.site.ty - ty) < gap) tooClose = true;
       if (tooClose) continue;
       const s = this._scoreSite(tx, ty, { kingdom: v.kingdom, minSpace: 95 });
       if (s < 0) continue;
       // unclaimed land is the prize
-      const sc = s - Math.abs(r - 27) * 1.2 + (w.owner[i] < 0 ? 40 : 0) + rng.next() * 10;
+      const sc = s - Math.abs(r - 27 * spread) * 1.2 + (w.owner[i] < 0 ? 40 : 0) + rng.next() * 10;
       if (sc > bs) {
         bs = sc;
         best = { tx, ty };
@@ -562,7 +565,7 @@ export class Civilization {
     // far-flung colonies sometimes strike out on their own as a new realm
     const cap = k ? this.villages[k.capital] : null;
     const far = cap ? Math.hypot(cap.cx - u.x, cap.cz - u.z) : 0;
-    const independent = !k || !k.alive || (this.law('civNewKingdoms') && ((far > 55 && this.rng.chance(0.45)) || this.rng.chance(0.12)));
+    const independent = !k || !k.alive || (this.law('civNewKingdoms') && ((far > 55 * this._villageSpread() && this.rng.chance(0.45)) || this.rng.chance(0.12)));
     if (exp.site.resettle != null) {
       const old = this.villages[exp.site.resettle];
       if (old) {
@@ -2346,12 +2349,14 @@ export class Civilization {
       lim[i] = R;
       push(i, 0);
     };
+    // (on a big map the same number of villages holds wider country)
+    const reach = this._territoryReach();
     for (const v of this.villages) {
       if (!v.alive) continue;
       const k = this.kingdoms[v.kingdom];
       if (!k || !k.alive) continue;
       const strength = 1 + v.tier * 0.25 + (k.capital === v.id ? 0.15 : 0);
-      seed(v.cx, v.cz, v.radius * 1.05 + v.tier * 4, v.kingdom, strength); // towns and cities hold the countryside around them
+      seed(v.cx, v.cz, (v.radius * 1.05 + v.tier * 4) * reach, v.kingdom, strength); // towns and cities hold the countryside around them
       for (const b of v.buildings) if (b.alive && !b.constructing && (b.type === 'watchtower' || b.type === 'tower')) seed(b.x, b.z, b.type === 'watchtower' ? 7 : 4, v.kingdom, 0.9);
     }
     const H = w.height;
