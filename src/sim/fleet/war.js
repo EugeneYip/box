@@ -50,14 +50,17 @@ export const war = {
 
   _galley(v, enemies, dt, now) {
     const nav = this.nav;
+    // lookouts see further over a big map's wide seas (enemy sail was rarely
+    // within sight there: no ship was sunk on the World Map in a century)
+    const look = this.seaScale();
     let tgt = v.target != null ? this.byId.get(v.target) : null;
-    if (tgt && (!tgt.alive || tgt.state === 'sinking' || tgt.state === 'moored' || tgt.kind === 'fishing' || !enemies.includes(tgt.kingdom) || Math.hypot(tgt.x - v.x, tgt.z - v.z) > 40)) tgt = null;
+    if (tgt && (!tgt.alive || tgt.state === 'sinking' || tgt.state === 'moored' || tgt.kind === 'fishing' || !enemies.includes(tgt.kingdom) || Math.hypot(tgt.x - v.x, tgt.z - v.z) > 40 * look)) tgt = null;
     if (!tgt) {
       // nearest enemy ship: warships and transports first. Fishermen are
       // never hunted, at any map size: a blockade drives them home instead
       // (below), and a blockaded harbour sends none out.
       let bs = Infinity;
-      this.near(v.x, v.z, 30, (o, d) => {
+      this.near(v.x, v.z, 30 * look, (o, d) => {
         if (o.cls !== 'sea' || o.state === 'sinking' || o.state === 'moored' || o.kind === 'fishing' || !enemies.includes(o.kingdom)) return;
         const sc = d - (o.kind === 'galley' ? 8 : o.kind === 'transport' ? 7 : o.kind === 'carrack' || o.kind === 'cog' ? 3 : 0);
         if (sc < bs) {
