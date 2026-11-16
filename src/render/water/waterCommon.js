@@ -252,6 +252,8 @@ vec3 applyWaterColumn(vec3 seabed, float depth, float viewY, float vis) {
   vec3 T = exp(-ab * (up + down * 0.6) - turb * (1.0 / vy + 0.6 / sy));
   vec3 Tv = exp(-ab * up * 1.15 - turb / vy);
   vec3 scat = mix(waterShallowColorV(vis), waterDeepColorV(vis), waterDeepMix(depth));
+  // (map zoom: wide flats only a few tenths deep read turquoise, not white)
+  T *= 1.0 - 0.32 * uMapZoom * smoothstep(0.0, 0.3, depth);
   return seabed * T + scat * (1.0 - Tv);
 }
 `;
