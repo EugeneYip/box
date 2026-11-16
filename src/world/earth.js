@@ -14,11 +14,12 @@ import { REGION_MASK as MASK_NA } from './data/mask-north-america.js';
 
 const REGION_MASKS = { 'great-east-asia': MASK_GEA, 'asia-mainland': MASK_AM, japan: MASK_JP, taiwan: MASK_TW, europe: MASK_EU, 'north-america': MASK_NA };
 // Authored heights are game units of about 2.7 per real kilometre on every map
-// (the whole Earth's 22-unit Everest). Regional maps keep that scale, a
-// little taller where the zoom is finest so Taiwan's and Japan's ranges still
-// stand up as mountains; climate reads heights divided by this factor.
-const REGION_VK = { taiwan: 1.4, japan: 1.35 };
+// (the whole Earth's 22-unit Everest). Regional maps keep that scale, taller
+// the finer their tiles (VK: x1.2 on Europe, x1.65 on Japan, x1.9 on Taiwan)
+// so ranges still stand up as mountains at a few km or less per tile; climate
+// reads heights divided by this factor.
 const KM_UNITS = 2.7;
+const WORLD_UPK = 22 / 8.85; // whole-Earth feature heights: game units per km (Everest 22)
 
 // World Map preset ('earth'): the real Earth on a 2:1 plate carree world,
 // centred on the Pacific (central meridian 150°E, so the Atlantic splits at
@@ -155,6 +156,10 @@ function table(t, x) {
 // Mean temperature (0 cold .. 1 hot) by absolute latitude, before anomalies
 // and altitude. Tuned to the shared biome thresholds: tree line near 67°N,
 // taiga below ~0.34, hot climates above ~0.64.
+// Tree line (km) by absolute latitude on maritime coasts; continental
+// interiors carry it up to ~0.8 km higher (the Rockies, Tibet). The snow line
+// (where peaks stay white) lies ~0.75 km above it, more in dry climates.
+const TREE_LAT = [[0, 3.7], [15, 3.6], [20, 3.45], [25, 3.3], [30, 3.15], [35, 2.75], [40, 2.4], [45, 2.05], [50, 1.65], [55, 1.25], [60, 0.9], [65, 0.6], [70, 0.3], [75, 0]];
 const TEMP_LAT = [[0, 0.95], [10, 0.93], [20, 0.86], [25, 0.8], [30, 0.72], [35, 0.64], [40, 0.57], [45, 0.5], [50, 0.43], [55, 0.37], [60, 0.31], [65, 0.245], [70, 0.18], [75, 0.12], [80, 0.07], [90, 0]];
 // Annual moisture by distance from the thermal equator (about 4°N): the wet
 // tropics, the dry subtropical belt, the wet westerlies, the dry poles.
@@ -206,12 +211,12 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
   const REG = options.region && options.region !== 'world' && REGION_MASKS[options.region] ? earthRegion(options.region) : null;
   if (REG && (REG.w !== W || REG.h !== H)) throw new Error(`World Map region ${REG.id} needs a ${REG.w} x ${REG.h} world, got ${W} x ${H}`);
   const GEO = REG ? { region: REG.id, lonMin: REG.lonMin, lonMax: REG.lonMax, latMin: REG.latMin, latMax: REG.latMax, wrap: false } : { region: 'world', lonMin: LEFT, lonMax: LEFT + 360, latMin: -90, latMax: 90, wrap: true };
-  const VK = REG ? REGION_VK[REG.id] || 1 : 1; // height scale (climate reads h / VK)
   // ---- geometry: tiles per degree, per-row latitude, per-column longitude
   const tpdX = W / (GEO.lonMax - GEO.lonMin),
     tpdY = H / (GEO.latMax - GEO.latMin);
   const tpd = REG ? tpdY : W / 360; // tiles per degree of latitude (and of longitude on the whole Earth)
   const kmTile = REG ? 111.2 / tpdY : 40075 / W; // tile size in km (at the equator on the whole Earth)
+  const VK = REG ? Math.min(1.9, 1 + 0.28 * Math.log2(Math.max(1, 12 / kmTile))) : 1; // height scale (climate reads h / VK)
   // Feature sizes are authored in tiles of a 768-wide whole-Earth map. On a
   // regional map every tile-based texture (noise, beaches, banks, ...) keeps
   // the scale it has on that map, while geography stays in lon/lat.
@@ -245,7 +250,7 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
   // (and a set's `widen` broadens its ranges, not its volcano cones)
   const kmPts = (f, ku, wk = 1) => {
     const k = f.cone ? 1 : wk;
-    return { ...f, h: (f.km ?? 0) * ku, w: f.w != null ? f.w * k : f.w, pts: f.pts.map((p) => (p.length > 2 ? [p[0], p[1], p[2] * ku, ...(p.length > 3 ? [p[3] * k] : [])] : p)) };
+    return { ...f, upk: ku, h: (f.km ?? 0) * ku, w: f.w != null ? f.w * k : f.w, pts: f.pts.map((p) => (p.length > 2 ? [p[0], p[1], p[2] * ku, ...(p.length > 3 ? [p[3] * k] : [])] : p)) };
   };
   const fromSets = (key, km = false) => SETS.flatMap((s) => (s[key] || []).map((f) => (km ? kmPts(f, s.ku ?? KM_UNITS, s.widen ?? 1) : f)));
   const keepWorld = (f) => !SETS.some((s) => s.skipWorld && inBox(s.box, f.pts[0]));
@@ -411,36 +416,20 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
       if (lo > cutLon && lo < -8) land[y * W + x] = 0;
     }
   }
-  // clean borders: a thin ring of open sea all round. The shaders and the
-  // terrain skirt clamp edge tiles outward, so polar ice or Antarctica's snow
-  // on the edge would continue as white bands beyond the map. (This splits
-  // Greenland's east coast at the Atlantic seam and gives Antarctica a far
-  // coast just inside the bottom edge.)
+  // clean borders on the whole Earth: a thin ring of open sea all round. The
+  // shaders and the terrain skirt clamp edge tiles outward, so polar ice or
+  // Antarctica's snow on the edge would continue as white bands beyond the
+  // map. (This splits Greenland's east coast at the Atlantic seam and gives
+  // Antarctica a far coast just inside the bottom edge.) On a regional map
+  // land that continues past the window runs to its edge (the terrain skirt
+  // carries it on beyond the border): only real seas meet the edge as water.
   const ringX = REG ? 4 : Math.max(2, Math.round(5 * scale768)), // wide enough that the shore field clamped past the side edges reads as open sea
     ringY = REG ? 4 : Math.max(2, Math.round(3 * scale768));
   const edgeDist = (x, y) => Math.min(x, W - 1 - x, y, H - 1 - y); // tiles to the border
   const inRing = (x, y) => x < ringX || x >= W - ringX || y < ringY || y >= H - ringY;
-  for (let y = 0; y < H; y++)
-    for (let x = 0; x < W; x++) if (x < ringX || x >= W - ringX || y < ringY || y >= H - ringY) land[y * W + x] = 0;
-  // regional maps: land that runs off the window ends in a ragged natural
-  // coast a few tiles inside the border (bays and capes), not a straight cut
-  const edgeCut = new Float32Array(REG ? N : 0); // 0 at the cut coast .. 1 inland (regional maps)
-  if (REG) {
+  if (!REG)
     for (let y = 0; y < H; y++)
-      for (let x = 0; x < W; x++) {
-        const i = y * W + x;
-        const e = edgeDist(x, y);
-        if (e > 64) {
-          edgeCut[i] = 1;
-          continue;
-        }
-        // 6-22 tiles in: broad bays and headlands, with smaller coves
-        const bay = clamp01(fbm(nWarp, x / 53 + 3.1, y / 53 - 8.3, 3) * 0.9 + 0.5);
-        const cut = ringX + 2 + bay * bay * 16 + nWarp(x / 11 - 4, y / 11 + 2) * 2.2;
-        if (e < cut) land[i] = 0;
-        edgeCut[i] = smoothstep(cut, cut + 28, e);
-      }
-  }
+      for (let x = 0; x < W; x++) if (inRing(x, y)) land[y * W + x] = 0;
   _t('land');
 
   // ------------------------------------------------------------- 2. distances
@@ -494,7 +483,6 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
       e = 0.25 + 1.2 * (1 - Math.exp(-dKm / 380));
       const hilly = 0.3 + 0.7 * smoothstep(-0.35, 0.45, fbm(nWarp, Ud(i) / 6 + 11, Vd(i) / 6 - 3, 2));
       e += Math.pow(Math.max(0, hn * 0.5 + 0.5), 2.0) * 1.35 * hilly * smoothstep(0.5, 5, dLand[i]);
-      e *= 0.45 + 0.55 * edgeCut[i];
     } else {
       const dT = dLand[i] / scale768; // tiles of a 768 map
       e = 0.26 + 1.45 * (1 - Math.exp(-dT / 7));
@@ -507,6 +495,11 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
   const platH = REG ? RELIEF * VK : RELIEF;
   const plat = new Float32Array(N);
   const platK = new Float32Array(N);
+  // game units per real km of each relief layer (for snow and tree lines
+  // from real elevation): plains, plateaus, ranges
+  const baseH = hgt.slice();
+  const platU = new Float32Array(N),
+    rngU = new Float32Array(N);
   for (const f of F_PLATEAUS) {
     const edge = f.edge ?? 1.5;
     stamp(f, 1, edge * 1.5, (i, d, h, w) => {
@@ -516,14 +509,14 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
       // (high plateaus such as Tibet roll in broad swells and low ridged hills
       // on every map, instead of lying flat as a table)
       const high = !REG && h >= 9; // Tibet, Pamir, Altiplano on the whole Earth
-      const r = REG || high ? (fbm(nRough, U(i) / 3.2, V(i) / 3.2, 3) * (0.5 + h * 0.06) + (ridged(nRidge, U(i) / 1.7 + 5, V(i) / 1.7 - 2) - 0.45) * (0.3 + h * 0.05)) * (high ? 1.6 : 1) : fbm(nRough, U(i) / 1.6, V(i) / 1.6, 3) * (0.25 + h * 0.03);
+      const r = REG || high ? (fbm(nRough, U(i) / 3.2, V(i) / 3.2, 3) * (0.5 + h * 0.06) + (ridged(nRidge, U(i) / 1.7 + 5, V(i) / 1.7 - 2) - 0.45) * (0.3 + h * 0.05)) * (high ? 2.1 : 1) : fbm(nRough, U(i) / 1.6, V(i) / 1.6, 3) * (0.25 + h * 0.03);
       // (and stand a little lower, leaving their great peaks room to rise above)
-      const val = h * (high ? 0.6 : platH) * k + r * k;
-      if (val > plat[i]) plat[i] = val;
+      const val = h * (high ? 0.56 : platH) * k + r * k;
+      if (val > plat[i]) (plat[i] = val), (platU[i] = (f.upk ?? WORLD_UPK) * (high ? 0.56 : platH));
       if (k > platK[i]) platK[i] = k;
     });
   }
-  for (let i = 0; i < N; i++) if (land[i] && plat[i] > 0) hgt[i] = smax(hgt[i], plat[i] * (REG ? 0.4 + 0.6 * edgeCut[i] : 1), 0.8);
+  for (let i = 0; i < N; i++) if (land[i] && plat[i] > 0) hgt[i] = smax(hgt[i], plat[i], 0.8);
   // basins: the ground sinks toward the basin floor
   for (const f of F_BASINS) {
     const edge = f.edge ?? 2;
@@ -561,6 +554,7 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
   // mountain ranges: ridged crests, several summits along each range
   const rng = new Float32Array(N);
   const iceR = new Uint8Array(REG ? N : 0);
+  const coneK = new Float32Array(N); // 0..1 on volcano cones (regional maps)
   const peakK = new Float32Array(N); // 0..1 inside `peaks` ranges (whole Earth)
   // ranges keep at least ~2 tiles of half-width on any map size, so narrow
   // ones (Taiwan, the Cascades) are not single-tile spikes the blur flattens
@@ -582,9 +576,11 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
     t = Math.max(0, t);
     let env, m;
     if (f.cone) {
-      // volcano: a smooth cone scored by radial gullies
+      // volcano: a smooth cone scored by radial gullies (a little over its
+      // height before the smoothing pass rounds its tip)
       env = Math.pow(1 - t, 1.5);
-      m = 0.84 + 0.16 * ridged(nRidge, x / 5 + 3, y / 5 - 1);
+      m = (0.9 + 0.1 * ridged(nRidge, x / 5 + 3, y / 5 - 1)) * 1.12;
+      if (env > coneK[i]) coneK[i] = env;
     } else {
       env = Math.pow(1 - t, 1.3) * (1 + 1.3 * t);
       // spurs and valleys running down each flank from the crest: a comb of
@@ -600,15 +596,51 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
       const sp = ridged(nWarp, along / lam + sOff, across / (lam * 2.6) + 4.3);
       const spur = clamp01(0.62 * comb + 0.38 * sp);
       // summits and saddles along the crest, and broad massifs
-      const crest = 0.68 + 0.32 * ridged(nRidge, along / (lam * 1.6) + 13, sOff * 0.3 + across / (lam * 4));
-      const mass = 0.82 + 0.18 * fbm(nHills, x / (lam * 5) + 7, y / (lam * 5) - 2, 2);
+      // (ranges more than ~10 tiles across: deeper saddles, so the axis
+      // breaks into massifs)
+      const wide = smoothstep(7, 16, wt);
+      // (the highest summits reach the height the range is drawn with)
+      const crest = 0.76 - 0.12 * wide + (0.3 + 0.12 * wide) * ridged(nRidge, along / (lam * 1.6) + 13, sOff * 0.3 + across / (lam * 4));
+      const mass = 0.88 + 0.12 * fbm(nHills, x / (lam * 5) + 7, y / (lam * 5) - 2, 2);
       // valleys cut deeper away from the crest
-      const vd = 0.62 * smoothstep(0.04, 0.45, t);
+      const vd = 0.62 * smoothstep(0.04, 0.45, t) + 0.3 * wide * (1 - smoothstep(0.04, 0.45, t));
       m = crest * mass * (1 - vd * (1 - spur));
+      if (wide > 0) {
+        // broad ranges: a field of peaks and ridges (a warped ridged
+        // multifractal) over the spurs, so the range is many mountains
+        // with valleys between, not one long ridge
+        const lw = Math.max(5, Math.min(16, wt * 0.4));
+        const wx = x + nWarp(x / (lw * 2) + 3.3, y / (lw * 2) - 1.7) * lw * 0.6,
+          wy = y + nWarp(x / (lw * 2) - 7.1, y / (lw * 2) + 4.4) * lw * 0.6;
+        let sum = 0,
+          amp = 0.55,
+          fr = 1 / lw,
+          wg = 1,
+          norm = 0;
+        for (let o = 0; o < 3; o++) {
+          let n = 1 - Math.abs(nRidge(wx * fr + o * 17.3, wy * fr - o * 9.1));
+          n *= n * wg;
+          wg = clamp01(n * 1.8);
+          sum += n * amp;
+          norm += amp;
+          amp *= 0.5;
+          fr *= 2.05;
+        }
+        const mw = (0.38 + 0.78 * (sum / norm)) * (0.85 + 0.15 * spur) * mass;
+        m += (mw - m) * wide * 0.7;
+        // several parallel ridges with long valleys between them (the Alps'
+        // Rhone and Inn, the Rockies' parks), wavering along the range
+        const pw = 0.3 * smoothstep(10, 22, wt) * smoothstep(0.08, 0.3, t);
+        if (pw > 0) {
+          const lamP = Math.max(6, Math.min(28, wt * 0.35));
+          const q = across / lamP + nWarp(along / (3.2 * lamP) + sOff, across / (2.5 * lamP) + 8.1) * 0.55;
+          m *= 1 - pw * (0.5 - 0.5 * Math.cos(q * Math.PI * 2));
+        }
+      }
     }
     const coastK = f.cone ? 1 : 0.6 + 0.4 * smoothstep(1, 9, landW[i]);
-    const val = Math.min(21.5, h * VK * env * m * coastK * (0.3 + 0.7 * edgeCut[i]));
-    if (val > rng[i]) rng[i] = val;
+    const val = Math.min(21.5, h * VK * env * m * coastK * (f.cone ? 1 : 1.1));
+    if (val > rng[i]) (rng[i] = val), (rngU[i] = (f.upk ?? WORLD_UPK) * VK);
     if (env > rangeMask[i]) rangeMask[i] = env;
     if (f.ice && env > 0.3) iceR[i] = 1; // ice caps (Iceland's glaciers)
   };
@@ -648,25 +680,36 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
       // near the sea, so islands keep green flanks instead of rock walls
       const coastK = f.cone ? 1 : 0.45 + 0.55 * smoothstep(1, 5 * scale768, landW[i]);
       const val = Math.min(19, h * (f.cone ? RELIEF : RANGE_RELIEF) * bump * crest * coastK);
-      if (val > rng[i]) rng[i] = val;
+      if (val > rng[i]) (rng[i] = val), (rngU[i] = WORLD_UPK * (f.cone ? RELIEF : RANGE_RELIEF));
       if (bump > rangeMask[i]) rangeMask[i] = bump;
       if (f.peaks && bump > peakK[i]) peakK[i] = bump;
     });
   }
   // smooth the range layer on its own (tile-to-tile spikes), then merge
+  // (regional maps: a lighter pass that keeps narrow crests and summits)
   {
     const src = rng.slice();
+    const kc = REG ? 8 : 4;
     for (let pass = 0; pass < (REG ? 1 : 2); pass++) {
       const a = pass ? rng.slice() : src;
       for (let y = 1; y < H - 1; y++)
         for (let x = 1; x < W - 1; x++) {
           const i = y * W + x;
           if (!a[i] && !a[i - 1] && !a[i + 1] && !a[i - W] && !a[i + W]) continue;
-          rng[i] = (a[i] * 4 + (a[i - 1] + a[i + 1] + a[i - W] + a[i + W]) * 2 + a[i - W - 1] + a[i - W + 1] + a[i + W - 1] + a[i + W + 1]) / 16;
+          rng[i] = (a[i] * kc + (a[i - 1] + a[i + 1] + a[i - W] + a[i + W]) * 2 + a[i - W - 1] + a[i - W + 1] + a[i + W - 1] + a[i + W + 1]) / (kc + 12);
         }
     }
   }
   for (let i = 0; i < N; i++) if (rng[i] > 0 && land[i]) hgt[i] = smax(hgt[i], rng[i], 1.0);
+  // units per km where each layer dominates (weighted toward the highest)
+  const upk = new Float32Array(N).fill(REG ? KM_UNITS : WORLD_UPK);
+  for (let i = 0; i < N; i++) {
+    if (!land[i]) continue;
+    const a = Math.max(0.05, baseH[i]) ** 4,
+      b = plat[i] > 0 ? plat[i] ** 4 : 0,
+      c = rng[i] > 0 ? rng[i] ** 4 : 0;
+    upk[i] = (a * (REG ? KM_UNITS : WORLD_UPK) + b * (platU[i] || 1) + c * (rngU[i] || 1)) / (a + b + c);
+  }
   // no sheer ramparts: inland, the ground may rise at most ~2.4 units per tile
   // (chamfer passes over land neighbours only, so sea cliffs keep their drop).
   // Great fronts (the Himalaya above the Ganges) become stepped slopes of spurs
@@ -677,9 +720,17 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
     const minDL = REG ? 4 : 4 * scale768;
     const cap = new Float32Array(N).fill(1e9);
     for (let i = 0; i < N; i++) if (land[i] && hgt[i] < 3.5 && dLand[i] >= minDL) cap[i] = hgt[i];
-    const rel = (i, j, s) => {
-      if (land[j] && cap[j] + s < cap[i]) cap[i] = cap[j] + s;
-    };
+    // (the whole Earth's great `peaks` fronts, the Himalaya above the
+    // Ganges, may climb more steeply, so their crests stand well above the
+    // plateau behind them instead of ending as a low rim around it)
+    const rel = REG
+      ? (i, j, s) => {
+          if (land[j] && cap[j] + s < cap[i]) cap[i] = cap[j] + s;
+        }
+      : (i, j, s) => {
+          const ss = s * (1 + 0.75 * peakK[i]);
+          if (land[j] && cap[j] + ss < cap[i]) cap[i] = cap[j] + ss;
+        };
     for (let pass = 0; pass < 2; pass++) {
       for (let y = 1; y < H - 1; y++)
         for (let x = 1; x < W - 1; x++) {
@@ -702,7 +753,12 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
       if (c < hgt[i]) hgt[i] = c + (hgt[i] - c) * 0.55 * pk;
     }
   };
+  const preCap = hgt.slice();
   limitSlopes();
+  // (the limiter lowers great fronts far below their authored height; snow
+  // and tree lines read the elevation the range was drawn with)
+  const capLoss = preCap;
+  for (let i = 0; i < N; i++) capLoss[i] = Math.max(0, preCap[i] - hgt[i]);
   for (const f of REG ? [] : COAST_PLAINS) {
     stamp(f, 1, 0, (i) => {
       if (!land[i]) return;
@@ -978,10 +1034,15 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
   {
     const wScale = Math.sqrt(scale768);
     const target = new Float32Array(N).fill(1e9);
-    const TRIM = 6.2;
-    // regional maps: valleys a little wider, meanders at the Huge map's scale
-    const VW = REG ? 2.6 : 1,
-      MZ = REG ? 2.2 : Math.max(0.6, scale768);
+    // (regional maps: rivers emerge where the ground falls below ~1.2 km, so
+    // no channel at sea level is cut along the axis of a range)
+    const TRIM = REG ? 3.4 * VK : 6.2;
+    // regional maps: valleys a little wider (in tiles, narrower the coarser
+    // the map), meanders at the Huge map's scale; channels about a tile wide
+    // at the source widening downstream, more on the finest maps
+    const VW = REG ? Math.max(1.4, Math.min(2.6, 2.6 * Math.pow(2.3 / kmTile, 0.35))) : 1,
+      MZ = REG ? 2.2 : Math.max(0.6, scale768),
+      WK = REG ? Math.max(0.3, Math.min(1.6, 1.2 / Math.sqrt(kmTile))) : 1;
     for (const R of F_RIVERS) {
       // authored points -> tile space -> Catmull-Rom, sampled ~2 per tile
       const P = [];
@@ -1015,8 +1076,11 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
           y = Math.min(H - 1, Math.max(0, Math.round(p[1])));
         return hgt[y * W + x];
       };
+      // (regional maps: a `gorge` river runs from its first point, cutting
+      // its own gorge through the mountains, as the Salween, Mekong and
+      // Yangtze do side by side through the Hengduan ranges)
       let start = 0;
-      while (start < pts.length - 4 && hAt(pts[start]) > TRIM) start++;
+      while (start < pts.length - 4 && hAt(pts[start]) > TRIM && !(REG && R.gorge)) start++;
       const C = pts.slice(start);
       if (C.length < 4) continue;
       // meander sideways (grows downstream), then carve
@@ -1040,8 +1104,9 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
         const [ax, az] = M[k],
           [bx, bz] = M[k + 1];
         const s = sAlong[k] / L;
-        // (regional maps: about a tile wide at the mouth, a little more for the great rivers)
-        const w = REG ? Math.max(0.3, 0.3 + (0.15 + R.w * 0.9) * Math.pow(s, 0.65)) : Math.max(0.16, (0.2 + (R.w - 0.2) * Math.pow(s, 0.65)) * wScale);
+        // (regional maps: under a tile wide at the source, widening downstream
+        // by the river's size and the map's scale)
+        const w = REG ? 0.38 + R.w * WK * Math.pow(s, 0.75) : Math.max(0.16, (0.2 + (R.w - 0.2) * Math.pow(s, 0.65)) * wScale);
         const size = Math.min(1, w / 1.1);
         const bed = -(0.32 + 0.45 * size);
         const Rr = w + 3.2 * VW;
@@ -1064,12 +1129,14 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
             const d2 = ex * ex + ez * ez;
             if (d2 > Rr * Rr) continue;
             const e = Math.max(0, Math.sqrt(d2) - w);
-            const ev = Math.max(0, e - 1.1) / VW;
+            const j = yy * W + xx;
+            // (through high ground the valley closes into a gorge with steep walls)
+            const g = REG ? smoothstep(2.6 * VK, 7.5 * VK, hgt[j]) : 0;
+            const ev = Math.max(0, e - 1.1 + 0.6 * g) / (VW * (1 - 0.6 * g));
             // narrow valleys with steep walls: a river only shapes the ground
             // a few tiles either side (tiles are ~50 km here; regional maps
             // keep the channel narrow and open the valley a little wider)
             const t = bed + (0.42 - bed) * smoothstep(0, REG ? 0.8 : 1.1, e) + ev * 1.2 + ev * ev * 1.2;
-            const j = yy * W + xx;
             if (t < target[j]) target[j] = t;
           }
       }
@@ -1100,7 +1167,7 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
         const ek = (1 - smoothstep(ringY, ringY + 28 * scale768, edgeDist(x, y) + fbm(nBank, x / NT / 2.5, y / NT / 2.5, 2) * 5 * scale768)) * smoothstep(1, 4 * scale768, dSea[i]);
         if (ek > 0) hgt[i] = Math.min(hgt[i], hgt[i] + (-8.6 - hgt[i]) * ek);
       }
-      if (!inRing(x, y)) continue;
+      if (!inRing(x, y) || land[i]) continue;
       const k = Math.min(1, edgeDist(x, y) / ringY); // 0 at the border
       hgt[i] = Math.min(hgt[i], -(REG ? 8 - 3 * k : 8.6 - 4 * k) + fbm(nBank, x / NT / 3, y / NT / 3, 2) * 0.5);
     }
@@ -1155,7 +1222,7 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
   for (let y = 0; y < H; y++)
     for (let x = 0; x < W; x++)
       if (latY[y] < southCut[x] - 0.4 && hgt[y * W + x] < SEA_LEVEL) temp[y * W + x] = Math.max(temp[y * W + x], 0.42);
-      else {
+      else if (!REG || hgt[y * W + x] < SEA_LEVEL) {
         const ek = 1 - smoothstep(ringY, ringY + 10 * scale768, Math.min(edgeDist(x, y), Math.min(x, W - 1 - x)));
         if (ek > 0) temp[y * W + x] = Math.max(temp[y * W + x], 0.42 * ek + temp[y * W + x] * (1 - ek));
       }
@@ -1196,6 +1263,8 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
     return TILE.DESERT;
   };
   const beachW = Math.max(1.05, 1.25 * scale768);
+  const treeM = new Float32Array(N).fill(9), // km below the tree line (negative above it)
+    snowM = new Float32Array(N).fill(9); // km below the snow line
   const slopeK = Math.min(1, Math.sqrt(scale768)); // coarser tiles are steeper per tile
   for (let y = 0; y < H; y++) {
     const lat = latY[y];
@@ -1215,7 +1284,9 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
           const ek = sideK[x];
           // (no open-ocean pack band: at the top of a plate carree any pack reads as a white strip or a dashed row)
           void ek;
-          if (lat > 70 && ds < 2.2 + bn) ice = true;
+          // (regional maps: by the sea's climate, so the Gulf Stream keeps
+          // Norway's coast open and no band of ice stops at a parallel)
+          if (REG ? baseT[i] < 0.205 + bn * 0.015 && lat > 60 && ds < 2.2 + bn : lat > 70 && ds < 2.2 + bn) ice = true;
           else if (lat < -60 && ds < 2.4 + bn * 1.2 + Math.max(0, pk) * 0.9) ice = true;
           else if (lat > southCut[x] + 1.4) {
             // the Ross and Filchner-Ronne ice shelves (water in the land mask)
@@ -1235,16 +1306,25 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
       const t = temp[i],
         m = moist[i];
       const slope = H_.slopeOf(hgt, W, H, x, y) * slopeK;
-      // crests of the great ranges carry snow even where the lowered relief stays under the regional line
-      const snowLine = (5 + 7.2 * clamp01(baseT[i]) + bn * 1.0 - (REG ? 1.2 : 2.6) * smoothstep(0.35, 0.85, rangeMask[i])) * VK;
-      const rockLine = snowLine - (2.5 - bn * 0.5) * VK;
+      // tree and snow lines from real elevation, latitude and climate (crests
+      // of the great ranges carry snow a little lower)
+      const ekm = (h + 0.8 * capLoss[i]) / upk[i];
+      const cont = smoothstep(150, 1500, dOcean[i] * kmTile * (REG ? 1 : cosY[y]));
+      const treeKm = table(TREE_LAT, Math.abs(lat)) + 0.8 * cont + bn * 0.12;
+      // (dry interiors such as Tibet keep their snow higher; snowy maritime
+      // mountains such as Japan's carry it lower)
+      const snowKm = treeKm + 0.9 + 1.3 * clamp01((0.5 - m) / 0.3) - 0.35 * clamp01((m - 0.6) / 0.25) - (REG ? 0.2 : 0.5) * smoothstep(0.6, 0.95, rangeMask[i]) - 0.8 * smoothstep(0.5, 0.9, coneK[i]);
+      treeM[i] = treeKm - ekm;
+      snowM[i] = snowKm - ekm;
       const dOcT = dOcean[i]; // tiles to the open sea
       let tt;
       if (icecap[i] && dLand[i] >= 1 && dLand[i] < 9 * scale768 && ridged(nRidge, x / tpd / 1.3 + 7, y / tpd / 1.3 - 3) > 0.86) tt = TILE.ROCK; // nunataks
       else if (marsh[i]) tt = TILE.SWAMP; // lakes on high ground: flat marshes
-      else if (icecap[i] || h > snowLine || t < 0.11 + bn * 0.02) tt = TILE.SNOW;
-      else if ((h > rockLine && slope > 0.6 + bn * 0.2) || slope > 2.2 + bn * 0.4) tt = TILE.ROCK;
-      else if (h > rockLine) tt = t > 0.17 ? TILE.TUNDRA : TILE.SNOW; // alpine meadow, high plateaus
+      else if (icecap[i] || ekm > snowKm || t < 0.11 + bn * 0.02) tt = TILE.SNOW;
+      // above the tree line: alpine grass, with bare rock on steep ground and
+      // more of it toward the snow
+      else if ((ekm > treeKm && slope > 0.55 + bn * 0.15 + 0.6 * (1 - smoothstep(treeKm, snowKm, ekm))) || slope > 2.2 + bn * 0.4) tt = TILE.ROCK;
+      else if (ekm > treeKm) tt = t > 0.17 ? TILE.TUNDRA : TILE.SNOW; // alpine meadow, high plateaus
       // (lone islets are green, not pale sand discs; narrow islands on the
       // whole Earth keep green shores rather than sea cliffs)
       else if (dOcT <= beachW + bn * 0.6 && h < 0.9 + bn * 0.3 && slope < 0.7 && t > 0.3 && landW[i] > 1.01) tt = TILE.SAND;
@@ -1263,7 +1343,7 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
     if (marsh[i] || hgt[i] < 5 * VK || plat[i] < 5.5 * VK || rangeMask[i] > 0.4) continue;
     const t = type[i];
     // (the cold plateau floor below the snow line is steppe, not snowfield)
-    const lowSnow = t === TILE.SNOW && hgt[i] < (5 + 7.2 * clamp01(baseT[i]) - 1.5) * VK && !icecap[i];
+    const lowSnow = t === TILE.SNOW && snowM[i] > 0.4 && temp[i] >= 0.11 && !icecap[i];
     if (t === TILE.FOREST || t === TILE.GRASS || t === TILE.JUNGLE || t === TILE.SWAMP || lowSnow) {
       type[i] = TILE.TUNDRA;
       moist[i] = Math.min(moist[i], 0.36);
@@ -1283,7 +1363,10 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
     const x = i % W,
       y = (i / W) | 0;
     const steep = FLORA_INFO[f]?.isTree && x > 0 && y > 0 && x < W - 1 && y < H - 1 && H_.slopeOf(hgt, W, H, x, y) > 1.05;
-    const bare = steep || (icecap[i] ? dLand[i] > 2 || hash2(x, y, seed + 5) > 0.15 : (hgt[i] > 7 * VK || plat[i] >= 5.5 * VK) && type[i] === TILE.TUNDRA && FLORA_INFO[f]?.isTree);
+    // (no trees above the tree line, and thinning out over the last ~300 m below it)
+    const tree = FLORA_INFO[f]?.isTree;
+    const aboveTL = tree && treeM[i] < 0.3 && hash2(x, y, seed + 23) > treeM[i] / 0.3;
+    const bare = steep || aboveTL || (icecap[i] ? dLand[i] > 2 || hash2(x, y, seed + 5) > 0.15 : (hgt[i] > 7 * VK || plat[i] >= 5.5 * VK) && type[i] === TILE.TUNDRA && tree);
     if (bare) {
       world.flora[i] = 0;
       world.floraGrowth[i] = 0;
@@ -1452,7 +1535,9 @@ function fillCraters(hgt, W, H, sea, marsh, wrap) {
       for (const j of [l, r, i - W, i + W])
         if (j >= 0 && j < N && !seen[j] && hgt[j] >= 0 && spill[j] > hgt[j] + 0.02) (seen[j] = 1), (stack[sp++] = j);
     }
-    if (comp.length <= 240 || depth <= 0.7) for (const i of comp) hgt[i] = spill[i];
+    // (pits: small hollows, or deep ones of moderate size; the broad shallow
+    // swales of a rolling plateau stay as they are)
+    if (comp.length <= 12 || (depth > 2.5 && comp.length <= 120)) for (const i of comp) hgt[i] = spill[i];
   }
 }
 
