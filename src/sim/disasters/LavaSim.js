@@ -90,6 +90,7 @@ export class LavaSim {
     }
     if (w.building[i] >= 0) {
       try {
+        this.game.disasters?.fire?.markBuildings(x + 0.5, y + 0.5, 1.3, 0); // the player's fire
         this.game.civ?.damageArea?.(x + 0.5, y + 0.5, 0.8, 60, 'lava');
       } catch (err) {
         console.error('[lava] civ.damageArea', err);

@@ -29,7 +29,8 @@ const BUDGET = 2600;
 // factor; skyOff: spread of lightning fires still burning while the
 // calamityLightning law is off; wild: override of wildfireDamp (tooling)
 const TUNE = { natExp: 3.4, skyOff: 0.4, wild: null };
-const ASH_THRESHOLD = 0.35; // ground flammability that leaves ash behind
+const ASH_THRESHOLD = 0.35;
+const SCARRED = 4; // scar bit: a fire has burnt this tile // ground flammability that leaves ash behind
 
 export class FireSim {
   constructor(game) {
@@ -50,6 +51,7 @@ export class FireSim {
     this.bTimer = new Float32Array(n); // building damage cadence
     this.cause = new Uint8Array(n); // lineage of each burning tile
     this.bCause = new Map(); // building id -> {c, t}: what set it alight
+    this.scar = new Uint8Array(n); // lineage of the last fire on a tile, | SCARRED
     this._spreadOpts = { cause: 0, spread: true };
     this.version = 0;
     this._dirty = null;
@@ -71,6 +73,7 @@ export class FireSim {
     this.smCount = 0;
     this.bTimer.fill(0);
     this.cause.fill(0);
+    this.scar.fill(0);
     this.bCause.clear();
     this._external = null;
     this._scan = null;
@@ -146,6 +149,7 @@ export class FireSim {
     this.fuel[i] = fuel;
     this.fuel0[i] = fuel;
     this.cause[i] = cause;
+    this.scar[i] = cause | SCARRED;
     w.fire[i] = Math.max(0.15, Math.min(1, intensity * (0.4 + 0.6 * Math.max(fl, 0.3))));
     this._add(i);
     this._mark(i);
@@ -157,12 +161,15 @@ export class FireSim {
   // building, it carries on the lineage of the fire that set the building
   // alight (so a house lit by lightning cannot rekindle the land while the
   // calamityLightning law is off, and one lit by the player stays theirs).
+  // A building that caught fire some other way (sparks from a neighbour,
+  // a strike beside it) is judged by the ground around it: if a lightning
+  // fire has passed within two tiles, its sparks count as lightning's.
   igniteExternal(tx, ty, intensity = 1) {
     const w = this.game.world;
     if (!w.inBounds(tx, ty)) return false;
     let cause = FIRE_WILD;
-    if (this.bCause.size) {
-      let best = null;
+    let best = null;
+    if (this.bCause.size)
       for (let dy = -1; dy <= 1; dy++)
         for (let dx = -1; dx <= 1; dx++) {
           const x = tx + dx,
@@ -172,9 +179,43 @@ export class FireSim {
           const rec = b >= 0 ? this.bCause.get(b) : null;
           if (rec && (!best || rec.t > best.t)) best = rec;
         }
-      if (best) cause = best.c;
-    }
+    if (best) cause = best.c;
+    else
+      for (let dy = -2; dy <= 2 && !(cause & FIRE_SKY); dy++)
+        for (let dx = -2; dx <= 2; dx++) {
+          const x = tx + dx,
+            y = ty + dy;
+          if (w.inBounds(x, y) && this.scar[y * w.w + x] & FIRE_SKY) {
+            cause |= FIRE_SKY;
+            break;
+          }
+        }
     return this.ignite(tx, ty, intensity, { cause });
+  }
+
+  // Record that a fire of this lineage reached the buildings within r of
+  // (x, z) (world units), so their sparks carry it on.
+  markBuildings(x, z, r, cause) {
+    const w = this.game.world;
+    const now = this.game.time.total;
+    const x0 = Math.max(0, Math.floor(x - r)),
+      x1 = Math.min(w.w - 1, Math.floor(x + r)),
+      y0 = Math.max(0, Math.floor(z - r)),
+      y1 = Math.min(w.h - 1, Math.floor(z + r));
+    for (let ty = y0; ty <= y1; ty++)
+      for (let tx = x0; tx <= x1; tx++) {
+        const b = w.building[ty * w.w + tx];
+        if (b >= 0) this._markBuilding(b, cause, now);
+      }
+  }
+  _markBuilding(bid, cause, now) {
+    // the player's fire wins, otherwise the latest lineage
+    const rec = this.bCause.get(bid);
+    if (!rec) this.bCause.set(bid, { c: cause, t: now });
+    else {
+      if (rec.c !== 0) rec.c = cause;
+      rec.t = now;
+    }
   }
 
   extinguish(tx, ty) {
@@ -431,18 +472,13 @@ export class FireSim {
       }
       // ---- buildings in the flames ----
       if (w.building[i] >= 0) {
-        // remember what set the building alight (its sparks carry it on);
-        // the player's fire wins, otherwise the latest lineage
-        const bid = w.building[i];
-        const rec = this.bCause.get(bid);
-        if (!rec) this.bCause.set(bid, { c: cause, t: g.time.total });
-        else {
-          if (rec.c !== 0) rec.c = cause;
-          rec.t = g.time.total;
-        }
+        // remember what set the building alight (its sparks carry it on)
+        this._markBuilding(w.building[i], cause, g.time.total);
         this.bTimer[i] -= dtEff;
         if (this.bTimer[i] <= 0) {
           this.bTimer[i] = 0.5;
+          // the heat reaches the buildings next door too
+          this.markBuildings(x + 0.5, y + 0.5, 1.4, cause);
           try {
             g.civ?.damageArea?.(x + 0.5, y + 0.5, 0.9, 7 * f, 'fire');
           } catch (err) {

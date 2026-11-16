@@ -66,6 +66,9 @@ export function lightningStrike(ds, x, z, opts = {}) {
   const io = { cause };
   if (canIgnite) ds.fire.ignite(tx, ty, 1, io);
   if (canIgnite) for (let k = 0; k < 3; k++) if (Math.random() < 0.55) ds.fire.ignite(tx + Math.round(rand(-1, 1)), ty + Math.round(rand(-1, 1)), 0.8, io);
+  // the bolt sets buildings beside it alight: their sparks are this
+  // strike's fire (and obey the law like it)
+  ds.fire.markBuildings(x, z, 2.2, cause);
   hurt(g, x, z, 1.8, 70, 45, 'lightning');
 }
 
