@@ -1132,7 +1132,7 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
             const j = yy * W + xx;
             // (through high ground the valley closes into a gorge with steep walls)
             const g = REG ? smoothstep(2.6 * VK, 7.5 * VK, hgt[j]) : 0;
-            const ev = Math.max(0, e - 1.1 + 0.6 * g) / (VW * (1 - 0.6 * g));
+            const ev = Math.max(0, e - 1.1 + 0.4 * g) / (VW * (1 - 0.35 * g));
             // narrow valleys with steep walls: a river only shapes the ground
             // a few tiles either side (tiles are ~50 km here; regional maps
             // keep the channel narrow and open the valley a little wider)
@@ -1153,19 +1153,19 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
   _t('rivers');
 
   // regional maps: land that runs off the window keeps its relief to within
-  // a few tiles of the border and then dips under the sea, with no beach or
-  // shelf: the terrain skirt and the water beyond the map continue the edge
-  // tiles outward, and they expect open sea there (land at the very edge
-  // stretched into streaks beyond the border)
+  // a few tiles of the border and then dips under the deep border ring, with
+  // no beach or shelf: the terrain skirt and the water beyond the map
+  // continue the edge tiles outward and expect deep open sea there (land or
+  // shallows at the very edge were stretched into streaks beyond the border)
   const edgeFade = new Uint8Array(REG ? N : 0);
   if (REG)
     for (let y = 0; y < H; y++)
       for (let x = 0; x < W; x++) {
         const e = edgeDist(x, y);
-        if (e >= 5) continue;
+        if (e >= 9) continue;
         const i = y * W + x;
         if (!land[i]) continue;
-        const k = smoothstep(0.3, 4.6, e);
+        const k = smoothstep(4.2, 9, e);
         const f = -2.4 + (Math.max(hgt[i], 0.3) + 2.4) * k;
         if (f < hgt[i]) hgt[i] = f;
         edgeFade[i] = 1;
@@ -1185,7 +1185,7 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
         const ek = (1 - smoothstep(ringY, ringY + 28 * scale768, edgeDist(x, y) + fbm(nBank, x / NT / 2.5, y / NT / 2.5, 2) * 5 * scale768)) * smoothstep(1, 4 * scale768, dSea[i]);
         if (ek > 0) hgt[i] = Math.min(hgt[i], hgt[i] + (-8.6 - hgt[i]) * ek);
       }
-      if (!inRing(x, y) || land[i]) continue;
+      if (!inRing(x, y) || (land[i] && !REG)) continue;
       const k = Math.min(1, edgeDist(x, y) / ringY); // 0 at the border
       hgt[i] = Math.min(hgt[i], -(REG ? 8 - 3 * k : 8.6 - 4 * k) + fbm(nBank, x / NT / 3, y / NT / 3, 2) * 0.5);
     }
