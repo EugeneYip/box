@@ -122,6 +122,25 @@ export const planner = {
   },
 
   // ---------------------------------------------------------------- sites
+  // Big maps (the World Map and its regions) hold the same people and about
+  // the same number of villages as a Medium map on about eight times the
+  // land. 0 on Medium and smaller maps, rising to 1 on the World Map's
+  // regions (Huge World Map about 0.4).
+  _bigMap() {
+    const a = this.budget?.area ?? 1;
+    return a <= 1.5 ? 0 : Math.min(1, (a - 1.5) / 3.5);
+  },
+  // How much further a big map's settlers go (1 on Medium): the village
+  // budget covers the land instead of a few clusters (Europe held 14% of its
+  // land at Year 100).
+  _villageSpread() {
+    return 1 + this._bigMap() * 0.4;
+  },
+  // How much further a village's territory reaches (1 on Medium).
+  _territoryReach() {
+    return 1 + this._bigMap() * 0.45;
+  },
+
   // Score a potential village centre (hall centre tile). Returns -1 if unusable.
   _scoreSite(tx, ty, opts = {}) {
     const w = this.world;

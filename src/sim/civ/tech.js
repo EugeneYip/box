@@ -51,6 +51,14 @@ export const TECHS = [
 
 export const techById = Object.fromEntries(TECHS.map((t) => [t.id, t]));
 
+// Extra research on big maps (planner _bigMap: none on Medium): their realms
+// stay small and far apart, and on their own reached the Enlightened arts
+// late in the first century or not at all (Japan lacked 9 of 23 at Year 100).
+const BIG_RESEARCH = 0.6;
+// In an age of learning, each realm in touch adds this much (per point of
+// the age's extra research rate, up to five realms).
+const LORE_EXCHANGE = 0.025;
+
 // Research leanings of culture traits.
 const LEANINGS = {
   Seafaring: ['fishing', 'sailing', 'astronomy', 'shipbuilding', 'navigation'],
@@ -129,15 +137,61 @@ export const tech = {
     return TECHS.filter((t) => !known.has(t.id) && t.era <= maxEra && t.requires.every((r) => known.has(r)));
   },
 
+  // How strongly a realm is drawn to the sea (0..1): its share of coastal
+  // towns, on a big map (the World Map's regions, Taiwan an island map) or
+  // when its homeland is an island (under a sixth of the world's land).
+  // A Medium continent's realms keep their old pace to Sailing.
+  _seaPull(k) {
+    let lean = this._bigMap();
+    if (lean < 1) {
+      const cap = this.villages[k.capital];
+      const home = cap ? this._landSizes.get(cap.landId) || 0 : 0;
+      let land = 0;
+      for (const n of this._landSizes.values()) land += n;
+      if (home > 0 && home < land / 6) lean = 1;
+    }
+    if (!lean) return 0;
+    let n = 0,
+      c = 0;
+    for (const vid of k.villages) {
+      const v = this.villages[vid];
+      if (!v?.alive) continue;
+      n++;
+      if (v.coastal) c++;
+    }
+    return n ? (lean * c) / n : 0;
+  },
+
+  // Realms in contact (borders, near neighbours, allies): kingdom id -> the
+  // living realms it is in touch with, rebuilt every research tick. On a big
+  // map a tech a neighbour already knows comes more easily; in an age of
+  // learning (Lore) every court gains by its scholars' letters.
+  _contactLore() {
+    const out = new Map();
+    for (const r of this.relations.values()) {
+      if (!r.contact && !r.ally) continue;
+      const A = this.kingdoms[r.a],
+        B = this.kingdoms[r.b];
+      if (!A?.alive || !B?.alive || !A.techs || !B.techs) continue;
+      (out.get(A.id) || out.set(A.id, []).get(A.id)).push(B);
+      (out.get(B.id) || out.set(B.id, []).get(B.id)).push(A);
+    }
+    return out;
+  },
+
   _chooseResearch(k) {
     const opts = this._availableTechs(k);
     if (!opts.length) return null;
     const traits = this.cultureDef(k.culture)?.traits || [];
+    // a realm of harbours and islands takes to the sea first (an island
+    // map's realms reached the Iron era without Sailing)
+    const sea = opts.some((t) => t.id === 'fishing' || t.id === 'sailing') ? this._seaPull(k) : 0;
     let best = null,
       bs = -Infinity;
     for (const t of opts) {
       let s = -t.cost / 100 + this.rng.next() * 1.5;
       for (const tr of traits) if (LEANINGS[tr]?.includes(t.id)) s += 2.5;
+      if (sea > 0.3 && (t.id === 'fishing' || t.id === 'sailing')) s += 1 + sea * 2;
       if (t.era < k.era) s += 1; // catch up on the basics first
       if (s > bs) {
         bs = s;
@@ -151,7 +205,12 @@ export const tech = {
   _researchTick(dt) {
     if (!this.law('civTechnology') && !this.kingdoms.some((k) => k.policy?.technology)) return;
     const g = this.game;
-    const speed = this.law('civTechSpeed', 1) * (g.age?.mods?.techRate ?? 1);
+    const ageRate = g.age?.mods?.techRate ?? 1;
+    const speed = this.law('civTechSpeed', 1) * ageRate;
+    const big = this._bigMap();
+    // an age of learning: knowledge spreads between the courts (any map)
+    const spread = Math.max(0, ageRate - 1);
+    const lore = big > 0 || spread > 0 ? this._contactLore() : null;
     for (const k of this.kingdoms) {
       if (!k.alive || !k.villages.length) continue;
       if (!this._kLaw(k.id, 'civTechnology')) continue;
@@ -196,6 +255,21 @@ export const tech = {
         rate *= 1 + Math.max(-0.3, Math.min(0.6, wit * 0.15));
       }
       if (g.time.total < k.goldenUntil) rate *= 1.3;
+      if (spread > 0 && lore) {
+        const c = lore.get(k.id)?.length || 0;
+        if (c) rate *= 1 + spread * LORE_EXCHANGE * Math.min(5, c);
+      }
+      if (big > 0) {
+        // big maps: scholars, letters and travellers cross the wide lands
+        rate *= 1 + big * BIG_RESEARCH;
+        // and what a neighbour knows is learned the sooner
+        const t = techById[k.researching];
+        if (t && lore) {
+          let n = 0;
+          for (const o of lore.get(k.id) || []) if (o.techs.has(t.id)) n++;
+          if (n) rate *= 1 + big * 0.3 * Math.min(3, n);
+        }
+      }
       k.knowledge += rate * speed * dt;
       if (!k.researching || k.techs.has(k.researching)) k.researching = this._chooseResearch(k) || 'mastery';
       if (k.researching === 'mastery') {
