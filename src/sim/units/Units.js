@@ -2064,7 +2064,8 @@ export class Units {
         this._depthStatusTick(u, dt * 16, now);
         if (!u.alive) continue;
       }
-      const sepEvery = (u._far ? 8 : 4) * (u.moving || u.target ? 1 : 2);
+      // personal space: less often the farther away (the overview LOD most rarely)
+      const sepEvery = (lod === 2 ? 16 : u._far ? 8 : 4) * (u.moving || u.target ? 1 : 2);
       if (slot % sepEvery === 0) this._separate(u);
       // ---- locomotion
       // distant creatures out of a fight step every other tick (twice as far)
