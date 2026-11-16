@@ -81,6 +81,13 @@ function makeLabel(text, color, kind, banner = null) {
   return sp;
 }
 
+// Spots tried for a realm's name, in label widths (x) and heights (y) from
+// its seat, nearest first.
+const LABEL_SPOTS = [
+  [0, 0], [0, -1.1], [0, 1.1], [-0.3, 0], [0.3, 0], [-0.3, -1.1], [0.3, -1.1], [-0.3, 1.1], [0.3, 1.1],
+  [-0.48, 0], [0.48, 0], [-0.48, -1.1], [0.48, -1.1], [-0.48, 1.1], [0.48, 1.1], [0, -2.2], [0, 2.2],
+];
+
 function swordsTexture() {
   const c = document.createElement('canvas');
   c.width = c.height = 96;
@@ -327,7 +334,7 @@ export class Labels {
       this._hudT = 1;
       this._hud = [];
       try {
-        for (const el of document.querySelectorAll('#ui-root .hud-panel, #ui-root [class*="panel"], #ui-root [class*="toolbar"], #ui-root [class*="feed"], #ui-root [class*="minimap"], #ui-root [class*="chip"], #ui-root [class*="badge"], #ui-root [class*="topbar"], #ui-root [class*="dock"]')) {
+        for (const el of document.querySelectorAll('#ui-root .hud-panel, #ui-root [class*="panel"], #ui-root [class*="toolbar"], #ui-root [class*="feed"], #ui-root [class*="minimap"], #ui-root [class*="chip"], #ui-root [class*="badge"], #ui-root [class*="topbar"], #ui-root [class*="dock"], #ui-root [class*="glass"]')) {
           const r = el.getBoundingClientRect();
           if (r.width > 4 && r.height > 4 && getComputedStyle(el).visibility !== 'hidden' && r.width < W * 0.95) this._hud.push(r);
         }
@@ -341,6 +348,11 @@ export class Labels {
       mBot = uiOn ? Math.min(90, H * 0.12) : 8,
       mRight = uiOn ? Math.min(300, W * 0.18) : 8,
       mLeft = 8;
+    // many realms on one screen get smaller name ribbons so that neighbours
+    // (Japan beside the two Chinas, the Low Countries) all fit
+    let nK = 0;
+    for (const c of cand) if (c.prio >= 3 && c.a > 0.01) nK++;
+    const kMax = Math.max(20, Math.min(44, H * 0.055) * Math.max(0.62, Math.min(1, 1 - (nK - 8) * 0.022)));
     const world = this.game.world;
     const fovK = H / (2 * Math.tan((cam.fov * Math.PI) / 360));
     const v = this._v || (this._v = new (cam.position.constructor)());
@@ -353,12 +365,18 @@ export class Labels {
       if (v.z > 1 || v.z < -1) target = 0;
       const sx = (v.x * 0.5 + 0.5) * W,
         sy = (-v.y * 0.5 + 0.5) * H;
-      const dist = cam.position.distanceTo(sp.position);
-      let ph = (sp.scale.y / Math.max(0.01, dist)) * fovK;
-      let pw = (sp.scale.x / Math.max(0.01, dist)) * fovK;
+      // a sprite's on-screen size follows its depth along the view axis, not
+      // its straight-line distance (which understates labels away from the
+      // centre of a wide view, so neighbours were let overlap)
+      const me = cam.matrixWorldInverse.elements,
+        P = sp.position;
+      const depth = -(me[2] * P.x + me[6] * P.y + me[10] * P.z + me[14]);
+      const dist = Math.max(0.01, depth);
+      let ph = (sp.scale.y / dist) * fovK;
+      let pw = (sp.scale.x / dist) * fovK;
       // cap on-screen size: an anchor close to the camera (e.g. a realm centre
       // just below the view) would otherwise blow its label up across the frame
-      const maxPx = c.prio >= 3 ? 44 : 52;
+      const maxPx = c.prio >= 3 ? kMax : 52;
       if (ph > maxPx) {
         const k = maxPx / ph;
         sp.scale.x *= k;
@@ -393,40 +411,59 @@ export class Labels {
         let cx = Math.min(right - pw / 2, Math.max(mLeft + pw / 2, sx)),
           cy = Math.min(bot - ph / 2, Math.max(top + ph / 2, sy));
         const v2 = this._v2 || (this._v2 = new (cam.position.constructor)());
-        const overRealm = (x, y) => {
+        // A name may sit anywhere that still covers or touches its seat (a
+        // small young realm owns far less land than its ribbon spans), or
+        // anywhere over the realm's own land.
+        const overRealm = (x, y, w2, h2) => {
           if (c.kid == null || !world) return true;
+          if (Math.abs(x - sx) <= w2 * 0.5 && Math.abs(y - sy) <= h2 * 1.2) return true;
           v2.set((x / W) * 2 - 1, -((y / H) * 2 - 1), v.z).unproject(cam);
           const tx = Math.floor(v2.x),
             tz = Math.floor(v2.z);
           if (!world.inBounds?.(tx, tz)) return false;
-          return world.owner[tz * world.w + tx] === c.kid || Math.hypot(x - sx, y - sy) < ph * 0.6;
+          return world.owner[tz * world.w + tx] === c.kid;
         };
-        let placed = false;
-        for (const [dx, dy] of [[0, 0], [0, -1.1], [0, 1.1], [-0.35, 0], [0.35, 0], [0, -2.2], [0, 2.2], [-0.35, -1.1], [0.35, 1.1], [-0.35, 1.1], [0.35, -1.1]]) {
-          const yy = cy + dy * ph,
-            xx = Math.min(right - pw / 2, Math.max(mLeft + pw / 2, cx + dx * pw));
-          if (yy - ph / 2 < top || yy + ph / 2 > bot) continue;
-          const r = { l: xx - pw / 2, r: xx + pw / 2, t: yy - ph / 2, b: yy + ph / 2 };
-          if (!hits(r) && overRealm(xx, yy)) {
-            rect.l = r.l;
-            rect.r = r.r;
-            rect.t = r.t;
-            rect.b = r.b;
-            cy = yy;
-            cx = xx;
-            placed = true;
+        let placed = false,
+          shrink = 1;
+        // nearest spots first; failing all of them at full size, try once more
+        // with a slightly smaller ribbon before giving the name up
+        for (const k of [1, 0.8]) {
+          const w2 = pw * k,
+            h2 = ph * k;
+          const x0 = Math.min(right - w2 / 2, Math.max(mLeft + w2 / 2, sx)),
+            y0 = Math.min(bot - h2 / 2, Math.max(top + h2 / 2, sy));
+          for (const [dx, dy] of LABEL_SPOTS) {
+            const yy = y0 + dy * h2,
+              xx = Math.min(right - w2 / 2, Math.max(mLeft + w2 / 2, x0 + dx * w2));
+            if (yy - h2 / 2 < top || yy + h2 / 2 > bot) continue;
+            const r = { l: xx - w2 / 2, r: xx + w2 / 2, t: yy - h2 / 2, b: yy + h2 / 2 };
+            if (!hits(r) && overRealm(xx, yy, w2, h2)) {
+              rect.l = r.l;
+              rect.r = r.r;
+              rect.t = r.t;
+              rect.b = r.b;
+              cy = yy;
+              cx = xx;
+              placed = true;
+              break;
+            }
+          }
+          if (placed) {
+            shrink = k;
             break;
           }
+        }
+        if (placed && shrink !== 1) {
+          sp.scale.x *= shrink;
+          sp.scale.y *= shrink;
+          pw *= shrink;
+          ph *= shrink;
         }
         if (placed && (cx !== sx || Math.abs(cy - sy) > 0.5)) {
           // move the sprite to the adjusted screen point at the same depth
           v.set((cx / W) * 2 - 1, -((cy / H) * 2 - 1), v.z).unproject(cam);
+          // (same view depth, so it keeps the on-screen size measured above)
           sp.position.copy(v);
-          // the label was sized for its anchor's distance; at the pinned point
-          // (same depth, much less lateral offset) it must shrink to match
-          const k = cam.position.distanceTo(v) / Math.max(0.01, dist);
-          sp.scale.x *= k;
-          sp.scale.y *= k;
         }
         if (!placed) target = 0;
       } else if (target > 0) {

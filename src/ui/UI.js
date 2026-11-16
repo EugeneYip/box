@@ -26,6 +26,14 @@ import { lawDef } from '../core/laws.js';
 import { earthLabel, earthChoice } from '../core/params.js';
 import { uiIcon } from './icons.js';
 
+// Overview name spots, in label widths (x) and heights (y) from the realm's
+// centre, nearest first; every one still touches the centre.
+const OV_SPOTS = [
+  [0, 0], [0, -1.12], [0, 1.12], [-0.3, 0], [0.3, 0], [-0.3, -1.12], [0.3, -1.12], [-0.3, 1.12], [0.3, 1.12],
+  [-0.5, 0], [0.5, 0], [-0.5, -1.12], [0.5, -1.12], [-0.5, 1.12], [0.5, 1.12],
+];
+const OV_ORDER = OV_SPOTS.map((_, i) => i);
+
 const PREF_KEY = 'worldseed.ui.v1';
 
 // Worldseed HUD ("obsidian glass" over the living diorama).
@@ -591,6 +599,9 @@ export class UI {
     const cam = g.cameraRig.camera;
     const v = (this._ovV ||= new THREE.Vector3());
     const seen = new Set();
+    const W = innerWidth,
+      H = innerHeight;
+    const items = [];
     for (const k of g.civ?.kingdoms || []) {
       if (!k || k.alive === false) continue;
       const cap = g.civ.villages?.[k.capital];
@@ -607,18 +618,130 @@ export class UI {
       if (e.dataset.n !== name) {
         e.dataset.n = name;
         e.lastChild.textContent = name;
+        e._w = 0; // measure again
       }
       e.style.setProperty('--k', hexCss(k.color));
       v.set(at.x, Math.max(0, g.world.heightAt(at.x, at.z)) + 2, at.z).project(cam);
-      const vis = v.z < 1 && Math.abs(v.x) < 1.1 && Math.abs(v.y) < 1.1;
-      e.hidden = !vis;
-      if (vis) e.style.transform = `translate(${Math.round((v.x * 0.5 + 0.5) * innerWidth)}px, ${Math.round((-v.y * 0.5 + 0.5) * innerHeight)}px) translate(-50%, -50%)`;
+      const vis = v.z < 1 && Math.abs(v.x) < 1.05 && Math.abs(v.y) < 1.05;
+      if (!vis) {
+        e.hidden = true;
+        continue;
+      }
+      let pop = 0;
+      for (const vid of k.villages || []) pop += g.civ.villages?.[vid]?.pop || 0;
+      items.push({ e, sx: (v.x * 0.5 + 0.5) * W, sy: (-v.y * 0.5 + 0.5) * H, prio: (k.villages?.length || 0) * 1000 + pop });
     }
+    this.layoutOverviewLabels(items, W, H);
     for (const [id, e] of this._ovLab) if (!seen.has(id)) (e.remove(), this._ovLab.delete(id));
   }
 
   // Where a realm's name goes in Overview: the middle of its own land (the owned
   // tiles' centroid, or the owned land tile nearest it), refreshed every 2 s.
+  // Place the Overview's realm names without overlaps: the largest realms
+  // first, each name on its realm's centre if free, else nudged to a nearby
+  // spot that still touches it, else drawn a little smaller, else reduced to
+  // its banner pin; names keep clear of the HUD and the screen edges.
+  layoutOverviewLabels(items, W, H) {
+    const now = performance.now();
+    if (!this._ovHud || now - this._ovHudT > 1000 || this._ovHudW !== W || this._ovHudH !== H) {
+      this._ovHudT = now;
+      this._ovHudW = W;
+      this._ovHudH = H;
+      const hud = (this._ovHud = []);
+      try {
+        // only what can be seen: faded-out panels and hints keep their boxes,
+        // and a container's box (the dock's, say) is wider than what it shows
+        const shown = [];
+        for (const n of this.root.querySelectorAll('.ws-glass, [class*="topbar"], [class*="toolbar"], [class*="dock"], [class*="feed"], [class*="minimap"], [class*="panel"]')) {
+          if (this.ovLabels.contains(n)) continue;
+          const r = n.getBoundingClientRect();
+          if (!(r.width > 4 && r.height > 4 && r.width < W * 0.95 && r.height < H * 0.95)) continue;
+          let op = 1;
+          for (let a = n; a && a !== this.root && op > 0.05; a = a.parentElement) {
+            const cs = getComputedStyle(a);
+            if (cs.visibility === 'hidden' || cs.display === 'none') op = 0;
+            else op *= +cs.opacity;
+          }
+          if (op > 0.05) shown.push([n, r]);
+        }
+        for (const [n, r] of shown) if (!shown.some(([m]) => m !== n && n.contains(m))) hud.push(r);
+      } catch {
+        /* no layout */
+      }
+    }
+    // sizes are read once per name (one layout pass for all that changed)
+    for (const it of items) {
+      const e = it.e;
+      if (e.hidden) e.hidden = false;
+      if (!e._w) e.classList.remove('is-pin');
+    }
+    for (const it of items) {
+      const e = it.e;
+      if (!e._w) {
+        e._w = e.offsetWidth || 60;
+        e._h = e.offsetHeight || 18;
+      }
+    }
+    items.sort((a, b) => b.prio - a.prio);
+    const placed = [];
+    const M = 6,
+      GAP = 3;
+    const free = (l, t, r, b) => {
+      if (l < M || t < M || r > W - M || b > H - M) return false;
+      for (const o of placed) if (l < o.r + GAP && r > o.l - GAP && t < o.b + GAP && b > o.t - GAP) return false;
+      for (const h of this._ovHud) if (l < h.right && r > h.left && t < h.bottom && b > h.top) return false;
+      return true;
+    };
+    for (const it of items) {
+      const e = it.e;
+      let hit = null;
+      // the spot it held last frame first, so names do not hop about
+      const order = e._spot != null ? [e._spot, ...OV_ORDER.filter((i) => i !== e._spot)] : OV_ORDER;
+      for (const sc of [1, 0.84]) {
+        const w = e._w * sc,
+          h = e._h * sc;
+        for (const i of order) {
+          const [dx, dy] = OV_SPOTS[i];
+          let x = it.sx + dx * w;
+          const y = it.sy + dy * h;
+          // a name at a screen edge slides inward rather than vanishing
+          x = Math.min(W - M - w / 2, Math.max(M + w / 2, x));
+          if (Math.abs(x - it.sx) > w * 0.62) continue;
+          if (free(x - w / 2, y - h / 2, x + w / 2, y + h / 2)) {
+            hit = { x, y, w, h, sc, i };
+            break;
+          }
+        }
+        if (hit) break;
+      }
+      let pin = false;
+      if (!hit) {
+        // no room for the name: its banner pin still marks the realm
+        const w = 18,
+          h = 18;
+        for (const [dx, dy] of [[0, 0], [0, -1], [0, 1], [-1, 0], [1, 0]]) {
+          const x = it.sx + dx * w,
+            y = it.sy + dy * h;
+          if (free(x - w / 2, y - h / 2, x + w / 2, y + h / 2)) {
+            hit = { x, y, w, h, sc: 1, i: null };
+            pin = true;
+            break;
+          }
+        }
+      }
+      if (!hit) {
+        e.hidden = true;
+        e._spot = null;
+        continue;
+      }
+      if (e.classList.contains('is-pin') !== pin) e.classList.toggle('is-pin', pin);
+      e._spot = hit.i;
+      e._sc = hit.sc;
+      placed.push({ l: hit.x - hit.w / 2, t: hit.y - hit.h / 2, r: hit.x + hit.w / 2, b: hit.y + hit.h / 2 });
+      e.style.transform = `translate(${Math.round(hit.x)}px, ${Math.round(hit.y)}px) translate(-50%, -50%)${hit.sc !== 1 ? ` scale(${hit.sc})` : ''}`;
+    }
+  }
+
   realmAnchor(k, cap) {
     const g = this.game;
     const W = g.world;

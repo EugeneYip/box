@@ -803,3 +803,11 @@
     white-space: nowrap;
   }
 }
+
+/* an Overview realm with no room for its name keeps its banner pin */
+.ws-ovlabel.is-pin {
+  padding: 4px 5px;
+}
+.ws-ovlabel.is-pin b {
+  display: none;
+}
