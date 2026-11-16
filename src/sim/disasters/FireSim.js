@@ -28,7 +28,7 @@ const BUDGET = 2600;
 // natExp: natural ignition falls off as factor^natExp below the Embers
 // factor; skyOff: spread of lightning fires still burning while the
 // calamityLightning law is off; wild: override of wildfireDamp (tooling)
-const TUNE = { natExp: 3.4, skyOff: 0.4, wild: null };
+const TUNE = { natExp: 3.4, skyOff: 0.2, wild: null };
 const ASH_THRESHOLD = 0.35;
 const SCARRED = 4; // scar bit: a fire has burnt this tile // ground flammability that leaves ash behind
 
