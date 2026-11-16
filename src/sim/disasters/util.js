@@ -167,8 +167,11 @@ export function wildfireDamp(game) {
 //               they spread as the age allows (wildfireDamp)
 //   FIRE_SKY    started by lightning: no new ones while the calamityLightning
 //               law is off (and those already burning die down)
+//   FIRE_SPARK  (with FIRE_WILD) sparks from a building burning in a war or a
+//               monster's breath: stays a local burn in every age
 export const FIRE_WILD = 1;
 export const FIRE_SKY = 2;
+export const FIRE_SPARK = 4;
 
 // Which ages make which disasters notable: notices then open with
 // "In the Age of …," when the current age is relevant to the event.
