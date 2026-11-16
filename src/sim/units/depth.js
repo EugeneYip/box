@@ -266,8 +266,11 @@ export function installDepth(Units) {
     for (const [k, b] of order) {
       if (n >= cap) break;
       if (has.has(k)) continue;
-      const strict = b.u.level >= 7 && (b.u.level >= 8 || (b.u.kills || 0) * 2 + (b.u._battles || 0) >= 14);
-      if (strict ? (size.get(k) || 0) < 30 : !short || n >= this.heroWant() || hailedShort >= 2 || (size.get(k) || 0) < 12) continue;
+      const pop = size.get(k) || 0;
+      // the old bar: a great veteran of a realm of thirty; the lower bar
+      // (two a minute at most) while the world is short of heroes
+      const strict = pop >= 30 && b.u.level >= 7 && (b.u.level >= 8 || (b.u.kills || 0) * 2 + (b.u._battles || 0) >= 14);
+      if (!strict && !(short && n < this.heroWant() && hailedShort < 2 && pop >= 12)) continue;
       const realm = g.civ?.kingdomName?.(k) || 'the realm';
       if (this.tryHero(b.u, `Hailed as the champion of ${realm}`)) {
         n++;
