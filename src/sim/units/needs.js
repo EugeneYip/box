@@ -5,14 +5,89 @@
 // Wild herds feel the seasons through their pasture (see Units._forageTick).
 //
 // Village hunger itself is set by Civ's village store (meals while the store
-// holds food); Life adds the tiredness, the sleep and the foraging.
+// holds food, smaller ones while it is rationed, none in a famine); Life adds
+// the tiredness, the sleep and the foraging, and LEAN TIMES: a meal fills
+// less in a hard season, so hunger settles higher and reads as a pressure.
+//   winter (milder with a full granary), thin stores, a blighted age, a siege
+//   or a war on the realm each raise the floor a meal leaves people at, up to
+//   a little under 0.6 ("Hungry" begins at 0.6, famine is Civ's empty store).
+// Lean times never starve anyone on their own: below 0.7 people still heal,
+// and nobody goes hungrier than 0.57 while the store holds food.
 
 const SLEEP_GAIN = 0.009; // energy per game second asleep at home
 const NAP_GAIN = 0.012; // ...asleep where they stand
 const MEAT = { deer: 10, rabbit: 3, sheep: 8, cow: 14, pig: 9, chicken: 2, goat: 7 };
+const LEAN_MAX = 0.45; // most a hard time adds to the fed floor (0.12)
+const LEAN_EVERY = 4; // game seconds between a village's lean reckonings
 
 export function installNeeds(Units) {
   const P = Units.prototype;
+
+  // How lean the times are in a village: {p: 0..LEAN_MAX, why: label|null}.
+  P.leanOf = function (v) {
+    if (!v || !v.alive) return null;
+    const g = this.game;
+    const now = g.time.total;
+    const M = this._leanMap || (this._leanMap = new Map());
+    let c = M.get(v.id);
+    if (c && now - c.t < LEAN_EVERY && now >= c.t) return c;
+    if (!c) M.set(v.id, (c = { t: 0, p: 0, why: null, v: -1 }));
+    c.t = now;
+    let p = 0,
+      why = null,
+      top = 0;
+    const add = (k, label) => {
+      p += k;
+      if (k > top) {
+        top = k;
+        why = label;
+      }
+    };
+    if (v.starving) {
+      c.p = 0;
+      c.why = 'famine';
+      return c;
+    }
+    const pop = Math.max(1, v.pop || 1);
+    const food = typeof v.food === 'number' ? v.food : pop * 4;
+    // the granary: a year and a half of meals counts as full
+    const store = Math.min(1, Math.max(0, food / (pop * 3)));
+    const s = g.laws?.weatherSeasons === false ? 1.5 : (g.time.season ?? 1.5);
+    // winter, and the hungry gap of early spring before the first harvest
+    const wk = s >= 3 ? 1 : s >= 2.75 ? (s - 2.75) * 4 : s < 0.35 ? 1 - s / 0.35 : 0;
+    if (wk > 0) add(0.22 * wk * (1 - 0.6 * store), s >= 2.75 ? 'lean winter' : 'hungry spring');
+    if (store < 0.35) add(0.16 * (1 - store / 0.35), 'thin stores');
+    // a blighted or barren age: harvests fail
+    const fert = g.age?.mods?.fertility ?? 1;
+    if (fert < 0.95) add(Math.min(0.2, 0.4 * (1 - fert)), 'failed harvests');
+    // a siege at the gates (walls, halls or houses struck lately), or a war on
+    if (v.buildings?.some?.((b) => b.alive && b.besieged && now - b.besieged < 25)) add(0.26, 'siege');
+    else if (v.kingdom >= 0 && (g.civ?.warCount?.(v.kingdom) || 0) > 0) add(0.05, 'war rations');
+    c.p = Math.min(LEAN_MAX, p);
+    c.why = c.p >= 0.08 ? why : null;
+    return c;
+  };
+  // After a meal: the hungry floor of lean times (royals eat first).
+  P._leanFloor = function (u) {
+    if (!this.law('lifeHunger')) return;
+    const v = this.game.civ?.villages?.[u.village];
+    const c = this.leanOf(v);
+    if (!c || c.p <= 0) return;
+    const p = u.data.civ?.royal || u.job === 'king' ? c.p * 0.35 : c.p;
+    const floor = 0.12 + p;
+    if (u.hunger < floor) u.hunger = Math.min(0.58, floor + ((u.id * 0.618) % 1) * 0.06);
+  };
+  // World-wide lean summary (tests and tools): villages by reason.
+  P._leanStats = function () {
+    const out = {};
+    for (const v of this.game.civ?.villages || []) {
+      if (!v?.alive) continue;
+      const c = this.leanOf(v);
+      const k = c?.why || 'fed';
+      out[k] = (out[k] || 0) + 1;
+    }
+    return out;
+  };
 
   // Before the village brain: returns true when tiredness or hunger took over.
   P._needsThink = function (u, now) {
@@ -43,9 +118,25 @@ export function installNeeds(Units) {
       if (!b) return this._nap0(u);
       const dx = b.doorX - u.x,
         dz = b.doorZ - u.z;
-      if (dx * dx + dz * dz > 0.8) {
+      const dd = dx * dx + dz * dz;
+      if (dd > 0.8) {
         if (!u.target || Math.abs(u.target.x - b.doorX) + Math.abs(u.target.z - b.doorZ) > 0.6) {
-          if (!this.moveTo(u, b.doorX, b.doorZ)) return this._nap0(u);
+          // one walk home a night: a path that fell short of the door (a
+          // crowded lane, a blocked doorstep) is not searched again and again;
+          // close by they slip in anyway, further off they sleep where they are
+          if (now - u._homeT < 30) {
+            if (!u.target) {
+              if (dd < 6) {
+                this._goInside(u, b);
+                return true;
+              }
+              return this._nap0(u);
+            }
+            // else: still on the way along a path that ends short of the door
+          } else {
+            u._homeT = now;
+            if (!this.moveTo(u, b.doorX, b.doorZ)) return this._nap0(u);
+          }
         }
         if (u.state !== 'run') u.state = 'walk';
         u.data.workAnim = null;

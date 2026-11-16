@@ -227,13 +227,24 @@ export function installDepth(Units) {
     const humans = this._counts?.get('human') || 0;
     return Math.max(3, Math.round(2 + 2 * this.popScale + humans / 250));
   };
+  // How many living heroes the world's people look for: about one per 160
+  // people (never fewer than three), within the cap.
+  P.heroWant = function () {
+    const humans = this._counts?.get('human') || 0;
+    return Math.min(this.heroCap(), Math.max(3, Math.round(humans / 160)));
+  };
   // Every realm of some size raises a champion: when it has no living hero,
-  // its most seasoned veteran is hailed (checked about once a game minute).
+  // its most seasoned veteran is hailed (checked once a game minute). While
+  // the world has fewer heroes than its people look for, the largest realms
+  // without one hail their best veteran on a lower bar, so a peaceful world
+  // of many small realms still has a handful of heroes.
   P._championsTick = function () {
     if (!this.law('lifeExperience')) return;
     const g = this.game;
     const L = this._legends();
-    if (L.heroes >= this.heroCap()) return;
+    const cap = this.heroCap();
+    if (L.heroes >= cap) return;
+    const short = L.heroes < this.heroWant();
     const best = new Map(),
       size = new Map(),
       has = new Set();
@@ -241,19 +252,27 @@ export function installDepth(Units) {
       if (!u.alive || u.species !== 'human' || !(u.kingdom >= 0)) continue;
       size.set(u.kingdom, (size.get(u.kingdom) || 0) + 1);
       if (u.traits.includes('hero')) has.add(u.kingdom);
-      if (u.level < 7 || u.data.civ?.royal) continue;
+      if (u.level < (short ? 4 : 7) || u.data.civ?.royal || u.age < u.def.maturity) continue;
       const deeds = (u.kills || 0) * 2 + (u._battles || 0);
-      if (u.level < 8 && deeds < 14) continue;
+      if (!short && u.level < 8 && deeds < 14) continue;
       const score = u.level * 10 + deeds;
       const b = best.get(u.kingdom);
       if (!b || score > b.s) best.set(u.kingdom, { u, s: score });
     }
+    // the most populous realms first
+    const order = [...best.entries()].sort((a, b) => (size.get(b[0]) || 0) - (size.get(a[0]) || 0));
     let n = L.heroes;
-    for (const [k, b] of best) {
-      if (n >= this.heroCap()) break;
-      if (has.has(k) || (size.get(k) || 0) < 30) continue;
+    let hailedShort = 0;
+    for (const [k, b] of order) {
+      if (n >= cap) break;
+      if (has.has(k)) continue;
+      const strict = b.u.level >= 7 && (b.u.level >= 8 || (b.u.kills || 0) * 2 + (b.u._battles || 0) >= 14);
+      if (strict ? (size.get(k) || 0) < 30 : !short || n >= this.heroWant() || hailedShort >= 2 || (size.get(k) || 0) < 12) continue;
       const realm = g.civ?.kingdomName?.(k) || 'the realm';
-      if (this.tryHero(b.u, `Hailed as the champion of ${realm}`)) n++;
+      if (this.tryHero(b.u, `Hailed as the champion of ${realm}`)) {
+        n++;
+        if (!strict) hailedShort++;
+      }
     }
   };
   // Hero: a deed worthy of song (respecting a cap on living heroes).
