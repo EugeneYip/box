@@ -1,5 +1,5 @@
 import { SEA_LEVEL, FLORA_INFO } from '../../world/constants.js';
-import { law, regionName, rand, ageMod, fireFactor, withAge } from './util.js';
+import { law, regionName, rand, ageMod, fireFactor, withAge, FIRE_SKY } from './util.js';
 
 // Natural calamities (World Law `calamityNatural`, default off): a scheduler
 // that now and then strikes a land location with an earthquake, tornado,
@@ -93,6 +93,9 @@ export class Calamities {
     w.earthquake *= id === 'iron' ? 1.5 : 1;
     w.blizzard = temp < -0.2 ? 2.4 : 0;
     w.plague = m('plague') > 1.3 ? 0.9 * m('plague') : 0;
+    // World Law calamityLightning off: no lightning storm and no
+    // dry-lightning wildfire is rolled (no lightning may strike)
+    if (!law(g, 'calamityLightning', true)) w.storm = w.wildfire = 0;
     return w;
   }
 
@@ -132,6 +135,7 @@ export class Calamities {
     const g = this.game;
     const ds = this.ds;
     const w = g.world;
+    if ((kind === 'storm' || kind === 'wildfire') && !law(g, 'calamityLightning', true)) return null;
     const forest = (tx, ty) => {
       let n = 0;
       for (let dy = -3; dy <= 3; dy++)
@@ -154,8 +158,10 @@ export class Calamities {
       else if (kind === 'storm') ds.add(new StormStrikes(ds, x, z));
       else if (kind === 'wildfire') {
         // a dry-lightning strike sparks the blaze
-        ds.lightning(x, z, { natural: true, ignite: true });
-        for (let k = 0; k < 4; k++) ds.ignite(spot[0] + Math.round(rand(-2, 2)), spot[1] + Math.round(rand(-2, 2)), 1);
+        // (a lightning fire: it obeys the calamityLightning law, but as a
+        // disaster the player asked for it spreads at full strength)
+        ds.lightning(x, z, { natural: true, ignite: true, cause: FIRE_SKY });
+        for (let k = 0; k < 4; k++) ds.ignite(spot[0] + Math.round(rand(-2, 2)), spot[1] + Math.round(rand(-2, 2)), 1, { cause: FIRE_SKY });
       } else if (kind === 'blizzard') {
         // a howling snowstorm: snow weather, fires snuffed out, the cold bites
         if (law(g, 'skyWeather', true) !== false) g.atmosphere?.setWeather?.('snow', 1, 60);

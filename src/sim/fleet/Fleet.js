@@ -184,11 +184,16 @@ export class Fleet {
     const wt = this.game.env?.weather;
     return wt && wt.type === 'storm' ? wt.intensity ?? 1 : 0;
   }
+  // How much wider the seas are than a Medium map's (1 there, about 1.8 on
+  // the World Map and its regions): reaches and lookouts scale with it.
+  seaScale() {
+    return Math.sqrt(Math.max(1, this.game.view?.worldScale ?? this.world.w / 256));
+  }
   // Sea range of a realm's ship (path length in tiles).
   range(kid, kind) {
     if (kind === 'fishing') return 26;
     if (kind === 'carrack' || this.hasTech(kid, 'navigation')) return Infinity;
-    const base = 150 * Math.sqrt(Math.max(1, this.game.view?.worldScale ?? this.world.w / 256));
+    const base = 150 * this.seaScale();
     if (kind === 'explorer') return base * 4;
     if (kind === 'galley') return base * (this.hasTech(kid, 'astronomy') ? 1.6 : 1);
     return base * (this.hasTech(kid, 'astronomy') ? 2.5 : 1);

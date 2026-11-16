@@ -9,6 +9,8 @@ let gScore = null,
   cameFrom = null,
   stamp = null,
   closed = null,
+  passStamp = null, // per-search passability cache (each tile asked once)
+  passVal = null,
   curStamp = 0,
   allocSize = 0;
 let heapF = new Float32Array(4096),
@@ -21,6 +23,8 @@ function ensure(n) {
   cameFrom = new Int32Array(n);
   stamp = new Uint32Array(n);
   closed = new Uint32Array(n);
+  passStamp = new Uint32Array(n);
+  passVal = new Uint8Array(n);
   allocSize = n;
   curStamp = 0;
 }
@@ -78,6 +82,7 @@ export function findPath(world, sx, sy, gx, gy, passable, maxNodes = 3000, cost 
   if (curStamp > 4e9) {
     stamp.fill(0);
     closed.fill(0);
+    passStamp.fill(0);
     curStamp = 1;
   }
   if (!passable(gx, gy)) {
@@ -110,6 +115,17 @@ export function findPath(world, sx, sy, gx, gy, passable, maxNodes = 3000, cost 
   let best = start,
     bestH = h(sx, sy);
   const height = world.height;
+  const H = world.h;
+  // passability is asked at most once per tile in a search (the caller's test
+  // walks tile, building and flora tables; diagonal moves re-ask neighbours)
+  const pass = (x, y) => {
+    const i = y * W + x;
+    if (passStamp[i] === curStamp) return passVal[i] === 1;
+    const p = !!passable(x, y);
+    passStamp[i] = curStamp;
+    passVal[i] = p ? 1 : 0;
+    return p;
+  };
   while (heapN > 0) {
     const cur = pop();
     if (closed[cur] === curStamp) continue;
@@ -124,10 +140,11 @@ export function findPath(world, sx, sy, gx, gy, passable, maxNodes = 3000, cost 
         if (!dx && !dy) continue;
         const nx = cx + dx,
           ny = cy + dy;
-        if (!passable(nx, ny)) continue;
-        if (dx && dy && (!passable(cx + dx, cy) || !passable(cx, cy + dy))) continue;
+        if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue; // off the map (never passable)
         const ni = ny * W + nx;
         if (closed[ni] === curStamp) continue;
+        if (!pass(nx, ny)) continue;
+        if (dx && dy && (!pass(cx + dx, cy) || !pass(cx, cy + dy))) continue;
         const climb = Math.max(0, height[ni] - ch);
         let g = gScore[cur] + (dx && dy ? SQRT2 : 1) + climb * 0.6;
         if (cost) g += cost(nx, ny);
