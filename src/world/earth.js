@@ -851,18 +851,124 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
     }
   }
   for (let i = 0; i < N; i++) if (lake[i] && !land[i]) lake[i] = 0;
+  // The water surface is one sheet at sea level, so a lake holds water only
+  // where it is carved down to it. Lakes in low country are; a lake on high
+  // ground (Tibet, the Altiplano, the Great Basin, ...) would become a black
+  // crater, so it is laid out as a flat marsh at the level of its shores.
+  const marsh = new Uint8Array(N);
+  const bowl = new Uint8Array(N); // lakes and shores of broad-bowl lakes
+  {
+    const lakeId = new Int32Array(N).fill(-1);
+    const comps = [];
+    const stack = new Int32Array(N);
+    for (let s0 = 0; s0 < N; s0++) {
+      if (!lake[s0] || lakeId[s0] >= 0) continue;
+      const id = comps.length,
+        tiles = [];
+      let sp = 0;
+      stack[sp++] = s0;
+      lakeId[s0] = id;
+      while (sp) {
+        const i = stack[--sp];
+        tiles.push(i);
+        const x = i % W;
+        for (const j of [x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, i - W, i + W])
+          if (j >= 0 && j < N && lake[j] && lakeId[j] < 0) (lakeId[j] = id), (stack[sp++] = j);
+      }
+      comps.push({ tiles, ring: [], near: [] });
+    }
+    // the shores: land up to 5 tiles out, each tile to its nearest lake
+    const ringD = new Uint8Array(N);
+    let front = [];
+    for (let i = 0; i < N; i++) if (lake[i]) front.push(i);
+    for (let d = 1; d <= 9 && front.length; d++) {
+      const next = [];
+      for (const i of front) {
+        const x = i % W;
+        for (const j of [x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, i - W, i + W]) {
+          if (j < 0 || j >= N || !land[j] || lake[j] || ringD[j]) continue;
+          ringD[j] = d;
+          lakeId[j] = lakeId[i];
+          next.push(j);
+          const c = comps[lakeId[i]];
+          if (d >= 2 && d <= 5) c.ring.push(hgt[j]);
+          if (d <= 2) c.near.push(hgt[j]);
+        }
+      }
+      front = next;
+    }
+    const pct = (a, q) => (a.length ? a.sort((p, q2) => p - q2)[Math.min(a.length - 1, Math.floor(a.length * q))] : 0);
+    // (a large lake on moderately high ground, such as Victoria, sits in a
+    // broad shallow bowl instead)
+    const low = new Uint8Array(comps.length); // 1 low country, 2 broad bowl
+    const floorOf = new Float32Array(comps.length);
+    comps.forEach((c, id) => {
+      const base = c.ring.length ? pct(c.ring, 0.3) : c.tiles.reduce((s, i) => s + hgt[i], 0) / c.tiles.length;
+      if (base <= 2.2) low[id] = 1;
+      else if (base <= 4.2 && c.tiles.length >= 10 * scale768 * scale768) low[id] = 2;
+      else floorOf[id] = Math.max(0.35, Math.min(base, pct(c.near, 0.1)) - 0.12);
+    });
+    for (let i = 0; i < N; i++) {
+      const id = lakeId[i];
+      if (id < 0) continue;
+      if (low[id]) {
+        if (low[id] === 2) bowl[i] = 1;
+        continue;
+      }
+      if (ringD[i] > 5) continue;
+      const fl = floorOf[id];
+      if (lake[i]) {
+        lake[i] = 0;
+        marsh[i] = 1;
+        hgt[i] = fl;
+      } else if (ringD[i] <= 4 && hgt[i] > fl) hgt[i] = fl + (hgt[i] - fl) * smoothstep(0.5, 4.5, ringD[i]); // soft shores
+    }
+  }
   {
     const dIn = H_.distanceField(lake, W, H, 1); // lake tiles: distance to the shore
     const dOut = H_.distanceField(lake, W, H, 0); // land tiles: distance to a lake
     for (let i = 0; i < N; i++) {
       if (lake[i]) {
         hgt[i] = -(0.45 + 1.5 * smoothstep(0.5, 3.5 * Math.max(0.7, scale768), dIn[i]));
-      } else if (land[i] && dOut[i] < 7) {
-        // shores rise quickly: a lake only shapes the land a few tiles around it
+      } else if (land[i] && dOut[i] < (bowl[i] ? 10 : 7)) {
+        // shores rise quickly: a lake only shapes the land a few tiles around
+        // it (a broad bowl around a large upland lake)
         const d = dOut[i];
-        const shore = 0.3 + d * 0.8 + d * d * 0.28;
+        const shore = bowl[i] ? 0.3 + d * 0.42 + d * d * 0.045 : 0.3 + d * 0.8 + d * d * 0.28;
         if (shore < hgt[i]) hgt[i] = shore;
       }
+    }
+  }
+  // narrow sea inlets and straits (a tile or two wide) get gentle banks: under
+  // steep walls the water at their bottom read as a dark pit
+  {
+    const narrowSrc = new Uint8Array(N);
+    const r = 2;
+    for (let y = 0; y < H; y++)
+      for (let x = 0; x < W; x++) {
+        const i = y * W + x;
+        if (land[i] || dSea[i] > 1.6 || inRing(x, y)) continue;
+        let wide = 0;
+        for (let dy = -r; dy <= r && !wide; dy++) {
+          const yy = y + dy;
+          if (yy < 0 || yy >= H) continue;
+          for (let dx = -r; dx <= r; dx++) {
+            const xx = REG ? x + dx : (x + dx + W) % W;
+            if (xx < 0 || xx >= W) continue;
+            if (dSea[yy * W + xx] > 1.6) {
+              wide = 1;
+              break;
+            }
+          }
+        }
+        if (!wide) narrowSrc[i] = 1;
+      }
+    const dN = H_.distanceField(narrowSrc, W, H, 0);
+    for (let i = 0; i < N; i++) {
+      if (!land[i] || lake[i] || dN[i] >= 5) continue;
+      const d = dN[i];
+      const bank = 0.3 + d * 0.5 + d * d * 0.2;
+      if (bank < hgt[i]) hgt[i] = bank;
     }
   }
   _t('lakes');
@@ -976,6 +1082,7 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
     }
   }
   limitSlopes();
+  fillCraters(hgt, W, H, sea, marsh, !REG);
   _t('rivers');
 
   // the border ring is deep open sea: the water shader and the terrain skirt
@@ -1134,6 +1241,7 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
       const dOcT = dOcean[i]; // tiles to the open sea
       let tt;
       if (icecap[i] && dLand[i] >= 1 && dLand[i] < 9 * scale768 && ridged(nRidge, x / tpd / 1.3 + 7, y / tpd / 1.3 - 3) > 0.86) tt = TILE.ROCK; // nunataks
+      else if (marsh[i]) tt = TILE.SWAMP; // lakes on high ground: flat marshes
       else if (icecap[i] || h > snowLine || t < 0.11 + bn * 0.02) tt = TILE.SNOW;
       else if ((h > rockLine && slope > 0.6 + bn * 0.2) || slope > 2.2 + bn * 0.4) tt = TILE.ROCK;
       else if (h > rockLine) tt = t > 0.17 ? TILE.TUNDRA : TILE.SNOW; // alpine meadow, high plateaus
@@ -1152,7 +1260,7 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
     if (moist[i] < 0.14 && temp[i] > 0.42 && baseT[i] > 0.6) type[i] = TILE.DESERT;
   }
   for (let i = 0; i < N; i++) {
-    if (hgt[i] < 5 * VK || plat[i] < 5.5 * VK || rangeMask[i] > 0.4) continue;
+    if (marsh[i] || hgt[i] < 5 * VK || plat[i] < 5.5 * VK || rangeMask[i] > 0.4) continue;
     const t = type[i];
     // (the cold plateau floor below the snow line is steppe, not snowfield)
     const lowSnow = t === TILE.SNOW && hgt[i] < (5 + 7.2 * clamp01(baseT[i]) - 1.5) * VK && !icecap[i];
@@ -1207,6 +1315,145 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
   world.wetness.fill(0);
   world.markAllDirty();
   if (_times) options.profile(_times);
+}
+
+// Spill levels: for every tile, the lowest "highest point" on any path from it
+// to the open sea (water connected to `sea` or the map border). A priority
+// flood over a binary heap; `wrap` joins the left and right edges.
+function spillLevels(hgt, W, H, sea, wrap) {
+  const N = W * H;
+  const spill = new Float32Array(N).fill(Infinity);
+  let hk = new Float32Array(1 << 16),
+    hv = new Int32Array(1 << 16),
+    n = 0;
+  const push = (k, v) => {
+    if (n >= hk.length) {
+      const a = new Float32Array(hk.length * 2);
+      a.set(hk);
+      hk = a;
+      const b = new Int32Array(hv.length * 2);
+      b.set(hv);
+      hv = b;
+    }
+    let i = n++;
+    while (i > 0) {
+      const p = (i - 1) >> 1;
+      if (hk[p] <= k) break;
+      hk[i] = hk[p];
+      hv[i] = hv[p];
+      i = p;
+    }
+    hk[i] = k;
+    hv[i] = v;
+  };
+  const pop = () => {
+    const v = hv[0];
+    const k = hk[--n],
+      vv = hv[n];
+    let i = 0;
+    for (;;) {
+      let c = 2 * i + 1;
+      if (c >= n) break;
+      if (c + 1 < n && hk[c + 1] < hk[c]) c++;
+      if (hk[c] >= k) break;
+      hk[i] = hk[c];
+      hv[i] = hv[c];
+      i = c;
+    }
+    hk[i] = k;
+    hv[i] = vv;
+    return v;
+  };
+  for (let i = 0; i < N; i++) {
+    const x = i % W,
+      y = (i / W) | 0;
+    const border = y === 0 || y === H - 1 || (!wrap && (x === 0 || x === W - 1));
+    if ((sea[i] && hgt[i] < 0) || border) {
+      spill[i] = Math.max(0, hgt[i]);
+      push(spill[i], i);
+    }
+  }
+  const done = new Uint8Array(N);
+  while (n) {
+    const i = pop();
+    if (done[i]) continue;
+    done[i] = 1;
+    const x = i % W,
+      s = spill[i];
+    const l = x > 0 ? i - 1 : wrap ? i + W - 1 : -1,
+      r = x < W - 1 ? i + 1 : wrap ? i - W + 1 : -1;
+    for (const j of [l, r, i - W, i + W]) {
+      if (j < 0 || j >= N || done[j]) continue;
+      const lv = Math.max(s, hgt[j] > 0 ? hgt[j] : 0);
+      if (lv < spill[j]) {
+        spill[j] = lv;
+        push(lv, j);
+      }
+    }
+  }
+  return spill;
+}
+
+// No craters: water the open sea cannot reach without climbing a rim (a lake
+// on high ground, a river head cut into a range) lies in a pit with the water
+// sheet at its bottom, so it is filled to a flat marsh at its rim. Small dry
+// hollows are filled to their brim; broad closed basins (the Tarim, the Great
+// Basin) keep their floors.
+function fillCraters(hgt, W, H, sea, marsh, wrap) {
+  const N = W * H;
+  const spill = spillLevels(hgt, W, H, sea, wrap);
+  const seen = new Uint8Array(N);
+  const stack = new Int32Array(N);
+  const comp = [];
+  const nbrs = (i, out) => {
+    const x = i % W;
+    out[0] = x > 0 ? i - 1 : wrap ? i + W - 1 : -1;
+    out[1] = x < W - 1 ? i + 1 : wrap ? i - W + 1 : -1;
+    out[2] = i - W;
+    out[3] = i + W;
+    return out;
+  };
+  const nb = [0, 0, 0, 0];
+  // enclosed water: a rim more than ~2.6 units high (or a small pond in a
+  // hole) is a crater
+  for (let s0 = 0; s0 < N; s0++) {
+    if (seen[s0] || hgt[s0] >= 0 || spill[s0] <= 0.05) continue;
+    let sp = 0;
+    comp.length = 0;
+    stack[sp++] = s0;
+    seen[s0] = 1;
+    while (sp) {
+      const i = stack[--sp];
+      comp.push(i);
+      for (const j of nbrs(i, nb)) if (j >= 0 && j < N && !seen[j] && hgt[j] < 0) (seen[j] = 1), (stack[sp++] = j);
+    }
+    const rim = spill[s0];
+    if (rim > 2.6 || (rim > 1.2 && comp.length <= 8))
+      for (const i of comp) {
+        hgt[i] = Math.max(0.3, rim - 0.1);
+        marsh[i] = 1;
+      }
+  }
+  seen.fill(0);
+  for (let s0 = 0; s0 < N; s0++) {
+    if (seen[s0] || hgt[s0] < 0 || spill[s0] <= hgt[s0] + 0.02) continue;
+    let sp = 0,
+      depth = 0;
+    comp.length = 0;
+    stack[sp++] = s0;
+    seen[s0] = 1;
+    while (sp) {
+      const i = stack[--sp];
+      comp.push(i);
+      depth = Math.max(depth, spill[i] - hgt[i]);
+      const x = i % W;
+      const l = x > 0 ? i - 1 : wrap ? i + W - 1 : -1,
+        r = x < W - 1 ? i + 1 : wrap ? i - W + 1 : -1;
+      for (const j of [l, r, i - W, i + W])
+        if (j >= 0 && j < N && !seen[j] && hgt[j] >= 0 && spill[j] > hgt[j] + 0.02) (seen[j] = 1), (stack[sp++] = j);
+    }
+    if (comp.length <= 240 || depth <= 0.7) for (const i of comp) hgt[i] = spill[i];
+  }
 }
 
 // Longitude / latitude (degrees) at a world position on the whole-Earth World
