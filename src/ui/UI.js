@@ -27,10 +27,12 @@ import { earthLabel, earthChoice } from '../core/params.js';
 import { uiIcon } from './icons.js';
 
 // Overview name spots, in label widths (x) and heights (y) from the realm's
-// centre, nearest first; every one still touches the centre.
+// centre, nearest first: first those that still touch the centre, then (for
+// a crowded corner such as Western Europe) one row further out.
 const OV_SPOTS = [
   [0, 0], [0, -1.12], [0, 1.12], [-0.3, 0], [0.3, 0], [-0.3, -1.12], [0.3, -1.12], [-0.3, 1.12], [0.3, 1.12],
   [-0.5, 0], [0.5, 0], [-0.5, -1.12], [0.5, -1.12], [-0.5, 1.12], [0.5, 1.12],
+  [0, -2.24], [0, 2.24], [-0.3, -2.24], [0.3, -2.24], [-0.3, 2.24], [0.3, 2.24],
 ];
 const OV_ORDER = OV_SPOTS.map((_, i) => i);
 
