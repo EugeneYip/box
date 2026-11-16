@@ -1152,6 +1152,24 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
   fillCraters(hgt, W, H, sea, marsh, !REG);
   _t('rivers');
 
+  // regional maps: land that runs off the window keeps its relief to within
+  // a few tiles of the border and then dips under the sea, with no beach or
+  // shelf: the terrain skirt and the water beyond the map continue the edge
+  // tiles outward, and they expect open sea there (land at the very edge
+  // stretched into streaks beyond the border)
+  const edgeFade = new Uint8Array(REG ? N : 0);
+  if (REG)
+    for (let y = 0; y < H; y++)
+      for (let x = 0; x < W; x++) {
+        const e = edgeDist(x, y);
+        if (e >= 5) continue;
+        const i = y * W + x;
+        if (!land[i]) continue;
+        const k = smoothstep(0.3, 4.6, e);
+        const f = -2.4 + (Math.max(hgt[i], 0.3) + 2.4) * k;
+        if (f < hgt[i]) hgt[i] = f;
+        edgeFade[i] = 1;
+      }
   // the border ring is deep open sea: the water shader and the terrain skirt
   // extend the edge tiles' depth outward, so shallows there would show as a
   // pale band beyond the map
@@ -1299,7 +1317,7 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
           if (sideK[x] < 0.35 + bn * 0.25) ice = false;
         }
         if (ice) type[i] = TILE.ICE;
-        else if (!sea[i]) type[i] = riverMask[i] || depth > 1.1 + bn * 0.5 ? TILE.SOIL : TILE.SAND;
+        else if (!sea[i] && !(REG && edgeFade[i])) type[i] = riverMask[i] || depth > 1.1 + bn * 0.5 ? TILE.SOIL : TILE.SAND;
         else type[i] = depth < 2.8 + bn * 1.2 ? TILE.SAND : TILE.ROCK;
         continue;
       }
@@ -1327,8 +1345,8 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
       else if (ekm > treeKm) tt = t > 0.17 ? TILE.TUNDRA : TILE.SNOW; // alpine meadow, high plateaus
       // (lone islets are green, not pale sand discs; narrow islands on the
       // whole Earth keep green shores rather than sea cliffs)
-      else if (dOcT <= beachW + bn * 0.6 && h < 0.9 + bn * 0.3 && slope < 0.7 && t > 0.3 && landW[i] > 1.01) tt = TILE.SAND;
-      else if (dOcT <= 1.5 && slope >= 1.3 && h > 1.2 && (REG || landW[i] > 5 * scale768)) tt = TILE.ROCK; // sea cliffs
+      else if (dOcT <= beachW + bn * 0.6 && h < 0.9 + bn * 0.3 && slope < 0.7 && t > 0.3 && landW[i] > 1.01 && !(REG && edgeDist(x, y) < 8)) tt = TILE.SAND;
+      else if (dOcT <= 1.5 && slope >= 1.3 && h > 1.2 && (REG || landW[i] > 5 * scale768) && !(REG && edgeDist(x, y) < 8)) tt = TILE.ROCK; // sea cliffs
       else if (wetland[i] && h < 3.2 && t > 0.24 && m > 0.35) tt = TILE.SWAMP;
       else if (m > 0.86 && h < 1.2 && dWater[i] < 3 && t > 0.3) tt = TILE.SWAMP;
       else tt = biome(t + bn * 0.02 + (hash2(x, y, seed) - 0.5) * 0.01, m - bn * 0.04);
@@ -1537,7 +1555,7 @@ function fillCraters(hgt, W, H, sea, marsh, wrap) {
     }
     // (pits: small hollows, or deep ones of moderate size; the broad shallow
     // swales of a rolling plateau stay as they are)
-    if (comp.length <= 12 || (depth > 2.5 && comp.length <= 120)) for (const i of comp) hgt[i] = spill[i];
+    if (comp.length <= 25 || (depth > 2.0 && comp.length <= 200)) for (const i of comp) hgt[i] = spill[i];
   }
 }
 
