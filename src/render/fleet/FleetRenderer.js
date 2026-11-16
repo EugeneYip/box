@@ -91,17 +91,18 @@ export class FleetRenderer {
     this.debris = this._inst(debrisGeometry(), this.propMat, 64);
     // stones and wreckage share one vertex-coloured material (one program)
     this.stones = this._inst(stoneGeometry(), this.propMat, 32);
-    // arrows and fire pots fly as glowing tracers: unlit, bright enough to
-    // bloom, sized to stay a few pixels wide at any battle zoom
+    // arrows and fire pots fly as thin glowing streaks: unlit, a faint glow,
+    // a pixel or two wide and short at any battle zoom
     this.tracerMat = new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false, transparent: true, depthWrite: false });
     this.arrows = this._inst(tracerGeometry(), this.tracerMat, 64);
     this.arrows.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(64 * 3), 3);
     this.pots = this._inst(potGeometry(), this.tracerMat, 16);
     this.pots.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(16 * 3), 3);
-    // (yellow at the head, orange down the tail; luminance over 1 so they bloom)
-    this._cArrow = new THREE.Color(2.4, 1.2, 0.3);
-    this._cPotTail = new THREE.Color(3.0, 0.9, 0.15);
-    this._cPot = new THREE.Color(4.0, 1.7, 0.35);
+    // (pale gold at the head, fading orange down the tail; just bright
+    // enough to glow, not to bloom into planks)
+    this._cArrow = new THREE.Color(1.35, 1.0, 0.55);
+    this._cPotTail = new THREE.Color(1.7, 0.75, 0.2);
+    this._cPot = new THREE.Color(2.2, 1.1, 0.35);
     // trade lanes (dashed, faint, mid zoom): the same water-fx program as lines
     const MAXV = 6000;
     const lg = new THREE.BufferGeometry();
@@ -667,8 +668,8 @@ export class FleetRenderer {
     this.stones.visible = n > 0;
   }
 
-  // Arrows and fire pots arcing between ships: glowing streaks (a blazing
-  // head for a pot) a few pixels wide from close up to the widest battle view.
+  // Arrows and fire pots arcing between ships: thin short glowing streaks (a
+  // small blazing head for a pot), readable but delicate at any battle zoom.
   _shots(F, alpha, far) {
     let n = 0,
       np = 0;
@@ -678,8 +679,8 @@ export class FleetRenderer {
       const pm = this._growProp('pots', Math.min(L.length, 48));
       const step = this.game.simStep || TICK;
       const dist = this.game.cameraRig?.cur?.dist ?? 30;
-      const th = Math.max(0.05, dist * 0.0032);
-      const len = 0.6 + dist * 0.04;
+      const th = Math.max(0.014, dist * 0.0011);
+      const len = 0.22 + dist * 0.013;
       const fx = !this.game.paused && this.game.fx?.emit;
       for (const sh of L) {
         const u = (sh.t + alpha * step) / sh.dur;
@@ -695,16 +696,16 @@ export class FleetRenderer {
         this._e.set(0, -Math.atan2(dz, dx), pitch, 'YZX');
         this._q.setFromEuler(this._e);
         const ln = Math.min(len, d * u + 0.2);
-        this._m.compose(this._p.set(x, y, z), this._q, this._s.set(sh.pot ? ln * 0.8 : ln, sh.pot ? th * 1.5 : th, sh.pot ? th * 1.5 : th));
+        this._m.compose(this._p.set(x, y, z), this._q, this._s.set(sh.pot ? ln * 0.8 : ln, sh.pot ? th * 1.4 : th, sh.pot ? th * 1.4 : th));
         mesh.setMatrixAt(n, this._m);
         mesh.setColorAt(n, sh.pot ? this._cPotTail : this._cArrow);
         n++;
         if (sh.pot && np < pm.instanceMatrix.count) {
-          this._m.compose(this._p, this._q, this._s.setScalar(Math.max(0.14, dist * 0.0075)));
+          this._m.compose(this._p, this._q, this._s.setScalar(Math.max(0.05, dist * 0.0026)));
           pm.setMatrixAt(np, this._m);
           pm.setColorAt(np, this._cPot);
           np++;
-          if (fx && Math.random() < 0.35) this.game.fx.emit('fire', { x, y, z }, { scale: 0.25 });
+          if (fx && Math.random() < 0.12) this.game.fx.emit('fire', { x, y, z }, { scale: 0.16 });
         }
       }
       mesh.instanceMatrix.needsUpdate = true;
