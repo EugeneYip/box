@@ -18,7 +18,11 @@ const FLAG_DIST = 115;
 const WAKE_DIST = 165;
 const PLUME_TINT = 0xeceff3; // a cool near-white: smoke over the sea reads grey, not brown
 const STONE_SCALE = 0.62; // catapult stone: ~0.38 tiles across, a third of the arm
-const BEAM = { fishing: 0.36, cog: 0.35, transport: 0.37, galley: 0.19, explorer: 0.27, carrack: 0.31 };
+
+function smoothstep(e0, e1, x) {
+  const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
+  return t * t * (3 - 2 * t);
+}
 
 function lerpAngle(a, b, t) {
   let d = b - a;
@@ -305,7 +309,7 @@ export class FleetRenderer {
           iS[k * 4 + 3] = a.oar;
           k++;
           if (flagsOn && b.model.flags.length && v.sink < 0.4) for (const f of b.model.flags) flagList.push({ f, m: this._m.clone(), v, h });
-          if (wakesOn && v.speed > 0.1 && !(v.sink > 0) && v.state !== 'moored' && (v.state === 'sail' || v.state === 'patrol' || v.speed > 0.3)) wakeList.push({ x, z, h, v, beam: BEAM[kind] || 0.3 });
+          if (wakesOn && v.speed > 0.05 && !(v.sink > 0) && v.state !== 'moored') wakeList.push({ x, z, h, v });
         } else {
           // land: sit on the ground, tilt with the slope
           const y = W.heightAt(x, z);
@@ -392,9 +396,10 @@ export class FleetRenderer {
     this.flags.visible = n > 0;
   }
 
-  // Wakes laid along each ship's own track (a Kelvin V that bends with its
-  // turns and fades within a few lengths), hull foam and a short bow wave,
-  // and soft contact shadows under carts and engines.
+  // Wakes: a short V of foam off the bow and a churned trail along the
+  // ship's own track that settles within a hull length or two, both sized by
+  // her speed and gone when she stops; soft contact shadows under carts and
+  // engines; far-zoom dots.
   _waterFxUpdate(wakes, wakesOn, blobs, blobsOn, dt, dots = null) {
     const g = this.waterFx.geometry;
     const P = g.attributes.position.array,
@@ -444,24 +449,32 @@ export class FleetRenderer {
         const v = w.v;
         const L = v.def.length;
         const T = v.track || [];
-        const spd = Math.min(1, v.speed / v.def.speed);
+        // wake strength: grows with speed, nothing at all when she lies still
+        const a = Math.min(1, v.speed / v.def.speed) * smoothstep(0.05, 0.3, v.speed);
+        if (a < 0.01) continue;
         const beam = (v.def.beam || 0.4) / L;
         const fx = Math.cos(w.h),
           fz = Math.sin(w.h);
-        // hull foam and bow wave
+        // waterline foam and a short V of foam off the bow (local quad, in
+        // ship lengths: the arms reach from the stem to just past the stern
+        // at full speed, less when slow)
+        const vLen = 0.5 + 0.8 * a;
         if (n < max) {
-          const hl = L * 0.72,
-            hw = (v.def.beam || 0.4) * 0.5 + L * 0.4;
+          const xb = 0.5 - vLen - 0.06,
+            xf = 0.62;
+          const zw = Math.max(beam * 0.6 + 0.05, beam * 0.22 + 0.34 * vLen + 0.14);
           const px = -fz,
             pz = fx;
-          const c0x = w.x - fx * L * 0.62,
-            c0z = w.z - fz * L * 0.62;
-          const c1x = w.x + fx * hl,
-            c1z = w.z + fz * hl;
-          quad(c0x + px * hw, c0z + pz * hw, c1x + px * hw, c1z + pz * hw, c1x - px * hw, c1z - pz * hw, c0x - px * hw, c0z - pz * hw, -0.62, hw / L, hl / L, hw / L, hl / L, -hw / L, -0.62, -hw / L, 2, spd, spd, beam, 0, 0, 0.022);
+          const c0x = w.x + fx * L * xb,
+            c0z = w.z + fz * L * xb;
+          const c1x = w.x + fx * L * xf,
+            c1z = w.z + fz * L * xf;
+          const hw = zw * L;
+          quad(c0x + px * hw, c0z + pz * hw, c1x + px * hw, c1z + pz * hw, c1x - px * hw, c1z - pz * hw, c0x - px * hw, c0z - pz * hw, xb, zw, xf, zw, xf, -zw, xb, -zw, 2, a, a, beam, vLen, vLen, 0.022);
         }
-        // the wake: resample the track back from the stern at even steps,
-        // then lay the two Kelvin arms and the churn as seamless ribbons
+        // the churned trail: resample the track back from the stern at even
+        // steps and lay a short ribbon of broken water that settles within
+        // one or two hull lengths (shorter when slow)
         let o = H.get(v.id);
         if (!o) H.set(v.id, (o = { x: w.x, z: w.z, d: 0 }));
         const mv = Math.hypot(w.x - o.x, w.z - o.z);
@@ -469,7 +482,7 @@ export class FleetRenderer {
         o.x = w.x;
         o.z = w.z;
         const odo = o.d;
-        const maxS = L * 1.7;
+        const maxS = L * (0.45 + 1.05 * a);
         const ds = Math.max(0.1, L * 0.13);
         const S = this._wk || (this._wk = new Float32Array(64 * 3));
         let ns = 0;
@@ -494,7 +507,7 @@ export class FleetRenderer {
             bz = T[i + 1];
             i -= 2;
           } else if (!tail) {
-            // the track runs out: a short straight tail, never a long beam
+            // the track runs out: a short straight tail
             tail = true;
             const rest = Math.min(maxS - acc, L * 0.3);
             if (rest < 0.05) break;
@@ -518,14 +531,10 @@ export class FleetRenderer {
           ax = bx;
           az = bz;
         }
-        if (ns < 2 || n >= max - 18 * ns) continue;
+        if (ns < 2 || n >= max - 6 * ns) continue;
         const hb = (v.def.beam || 0.4) * 0.5;
-        const fade = (s) => spd * Math.min(1, 0.45 + s / (L * 0.25)) * Math.pow(Math.max(0, 1 - s / maxS), 1.7);
-        const arm = (s) => hb * 0.9 + s * 0.3;
-        const bw = (s) => L * 0.025 + s * 0.07;
-        const churnS = L * 0.9;
-        const cw = (s) => hb * 0.55 + s * 0.06;
-        const cfade = (s) => spd * Math.pow(Math.max(0, 1 - s / churnS), 1.5) * (v.anim.oar > 0.3 ? 1 : 0.8);
+        const cw = (s) => hb * 0.6 + s * 0.09;
+        const cfade = (s) => a * Math.min(1, 0.5 + s / (L * 0.2)) * Math.pow(Math.max(0, 1 - s / maxS), 1.6) * (v.anim.oar > 0.3 ? 1 : 0.85);
         // the normal at each sample, from its neighbours (smooth through turns)
         const nrm = (j) => {
           const j0 = Math.max(0, j - 1),
@@ -544,23 +553,11 @@ export class FleetRenderer {
             x1 = S[j * 3 + 3],
             z1 = S[j * 3 + 4],
             s1 = S[j * 3 + 5];
-          const a0 = fade(s0),
-            a1 = fade(s1);
           const u0 = odo - s0,
             u1 = odo - s1;
-          if (a0 > 0.003 || a1 > 0.003)
-            for (const side of [1, -1]) {
-              const i0 = arm(s0) - bw(s0),
-                o0 = arm(s0) + bw(s0),
-                i1 = arm(s1) - bw(s1),
-                o1 = arm(s1) + bw(s1);
-              quad(x0 + n0x * side * i0, z0 + n0z * side * i0, x0 + n0x * side * o0, z0 + n0z * side * o0, x1 + n1x * side * o1, z1 + n1z * side * o1, x1 + n1x * side * i1, z1 + n1z * side * i1, u0, 0, u0, 1, u1, 1, u1, 0, 0, a0, a1, beam, s0 / L, s1 / L);
-            }
-          if (s0 < churnS) {
-            const c0 = cw(s0),
-              c1 = cw(s1);
-            quad(x0 + n0x * c0, z0 + n0z * c0, x0 - n0x * c0, z0 - n0z * c0, x1 - n1x * c1, z1 - n1z * c1, x1 + n1x * c1, z1 + n1z * c1, u0, 0, u0, 1, u1, 1, u1, 0, 1, cfade(s0), cfade(s1), beam, s0 / L, s1 / L);
-          }
+          const c0 = cw(s0),
+            c1 = cw(s1);
+          quad(x0 + n0x * c0, z0 + n0z * c0, x0 - n0x * c0, z0 - n0z * c0, x1 - n1x * c1, z1 - n1z * c1, x1 + n1x * c1, z1 + n1z * c1, u0, 0, u0, 1, u1, 1, u1, 0, 1, cfade(s0), cfade(s1), beam, s0 / L, s1 / L);
           n0x = n1x;
           n0z = n1z;
         }
