@@ -99,6 +99,9 @@ export class Terrain {
       uOverlay: { value: blank },
       uOverlayOn: { value: 0 },
       uOverlaySize: { value: new THREE.Vector2(1, 1) },
+      // water shore field (distance to land, local water width); the Water
+      // module points this at its own texture. Fallback: wide open water
+      uShoreTex: { value: this._openShore() },
       uTilePalette: { value: palette },
       // 1 when the float height texture filters linearly (else the shader
       // interpolates its four texels itself)
@@ -301,6 +304,12 @@ export class Terrain {
     };
     bakeAO(this.game.world, rr, this.ao);
     this._writeAO(rr);
+  }
+
+  _openShore() {
+    const t = new THREE.DataTexture(new Uint8Array([255, 255, 0, 255]), 1, 1);
+    t.needsUpdate = true;
+    return t;
   }
 
   // Shader detail tier: fine noise layers, caustics and foam micro detail fade

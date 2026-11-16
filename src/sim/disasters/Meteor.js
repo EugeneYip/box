@@ -290,7 +290,7 @@ export class Meteor {
         life: rand(10, 18),
         onLand: hot
           ? (lx, ly, lz, heat) => {
-              if (heat > 0.4 && Math.random() < 0.5) g.disasters?.ignite(Math.floor(lx), Math.floor(lz), 0.8);
+              if (heat > 0.4 && Math.random() < 0.5) g.disasters?.ignite(Math.floor(lx), Math.floor(lz), 0.8, {});
             }
           : null,
       });
@@ -303,6 +303,7 @@ export class Meteor {
         pz = z + Math.sin(a) * rr;
       dustPuff(fx, px, w.surfaceAt(px, pz), pz, 1 + s * 0.8, { ang: a, out: rand(1, 3), life: rand(3, 6), delay: rand(0, 0.4) });
     }
+    g.disasters?.fire?.markBuildings(x, z, R * 1.9 + 0.5, 0); // houses it sets alight burn as the player's fire
     hurt(g, x, z, R * 1.9, 140, 260, 'meteor');
   }
 

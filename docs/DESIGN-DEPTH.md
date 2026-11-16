@@ -138,7 +138,11 @@ example:
 Each kingdom has:
 - `k.knowledge`, the research points it is accumulating. These come from population,
   scholars, temples, libraries and wise kings, scaled by `civTechSpeed` and the age's
-  `techRate`. Research only happens while the `civTechnology` law is on.
+  `techRate`. Research only happens while the `civTechnology` law is on. On big maps
+  (the World Map and its regions, `planner._bigMap()`) research runs up to 1.6x faster
+  and a tech a realm in contact already knows comes sooner, so the Enlightened era
+  arrives within the first century there too; Medium keeps its pace. In an age with
+  `techRate` above 1 (Lore), realms in contact with others also gain a little from each.
 - `k.techs`, a `Set` of the technologies it has learned.
 - `k.era`, an index from 0 to 3.
 - `k.researching`, the technology currently in progress.

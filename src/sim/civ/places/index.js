@@ -29,3 +29,19 @@ export const REALMS_BY_REGION = {
 export function realmsFor(region) {
   return REALMS_BY_REGION[region] || null;
 }
+
+// A map's own ruler title and naming style, for realms that rise there
+// later (a rebel city on the Japan map is held by a daimyo, one on the Taiwan
+// map by a magistrate) and for land whose real names have run out (East
+// Asian maps never fall back to English-sounding names).
+const DAIMYO = { m: 'Daimyo', f: 'Daimyo' };
+const MAGISTRATE = { m: 'Magistrate', f: 'Magistrate' };
+export const REGION_STYLE = {
+  japan: { title: DAIMYO, lang: 'ja' },
+  taiwan: { title: MAGISTRATE, lang: 'tw' },
+  'great-east-asia': { lang: 'zh' },
+  'asia-mainland': { lang: 'zh' },
+};
+export function regionStyle(region) {
+  return REGION_STYLE[region] || {};
+}

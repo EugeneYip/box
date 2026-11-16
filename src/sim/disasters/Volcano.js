@@ -85,7 +85,7 @@ export class Volcano {
               // the rising cone sheds its woods (a few trunks smoulder):
               // burning trees all over the flanks read as a glowing crack
               // net; the glow belongs to the crater and the lava rivers
-              if (FLORA_INFO[fl].isTree && T.d > 0.6 && hash2(T.tx, T.ty, this.seed + 9) < 0.1) this.ds.ignite(T.tx, T.ty, 0.6);
+              if (FLORA_INFO[fl].isTree && T.d > 0.6 && hash2(T.tx, T.ty, this.seed + 9) < 0.1) this.ds.ignite(T.tx, T.ty, 0.6, {});
               else w.flora[T.i] = FLORA.NONE;
             }
             const hh = hash2(T.tx, T.ty, this.seed + 5);
@@ -176,7 +176,7 @@ export class Volcano {
           fx.decal({ frame: DF.LAVASPLAT, x: lx, z: lz, size: 1.2 + sz * 2, life: 9, additive: true, color: 0xff8a30, intensity: 1.2, cool: 1.2, fadeIn: 0.005, fadeOut: 0.5 });
           fx.decal({ frame: DF.SCORCH1, x: lx, z: lz, size: 1.6 + sz * 2, life: 80, color: 0x14100d, alpha: 0.75, fadeIn: 0.002, fadeOut: 0.8 });
           if (sz > 0.5) this.ds.lava.pour(tx, ty, 0.03, 0.9); // a splash, never a molten tile
-          if (Math.random() < 0.35) this.ds.ignite(tx, ty, 1);
+          if (Math.random() < 0.35) this.ds.ignite(tx, ty, 1, {});
           hurt(g, lx, lz, 1.2, 40, 30, 'volcano');
         },
       });

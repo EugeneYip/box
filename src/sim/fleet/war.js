@@ -50,14 +50,23 @@ export const war = {
 
   _galley(v, enemies, dt, now) {
     const nav = this.nav;
+    // lookouts see further over a big map's wide seas (enemy sail was rarely
+    // within sight there: no ship was sunk on the World Map in a century)
+    const look = this.seaScale();
+    const m = v.mission;
     let tgt = v.target != null ? this.byId.get(v.target) : null;
-    if (tgt && (!tgt.alive || tgt.state === 'sinking' || tgt.state === 'moored' || tgt.kind === 'fishing' || !enemies.includes(tgt.kingdom) || Math.hypot(tgt.x - v.x, tgt.z - v.z) > 40)) tgt = null;
+    // a raid on a ship moored in a blockaded harbour (below) is given up after a while
+    if (tgt && m.raid === tgt.id && (now - m.raidAt > 30 || !tgt.alive || tgt.state === 'sinking' || !enemies.includes(tgt.kingdom))) {
+      m.raid = null;
+      tgt = null;
+    }
+    if (tgt && m.raid !== tgt.id && (!tgt.alive || tgt.state === 'sinking' || tgt.state === 'moored' || tgt.kind === 'fishing' || !enemies.includes(tgt.kingdom) || Math.hypot(tgt.x - v.x, tgt.z - v.z) > 40 * look)) tgt = null;
     if (!tgt) {
       // nearest enemy ship: warships and transports first. Fishermen are
       // never hunted, at any map size: a blockade drives them home instead
       // (below), and a blockaded harbour sends none out.
       let bs = Infinity;
-      this.near(v.x, v.z, 30, (o, d) => {
+      this.near(v.x, v.z, 30 * look, (o, d) => {
         if (o.cls !== 'sea' || o.state === 'sinking' || o.state === 'moored' || o.kind === 'fishing' || !enemies.includes(o.kingdom)) return;
         const sc = d - (o.kind === 'galley' ? 8 : o.kind === 'transport' ? 7 : o.kind === 'carrack' || o.kind === 'cog' ? 3 : 0);
         if (sc < bs) {
@@ -67,13 +76,13 @@ export const war = {
       });
       if (tgt && (nav.comp(tgt.x, tgt.z) !== nav.comp(v.x, v.z) || nav.clearAt(tgt.x, tgt.z) < 1.8)) tgt = null;
     }
-    const m = v.mission;
     if (tgt) {
       v.target = tgt.id;
       v.chase = true;
       m.blockade = null;
       const d = Math.hypot(tgt.x - v.x, tgt.z - v.z);
-      const reach = 1.6 + (v.def.size + tgt.def.size) * 0.5;
+      // (hulls keep a hand's breadth apart: bow to stern still counts as alongside)
+      const reach = Math.max(1.6 + (v.def.size + tgt.def.size) * 0.5, (v.def.length + tgt.def.length) * 0.5 + 0.45);
       if (d <= reach) {
         this._fight(v, tgt, dt);
         if (!v.alive || v.state === 'sinking') return;
@@ -133,6 +142,10 @@ export const war = {
       px = sp.x;
       pz = sp.z;
     }
+    // each galley of the squadron keeps its own station, line abreast
+    const st = this._station(v, px, pz, bh || (v.harbour != null ? this.harbourInfo(v.harbour) : null));
+    px = st.x;
+    pz = st.z;
     const dd = Math.hypot(px - v.x, pz - v.z);
     if (dd > 3.5) {
       if (v.state !== 'sail' || !v.dest || Math.hypot(v.dest.x - px, v.dest.z - pz) > 2) {
@@ -146,6 +159,24 @@ export const war = {
       v.state = 'patrol';
       if (bh) {
         this.blockades.set(bh.id, now + 4);
+        // holding the blockade a while, the galley rows in to burn a ship
+        // moored in the harbour (never a fishing boat): on a big map's wide
+        // seas enemy sail seldom passes a blockade, and none leaves port
+        if ((m.raidWait = (m.raidWait ?? 20) - dt) <= 0) {
+          m.raidWait = 30;
+          let prey = null,
+            pd = 14;
+          this.near(v.x, v.z, 14, (o, d) => {
+            if (o.cls !== 'sea' || o.kind === 'fishing' || o.state !== 'moored' || o.harbour !== bh.id || !enemies.includes(o.kingdom) || d >= pd) return;
+            pd = d;
+            prey = o;
+          });
+          if (prey) {
+            m.raid = prey.id;
+            m.raidAt = now;
+            v.target = prey.id;
+          }
+        }
         // the harbour's fishing boats put about and run for home
         this.near(v.x, v.z, 10, (o) => {
           if (o.kind !== 'fishing' || o.harbour !== bh.id || o.state === 'sinking' || o.state === 'moored' || o.mission?.phase === 'home') return;
@@ -158,6 +189,33 @@ export const war = {
         }
       }
     }
+  },
+
+  // A galley's own station off a harbour: its squadron (the realm's galleys
+  // keeping the same watch) lies line abreast across the approach, a few
+  // hull lengths apart, instead of piling onto one point.
+  _station(v, px, pz, h) {
+    const key = (v.mission.station = h ? h.id : -1);
+    let i = 0,
+      n = 0;
+    for (const o of this.list) {
+      if (!o.alive || o.kind !== 'galley' || o.kingdom !== v.kingdom || o.state === 'sinking' || o.mission?.type !== 'patrol' || o.target != null) continue;
+      if (o !== v && o.mission.station !== key) continue;
+      if (o.id < v.id) i++;
+      n++;
+    }
+    if (n <= 1 || !h) return { x: px, z: pz };
+    const ax = -h.dirZ,
+      az = h.dirX;
+    const slot = i - (n - 1) / 2;
+    const gap = v.def.length + 2.2;
+    for (const f of [1, 0.6, -1]) {
+      const x = px + ax * slot * gap * f,
+        z = pz + az * slot * gap * f;
+      const p = this.nav.waterNear(x, z, 2, 1.2);
+      if (p && this.nav.comp(p.x, p.z) === this.nav.comp(px, pz)) return p;
+    }
+    return { x: px, z: pz };
   },
 
   // Arrows and fire pots from one ship at another, seen in flight: longer

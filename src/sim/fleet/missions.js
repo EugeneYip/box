@@ -1,9 +1,11 @@
 import { SEA_LEVEL, TILE } from '../../world/constants.js';
 import { KINDS } from './kinds.js';
 import { pathLength } from './nav.js';
+import { hullR, hullHalf, segDist } from './hull.js';
 import { regionName } from '../disasters/util.js';
 
 const YEAR = 30;
+const _P = { x: 0, z: 0 };
 
 // Voyages, the self-driven scheduler and sea missions (mixed into Fleet).
 export const missions = {
@@ -39,6 +41,7 @@ export const missions = {
       if (!toH) return refuse('no such harbour');
       // no merchant sails into an enemy blockade
       if (cargo.trade && this.blockaded(toH)) return refuse('the harbour is blockaded');
+      // a free berth, else a place in the roads off it (never the pier head of a full jetty)
       dest = this._mooringSpot(toH, null, kind) || this._anchorage(toH, KINDS[kind] || KINDS.cog) || toH.berth;
       deliver = { x: toH.x, z: toH.z };
       toName = toH.name;
@@ -98,7 +101,10 @@ export const missions = {
     if (!pick) return refuse(reason);
     if (pick === 'explorer' && cargo.settlers) cargo.settlers = Array.isArray(cargo.settlers) ? cargo.settlers.slice(0, 6) : Math.min(6, cargo.settlers);
     let v = this.list.find((s) => s.alive && s.kind === pick && s.harbour === h.id && s.state === 'moored' && !s.mission && !s.layup);
-    if (!v) v = this.spawn(pick, kid, h.berth.x, h.berth.z, { home: h.village, harbour: h.id, heading: Math.atan2(h.dirZ, h.dirX) });
+    if (!v) {
+      const at = this._launchAt(h, pick);
+      v = this.spawn(pick, kid, at.x, at.z, { home: h.village, harbour: h.id, heading: Math.atan2(h.dirZ, h.dirX) });
+    }
     if (!v) return refuse('no ship');
     const type = cargo.settlers ? 'colony' : cargo.army ? 'army' : toH ? 'trade' : 'voyage';
     // when each realm last traded, and when anyone last sailed to settle
@@ -210,11 +216,12 @@ export const missions = {
     const taken = (x, z) => {
       for (const o of this.list) {
         if (!o.alive || o === self || o.cls !== 'sea' || o.state === 'sinking') continue;
+        // a berth is taken by a ship lying in it or bound for it (home or a
+        // visitor), and by any hull sitting there now
         let ox, oz;
         if (o.state === 'moored') (ox = o.x), (oz = o.z);
-        else if (o.state === 'sail' && o.mission?.phase === 'home' && o.dest) (ox = o.dest.x), (oz = o.dest.z);
-        else continue;
-        // hulls lie parallel to the pier: compare along and across it
+        else if (o.state === 'sail' && o.dest?.berth) (ox = o.dest.x), (oz = o.dest.z);
+        else (ox = o.x), (oz = o.z);
         const ddx = ox - x,
           ddz = oz - z;
         const along = Math.abs(ddx * h.dirX + ddz * h.dirZ),
@@ -291,7 +298,7 @@ export const missions = {
           z = h.berth.z + Math.sin(a) * r;
         if (nav.clearAt(x, z) < Math.max(1.5, def.clear || 0)) continue;
         if (!this._hullFits(x, z, Math.cos(a), Math.sin(a), def)) continue;
-        if (nav.comp(x, z) !== h.water) continue;
+        if (nav.comp(x, z) !== h.water || this._inBerth(x, z, 0.5)) continue;
         // spread out: well clear of other hulls and of where they are bound
         let busy = false;
         for (const o of this.list) {
@@ -305,7 +312,103 @@ export const missions = {
         if (!busy) return { x, z };
       }
     }
+    // a narrow bay or a river mouth: any water off the jetty, clear of its
+    // berths and of the other ships, a little closer together
+    for (let r = 3; r <= 16; r += 1.5) {
+      for (let k = 0; k < 11; k++) {
+        const a = Math.atan2(h.dirZ, h.dirX) + (k - 5) * 0.32;
+        const x = h.berth.x + Math.cos(a) * r,
+          z = h.berth.z + Math.sin(a) * r;
+        if (nav.clearAt(x, z) < 1.2 || nav.comp(x, z) !== h.water) continue;
+        if (!this._hullFits(x, z, Math.cos(a), Math.sin(a), def)) continue;
+        if (this._inBerth(x, z)) continue;
+        let busy = false;
+        for (const o of this.list) {
+          if (!o.alive || o.cls !== 'sea' || o.state === 'sinking') continue;
+          const gap = (o.def.length + def.length) * 0.6 + 0.3;
+          if (Math.hypot(o.x - x, o.z - z) < gap || (o.dest && o.state === 'sail' && Math.hypot(o.dest.x - x, o.dest.z - z) < gap)) {
+            busy = true;
+            break;
+          }
+        }
+        if (!busy) return { x, z };
+      }
+    }
     return null;
+  },
+
+  // Where a new ship is launched: a free berth at the jetty, else the pier
+  // head if no hull lies there, else out in the roads (never inside another).
+  _launchAt(h, kind) {
+    const def = KINDS[kind] || KINDS.cog;
+    const s = this._mooringSpot(h, null, kind);
+    if (s) return s;
+    if (!this._hullAt(h.berth.x, h.berth.z, def, Math.atan2(h.dirZ, h.dirX))) return h.berth;
+    return this._anchorage(h, def) || h.berth;
+  },
+  // Is any hull (not a wreck) lying where a ship of this kind would sit?
+  _hullAt(x, z, def, heading, self = null) {
+    const r = (def.beam || 0.5) * 0.5 + 0.12,
+      hl = Math.max(0, def.length * 0.5 - r * 0.8);
+    const ux = Math.cos(heading),
+      uz = Math.sin(heading);
+    for (const o of this.list) {
+      if (!o.alive || o === self || o.cls !== 'sea' || o.state === 'sinking') continue;
+      if (Math.abs(o.x - x) > 3.5 || Math.abs(o.z - z) > 3.5) continue;
+      const d = segDist(x, z, ux, uz, hl, o.x, o.z, Math.cos(o.heading), Math.sin(o.heading), hullHalf(o), _P);
+      if (d < r + hullR(o) + 0.05) return o;
+    }
+    return null;
+  },
+  // The water off a jetty where its ships moor: from the pier's root to a
+  // great ship's length beyond its end, and a couple of beams either side.
+  // Returns the harbour, or null.
+  _inBerth(x, z, pad = 0) {
+    const now = this.game.time.total;
+    let Z = this._bz;
+    if (!Z || Z.t !== now) Z = this._bz = { t: now, L: this.harbours() };
+    for (const h of Z.L) {
+      const ex = h.x + h.dirX * 3.4,
+        ez = h.z + h.dirZ * 3.4;
+      const dx = x - ex,
+        dz = z - ez;
+      if (Math.abs(dx) > 9 || Math.abs(dz) > 9) continue;
+      const al = dx * h.dirX + dz * h.dirZ,
+        ac = -dx * h.dirZ + dz * h.dirX;
+      if (al > -3.6 - pad && al < 5 + pad && Math.abs(ac) < 2.7 + pad) return h;
+    }
+    return null;
+  },
+  // Bound for a berth that another hull has taken meanwhile (a ship came in
+  // first, or one lies there): another berth, else the roads.
+  _berthCheck(v) {
+    const D = v.dest;
+    const out = v.mission?.phase === 'out' && v.mission.toH != null;
+    const hid = out ? v.mission.toH : v.harbour;
+    const h = hid != null ? this.harbourInfo(hid) : null;
+    const hd = h ? Math.atan2(h.dirZ, h.dirX) : v.heading;
+    let o = this._hullAt(D.x, D.z, v.def, hd, v);
+    // a moving ship merely passing by does not take it; one bound there first does
+    if (o && o.state === 'sail' && !(o.dest?.berth && Math.hypot(o.dest.x - D.x, o.dest.z - D.z) < 1 && o.id < v.id)) o = null;
+    if (!o) {
+      for (const s of this.list) {
+        if (s === v || !s.alive || s.state !== 'sail' || !s.dest?.berth || s.id > v.id) continue;
+        if (Math.hypot(s.dest.x - D.x, s.dest.z - D.z) < 0.8) {
+          o = s;
+          break;
+        }
+      }
+    }
+    if (!o) return;
+    // (one fresh choice every few seconds at most)
+    const now = this.game.time.total;
+    if (now - (v._rbT ?? -99) < 5) return;
+    v._rbT = now;
+    if (out && h) {
+      // a visitor unloads in the roads instead
+      const s = this._mooringSpot(h, v) || this._anchorage(h, v.def);
+      if (s) this._sail(v, s);
+    } else if (v.mission?.phase === 'home' || !v.mission) this._goHome(v);
   },
 
   _goHome(v) {
@@ -409,8 +512,8 @@ export const missions = {
       // the rest once a second is plenty for a ship at rest
       if ((v._mt = (v._mt || 0) + step) < 1) return;
       v._mt = 0;
-      // shipwrights patch her up in port
-      if (v.hp < v.maxHp) v.hp = Math.min(v.maxHp, v.hp + v.maxHp * 0.025);
+      // shipwrights patch her up in port (not under a blockade's fire)
+      if (v.hp < v.maxHp && !(this.blockades.get(v.harbour) > this.game.time.total)) v.hp = Math.min(v.maxHp, v.hp + v.maxHp * 0.025);
       v.burning = 0;
       if (v.layup && v.idleT > 4) this.remove(v);
       else if (v.roads && v.kind !== 'fishing' && v.idleT > 45) this.remove(v); // laid up after a spell in the roads
@@ -447,6 +550,14 @@ export const missions = {
         return;
       }
       if (m && m.type === 'patrol') return;
+      // coming in to a berth: make sure no other hull has it now (once a second)
+      if (v.dest?.berth && v.kind !== 'fishing' && (v._bt = (v._bt || 0) + step) >= 1) {
+        v._bt = 0;
+        if (Math.hypot(v.dest.x - v.x, v.dest.z - v.z) < 9) {
+          this._berthCheck(v);
+          if (!v.alive || v.state !== 'sail') return;
+        }
+      }
       // a voyage that makes no headway (circling a crowded berth, caught in a
       // channel) gives up within a couple of years instead of wandering for
       // thirty and holding a place in the crowded seas: close by, it counts
@@ -550,6 +661,8 @@ export const missions = {
     v.stateT = 0;
     v.idleT = 0;
     v.path = null;
+    // a ship to be laid up never lies on top of another at the pier head
+    if (v.layup && v.kind !== 'fishing' && this._hullAt(v.x, v.z, v.def, v.heading, v)) v.idleT = 99;
     const m = v.mission;
     const civ = this.game.civ;
     const home = civ?.villages?.[v.home];
@@ -886,7 +999,8 @@ export const missions = {
     let v = this.list.find((s) => s.alive && s.kind === 'explorer' && s.kingdom === kid && s.state === 'moored' && !s.mission);
     if (!v) {
       if (this.count(kid, 'explorer') >= this.cap(kid, 'explorer')) return;
-      v = this.spawn('explorer', kid, from.berth.x, from.berth.z, { home: from.village, harbour: from.id, heading: Math.atan2(from.dirZ, from.dirX) });
+      const at = this._launchAt(from, 'explorer');
+      v = this.spawn('explorer', kid, at.x, at.z, { home: from.village, harbour: from.id, heading: Math.atan2(from.dirZ, from.dirX) });
     }
     v.mission = { type: 'chart', phase: 'out', cell: best };
     v.voyage = { from: from.village, fromHarbour: from.id, to: { x: nav.nx[best], z: nav.nz[best] }, fromName: from.name, toName: 'uncharted waters', t0: now };
@@ -962,7 +1076,8 @@ export const missions = {
     }
     // no enemy port on our waters: no fleet (their ships passing by are not a war at sea)
     if (!best) return;
-    const v = this.spawn('galley', kid, best.berth.x, best.berth.z, { home: best.village, harbour: best.id, heading: Math.atan2(best.dirZ, best.dirX) });
+    const at = this._launchAt(best, 'galley');
+    const v = this.spawn('galley', kid, at.x, at.z, { home: best.village, harbour: best.id, heading: Math.atan2(best.dirZ, best.dirX) });
     v.mission = { type: 'patrol', phase: 'out', t: 0 };
     v.state = 'patrol';
   },

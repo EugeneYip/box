@@ -5,6 +5,9 @@ import { KINDS, SEA_KINDS, shipName, craftName, cargoText } from './kinds.js';
 import { missions } from './missions.js';
 import { land } from './land.js';
 import { war } from './war.js';
+import { hullR, hullHalf, segDist, HULL_GAP } from './hull.js';
+
+const _SD = { x: 0, z: 0 };
 
 const YEAR = 30; // == YEAR_SECONDS
 const ROT_DIR = [
@@ -181,11 +184,16 @@ export class Fleet {
     const wt = this.game.env?.weather;
     return wt && wt.type === 'storm' ? wt.intensity ?? 1 : 0;
   }
+  // How much wider the seas are than a Medium map's (1 there, about 1.8 on
+  // the World Map and its regions): reaches and lookouts scale with it.
+  seaScale() {
+    return Math.sqrt(Math.max(1, this.game.view?.worldScale ?? this.world.w / 256));
+  }
   // Sea range of a realm's ship (path length in tiles).
   range(kid, kind) {
     if (kind === 'fishing') return 26;
     if (kind === 'carrack' || this.hasTech(kid, 'navigation')) return Infinity;
-    const base = 150 * Math.sqrt(Math.max(1, this.game.view?.worldScale ?? this.world.w / 256));
+    const base = 150 * this.seaScale();
     if (kind === 'explorer') return base * 4;
     if (kind === 'galley') return base * (this.hasTech(kid, 'astronomy') ? 1.6 : 1);
     return base * (this.hasTech(kid, 'astronomy') ? 2.5 : 1);
@@ -646,25 +654,48 @@ export class Fleet {
         });
         continue;
       }
-      const ra = a.def.length * 0.32 + 0.25;
-      this.near(a.x, a.z, ra + 1.4, (b, d) => {
+      // hulls as capsules (keel line plus beam): two ships never overlap, end
+      // to end or side by side; most of any overlap is undone each tick
+      const ra = hullR(a),
+        ha = hullHalf(a);
+      const ax = Math.cos(a.heading),
+        az = Math.sin(a.heading);
+      const k = Math.min(1, step * 8);
+      this.near(a.x, a.z, a.def.length * 0.5 + 1.4, (b, cd) => {
         if (b === a || b.cls !== 'sea' || b.id < a.id || b.state === 'sinking') return;
-        const min = ra + b.def.length * 0.32 + 0.25;
+        const rb = hullR(b),
+          hb = hullHalf(b);
+        const min = ra + rb + HULL_GAP;
+        if (cd >= ha + hb + min) return;
+        const d = segDist(a.x, a.z, ax, az, ha, b.x, b.z, Math.cos(b.heading), Math.sin(b.heading), hb, _SD);
         if (d >= min) return;
-        let dx = b.x - a.x,
-          dz = b.z - a.z;
-        if (d < 1e-3) {
-          dx = Math.cos(a.seed * 6.3);
-          dz = Math.sin(a.seed * 6.3);
-          d = 1;
+        // (nx, nz): the unit push direction, from a towards b
+        let nx, nz;
+        if (d > 1e-3) {
+          nx = -_SD.x / d;
+          nz = -_SD.z / d;
+        } else {
+          let dx = b.x - a.x,
+            dz = b.z - a.z,
+            l = Math.hypot(dx, dz);
+          if (l < 1e-3) {
+            dx = Math.cos(a.seed * 6.3);
+            dz = Math.sin(a.seed * 6.3);
+            l = 1;
+          }
+          nx = dx / l;
+          nz = dz / l;
         }
-        const push = Math.min(0.5, (min - d) * 0.5) * Math.min(1, step * 3);
-        const ux = (dx / d) * push,
-          uz = (dz / d) * push;
+        const push = Math.min(0.3 * Math.max(1, step * 15), (min - d) * 0.5 * k);
+        const ux = nx * push,
+          uz = nz * push;
         // a moored ship holds its berth; the newcomer gives way
+        // (against the shore, the other one takes the whole of it)
         const both = a.state === 'moored' && b.state === 'moored';
-        const wa = both ? 0.5 : a.state === 'moored' ? 0 : b.state === 'moored' ? 2 : 1,
-          wb = both ? 0.5 : b.state === 'moored' ? 0 : a.state === 'moored' ? 2 : 1;
+        let wa = both ? 1 : a.state === 'moored' ? 0 : b.state === 'moored' ? 2 : 1,
+          wb = both ? 1 : b.state === 'moored' ? 0 : a.state === 'moored' ? 2 : 1;
+        if (wa && wb && !nav.isWater(a.x - ux * wa, a.z - uz * wa)) (wa = 0), (wb = 2);
+        else if (wa && wb && !nav.isWater(b.x + ux * wb, b.z + uz * wb)) (wb = 0), (wa = 2);
         if (wa && nav.isWater(a.x - ux * wa, a.z - uz * wa)) {
           a.x -= ux * wa;
           a.z -= uz * wa;
@@ -675,6 +706,78 @@ export class Fleet {
         }
       });
     }
+  }
+
+  // A ship under way gives way to any hull she is closing on (moored, at
+  // anchor or moving; not the enemy she is closing to grapple, nor a wreck):
+  // when her course (`want`) runs into another hull she bears away to the
+  // first free heading on the far side of it (two ships meeting bow to bow
+  // both turn the same way and pass), and she eases off with the room left
+  // ahead on her present heading. Coming in to her own spot (a berth or a
+  // place in the roads, chosen free), she creeps on past ships lying still
+  // and lets them shoulder her into place. Returns {want, f}: the course to
+  // steer and the share of speed to keep.
+  _giveWay(v, want) {
+    const G = this._gwOut || (this._gwOut = { want: 0, f: 1 });
+    G.want = want;
+    G.f = 1;
+    const look = Math.max(0.35, v.speed * 0.9) + 0.15;
+    const foe = v.chase ? v.target : null;
+    const home = !!v.dest && v.state === 'sail' && Math.hypot(v.dest.x - v.x, v.dest.z - v.z) < 2.5;
+    const O = this._gwList || (this._gwList = []);
+    O.length = 0;
+    this.near(v.x, v.z, v.def.length * 0.5 + look + 1.4, (o) => {
+      if (o === v || o.cls !== 'sea' || o.id === foe || o.state === 'sinking') return;
+      if (home && (o.state === 'moored' || o.state === 'fish' || o.speed < 0.1)) return;
+      O.push(o);
+    });
+    if (!O.length) return G;
+    const ra = hullR(v),
+      ha = hullHalf(v);
+    // room left on heading h: how far she may sail before she is closing
+    // on a hull (Infinity when it is clear), and the hull in the way
+    let block = null;
+    const room = (h) => {
+      const ux = Math.cos(h),
+        uz = Math.sin(h);
+      let best = Infinity;
+      block = null;
+      for (const o of O) {
+        const wx = Math.cos(o.heading),
+          wz = Math.sin(o.heading),
+          hb = hullHalf(o);
+        const min = ra + hullR(o) + HULL_GAP + 0.06;
+        const d0 = segDist(v.x, v.z, ux, uz, ha, o.x, o.z, wx, wz, hb, _SD);
+        if (d0 > min + look) continue;
+        const d1 = segDist(v.x + ux * look, v.z + uz * look, ux, uz, ha, o.x, o.z, wx, wz, hb, _SD);
+        if (d1 >= min || d1 >= d0 - 1e-4) continue; // not closing on it
+        const r = Math.max(0, d0 - min);
+        if (r < best) {
+          best = r;
+          block = o;
+        }
+      }
+      return best;
+    };
+    // the course: straight on if it is clear, else bear away
+    if (room(want) < Infinity && block) {
+      const across = (block.x - v.x) * -Math.sin(want) + (block.z - v.z) * Math.cos(want);
+      const side = across > 0.12 ? -1 : across < -0.12 ? 1 : -1;
+      let pick = null;
+      for (const off of [0.55, 1.0, -0.55, 1.5, -1.0, 2.1]) {
+        const h = want + side * off;
+        if (room(h) === Infinity) {
+          pick = h;
+          break;
+        }
+      }
+      G.want = pick ?? want + side * 2.1;
+      if (pick == null) G.f = 0; // boxed in: wait for the other to move off
+    }
+    // the pace: by the room ahead on her present heading
+    const r = room(v.heading);
+    if (r < Infinity) G.f = Math.min(G.f, r <= 0 ? 0 : Math.max(0.2, Math.min(1, r / look) * 0.85));
+    return G;
   }
 
   // vehicles within r of a point (from the per-tick hash)
@@ -707,6 +810,27 @@ export class Fleet {
     const a = v.anim;
     const night = this._nightNow && !this._astro?.[v.kingdom];
     if (v.state === 'sinking') {
+      const W = v.wreckTo;
+      if (W) {
+        // holed at a jetty: she drifts out of the berths, low and listing,
+        // before she goes down (a wreck never lies in a berth)
+        const dx = W.x - v.x,
+          dz = W.z - v.z,
+          d = Math.hypot(dx, dz);
+        const sp = Math.min(1.3, 0.35 + d * 0.5) * step;
+        const nx = v.x + (dx / (d || 1)) * Math.min(d, sp),
+          nz = v.z + (dz / (d || 1)) * Math.min(d, sp);
+        if (d < 0.25 || v.stateT > 14 || !this.nav.isWater(nx, nz)) v.wreckTo = null;
+        else {
+          v.x = nx;
+          v.z = nz;
+          v.heading += angDiff(Math.atan2(dz, dx), v.heading) * Math.min(1, step * 0.8);
+          v.speed = sp / step;
+        }
+        v.sink = Math.min(0.32, v.sink + step / 14);
+        if (!v.wreckTo) this._wreckDebris(v);
+        return;
+      }
       v.sink = Math.min(1, v.sink + step / 6);
       v.speed *= Math.exp(-step * 1.5);
       v.x += Math.cos(v.heading) * v.speed * step;
@@ -738,7 +862,8 @@ export class Fleet {
       return;
     }
     if (!v.alive) return;
-    let target = 0;
+    let target = 0,
+      give = 1;
     if (v.state === 'sail' && v.path) {
       // next waypoint
       const P = v.path;
@@ -756,7 +881,10 @@ export class Fleet {
         this._arrive(v);
         if (!v.alive) return;
       } else {
-        const want = Math.atan2(tz - v.z, tx - v.x);
+        // (bearing away from any hull in the way)
+        const gw = this._giveWay(v, Math.atan2(tz - v.z, tx - v.x));
+        const want = gw.want;
+        give = gw.f;
         let diff = angDiff(want, v.heading);
         const turn = def.turn * (v.speed < 0.5 ? 1.6 : 1) * step;
         v.heading += Math.max(-turn, Math.min(turn, diff));
@@ -776,7 +904,13 @@ export class Fleet {
     } else if (v.state === 'patrol') {
       v.heading += step * 0.35;
       target = def.speed * (v.grappled > this.game.time.total ? 0.08 : 0.3);
+      const gw = this._giveWay(v, v.heading);
+      const turn = def.turn * step;
+      v.heading += Math.max(-turn, Math.min(turn, angDiff(gw.want, v.heading)));
+      give = gw.f;
     }
+    // keep clear of other hulls: ease off with the room ahead
+    target *= give;
     // accelerate / brake
     const acc = target > v.speed ? 0.7 : 1.4;
     v.speed += Math.max(-acc * step, Math.min(acc * step, target - v.speed));
@@ -856,9 +990,13 @@ export class Fleet {
       v.state = 'sinking';
       v.sink = 0.01;
       v.path = null;
+      v.stateT = 0;
       this.totals.sunk++;
-      const n = Math.round(4 + v.def.length * 3);
-      for (let i = 0; i < n; i++) this._addDebris(v.x + (this.rng() - 0.5) * v.def.length, v.z + (this.rng() - 0.5) * v.def.length * 0.6, i);
+      // struck in a jetty's berths: the wreck drifts clear first (its
+      // wreckage is strewn where she goes down, out of the way)
+      const hb = this._inBerth(v.x, v.z, 0.5);
+      v.wreckTo = hb ? this._wreckSpot(v, hb) : null;
+      if (!v.wreckTo) this._wreckDebris(v);
       this._fx('splash', v.x, v.z, 0.8 + v.def.length * 0.4);
       // a grey-white pall over the water (the dark land smoke reads as brown there)
       if (cause === 'fire' || cause === 'battle' || cause === 'meteor' || cause === 'lightning') this._fx('smoke', v.x, v.z, 1.1, { dark: false, count: 2, y: 0.5 });
@@ -1007,14 +1145,69 @@ export class Fleet {
     this.shots = keep;
   }
 
+  // Wreckage strewn where a ship goes down (once).
+  _wreckDebris(v) {
+    if (v._strewn) return;
+    v._strewn = true;
+    const n = Math.round(4 + v.def.length * 3);
+    for (let i = 0; i < n; i++) this._addDebris(v.x + (this.rng() - 0.5) * v.def.length, v.z + (this.rng() - 0.5) * v.def.length * 0.6, i);
+  }
+  // Open water off a jetty, out of its berths, for a ship holed in them to
+  // drift to: beyond the pier head, on the side she lay.
+  _wreckSpot(v, h) {
+    const nav = this.nav;
+    const ex = h.x + h.dirX * 3.4,
+      ez = h.z + h.dirZ * 3.4;
+    const px = -h.dirZ,
+      pz = h.dirX;
+    const ac = (v.x - ex) * px + (v.z - ez) * pz;
+    const side = ac > 0.2 ? 1 : ac < -0.2 ? -1 : v.seed > 0.5 ? 1 : -1;
+    const comp = nav.comp(v.x, v.z);
+    for (const [f, sd] of [
+      [6.5, 3.6 * side],
+      [7.5, 0],
+      [3, 4.4 * side],
+      [8.5, 4.5 * side],
+      [6.5, -3.6 * side],
+      [10, 0],
+    ]) {
+      const p = nav.waterNear(ex + h.dirX * f + px * sd, ez + h.dirZ * f + pz * sd, 2, 0.5);
+      if (!p || nav.comp(p.x, p.z) !== comp || this._inBerth(p.x, p.z, 0.3)) continue;
+      if (Math.hypot(p.x - v.x, p.z - v.z) > 12 || !nav.los(v.x, v.z, p.x, p.z, 0)) continue;
+      return p;
+    }
+    return null;
+  }
+
   _addDebris(x, z, i) {
     if (this.debris.length >= this.budget.debris) this.debris.shift();
     if (!this.nav.isWater(x, z)) return;
+    // nothing floats in a berth: a ram's splinters there are carried out past the pier head
+    const h = this._inBerth(x, z);
+    if (h) {
+      const al = (x - h.x - h.dirX * 3.4) * h.dirX + (z - h.z - h.dirZ * 3.4) * h.dirZ;
+      const nx = x + h.dirX * (5.6 - al),
+        nz = z + h.dirZ * (5.6 - al);
+      if (!this.nav.isWater(nx, nz)) return;
+      x = nx;
+      z = nz;
+    }
     this.debris.push({ x, z, rot: this.rng() * 6.3, spin: (this.rng() - 0.5) * 0.4, vx: (this.rng() - 0.5) * 0.6, vz: (this.rng() - 0.5) * 0.6, age: 0, life: 70 + this.rng() * 60, size: 0.6 + this.rng() * 0.7, type: i % 4, seed: this.rng() });
   }
   _debrisTick(step) {
     if (!this.debris.length) return;
     const wind = this.game.env?.wind || { x: 1, z: 0, strength: 0.3 };
+    // wreckage the wind carries into a jetty's berths drifts back out
+    if ((this._dbT = (this._dbT || 0) + step) >= 1) {
+      this._dbT = 0;
+      for (const d of this.debris) {
+        const h = this._inBerth(d.x, d.z);
+        if (h) {
+          d.vx = d.vx * 0.3 + h.dirX * 1.1;
+          d.vz = d.vz * 0.3 + h.dirZ * 1.1;
+        }
+      }
+    }
     const keep = [];
     for (const d of this.debris) {
       d.age += step;
@@ -1156,6 +1349,7 @@ export function angDiff(a, b) {
   while (d < -Math.PI) d += Math.PI * 2;
   return d;
 }
+
 
 Object.assign(Fleet.prototype, missions, land, war);
 export { KINDS, SEA_KINDS, pathLength, SEA_LEVEL };
