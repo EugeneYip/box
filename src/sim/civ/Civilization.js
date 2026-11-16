@@ -37,6 +37,9 @@ import { realms } from './realms.js';
 // Budgets scale with map area (a = w*h / 256^2): a Huge 512 map tops out near
 // 900 people and 900 buildings.
 const VILLAGE_MAX_POP = 64; // legacy reference size (a town)
+// the eight neighbours of a tile, in the order the territory fill visits them
+const TERR_DX = [1, -1, 0, 0, 1, 1, -1, -1];
+const TERR_DY = [0, 0, 1, -1, 1, -1, 1, -1];
 const TIER_POP = [40, 70, 115]; // village, town, city (capitals and ports grow larger)
 // What each finished monument gives its realm (techMod / techAdd keys).
 const MONUMENT_FX = {
@@ -2359,10 +2362,17 @@ export class Civilization {
       seed(v.cx, v.cz, (v.radius * 1.05 + v.tier * 4) * reach, v.kingdom, strength); // towns and cities hold the countryside around them
       for (const b of v.buildings) if (b.alive && !b.constructing && (b.type === 'watchtower' || b.type === 'tower')) seed(b.x, b.z, b.type === 'watchtower' ? 7 : 4, v.kingdom, 0.9);
     }
-    const H = w.height;
+    const H = w.height,
+      type = w.type,
+      owner0 = w.owner,
+      Hh = w.h;
     while (n) {
+      const f0 = qf[0];
       const i = pop();
       const ci = best[i];
+      // a tile reached again more cheaply since this entry was queued has
+      // already spread from there (relaxing it again changes nothing)
+      if (f0 > ci) continue;
       const kid = own[i];
       const sr = str[i],
         R = lim[i];
@@ -2370,11 +2380,11 @@ export class Civilization {
         y = (i / W) | 0;
       const h0 = H[i];
       for (let d = 0; d < 8; d++) {
-        const dx = d === 0 ? 1 : d === 1 ? -1 : d === 2 ? 0 : d === 3 ? 0 : d === 4 ? 1 : d === 5 ? 1 : d === 6 ? -1 : -1;
-        const dy = d === 0 ? 0 : d === 1 ? 0 : d === 2 ? 1 : d === 3 ? -1 : d === 4 ? 1 : d === 5 ? -1 : d === 6 ? 1 : -1;
+        const dx = TERR_DX[d],
+          dy = TERR_DY[d];
         const nx = x + dx,
           ny = y + dy;
-        if (nx < 0 || ny < 0 || nx >= W || ny >= w.h) continue;
+        if (nx < 0 || ny < 0 || nx >= W || ny >= Hh) continue;
         const j = ny * W + nx;
         const hj = H[j];
         let c = dx && dy ? 1.414 : 1;
@@ -2382,11 +2392,11 @@ export class Civilization {
         else {
           const climb = hj - h0;
           c += Math.abs(climb) * 1.1 + Math.max(0, climb) * 0.8;
-          const t = w.type[j];
+          const t = type[j];
           if (t === TILE.ROCK || t === TILE.SNOW) c += 1.2;
           else if (t === TILE.FOREST || t === TILE.JUNGLE || t === TILE.SWAMP) c += 0.25;
         }
-        if (w.owner[j] === kid) c *= 0.9; // incumbency
+        if (owner0[j] === kid) c *= 0.9; // incumbency
         const nc = ci + c / sr;
         if (nc > R || nc >= best[j]) continue;
         best[j] = nc;
@@ -2396,66 +2406,71 @@ export class Civilization {
         push(j, nc);
       }
     }
-    // land only
-    for (let i = 0; i < w.size; i++) if (own[i] >= 0 && H[i] < SEA_LEVEL) own[i] = -1;
+    // land only; publish the changes; sum each realm's land for its label
+    // (one pass over the map, then one more for the label spots and borders:
+    // a big map's wider territories cost no more to refresh than before)
+    const K = this.kingdoms.length;
+    const sx = new Float64Array(K),
+      sz = new Float64Array(K),
+      cnt = new Float64Array(K);
+    // only the land the capital stands on counts (colonies across the sea
+    // would pull the centre out into the ocean)
+    const capLand = this.kingdoms.map((k) => (k.alive && this.villages[k.capital] ? this.villages[k.capital].landId : -2));
+    const landId = this.landId;
+    const owner = w.owner;
     let x0 = W,
       y0 = w.h,
       x1 = -1,
       y1 = -1;
-    for (let i = 0; i < w.size; i++) {
-      if (w.owner[i] !== own[i]) {
-        w.owner[i] = own[i];
-        const x = i % W,
-          y = (i / W) | 0;
-        if (x < x0) x0 = x;
-        if (x > x1) x1 = x;
-        if (y < y0) y0 = y;
-        if (y > y1) y1 = y;
-      }
-    }
-    if (x1 >= 0) w.markDirty('owner', x0, y0, x1, y1);
-    // label anchors: the realm's own land nearest the centre of its territory
-    {
-      const sx = new Float64Array(this.kingdoms.length),
-        sz = new Float64Array(this.kingdoms.length),
-        cnt = new Float64Array(this.kingdoms.length);
-      // only the land the capital stands on counts (colonies across the sea
-      // would pull the centre out into the ocean)
-      const capLand = this.kingdoms.map((k) => (k.alive && this.villages[k.capital] ? this.villages[k.capital].landId : -2));
-      for (let i = 0; i < w.size; i++) {
-        const o = own[i];
-        if (o < 0 || (capLand[o] >= 0 && this.landId?.[i] !== capLand[o])) continue;
-        sx[o] += i % W;
-        sz[o] += (i / W) | 0;
+    for (let y = 0, i = 0; y < w.h; y++)
+      for (let x = 0; x < W; x++, i++) {
+        let o = own[i];
+        if (o >= 0 && H[i] < SEA_LEVEL) own[i] = o = -1;
+        if (owner[i] !== o) {
+          owner[i] = o;
+          if (x < x0) x0 = x;
+          if (x > x1) x1 = x;
+          if (y < y0) y0 = y;
+          if (y > y1) y1 = y;
+        }
+        if (o < 0 || (capLand[o] >= 0 && landId[i] !== capLand[o])) continue;
+        sx[o] += x;
+        sz[o] += y;
         cnt[o]++;
       }
-      const best = new Float64Array(this.kingdoms.length).fill(Infinity);
-      const at = new Int32Array(this.kingdoms.length).fill(-1);
-      for (let i = 0; i < w.size; i++) {
-        const o = own[i];
-        if (o < 0 || !cnt[o] || H[i] < SEA_LEVEL + 0.1 || (capLand[o] >= 0 && this.landId?.[i] !== capLand[o])) continue;
-        const d = (i % W - sx[o] / cnt[o]) ** 2 + (((i / W) | 0) - sz[o] / cnt[o]) ** 2;
-        if (d < best[o]) (best[o] = d), (at[o] = i);
-      }
-      for (const k of this.kingdoms) {
-        if (at[k.id] >= 0) {
-          k.labelX = (at[k.id] % W) + 0.5;
-          k.labelZ = ((at[k.id] / W) | 0) + 0.5;
-        } else k.labelX = k.labelZ = null;
-      }
-    }
+    if (x1 >= 0) w.markDirty('owner', x0, y0, x1, y1);
+    // label anchors: the realm's own land nearest the centre of its territory;
     // border lengths between kingdoms
-    this._borders.clear();
-    for (let y = 0; y < w.h - 1; y++)
-      for (let x = 0; x < W - 1; x++) {
-        const i = y * W + x;
-        const a = own[i];
-        if (a < 0) continue;
-        const r = own[i + 1],
-          d = own[i + W];
-        if (r >= 0 && r !== a) this._borders.set(relKey(a, r), (this._borders.get(relKey(a, r)) || 0) + 1);
-        if (d >= 0 && d !== a) this._borders.set(relKey(a, d), (this._borders.get(relKey(a, d)) || 0) + 1);
+    const near = new Float64Array(K).fill(Infinity);
+    const at = new Int32Array(K).fill(-1);
+    for (let k = 0; k < K; k++)
+      if (cnt[k]) {
+        sx[k] /= cnt[k];
+        sz[k] /= cnt[k];
       }
+    const borders = this._borders;
+    borders.clear();
+    const last = w.h - 1;
+    for (let y = 0, i = 0; y < w.h; y++)
+      for (let x = 0; x < W; x++, i++) {
+        const o = own[i];
+        if (o < 0) continue;
+        if (cnt[o] && H[i] >= SEA_LEVEL + 0.1 && !(capLand[o] >= 0 && landId[i] !== capLand[o])) {
+          const d = (x - sx[o]) ** 2 + (y - sz[o]) ** 2;
+          if (d < near[o]) (near[o] = d), (at[o] = i);
+        }
+        if (y === last || x === W - 1) continue;
+        const r = own[i + 1],
+          dn = own[i + W];
+        if (r >= 0 && r !== o) borders.set(relKey(o, r), (borders.get(relKey(o, r)) || 0) + 1);
+        if (dn >= 0 && dn !== o) borders.set(relKey(o, dn), (borders.get(relKey(o, dn)) || 0) + 1);
+      }
+    for (const k of this.kingdoms) {
+      if (at[k.id] >= 0) {
+        k.labelX = (at[k.id] % W) + 0.5;
+        k.labelZ = ((at[k.id] / W) | 0) + 0.5;
+      } else k.labelX = k.labelZ = null;
+    }
   }
 
   // ------------------------------------------------------------------ helpers

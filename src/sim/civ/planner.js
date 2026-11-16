@@ -138,7 +138,7 @@ export const planner = {
   },
   // How much further a village's territory reaches (1 on Medium).
   _territoryReach() {
-    return 1 + this._bigMap() * 0.45;
+    return 1 + this._bigMap() * 0.35;
   },
 
   // Score a potential village centre (hall centre tile). Returns -1 if unusable.
