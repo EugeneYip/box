@@ -1,5 +1,5 @@
 import { TILE, TILE_INFO, FLORA, FLORA_INFO, SEA_LEVEL, DIRS8 } from '../../world/constants.js';
-import { law, fireFactor, regionName, yearLabel, withAge, wildfireDamp, HOT_FIRE, FIRE_WILD, FIRE_SKY } from './util.js';
+import { law, fireFactor, regionName, yearLabel, withAge, wildfireDamp, simWeather, HOT_FIRE, FIRE_WILD, FIRE_SKY } from './util.js';
 
 // Wildfire simulation on world.fire (0 = not burning, (0..1] intensity).
 //
@@ -264,7 +264,7 @@ export class FireSim {
     const g = this.game;
     const w = g.world;
     if (g.time.total < 20 || !law(g, 'calamityLightning', true)) return;
-    const wt = g.env?.weather?.type;
+    const wt = simWeather(g).type;
     if (wt === 'rain' || wt === 'storm' || wt === 'snow') return;
     const area = (w.w * w.h) / 65536;
     const cap = 600 * area;
@@ -361,8 +361,9 @@ export class FireSim {
       return;
     }
     const env = g.env;
-    const wt = env.weather?.type;
-    const wi = env.weather?.intensity ?? 0;
+    const sw = simWeather(g);
+    const wt = sw.type;
+    const wi = sw.intensity ?? 0;
     const rain = wt === 'rain' || wt === 'storm' ? Math.max(0.35, wi) * (wt === 'storm' ? 1.25 : 1) : wt === 'snow' ? 0.5 * Math.max(0.3, wi) : 0;
     const wind = env.wind || { x: 0, z: 0, strength: 0 };
     const wl = Math.hypot(wind.x || 0, wind.z || 0) || 1;

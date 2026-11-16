@@ -123,6 +123,16 @@ export function law(game, key, fallback) {
   return v === undefined ? fallback : v;
 }
 
+// The weather on game time ({type, intensity}): the atmosphere's own
+// weather state, which turns in fixed steps even while fast-forwarding or
+// when no frame is drawn. game.env.weather is only refreshed by rendered
+// frames, so it can hold a long-gone storm through a fast-forward.
+export function simWeather(game) {
+  const W = game.atmosphere?.weather;
+  if (W && typeof W.type === 'string') return W;
+  return game.env?.weather || { type: 'clear', intensity: 0 };
+}
+
 // Current World Age modifier (neutral when ages are missing).
 export function ageMod(game, key, fallback = 1) {
   const v = game.age?.mods?.[key];
