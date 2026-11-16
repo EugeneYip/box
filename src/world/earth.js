@@ -1374,7 +1374,9 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
     }
   }
   H_.despeckleTypes(type, hgt, W, H);
-  H_.dissolveSmallPatches(type, hgt, W, H, TILE.SNOW, 10, (i) => (icecap[i] ? TILE.SNOW : temp[i] < 0.3 ? TILE.TUNDRA : biome(temp[i], moist[i])));
+  // (small snow patches dissolve, but not the caps of volcano cones such as
+  // Fuji, nor, on regional maps, the white tops of single high peaks)
+  H_.dissolveSmallPatches(type, hgt, W, H, TILE.SNOW, REG ? 4 : 10, (i) => (icecap[i] || coneK[i] > 0.5 ? TILE.SNOW : temp[i] < 0.3 ? TILE.TUNDRA : biome(temp[i], moist[i])));
   _t('biomes');
 
   // ------------------------------------------------------------------ flora
