@@ -53,8 +53,14 @@ export const war = {
     // lookouts see further over a big map's wide seas (enemy sail was rarely
     // within sight there: no ship was sunk on the World Map in a century)
     const look = this.seaScale();
+    const m = v.mission;
     let tgt = v.target != null ? this.byId.get(v.target) : null;
-    if (tgt && (!tgt.alive || tgt.state === 'sinking' || tgt.state === 'moored' || tgt.kind === 'fishing' || !enemies.includes(tgt.kingdom) || Math.hypot(tgt.x - v.x, tgt.z - v.z) > 40 * look)) tgt = null;
+    // a raid on a ship moored in a blockaded harbour (below) is given up after a while
+    if (tgt && m.raid === tgt.id && (now - m.raidAt > 30 || !tgt.alive || tgt.state === 'sinking' || !enemies.includes(tgt.kingdom))) {
+      m.raid = null;
+      tgt = null;
+    }
+    if (tgt && m.raid !== tgt.id && (!tgt.alive || tgt.state === 'sinking' || tgt.state === 'moored' || tgt.kind === 'fishing' || !enemies.includes(tgt.kingdom) || Math.hypot(tgt.x - v.x, tgt.z - v.z) > 40 * look)) tgt = null;
     if (!tgt) {
       // nearest enemy ship: warships and transports first. Fishermen are
       // never hunted, at any map size: a blockade drives them home instead
@@ -70,7 +76,6 @@ export const war = {
       });
       if (tgt && (nav.comp(tgt.x, tgt.z) !== nav.comp(v.x, v.z) || nav.clearAt(tgt.x, tgt.z) < 1.8)) tgt = null;
     }
-    const m = v.mission;
     if (tgt) {
       v.target = tgt.id;
       v.chase = true;
@@ -149,6 +154,24 @@ export const war = {
       v.state = 'patrol';
       if (bh) {
         this.blockades.set(bh.id, now + 4);
+        // holding the blockade a while, the galley rows in to burn a ship
+        // moored in the harbour (never a fishing boat): on a big map's wide
+        // seas enemy sail seldom passes a blockade, and none leaves port
+        if ((m.raidWait = (m.raidWait ?? 20) - dt) <= 0) {
+          m.raidWait = 30;
+          let prey = null,
+            pd = 14;
+          this.near(v.x, v.z, 14, (o, d) => {
+            if (o.cls !== 'sea' || o.kind === 'fishing' || o.state !== 'moored' || o.harbour !== bh.id || !enemies.includes(o.kingdom) || d >= pd) return;
+            pd = d;
+            prey = o;
+          });
+          if (prey) {
+            m.raid = prey.id;
+            m.raidAt = now;
+            v.target = prey.id;
+          }
+        }
         // the harbour's fishing boats put about and run for home
         this.near(v.x, v.z, 10, (o) => {
           if (o.kind !== 'fishing' || o.harbour !== bh.id || o.state === 'sinking' || o.state === 'moored' || o.mission?.phase === 'home') return;
