@@ -401,7 +401,12 @@ export const realms = {
     const idx = k?.realm ?? -1;
     const d = idx >= 0 ? data?.[idx] : null;
     if (d && d.title !== undefined) return d.title || REAL_TITLE;
-    return regionStyle(geoRegion(this.world)).title || REAL_TITLE;
+    // a realm named after its seat takes the map's title only in the map's
+    // own land (a rebel Ulsan on the Japan map has a lord, not a daimyo)
+    const style = regionStyle(geoRegion(this.world));
+    const land = data?.[k?.placesFrom ?? -1];
+    if (land && style.lang && land.lang && land.lang !== style.lang) return REAL_TITLE;
+    return style.title || REAL_TITLE;
   },
 
   // The name of a realm that rises on a World Map world (a rebellion, a
