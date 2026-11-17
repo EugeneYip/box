@@ -59,7 +59,7 @@ export const missions = {
       toName = this._placeName(deliver.x, deliver.z);
     } else return refuse('no destination');
     if (nav.comp(dest.x, dest.z) !== h.water) return refuse('no water route');
-    const straight = Math.hypot(dest.x - h.berth.x, dest.z - h.berth.z);
+    const straight = this.dist(dest.x, dest.z, h.berth.x, h.berth.z);
     // the right ship for the route: short hauls go in cogs and transports (even
     // for a realm with carracks), long ones in ocean-going ships; great ships
     // never sail up narrow rivers
@@ -133,7 +133,7 @@ export const missions = {
       bd = 30;
     for (const v of civ?.villages || []) {
       if (!v.alive) continue;
-      const d = Math.hypot(v.cx - x, v.cz - z);
+      const d = this.dist(v.cx, v.cz, x, z);
       if (d < bd) {
         bd = d;
         best = v;
@@ -554,7 +554,7 @@ export const missions = {
       // coming in to a berth: make sure no other hull has it now (once a second)
       if (v.dest?.berth && v.kind !== 'fishing' && (v._bt = (v._bt || 0) + step) >= 1) {
         v._bt = 0;
-        if (Math.hypot(v.dest.x - v.x, v.dest.z - v.z) < 9) {
+        if (this.dist(v.dest.x, v.dest.z, v.x, v.z) < 9) {
           this._berthCheck(v);
           if (!v.alive || v.state !== 'sail') return;
         }
@@ -577,7 +577,7 @@ export const missions = {
           px = P[i];
           pz = P[i + 1];
         }
-        const d = Math.hypot(v.dest.x - v.x, v.dest.z - v.z);
+        const d = this.dist(v.dest.x, v.dest.z, v.x, v.z);
         const w = v._way || (v._way = { best: rest, t: 0, tries: 0 });
         if (rest < w.best - 1.5) {
           w.best = rest;
@@ -869,7 +869,7 @@ export const missions = {
       }
       for (const h of this.harbours(o.id)) {
         if (h.id === from.id || h.water !== from.water || this.blockaded(h)) continue;
-        const d = Math.hypot(h.berth.x - from.berth.x, h.berth.z - from.berth.z);
+        const d = this.dist(h.berth.x, h.berth.z, from.berth.x, from.berth.z);
         if (d < 22) continue;
         const sc = op + (h.landId !== from.landId ? 25 : 0) + (o.id !== kid ? 10 : 0) - d * 0.15 + this.rng() * 15;
         if (sc > bs) {
@@ -889,7 +889,7 @@ export const missions = {
         fv[r] -= amt;
       }
     }
-    const kind = this.hasTech(kid, 'navigation') && Math.hypot(best.x - from.x, best.z - from.z) > 90 ? 'carrack' : 'cog';
+    const kind = this.hasTech(kid, 'navigation') && this.dist(best.x, best.z, from.x, from.z) > 90 ? 'carrack' : 'cog';
     this.requestVoyage({ kind, kingdom: kid, from: from.id, to: best.id, cargo, _self: true });
   },
 
@@ -938,7 +938,7 @@ export const missions = {
       if (nav.compOf[c] !== h.water || nav.nd[c] > 3) continue;
       const cx = nav.nx[c],
         cz = nav.nz[c];
-      const dd = Math.hypot(cx - h.berth.x, cz - h.berth.z);
+      const dd = this.dist(cx, cz, h.berth.x, h.berth.z);
       if (dd < 25 || dd > range * 0.85) continue;
       // a land tile a few steps inland
       for (let k = 0; k < 8; k++) {
@@ -951,7 +951,7 @@ export const missions = {
         if (civ.landId && civ.landId[i] === h.landId) continue;
         const ty = w.type[i];
         if (ty === TILE.SNOW || ty === TILE.ROCK || ty === TILE.LAVA || ty === TILE.ICE || ty === TILE.DESERT) continue;
-        if (civ.villages.some((v) => v.alive && Math.hypot(v.cx - tx, v.cz - tz) < 24)) continue;
+        if (civ.villages.some((v) => v.alive && this.dist(v.cx, v.cz, tx, tz) < 24)) continue;
         scored++;
         const s = civ._scoreSite ? civ._scoreSite(tx, tz, { minSpace: 85 }) : 100;
         if (s < 0) continue;
@@ -988,7 +988,7 @@ export const missions = {
     for (let i = 0; i < 300; i++) {
       const c = Math.floor(this.rng() * n);
       if (nav.compOf[c] !== from.water) continue;
-      const d = Math.hypot(nav.nx[c] - from.berth.x, nav.nz[c] - from.berth.z);
+      const d = this.dist(nav.nx[c], nav.nz[c], from.berth.x, from.berth.z);
       if (d < far * 0.6) continue;
       const sc = Math.min(d, far * 2) + (charts.has(c) ? -200 : 0) + (nav.nd[c] < 4 ? 40 : 0) + this.rng() * 40;
       if (sc > bs) {
@@ -1068,7 +1068,7 @@ export const missions = {
       if (this.blockaded(h)) continue;
       for (const o of theirs) {
         if (o.water !== h.water) continue;
-        const d = Math.hypot(o.berth.x - h.berth.x, o.berth.z - h.berth.z);
+        const d = this.dist(o.berth.x, o.berth.z, h.berth.x, h.berth.z);
         if (d < bd) {
           bd = d;
           best = h;

@@ -215,6 +215,7 @@ export class World {
       w: this.w,
       h: this.h,
       seed: this.seed,
+      wrapTravel: this.wrapTravel !== false, // Round world (docs/ROUND-WORLD.md)
       height: this.height.slice(),
       type: this.type.slice(),
       flora: this.flora.slice(),

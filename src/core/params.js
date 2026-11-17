@@ -16,6 +16,8 @@
 //   ?audio=0            disable audio
 //   ?civs=3             number of starting villages to seed (0 for none)
 //   ?power=1            power saver (30 fps cap, lighter rendering); default on for touch devices
+//   ?wrap=0             World Map, whole Earth only: close the Atlantic seam (default 1:
+//                       ships cross the map's left and right edges; docs/ROUND-WORLD.md)
 
 import { EARTH_REGIONS, earthRegion } from '../world/data/regions.js';
 
@@ -115,7 +117,8 @@ export function readParams() {
   const num = (k, d) => (q.has(k) && q.get(k) !== '' && !isNaN(+q.get(k)) ? +q.get(k) : d);
   const cam = q.has('cam') ? q.get('cam').split(',').map(Number) : null;
   const preset = q.get('preset') || 'continent';
-  const region = isWidePreset(preset) ? validRegion(q.get('region')) : null;
+  const asked = isWidePreset(preset) ? q.get('region') : null;
+  const region = asked ? validRegion(asked) : null;
   const size = region ? 1024 : isWidePreset(preset) ? clampSize(num('size', EARTH_DEFAULT_SIZE), preset) : clampSize(num('size', IS_TOUCH ? 192 : 256));
   return {
     seed: num('seed', Math.floor(Math.random() * 1e9)),
@@ -123,6 +126,9 @@ export function readParams() {
     size,
     preset,
     region,
+    // a regional map the URL asked for but this device cannot have (touch) or
+    // that does not exist: the whole Earth loads instead, and the UI says so
+    regionDropped: asked && !region ? asked : null,
     cam,
     hour: q.has('hour') ? num('hour', 10) : null,
     ff: num('ff', 0),
@@ -134,6 +140,7 @@ export function readParams() {
     audio: q.get('audio') !== '0',
     civs: num('civs', 3),
     power: q.has('power') ? q.get('power') !== '0' : null,
+    wrap: q.has('wrap') ? q.get('wrap') !== '0' : null,
     debug: q.has('debug'),
     raw: q,
   };

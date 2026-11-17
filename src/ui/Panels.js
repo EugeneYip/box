@@ -2,7 +2,7 @@ import { uiIcon } from './icons.js';
 import { el, esc, safe, hexCss, fmtNum, clamp } from './dom.js';
 import { PRESET_NAMES } from './TopBar.js';
 import { SLOT_LABELS } from './Toolbar.js';
-import { LAWS, LAW_CATEGORIES, lawDef } from '../core/laws.js';
+import { LAWS, LAW_CATEGORIES, lawDef, lawShown } from '../core/laws.js';
 import { agesPanel } from './Ages.js';
 import { techPanel } from './TechPanel.js';
 import { eraNames, traitDef } from './depth.js';
@@ -81,6 +81,7 @@ const LAW_ICON = {
   weather: 'weather-rain',
   calamities: 'fire',
   ages: 'eclipse',
+  world: 'globe',
   others: 'settings',
   peoples: 'banner',
   life: 'paw',
@@ -461,6 +462,7 @@ export class Modals {
         ? this.nwState
         : { seed: String(g.params.seed), preset: g.params.preset || 'continent', civs: clamp(g.params.civs ?? 3, 0, 12), civsSet: explicitCivs, size: isWidePreset(g.params.preset) ? g.params.size : g.world.w, earth: earthChoice(g.params.size, g.params.region)?.id || null };
     this.reopenNW = false;
+    if (state.wrap == null) state.wrap = g.laws?.worldWrap !== false; // Round world (whole Earth)
     const seedIn = el('input', { class: 'ws-input', type: 'text', inputmode: 'numeric', value: state.seed, 'aria-label': 'World seed', autofocus: true, spellcheck: 'false' });
     seedIn.addEventListener('input', () => (state.seed = seedIn.value));
     seedIn.addEventListener('keydown', (e) => e.key === 'Enter' && create());
@@ -527,10 +529,7 @@ export class Modals {
       // (World Map worlds: the real countries and cities, up to this many villages)
       const real = isWidePreset(state.preset);
       civAuto.textContent = real ? 'Auto (real places)' : 'Auto';
-      // (the longer label takes its room from the slider, not from beyond the panel)
-      civ.style.flex = real ? '1 1 auto' : '';
-      civ.style.width = real ? 'auto' : '';
-      civ.style.minWidth = real ? '56px' : '';
+      // (the pill has its own line under the slider, hud7.css, so neither label takes the slider's room)
       civAuto.dataset.tip = real ? 'Back to the real countries and cities this map starts with' : 'Back to the count this size starts with';
       civAuto.setAttribute('aria-label', state.civsSet ? `Use the automatic count (${real ? 'real places, up to ' : ''}${auto})` : real ? `Real countries and cities, up to ${auto} villages` : 'Automatic count for this size');
     };
@@ -544,6 +543,9 @@ export class Modals {
       syncCivs();
     });
     const sizeNote = el('span', { class: 'ws-row__desc ws-size__note' });
+    // Round world (docs/ROUND-WORLD.md): the whole-Earth sizes only
+    const wrapRow = toggleRow('Round world: sail across the map’s edge', 'Ships cross the Atlantic through the left and right edges, as on the real Earth', state.wrap, (v) => (state.wrap = v));
+    wrapRow.style.marginTop = '8px';
     const sizeCards = el('div', { class: 'ws-sizes', role: 'radiogroup', 'aria-label': 'World size' });
     // the World Map's regional maps get their own row of cards under the whole-Earth sizes
     const regionCards = el('div', { class: 'ws-sizes', role: 'radiogroup', 'aria-label': 'Regional map', style: 'grid-template-columns:repeat(3,1fr)' });
@@ -562,6 +564,7 @@ export class Modals {
         sizeNote.textContent = SIZE_NOTES[v] || `${v} × ${v} tiles`;
       }
       sizeNote.classList.remove('is-warn');
+      wrapRow.style.display = wide && !earthZ().region ? '' : 'none'; // (.ws-row overrides [hidden])
       syncCivs();
     };
     const card = (z, wide) => {
@@ -589,7 +592,7 @@ export class Modals {
       else pickSize(list.some((z) => z.size === want) ? want : 256);
     };
     buildSizes(isWidePreset(state.preset) ? state.earth : state.size);
-    const sizes = el('div', { class: 'ws-field' }, el('label', { class: 'ws-field__label', text: 'World size' }), sizeCards, regionLabel, regionCards, sizeNote);
+    const sizes = el('div', { class: 'ws-field' }, el('label', { class: 'ws-field__label', text: 'World size' }), sizeCards, wrapRow, regionLabel, regionCards, sizeNote);
     this.nwState = state;
     const create = () => {
       const n = parseInt(String(state.seed).replace(/[^0-9]/g, ''), 10);
@@ -619,6 +622,8 @@ export class Modals {
         }
         q.set('title', '0');
         for (const k of ['cam', 'hour', 'ff']) q.delete(k);
+        if (wide && !region && !state.wrap) q.set('wrap', '0');
+        else q.delete('wrap');
         const z = WORLD_SIZES.find((s) => s.size === state.size);
         const label = wide ? earthLabel(ez.size, region) : `Seeding ${/^[aeiou]/i.test(PRESET_NAMES[state.preset] || '') ? 'an' : 'a'} ${PRESET_NAMES[state.preset] || 'new'} world${z ? ` · ${z.name}` : ''}`;
         bootNote(label);
@@ -628,6 +633,7 @@ export class Modals {
         setTimeout(() => (location.search = q.toString()), 300);
         return;
       }
+      if (wide && !region && state.wrap !== (g.laws?.worldWrap !== false)) g.setLaw?.('worldWrap', state.wrap);
       this.ui.regenerate(seed, state.preset, state.civsSet ? state.civs : (g.civ?.budget?.startVillages ?? autoStartVillages(g, ez ? ez.size : state.size, state.preset, region)));
     };
     const body = el(
@@ -658,7 +664,7 @@ export class Modals {
 
   lawsChanged() {
     const L = this.game.laws || {};
-    return LAWS.filter((l) => L[l.key] != null && L[l.key] !== l.default).length;
+    return LAWS.filter((l) => lawShown(l, this.game) && L[l.key] != null && L[l.key] !== l.default).length;
   }
 
   // ---- world laws: search, category rail, sectioned list (built once, filtered in place)
@@ -673,11 +679,12 @@ export class Modals {
     const list = el('div', { class: 'ws-lawlist' });
     const none = el('div', { class: 'ws-empty ws-lawnone', hidden: true }, el('div', { class: 'ws-empty__art', html: uiIcon('inspect') }), el('div', { class: 'ws-empty__title', text: 'No laws match' }), el('p', { class: 'ws-empty__txt', text: 'Try another word, such as “fire”, “war” or “snow”.' }));
     const isChanged = (def) => (g.laws?.[def.key] ?? def.default) !== def.default;
-    const changedIn = (cid) => LAWS.filter((l) => l.category === cid && isChanged(l)).length;
+    const shown = LAWS.filter((l) => lawShown(l, g));
+    const changedIn = (cid) => shown.filter((l) => l.category === cid && isChanged(l)).length;
     const countEl = el('span', { class: 'ws-lawsx__count' });
     const syncCounts = () => {
       for (const [cid, b] of railBtns) b.classList.toggle('has-changes', changedIn(cid) > 0);
-      const n = LAWS.filter(isChanged).length;
+      const n = shown.filter(isChanged).length;
       countEl.textContent = n ? `${n} changed` : 'All at defaults';
       countEl.classList.toggle('is-changed', n > 0);
     };
@@ -695,7 +702,7 @@ export class Modals {
       }
     };
     for (const c of LAW_CATEGORIES) {
-      const defs = LAWS.filter((l) => l.category === c.id);
+      const defs = shown.filter((l) => l.category === c.id);
       if (!defs.length) continue;
       const b = el('button', { class: 'ws-lawrail__btn', type: 'button', role: 'tab', onclick: () => scrollToCat(c.id) }, el('span', { class: 'ws-lawrail__ico', html: uiIcon(LAW_ICON[c.id] || 'settings') }), el('span', { class: 'ws-lawrail__name', text: c.name }), el('i', { class: 'ws-lawrail__dot' }));
       railBtns.set(c.id, b);

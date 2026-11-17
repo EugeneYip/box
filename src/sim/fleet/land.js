@@ -164,7 +164,7 @@ export const land = {
     for (const from of vs) {
       for (const to of vs) {
         if (to === from || to.landId !== from.landId) continue;
-        const d = Math.hypot(to.cx - from.cx, to.cz - from.cz);
+        const d = this.dist(to.cx, to.cz, from.cx, from.cz);
         if (d < 8 || d > 110) continue;
         // food: days of bread per mouth, the hungry and the low first
         const reserve = (from.pop || 0) * 3 + 25;
@@ -214,7 +214,7 @@ export const land = {
         for (const vb of o.villages) {
           const b = civ.villages[vb];
           if (!b?.alive || b.landId !== a.landId) continue;
-          const d = Math.hypot(a.cx - b.cx, a.cz - b.cz) - (r?.ally ? 20 : 0);
+          const d = this.dist(a.cx, a.cz, b.cx, b.cz) - (r?.ally ? 20 : 0);
           if (d < bd && d < 120 * reach) {
             bd = d;
             best = { a, b };

@@ -6,6 +6,7 @@ import { emblemAtlas, EMBLEM_IDS, FIELD_IDS } from '../buildings/emblems.js';
 import { ALL_KINDS, KINDS } from '../../sim/fleet/kinds.js';
 import { smokePuff, RAMP } from '../fx/Effects.js';
 import { VEHICLE } from '../../core/scale.js';
+import { geoWrapOn } from '../../world/geo.js';
 
 // Draws game.fleet: one instanced batch per vehicle kind (sails, oars, wheels
 // and legs animate in the vertex shader), realm flags with their emblems,
@@ -19,6 +20,10 @@ const FLAG_DIST = 115;
 const WAKE_DIST = 165;
 const PLUME_TINT = 0xeceff3; // a cool near-white: smoke over the sea reads grey, not brown
 const STONE_SCALE = 0.62 * VEHICLE.land; // catapult stone: a third of the arm (~0.38 tiles across at design size)
+// Round world (docs/ROUND-WORLD.md): within this many tiles of the seam a ship
+// is drawn twice, once one map width over, so she sails on past one edge
+// while her twin comes in at the other (the sea runs on beyond the map)
+const SEAM_TWIN = 28;
 
 function smoothstep(e0, e1, x) {
   const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
@@ -230,9 +235,19 @@ export class FleetRenderer {
     // ---- detailed vehicles
     const per = new Map();
     let visible = 0;
+    const wrapW = geoWrapOn(g.world) ? g.world.w : 0;
     if (!far) {
       for (const v of list) {
         if (!v.alive) continue;
+        // (Round world: a ship near the seam also sails on past the edge)
+        if (wrapW && v.cls === 'sea' && (v.x < SEAM_TWIN || v.x > wrapW - SEAM_TWIN)) {
+          const t = this._twin(v, v.x < SEAM_TWIN ? wrapW : -wrapW);
+          if (Math.abs(t.x - cx) <= viewR && Math.abs(t.z - cz) <= viewR) {
+            let L = per.get(v.kind);
+            if (!L) per.set(v.kind, (L = []));
+            L.push(t);
+          }
+        }
         if (Math.abs(v.x - cx) > viewR || Math.abs(v.z - cz) > viewR) continue;
         let L = per.get(v.kind);
         if (!L) per.set(v.kind, (L = []));
@@ -366,6 +381,20 @@ export class FleetRenderer {
     this._lanes(F, dt, dist, far);
     this._effects(F, dt, far, dist, cx, cz);
     this.visibleCount = visible;
+  }
+
+  // A ship's twin one map width over (Round world): reads through to the ship
+  // for everything but where she is (and her wake, which moves with her).
+  _twin(v, s) {
+    const t = Object.create(v);
+    t.x = v.x + s;
+    t.px = v.px + s;
+    t.id = -v.id; // her own wake odometer
+    if (v.track) {
+      const T = (t.track = v.track.slice());
+      for (let i = 0; i < T.length; i += 2) T[i] += s;
+    }
+    return t;
   }
 
   _flags(L, on, wind) {
@@ -734,33 +763,50 @@ export class FleetRenderer {
       C = geo.attributes.aC.array,
       D = geo.attributes.aUV.array;
     let n = 0;
+    // (Round world: a route across the seam runs on past the map's side in
+    // one continuous line; it is drawn on the map, split at the seam)
+    const W = geoWrapOn(this.game.world) ? this.game.world.w : 0;
+    let c = null;
+    const seg = (ax, az, bx, bz, d0, d1) => {
+      P[n * 3] = ax;
+      P[n * 3 + 1] = 0.05;
+      P[n * 3 + 2] = az;
+      P[n * 3 + 3] = bx;
+      P[n * 3 + 4] = 0.05;
+      P[n * 3 + 5] = bz;
+      for (let q = 0; q < 2; q++) {
+        C[(n + q) * 3] = c.r * 1.3 + 0.2;
+        C[(n + q) * 3 + 1] = c.g * 1.3 + 0.2;
+        C[(n + q) * 3 + 2] = c.b * 1.3 + 0.2;
+      }
+      D[n * 2] = d0;
+      D[n * 2 + 2] = d1;
+      n += 2;
+    };
     for (const lane of F.lanes()) {
       const v = F.get(lane.id);
       const p = lane.path;
-      const c = this._kingdomColor(lane.kingdom);
+      c = this._kingdomColor(lane.kingdom);
       let acc = 0;
       let px = v ? v.x : p[0],
         pz = v ? v.z : p[1];
       for (let i = Math.max(0, (v?.pi ?? 0)); i < p.length; i += 2) {
-        if (n + 2 > this._laneMax) break;
+        if (n + 4 > this._laneMax) break;
         const x = p[i],
           z = p[i + 1];
         const L = Math.hypot(x - px, z - pz);
-        P[n * 3] = px;
-        P[n * 3 + 1] = 0.05;
-        P[n * 3 + 2] = pz;
-        P[n * 3 + 3] = x;
-        P[n * 3 + 4] = 0.05;
-        P[n * 3 + 5] = z;
-        for (let q = 0; q < 2; q++) {
-          C[(n + q) * 3] = c.r * 1.3 + 0.2;
-          C[(n + q) * 3 + 1] = c.g * 1.3 + 0.2;
-          C[(n + q) * 3 + 2] = c.b * 1.3 + 0.2;
+        const k0 = W ? Math.floor(px / W) : 0,
+          k1 = W ? Math.floor(x / W) : 0;
+        if (k0 === k1) seg(px - k0 * W, pz, x - k0 * W, z, acc, acc + L);
+        else {
+          // the seam at x = k * W: up to the edge, then on from the other one
+          const k = Math.max(k0, k1);
+          const t = (k * W - px) / (x - px || 1);
+          const zs = pz + (z - pz) * t;
+          seg(px - k0 * W, pz, k * W - k0 * W, zs, acc, acc + L * t);
+          seg(k * W - k1 * W, zs, x - k1 * W, z, acc + L * t, acc + L);
         }
-        D[n * 2] = acc;
-        D[n * 2 + 2] = acc + L;
         acc += L;
-        n += 2;
         px = x;
         pz = z;
       }

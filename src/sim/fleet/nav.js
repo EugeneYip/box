@@ -1,4 +1,5 @@
 import { SEA_LEVEL, TILE } from '../../world/constants.js';
+import { geoWrapOn } from '../../world/geo.js';
 
 const ICE = TILE.ICE; // frozen water: no keel crosses it
 
@@ -20,6 +21,16 @@ const ICE = TILE.ICE; // frozen water: no keel crosses it
 //   nav.markDirty(rect)    terrain changed; nav.update() rebuilds the touched area
 //   nav.isWater(x,z), nav.clearAt(x,z), nav.los(ax,az,bx,bz,clear)
 // Distances are capped at DMAX tiles, which lets a terrain edit be patched locally.
+//
+// Round world (docs/ROUND-WORLD.md): on the whole-Earth World Map with the
+// setting on (nav.wrap, kept in step by Fleet through setWrap()), the cells
+// of the left and right columns are neighbours, so the graph and every
+// straight run cross the Atlantic seam. A route that crosses comes back as
+// one continuous polyline: its x runs on past 0 or w (say from 1020 to 1030
+// on a 1024-wide map), so lengths and headings along it need no special
+// care; the vessel following it is moved back onto the map as it crosses
+// (Fleet._wrapVessel). Water queries (isWater, clearAt, los, snap) accept
+// such off-map x and read the tile the short way round.
 
 const DMAX = 12;
 const SQ2 = Math.SQRT2;
@@ -40,7 +51,59 @@ export class WaterNav {
     this.C = cell;
     this.version = 0;
     this._dirty = null;
+    this.wrap = false;
     this.build();
+  }
+
+  // Round world: may the graph cross the seam on this world now?
+  _wrapWanted() {
+    return geoWrapOn(this.world) && this.world.w % this.C === 0;
+  }
+  // The setting changed during play: relink the two edge columns.
+  setWrap(on = this._wrapWanted()) {
+    on = !!on && this.world.w % this.C === 0;
+    if (on === this.wrap) return false;
+    this.wrap = on;
+    this._edgesIn(0, 0, 0, this.ch - 1);
+    this._edgesIn(this.cw - 1, 0, this.cw - 1, this.ch - 1);
+    this._components();
+    this.version++;
+    return true;
+  }
+  // x the short way round (wrap on), or unchanged
+  _sdx(dx) {
+    if (!this.wrap) return dx;
+    const W = this.W;
+    return dx > W / 2 ? dx - W : dx < -W / 2 ? dx + W : dx;
+  }
+  // tile column on the map for any tile x (wrap on), or unchanged
+  _tx(tx) {
+    return this.wrap && (tx < 0 || tx >= this.W) ? ((tx % this.W) + this.W) % this.W : tx;
+  }
+  // neighbouring cell in direction k, across the seam when wrap is on; -1 off the map
+  _nb(cx, cy, k) {
+    let nx = cx + DIRS[k][0];
+    const ny = cy + DIRS[k][1];
+    if (ny < 0 || ny >= this.ch) return -1;
+    if (nx < 0 || nx >= this.cw) {
+      if (!this.wrap) return -1;
+      nx = nx < 0 ? nx + this.cw : nx - this.cw;
+    }
+    return ny * this.cw + nx;
+  }
+  // A polyline made continuous for a wrapped world: each point's x is moved by
+  // whole map widths to lie within half a map of the previous one (in place).
+  unwrap(p, from = 0) {
+    if (!this.wrap || !p) return p;
+    const W = this.W;
+    for (let i = Math.max(2, from + 2); i < p.length; i += 2) {
+      const prev = p[i - 2];
+      let x = p[i];
+      while (x - prev > W / 2) x -= W;
+      while (x - prev < -W / 2) x += W;
+      p[i] = x;
+    }
+    return p;
   }
 
   // ------------------------------------------------------------------ build
@@ -51,6 +114,7 @@ export class WaterNav {
     this.H = w.h;
     this.cw = Math.ceil(w.w / C);
     this.ch = Math.ceil(w.h / C);
+    this.wrap = this._wrapWanted();
     const n = this.cw * this.ch;
     this.dist = new Float32Array(w.w * w.h);
     this.nx = new Float32Array(n);
@@ -251,17 +315,20 @@ export class WaterNav {
   _edgesIn(cx0, cy0, cx1, cy1) {
     const cw = this.cw,
       ch = this.ch;
+    void ch;
     // clear the bits of these cells (and the matching bits of outside neighbours)
+    // (neighbours run across the seam when the world wraps)
     for (let cy = cy0; cy <= cy1; cy++)
       for (let cx = cx0; cx <= cx1; cx++) {
         const c = cy * cw + cx;
         this.edges[c] = 0;
         for (let k = 0; k < 8; k++) {
-          const nx = cx + DIRS[k][0],
-            ny = cy + DIRS[k][1];
-          if (nx < 0 || ny < 0 || nx >= cw || ny >= ch) continue;
+          const o = this._nb(cx, cy, k);
+          if (o < 0) continue;
+          const nx = o % cw,
+            ny = (o / cw) | 0;
           if (nx >= cx0 && nx <= cx1 && ny >= cy0 && ny <= cy1) continue;
-          this.edges[ny * cw + nx] &= ~(1 << ((k + 4) & 7));
+          this.edges[o] &= ~(1 << ((k + 4) & 7));
         }
       }
     for (let cy = cy0; cy <= cy1; cy++)
@@ -269,10 +336,8 @@ export class WaterNav {
         const c = cy * cw + cx;
         if (this.ntile[c] < 0) continue;
         for (let k = 0; k < 8; k++) {
-          const nx = cx + DIRS[k][0],
-            ny = cy + DIRS[k][1];
-          if (nx < 0 || ny < 0 || nx >= cw || ny >= ch) continue;
-          const o = ny * cw + nx;
+          const o = this._nb(cx, cy, k);
+          if (o < 0) continue;
           if (this.ntile[o] < 0) continue;
           if (this.edges[c] & (1 << k)) continue;
           if (!this.los(this.nx[c], this.nz[c], this.nx[o], this.nz[o], 0)) continue;
@@ -305,8 +370,8 @@ export class WaterNav {
           cy = (c / cw) | 0;
         for (let k = 0; k < 8; k++) {
           if (!(e & (1 << k))) continue;
-          const o = (cy + DIRS[k][1]) * cw + cx + DIRS[k][0];
-          if (comp[o] === -1) {
+          const o = this._nb(cx, cy, k);
+          if (o >= 0 && comp[o] === -1) {
             comp[o] = next;
             stack[sp++] = o;
           }
@@ -319,14 +384,14 @@ export class WaterNav {
 
   // ------------------------------------------------------------------ queries
   isWater(x, z) {
-    const tx = Math.floor(x),
+    const tx = this._tx(Math.floor(x)),
       tz = Math.floor(z);
     if (tx < 0 || tz < 0 || tx >= this.W || tz >= this.H) return false;
     const i = tz * this.W + tx;
     return this.world.height[i] < SEA_LEVEL && this.world.type[i] !== ICE;
   }
   clearAt(x, z) {
-    const tx = Math.floor(x),
+    const tx = this._tx(Math.floor(x)),
       tz = Math.floor(z);
     if (tx < 0 || tz < 0 || tx >= this.W || tz >= this.H) return 0;
     const i = tz * this.W + tx;
@@ -334,15 +399,16 @@ export class WaterNav {
     return this.dist[i];
   }
   cellAt(x, z) {
-    const cx = Math.min(this.cw - 1, Math.max(0, Math.floor(x / this.C))),
+    const cx = Math.min(this.cw - 1, Math.max(0, Math.floor(this._tx(Math.floor(x)) / this.C))),
       cy = Math.min(this.ch - 1, Math.max(0, Math.floor(z / this.C)));
     return cy * this.cw + cx;
   }
 
   // Straight run on water. clear > 0 also asks for that much open water.
   los(ax, az, bx, bz, clear = 0) {
-    const dx = bx - ax,
+    const dx = this._sdx(bx - ax),
       dz = bz - az;
+    const wrap = this.wrap;
     const L = Math.hypot(dx, dz);
     const n = Math.max(1, Math.ceil(L / 0.3));
     const W = this.W,
@@ -352,8 +418,9 @@ export class WaterNav {
       d = this.dist;
     for (let s = 0; s <= n; s++) {
       const t = s / n;
-      const tx = Math.floor(ax + dx * t),
-        tz = Math.floor(az + dz * t);
+      let tx = Math.floor(ax + dx * t);
+      const tz = Math.floor(az + dz * t);
+      if (wrap && (tx < 0 || tx >= W)) tx = ((tx % W) + W) % W;
       if (tx < 0 || tz < 0 || tx >= W || tz >= H) return false;
       const i = tz * W + tx;
       if (h[i] >= SEA_LEVEL || ty[i] === ICE) return false;
@@ -365,6 +432,7 @@ export class WaterNav {
   // The node a water point attaches to (direct line), or -1.
   snap(x, z) {
     const C = this.C;
+    if (this.wrap && (x < 0 || x >= this.W)) x = ((x % this.W) + this.W) % this.W;
     const cx = Math.floor(x / C),
       cy = Math.floor(z / C);
     let best = -1,
@@ -373,12 +441,13 @@ export class WaterNav {
       for (let dy = -r; dy <= r; dy++)
         for (let dx = -r; dx <= r; dx++) {
           if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
-          const nx = cx + dx,
-            ny = cy + dy;
+          let nx = cx + dx;
+          const ny = cy + dy;
+          if (this.wrap && (nx < 0 || nx >= this.cw)) nx = nx < 0 ? nx + this.cw : nx - this.cw;
           if (nx < 0 || ny < 0 || nx >= this.cw || ny >= this.ch) continue;
           const c = ny * this.cw + nx;
           if (this.ntile[c] < 0 || this.compOf[c] < 0) continue;
-          const dd = Math.hypot(this.nx[c] - x, this.nz[c] - z);
+          const dd = Math.hypot(this._sdx(this.nx[c] - x), this.nz[c] - z);
           if (dd >= bd) continue;
           if (!this.los(x, z, this.nx[c], this.nz[c], 0)) continue;
           bd = dd;
@@ -398,12 +467,16 @@ export class WaterNav {
   _localToNode(x, z, R = 10) {
     const W = this.W,
       H = this.H;
+    const wrap = this.wrap;
+    if (wrap && (x < 0 || x >= W)) x = ((x % W) + W) % W;
     const tx0 = Math.floor(x),
       tz0 = Math.floor(z);
     if (tx0 < 0 || tz0 < 0 || tx0 >= W || tz0 >= H) return null;
     const h = this.world.height,
       ty = this.world.type;
     const dry = (i) => h[i] >= SEA_LEVEL || ty[i] === ICE;
+    // (tile x on the map: across the seam when the world wraps)
+    const mx = (t) => (wrap && (t < 0 || t >= W) ? ((t % W) + W) % W : t);
     if (dry(tz0 * W + tx0)) return null;
     const S = R * 2 + 1;
     const prev = new Int32Array(S * S).fill(-2);
@@ -418,7 +491,7 @@ export class WaterNav {
       const k = q[qh++];
       const lx = k % S,
         lz = (k / S) | 0;
-      const tx = tx0 + lx - R,
+      const tx = mx(tx0 + lx - R),
         tz = tz0 + lz - R;
       const ti = tz * W + tx;
       const c = Math.floor(tz / C) * this.cw + Math.floor(tx / C);
@@ -436,7 +509,7 @@ export class WaterNav {
         if (nx < 0 || nz < 0 || nx >= S || nz >= S) continue;
         const nk = nz * S + nx;
         if (prev[nk] !== -2) continue;
-        const ttx = tx0 + nx - R,
+        const ttx = mx(tx0 + nx - R),
           ttz = tz0 + nz - R;
         if (ttx < 0 || ttz < 0 || ttx >= W || ttz >= H) continue;
         if (dry(ttz * W + ttx)) continue;
@@ -463,10 +536,12 @@ export class WaterNav {
   // maxLen (tiles; refuse longer), clear (clearance kept when smoothing)}.
   findPath(sx, sz, gx, gz, opts = {}) {
     if (!this.isWater(sx, sz) || !this.isWater(gx, gz)) return null;
-    // short hops in plain sight need no graph
-    const dd = Math.hypot(gx - sx, gz - sz);
-    if (dd < this.C * 3 && this.los(sx, sz, gx, gz, 0)) return [sx, sz, gx, gz];
-    if (dd < 48 && this.los(sx, sz, gx, gz, Math.max(1, opts.minClear || 0))) return [sx, sz, gx, gz];
+    // short hops in plain sight need no graph (the goal taken the short way
+    // round when the world wraps, so the hop is one continuous line)
+    const gxs = sx + this._sdx(gx - sx);
+    const dd = Math.hypot(gxs - sx, gz - sz);
+    if (dd < this.C * 3 && this.los(sx, sz, gxs, gz, 0)) return [sx, sz, gxs, gz];
+    if (dd < 48 && this.los(sx, sz, gxs, gz, Math.max(1, opts.minClear || 0))) return [sx, sz, gxs, gz];
     const a = this._attach(sx, sz);
     const b = this._attach(gx, gz);
     if (!a || !b) return null;
@@ -478,6 +553,7 @@ export class WaterNav {
     // b.pts runs goal -> node: append reversed (node -> goal)
     for (let i = b.pts.length - 2; i >= 0; i -= 2) raw.push(b.pts[i], b.pts[i + 1]);
     raw.push(gx, gz);
+    this.unwrap(raw); // one continuous line across the seam
     const path = this.smooth(raw, opts.clear ?? Math.max(opts.big ? 2 : 1.4, opts.minClear || 0));
     if (opts.maxLen && pathLength(path) > opts.maxLen) return null;
     return path;
@@ -514,10 +590,15 @@ export class WaterNav {
       gx0 = g % cw,
       gy0 = (g / cw) | 0;
     // within two cells of either end a ship may use narrower water (harbour mouths)
+    const wrap = this.wrap;
+    const cdx = (a, b) => {
+      const d = Math.abs(a - b);
+      return wrap ? Math.min(d, cw - d) : d;
+    };
     const nearEnd = (c) => {
       const x = c % cw,
         y = (c / cw) | 0;
-      return Math.max(Math.abs(x - sx0), Math.abs(y - sy0)) <= 2 || Math.max(Math.abs(x - gx0), Math.abs(y - gy0)) <= 2;
+      return Math.max(cdx(x, sx0), Math.abs(y - sy0)) <= 2 || Math.max(cdx(x, gx0), Math.abs(y - gy0)) <= 2;
     };
     const stamp = ++this._stamp;
     const G = this._g,
@@ -529,7 +610,7 @@ export class WaterNav {
       gy = (g / cw) | 0;
     const hk = this.C;
     const hfn = (c) => {
-      const dx = Math.abs((c % cw) - gx),
+      const dx = cdx(c % cw, gx),
         dy = Math.abs(((c / cw) | 0) - gy);
       return (dx + dy + (SQ2 - 2) * Math.min(dx, dy)) * hk;
     };
@@ -598,9 +679,9 @@ export class WaterNav {
       const dc = this.nd[c];
       for (let k = 0; k < 8; k++) {
         if (!(e & (1 << k))) continue;
-        const o = (cy + DIRS[k][1]) * cw + cx + DIRS[k][0];
-        if (done[o] === stamp) continue;
-        const len = Math.hypot(this.nx[o] - this.nx[c], this.nz[o] - this.nz[c]);
+        const o = wrap ? this._nb(cx, cy, k) : (cy + DIRS[k][1]) * cw + cx + DIRS[k][0];
+        if (o < 0 || done[o] === stamp) continue;
+        const len = Math.hypot(wrap ? this._sdx(this.nx[o] - this.nx[c]) : this.nx[o] - this.nx[c], this.nz[o] - this.nz[c]);
         const md = Math.min(dc, this.nd[o]);
         // keep off the coasts; big ships avoid rivers and narrows
         let mul = 1 + 1.2 / Math.max(1, md);

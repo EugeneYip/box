@@ -56,12 +56,15 @@ const DIAL = `<svg class="ws-dial" viewBox="0 0 44 44" aria-hidden="true">
 </svg>`;
 
 const SPEEDS = [1, 2, 4, 8, 16];
+// `wide`: the value may run to five characters ("9,999", "38.4k", "999M": the
+// longest fmtNum writes), otherwise three ("999"); each value keeps that room
+// so the bar never changes width as the numbers grow
 const STAT_DEFS = [
-  { key: 'population', label: 'Population', icon: 'population', tint: '#f3d9a6' },
+  { key: 'population', label: 'Population', icon: 'population', tint: '#f3d9a6', wide: true },
   { key: 'kingdoms', label: 'Kingdoms', icon: 'crown', tint: '#ffd36a' },
   { key: 'villages', label: 'Villages', icon: 'village', tint: '#9fbcff' },
-  { key: 'animals', label: 'Animals', icon: 'paw', tint: '#ffab94' },
-  { key: 'trees', label: 'Trees', icon: 'tree', tint: '#6fdca4' },
+  { key: 'animals', label: 'Animals', icon: 'paw', tint: '#ffab94', wide: true },
+  { key: 'trees', label: 'Trees', icon: 'tree', tint: '#6fdca4', wide: true },
 ];
 export const PRESET_NAMES = { continent: 'Continent', pangaea: 'Pangaea', archipelago: 'Archipelago', islands: 'Islands', earth: 'World Map' };
 
@@ -73,16 +76,19 @@ export class TopBar {
     this.el = el('div', { class: 'ws-top' });
 
     // ---- brand plate (left)
-    this.worldLine = el('span', { class: 'ws-brand__world' });
+    // a long line ends in an ellipsis, the seed giving way before the place ("North America · Seed 42…")
+    this.placeEl = el('span', { class: 'ws-brand__place' });
+    this.seedEl = el('span', { class: 'ws-brand__seed' });
+    this.worldLine = el('span', { class: 'ws-brand__world' }, this.placeEl, this.seedEl);
     this.brand = el(
       'div',
       { class: 'ws-brand ws-glass' },
-      el(
+      (this.brandBtn = el(
         'button',
         { class: 'ws-brand__id', type: 'button', 'aria-label': 'Worldseed menu', 'data-tip': 'New world · G', onclick: () => (this.menuMode() ? this.toggleMenu() : ui.modals.toggle('newworld')) },
         el('span', { class: 'ws-brand__emblem', html: emblemSvg('', 'brand') }),
         el('span', { class: 'ws-brand__txt' }, el('span', { class: 'ws-brand__name', text: 'Worldseed' }), this.worldLine),
-      ),
+      )),
       el('span', { class: 'ws-sep' }),
       el(
         'nav',
@@ -138,6 +144,7 @@ export class TopBar {
       class: 'ws-speed__cycle',
       type: 'button',
       'aria-label': 'Change speed',
+      'data-tip': 'Change speed · 1–5',
       onclick: () => {
         const i = SPEEDS.indexOf(g.speed);
         g.setSpeed(SPEEDS[(i + 1) % SPEEDS.length]);
@@ -155,7 +162,16 @@ export class TopBar {
         el('span', { class: 'ws-clock__txt' }, this.yearEl, this.dayEl, el('span', { class: 'ws-seasonbar' }, (this.seasonBar = el('i')))),
       )),
       el('span', { class: 'ws-sep' }),
-      el('div', { class: 'ws-speed' }, this.pauseBtn, this.seg, this.cycleBtn, this.effEl, (this.leafEl = el('span', { class: 'ws-leaf', 'data-tip': 'Power saver on · 30 fps', html: uiIcon('leaf') }))),
+      // the actual-speed and power-saver badges ride on the speed control's corner,
+      // so showing them never changes the clock's width
+      el(
+        'div',
+        { class: 'ws-speed' },
+        this.pauseBtn,
+        this.seg,
+        this.cycleBtn,
+        el('span', { class: 'ws-speed__flags' }, this.effEl, (this.leafEl = el('span', { class: 'ws-leaf', 'data-tip': 'Power saver on · 30 fps', html: uiIcon('leaf') }))),
+      ),
     );
     this.pausedEl = el('div', { class: 'ws-paused' }, el('span', { class: 'ws-paused__dot' }), 'Time is paused', el('kbd', { class: 'ws-key', text: 'Space' }));
     this.centre = el('div', { class: 'ws-top__centre' }, this.clock, this.pausedEl);
@@ -164,7 +180,7 @@ export class TopBar {
     this.statEls = {};
     this.stats = el('div', { class: 'ws-stats ws-glass' });
     for (const d of STAT_DEFS) {
-      const v = el('span', { class: 'ws-stat__v', text: '—' });
+      const v = el('span', { class: 'ws-stat__v' + (d.wide ? ' is-wide' : ''), text: '—' });
       const b = el(
         'button',
         {
@@ -244,7 +260,10 @@ export class TopBar {
     const p = this.game.params;
     // (a regional World Map shows its region: "Japan · Seed 7")
     const preset = (p.preset === 'earth' && p.region && earthRegion(p.region)?.name) || PRESET_NAMES[p.preset] || titleCase(p.preset || 'world');
-    this.worldLine.textContent = `${preset} · Seed ${p.seed}`;
+    this.placeEl.textContent = preset;
+    this.seedEl.textContent = ` · Seed ${p.seed}`;
+    // the whole line in the tip, for when it is shortened
+    this.brandBtn.dataset.tip = `${preset} · Seed ${p.seed} — New world · G`;
   }
 
   syncSpeed() {
@@ -301,7 +320,7 @@ export class TopBar {
       const yKey = `${year}|${time}`;
       if (this._yKey !== yKey) {
         this._yKey = yKey;
-        this.yearEl.innerHTML = `<span>${year}</span><span class="ws-clock__tod">${time}</span>`;
+        this.yearEl.innerHTML = `<span class="ws-clock__yr">${year}</span><span class="ws-clock__tod">${time}</span>`;
       }
       const len = t.seasonYears || this.game.laws?.weatherSeasonLength || 1;
       const frac = (((t.season ?? 0) % 1) + 1) % 1;

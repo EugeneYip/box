@@ -65,3 +65,64 @@ export function geoKmPerTile(world, x = null, z = null) {
   const ew = ((g.lonMax - g.lonMin) / world.w) * 111.32 * Math.cos((lat * Math.PI) / 180);
   return (ns + ew) / 2;
 }
+
+// ---- Round world (docs/ROUND-WORLD.md) ------------------------------------
+// On the whole Earth the map's left and right edges meet in the mid-Atlantic
+// (longitude -30). With the "Round world" setting on (World Law `worldWrap`,
+// mirrored on the World instance as `world.wrapTravel` by the game), travel
+// crosses that seam: tiles at x = 0 and x = w - 1 are neighbours and every
+// distance compared across the map is measured the short way round. Regional
+// maps and square presets never wrap, and with the setting off every helper
+// below gives exactly the plain flat-map answer.
+
+// True when travel crosses the whole Earth's left and right edges.
+export function geoWrapOn(world) {
+  if (!world || world.wrapTravel === false) return false;
+  const m = world.meta;
+  if (!m || m.preset !== 'earth') return false;
+  return (m.geo || WORLD_GEO).wrap === true;
+}
+
+// Shortest east-west step from ax to bx (bx - ax, the short way round when
+// the world wraps).
+export function geoDx(world, ax, bx) {
+  let dx = bx - ax;
+  if (geoWrapOn(world)) {
+    const W = world.w;
+    if (dx > W / 2) dx -= W;
+    else if (dx < -W / 2) dx += W;
+  }
+  return dx;
+}
+
+// Shortest step {dx, dz} from (ax, az) to (bx, bz).
+export function geoDelta(world, ax, az, bx, bz) {
+  return { dx: geoDx(world, ax, bx), dz: bz - az };
+}
+
+// Distance between two points (tiles), the short way round when the world
+// wraps; Math.hypot of the plain difference otherwise.
+export function geoDist(world, ax, az, bx, bz) {
+  return Math.hypot(geoDx(world, ax, bx), bz - az);
+}
+
+// A world x brought back onto the map ([0, w)) when the world wraps; x
+// unchanged otherwise.
+export function geoWrapX(world, x) {
+  if (!geoWrapOn(world)) return x;
+  const W = world.w;
+  return x >= 0 && x < W ? x : ((x % W) + W) % W;
+}
+
+// The tile one step (dx, dy) from tile (tx, ty), across the seam when the
+// world wraps: its index, or -1 off the map.
+export function geoNeighbor(world, tx, ty, dx, dy) {
+  let x = tx + dx;
+  const y = ty + dy;
+  if (y < 0 || y >= world.h) return -1;
+  if (x < 0 || x >= world.w) {
+    if (!geoWrapOn(world)) return -1;
+    x = ((x % world.w) + world.w) % world.w;
+  }
+  return y * world.w + x;
+}
