@@ -67,28 +67,28 @@ export const TECHS = [
   { id: 'sanitation', name: 'Sanitation', era: 4, cost: 49500, requires: ['medicine', 'engineering'], description: 'Clean water and sewers: towns grow and plague retreats.', effects: { birth: 1.08 }, unlocks: ['Waterworks, sewers and public baths', 'Bigger towns', 'Far fewer deaths from plague'], builds: ['waterworks'] },
   { id: 'ironclads', name: 'Ironclads', era: 4, cost: 59000, requires: ['gunpowder', 'steampower', 'steelworking'], description: 'Armoured steam warships with cannon.', effects: {}, unlocks: ['Ironclad steam warships with cannon'] },
   // Modern
-  { id: 'electricity', name: 'Electricity', era: 5, cost: 26500, requires: ['industry'], description: 'Power stations light the streets and drive the machines.', effects: { work: 1.1, research: 1.1 }, unlocks: ['Power stations', 'Pylons and power lines to the towns', 'Street lights and lit windows at night'], builds: ['powerstation', 'pylon'] },
-  { id: 'combustion', name: 'Combustion Engine', era: 5, cost: 27500, requires: ['industry', 'railways'], description: 'Engines on the roads and at sea.', effects: { work: 1.04 }, unlocks: ['Trucks and cars on the roads', 'Motor freighters at sea'] },
-  { id: 'flight', name: 'Flight', era: 5, cost: 30000, requires: ['combustion'], description: 'Wings of canvas and wire.', effects: { march: 1.05 }, unlocks: ['Airfields', 'Mail and transport planes between towns', 'Biplanes that scout and strafe in war'], builds: ['airfield'] },
-  { id: 'radio', name: 'Radio', era: 5, cost: 27000, requires: ['electricity'], description: 'Voices through the air: news and treaties travel fast.', effects: { research: 1.04, diplomacy: 1.6 }, unlocks: ['Radio masts with blinking lights', 'Faster diplomacy; allies answer sooner'], builds: ['radiomast'] },
-  { id: 'concrete', name: 'Reinforced Concrete', era: 5, cost: 26500, requires: ['industry', 'architecture'], description: 'Steel and concrete: towns grow upward.', effects: { build: 1.1 }, unlocks: ['Apartment blocks', 'Taller, larger towns on the same land'], builds: ['apartment'] },
-  { id: 'battleships', name: 'Battleships', era: 5, cost: 31000, requires: ['ironclads', 'electricity'], description: 'Steel turrets at sea, armour on land.', effects: { siegeFire: 1.2 }, unlocks: ['Steel battleships with turrets', 'Tanks and artillery with the armies'] },
+  { id: 'electricity', name: 'Electricity', era: 5, cost: 24200, requires: ['industry'], description: 'Power stations light the streets and drive the machines.', effects: { work: 1.1, research: 1.1 }, unlocks: ['Power stations', 'Pylons and power lines to the towns', 'Street lights and lit windows at night'], builds: ['powerstation', 'pylon'] },
+  { id: 'combustion', name: 'Combustion Engine', era: 5, cost: 25300, requires: ['industry', 'railways'], description: 'Engines on the roads and at sea.', effects: { work: 1.04 }, unlocks: ['Trucks and cars on the roads', 'Motor freighters at sea'] },
+  { id: 'flight', name: 'Flight', era: 5, cost: 27500, requires: ['combustion'], description: 'Wings of canvas and wire.', effects: { march: 1.05 }, unlocks: ['Airfields', 'Mail and transport planes between towns', 'Biplanes that scout and strafe in war'], builds: ['airfield'] },
+  { id: 'radio', name: 'Radio', era: 5, cost: 24750, requires: ['electricity'], description: 'Voices through the air: news and treaties travel fast.', effects: { research: 1.04, diplomacy: 1.6 }, unlocks: ['Radio masts with blinking lights', 'Faster diplomacy; allies answer sooner'], builds: ['radiomast'] },
+  { id: 'concrete', name: 'Reinforced Concrete', era: 5, cost: 24200, requires: ['industry', 'architecture'], description: 'Steel and concrete: towns grow upward.', effects: { build: 1.1 }, unlocks: ['Apartment blocks', 'Taller, larger towns on the same land'], builds: ['apartment'] },
+  { id: 'battleships', name: 'Battleships', era: 5, cost: 28600, requires: ['ironclads', 'electricity'], description: 'Steel turrets at sea, armour on land.', effects: { siegeFire: 1.2 }, unlocks: ['Steel battleships with turrets', 'Tanks and artillery with the armies'] },
   // Atomic
-  { id: 'jets', name: 'Jet Engines', era: 6, cost: 38500, requires: ['flight', 'electricity'], description: 'Jets cross the world in hours.', effects: { gold: 1.1 }, unlocks: ['Airports with runways', 'Jet airliners between realms at peace', 'Jet fighters in war'], builds: ['airport'] },
-  { id: 'rocketry', name: 'Rocketry', era: 6, cost: 43000, requires: ['jets', 'radio'], description: 'Rockets climb to orbit.', effects: { research: 1.03 }, unlocks: ['Launch pads', 'Rockets lifting off on plumes of fire', 'Satellites crossing the night sky, each one speeding research'], builds: ['launchpad'] },
-  { id: 'computing', name: 'Computing', era: 6, cost: 39500, requires: ['radio', 'concrete'], description: 'Thinking machines speed every inquiry.', effects: { research: 1.3 }, unlocks: ['Research campuses', 'Glowing screens in the windows'], builds: ['campus'] },
-  { id: 'containers', name: 'Container Shipping', era: 6, cost: 37500, requires: ['combustion', 'concrete'], description: 'Boxes by the thousand: bulk sea trade.', effects: { gold: 1.15 }, unlocks: ['Container ships', 'Ports with gantry cranes and stacked containers'], builds: ['containerport'] },
-  { id: 'skyscrapers', name: 'Skyscrapers', era: 6, cost: 38500, requires: ['concrete', 'electricity'], description: 'Towers of steel and glass at the heart of the city.', effects: { build: 1.05 }, unlocks: ['High-rise towers at city centres', 'Larger cities'], builds: ['skyscraper'] },
-  { id: 'carriers', name: 'Carriers', era: 6, cost: 43000, requires: ['battleships', 'jets'], description: 'Floating airfields.', effects: {}, unlocks: ['Aircraft carriers that launch and recover jets'] },
-  { id: 'nuclear', name: 'Nuclear Power', era: 6, cost: 44000, requires: ['electricity', 'computing'], description: 'Power from the atom, and never its weapons.', effects: { work: 1.2 }, unlocks: ['Power plants with cooling towers and steam', 'A large boost to work'], builds: ['nuclear'] },
+  { id: 'jets', name: 'Jet Engines', era: 6, cost: 70000, requires: ['flight', 'electricity'], description: 'Jets cross the world in hours.', effects: { gold: 1.1 }, unlocks: ['Airports with runways', 'Jet airliners between realms at peace', 'Jet fighters in war'], builds: ['airport'] },
+  { id: 'rocketry', name: 'Rocketry', era: 6, cost: 78000, requires: ['jets', 'radio'], description: 'Rockets climb to orbit.', effects: { research: 1.03 }, unlocks: ['Launch pads', 'Rockets lifting off on plumes of fire', 'Satellites crossing the night sky, each one speeding research'], builds: ['launchpad'] },
+  { id: 'computing', name: 'Computing', era: 6, cost: 72000, requires: ['radio', 'concrete'], description: 'Thinking machines speed every inquiry.', effects: { research: 1.3 }, unlocks: ['Research campuses', 'Glowing screens in the windows'], builds: ['campus'] },
+  { id: 'containers', name: 'Container Shipping', era: 6, cost: 68000, requires: ['combustion', 'concrete'], description: 'Boxes by the thousand: bulk sea trade.', effects: { gold: 1.15 }, unlocks: ['Container ships', 'Ports with gantry cranes and stacked containers'], builds: ['containerport'] },
+  { id: 'skyscrapers', name: 'Skyscrapers', era: 6, cost: 70000, requires: ['concrete', 'electricity'], description: 'Towers of steel and glass at the heart of the city.', effects: { build: 1.05 }, unlocks: ['High-rise towers at city centres', 'Larger cities'], builds: ['skyscraper'] },
+  { id: 'carriers', name: 'Carriers', era: 6, cost: 78000, requires: ['battleships', 'jets'], description: 'Floating airfields.', effects: {}, unlocks: ['Aircraft carriers that launch and recover jets'] },
+  { id: 'nuclear', name: 'Nuclear Power', era: 6, cost: 80000, requires: ['electricity', 'computing'], description: 'Power from the atom, and never its weapons.', effects: { work: 1.2 }, unlocks: ['Power plants with cooling towers and steam', 'A large boost to work'], builds: ['nuclear'] },
   // Future
-  { id: 'fusion', name: 'Fusion', era: 7, cost: 58000, requires: ['nuclear'], description: 'A star in a bottle: clean, boundless power.', effects: { work: 1.12, birth: 1.08 }, unlocks: ['Fusion plants with a glowing ring', 'The factory haze clears'], builds: ['fusion'] },
-  { id: 'maglev', name: 'Maglev', era: 7, cost: 60500, requires: ['railways', 'fusion'], description: 'Trains that float above their rails.', effects: { march: 1.1, gold: 1.05 }, unlocks: ['Elevated maglev lines between cities', 'Sleek maglev trains'] },
-  { id: 'robotics', name: 'Robotics', era: 7, cost: 55000, requires: ['computing'], description: 'Machines that build and carry.', effects: { build: 1.25, work: 1.08 }, unlocks: ['Delivery drones over the towns', 'Robot workers'] },
-  { id: 'vtol', name: 'VTOL Transport', era: 7, cost: 60500, requires: ['jets', 'robotics'], description: 'Craft that rise straight up.', effects: { march: 1.05 }, unlocks: ['Sky taxis and VTOL transports between towns'] },
-  { id: 'arcology', name: 'Arcology', era: 7, cost: 63000, requires: ['skyscrapers', 'fusion'], description: 'Whole cities in one green tower.', effects: { foodCap: 1.2 }, unlocks: ['Arcologies: vast green tower-cities', 'Very large cities'], builds: ['arcology'] },
-  { id: 'orbital', name: 'Orbital Industry', era: 7, cost: 66000, requires: ['rocketry', 'fusion'], description: 'Factories and harbours in orbit.', effects: { research: 1.12, gold: 1.25 }, unlocks: ['A spaceport where reusable rockets land', 'An orbital station in the sky'], builds: ['spaceport'] },
-  { id: 'starships', name: 'Starships', era: 7, cost: 74000, requires: ['orbital', 'arcology'], description: 'Colony ships for the stars.', effects: { research: 1.05 }, unlocks: ['Colony starships launched to the stars'] },
+  { id: 'fusion', name: 'Fusion', era: 7, cost: 147000, requires: ['nuclear'], description: 'A star in a bottle: clean, boundless power.', effects: { work: 1.12, birth: 1.08 }, unlocks: ['Fusion plants with a glowing ring', 'The factory haze clears'], builds: ['fusion'] },
+  { id: 'maglev', name: 'Maglev', era: 7, cost: 154000, requires: ['railways', 'fusion'], description: 'Trains that float above their rails.', effects: { march: 1.1, gold: 1.05 }, unlocks: ['Elevated maglev lines between cities', 'Sleek maglev trains'] },
+  { id: 'robotics', name: 'Robotics', era: 7, cost: 140000, requires: ['computing'], description: 'Machines that build and carry.', effects: { build: 1.25, work: 1.08 }, unlocks: ['Delivery drones over the towns', 'Robot workers'] },
+  { id: 'vtol', name: 'VTOL Transport', era: 7, cost: 154000, requires: ['jets', 'robotics'], description: 'Craft that rise straight up.', effects: { march: 1.05 }, unlocks: ['Sky taxis and VTOL transports between towns'] },
+  { id: 'arcology', name: 'Arcology', era: 7, cost: 161000, requires: ['skyscrapers', 'fusion'], description: 'Whole cities in one green tower.', effects: { foodCap: 1.2 }, unlocks: ['Arcologies: vast green tower-cities', 'Very large cities'], builds: ['arcology'] },
+  { id: 'orbital', name: 'Orbital Industry', era: 7, cost: 168000, requires: ['rocketry', 'fusion'], description: 'Factories and harbours in orbit.', effects: { research: 1.12, gold: 1.25 }, unlocks: ['A spaceport where reusable rockets land', 'An orbital station in the sky'], builds: ['spaceport'] },
+  { id: 'starships', name: 'Starships', era: 7, cost: 189000, requires: ['orbital', 'arcology'], description: 'Colony ships for the stars.', effects: { research: 1.05 }, unlocks: ['Colony starships launched to the stars'] },
 ];
 
 export const techById = Object.fromEntries(TECHS.map((t) => [t.id, t]));
@@ -104,8 +104,11 @@ for (let e = 0; e <= LAST_ERA; e++) {
 // while the rest goes into the modern arts.
 const MASTERY_SHARE = 0.3;
 // Each art a realm knows of a modern era speeds its study of that era's
-// others by this much (the first steps into an age are slow, the rest quick).
+// others by this much (the first steps into an age are slow, the rest
+// quick), and each modern art it knows at all speeds every later one a
+// little (CARRY). Tuned against Medium runs of seeds 7 and 11.
 const MOMENTUM = 1.2;
+const CARRY = 0.15;
 
 // Extra research on big maps (planner _bigMap: none on Medium): their realms
 // stay small and far apart, and on their own reached the Enlightened arts
@@ -244,8 +247,11 @@ export const tech = {
   },
 
   _chooseResearch(k) {
-    const opts = this._availableTechs(k);
+    let opts = this._availableTechs(k);
     if (!opts.length) return null;
+    // the old arts first: no modern art while one up to the Enlightened era
+    // is still to learn (round 13's pacing of eras 0-3 stays as it was)
+    if (opts.some((t) => t.era <= 3)) opts = opts.filter((t) => t.era <= 3);
     const traits = this.cultureDef(k.culture)?.traits || [];
     // a realm of harbours and islands takes to the sea first (an island
     // map's realms reached the Iron era without Sailing)
@@ -350,9 +356,14 @@ export const tech = {
       if (rt && rt.era >= 4) {
         const m = gain * MASTERY_SHARE;
         gain -= m;
-        let n = 0;
-        for (const t of TECHS) if (t.era === rt.era && k.techs.has(t.id)) n++;
-        gain *= 1 + MOMENTUM * n;
+        let n = 0,
+          all = 0;
+        for (const t of TECHS) {
+          if (t.era < 4 || !k.techs.has(t.id)) continue;
+          all++;
+          if (t.era === rt.era) n++;
+        }
+        gain *= 1 + MOMENTUM * n + CARRY * all;
         k.masteryKnowledge = (k.masteryKnowledge || 0) + m;
         if (k.masteryKnowledge >= this.masteryCost(k)) {
           k.masteryKnowledge -= this.masteryCost(k);
