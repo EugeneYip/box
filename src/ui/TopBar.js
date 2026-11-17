@@ -262,8 +262,8 @@ export class TopBar {
     const preset = (p.preset === 'earth' && p.region && earthRegion(p.region)?.name) || PRESET_NAMES[p.preset] || titleCase(p.preset || 'world');
     this.placeEl.textContent = preset;
     this.seedEl.textContent = ` · Seed ${p.seed}`;
-    // the whole line in the tip, for when the place is shortened
-    this.brandBtn.dataset.tip = `${preset} · Seed ${p.seed} · New world · G`;
+    // the whole line in the tip, for when it is shortened
+    this.brandBtn.dataset.tip = `${preset} · Seed ${p.seed} — New world · G`;
   }
 
   syncSpeed() {
