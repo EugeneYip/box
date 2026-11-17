@@ -16,6 +16,8 @@
 //   ?audio=0            disable audio
 //   ?civs=3             number of starting villages to seed (0 for none)
 //   ?power=1            power saver (30 fps cap, lighter rendering); default on for touch devices
+//   ?wrap=0             World Map, whole Earth only: close the Atlantic seam (default 1:
+//                       ships cross the map's left and right edges; docs/ROUND-WORLD.md)
 
 import { EARTH_REGIONS, earthRegion } from '../world/data/regions.js';
 
@@ -134,6 +136,7 @@ export function readParams() {
     audio: q.get('audio') !== '0',
     civs: num('civs', 3),
     power: q.has('power') ? q.get('power') !== '0' : null,
+    wrap: q.has('wrap') ? q.get('wrap') !== '0' : null,
     debug: q.has('debug'),
     raw: q,
   };

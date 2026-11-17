@@ -66,6 +66,10 @@ export class Game {
     this.paused = params.speed === 0;
     // World Laws (src/core/laws.js): player-editable simulation rules.
     this.laws = loadLaws();
+    // Round world (docs/ROUND-WORLD.md): kept with the world (URL wrap=0|1), on
+    // by default; the World instance carries it for src/world/geo.js
+    this.laws.worldWrap = params.wrap ?? true;
+    this.world.wrapTravel = this.laws.worldWrap;
     this.settings = {
       // ?hour= pins the time of day (screenshots) without touching the law.
       dayNight: this.laws.skyDayNight && params.hour == null,
@@ -184,6 +188,7 @@ export class Game {
     this.laws[key] = value;
     if (key === 'skyDayNight') this.settings.dayNight = value && this.params.hour == null;
     if (key === 'skyWeather') this.settings.autoWeather = value;
+    if (key === 'worldWrap') this._setWrap(value);
     saveLaws(this.laws);
     this.events.emit('laws', { key, value });
   }
@@ -191,11 +196,28 @@ export class Game {
     Object.assign(this.laws, defaultLaws());
     this.settings.dayNight = this.laws.skyDayNight;
     this.settings.autoWeather = this.laws.skyWeather;
+    this._setWrap(this.laws.worldWrap);
     saveLaws(this.laws);
     this.events.emit('laws', { key: null, value: null });
   }
   setAge(id) {
     this.ages.begin(id);
+  }
+  // Round world on or off for this world; the address keeps it (wrap=0) so a
+  // reload grows the same world with the same seam.
+  _setWrap(on) {
+    this.world.wrapTravel = !!on;
+    this.params.wrap = !!on;
+    if (this.world.meta?.preset !== 'earth' || this.params.region) return;
+    try {
+      const q = new URLSearchParams(location.search);
+      if (on) q.delete('wrap');
+      else q.set('wrap', '0');
+      const s = q.toString();
+      history.replaceState(history.state, '', location.pathname + (s ? '?' + s : '') + location.hash);
+    } catch {
+      /* no address bar (tests) */
+    }
   }
   setPowerSaver(on) {
     this.settings.powerSaver = !!on;
