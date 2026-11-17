@@ -1,5 +1,5 @@
 import { SEA_LEVEL, TILE } from '../../world/constants.js';
-import { KINDS } from './kinds.js';
+import { KINDS, STUB_KINDS } from './kinds.js';
 import { pathLength } from './nav.js';
 import { hullR, hullHalf, segDist } from './hull.js';
 import { regionName } from '../disasters/util.js';
@@ -22,6 +22,12 @@ export const missions = {
     if (!this.law('fleetSailing')) return refuse('sailing is forbidden by the laws of the world');
     const cargo = o.cargo ? { ...o.cargo } : {};
     if (cargo.settlers && !this.law('fleetColonize')) return refuse('overseas settlement is forbidden');
+    // a modern ship (a stub of kinds.js) sails as its base kind with its own stats
+    let model = null;
+    if (STUB_KINDS[o.kind]?.base && KINDS[STUB_KINDS[o.kind].base].cls === 'sea') {
+      model = o.kind;
+      o = { ...o, kind: STUB_KINDS[o.kind].base };
+    }
     let kind = KINDS[o.kind]?.cls === 'sea' ? o.kind : cargo.settlers || cargo.army ? 'transport' : 'cog';
     if (kind === 'galley' && !this.law('fleetNaval')) return refuse('naval war is forbidden');
     const h = this.resolveHarbour(o.from, kid);
@@ -64,7 +70,8 @@ export const missions = {
     // for a realm with carracks), long ones in ocean-going ships; great ships
     // never sail up narrow rivers
     let options;
-    if (kind === 'transport' || cargo.settlers || cargo.army) options = cargo.army ? ['transport', 'carrack'] : straight < 120 ? ['transport', 'carrack', 'explorer'] : ['carrack', 'explorer', 'transport'];
+    if (model) options = [kind];
+    else if (kind === 'transport' || cargo.settlers || cargo.army) options = cargo.army ? ['transport', 'carrack'] : straight < 120 ? ['transport', 'carrack', 'explorer'] : ['carrack', 'explorer', 'transport'];
     else if (kind === 'cog' || kind === 'carrack') options = straight < 70 || kind === 'cog' ? ['cog', 'carrack'] : ['carrack', 'cog'];
     else options = [kind];
     let pick = null,
@@ -100,10 +107,11 @@ export const missions = {
     }
     if (!pick) return refuse(reason);
     if (pick === 'explorer' && cargo.settlers) cargo.settlers = Array.isArray(cargo.settlers) ? cargo.settlers.slice(0, 6) : Math.min(6, cargo.settlers);
-    let v = this.list.find((s) => s.alive && s.kind === pick && s.harbour === h.id && s.state === 'moored' && !s.mission && !s.layup);
+    // (an older ship in port sails first: the new kinds replace the old gradually)
+    let v = this.list.find((s) => s.alive && s.kind === pick && s.harbour === h.id && s.state === 'moored' && !s.mission && !s.layup && (!model || s.model === model || this.rng() < 0.5));
     if (!v) {
       const at = this._launchAt(h, pick);
-      v = this.spawn(pick, kid, at.x, at.z, { home: h.village, harbour: h.id, heading: Math.atan2(h.dirZ, h.dirX) });
+      v = this.spawn(pick, kid, at.x, at.z, { home: h.village, harbour: h.id, heading: Math.atan2(h.dirZ, h.dirX), model });
     }
     if (!v) return refuse('no ship');
     const type = cargo.settlers ? 'colony' : cargo.army ? 'army' : toH ? 'trade' : 'voyage';
@@ -1077,7 +1085,7 @@ export const missions = {
     // no enemy port on our waters: no fleet (their ships passing by are not a war at sea)
     if (!best) return;
     const at = this._launchAt(best, 'galley');
-    const v = this.spawn('galley', kid, at.x, at.z, { home: best.village, harbour: best.id, heading: Math.atan2(best.dirZ, best.dirX) });
+    const v = this.spawn('galley', kid, at.x, at.z, { home: best.village, harbour: best.id, heading: Math.atan2(best.dirZ, best.dirX), model: this.warModel(kid) });
     v.mission = { type: 'patrol', phase: 'out', t: 0 };
     v.state = 'patrol';
   },

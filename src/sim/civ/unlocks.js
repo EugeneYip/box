@@ -1,6 +1,7 @@
 import { TILE, SEA_LEVEL } from '../../world/constants.js';
 import { BUILDING_TYPES } from './catalog.js';
 import { USE, YEAR, ADULT_AGE, SPIRAL, spiralCount } from './util.js';
+import { MODERN_FIRST } from './modern.js';
 
 // Tangible technology (docs/TECH-UNLOCKS.md, the parts marked Civ): the
 // buildings each technology adds, surveyed roads and stone bridges, healers,
@@ -49,7 +50,7 @@ export const unlocks = {
     const f = k.firsts || (k.firsts = new Set());
     if (f.has(key)) return false;
     f.add(key);
-    const what = FIRST[key];
+    const what = FIRST[key] || MODERN_FIRST[key];
     if (what) this._note(`✨ ${k.plain || /^the /i.test(k.name) ? k.name : 'The ' + k.name} ${what}`, 'good', pos || this._kingdomPos?.(k), 'first' + k.id + key, 1);
     return true;
   },
@@ -65,7 +66,7 @@ export const unlocks = {
     // Engineering: the larger works of the realm rise under cranes
     if (BUILDING_TYPES[b.type]?.w * BUILDING_TYPES[b.type]?.h >= 4 && this.hasTech(k.id, 'engineering')) this._firstUse(k, 'crane', { x: b.x, z: b.z });
     if (b.type === 'workshop' && b.level < 2) return;
-    if (FIRST[key]) this._firstUse(k, key, { x: b.x, z: b.z });
+    if (FIRST[key] || MODERN_FIRST[key]) this._firstUse(k, key, { x: b.x, z: b.z });
   },
 
   // ------------------------------------------------------------ building plan
@@ -99,6 +100,8 @@ export const unlocks = {
     }
     // masonry: a paved square before the hall
     if (has('masonry') && pop >= 14 && !v.squarePaved && v.hall && !v.hall.constructing && v.policy?.buildings !== false) this._paveSquare(v, K);
+    // the modern and future eras (modern.js)
+    this._planModern(v, K, room, build, upgrade, count);
   },
 
   // A small building on the bank of a river or lake near the fields.
@@ -168,6 +171,7 @@ export const unlocks = {
         this._fleetDecisions(k);
       }
     }
+    this._modernTick(dt);
   },
 
   // Young colonies are supplied for thirty years: families and grain from
@@ -483,8 +487,10 @@ export const unlocks = {
       // with no foreign partner, ships still carry goods between the realm's own ports
       if (!best && mine.length > 1) best = mine.find((h) => h !== from && sameSea(h) && h.village !== from.village) || null;
       if (best) {
-        const kind = this.hasTech(k.id, 'navigation') ? 'carrack' : 'cog';
-        const ok = F.requestVoyage({ kind, kingdom: k.id, from: from.id, to: best.id, cargo: { gold: 8 + (this.hasTech(k.id, 'banking') ? 6 : 0), food: 12, wood: 6, trade: true } });
+        // steamers, motor freighters and container ships take over the trade
+        const kind = F.tradeModel?.(k.id) || (this.hasTech(k.id, 'navigation') ? 'carrack' : 'cog');
+        const bulk = { steamer: 3, freighter: 6, container: 12 }[kind] || 0;
+        const ok = F.requestVoyage({ kind, kingdom: k.id, from: from.id, to: best.id, cargo: { gold: 8 + (this.hasTech(k.id, 'banking') ? 6 : 0) + bulk, food: 12, wood: 6, trade: true } });
         if (ok) {
           k.tradeT = now;
           fv.food -= 10;

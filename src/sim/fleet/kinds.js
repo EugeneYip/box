@@ -26,6 +26,59 @@ export const SEA_KINDS = ['fishing', 'cog', 'transport', 'galley', 'explorer', '
 export const LAND_KINDS = ['oxcart', 'caravan', 'ram', 'catapult'];
 export const ALL_KINDS = [...SEA_KINDS, ...LAND_KINDS];
 
+// ---------------------------------------------------------------- modern and future (docs/MODERN-ERAS.md)
+// STUBS until the Fleets module gives each its own model and behaviour. A
+// stub with a `base` runs as that existing kind: it is spawned as the base
+// kind (so every routine and the renderer's batches handle it), with its own
+// name, speed, strength and capacity, and `vehicle.model` naming what it
+// really is (the renderer and the inspector can key on it). Air and space
+// stubs (`cls` 'air' / 'space') have no base: they fly as plain records in
+// fleet.air (straight routes at an altitude) and fleet.orbit (satellites,
+// stations), which the air layer will draw. To make a stub real: add the kind
+// to KINDS and to SEA_KINDS / LAND_KINDS with its model, and delete it here.
+export const STUB_KINDS = {
+  // sea: cogs give way to steamers, freighters and container ships
+  steamer: { base: 'cog', name: 'Steamship', tech: 'steampower', speed: 2.3, capacity: 90, hp: 170, smoke: true, sail: false },
+  freighter: { base: 'cog', name: 'Motor freighter', tech: 'combustion', speed: 2.6, capacity: 140, hp: 210, smoke: true, sail: false },
+  container: { base: 'carrack', name: 'Container ship', tech: 'containers', speed: 2.8, capacity: 300, hp: 340, sail: false },
+  ironclad: { base: 'galley', name: 'Ironclad', tech: 'ironclads', speed: 2.35, hp: 320, dps: 22, smoke: true, sail: false, oars: false },
+  battleship: { base: 'galley', name: 'Battleship', tech: 'battleships', speed: 2.55, hp: 520, dps: 34, sail: false, oars: false },
+  carrier: { base: 'galley', name: 'Aircraft carrier', tech: 'carriers', speed: 2.45, hp: 620, dps: 30, sail: false, oars: false },
+  // land: carts give way to trains and trucks; siege engines to guns and armour
+  train: { base: 'oxcart', name: 'Steam train', tech: 'railways', speed: 3.4, capacity: 80, hp: 120, rail: true },
+  maglev: { base: 'oxcart', name: 'Maglev train', tech: 'maglev', speed: 6.5, capacity: 120, hp: 160, rail: true },
+  truck: { base: 'oxcart', name: 'Truck', tech: 'combustion', speed: 2.4, capacity: 48, hp: 70 },
+  car: { base: 'oxcart', name: 'Car', tech: 'combustion', speed: 2.6, capacity: 4, hp: 40 },
+  cannon: { base: 'catapult', name: 'Cannon', tech: 'gunpowder', speed: 1.1, hp: 140 },
+  tank: { base: 'ram', name: 'Tank', tech: 'battleships', speed: 1.7, hp: 420 },
+  artillery: { base: 'catapult', name: 'Artillery', tech: 'battleships', speed: 1.35, hp: 190 },
+  // air (no terrain pathing: straight or gently curved routes at altitude)
+  plane: { cls: 'air', name: 'Transport plane', tech: 'flight', speed: 6, alt: 6, capacity: 20, hp: 60 },
+  biplane: { cls: 'air', name: 'Biplane', tech: 'flight', speed: 7, alt: 5, hp: 50, war: true },
+  airliner: { cls: 'air', name: 'Jet airliner', tech: 'jets', speed: 14, alt: 11, capacity: 60, hp: 120 },
+  jet: { cls: 'air', name: 'Jet fighter', tech: 'jets', speed: 18, alt: 9, hp: 90, war: true },
+  drone: { cls: 'air', name: 'Delivery drone', tech: 'robotics', speed: 3.5, alt: 2.2, capacity: 2, hp: 10 },
+  skytaxi: { cls: 'air', name: 'Sky taxi', tech: 'vtol', speed: 8, alt: 4.5, capacity: 4, hp: 60 },
+  // space
+  rocket: { cls: 'space', name: 'Rocket', tech: 'rocketry', speed: 4, hp: 80 },
+  satellite: { cls: 'space', name: 'Satellite', tech: 'rocketry', hp: 20 },
+  station: { cls: 'space', name: 'Orbital station', tech: 'orbital', hp: 400 },
+  starship: { cls: 'space', name: 'Colony starship', tech: 'starships', speed: 3, hp: 600 },
+};
+const _stubDefs = new Map();
+// The def a stub vehicle runs with: its base kind's, with the stub's own stats.
+export function stubDef(model) {
+  let d = _stubDefs.get(model);
+  if (d) return d;
+  const s = STUB_KINDS[model];
+  if (!s) return null;
+  const base = s.base ? KINDS[s.base] : null;
+  d = { ...(base || { cls: s.cls, turn: 2, crew: 1, capacity: 0, scale: 1, length: 1, size: 0.6, dps: 0 }), ...s, model, stub: true };
+  if (base) d.cls = base.cls;
+  _stubDefs.set(model, d);
+  return d;
+}
+
 // Proud names for ships (the chronicle and the inspector use them).
 const ADJ = ['Swift', 'Grey', 'Golden', 'Bold', 'Silver', 'Red', 'Morning', 'Wandering', 'Faithful', 'Northern', 'Lucky', 'Proud', 'Quiet', 'Salt', 'Iron', 'Merry', 'Blue', 'Brave', 'Old', 'Evening'];
 const NOUN = ['Heron', 'Gull', 'Star', 'Otter', 'Wind', 'Maiden', 'Dolphin', 'Lantern', 'Crown', 'Swan', 'Tide', 'Pike', 'Hawk', 'Rose', 'Promise', 'Seal', 'Petrel', 'Fortune', 'Wave', 'Anchor'];

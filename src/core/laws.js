@@ -28,6 +28,8 @@ export const LAW_CATEGORIES = [
 
 const B = (key, category, label, description, def, owner) => ({ key, category, label, description, type: 'bool', default: def, owner });
 const N = (key, category, label, description, def, min, max, step, owner) => ({ key, category, label, description, type: 'number', default: def, min, max, step, owner });
+// A number law whose steps are named (the panel shows the name, not a multiplier).
+const S = (key, category, label, description, def, labels, owner) => ({ key, category, label, description, type: 'number', default: def, min: 0, max: labels.length - 1, step: 1, labels, owner });
 
 export const LAWS = [
   // ---- Harmony -----------------------------------------------------------
@@ -49,6 +51,7 @@ export const LAWS = [
   N('civGrowth', 'civilization', 'Birth rate', 'How quickly villages grow.', 1, 0.25, 3, 0.25, 'civ'),
   B('civTechnology', 'civilization', 'Knowledge', 'Kingdoms research technologies and advance through eras.', true, 'civ'),
   N('civTechSpeed', 'civilization', 'Research speed', 'How quickly kingdoms gain knowledge.', 1, 0.25, 4, 0.25, 'civ'),
+  S('civEraCap', 'civilization', 'Latest era', 'The latest era realms may reach, from Hearth to Future. Choose Enlightened for a world that never leaves the age of sail and steel.', 7, ['Hearth', 'Bronze', 'Iron', 'Enlightened', 'Industrial', 'Modern', 'Atomic', 'Future'], 'civ'),
   B('civRoads', 'civilization', 'Roads', 'Villages pave paths between their buildings and neighbours.', true, 'civ'),
   B('civWalls', 'civilization', 'Fortifications', 'Cities raise walls, gates and watchtowers.', true, 'civ'),
   B('fleetSailing', 'civilization', 'Ships', 'Realms launch fishing boats, trading cogs, transports and great ships.', true, 'fleet'),

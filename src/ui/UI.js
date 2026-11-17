@@ -172,6 +172,7 @@ export class UI {
           const v = game.laws?.[key] ?? value;
           let text;
           if (def.type === 'bool') text = v ? `${def.label} allowed again: ${def.description.replace(/\.$/, '').replace(/^./, (c) => c.toLowerCase())}.` : `${def.label} forbidden by World Law.`;
+          else if (def.labels) text = `${def.label} set to ${def.labels[Math.round(+v)] ?? v} by World Law.`;
           else text = +v === 0 ? `${def.label} stilled by World Law.` : `${def.label} set to ×${+(+v).toFixed(2)}.`;
           this.toast(text);
           safe(() => game.notify(text, 'info'));

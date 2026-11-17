@@ -502,7 +502,8 @@ export const politics = {
           if (r.border > 0 && r.border < 30) target += 4;
         }
         if (r.war) r.peaceT = 0;
-        r.opinion += (target - r.opinion) * 0.12;
+        // Radio: news and envoys travel fast, and opinion follows events sooner
+        r.opinion += (target - r.opinion) * 0.12 * Math.max(this.techMod(A.id, 'diplomacy'), this.techMod(B.id, 'diplomacy'));
         r.opinion = clamp(r.opinion, -100, 100);
         r.grievance = Math.max(0, r.grievance - 0.25);
         if (this._relLocked?.(r)) continue;
@@ -660,7 +661,7 @@ export const politics = {
         if (this._relLocked?.(this.relations.get(relKey(k.id, a)))) continue;
         // a realm sworn to peace (warlike 0) keeps out of its allies' wars
         if (this._kLaw(k.id, 'diploWarlike', 1) <= 0) continue;
-        if (this.allied(k.id, b) && !this.allied(k.id, a) && this.warCount(k.id) < 2 && this.rng.chance(0.7)) {
+        if (this.allied(k.id, b) && !this.allied(k.id, a) && this.warCount(k.id) < 2 && this.rng.chance(this.hasTech(k.id, 'radio') ? 0.9 : 0.7)) {
           const rr = this.rel(k.id, a);
           if (!rr.war) {
             rr.war = true;

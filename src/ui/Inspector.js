@@ -3,7 +3,7 @@ import { TILE_INFO, FLORA_INFO, SEA_LEVEL, SHALLOW_DEPTH, TILE } from '../world/
 import { powerIcon, uiIcon, tileTint, hasIcon } from './icons.js';
 import { getPower } from '../powers/registry.js';
 import { el, esc, safe, hexCss, fmtNum, realmColourText } from './dom.js';
-import { traitDef, statusDef, modLines, prettyId, eraNames, techDef, techList } from './depth.js';
+import { traitDef, statusDef, modLines, prettyId, eraNames, techDef, techList, ERA_ICON } from './depth.js';
 import { kingdomOf, eraOf, researchOf } from './TechPanel.js';
 import { CULTURES } from '../sim/civ/cultures.js';
 import { Editor } from './Editor.js';
@@ -807,7 +807,7 @@ export class Inspector {
     if (isKingdom && k.motto && !(r.stats || []).some((s) => /motto/i.test(String(s[0])))) html += `<p class="ws-motto">“${esc(String(k.motto))}”</p>`;
     if (k && !isKingdom) {
       const era = eraOf(g, k);
-      html += `<section class="ws-dsec"><h5>Realm</h5><div class="ws-realm__line"><span class="ws-era is-era${era}">${uiIcon(['house', 'build', 'job-soldier', 'chronicle'][era])}<span>Realm · ${esc(eraNames()[era] || '')} era</span></span>${this._chipNames?.has(String(k.name || '').toLowerCase()) ? '' : `<span class="ws-realm__of">${esc(String(k.name || ''))}</span>`}</div></section>`;
+      html += `<section class="ws-dsec"><h5>Realm</h5><div class="ws-realm__line"><span class="ws-era is-era${era}">${uiIcon(ERA_ICON[era] || 'chronicle')}<span>Realm · ${esc(eraNames()[era] || '')} era</span></span>${this._chipNames?.has(String(k.name || '').toLowerCase()) ? '' : `<span class="ws-realm__of">${esc(String(k.name || ''))}</span>`}</div></section>`;
     }
     if (k && isKingdom) {
       const era = eraOf(g, k);
@@ -815,7 +815,7 @@ export class Inspector {
       const nT = k.techs instanceof Set ? k.techs.size : Array.isArray(k.techs) ? k.techs.length : 0;
       const tot = techList(g).length;
       const mastery = k.mastery || 0;
-      html += `<section class="ws-dsec"><h5>Learning</h5><div class="ws-realm__era"><span class="ws-era is-era${era}">${uiIcon(['house', 'build', 'job-soldier', 'chronicle'][era])}<span>${esc(eraNames()[era] || '')} era</span></span>${
+      html += `<section class="ws-dsec"><h5>Learning</h5><div class="ws-realm__era"><span class="ws-era is-era${era}">${uiIcon(ERA_ICON[era] || 'chronicle')}<span>${esc(eraNames()[era] || '')} era</span></span>${
         res ? `<span class="ws-realm__res"><small>Studying ${esc(res.name)}${res.pct != null ? ` · ${Math.round(res.pct * 100)}%` : ''}</small>${res.pct != null ? `<span class="ws-meter"><i style="width:${(res.pct * 100).toFixed(1)}%"></i></span>` : ''}</span>` : `<span class="ws-realm__res"><small>${nT && tot && nT >= tot ? 'Every technology is known' : 'No research under way'}</small></span>`
       }</div><div class="ws-realm__facts"><span data-tip="Technologies this realm has learned">${uiIcon('chronicle')}${nT}${tot ? ` / ${tot}` : ''} techs</span>${mastery > 0 ? `<span data-tip="Mastery: refinements earned after every technology is known. Each level adds 3% to work, harvests and building.">${uiIcon('crown')}Mastery ${mastery}</span>` : ''}</div></section>`;
     }

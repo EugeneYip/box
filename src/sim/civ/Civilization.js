@@ -7,7 +7,8 @@ import { brain } from './brain.js';
 import { politics, relKey } from './politics.js';
 import { editing } from './editing.js';
 import { unlocks } from './unlocks.js';
-import { tech, ERAS, TECHS, techById } from './tech.js';
+import { tech, ERAS, TECHS, techById, LAST_ERA } from './tech.js';
+import { modern } from './modern.js';
 import { culture, TRAIT_INFO } from './culture.js';
 import { realms } from './realms.js';
 
@@ -98,6 +99,9 @@ export class Civilization {
     game.events.on('world:height', (r) => this._onHeight(r));
     // Fleets (optional module) reports voyages; Civ applies the cargo
     game.events.on('fleet:arrived', (e) => this._onFleetArrived?.(e));
+    // aircraft land and rockets reach orbit (Fleets air.js; modern.js applies them)
+    game.events.on('fleet:landed', (e) => this._onAirLanded?.(e));
+    game.events.on('fleet:orbit', (e) => this._onOrbit?.(e));
     game.events.on('fleet:lost', (e) => {
       const k = this.kingdoms[e?.kingdom ?? e?.vessel?.kingdom];
       if (k && (e?.cargo?.settlers || e?.cargo?.army)) this._history(`A ship of ${this._kn(k)} is lost at sea with all aboard`, 'bad', null);
@@ -142,6 +146,7 @@ export class Civilization {
     this._noteT = new Map();
     this.history = []; // full civ chronicle: {t, text, kind, x, z}
     this._techFirst = new Set();
+    this._initModern(); // rails, power lines (modern.js)
     this._initCultures();
     this.battles = [];
     this._computeLand();
@@ -995,13 +1000,16 @@ export class Civilization {
 
     // a kingdom's new era spreads through its towns building by building
     const K0 = this.kingdoms[v.kingdom];
-    // a realm of masters gilds its capital and cities (render era 4)
-    let era = Math.min(4, (K0?.era ?? 0) + ((K0?.mastery || 0) >= 4 && (K0.capital === v.id || v.tier >= 1) ? 1 : 0));
+    let era = Math.min(LAST_ERA, K0?.era ?? 0);
     if (era < 1 && K0 && this.hasTech(K0.id, 'masonry')) era = 1; // masons build in stone from the start
+    // a realm of masters gilds its capital and cities (b.gilded: gold leaf,
+    // bright plaster and banners, in whatever era it builds)
+    const gild = (K0?.mastery || 0) >= 4 && (K0.capital === v.id || v.tier >= 1);
     if (this.rng.chance(0.06 * dt)) {
-      const old = v.buildings.find((b) => b.alive && !b.constructing && (b.era ?? 0) < era);
+      const old = v.buildings.find((b) => b.alive && !b.constructing && ((b.era ?? 0) < era || (gild && !b.gilded)));
       if (old) {
-        old.era = Math.min(era, (old.era ?? 0) + 1);
+        if ((old.era ?? 0) < era) old.era = Math.min(era, (old.era ?? 0) + 1);
+        else old.gilded = true;
         this.version++;
         this._fx('sparkle', old.x, old.z, 0.8);
       }
@@ -1418,7 +1426,8 @@ export class Civilization {
   _popCap(v) {
     const m = this._easedMods();
     const great = v.tier >= 2 && (this.kingdoms[v.kingdom]?.capital === v.id || v.coastal || v.buildings.some((b) => b.alive && b.type === 'market' && b.level >= 2)) ? 1.6 : 1;
-    return Math.round(TIER_POP[v.tier || 0] * great * Math.max(1, Math.min(1.35, m.birth * 0.6 + m.fertility * 0.4)));
+    // taller towns: waterworks, apartment blocks, skyscrapers and arcologies (modern.js)
+    return Math.round(TIER_POP[v.tier || 0] * great * Math.max(1, Math.min(1.35, m.birth * 0.6 + m.fertility * 0.4)) * (v.tallMul || 1));
   }
   // How big a settlement may still grow once the world is full. The realm's
   // capital and its port and market cities grow on (a capital already as a
@@ -1432,10 +1441,11 @@ export class Civilization {
     const k = this.kingdoms[v.kingdom];
     const seat = k?.capital === v.id;
     const big = this.budget.area > 1.5;
-    if (v.tier >= 2 && seat) return 170;
-    if (v.tier >= 2 && v.coastal) return big ? 170 : 120;
-    if (v.tier >= 1 && seat && big) return 170;
-    return clamp(Math.round((1.6 * this._humanCap()) / Math.max(1, this._aliveVillageCount())), 14, 45);
+    const tall = v.tallMul || 1;
+    if (v.tier >= 2 && seat) return Math.round(170 * tall);
+    if (v.tier >= 2 && v.coastal) return Math.round((big ? 170 : 120) * tall);
+    if (v.tier >= 1 && seat && big) return Math.round(170 * tall);
+    return Math.round(clamp(Math.round((1.6 * this._humanCap()) / Math.max(1, this._aliveVillageCount())), 14, 45) * tall);
   }
   // May a village add a new house (rather than only enlarge old ones)? In a
   // crowded world towns may, and so may a hamlet up to 26 places while the
@@ -1462,7 +1472,7 @@ export class Civilization {
   }
   _humanCap() {
     const b = this._easedMods().birth;
-    return Math.round(this.budget.humans * Math.max(0.9, Math.min(1.25, b)));
+    return Math.round(this.budget.humans * Math.max(0.9, Math.min(1.25, b)) * (1 + this._modernPeople()));
   }
 
   _homeFor(v, u) {
@@ -2600,8 +2610,8 @@ export class Civilization {
       if (def.housing && b.alive) stats.push(['Houses', `${def.housing[b.level - 1]} people`]);
       if (def.levels > 1) stats.push(['Level', `${b.level} / ${def.levels}`]);
       // the building's own era (the realm's era is shown by the UI separately)
-      const be = Math.min(b.builtEra ?? b.era ?? 0, k?.era ?? 3);
-      stats.push(['Built in', `${ERAS[be]?.name || 'Hearth'} era${(b.era ?? 0) >= 4 ? ', since gilded' : ''}`]);
+      const be = Math.min(b.builtEra ?? b.era ?? 0, k?.era ?? LAST_ERA);
+      stats.push(['Built in', `${ERAS[be]?.name || 'Hearth'} era${b.gilded ? ', since gilded' : ''}`]);
       if (b.type === 'hall' && v) {
         // wood / stone / gold / ore appear in the UI's "Village stores" section
         stats.push(['Population', v.pop], ['Food', `${Math.floor(v.food)} / ${v.foodCap}`]);
@@ -2708,5 +2718,5 @@ export class Civilization {
   }
 }
 
-Object.assign(Civilization.prototype, planner, brain, politics, tech, culture, editing, unlocks, realms);
+Object.assign(Civilization.prototype, planner, brain, politics, tech, culture, editing, unlocks, realms, modern);
 export { ERAS, TECHS, techById, TRAIT_INFO };

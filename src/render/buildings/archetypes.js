@@ -1,4 +1,6 @@
 import { GeoBuilder, shade, mix } from './geom.js';
+import { modernPlaceholder } from './modernArch.js';
+import { BUILDING_TYPES } from '../../sim/civ/catalog.js';
 
 // Procedural architecture for every building type x culture style x level.
 // Local space: footprint centred on the origin, ground (levelled) at y = 0,
@@ -1709,21 +1711,33 @@ const ERA_DRESS = {
     { thatch: 0x9e3c2c, thatch2: 0x7e2c20, tile: 0x9e3c2c, wall: 0xdcc494, glass: 0x3f6e95 },
   ],
 };
-// Era 4 is not an era of research but of mastery: a realm that has mastered
-// its arts gilds its capital and cities (gold leaf, bright plaster, banners).
-for (const st of Object.keys(ERA_DRESS)) {
-  const e3 = ERA_DRESS[st][3] || {};
-  ERA_DRESS[st][4] = { ...e3, trim: 0xc9a23a, metal: 0xd8b04a, wall2: e3.wall2 ?? e3.wall ?? undefined };
-  if (ERA_DRESS[st][4].wall2 === undefined) delete ERA_DRESS[st][4].wall2;
+// The modern eras (PLACEHOLDER dress until the towns of each era get their
+// own look, docs/MODERN-ERAS.md): Industrial brick and slate, Modern
+// concrete and steel, Atomic glass and white, Future white and green.
+const MODERN_DRESS = [
+  { wall: 0xa0583e, wall2: 0xb8694a, tile: 0x4a4f57, thatch: 0x4a4f57, thatch2: 0x3c4047, stone: 0x8a8580, stone2: 0x6a6560, glass: 0x7a9ab8, timber: 0x3a3430 },
+  { wall: 0xc8c4bc, wall2: 0xd8d4cc, tile: 0x5a5e66, thatch: 0x5a5e66, thatch2: 0x484c52, stone: 0xa8a49c, stone2: 0x8a8680, glass: 0x8fb4d0, timber: 0x55585e },
+  { wall: 0xe4e6e8, wall2: 0xd0dae2, tile: 0x6a7a8a, thatch: 0x6a7a8a, thatch2: 0x56646f, stone: 0xb8bcc0, stone2: 0x9aa0a6, glass: 0x9cc8e8, timber: 0x6a6e74 },
+  { wall: 0xf2f4f0, wall2: 0xe2efe4, tile: 0x5f9a6a, thatch: 0x5f9a6a, thatch2: 0x4d8058, stone: 0xd4d8d2, stone2: 0xb4bab2, glass: 0xa8e0e8, timber: 0x8a9a8c, accent: 0x3fbfa8 },
+];
+for (const st of Object.keys(ERA_DRESS)) for (let e = 4; e <= 7; e++) ERA_DRESS[st][e] = { ...(ERA_DRESS[st][3] || {}), ...MODERN_DRESS[e - 4] };
+// Gilding is not an era but mastery (building.gilded): a realm that has
+// mastered its arts gilds its capital and cities (gold leaf, bright
+// plaster, banners) in whatever era it builds.
+function gildDress(d) {
+  const g = { ...d, trim: 0xc9a23a, metal: 0xd8b04a };
+  if (d.wall2 ?? d.wall) g.wall2 = d.wall2 ?? d.wall;
+  return g;
 }
 const ROOF_OF = { 0x8f4530: 2, 0x3f4852: 3, 0x4a5a6e: 3, 0x3c4450: 3, 0x4a7e6c: 3, 0xcf9f52: 1, 0x515b67: 3, 0x5b6e86: 3, 0xcfa676: 0, 0x2f9a96: 0, 0xd9a830: 0, 0x6c7e40: 4, 0x7a5a3c: 2, 0x5c9a86: 3, 0xb59a52: 1, 0x7a5a38: 2, 0x9e3c2c: 2, 0x7e2c20: 2, 0x5e4428: 2 };
 for (const [c, k] of Object.entries(ROOF_OF)) if (k) ROOF_KIND.set(+c, k);
 const _eraPal = new Map();
-export function eraPalette(style, era) {
-  const key = style + era;
+export function eraPalette(style, era, gilded = false) {
+  const key = style + era + (gilded ? 'g' : '');
   let K = _eraPal.get(key);
   if (!K) {
-    K = { ...(PAL[style] || PAL.vale), ...((ERA_DRESS[style] || [])[era] || {}) };
+    const d = (ERA_DRESS[style] || [])[era] || {};
+    K = { ...(PAL[style] || PAL.vale), ...(gilded ? gildDress(d) : d) };
     _eraPal.set(key, K);
   }
   return K;
@@ -2332,19 +2346,24 @@ const BUILDERS = {
   gate: (g, K, s) => gatehouse(g, K, s),
 };
 
-export function buildArchetype(type, style, level, era = 1, variant = 0) {
-  const K = eraPalette(style, era);
+export function buildArchetype(type, style, level, era = 1, variant = 0, gilded = false) {
+  const K = eraPalette(style, era, gilded);
   const g = new GeoBuilder(type.length * 131 + level * 17 + style.length * 7, { roofKind });
   const fn = BUILDERS[type];
   let info = {};
   if (fn) info = fn(g, K, style, level, variant) || {};
-  else g.box(0, 0, 0, 0.8, 0.8, 0.8, K.wall);
+  else if (BUILDING_TYPES[type]?.modern) info = modernPlaceholder(g, BUILDING_TYPES[type].kind || type, level) || {};
+  else {
+    // anything without a model of its own: a plain block of its footprint
+    const d = BUILDING_TYPES[type];
+    g.box(0, 0, 0, (d?.w || 1) * 0.8, 0.8, (d?.h || 1) * 0.8, K.wall);
+  }
   // every home flies a small pennant in its kingdom's colours
   if (type === 'house' && !(style === 'mire' && level >= 3)) bannerPole(g, K, 0.88, 0, 0.88, style === 'mire' ? 1.35 : 1.0, { s: 0.55 });
   if (era >= 3 && (type === 'house' || type === 'hall') && level >= 2) bannerPole(g, K, -0.9, 0, 0.86, 1.25, { s: 0.65 });
   // mastery: banners on every civic building and a gilded finial on the hall
-  if (era >= 4 && (type === 'temple' || type === 'market' || type === 'barracks' || type === 'library' || type === 'granary' || type === 'workshop')) bannerPole(g, K, 0.95, 0, -0.9, 1.6, { s: 0.85, finial: 0xe2b440 });
-  if (era >= 4 && type === 'hall') {
+  if (gilded && (type === 'temple' || type === 'market' || type === 'barracks' || type === 'library' || type === 'granary' || type === 'workshop')) bannerPole(g, K, 0.95, 0, -0.9, 1.6, { s: 0.85, finial: 0xe2b440 });
+  if (gilded && type === 'hall') {
     bannerPole(g, K, 0.95, 0, -0.9, 2.0, { s: 1.0, finial: 0xe2b440 });
     bannerPole(g, K, -0.95, 0, -0.9, 2.0, { s: 1.0, finial: 0xe2b440 });
   }

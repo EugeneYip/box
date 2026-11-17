@@ -29,7 +29,9 @@ export const land = {
       cargo[r] = take;
       any += take;
     }
-    const v = this.spawn('oxcart', kid ?? a.kingdom, path[0], path[1], { home: a.id, state: 'move', heading: Math.atan2(path[3] - path[1], path[2] - path[0]) });
+    // Combustion: trucks take over the hauling, a few carts at a time
+    const model = o.model || (this.hasTech(kid ?? a.kingdom, 'combustion') && this.rng() < 0.75 ? 'truck' : null);
+    const v = this.spawn('oxcart', kid ?? a.kingdom, path[0], path[1], { home: a.id, state: 'move', heading: Math.atan2(path[3] - path[1], path[2] - path[0]), model });
     v.cargo = any ? cargo : null;
     v.anim.cargoType = cargo.wood ? 0 : cargo.stone ? 1 : cargo.ore ? 3 : 2;
     v.mission = { type: 'haul', phase: 'out', from: a.id, to: b.id };
@@ -163,6 +165,8 @@ export const land = {
     for (const from of vs) {
       for (const to of vs) {
         if (to === from || to.landId !== from.landId) continue;
+        // towns linked by rail send their goods by train (civ._railTrains)
+        if (civ.railBetween?.(from.id, to.id)) continue;
         const d = Math.hypot(to.cx - from.cx, to.cz - from.cz);
         if (d < 8 || d > 110) continue;
         // food: days of bread per mouth, the hungry and the low first
@@ -312,6 +316,8 @@ export const land = {
       return;
     }
     const to = civ.villages[m.to];
+    if (m.type === 'train') return this._trainArrive(v, m, to);
+    if (m.type === 'drive') return this.remove(v);
     if (v.kind === 'oxcart') {
       if (to?.alive && v.cargo) for (const [r, n] of Object.entries(v.cargo)) to[r] = (to[r] || 0) + n;
       this.game.events.emit('fleet:delivered', { vehicle: v, kind: v.kind, kingdom: v.kingdom, from: m.from, to: m.to, cargo: v.cargo });
@@ -365,7 +371,8 @@ export const land = {
       if (!c) continue;
       const list = [];
       for (const kind of ['ram', 'catapult']) {
-        const v = this.spawn(kind, army.kingdom, c.x - 1 - list.length, c.z - 1, { state: 'siege', home: army.home });
+        // Gunpowder: cannon replace catapults; Battleships: tanks and artillery
+        const v = this.spawn(kind, army.kingdom, c.x - 1 - list.length, c.z - 1, { state: 'siege', home: army.home, model: this.siegeModel(army.kingdom, kind) });
         v.army = army.id;
         v.ti = 0;
         v.mission = { type: 'siege', phase: 'out' };

@@ -311,6 +311,7 @@ export const planner = {
     const b = {
       id: this._nextBid++,
       type,
+      kind: def.kind || type, // the renderer's model key (modern types share placeholders until modelled)
       tx,
       ty,
       w: fw,
