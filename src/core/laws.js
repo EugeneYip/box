@@ -23,6 +23,7 @@ export const LAW_CATEGORIES = [
   { id: 'weather', name: 'Weather & Time', blurb: 'Sky, seasons and the passing of days.' },
   { id: 'calamities', name: 'Calamities', blurb: 'Fire, plague and disaster.' },
   { id: 'ages', name: 'Ages', blurb: 'The great eras that sweep over the world.' },
+  { id: 'world', name: 'World', blurb: 'The shape of the map itself.' },
   { id: 'others', name: 'Others', blurb: 'Everything else.' },
 ];
 
@@ -107,12 +108,23 @@ export const LAWS = [
   B('ageCycle', 'ages', 'Turning ages', 'Great ages change by themselves over the centuries.', true, 'core'),
   N('ageLength', 'ages', 'Age length', 'How long each age endures.', 1, 0.25, 4, 0.25, 'core'),
   N('ageIntensity', 'ages', 'Age intensity', 'How strongly an age shapes the world.', 1, 0, 2, 0.25, 'core'),
+  // ---- World (World Map, whole Earth only: docs/ROUND-WORLD.md) ------------
+  // Saved with the world (URL wrap=0|1), not with the other laws: see PER_WORLD.
+  { ...B('worldWrap', 'world', 'Round world', 'Ships sail across the map’s left and right edges through the Atlantic, as on the real round Earth, and distances run the short way round.', true, 'fleet'), worldMapOnly: true, perWorld: true },
   // ---- Others -------------------------------------------------------------
   B('miscRuins', 'others', 'Lasting ruins', 'Destroyed buildings leave ruins that slowly crumble away.', true, 'civ'),
   B('miscMinorEvents', 'others', 'Minor chronicle events', 'Record births of heroes, legendary items and other small events.', true, 'ui'),
 ];
 
 const STORE_KEY = 'worldseed.laws.v1';
+
+// Is a law offered on this game's world? (`worldMapOnly` laws belong to the
+// whole-Earth World Map, whose left and right edges meet.)
+export function lawShown(def, game) {
+  if (!def?.worldMapOnly) return true;
+  const m = game?.world?.meta;
+  return !!(m && m.preset === 'earth' && (m.geo?.wrap ?? true) === true);
+}
 
 export function defaultLaws() {
   const out = {};
@@ -126,6 +138,7 @@ export function loadLaws() {
     const saved = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
     if (saved && typeof saved === 'object') {
       for (const l of LAWS) {
+        if (l.perWorld) continue; // kept with the world, not across worlds
         const v = saved[l.key];
         if (l.type === 'bool' && typeof v === 'boolean') laws[l.key] = v;
         if (l.type === 'number' && typeof v === 'number' && isFinite(v)) laws[l.key] = Math.min(l.max, Math.max(l.min, v));
@@ -139,7 +152,9 @@ export function loadLaws() {
 
 export function saveLaws(laws) {
   try {
-    localStorage.setItem(STORE_KEY, JSON.stringify(laws));
+    const out = { ...laws };
+    for (const l of LAWS) if (l.perWorld) delete out[l.key];
+    localStorage.setItem(STORE_KEY, JSON.stringify(out));
   } catch {
     /* ignore */
   }

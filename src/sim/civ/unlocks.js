@@ -2,6 +2,7 @@ import { TILE, SEA_LEVEL } from '../../world/constants.js';
 import { BUILDING_TYPES } from './catalog.js';
 import { USE, YEAR, ADULT_AGE, SPIRAL, spiralCount } from './util.js';
 import { MODERN_FIRST } from './modern.js';
+import { geoDist } from '../../world/geo.js';
 
 // Tangible technology (docs/TECH-UNLOCKS.md, the parts marked Civ): the
 // buildings each technology adds, surveyed roads and stone bridges, healers,
@@ -210,7 +211,7 @@ export const unlocks = {
     for (const vid of k.villages) {
       const v = this.villages[vid];
       if (!v?.alive || v === cap || linked.has(vid) || v.landId !== cap.landId) continue;
-      const d = Math.hypot(v.cx - cap.cx, v.cz - cap.cz);
+      const d = geoDist(this.world, v.cx, v.cz, cap.cx, cap.cz);
       if (d < bd && d < 80 * Math.sqrt(Math.max(1, this.budget.area))) (bd = d), (best = v); // (towns lie further apart on a big map)
     }
     if (!best) return;
@@ -388,7 +389,7 @@ export const unlocks = {
       for (const vid of this.kingdoms[e].villages) {
         const ev = this.villages[vid];
         if (!ev?.alive || (land != null && ev.landId !== land)) continue;
-        const d = Math.hypot(ev.cx - x, ev.cz - z);
+        const d = geoDist(this.world, ev.cx, ev.cz, x, z);
         if (d < td) (td = d), (target = ev);
       }
     if (!target) return null;
@@ -479,7 +480,7 @@ export const unlocks = {
         if (op < -10 && !r?.ally) continue;
         for (const h of F.harbours ? F.harbours(o.id) : this.harbours(o.id)) {
           if (!sameSea(h)) continue;
-          const d = Math.hypot(h.x - from.x, h.z - from.z);
+          const d = geoDist(this.world, h.x, h.z, from.x, from.z);
           const sc = op + (r?.ally ? 30 : 0) - d * 0.08 + this.rng.next() * 10;
           if (sc > bs) (bs = sc), (best = h);
         }
@@ -524,7 +525,7 @@ export const unlocks = {
         // across the water, or a long march away by land: go by sea
         const ec = this.villages[E.capital],
           mc = this.villages[k.capital];
-        const far = ec && mc && Math.hypot(ec.cx - mc.cx, ec.cz - mc.cz) > 70 * Math.sqrt(this.world.size / 65536);
+        const far = ec && mc && geoDist(this.world, ec.cx, ec.cz, mc.cx, mc.cz) > 70 * Math.sqrt(this.world.size / 65536);
         if (this._reachable(k, E) && !(far && this.rng.chance(0.3))) continue;
         let tgt = null;
         for (const h of F.harbours ? F.harbours(e) : this.harbours(e)) if (!tgt && sameSea(h)) tgt = h;
@@ -567,7 +568,7 @@ export const unlocks = {
         if (w.inBounds(xx, zz) && w.height[zz * w.w + xx] < SEA_LEVEL - 0.6) shore = true;
       }
       if (!shore) continue;
-      if (this.villages.some((v) => v.alive && Math.hypot(v.cx - x, v.cz - z) < 24)) continue;
+      if (this.villages.some((v) => v.alive && geoDist(this.world, v.cx, v.cz, x, z) < 24)) continue;
       return { x: x + 0.5, z: z + 0.5 };
     }
     return null;

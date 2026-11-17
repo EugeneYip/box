@@ -60,7 +60,7 @@ export const war = {
       m.raid = null;
       tgt = null;
     }
-    if (tgt && m.raid !== tgt.id && (!tgt.alive || tgt.state === 'sinking' || tgt.state === 'moored' || tgt.kind === 'fishing' || !enemies.includes(tgt.kingdom) || Math.hypot(tgt.x - v.x, tgt.z - v.z) > 40 * look)) tgt = null;
+    if (tgt && m.raid !== tgt.id && (!tgt.alive || tgt.state === 'sinking' || tgt.state === 'moored' || tgt.kind === 'fishing' || !enemies.includes(tgt.kingdom) || this.dist(tgt.x, tgt.z, v.x, v.z) > 40 * look)) tgt = null;
     if (!tgt) {
       // nearest enemy ship: warships and transports first. Fishermen are
       // never hunted, at any map size: a blockade drives them home instead
@@ -121,7 +121,7 @@ export const war = {
       for (const e of enemies)
         for (const h of this.harbours(e)) {
           if (h.water !== comp) continue;
-          const d = Math.hypot(h.berth.x - v.x, h.berth.z - v.z);
+          const d = this.dist(h.berth.x, h.berth.z, v.x, v.z);
           if (d < bd && d < this.range(v.kingdom, 'galley')) {
             bd = d;
             bh = h;
@@ -146,9 +146,9 @@ export const war = {
     const st = this._station(v, px, pz, bh || (v.harbour != null ? this.harbourInfo(v.harbour) : null));
     px = st.x;
     pz = st.z;
-    const dd = Math.hypot(px - v.x, pz - v.z);
+    const dd = this.dist(px, pz, v.x, v.z);
     if (dd > 3.5) {
-      if (v.state !== 'sail' || !v.dest || Math.hypot(v.dest.x - px, v.dest.z - pz) > 2) {
+      if (v.state !== 'sail' || !v.dest || this.dist(v.dest.x, v.dest.z, px, pz) > 2) {
         m.phase = 'out';
         if (!this._sail(v, { x: px, z: pz })) {
           m.blockade = null;

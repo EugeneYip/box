@@ -2,6 +2,7 @@ import { TILE, TILE_INFO, FLORA, FLORA_INFO, SEA_LEVEL } from '../../world/const
 import { CULTURES, personName, placeName, baseCulture } from './cultures.js';
 import { BUILDING_TYPES, buildingLabel, costOf, canAfford, pay } from './catalog.js';
 import { USE, YEAR, ADULT_AGE, ROT, ROT_DIR, SPIRAL, spiralCount, clamp } from './util.js';
+import { geoDist } from '../../world/geo.js';
 import { planner } from './planner.js';
 import { brain } from './brain.js';
 import { politics, relKey } from './politics.js';
@@ -192,7 +193,7 @@ export class Civilization {
       bd = maxD;
     for (const v of this.villages) {
       if (!v.alive) continue;
-      const d = Math.hypot(v.cx - x, v.cz - z);
+      const d = geoDist(this.world, v.cx, v.cz, x, z);
       if (d < bd) {
         bd = d;
         best = v;
@@ -507,11 +508,11 @@ export class Civilization {
     // first choice: resettle an abandoned village nearby (its fields and roads remain)
     for (const o of this.villages) {
       if (o.alive || o.resettled) continue;
-      const d = Math.hypot(o.cx - v.cx, o.cz - v.cz);
+      const d = geoDist(this.world, o.cx, o.cz, v.cx, v.cz);
       if (d < 14 || d > 60 || o.landId !== v.landId) continue;
       const i = Math.floor(o.cz) * w.w + Math.floor(o.cx);
       if (w.owner[i] >= 0 && w.owner[i] !== v.kingdom) continue;
-      if (this.villages.some((x) => x.alive && Math.hypot(x.cx - o.cx, x.cz - o.cz) < 14)) continue;
+      if (this.villages.some((x) => x.alive && geoDist(this.world, x.cx, x.cz, o.cx, o.cz) < 14)) continue;
       const sc = 400 - d;
       if (sc > bs) {
         bs = sc;
@@ -533,8 +534,8 @@ export class Civilization {
       if (this.landId[i] !== v.landId) continue;
       if (w.owner[i] >= 0 && w.owner[i] !== v.kingdom) continue;
       let tooClose = false;
-      for (const o of this.villages) if (o.alive && Math.hypot(o.cx - tx, o.cz - ty) < gap) tooClose = true;
-      for (const e of this.expeditions) if (Math.hypot(e.site.tx - tx, e.site.ty - ty) < gap) tooClose = true;
+      for (const o of this.villages) if (o.alive && geoDist(this.world, o.cx, o.cz, tx, ty) < gap) tooClose = true;
+      for (const e of this.expeditions) if (geoDist(this.world, e.site.tx, e.site.ty, tx, ty) < gap) tooClose = true;
       if (tooClose) continue;
       const s = this._scoreSite(tx, ty, { kingdom: v.kingdom, minSpace: 95 });
       if (s < 0) continue;
@@ -573,7 +574,7 @@ export class Civilization {
     const members = [...exp.members].filter((m) => m.alive);
     // far-flung colonies sometimes strike out on their own as a new realm
     const cap = k ? this.villages[k.capital] : null;
-    const far = cap ? Math.hypot(cap.cx - u.x, cap.cz - u.z) : 0;
+    const far = cap ? geoDist(this.world, cap.cx, cap.cz, u.x, u.z) : 0;
     // (distance measured in this map's village spacing, so big maps' wider
     // settling reach does not make every colony a new realm)
     const independent = !k || !k.alive || (this.law('civNewKingdoms') && this.rng.chance(this._splinterOdds(k, far / this._villageSpread())));
@@ -969,7 +970,7 @@ export class Civilization {
       for (const vid of this.kingdoms[v.kingdom]?.villages || []) {
         const o = this.villages[vid];
         if (!o?.alive || o === v || o.landId !== v.landId || o.pop < 12 || o.starving) continue;
-        const d = Math.hypot(o.cx - v.cx, o.cz - v.cz);
+        const d = geoDist(this.world, o.cx, o.cz, v.cx, v.cz);
         if (d < td) (td = d), (to = o);
       }
       if (to) {
@@ -1021,7 +1022,7 @@ export class Civilization {
       for (const o of this.villages) {
         if (!o.alive || o === v || o.starving || o.landId !== v.landId || o.pop >= o.housing) continue;
         if (this.atWar(o.kingdom, v.kingdom)) continue;
-        const dd = Math.hypot(o.cx - v.cx, o.cz - v.cz);
+        const dd = geoDist(this.world, o.cx, o.cz, v.cx, v.cz);
         if (dd < bd && dd < 80) {
           bd = dd;
           best = o;
@@ -1380,7 +1381,7 @@ export class Civilization {
       const tx = this.rng.int(16, w.w - 17),
         ty = this.rng.int(16, w.h - 17);
       if (w.owner[ty * w.w + tx] >= 0) continue;
-      if (this.villages.some((v) => v.alive && Math.hypot(v.cx - tx, v.cz - ty) < 30)) continue;
+      if (this.villages.some((v) => v.alive && geoDist(this.world, v.cx, v.cz, tx, ty) < 30)) continue;
       if (this._scoreSite(tx, ty, { minSpace: 110 }) < 0) continue;
       const cultureId = this._realCultureAt?.(tx, ty) || this._cultureAt(tx, ty);
       const v = this.foundVillage(tx, ty, { culture: cultureId, settlers: this.rng.int(6, 9), silent: true, kingdom: null, wanderers: true });
@@ -1398,7 +1399,7 @@ export class Civilization {
       if (!needy.length) continue;
       const rich = vs.filter((v) => v.food > v.pop * 5 + 30).sort((a, b) => b.food - a.food);
       for (const to of needy) {
-        const from = rich.find((r) => r.landId === to.landId && Math.hypot(r.cx - to.cx, r.cz - to.cz) < 90 * Math.sqrt(Math.max(1, this.budget.area))); // (towns lie further apart on a big map)
+        const from = rich.find((r) => r.landId === to.landId && geoDist(this.world, r.cx, r.cz, to.cx, to.cz) < 90 * Math.sqrt(Math.max(1, this.budget.area))); // (towns lie further apart on a big map)
         if (!from) continue;
         const amt = Math.min(from.food - (from.pop * 5 + 20), to.pop * 4 + 20);
         if (amt <= 4) continue;
@@ -1919,7 +1920,7 @@ export class Civilization {
       bd = Infinity;
     for (const o of this.villages) {
       if (!o.alive || o.kingdom === v.kingdom) continue;
-      const d = Math.hypot(o.cx - v.cx, o.cz - v.cz);
+      const d = geoDist(this.world, o.cx, o.cz, v.cx, v.cz);
       if (d < bd) {
         bd = d;
         best = o;

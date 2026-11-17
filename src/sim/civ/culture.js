@@ -1,5 +1,6 @@
 import { CULTURES, baseCulture } from './cultures.js';
 import { YEAR, clamp } from './util.js';
+import { geoDist } from '../../world/geo.js';
 
 // Living cultures. The four founding peoples keep their base ids ('vale',
 // 'dune', 'frost', 'mire'); peoples that drift away get ids like 'vale~2'
@@ -133,7 +134,7 @@ export const culture = {
       const k = this.kingdoms[v.kingdom];
       const cap = k && this.villages[k.capital];
       const origin = this._cultureOrigin(v.culture);
-      const far = origin ? Math.hypot(origin.x - v.cx, origin.z - v.cz) : 0;
+      const far = origin ? geoDist(this.world, origin.x, origin.z, v.cx, v.cz) : 0;
       // (slowly: peoples are born over generations, and the world holds at most 16)
       if (far > 40 && v.pop >= 10 && now - v.founded > YEAR * 25 && this.rng.chance(0.0035) && (this._nCult ?? 0) < 16) {
         const c = this._newCulture(v);
@@ -253,7 +254,7 @@ export const culture = {
       if (!cap?.alive || cap.pop < 14 || (this._nCult ?? 0) >= 16) continue;
       const shared = this.kingdoms.some((o) => o !== k && o.alive && o.villages.length && o.culture === k.culture);
       const origin = this._cultureOrigin(k.culture);
-      const far = origin ? Math.hypot(origin.x - cap.cx, origin.z - cap.cz) : 0;
+      const far = origin ? geoDist(this.world, origin.x, origin.z, cap.cx, cap.cz) : 0;
       if (!shared && far < 60) continue;
       const old = k.culture;
       const c = this._newCulture(cap);

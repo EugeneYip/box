@@ -7,6 +7,7 @@ import { land } from './land.js';
 import { war } from './war.js';
 import { air } from './air.js';
 import { hullR, hullHalf, segDist, HULL_GAP } from './hull.js';
+import { geoDist, geoWrapOn } from '../../world/geo.js';
 
 const _SD = { x: 0, z: 0 };
 
@@ -51,7 +52,14 @@ const ROT_DIR = [
 // Vehicle fields read by the renderer: id, kind, cls, kingdom, x, z, px, pz,
 //   heading, ph, speed, state, hp, maxHp, sink (0..1), burning (0..1), anim
 //   {row, wheel, arm, fill, furl, oar, walk, cargoType}, alive.
-// World Laws honoured: fleetSailing, fleetNaval, fleetColonize.
+// World Laws honoured: fleetSailing, fleetNaval, fleetColonize, worldWrap.
+// Round world (docs/ROUND-WORLD.md): on the whole-Earth World Map with the
+// setting on, routes cross the Atlantic seam (nav.js) and a vessel that sails
+// off one edge comes back on at the other (_wrapVessel); positions stay on
+// the map while the route being followed runs on continuously. Distances
+// between places are measured the short way round (dist()). Every crossing
+// is logged in fleet.crossings and announced as 'fleet:crossed'
+// {vessel, id, kind, kingdom, x, z, dir: 'east'|'west'}.
 export class Fleet {
   constructor(game) {
     this.game = game;
@@ -98,6 +106,7 @@ export class Fleet {
     this._berths = new Map();
     this.blockades = new Map(); // harbour building id -> until
     this._navWait = 0;
+    this.crossings = { n: 0, log: [] }; // ships across the Atlantic seam (Round world)
     this.lastRefusal = '';
     this.totals = { launched: 0, sunk: 0, colonies: 0, trades: 0, catches: 0, hauls: 0, caravans: 0, stones: 0 };
     this._hash = new Map();
@@ -145,6 +154,10 @@ export class Fleet {
   }
   atWar(a, b) {
     return a !== b && a >= 0 && b >= 0 && !!this.game.civ?.atWar?.(a, b);
+  }
+  // Distance between two places (the short way round a Round world)
+  dist(ax, az, bx, bz) {
+    return geoDist(this.world, ax, az, bx, bz);
   }
   // Chronicle: through the civ chronicle when present (de-duplicated by key).
   note(text, kind = 'info', pos = null, key = null, cooldown = 45) {
@@ -531,6 +544,22 @@ export class Fleet {
 
   // ------------------------------------------------------------------ paths
   setPath(v, path) {
+    // (Round world: a route given in map positions, such as a straight run to a
+    // ship across the seam, is made one continuous line from where she lies)
+    const nav = this.nav;
+    if (path && nav.wrap && path.length >= 2) {
+      const W = this.world.w;
+      let off = 0;
+      while (path[0] + off - v.x > W / 2) off -= W;
+      while (path[0] + off - v.x < -W / 2) off += W;
+      let jump = off !== 0;
+      for (let i = 2; i < path.length && !jump; i += 2) if (Math.abs(path[i] - path[i - 2]) > W / 2) jump = true;
+      if (jump) {
+        path = path.slice();
+        if (off) for (let i = 0; i < path.length; i += 2) path[i] += off;
+        nav.unwrap(path);
+      }
+    }
     v.path = path;
     v.pi = path ? Math.min(2, path.length - 2) : 0;
     v.stuck = 0;
@@ -752,7 +781,7 @@ export class Fleet {
     G.f = 1;
     const look = Math.max(0.35, v.speed * 0.9) + 0.15;
     const foe = v.chase ? v.target : null;
-    const home = !!v.dest && v.state === 'sail' && Math.hypot(v.dest.x - v.x, v.dest.z - v.z) < 2.5;
+    const home = !!v.dest && v.state === 'sail' && this.dist(v.dest.x, v.dest.z, v.x, v.z) < 2.5;
     const O = this._gwList || (this._gwList = []);
     O.length = 0;
     this.near(v.x, v.z, v.def.length * 0.5 + look + 1.4, (o) => {
@@ -864,6 +893,7 @@ export class Fleet {
       v.speed *= Math.exp(-step * 1.5);
       v.x += Math.cos(v.heading) * v.speed * step;
       v.z += Math.sin(v.heading) * v.speed * step;
+      this._wrapVessel(v);
       if (v.sink >= 1) this.remove(v);
       return;
     }
@@ -952,6 +982,7 @@ export class Fleet {
         v.x = nx;
         v.z = nz;
         v.stuck = Math.max(0, v.stuck - step);
+        this._wrapVessel(v);
       } else {
         v.speed *= 0.3;
         v.stuck += step;
@@ -980,6 +1011,51 @@ export class Fleet {
     const rowing = def.oars && (v.state === 'sail' || v.state === 'patrol') && (v.kind === 'galley' || v.speed > 0.1);
     a.oar += ((rowing ? 1 : 0) - a.oar) * Math.min(1, step * 2);
     a.row += step * (v.kind === 'galley' ? 3.2 : 2.4) * (0.4 + Math.min(1, v.speed / def.speed));
+  }
+
+  // Round world: a vessel that sails off one edge of the whole-Earth map comes
+  // back on at the other. Her position (and the one she had a tick ago, which
+  // the renderer blends from), the route still to sail and her wake move by
+  // one map width together, so nothing jumps; the crossing is logged.
+  _wrapVessel(v) {
+    const W = this.world.w;
+    if ((v.x >= 0 && v.x < W) || !this.nav.wrap) return;
+    const s = v.x < 0 ? W : -W;
+    v.x += s;
+    v.px += s;
+    if (v.path) v.path = v.path.map((p, i) => (i & 1 ? p : p + s)); // (routes may be shared: a copy)
+    const T = v.track;
+    if (T) for (let i = 0; i < T.length; i += 2) T[i] += s;
+    const C = this.crossings;
+    C.n++;
+    const dir = s < 0 ? 'east' : 'west';
+    const rec = { t: this.game.time.total, year: Math.floor(this.game.time.total / YEAR), id: v.id, kind: v.kind, kingdom: v.kingdom, mission: v.mission?.type || null, z: +v.z.toFixed(1), dir, from: v.voyage?.fromName || null, to: v.voyage?.toName || null };
+    C.log.push(rec);
+    if (C.log.length > 400) C.log.shift();
+    this.game.events.emit('fleet:crossed', { vessel: v, id: v.id, kind: v.kind, kingdom: v.kingdom, x: v.x, z: v.z, dir });
+    // a realm's first ship across the ocean seam is remembered
+    if (v.kind !== 'fishing' && !this.firsts.has(v.kingdom + '|cross')) {
+      this.firsts.add(v.kingdom + '|cross');
+      const n = this.kname(v.kingdom);
+      const nm = v.name ? `the ${v.def.name.toLowerCase()} ${v.name}` : `a ${v.def.name.toLowerCase()}`;
+      this.note(`🧭 ${nm[0].toUpperCase() + nm.slice(1)} of ${n} sails ${dir} across the Atlantic, round the world`, 'good', { x: v.x, z: v.z }, 'cross' + v.kingdom, 1);
+    }
+  }
+  // The Round world setting changed: relink the seam, and send every ship
+  // whose route runs across a seam that has just closed (or could now be
+  // shorter) on a fresh course.
+  _syncWrap() {
+    if (!this.nav.setWrap(geoWrapOn(this.world))) return;
+    this._routes?.clear?.();
+    this._berths.clear();
+    const W = this.world.w;
+    for (const v of this.list) {
+      if (!v.alive || v.cls !== 'sea' || !v.path || !v.dest || v.state === 'sinking') continue;
+      if (this.nav.wrap ? v.state !== 'sail' : !v.path.some((p, i) => !(i & 1) && (p < 0 || p >= W))) continue;
+      const p = this.seaPath(v, v.dest.x, v.dest.z);
+      if (p) this.setPath(v, p);
+      else this._failMission(v);
+    }
   }
 
   _windFactor(v) {
@@ -1080,7 +1156,7 @@ export class Fleet {
     const mul = { meteor: 1.4, smite: 3, tornado: 2.4, lightning: 1.2, tsunami: 2, volcano: 1, earthquake: 0.6, golem: 0.8, fire: 0.6 }[cause] ?? 1;
     for (const v of this.list) {
       if (!v.alive || v.state === 'sinking') continue;
-      const d = Math.hypot(v.x - x, v.z - z);
+      const d = this.dist(v.x, v.z, x, z);
       const R = r + v.def.size;
       if (d > R) continue;
       if (v.cls === 'sea' && (cause === 'earthquake' || cause === 'fire' || cause === 'lava')) continue;
@@ -1117,7 +1193,12 @@ export class Fleet {
           maxx = Math.max(P[i], P[i + 2]),
           minz = Math.min(P[i + 1], P[i + 3]),
           maxz = Math.max(P[i + 1], P[i + 3]);
-        if (maxx < r.x0 - 1 || minx > r.x1 + 1 || maxz < r.y0 - 1 || minz > r.y1 + 1) continue;
+        if (maxz < r.y0 - 1 || minz > r.y1 + 1) continue;
+        // (a route across the Round world's seam runs on past the map's sides)
+        const W = this.world.w;
+        let inX = false;
+        for (const s of this.nav.wrap ? [0, -W, W] : [0]) if (!(maxx + s < r.x0 - 1 || minx + s > r.x1 + 1)) inX = true;
+        if (!inX) continue;
         if (!this.nav.los(P[i], P[i + 1], P[i + 2], P[i + 3], 0)) hit = true;
       }
       if (hit && v.dest) {
@@ -1261,6 +1342,7 @@ export class Fleet {
   }
 
   _onLaw(key) {
+    if (key == null || key === 'worldWrap') this._syncWrap();
     if (key == null || key === 'fleetSailing' || key === 'fleetNaval' || key === 'fleetColonize') {
       for (const v of this.list) if (v.alive && v.cls === 'sea' && v.state !== 'sinking') this._lawCheck(v);
     }
