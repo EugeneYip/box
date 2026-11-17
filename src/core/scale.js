@@ -18,7 +18,7 @@
 //
 // Modern-era builders: model at the design size and multiply by these.
 
-const S = 1;
+const S = 0.6;
 
 export const UNIT = {
   scale: S,
