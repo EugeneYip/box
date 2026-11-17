@@ -1,6 +1,7 @@
 import { TILE, TILE_INFO, FLORA, FLORA_INFO, SEA_LEVEL } from '../../world/constants.js';
 import { BUILDING_TYPES } from './catalog.js';
 import { USE, YEAR, ADULT_AGE, SPIRAL, spiralCount, ROT_DIR } from './util.js';
+import { geoDist } from '../../world/geo.js';
 import { civPath } from './pathing.js';
 
 // The human brain: villagers pick up their job's work loop and visibly do it
@@ -1202,7 +1203,7 @@ export const brain = {
     for (const a of this.armies) {
       if (a.dead || a.target !== v.id || a.state === 'gather') continue;
       const c = this._armyCentre(a);
-      if (Math.hypot(c.x - v.cx, c.z - v.cz) < v.radius + 18) return a;
+      if (geoDist(this.world, c.x, c.z, v.cx, v.cz) < v.radius + 18) return a;
     }
     return null;
   },
@@ -1523,7 +1524,7 @@ export const brain = {
       bd = Infinity;
     for (const v of this.villages) {
       if (!v.alive || v.razed) continue;
-      let dd = Math.hypot(v.cx - u.x, v.cz - u.z);
+      let dd = geoDist(this.world, v.cx, v.cz, u.x, u.z);
       if (v.kingdom === u.kingdom) dd *= 0.5;
       if (u.kingdom >= 0 && this.atWar(u.kingdom, v.kingdom)) continue;
       if (dd < bd) {
