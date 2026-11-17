@@ -384,6 +384,7 @@ export class Fleet {
       kind,
       def,
       cls: def.cls,
+      _gw: null, // cached give-way (see _giveWayCached)
       kingdom: kid,
       name: def.cls === 'sea' ? shipName(this.rng, kind) : craftName(this.rng, kind, this.game.civ?.villages?.[opts.home]?.name),
       home: opts.home ?? -1,
@@ -552,6 +553,7 @@ export class Fleet {
 
   // ------------------------------------------------------------------ tick
   tick(step) {
+    this._gwTick = (this._gwTick || 0) + 1;
     const g = this.game;
     if (!g.civ) return;
     // terrain edits: patch the water graph (debounced)
@@ -749,6 +751,26 @@ export class Fleet {
   // place in the roads, chosen free), she creeps on past ships lying still
   // and lets them shoulder her into place. Returns {want, f}: the course to
   // steer and the share of speed to keep.
+  // Give-way, re-judged every second tick near the camera and every fourth
+  // farther off (a sea of smaller hulls made it the fleet's dearest step); in
+  // between a ship keeps her last bearing-off and pace.
+  _giveWayCached(v, want) {
+    const n = (this._gwTick || 0) + v.id;
+    const cam = this.game.cameraRig?.cur;
+    const far = cam ? (v.x - cam.x) ** 2 + (v.z - cam.z) ** 2 > 3600 : true;
+    const C = v._gw || (v._gw = { d: 0, f: 1, ok: false });
+    if (!C.ok || (n & (far ? 3 : 1)) === 0) {
+      const G = this._giveWay(v, want);
+      C.d = G.want - want;
+      C.f = G.f;
+      C.ok = true;
+    }
+    const G = this._gwOut2 || (this._gwOut2 = { want: 0, f: 1 });
+    G.want = want + C.d;
+    G.f = C.f;
+    return G;
+  }
+
   _giveWay(v, want) {
     const G = this._gwOut || (this._gwOut = { want: 0, f: 1 });
     G.want = want;
@@ -758,7 +780,7 @@ export class Fleet {
     const home = !!v.dest && v.state === 'sail' && this.dist(v.dest.x, v.dest.z, v.x, v.z) < 2.5;
     const O = this._gwList || (this._gwList = []);
     O.length = 0;
-    this.near(v.x, v.z, v.def.length * 0.5 + look + 1.4, (o) => {
+    this.near(v.x, v.z, v.def.length * 0.5 + look + 1.4 * BERTH, (o) => {
       if (o === v || o.cls !== 'sea' || o.id === foe || o.state === 'sinking') return;
       if (home && (o.state === 'moored' || o.state === 'fish' || o.speed < 0.1)) return;
       O.push(o);
@@ -915,7 +937,7 @@ export class Fleet {
         if (!v.alive) return;
       } else {
         // (bearing away from any hull in the way)
-        const gw = this._giveWay(v, Math.atan2(tz - v.z, tx - v.x));
+        const gw = this._giveWayCached(v, Math.atan2(tz - v.z, tx - v.x));
         const want = gw.want;
         give = gw.f;
         let diff = angDiff(want, v.heading);
@@ -937,7 +959,7 @@ export class Fleet {
     } else if (v.state === 'patrol') {
       v.heading += step * 0.35;
       target = def.speed * (v.grappled > this.game.time.total ? 0.08 : 0.3);
-      const gw = this._giveWay(v, v.heading);
+      const gw = this._giveWayCached(v, v.heading);
       const turn = def.turn * step;
       v.heading += Math.max(-turn, Math.min(turn, angDiff(gw.want, v.heading)));
       give = gw.f;
