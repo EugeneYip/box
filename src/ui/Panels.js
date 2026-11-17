@@ -148,6 +148,7 @@ const LAW_ICON_BY_KEY = {
   civGrowth: 'fertility',
   civTechnology: 'lamp',
   civTechSpeed: 'time-skip',
+  civEraCap: 'compass',
   civRoads: 'road',
   civWalls: 'wall',
   fleetSailing: 'ship',
@@ -201,7 +202,7 @@ const lawIcon = (def) => {
   const hay = `${def.key} ${def.label}`.toLowerCase();
   return (LAW_KEY_ICON.find(([re]) => re.test(hay)) || [null, LAW_ICON[def.category] || 'settings'])[1];
 };
-const fmtLaw = (def, v) => (def.type === 'bool' ? (v ? 'On' : 'Off') : `×${(+v).toFixed(2).replace(/0$/, '').replace(/\.0$/, '')}`);
+const fmtLaw = (def, v) => (def.type === 'bool' ? (v ? 'On' : 'Off') : def.labels ? def.labels[Math.round(+v)] ?? String(v) : `×${(+v).toFixed(2).replace(/0$/, '').replace(/\.0$/, '')}`);
 
 // ---------------------------------------------------------------- shared bits
 export const PRESETS = [
@@ -1070,7 +1071,7 @@ export class KingdomsPanel {
         R.el.style.setProperty('--k', x.color);
       }
       set(R.name, 'name', x.name);
-      const era = Math.max(0, Math.min(3, safe(() => this.game.civ?.kingdomEra?.(x.id), null) ?? x.k.era ?? 0));
+      const era = Math.max(0, Math.min(eraNames().length - 1, safe(() => this.game.civ?.kingdomEra?.(x.id), null) ?? x.k.era ?? 0));
       if (R.sig.era !== era) {
         R.sig.era = era;
         R.era.className = `ws-era ws-era--sm is-era${era}`;

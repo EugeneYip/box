@@ -6,6 +6,7 @@ import { createBuildingMaterial, createPropMaterial } from './material.js';
 import { emblemAtlas, EMBLEM_IDS, FIELD_IDS } from './emblems.js';
 import { bannerGeometry, bannerMaterial, bladesGeometry, boatGeometry, FENCE, scarecrowGeometry, glowTexture, PuffSystem } from './props.js';
 import { TerritoryOverlay } from './TerritoryOverlay.js';
+import { InfraRenderer } from './InfraRenderer.js';
 import { BUILDING_TYPES } from '../../sim/civ/catalog.js';
 import { CULTURES, baseCulture } from '../../sim/civ/cultures.js';
 import { SEA_LEVEL, TILE } from '../../world/constants.js';
@@ -31,6 +32,14 @@ const DIRS8 = [
   [-1, -1],
   [1, -1],
 ];
+
+// The archetype of a building: type, style, level, era (+ 'g' when gilded)
+// and variant. The modern types (catalog `modern`) share one placeholder per
+// type and level, whatever the culture and era, until they have models.
+function archKey(b, def, lvl) {
+  if (def.modern) return `${b.type}|m|${lvl}|0`;
+  return `${b.type}|${b.style}|${lvl}|${b.era ?? 1}${b.gilded ? 'g' : ''}${b.variant ? '|' + b.variant : ''}`;
+}
 
 class Batch {
   constructor(parent, geo, material, { shadow = true } = {}) {
@@ -111,11 +120,13 @@ export class BuildingRenderer {
     this.boats = [];
     this.burning = [];
     this._fxReal = null;
+    this.infra = new InfraRenderer(game); // rails, maglev and power lines (placeholder lines)
   }
 
   reset() {
     this._ver = -1;
     this._fver = -1;
+    this.infra?.reset();
     this.overlay.markAll();
     this.puffs?.clear();
   }
@@ -236,7 +247,7 @@ export class BuildingRenderer {
     else if (kind === 'lamppost') {
       const l = lampPost();
       a = { geo: l.geo, anchors: l.anchors, maxY: 0.8 };
-    } else a = buildArchetype(kind, p1, +p2, p3 == null ? 1 : +p3, p4 == null ? 0 : +p4);
+    } else a = buildArchetype(kind, p1, +p2, p3 == null ? 1 : parseInt(p3, 10), p4 == null ? 0 : +p4, p3 != null && p3.endsWith('g'));
     this.arche.set(key, a);
     return a;
   }
@@ -319,7 +330,7 @@ export class BuildingRenderer {
         continue;
       }
       const lvl = Math.min(b.level || 1, def.levels);
-      const akey = `${b.type}|${b.style}|${lvl}|${b.era ?? 1}${b.variant ? '|' + b.variant : ''}`;
+      const akey = archKey(b, def, lvl);
       const a = this._arch(akey);
       if (stage === 'found' || stage === 'frame' || stage === 'build') {
         // footings, then a timber frame, then walls rising, then the roof;
@@ -427,7 +438,7 @@ export class BuildingRenderer {
       const key = 'proxy|' + b.style;
       let L = proxies.get(key);
       if (!L) proxies.set(key, (L = { m: [], col: [], bs: [] }));
-      const a = this._arch(def.wall ? `wpost|${b.style}` : `${b.type}|${b.style}|${Math.min(b.level || 1, def.levels)}|${b.era ?? 1}${b.variant ? '|' + b.variant : ''}`);
+      const a = this._arch(def.wall ? `wpost|${b.style}` : archKey(b, def, Math.min(b.level || 1, def.levels)));
       const hgt = def.wall ? 1.1 : Math.max(0.5, Math.min(def.monument ? 12 : 3, a.maxY)) * (b.constructing ? Math.max(0.2, b.progress) : 1);
       const pm = this._m2.makeRotationY(b.rotation || 0).setPosition(b.x, b.y, b.z).multiply(this._m3.makeScale(def.w * 0.82, hgt, def.h * 0.82));
       for (let i = 0; i < 16; i++) L.m.push(pm.elements[i]);
@@ -956,6 +967,7 @@ export class BuildingRenderer {
     const g = this.game;
     const civ = g.civ;
     if (!civ) return;
+    this.infra?.update(dt);
     this.t += dt;
     const env = g.env;
     this.uniforms.uTime.value = this.t;

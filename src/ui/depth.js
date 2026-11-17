@@ -45,7 +45,9 @@ export function techList(game) {
 export function techDef(game, id) {
   return findIn(REG.tech?.TECHS ?? REG.tech?.TECH ?? game?.civ?.TECHS, id) || techList(game).find((t) => t.id === id) || null;
 }
-export const ERA_NAMES = ['Hearth', 'Bronze', 'Iron', 'Enlightened'];
+export const ERA_NAMES = ['Hearth', 'Bronze', 'Iron', 'Enlightened', 'Industrial', 'Modern', 'Atomic', 'Future'];
+// one icon per era (the era chips of the tech panel, inspector and realm list)
+export const ERA_ICON = ['house', 'build', 'job-soldier', 'chronicle', 'fire', 'lamp', 'lightning', 'star'];
 export function eraNames() {
   const e = REG.tech?.ERAS;
   if (Array.isArray(e) && e.length) return e.map((x) => (typeof x === 'string' ? x : x?.name || ''));

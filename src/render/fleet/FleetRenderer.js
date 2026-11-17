@@ -5,6 +5,7 @@ import { bannerGeometry, bannerMaterial } from '../buildings/props.js';
 import { emblemAtlas, EMBLEM_IDS, FIELD_IDS } from '../buildings/emblems.js';
 import { ALL_KINDS, KINDS } from '../../sim/fleet/kinds.js';
 import { smokePuff, RAMP } from '../fx/Effects.js';
+import { AirPlaceholder } from './AirPlaceholder.js';
 import { geoWrapOn } from '../../world/geo.js';
 
 // Draws game.fleet: one instanced batch per vehicle kind (sails, oars, wheels
@@ -61,6 +62,7 @@ export class FleetRenderer {
     this._fxT = 0;
     this._laneT = 0;
     this._initProps();
+    this.air = new AirPlaceholder(game, this.group); // aircraft, rockets and satellites (placeholder)
   }
 
   reset() {
@@ -220,6 +222,7 @@ export class FleetRenderer {
     const day = g.env?.daylight ?? 1;
     const night = 1 - THREE.MathUtils.smoothstep(day, 0.12, 0.62);
     U.uNight.value += (night - U.uNight.value) * Math.min(1, dt * 3);
+    this.air?.update(U.uNight.value);
     U.uLight.value = 0.25 + 0.75 * Math.min(1, day * 1.4);
     U.uWind.value = g.env?.wind?.strength ?? 0.35;
     const rig = g.cameraRig;

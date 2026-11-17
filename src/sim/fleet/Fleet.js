@@ -1,10 +1,11 @@
 import { SEA_LEVEL, TILE } from '../../world/constants.js';
 import { mulberry32 } from '../../core/Random.js';
 import { WaterNav, pathLength } from './nav.js';
-import { KINDS, SEA_KINDS, shipName, craftName, cargoText } from './kinds.js';
+import { KINDS, SEA_KINDS, STUB_KINDS, stubDef, shipName, craftName, cargoText } from './kinds.js';
 import { missions } from './missions.js';
 import { land } from './land.js';
 import { war } from './war.js';
+import { air } from './air.js';
 import { hullR, hullHalf, segDist, HULL_GAP } from './hull.js';
 import { geoDist, geoWrapOn } from '../../world/geo.js';
 
@@ -116,7 +117,10 @@ export class Fleet {
       fishing: Math.round(Math.min(200, 60 * Math.pow(area, 0.6))),
       land: Math.round(Math.min(120, 36 * Math.pow(area, 0.55))),
       debris: 240,
+      air: Math.round(Math.min(60, 18 * Math.pow(area, 0.5))), // aircraft and rockets (air.js)
     };
+    this.air = []; // aircraft and rockets in flight (air.js)
+    this.orbit = []; // satellites and stations circling the world
   }
 
   reset() {
@@ -184,6 +188,27 @@ export class Fleet {
       caravan: 'sends its first trade caravan abroad',
       ram: 'brings a battering ram to war',
       catapult: 'brings catapults to war',
+      // modern and future (stubs until they have models of their own)
+      steamer: 'launches its first steamship',
+      freighter: 'launches its first motor freighter',
+      container: 'launches its first container ship',
+      ironclad: 'launches its first ironclad',
+      battleship: 'launches its first battleship',
+      carrier: 'launches its first aircraft carrier',
+      train: 'runs its first steam train',
+      maglev: 'runs its first maglev train',
+      truck: 'sends its first trucks along the roads',
+      car: 'sees its first cars in the streets',
+      cannon: 'brings cannon to war',
+      tank: 'brings tanks to war',
+      artillery: 'brings artillery to war',
+      plane: 'flies its first transport plane',
+      biplane: 'sends its first biplanes to war',
+      airliner: 'flies its first jet airliner',
+      jet: 'sends its first jet fighters to war',
+      drone: 'sends its first delivery drones over its towns',
+      skytaxi: 'flies its first sky taxis between its towns',
+      rocket: 'launches its first rocket',
     }[kind];
     if (!what) return;
     const n = this.kname(kid);
@@ -374,15 +399,18 @@ export class Fleet {
   }
 
   spawn(kind, kid, x, z, opts = {}) {
-    const def = KINDS[kind];
+    // a modern stub runs as its base kind with its own stats (kinds.js STUB_KINDS)
+    const model = opts.model && STUB_KINDS[opts.model]?.base === kind ? opts.model : null;
+    const def = model ? stubDef(model) : KINDS[kind];
     if (!def) return null;
     const v = {
       id: this._nextId++,
       kind,
+      model: model || kind,
       def,
       cls: def.cls,
       kingdom: kid,
-      name: def.cls === 'sea' ? shipName(this.rng, kind) : craftName(this.rng, kind, this.game.civ?.villages?.[opts.home]?.name),
+      name: def.cls === 'sea' ? shipName(this.rng, kind) : model ? `${def.name}${opts.home != null && this.game.civ?.villages?.[opts.home] ? ' of ' + this.game.civ.villages[opts.home].name : ''}` : craftName(this.rng, kind, this.game.civ?.villages?.[opts.home]?.name),
       home: opts.home ?? -1,
       harbour: opts.harbour ?? null,
       village: opts.home ?? -1,
@@ -420,8 +448,8 @@ export class Fleet {
     this.byId.set(v.id, v);
     this.totals.launched++;
     this.version++;
-    this.first(kid, kind, { x, z });
-    this.game.events.emit('fleet:launched', { vessel: v, kind, kingdom: kid });
+    this.first(kid, model || kind, { x, z });
+    this.game.events.emit('fleet:launched', { vessel: v, kind, model: v.model, kingdom: kid });
     return v;
   }
 
@@ -588,6 +616,7 @@ export class Fleet {
         v.y = this.world.heightAt(v.x, v.z);
       }
     }
+    if (this.air.length || this.orbit.length) this._airTick(step);
     this._separate(step);
     if ((T.war += step) >= 0.5) {
       this._warTick(T.war);
@@ -1034,6 +1063,8 @@ export class Fleet {
     const wind = this.game.env?.wind || { x: 1, z: 0, strength: 0.3 };
     const along = Math.cos(v.heading) * (wind.x || 0) + Math.sin(v.heading) * (wind.z || 0);
     const s = wind.strength ?? 0.3;
+    // engines: steam and motor ships care little for the wind
+    if (def.sail === false) return 1.05;
     let f = 0.8 + (along * 0.5 + 0.5) * 0.35 * (0.6 + s);
     if (def.oars) f = Math.max(f, v.kind === 'galley' ? 1 : 0.95);
     return Math.max(0.6, Math.min(1.3, f));
@@ -1319,7 +1350,10 @@ export class Fleet {
 
   // ------------------------------------------------------------------ inspect & stats
   inspect(hit) {
-    if (!hit || !this.list.length) return null;
+    if (!hit) return null;
+    const a = this.inspectAir?.(hit);
+    if (a) return a;
+    if (!this.list.length) return null;
     let best = null,
       bd = Infinity;
     for (const v of this.list) {
@@ -1396,7 +1430,12 @@ export class Fleet {
       case 'caravan':
         return m.phase === 'home' ? 'Returning with coin' : 'Bringing goods to a neighbour';
       case 'siege':
+        if (v.model !== v.kind && v.siegeTarget) return v.kind === 'catapult' ? 'Shelling the walls' : 'Firing on the gates';
         return v.siegeTarget ? (v.kind === 'catapult' ? 'Hurling stones at the walls' : 'Battering the gates') : 'Rolling with the army';
+      case 'train':
+        return m.phase === 'home' ? 'Running back down the line' : `Carrying ${cargoText(v.cargo)} along the line`;
+      case 'drive':
+        return 'Driving through the streets';
       default:
         return 'Under way';
     }
@@ -1433,5 +1472,5 @@ export function angDiff(a, b) {
 }
 
 
-Object.assign(Fleet.prototype, missions, land, war);
+Object.assign(Fleet.prototype, missions, land, war, air);
 export { KINDS, SEA_KINDS, pathLength, SEA_LEVEL };

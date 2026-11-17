@@ -983,6 +983,25 @@
   stroke-width: 1.2;
 }
 
+/* modern and future eras (docs/MODERN-ERAS.md): era chips and tech columns */
+.ws-era.is-era4,
+.ws-tech__era.is-era4 {
+  --e: #e07a52;
+}
+.ws-era.is-era5,
+.ws-tech__era.is-era5 {
+  --e: #f2d06b;
+}
+.ws-era.is-era6,
+.ws-tech__era.is-era6 {
+  --e: #7fd3e8;
+}
+.ws-era.is-era7,
+.ws-tech__era.is-era7 {
+  --e: #8ee0a8;
+}
+.ws-tech__col.is-capped {
+  opacity: 0.45;
 /* ==========================================================================
    Round 14: a top bar of fixed width
    Each panel keeps one width per breakpoint whatever it shows: the clock's

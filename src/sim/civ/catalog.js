@@ -61,7 +61,32 @@ export const BUILDING_TYPES = {
   wall: { names: ['Wall'], w: 1, h: 1, levels: 1, hp: [110], buildTime: [5], cost: [{ stone: 3 }], wall: true },
   tower: { names: ['Wall Tower'], w: 1, h: 1, levels: 1, hp: [170], buildTime: [12], cost: [{ stone: 10 }], wall: true, banner: true },
   gate: { names: ['Gatehouse'], w: 1, h: 1, levels: 1, hp: [190], buildTime: [12], cost: [{ stone: 10, wood: 4 }], wall: true },
+  // ---- modern and future eras (docs/MODERN-ERAS.md) ----
+  // `kind` is what the Buildings renderer keys its model on (until each has
+  // a model of its own it draws a plain placeholder of the right size);
+  // `modern` marks the types of eras 4-7; `smoke` how much haze a working
+  // one puts out (civ.haze()); `power` how much it feeds the power lines.
+  // They are paid mostly in gold (the towns of these eras run short of stone).
+  factory: { names: ['Factory'], kind: 'factory', w: 3, h: 2, levels: 1, hp: [360], buildTime: [40], cost: [{ wood: 10, stone: 24, gold: 16 }], tech: ['industry'], modern: true, smoke: 1 },
+  rowhouse: { names: ["Workers' Row Houses"], kind: 'rowhouse', w: 3, h: 1, levels: 1, hp: [200], housing: [10], buildTime: [26], cost: [{ wood: 10, stone: 14, gold: 4 }], tech: ['industry'], modern: true },
+  waterworks: { names: ['Waterworks'], kind: 'waterworks', w: 2, h: 2, levels: 1, hp: [260], buildTime: [34], cost: [{ stone: 20, gold: 14 }], tech: ['sanitation'], modern: true },
+  powerstation: { names: ['Power Station'], kind: 'powerstation', w: 3, h: 2, levels: 1, hp: [400], buildTime: [44], cost: [{ stone: 30, gold: 24 }], tech: ['electricity'], modern: true, smoke: 0.7, power: 1 },
+  pylon: { names: ['Pylon'], kind: 'pylon', w: 1, h: 1, levels: 1, hp: [120], buildTime: [8], cost: [{ stone: 4, gold: 2 }], tech: ['electricity'], modern: true },
+  radiomast: { names: ['Radio Mast'], kind: 'radiomast', w: 1, h: 1, levels: 1, hp: [140], buildTime: [16], cost: [{ stone: 6, gold: 8 }], tech: ['radio'], modern: true },
+  apartment: { names: ['Apartment Block', 'Tall Apartment Block'], kind: 'apartment', w: 2, h: 2, levels: 2, hp: [320, 420], housing: [14, 20], buildTime: [36, 30], cost: [{ wood: 6, stone: 22, gold: 10 }, { stone: 20, gold: 12 }], tech: ['concrete', 'concrete'], modern: true },
+  campus: { names: ['Research Campus'], kind: 'campus', w: 3, h: 2, levels: 1, hp: [380], buildTime: [50], cost: [{ stone: 30, gold: 30 }], tech: ['computing'], modern: true },
+  skyscraper: { names: ['Skyscraper'], kind: 'skyscraper', w: 2, h: 2, levels: 1, hp: [700], housing: [30], buildTime: [70], cost: [{ stone: 40, gold: 40 }], tech: ['skyscrapers'], modern: true },
+  nuclear: { names: ['Nuclear Power Plant'], kind: 'nuclear', w: 3, h: 3, levels: 1, hp: [800], buildTime: [80], cost: [{ stone: 50, gold: 60 }], tech: ['nuclear'], modern: true, power: 3 },
+  fusion: { names: ['Fusion Plant'], kind: 'fusion', w: 3, h: 3, levels: 1, hp: [900], buildTime: [80], cost: [{ stone: 45, gold: 70 }], tech: ['fusion'], modern: true, power: 4 },
+  arcology: { names: ['Arcology'], kind: 'arcology', w: 4, h: 4, levels: 1, hp: [1600], housing: [70], buildTime: [120], cost: [{ wood: 20, stone: 70, gold: 80 }], tech: ['arcology'], modern: true, banner: true },
+  station: { names: ['Railway Station'], kind: 'station', w: 3, h: 1, levels: 1, hp: [260], buildTime: [30], cost: [{ wood: 10, stone: 16, gold: 6 }], tech: ['railways'], modern: true },
+  airfield: { names: ['Airfield'], kind: 'airfield', w: 4, h: 2, levels: 1, hp: [200], buildTime: [30], cost: [{ wood: 6, stone: 14, gold: 12 }], tech: ['flight'], modern: true, air: 1 },
+  airport: { names: ['Airport'], kind: 'airport', w: 5, h: 3, levels: 1, hp: [500], buildTime: [60], cost: [{ stone: 40, gold: 50 }], tech: ['jets'], modern: true, air: 2 },
+  containerport: { names: ['Container Port'], kind: 'containerport', w: 3, h: 2, levels: 1, hp: [420], buildTime: [50], cost: [{ stone: 30, gold: 30 }], coastal: true, tech: ['containers'], modern: true },
+  launchpad: { names: ['Launch Pad'], kind: 'launchpad', w: 3, h: 3, levels: 1, hp: [500], buildTime: [60], cost: [{ stone: 40, gold: 50 }], tech: ['rocketry'], modern: true },
+  spaceport: { names: ['Spaceport'], kind: 'spaceport', w: 4, h: 4, levels: 1, hp: [900], buildTime: [90], cost: [{ stone: 60, gold: 80 }], tech: ['orbital'], modern: true },
 };
+export const MODERN_TYPES = Object.keys(BUILDING_TYPES).filter((t) => BUILDING_TYPES[t].modern);
 
 export const BUILDING_LABEL = {
   vale: { academy: ['Royal Academy'], wonder: ['Great Spire Footings', 'Rising Spire', 'Great Spire'], colossus: ['Founder Pedestal', 'Rising Founder', 'Colossus of the Founder'], statue: ['Hero Statue'], hall: ['Longhall', 'Town Hall', 'Castle Keep'], house: ['Thatched Cottage', 'Timber House', 'Manor House'], temple: ['Wayside Chapel', 'Stone Chapel'] },

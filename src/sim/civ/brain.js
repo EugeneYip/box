@@ -1247,7 +1247,8 @@ export const brain = {
         if (!(d.noEngage > now)) return;
       }
     }
-    const range = (u.def.attackRange || 0.8) + 0.15;
+    // musketeers and the soldiers after them shoot from a few paces (modern.js gear)
+    const range = Math.max(u.def.attackRange || 0.8, u.data.reach || 0) + 0.15;
     if (dist > range) {
       u.state = 'run';
       u.path = null;
@@ -1265,7 +1266,7 @@ export const brain = {
       g.units.damage(foe, dmg, u);
       u.attackCd = u.def.attackCooldown || 1.2;
       this._fx('blood', foe.x, foe.z, 0.5);
-      this._fx('sparks', (foe.x + u.x) / 2, (foe.z + u.z) / 2, 0.5);
+      this._fx('sparks', u.data.reach ? u.x + (dx / dist) * 0.4 : (foe.x + u.x) / 2, u.data.reach ? u.z + (dz / dist) * 0.4 : (foe.z + u.z) / 2, 0.5); // a muzzle flash
       if (!foe.alive) {
         d.foe = null;
         d.engaged = null;
@@ -1372,7 +1373,8 @@ export const brain = {
       let ring = 0;
       if (b.type === 'hall') for (const o of army.units) if (Math.hypot(o.x - b.x, o.z - b.z) < Math.max(b.w, b.h) * 0.5 + 1.6) ring++;
       const mult = b.type === 'hall' ? 1 + Math.min(4, ring) * 0.6 : BUILDING_TYPES[b.type].wall ? 1.6 : 1;
-      this.damageBuilding(b, (6 + this.rng.next() * 4) * mult, 'siege');
+      // Gunpowder and Battleships: shot and shell breach walls sooner
+      this.damageBuilding(b, (6 + this.rng.next() * 4) * mult * this.techMod(army.kingdom, 'siegeFire'), 'siege');
       b.besieged = this.game.time.total;
       if (this.rng.chance(0.14)) b.burning = Math.max(b.burning, 0.45);
       this._fx('debris', b.x + this.rng.float(-0.5, 0.5), b.z + this.rng.float(-0.5, 0.5), 0.4);

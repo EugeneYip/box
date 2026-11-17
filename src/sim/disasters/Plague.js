@@ -130,8 +130,10 @@ export class PlagueSim {
         continue;
       }
       p.t += step;
+      // Sanitation: clean water and sewers blunt the sickness and its spread
+      const resist = g.civ?.plagueResist?.(u) ?? 1;
       // incubation, then sickness worsens
-      const dps = p.t < 3 ? 0.2 : 1.1 * p.severity * Math.min(1.6, 0.6 + p.t / 25);
+      const dps = (p.t < 3 ? 0.2 : 1.1 * p.severity * Math.min(1.6, 0.6 + p.t / 25)) * resist;
       u.hp -= dps * step;
       u.lastHurt = g.time.total;
       if (u.hp <= 0) {
@@ -148,7 +150,7 @@ export class PlagueSim {
       if (law(g, 'calamityPlague', true) && rng.next() < step * 1.4) {
         const near = g.units.query(u.x, u.z, SPREAD_RADIUS);
         for (const o of near) {
-          if (o !== u && this.canCatch(o) && rng.next() < Math.min(0.95, 0.35 * ageMod(g, "plague", 1))) this.infect(o, Math.max(0.6, p.severity * (0.85 + rng.next() * 0.3)));
+          if (o !== u && this.canCatch(o) && rng.next() < Math.min(0.95, 0.35 * ageMod(g, "plague", 1)) * resist) this.infect(o, Math.max(0.6, p.severity * (0.85 + rng.next() * 0.3)));
         }
       }
     }
