@@ -115,7 +115,8 @@ export function readParams() {
   const num = (k, d) => (q.has(k) && q.get(k) !== '' && !isNaN(+q.get(k)) ? +q.get(k) : d);
   const cam = q.has('cam') ? q.get('cam').split(',').map(Number) : null;
   const preset = q.get('preset') || 'continent';
-  const region = isWidePreset(preset) ? validRegion(q.get('region')) : null;
+  const asked = isWidePreset(preset) ? q.get('region') : null;
+  const region = asked ? validRegion(asked) : null;
   const size = region ? 1024 : isWidePreset(preset) ? clampSize(num('size', EARTH_DEFAULT_SIZE), preset) : clampSize(num('size', IS_TOUCH ? 192 : 256));
   return {
     seed: num('seed', Math.floor(Math.random() * 1e9)),
@@ -123,6 +124,9 @@ export function readParams() {
     size,
     preset,
     region,
+    // a regional map the URL asked for but this device cannot have (touch) or
+    // that does not exist: the whole Earth loads instead, and the UI says so
+    regionDropped: asked && !region ? asked : null,
     cam,
     hour: q.has('hour') ? num('hour', 10) : null,
     ff: num('ff', 0),

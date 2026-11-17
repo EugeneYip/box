@@ -24,6 +24,7 @@ import { AgeChip, AgeBanner } from './Ages.js';
 import { loadRegistries } from './depth.js';
 import { lawDef } from '../core/laws.js';
 import { earthLabel, earthChoice } from '../core/params.js';
+import { earthRegion } from '../world/data/regions.js';
 import { uiIcon } from './icons.js';
 
 // Overview name spots, in label widths (x) and heights (y) from the realm's
@@ -122,6 +123,9 @@ export class UI {
     } else {
       root.classList.add('is-ready');
     }
+    // a regional link opened where it cannot load (touch devices): say so once,
+    // and let the address show the world that did load
+    if (game.params.regionDropped) setTimeout(() => safe(() => this.noteRegionFallback(), null, 'region note'), 900);
 
     // input
     addEventListener('keydown', (e) => this.onKeyCapture(e), true);
@@ -300,10 +304,59 @@ export class UI {
         this._regenN = (this._regenN || 0) + 1; // new land: the overview frame is measured again
         g.params.civs = civs;
         after?.();
+        safe(() => this.syncUrl(), null, 'url');
         if (!quiet) setTimeout(() => g.notify(preset === 'earth' ? `${region ? earthChoice(1024, region)?.name || 'The World Map' : 'The World Map'} rises from the deep. Seed ${seed}.` : `A new ${(PRESET_NAMES[preset] || 'world').toLowerCase()} rises from the deep. Seed ${seed}.`, 'good'), 400);
         setTimeout(() => this.veil.classList.remove('is-shown'), 120);
       });
     }, 360);
+  }
+
+  // The address bar follows a world changed in place (seed, landmass), so a
+  // reload or a shared link brings back this world, not the one first opened.
+  syncUrl() {
+    const g = this.game;
+    if (g._reloading || !window.history?.replaceState) return;
+    const p = g.params;
+    const q = new URLSearchParams(location.search);
+    q.set('seed', p.seed);
+    q.set('preset', p.preset);
+    if (p.preset === 'earth' && p.region) {
+      q.set('region', p.region);
+      q.delete('size');
+    } else {
+      q.set('size', p.preset === 'earth' ? p.size : g.world.w);
+      q.delete('region');
+    }
+    // (as on a reload: the count the map starts with by itself stays implicit)
+    const auto = g.civ?.budget?.startVillages;
+    if (p.civs == null || p.civs === 3 || p.civs === auto) q.delete('civs');
+    else q.set('civs', p.civs);
+    for (const k of ['cam', 'hour', 'ff']) q.delete(k);
+    if (this.title?.active) q.delete('title');
+    else q.set('title', '0');
+    history.replaceState(history.state, '', `${location.pathname}?${q}${location.hash}`);
+  }
+
+  // Touch devices cannot load the regional maps (src/core/params.js validRegion):
+  // the whole Earth loads instead; tell the player once and fix the address.
+  noteRegionFallback() {
+    const g = this.game;
+    const id = g.params.regionDropped;
+    if (!id) return;
+    g.params.regionDropped = null;
+    const r = earthRegion(id);
+    const z = earthChoice(g.params.size);
+    const what = `the whole Earth${z ? ` (${z.name})` : ''}`;
+    const q = new URLSearchParams(location.search);
+    q.delete('region');
+    q.set('size', g.params.size);
+    if (window.history?.replaceState) history.replaceState(history.state, '', `${location.pathname}?${q}${location.hash}`);
+    // above the title screen when it is up
+    const t = this.toastEl;
+    t.classList.add('is-note');
+    t.classList.toggle('is-front', !!this.title?.active);
+    this.toast(r ? `${r.name} is a desktop-only map, so ${what} loaded instead` : `There is no regional map called “${id}”, so ${what} loaded instead`, 5200);
+    setTimeout(() => t.classList.remove('is-note', 'is-front'), 5700);
   }
 
   onRegenerated() {

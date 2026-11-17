@@ -1226,3 +1226,16 @@
     --ws-clocktxt: 136px;
   }
 }
+
+/* a longer notice (a regional link opened on a touch device) wraps on narrow
+   screens, and shows above the title screen when it is up */
+.ws-toast.is-note {
+  width: max-content;
+  max-width: calc(100vw - 32px);
+  white-space: normal;
+  text-align: center;
+  line-height: 1.35;
+}
+.ws-toast.is-front {
+  z-index: 55;
+}
