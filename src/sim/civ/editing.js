@@ -2,6 +2,7 @@ import { HERALDRY, colorDist, baseCulture } from './cultures.js';
 import { relKey } from './politics.js';
 import { BUILDING_TYPES } from './catalog.js';
 import { YEAR, ADULT_AGE } from './util.js';
+import { geoDist } from '../../world/geo.js';
 
 // Player editing of kingdoms, villages and cultures (contract: docs/EDITING.md).
 // Every successful edit returns true, emits game.events 'edit'
@@ -93,7 +94,7 @@ export const editing = {
       let s = 1;
       for (const o of others) {
         const ov = this.villages[o.capital];
-        const near = (this.relations.get(relKey(o.id, id))?.border || 0) > 0 || (cap && ov && Math.hypot(cap.cx - ov.cx, cap.cz - ov.cz) < 90);
+        const near = (this.relations.get(relKey(o.id, id))?.border || 0) > 0 || (cap && ov && geoDist(this.world, cap.cx, cap.cz, ov.cx, ov.cz) < 90);
         s = Math.min(s, colorDist(o.color, h.color) + (near ? 0 : 0.12));
       }
       return { c: h.color, s };
@@ -123,7 +124,7 @@ export const editing = {
     for (const o of this.kingdoms) {
       if (!o.alive || o === k || !o.banner) continue;
       const ov = this.villages[o.capital];
-      if (x == null || !ov || Math.hypot(ov.cx - x, ov.cz - z) < 110) used.add(o.banner.symbol + '|' + o.banner.field);
+      if (x == null || !ov || geoDist(this.world, ov.cx, ov.cz, x, z) < 110) used.add(o.banner.symbol + '|' + o.banner.field);
     }
     for (let t = 0; t < 24; t++) {
       const symbol = t < 12 ? pool[(rng.next() * pool.length) | 0] : BANNER_SYMBOLS[(rng.next() * BANNER_SYMBOLS.length) | 0];

@@ -1,7 +1,7 @@
 import { CULTURES, HERALDRY, HERALDRY_AVOID, colorDist, baseCulture, placeName, kingdomName as makeKingdomName, rulerTitle } from './cultures.js';
 import { BUILDING_TYPES, buildingLabel } from './catalog.js';
 import { YEAR, ADULT_AGE, clamp } from './util.js';
-import { geoRegion } from '../../world/geo.js';
+import { geoRegion, geoDist } from '../../world/geo.js';
 
 // Kingdoms, rulers, diplomacy (opinion, alliances, war), armies, conquest,
 // rebellion and collapse. Mixed into Civilization.prototype.
@@ -75,7 +75,7 @@ export const politics = {
       if (x == null) return 0.12;
       const v = this.villages[k.capital];
       if (!v) return 0.3;
-      const d = Math.hypot(v.cx - x, v.cz - z);
+      const d = geoDist(this.world, v.cx, v.cz, x, z);
       return d < 70 ? 0 : d < 130 ? 0.08 : 0.25; // a far realm may repeat a tincture
     };
     let her = null,
@@ -102,7 +102,7 @@ export const politics = {
     for (const k of this.kingdoms) {
       if (!k.alive || !k.villages.length) continue;
       const v = this.villages[k.capital];
-      if (x != null && v && Math.hypot(v.cx - x, v.cz - z) > 130) continue;
+      if (x != null && v && geoDist(this.world, v.cx, v.cz, x, z) > 130) continue;
       if (colorDist(k.color, color) < 0.15) return false;
     }
     return true;
@@ -122,7 +122,7 @@ export const politics = {
         const r = this.relations.get(relKey(A.id, B.id));
         const vA = this.villages[A.capital],
           vB = this.villages[B.capital];
-        const close = (r?.border || 0) > 0 || r?.war || (vA && vB && Math.hypot(vA.cx - vB.cx, vA.cz - vB.cz) < 90);
+        const close = (r?.border || 0) > 0 || r?.war || (vA && vB && geoDist(this.world, vA.cx, vA.cz, vB.cx, vB.cz) < 90);
         if (!close && !same) continue;
         let Y = A.founded > B.founded ? A : B;
         if (Y.player?.color) Y = Y === A ? B : A;
@@ -326,7 +326,7 @@ export const politics = {
       for (const vid of k.villages) {
         const v = this.villages[vid];
         if (!v?.alive || vid === k.capital || v.pop < 8) continue;
-        const d = Math.hypot(v.cx - cap.cx, v.cz - cap.cz) - v.loyalty * 0.3;
+        const d = geoDist(this.world, v.cx, v.cz, cap.cx, cap.cz) - v.loyalty * 0.3;
         if (d > fd) (fd = d), (far = v);
       }
       if (!far) continue;
@@ -611,7 +611,7 @@ export const politics = {
       for (const vb of B.villages) {
         const b = this.villages[vb];
         if (!b?.alive) continue;
-        const d = Math.hypot(a.cx - b.cx, a.cz - b.cz);
+        const d = geoDist(this.world, a.cx, a.cz, b.cx, b.cz);
         if (d < best) best = d;
       }
     }
@@ -771,7 +771,7 @@ export const politics = {
           for (const evid of this.kingdoms[e].villages) {
             const ev = this.villages[evid];
             if (!ev?.alive || ev.landId !== v.landId) continue;
-            const d = Math.hypot(ev.cx - v.cx, ev.cz - v.cz);
+            const d = geoDist(this.world, ev.cx, ev.cz, v.cx, v.cz);
             if (d < bd) {
               bd = d;
               best = ev;
@@ -808,7 +808,7 @@ export const politics = {
     for (const vid of k.villages) {
       const v = this.villages[vid];
       if (!v?.alive || v.landId !== home.landId) continue;
-      if (Math.hypot(v.cx - home.cx, v.cz - home.cz) > 70) continue;
+      if (geoDist(this.world, v.cx, v.cz, home.cx, home.cz) > 70) continue;
       const own = [...v.members].filter((u) => u.alive && u.job === 'soldier' && !u.data.civ?.army);
       const keep = v === home ? 1 : 1;
       for (let i = keep; i < own.length; i++) soldiers.push(own[i]);
@@ -892,7 +892,7 @@ export const politics = {
         for (const evid of this.kingdoms[e].villages) {
           const ev = this.villages[evid];
           if (!ev?.alive || ev.landId !== (a.landId ?? this.villages[a.home]?.landId)) continue;
-          const d = Math.hypot(ev.cx - c.x, ev.cz - c.z);
+          const d = geoDist(this.world, ev.cx, ev.cz, c.x, c.z);
           if (d < bd) {
             bd = d;
             best = ev;
@@ -984,7 +984,7 @@ export const politics = {
     for (const vid of kingdom.villages) {
       const v = this.villages[vid];
       if (!v?.alive || v.id === u.village || v.razed) continue;
-      const d = Math.hypot(v.cx - u.x, v.cz - u.z);
+      const d = geoDist(this.world, v.cx, v.cz, u.x, u.z);
       if (d < bd) {
         bd = d;
         best = v;
@@ -1093,7 +1093,7 @@ export const politics = {
     // distance from the crown; a colony over the sea is governed by ship, so
     // the open water counts for little (otherwise every World Map colony
     // rose the day it reached 14 people)
-    if (cap) L -= Math.max(0, (Math.hypot(cap.cx - v.cx, cap.cz - v.cz) * (v.colony && (v.colonyOf ?? v.kingdom) === v.kingdom && v.landId !== cap.landId ? 0.3 : 1)) / Math.max(1, Math.sqrt(this.world.size / 65536)) - 28) * 0.75;
+    if (cap) L -= Math.max(0, (geoDist(this.world, cap.cx, cap.cz, v.cx, v.cz) * (v.colony && (v.colonyOf ?? v.kingdom) === v.kingdom && v.landId !== cap.landId ? 0.3 : 1)) / Math.max(1, Math.sqrt(this.world.size / 65536)) - 28) * 0.75;
     if (v.culture !== k.culture) L -= 18;
     if (v.conqueredAt) L -= Math.max(0, 34 - ((now - v.conqueredAt) / YEAR) * 3);
     if (v.starving && this.law('harmonyUnrest')) L -= 22;
@@ -1148,7 +1148,7 @@ export const politics = {
     for (const vid of bestK.villages) {
       const v = this.villages[vid];
       if (!v?.alive || vid === bestK.capital || v.pop < 8) continue;
-      const d = cap ? Math.hypot(cap.cx - v.cx, cap.cz - v.cz) : 0;
+      const d = cap ? geoDist(this.world, cap.cx, cap.cz, v.cx, v.cz) : 0;
       const sc = d + (100 - v.loyalty) * 0.4 + v.pop * 0.2;
       if (sc > fd) {
         fd = sc;
@@ -1213,7 +1213,7 @@ export const politics = {
     for (const vid of [...old.villages]) {
       const o = this.villages[vid];
       if (!o?.alive || o.id === old.capital) continue;
-      if (Math.hypot(o.cx - v.cx, o.cz - v.cz) < (this._civilWar ? 55 : 34) && o.loyalty < (this._civilWar ? 65 : 40) && this.rng.chance(0.6)) {
+      if (geoDist(this.world, o.cx, o.cz, v.cx, v.cz) < (this._civilWar ? 55 : 34) && o.loyalty < (this._civilWar ? 65 : 40) && this.rng.chance(0.6)) {
         this._transferVillage(o, K.id, 'rebellion');
         this._note(`${o.name} joins the rebels`, 'war', { x: o.cx, z: o.cz }, 'joinreb' + K.id, 60);
       }
@@ -1237,7 +1237,7 @@ export const politics = {
     for (const vid of [...old.villages]) {
       const o = this.villages[vid];
       if (!o?.alive || o.id === old.capital || o.home !== home.id) continue;
-      if (Math.hypot(o.cx - v.cx, o.cz - v.cz) < 34 && o.loyalty < 45 && this.rng.chance(0.6)) {
+      if (geoDist(this.world, o.cx, o.cz, v.cx, v.cz) < 34 && o.loyalty < 45 && this.rng.chance(0.6)) {
         this._transferVillage(o, home.id, 'rebellion');
         this._note(`${o.name} follows it back to ${this._kn(home)}`, 'war', { x: o.cx, z: o.cz }, 'joinhome' + home.id, 60);
       }

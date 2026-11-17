@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { TILE_INFO, FLORA_INFO, SEA_LEVEL, MAX_HEIGHT } from '../world/constants.js';
 import { uiIcon } from './icons.js';
 import { el, safe, rgbOf } from './dom.js';
+import { geoWrapOn } from '../world/geo.js';
 
 // Painted minimap: terrain colour with hillshade, water depth, forest
 // darkening and kingdom territory tint with crisp borders. Redrawn
@@ -369,6 +370,10 @@ export class Minimap {
       ctx.fill();
     }
 
+    // Round world: ships bound across the Atlantic seam, their course split at
+    // the map's edges with a notch where it leaves one side and comes in at the other
+    if (geoWrapOn(g.world)) safe(() => this._seamVoyages(ctx, sx, sy, dpr));
+
     // camera footprint
     const pts = this.footprint();
     ctx.beginPath();
@@ -389,6 +394,78 @@ export class Minimap {
     ctx.arc(rig.cur.x * sx, rig.cur.z * sy, 1.8 * dpr, 0, Math.PI * 2);
     ctx.fillStyle = '#fbe3a6';
     ctx.fill();
+  }
+
+  // Voyages across the seam (Round world): each ship whose route still runs
+  // past a side of the map, or that has just come in across it, with her
+  // course ahead drawn on the map in her realm's colour.
+  _seamVoyages(ctx, sx, sy, dpr) {
+    const F = this.game.fleet;
+    if (!F?.list) return;
+    const W = this.w;
+    const notch = [];
+    for (const v of F.list) {
+      if (!v.alive || v.cls !== 'sea' || v.kind === 'fishing' || v.state === 'sinking') continue;
+      const p = v.path;
+      let crosses = false;
+      if (p && v.state === 'sail') for (let i = v.pi || 0; i < p.length && !crosses; i += 2) crosses = p[i] < 0 || p[i] >= W;
+      if (!crosses && !(v.x < 10 || v.x > W - 10)) continue;
+      const kc = v.kingdom != null && v.kingdom >= 0 ? this.kingdomRGB(v.kingdom) : [245, 238, 223];
+      const col = `rgba(${kc[0]},${kc[1]},${kc[2]},0.9)`;
+      if (crosses) {
+        ctx.beginPath();
+        let px = v.x,
+          pz = v.z;
+        ctx.moveTo(px * sx, pz * sy);
+        for (let i = v.pi || 0; i < p.length; i += 2) {
+          const x = p[i],
+            z = p[i + 1];
+          const k0 = Math.floor(px / W),
+            k1 = Math.floor(x / W);
+          if (k0 !== k1) {
+            const k = Math.max(k0, k1);
+            const t = (k * W - px) / (x - px || 1);
+            const zs = pz + (z - pz) * t;
+            ctx.lineTo((k - k0) * W * sx, zs * sy);
+            ctx.moveTo((k - k1) * W * sx, zs * sy);
+            notch.push(0, zs, W, zs);
+          }
+          ctx.lineTo((x - k1 * W) * sx, z * sy);
+          px = x;
+          pz = z;
+        }
+        ctx.setLineDash([3 * dpr, 2.5 * dpr]);
+        ctx.lineWidth = 2.4 * dpr;
+        ctx.strokeStyle = 'rgba(10,10,14,0.45)';
+        ctx.stroke();
+        ctx.lineWidth = 1.2 * dpr;
+        ctx.strokeStyle = col;
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      // the ship
+      ctx.beginPath();
+      ctx.arc(v.x * sx, v.z * sy, 2 * dpr, 0, Math.PI * 2);
+      ctx.fillStyle = col;
+      ctx.fill();
+      ctx.lineWidth = 0.9 * dpr;
+      ctx.strokeStyle = 'rgba(16,14,10,.85)';
+      ctx.stroke();
+    }
+    // notches on both edges where a course crosses
+    ctx.fillStyle = 'rgba(251,227,166,0.95)';
+    for (let i = 0; i < notch.length; i += 2) {
+      const x = notch[i] * sx,
+        y = notch[i + 1] * sy,
+        r = 3 * dpr,
+        d = notch[i] === 0 ? 1 : -1;
+      ctx.beginPath();
+      ctx.moveTo(x, y - r);
+      ctx.lineTo(x + d * r * 1.1, y);
+      ctx.lineTo(x, y + r);
+      ctx.closePath();
+      ctx.fill();
+    }
   }
 
   update(dt) {

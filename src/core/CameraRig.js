@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { geoWrapOn } from '../world/geo.js';
 
 // Smooth god-view camera: orbits a ground target. Zooming out tilts the view
 // toward top-down; zooming in lowers it for a diorama perspective.
@@ -73,7 +74,10 @@ export class CameraRig {
   }
   clampGoal() {
     const w = this.game.world;
-    this.goal.x = THREE.MathUtils.clamp(this.goal.x, 0, w.w);
+    // Round world (docs/ROUND-WORLD.md): past a side of the whole-Earth map the
+    // camera pans on round to the other side (update() brings it back on)
+    if (geoWrapOn(w)) this.goal.x = THREE.MathUtils.clamp(this.goal.x, -w.w * 0.25, w.w * 1.25);
+    else this.goal.x = THREE.MathUtils.clamp(this.goal.x, 0, w.w);
     this.goal.z = THREE.MathUtils.clamp(this.goal.z, 0, w.h);
   }
   addShake(amount) {
@@ -102,9 +106,12 @@ export class CameraRig {
     if (this.keys.has('Equal') || this.keys.has('NumpadAdd')) this.zoom(Math.pow(0.35, dt));
     if (this.keys.has('Minus') || this.keys.has('NumpadSubtract')) this.zoom(Math.pow(1 / 0.35, dt));
 
+    const wrapW = geoWrapOn(this.game.world) ? this.game.world.w : 0;
     if (this.follow && this.follow.alive !== false) {
       this.goal.x = this.follow.x;
       this.goal.z = this.follow.z;
+      // (a ship followed across the Round world's seam: the camera goes round with her)
+      if (wrapW && Math.abs(this.goal.x - this.cur.x) > wrapW / 2) this.cur.x += this.goal.x > this.cur.x ? wrapW : -wrapW;
     }
 
     const k = 1 - Math.exp(-dt * 9);
@@ -113,6 +120,11 @@ export class CameraRig {
     this.cur.z += (this.goal.z - this.cur.z) * k;
     this.cur.dist += (this.goal.dist - this.cur.dist) * kz;
     this.cur.yaw += (this.goal.yaw - this.cur.yaw) * k;
+    if (wrapW && (this.cur.x < 0 || this.cur.x >= wrapW)) {
+      const s = this.cur.x < 0 ? wrapW : -wrapW;
+      this.cur.x += s;
+      this.goal.x += s;
+    }
     this.shake = Math.max(0, this.shake - dt * 2.2);
     this._shakeT += dt;
     this.apply();
