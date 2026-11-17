@@ -132,6 +132,7 @@ export const realms = {
       }
       if (!ok) best.done = true;
     }
+    this._kingdomTotals?.(); // realm cards show their people from the first frame
     return true;
   },
 

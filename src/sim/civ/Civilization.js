@@ -471,6 +471,7 @@ export class Civilization {
     for (const s of sites) {
       this.foundVillage(s.tx, s.ty, { culture: s.culture, starter: true, settlers: 10 + this.rng.int(0, 2), silent: true });
     }
+    this._kingdomTotals?.(); // realm cards show their people from the first frame
     this._territory();
     this.world.flushDirty?.();
   }
@@ -1373,7 +1374,7 @@ export class Civilization {
       if (w.owner[ty * w.w + tx] >= 0) continue;
       if (this.villages.some((v) => v.alive && Math.hypot(v.cx - tx, v.cz - ty) < 30)) continue;
       if (this._scoreSite(tx, ty, { minSpace: 110 }) < 0) continue;
-      const cultureId = this._cultureAt(tx, ty);
+      const cultureId = this._realCultureAt?.(tx, ty) || this._cultureAt(tx, ty);
       const v = this.foundVillage(tx, ty, { culture: cultureId, settlers: this.rng.int(6, 9), silent: true, kingdom: null, wanderers: true });
       if (v) this._note(`🧭 Wanderers settle the empty land at ${v.name}`, 'good', { x: v.cx, z: v.cz });
       return;
@@ -2022,7 +2023,7 @@ export class Civilization {
     const name = buildingLabel({ ...b, level: 3 });
     if (b.level >= 3) {
       const fx = MONUMENT_FX[b.type === 'colossus' ? 'colossus' : b.style] || MONUMENT_FX.vale;
-      this._note(`🏛 The ${name} of ${v.name} stands complete, glory of the ${K?.name || 'realm'}: ${fx.text}`, 'good', { x: b.x, z: b.z }, 'wonderdone' + b.id, 1);
+      this._note(`🏛 The ${name} of ${v.name} stands complete, glory of ${K ? this._theK(K) : 'the realm'}: ${fx.text}`, 'good', { x: b.x, z: b.z }, 'wonderdone' + b.id, 1);
       this._fx('magic', b.x, b.z, 2);
       this._sfx('bell', b.x, b.z, 0, true);
     } else this._note(`🏗 The ${name} of ${v.name} rises: stage ${b.level} of 3 stands`, 'info', { x: b.x, z: b.z }, 'monlvl' + b.id + b.level, 1);
@@ -2632,7 +2633,7 @@ export class Civilization {
       village: v,
       kingdom: k,
       title: v.name,
-      subtitle: `${tier} of the ${k ? k.name : 'unclaimed lands'} · ${this.cultureName(v.culture)}`,
+      subtitle: `${tier} of ${k ? this._theK(k) : 'the unclaimed lands'} · ${this.cultureName(v.culture)}`,
       stats: [
         ['Population', `${v.pop} (${v.children} children)`],
         ['Housing', v.housing],
@@ -2664,7 +2665,7 @@ export class Civilization {
         ['Ruler', this.rulerLabel(k)],
         ['Capital', cap ? cap.name : '—'],
         ['Villages', k.villages.length],
-        ['Population', k.population],
+        ['Population', this._kingdomPop?.(k) ?? k.population],
         ['Soldiers', k.soldiers],
         ['At war with', wars.length ? wars.join(', ') : 'nobody'],
         ['Allies', allies.length ? allies.join(', ') : 'none'],

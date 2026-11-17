@@ -570,6 +570,39 @@ export const politics = {
       }
   },
 
+  // A realm's people (alive members of its villages), counted on the spot:
+  // the diplomacy pass refreshes k.population only every few seconds, so a
+  // realm card opened at load read 0.
+  _kingdomPop(k) {
+    let n = 0;
+    for (const vid of k.villages) {
+      const v = this.villages[vid];
+      if (v?.alive) for (const u of v.members) if (u.alive) n++;
+    }
+    return n;
+  },
+
+  // Fill in every realm's population and soldiers right after the start (the
+  // diplomacy pass keeps them current from then on).
+  _kingdomTotals() {
+    for (const k of this.kingdoms) {
+      if (!k.alive) continue;
+      let pop = 0,
+        sold = 0;
+      for (const vid of k.villages) {
+        const v = this.villages[vid];
+        if (!v?.alive) continue;
+        for (const u of v.members) {
+          if (!u.alive) continue;
+          pop++;
+          if (u.job === 'soldier') sold++;
+        }
+      }
+      k.population = pop;
+      k.soldiers = sold;
+    }
+  },
+
   _kingdomDistance(A, B) {
     let best = Infinity;
     for (const va of A.villages) {
