@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { SEA_LEVEL } from '../world/constants.js';
 
 // Smooth god-view camera: orbits a ground target. Zooming out tilts the view
 // toward top-down; zooming in lowers it for a diorama perspective.
@@ -10,8 +11,16 @@ export class CameraRig {
     this.camera = new THREE.PerspectiveCamera(38, innerWidth / innerHeight, 0.5, 2000);
     this.minDist = 7;
     // a wide (2:1) map is framed by its width on a landscape screen; squares
-    // are unchanged (the height wins)
+    // are unchanged (the height wins). This is the reference distance: the
+    // pitch tops out here, and the renderers' zoom level reads 1 from here on.
     this.maxDist = Math.max(world.w * 0.8, world.h) * 1.15;
+    // the zoom-out limit: never less than maxDist, and far enough that the
+    // whole map fits on this screen whatever its aspect (a portrait regional
+    // map on a wide screen, a 2:1 map on a phone held upright)
+    this.limitDist = this.maxDist;
+    this._land = null;
+    this._landT = 0;
+    game.events?.on?.('world:regenerated', () => (this._land = null));
     this.target = new THREE.Vector3(world.w / 2, 0, world.h / 2);
     this.goal = { x: world.w / 2, z: world.h / 2, dist: this.maxDist * 0.55, yaw: 0, pitchBias: 0 };
     this.cur = { ...this.goal };
@@ -21,6 +30,77 @@ export class CameraRig {
     this._shakeT = 0;
     this.keys = new Set();
     this.follow = null; // optional object with .x/.z to follow (e.g. a unit)
+    this.fitLimit();
+  }
+
+  // The farthest the camera may pull back.
+  zoomMax() {
+    return Math.max(this.maxDist, this.limitDist);
+  }
+
+  // The distance at which the whole map fits on screen at the top pitch, north up,
+  // with a small margin.
+  fitLimit() {
+    const W = this.game.world;
+    const cam = new THREE.PerspectiveCamera(this.camera.fov, this.camera.aspect || innerWidth / innerHeight, 1, 1e6);
+    const pitch = THREE.MathUtils.degToRad(70);
+    const v = new THREE.Vector3();
+    const cx = W.w / 2,
+      cz = W.h / 2;
+    const corners = [
+      [0, 0],
+      [W.w, 0],
+      [0, W.h],
+      [W.w, W.h],
+    ];
+    const fits = (d, yaw) => {
+      const horiz = Math.cos(pitch) * d;
+      cam.position.set(cx + Math.sin(yaw) * horiz, Math.sin(pitch) * d, cz + Math.cos(yaw) * horiz);
+      cam.lookAt(cx, 0, cz);
+      cam.updateMatrixWorld();
+      for (const [x, z] of corners) {
+        v.set(x, 0, z).project(cam);
+        if (v.z > 1 || Math.abs(v.x) > 0.97 || Math.abs(v.y) > 0.97) return false;
+      }
+      return true;
+    };
+    let lo = this.minDist,
+      hi = Math.max(W.w, W.h) * 20;
+    for (let i = 0; i < 30; i++) {
+      const m = (lo + hi) / 2;
+      if (fits(m, 0)) hi = m;
+      else lo = m;
+    }
+    const need = Math.max(this.maxDist, hi);
+    this.limitDist = need;
+    if (this.goal) this.goal.dist = Math.min(this.goal.dist, this.zoomMax());
+    return need;
+  }
+
+  // The land (above sea level) sampled on a coarse grid, cached; it is measured
+  // again after a new world and every few seconds (terraforming moves it).
+  landPoints() {
+    if (this._land) return this._land;
+    const W = this.game.world;
+    const nx = 96,
+      nz = Math.max(8, Math.round((nx * W.h) / W.w));
+    const sx = W.w / nx,
+      sz = W.h / nz;
+    const pts = [];
+    for (let j = 0; j < nz; j++)
+      for (let i = 0; i < nx; i++) {
+        const x = (i + 0.5) * sx,
+          z = (j + 0.5) * sz;
+        let h = 0;
+        try {
+          h = W.heightAt(x, z);
+        } catch (e) {
+          h = 0;
+        }
+        if (h > SEA_LEVEL + 0.05) pts.push(x, z);
+      }
+    this._land = Float32Array.from(pts);
+    return this._land;
   }
 
   pitchFor(dist) {
@@ -33,7 +113,7 @@ export class CameraRig {
   set(x, z, dist, yawDeg = 0, pitchDeg = null, instant = true) {
     this.goal.x = x;
     this.goal.z = z;
-    this.goal.dist = THREE.MathUtils.clamp(dist, this.minDist, this.maxDist);
+    this.goal.dist = THREE.MathUtils.clamp(dist, this.minDist, this.zoomMax());
     this.goal.yaw = THREE.MathUtils.degToRad(yawDeg);
     this.manualPitch = pitchDeg == null || isNaN(pitchDeg) ? null : THREE.MathUtils.degToRad(pitchDeg);
     if (instant) Object.assign(this.cur, this.goal);
@@ -45,17 +125,21 @@ export class CameraRig {
     const k = (this.cur.dist * 1.2) / innerHeight;
     const s = Math.sin(this.goal.yaw),
       c = Math.cos(this.goal.yaw);
+    const px = this.goal.x,
+      pz = this.goal.z;
     this.goal.x -= (dx * c + dy * s) * k;
     this.goal.z -= (-dx * s + dy * c) * k;
     this.follow = null;
-    this.clampGoal();
+    this.clampGoal(px, pz);
   }
   // Pan by world-space delta (used when dragging the ground precisely).
   panWorld(dx, dz) {
+    const px = this.goal.x,
+      pz = this.goal.z;
     this.goal.x += dx;
     this.goal.z += dz;
     this.follow = null;
-    this.clampGoal();
+    this.clampGoal(px, pz);
   }
   rotate(dyaw) {
     this.goal.yaw += dyaw;
@@ -63,18 +147,86 @@ export class CameraRig {
   // Zoom with wheel, keeping the point under the cursor fixed when given.
   zoom(factor, anchor = null) {
     const before = this.goal.dist;
-    this.goal.dist = THREE.MathUtils.clamp(this.goal.dist * factor, this.minDist, this.maxDist);
+    this.goal.dist = THREE.MathUtils.clamp(this.goal.dist * factor, this.minDist, this.zoomMax());
     if (anchor) {
+      const px = this.goal.x,
+        pz = this.goal.z;
       const k = 1 - this.goal.dist / before;
       this.goal.x += (anchor.x - this.goal.x) * k;
       this.goal.z += (anchor.z - this.goal.z) * k;
-      this.clampGoal();
+      this.clampGoal(px, pz);
     }
   }
-  clampGoal() {
+  // Keep land in view: a pan or zoom may not carry the view off into empty sea
+  // or past the map's corner. "In view" means some land lies within the middle
+  // 80% of the screen (measured on the ground at the target, both ways). A move
+  // that loses the land slides along the coast on one axis if it can, else it
+  // stops; a view that has already lost the land (zoomed in over open sea, a
+  // followed ship) may still move, but only back toward land. Without a
+  // previous position (a minimap jump) the goal is pulled to the nearest land.
+  clampGoal(prevX = null, prevZ = null) {
     const w = this.game.world;
-    this.goal.x = THREE.MathUtils.clamp(this.goal.x, 0, w.w);
-    this.goal.z = THREE.MathUtils.clamp(this.goal.z, 0, w.h);
+    const g = this.goal;
+    // the view's half-size on the ground at the target, along the map's axes
+    const fov = THREE.MathUtils.degToRad(this.camera.fov) / 2;
+    const d = g.dist;
+    const hx = d * Math.tan(fov) * (this.camera.aspect || 1);
+    const hz = (d * Math.tan(fov)) / Math.max(0.3, Math.sin(this.pitchFor(d)));
+    const sy = Math.abs(Math.sin(g.yaw)),
+      cy = Math.abs(Math.cos(g.yaw));
+    const ex = Math.max(1, cy * hx + sy * hz),
+      ez = Math.max(1, sy * hx + cy * hz);
+    const A = 0.8;
+    // past the map's edge there is only empty sea: at most a tenth of the screen shows
+    // beyond it (a view wider than the map stays centred on it)
+    const edge = (v, prev, e, size) => {
+      const m = Math.min(size / 2, A * e);
+      let lo = m,
+        hi = size - m;
+      if (prev != null && Number.isFinite(prev)) {
+        lo = Math.min(lo, prev);
+        hi = Math.max(hi, prev);
+      }
+      return THREE.MathUtils.clamp(v, Math.max(0, lo), Math.min(size, hi));
+    };
+    g.x = edge(g.x, prevX, ex, w.w);
+    g.z = edge(g.z, prevZ, ez, w.h);
+    const pts = this.landPoints();
+    if (!pts.length) return;
+    // distance to the nearest land in half-screens (<= A: land is in view)
+    const far = (x, z) => {
+      let best = Infinity,
+        bi = -1;
+      for (let i = 0; i < pts.length; i += 2) {
+        const q = Math.max(Math.abs(pts[i] - x) / ex, Math.abs(pts[i + 1] - z) / ez);
+        if (q < best) {
+          best = q;
+          bi = i;
+        }
+      }
+      return { q: best, i: bi };
+    };
+    const now = far(g.x, g.z);
+    if (now.q <= A) return;
+    if (prevX == null || prevZ == null) {
+      const lx = pts[now.i],
+        lz = pts[now.i + 1];
+      g.x = THREE.MathUtils.clamp(g.x, lx - A * ex, lx + A * ex);
+      g.z = THREE.MathUtils.clamp(g.z, lz - A * ez, lz + A * ez);
+      return;
+    }
+    const was = far(prevX, prevZ).q;
+    if (now.q <= was) return;
+    const ok = (x, z) => {
+      const q = far(x, z).q;
+      return q <= A || q <= was;
+    };
+    if (ok(g.x, prevZ)) g.z = prevZ;
+    else if (ok(prevX, g.z)) g.x = prevX;
+    else {
+      g.x = prevX;
+      g.z = prevZ;
+    }
   }
   addShake(amount) {
     this.shake = Math.min(2.5, this.shake + amount);
@@ -92,10 +244,18 @@ export class CameraRig {
     if (px || pz) {
       const s = Math.sin(this.goal.yaw),
         c = Math.cos(this.goal.yaw);
+      const ox = this.goal.x,
+        oz = this.goal.z;
       this.goal.x += (px * c + pz * s) * speed;
       this.goal.z += (-px * s + pz * c) * speed;
       this.follow = null;
-      this.clampGoal();
+      this.clampGoal(ox, oz);
+    }
+    // the land outline drifts as the player raises and sinks it
+    this._landT -= dt;
+    if (this._landT <= 0) {
+      this._landT = 8;
+      this._land = null;
     }
     if (this.keys.has('KeyQ')) this.goal.yaw -= dt * 1.4;
     if (this.keys.has('KeyE')) this.goal.yaw += dt * 1.4;
@@ -148,5 +308,6 @@ export class CameraRig {
   resize(w, h) {
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
+    this.fitLimit();
   }
 }
