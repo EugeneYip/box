@@ -595,7 +595,7 @@ export class Modals {
       else pickSize(list.some((z) => z.size === want) ? want : 256);
     };
     buildSizes(isWidePreset(state.preset) ? state.earth : state.size);
-    const sizes = el('div', { class: 'ws-field' }, el('label', { class: 'ws-field__label', text: 'World size' }), sizeCards, regionLabel, regionCards, sizeNote, wrapRow);
+    const sizes = el('div', { class: 'ws-field' }, el('label', { class: 'ws-field__label', text: 'World size' }), sizeCards, wrapRow, regionLabel, regionCards, sizeNote);
     this.nwState = state;
     const create = () => {
       const n = parseInt(String(state.seed).replace(/[^0-9]/g, ''), 10);
