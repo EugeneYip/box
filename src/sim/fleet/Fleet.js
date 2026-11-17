@@ -103,7 +103,7 @@ export class Fleet {
     const area = (w.w * w.h) / (256 * 256);
     // budgets: vessels and land vehicles in the whole world (scaled with the
     // map; MORE: the smaller world scale holds more of them, docs/WORLD-SCALE.md)
-    const MORE = 1;
+    const MORE = 1.7;
     this.budget = {
       sea: Math.round(Math.min(220, 70 * Math.pow(area, 0.6)) * MORE), // ships (fishing boats apart)
       fishing: Math.round(Math.min(200, 60 * Math.pow(area, 0.6)) * MORE),

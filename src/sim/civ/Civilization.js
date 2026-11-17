@@ -68,7 +68,7 @@ function monumentTitle(type, style, variant) {
 // about a third of the land it did, so the world holds more of them: the
 // people, building and village budgets grow by BUDGET (people 1.6x, villages
 // 1.8x, buildings 1.7x per map area).
-const BUDGET = { humans: 1, buildings: 1, villages: 1, start: 1 };
+const BUDGET = { humans: 1.6, buildings: 1.7, villages: 1.8, start: 1.34 };
 function budgets(w, h, area = w * h) {
   const a = area / (256 * 256);
   const humans = Math.round(Math.min(900, 850 * Math.pow(a, 0.04)) * BUDGET.humans);
