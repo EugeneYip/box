@@ -165,7 +165,7 @@ export const modern = {
       if (r) realm.set(type, rc(type) + 1);
       return r;
     };
-    const out = (type, minR, extra) => () => this._placeOutskirts(v, type, Math.max(minR, v.radius * 0.6), v.buildRadius + extra, null, null) || this._placeOutskirts(v, type, v.buildRadius, v.buildRadius + extra + 6, null, null);
+    const out = (type, minR, extra) => () => this._placeOutskirts(v, type, Math.max(minR, v.radius * 0.6), v.buildRadius + extra, null, null) || this._placeWide(v, type, v.buildRadius * 0.7, v.buildRadius + extra + 10);
     // Sanitation: waterworks and sewers
     if (room() && has('sanitation') && (town || pop >= 30) && count('waterworks') === 0) tryBuild('waterworks', () => this._placeByWater(v, 'waterworks') || this.placeAlongRoad(v, 'waterworks'));
     // Industry: factories on the edge of town, row houses for their workers
@@ -184,7 +184,7 @@ export const modern = {
     // Radio
     if (room() && has('radio') && town && count('radiomast') === 0) tryBuild('radiomast', out('radiomast', 3, 2));
     // Reinforced Concrete: apartment blocks (and taller ones in the cities)
-    if (room() && has('concrete') && town && v.housing - pop < 3 + v.tier && count('apartment') < 1 + v.tier * 2) tryBuild('apartment');
+    if (room() && has('concrete') && town && (v.housing - pop < 6 + v.tier * 2 || count('apartment') === 0) && count('apartment') < 1 + v.tier * 2) tryBuild('apartment');
     else if (room() && has('concrete') && city) {
       const a = v.buildings.find((b) => b.alive && b.type === 'apartment' && !b.constructing && !b.upgrading && b.level < 2);
       if (a && v.housing - pop < 6) upgrade(a);
@@ -205,6 +205,34 @@ export const modern = {
     // Rocketry: a launch pad; Orbital Industry: a spaceport (far out of town)
     if (room() && has('rocketry') && (isCap || city) && rc('launchpad') === 0) tryBuild('launchpad', out('launchpad', 6, 12));
     if (room() && has('orbital') && (isCap || city) && rc('spaceport') === 0) tryBuild('spaceport', out('spaceport', 6, 12));
+  },
+  // A big footprint (airport, arcology, spaceport) beyond the fields: more
+  // tries than _placeOutskirts, on ground that may be levelled more.
+  _placeWide(v, type, minR, maxR) {
+    const def = BUILDING_TYPES[type];
+    const rng = this.rng;
+    let best = null,
+      bs = Infinity;
+    for (let k = 0; k < 140; k++) {
+      const a = rng.float(0, Math.PI * 2);
+      const r = rng.float(minR, maxR);
+      const x = Math.floor(v.cx + Math.cos(a) * r),
+        y = Math.floor(v.cz + Math.sin(a) * r);
+      const rot = rng.int(0, 3);
+      const fw = rot & 1 ? def.h : def.w,
+        fh = rot & 1 ? def.w : def.h;
+      if (!this.world.inBounds(x, y) || this.landId[y * this.world.w + x] !== v.landId) continue;
+      if (!this._footprintOK(x, y, fw, fh, 0.6 + 0.3 * Math.max(fw, fh))) continue;
+      const st = this._footprintStats(x, y, fw, fh);
+      const s = st.slope * 2 + st.trees * 0.5 + r * 0.15 + rng.next() * 2;
+      if (s < bs) (bs = s), (best = { x, y, rot });
+    }
+    if (!best) return null;
+    const b = this.addBuilding(v, type, best.x, best.y, best.rot);
+    const dx = Math.floor(b.doorX),
+      dz = Math.floor(b.doorZ);
+    if (this.world.inBounds(dx, dz)) this._connectToRoads(v, dx, dz);
+    return b;
   },
   // buildings of each modern type a realm has (cached for a moment)
   _realmTypeCount(kid) {
