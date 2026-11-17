@@ -83,6 +83,110 @@ class Batch {
   }
 }
 
+// Every building model of a kind of pass in ONE draw call: a THREE.BatchedMesh
+// holds each archetype's geometry once and draws all instances with a single
+// multi-draw (per-instance frustum culling against the camera, and against
+// the light for the shadow pass, is done by three). Instance colour and state
+// live in a float texture read by the building material (material.js).
+class DetailBatch {
+  constructor(parent, uniforms, { clip = false, shadow = true, name = 'detail' } = {}) {
+    this.parent = parent;
+    this.inst = { value: null };
+    this.material = createBuildingMaterial(uniforms, { clip, inst: this.inst });
+    this.shadow = shadow;
+    this.name = name;
+    this.geoIds = new Map(); // archetype key -> geometry id
+    this.vUsed = 0;
+    this.cap = 0; // instances
+    this.vcap = 0; // vertices
+    this.nInst = 0; // instance ids handed out (some may be hidden)
+    this.n = 0; // instances in use
+    this.mesh = null;
+    this.data = null; // 8 floats per instance: colour (rgb_), state
+    this.items = [];
+    this.extra = [];
+    this.keys = [];
+  }
+  _texFor(cap) {
+    const size = Math.max(4, Math.ceil(Math.sqrt(cap * 2)));
+    const data = new Float32Array(size * size * 4);
+    if (this.data) data.set(this.data.subarray(0, Math.min(this.data.length, data.length)));
+    const tex = new THREE.DataTexture(data, size, size, THREE.RGBAFormat, THREE.FloatType);
+    tex.needsUpdate = true;
+    this.inst.value?.dispose?.();
+    this.inst.value = tex;
+    this.data = data;
+  }
+  _ensure(nInst, vNeed) {
+    if (!this.mesh) {
+      this.cap = Math.max(64, Math.ceil(nInst * 1.5));
+      this.vcap = Math.max(65536, Math.ceil(vNeed * 1.5));
+      const m = new THREE.BatchedMesh(this.cap, this.vcap, 0, this.material);
+      m.name = 'buildings:' + this.name;
+      m.castShadow = this.shadow;
+      m.receiveShadow = true;
+      m.frustumCulled = false; // three culls each instance itself
+      m.perObjectFrustumCulled = true;
+      m.sortObjects = false;
+      this.mesh = m;
+      this._texFor(this.cap);
+      this.parent.add(m);
+      return;
+    }
+    if (nInst > this.cap) {
+      this.cap = Math.ceil(nInst * 1.5);
+      this.mesh.setInstanceCount(this.cap);
+      this._texFor(this.cap);
+    }
+    if (vNeed > this.vcap) {
+      this.vcap = Math.ceil(vNeed * 1.5);
+      this.mesh.setGeometrySize(this.vcap, 0);
+    }
+  }
+  geometryId(key, geo) {
+    let id = this.geoIds.get(key);
+    if (id != null) return id;
+    const vc = geo.attributes.position.count;
+    this._ensure(this.cap, this.vUsed + vc);
+    id = this.mesh.addGeometry(geo);
+    this.vUsed += vc;
+    this.geoIds.set(key, id);
+    return id;
+  }
+  // list: {key, geo, m (Float32Array/Array of 16 at offset o), o, col: [r,g,b], item, extra}
+  set(L) {
+    const n = L.length;
+    this._ensure(Math.max(n, 1), this.vUsed);
+    // geometry ids first (may grow the vertex store)
+    const gids = new Int32Array(n);
+    for (let i = 0; i < n; i++) gids[i] = this.geometryId(L[i].key, L[i].geo);
+    const m = this.mesh;
+    while (this.nInst < n) m.addInstance(gids[this.nInst++]);
+    const mats = m._matricesTexture.image.data;
+    for (let i = 0; i < n; i++) {
+      const e = L[i];
+      if (m.getGeometryIdAt(i) !== gids[i]) m.setGeometryIdAt(i, gids[i]);
+      if (!m.getVisibleAt(i)) m.setVisibleAt(i, true);
+      for (let q = 0; q < 16; q++) mats[i * 16 + q] = e.m[e.o + q];
+      this.data[i * 8] = e.col[0];
+      this.data[i * 8 + 1] = e.col[1];
+      this.data[i * 8 + 2] = e.col[2];
+    }
+    for (let i = n; i < this.nInst; i++) if (m.getVisibleAt(i)) m.setVisibleAt(i, false);
+    m._matricesTexture.needsUpdate = true;
+    this.items = L.map((e) => e.item);
+    this.extra = L.map((e) => e.extra);
+    this.keys = L.map((e) => e.key);
+    this.n = n;
+    m.visible = n > 0;
+  }
+  // per-instance visibility for one archetype key (lampposts beyond prop range)
+  showKey(key, on) {
+    if (!this.mesh) return;
+    for (let i = 0; i < this.n; i++) if (this.keys[i] === key && this.mesh.getVisibleAt(i) !== on) this.mesh.setVisibleAt(i, on);
+  }
+}
+
 export class BuildingRenderer {
   constructor(game) {
     this.game = game;
@@ -90,11 +194,15 @@ export class BuildingRenderer {
     this.group.name = 'civ-buildings';
     game.scene.add(this.group);
     this.uniforms = { uTime: { value: 0 }, uNight: { value: 0 }, uSnow: { value: 0 }, uWind: { value: 0.35 }, uEmblems: { value: emblemAtlas() } };
-    this.mat = createBuildingMaterial(this.uniforms);
-    this.matClip = createBuildingMaterial(this.uniforms, { clip: true });
+    this.mat = createBuildingMaterial(this.uniforms); // far-zoom proxies
     this.propMat = createPropMaterial();
     this.arche = new Map();
-    this.batches = new Map();
+    // building models: shadow casters, small pieces (wells, piles, footings,
+    // ruins, lampposts) that cast none, and buildings rising in scaffolding
+    this.dSolid = new DetailBatch(this.group, this.uniforms, { shadow: true, name: 'solid' });
+    this.dSmall = new DetailBatch(this.group, this.uniforms, { shadow: false, name: 'small' });
+    this.dClip = new DetailBatch(this.group, this.uniforms, { clip: true, shadow: false, name: 'clip' });
+    this.details = [this.dSolid, this.dSmall, this.dClip];
     this.overlay = new TerritoryOverlay(game);
     this._ver = -1;
     this._cver = -1;
@@ -254,16 +362,10 @@ export class BuildingRenderer {
     return a;
   }
 
-  _batch(key, clip = false) {
-    const bk = clip ? key + '|clip' : key;
-    let b = this.batches.get(bk);
-    if (!b) {
-      const a = this._arch(key);
-      const small = /^(well|pile|found|ruin|lamppost)/.test(key);
-      b = new Batch(this.group, a.geo, clip ? this.matClip : this.mat, { shadow: !clip && !small });
-      this.batches.set(bk, b);
-    }
-    return b;
+  // which DetailBatch draws an archetype (casters, small pieces, rising sites)
+  _detailFor(key, clip) {
+    if (clip) return this.dClip;
+    return /^(well|pile|found|ruin|lamppost)/.test(key) ? this.dSmall : this.dSolid;
   }
 
   // ------------------------------------------------------------------ rebuild
@@ -277,15 +379,10 @@ export class BuildingRenderer {
     const g = this.game;
     const civ = g.civ;
     const world = g.world;
-    const lists = new Map();
+    const lists = new Map(this.details.map((d) => [d, []]));
     const push = (key, clip, m, color, b, extra = null) => {
-      const bk = clip ? key + '|clip' : key;
-      let L = lists.get(bk);
-      if (!L) lists.set(bk, (L = { key, clip, m: [], col: [], bs: [], extra: [] }));
-      for (let i = 0; i < 16; i++) L.m.push(m.elements[i]);
-      L.col.push(color.r, color.g, color.b);
-      L.bs.push(b);
-      L.extra.push(extra);
+      const d = this._detailFor(key, clip);
+      lists.get(d).push({ key, geo: this._arch(key).geo, m: m.elements.slice(), o: 0, col: [color.r, color.g, color.b], item: b, extra });
     };
     const footings = [];
     this.chimneys.length = 0;
@@ -413,26 +510,12 @@ export class BuildingRenderer {
         decals.push([x - ox * 0.4, world.heightAt(x, z), z - oz * 0.4, 0.6 * PS]);
       }
     }
-    // write batches
-    const used = new Set();
-    for (const [bk, L] of lists) {
-      used.add(bk);
-      const batch = this._batch(L.key, L.clip);
-      const n = L.bs.length;
-      batch.ensure(n);
-      const mesh = batch.mesh;
-      mesh.instanceMatrix.array.set(L.m);
-      batch.iColor.array.set(L.col);
-      batch.items = L.bs;
-      batch.extra = L.extra;
-      mesh.count = n;
-      mesh.visible = n > 0;
-      this._writeStates(batch);
-      mesh.instanceMatrix.needsUpdate = true;
-      batch.iColor.needsUpdate = true;
-      mesh.computeBoundingSphere();
+    // write the building models: one batched draw per DetailBatch
+    for (const [d, L] of lists) {
+      d.set(L);
+      this._writeStates(d);
     }
-    for (const [bk, batch] of this.batches) if (!used.has(bk) && batch.mesh) batch.mesh.count = 0;
+    this._lampsOn = null; // re-apply the lamppost range
     // far-zoom proxies
     const proxies = new Map();
     for (const b of civ.buildings) {
@@ -550,13 +633,19 @@ export class BuildingRenderer {
     }
   }
 
+  // Per-instance state: damage, burning, seed and the clip height of a
+  // building rising in its scaffolding. A DetailBatch keeps it in its
+  // instance texture (texel 1 of 2), a proxy Batch in its iState attribute.
   _writeStates(batch) {
-    const arr = batch.iState.array;
+    const det = batch instanceof DetailBatch;
+    const arr = det ? batch.data : batch.iState.array;
+    const stride = det ? 8 : 4,
+      off = det ? 4 : 0;
     const items = batch.items;
     let burning = false;
     for (let i = 0; i < items.length; i++) {
       const b = items[i];
-      const k = i * 4;
+      const k = i * stride + off;
       if (!b) {
         arr[k] = 0;
         arr[k + 1] = 0;
@@ -579,7 +668,9 @@ export class BuildingRenderer {
       arr[k + 3] = clipY;
       if (b.burning > 0.02) burning = true;
     }
-    batch.iState.needsUpdate = true;
+    if (det) {
+      if (batch.inst.value) batch.inst.value.needsUpdate = true;
+    } else batch.iState.needsUpdate = true;
     return burning;
   }
 
@@ -587,7 +678,7 @@ export class BuildingRenderer {
     const civ = this.game.civ;
     // stage changes need a structural rebuild
     for (const b of civ.buildings) if (!b.gone && b._stage && b._stage !== this._stage(b)) return this._rebuild();
-    for (const batch of this.batches.values()) if (batch.mesh && batch.mesh.count) this._writeStates(batch);
+    for (const d of this.details) if (d.n) this._writeStates(d);
   }
 
   // ------------------------------------------------------------------ fences & fields
@@ -831,14 +922,16 @@ export class BuildingRenderer {
     const z01 = this.game.view?.zoom01 ?? 0;
     const far = this._far ? D > this.lodDist - 12 : D > this.lodDist || !!this.game.view?.far;
     const props = D <= this.propDist && z01 < 0.42;
-    if (!force && far === this._far && props === this._props) return;
+    if (!force && far === this._far && props === this._props && this._lampsOn === props) return;
     this._far = far;
     this._props = props;
-    for (const b of this.batches.values()) if (b.mesh) b.mesh.visible = !far && b.mesh.count > 0;
+    for (const d of this.details) if (d.mesh) d.mesh.visible = !far && d.n > 0;
     for (const b of (this.proxyBatches || new Map()).values()) if (b.mesh) b.mesh.visible = far && b.mesh.count > 0;
     if (this.footing) this.footing.visible = !far;
-    const lp = this.batches.get('lamppost');
-    if (lp?.mesh) lp.mesh.visible = props && lp.mesh.count > 0;
+    if (this._lampsOn !== props) {
+      this._lampsOn = props;
+      this.dSmall.showKey('lamppost', props);
+    }
     for (const fm of this.fenceMeshes.values()) {
       fm.posts.visible = props && fm.posts.count > 0;
       fm.rails.visible = props && fm.rails.count > 0;

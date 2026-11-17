@@ -4,7 +4,12 @@ import * as THREE from 'three';
 // aGlow (window / lamp mask). Per-instance: iColor (kingdom colour, linear),
 // iState = (damage 0..1, burning 0..1, seed, clipY). clipY discards fragments
 // above a local height so buildings visibly rise inside their scaffolding.
-export function createBuildingMaterial(uniforms, { clip = false } = {}) {
+//
+// On a THREE.BatchedMesh (one draw call for every building model, see
+// BuildingRenderer DetailBatch) the per-instance colour and state come from
+// a float texture instead (`inst`: { value: DataTexture }, two RGBA texels
+// per instance: colour, state), indexed by the batch's instance id.
+export function createBuildingMaterial(uniforms, { clip = false, inst = null } = {}) {
   const mat = new THREE.MeshStandardMaterial({
     vertexColors: true,
     roughness: 0.84,
@@ -15,6 +20,7 @@ export function createBuildingMaterial(uniforms, { clip = false } = {}) {
     sh.uniforms.uTime = uniforms.uTime;
     sh.uniforms.uNight = uniforms.uNight;
     sh.uniforms.uSnow = uniforms.uSnow || { value: 0 };
+    if (inst) sh.uniforms.uBInst = inst;
     sh.vertexShader = sh.vertexShader
       .replace(
         '#include <common>',
@@ -22,8 +28,17 @@ export function createBuildingMaterial(uniforms, { clip = false } = {}) {
 attribute float aTint;
 attribute float aGlow;
 attribute vec2 aRoof;
+#ifdef USE_BATCHING
+uniform highp sampler2D uBInst;
+vec4 wsInst(const in float i, const in int k) {
+  int size = textureSize(uBInst, 0).x;
+  int j = int(i) * 2 + k;
+  return texelFetch(uBInst, ivec2(j % size, j / size), 0);
+}
+#else
 attribute vec3 iColor;
 attribute vec4 iState;
+#endif
 varying vec2 vRoof;
 varying float vTint;
 varying float vGlow;
@@ -34,7 +49,13 @@ varying vec3 vLocal;`,
       .replace(
         '#include <begin_vertex>',
         `#include <begin_vertex>
-vTint = aTint; vGlow = aGlow; vKCol = iColor; vState = iState; vLocal = position; vRoof = aRoof;`,
+#ifdef USE_BATCHING
+float wsBi = getIndirectIndex(gl_DrawID);
+vKCol = wsInst(wsBi, 0).rgb; vState = wsInst(wsBi, 1);
+#else
+vKCol = iColor; vState = iState;
+#endif
+vTint = aTint; vGlow = aGlow; vLocal = position; vRoof = aRoof;`,
       );
     sh.fragmentShader = sh.fragmentShader
       .replace(
