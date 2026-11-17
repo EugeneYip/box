@@ -24,6 +24,7 @@ import { AgeChip, AgeBanner } from './Ages.js';
 import { loadRegistries } from './depth.js';
 import { lawDef } from '../core/laws.js';
 import { earthLabel, earthChoice } from '../core/params.js';
+import { earthRegion } from '../world/data/regions.js';
 import { uiIcon } from './icons.js';
 
 // Overview name spots, in label widths (x) and heights (y) from the realm's
@@ -122,6 +123,9 @@ export class UI {
     } else {
       root.classList.add('is-ready');
     }
+    // a regional link opened where it cannot load (touch devices): say so once,
+    // and let the address show the world that did load
+    if (game.params.regionDropped) setTimeout(() => safe(() => this.noteRegionFallback(), null, 'region note'), 900);
 
     // input
     addEventListener('keydown', (e) => this.onKeyCapture(e), true);
@@ -301,10 +305,59 @@ export class UI {
         this._regenN = (this._regenN || 0) + 1; // new land: the overview frame is measured again
         g.params.civs = civs;
         after?.();
+        safe(() => this.syncUrl(), null, 'url');
         if (!quiet) setTimeout(() => g.notify(preset === 'earth' ? `${region ? earthChoice(1024, region)?.name || 'The World Map' : 'The World Map'} rises from the deep. Seed ${seed}.` : `A new ${(PRESET_NAMES[preset] || 'world').toLowerCase()} rises from the deep. Seed ${seed}.`, 'good'), 400);
         setTimeout(() => this.veil.classList.remove('is-shown'), 120);
       });
     }, 360);
+  }
+
+  // The address bar follows a world changed in place (seed, landmass), so a
+  // reload or a shared link brings back this world, not the one first opened.
+  syncUrl() {
+    const g = this.game;
+    if (g._reloading || !window.history?.replaceState) return;
+    const p = g.params;
+    const q = new URLSearchParams(location.search);
+    q.set('seed', p.seed);
+    q.set('preset', p.preset);
+    if (p.preset === 'earth' && p.region) {
+      q.set('region', p.region);
+      q.delete('size');
+    } else {
+      q.set('size', p.preset === 'earth' ? p.size : g.world.w);
+      q.delete('region');
+    }
+    // (as on a reload: the count the map starts with by itself stays implicit)
+    const auto = g.civ?.budget?.startVillages;
+    if (p.civs == null || p.civs === 3 || p.civs === auto) q.delete('civs');
+    else q.set('civs', p.civs);
+    for (const k of ['cam', 'hour', 'ff']) q.delete(k);
+    if (this.title?.active) q.delete('title');
+    else q.set('title', '0');
+    history.replaceState(history.state, '', `${location.pathname}?${q}${location.hash}`);
+  }
+
+  // Touch devices cannot load the regional maps (src/core/params.js validRegion):
+  // the whole Earth loads instead; tell the player once and fix the address.
+  noteRegionFallback() {
+    const g = this.game;
+    const id = g.params.regionDropped;
+    if (!id) return;
+    g.params.regionDropped = null;
+    const r = earthRegion(id);
+    const z = earthChoice(g.params.size);
+    const what = `the whole Earth${z ? ` (${z.name})` : ''}`;
+    const q = new URLSearchParams(location.search);
+    q.delete('region');
+    q.set('size', g.params.size);
+    if (window.history?.replaceState) history.replaceState(history.state, '', `${location.pathname}?${q}${location.hash}`);
+    // above the title screen when it is up
+    const t = this.toastEl;
+    t.classList.add('is-note');
+    t.classList.toggle('is-front', !!this.title?.active);
+    this.toast(r ? `${r.name} is a desktop-only map, so ${what} loaded instead` : `There is no regional map called “${id}”, so ${what} loaded instead`, 5200);
+    setTimeout(() => t.classList.remove('is-note', 'is-front'), 5700);
   }
 
   onRegenerated() {
@@ -327,13 +380,30 @@ export class UI {
   overview() {
     const g = this.game;
     const rig = g.cameraRig;
-    const W = g.world;
     if (this._overview) return this.exitOverview(true);
     const prev = { x: rig.goal.x, z: rig.goal.z, dist: rig.goal.dist, yaw: rig.goal.yaw, follow: rig.follow, maxDist: rig.maxDist, dockMin: this.toolbar.el.classList.contains('is-min') };
     // fold the tray first so the usable band is measured with it folded
     this.root.classList.add('is-overview');
     if (!prev.dockMin && !this.toolbar.isDrawer()) this.toolbar.setMin(true);
     if (this.toolbar.isDrawer()) this.toolbar.toggleDrawer(false);
+    this._overview = { ...prev, dist: prev.dist, target: 0 };
+    rig.follow = null;
+    this.fitOverview();
+    this.syncOverviewBtn();
+    g.audio?.play?.('ui-click', { volume: 0.45 });
+  }
+
+  // Solve the Overview framing for the screen as it is now (also after a resize or
+  // a turn of the phone while the Overview is open). The map stays north up.
+  // A landscape screen fits all of the land; a portrait one fits the land's
+  // height (the land fills the screen top to bottom) and centres on the stretch
+  // with the most land, the rest a pan away to either side.
+  fitOverview() {
+    const g = this.game;
+    const rig = g.cameraRig;
+    const W = g.world;
+    if (!this._overview) return;
+    if (!this.toolbar.el.classList.contains('is-min') && !this.toolbar.isDrawer()) this.toolbar.setMin(true);
     this.placeBackPill(true);
     const vw = innerWidth,
       vh = innerHeight;
@@ -352,9 +422,8 @@ export class UI {
       right = vw - (short ? 6 : 12);
     // the outline carries a shore margin; on short screens that margin may slip under the edges
     const tol = short ? 16 : 0;
-    // the World Map stays north-up (Earth must look like Earth); on a tall screen its
-    // Atlantic edges may run a little past the sides so the continents fill more
-    const tolX = g.params?.preset === 'earth' && vh > vw * 1.15 ? vw * 0.09 : tol;
+    // portrait: height first (the sides may run off screen; panning reaches them)
+    const tall = vh > vw * 1.05;
     const north = Math.round(rig.goal.yaw / (Math.PI * 2)) * Math.PI * 2;
     const bias = THREE.MathUtils.degToRad(innerHeight <= 500 ? 15 : 8);
     const pitch = THREE.MathUtils.degToRad(70) + bias;
@@ -374,66 +443,74 @@ export class UI {
       [box.x0, box.z1],
       [box.x1, box.z1],
     ];
-    const fits = (d, tx, tz, yaw) => {
+    const place = (d, tx, tz) => {
       const horiz = Math.cos(pitch) * d;
-      cam.position.set(tx + Math.sin(yaw) * horiz, ty + Math.sin(pitch) * d, tz + Math.cos(yaw) * horiz);
+      cam.position.set(tx + Math.sin(north) * horiz, ty + Math.sin(pitch) * d, tz + Math.cos(north) * horiz);
       cam.lookAt(tx, ty, tz);
       cam.updateMatrixWorld();
+    };
+    const fits = (d, tx, tz) => {
+      place(d, tx, tz);
       for (const [x, z] of corners) {
         v.set(x, 0, z).project(cam);
         const sx = (v.x * 0.5 + 0.5) * vw,
           sy = (-v.y * 0.5 + 0.5) * vh;
-        if (v.z > 1 || sx < left - tolX || sx > right + tolX || sy < top - tol || sy > bottom + tol) return false;
+        if (v.z > 1 || sy < top - tol || sy > bottom + tol) return false;
+        if (!tall && (sx < left - tol || sx > right + tol)) return false;
       }
       return true;
     };
-    const solve = (yaw) => {
-      let best = null;
-      const span = Math.abs(Math.cos(yaw)) > 0.5 ? box.z1 - box.z0 : box.x1 - box.x0;
-      for (let k = -10; k <= 10; k++) {
-        // slide the target along the view direction (perspective puts the far edge higher)
-        const off = (k / 40) * span;
-        const tx = cx - Math.sin(yaw) * off,
-          tz = cz - Math.cos(yaw) * off;
-        let lo = 5,
-          hi = Math.max(W.w, W.h) * 12;
-        if (!fits(hi, tx, tz, yaw)) continue;
-        for (let it = 0; it < 26; it++) {
-          const m = (lo + hi) / 2;
-          if (fits(m, tx, tz, yaw)) hi = m;
-          else lo = m;
-        }
-        if (!best || hi < best.d) best = { d: hi, tx, tz, yaw };
+    let best = null;
+    const span = box.z1 - box.z0;
+    for (let k = -10; k <= 10; k++) {
+      // slide the target along the view direction (perspective puts the far edge higher)
+      const off = (k / 40) * span;
+      const tx = cx - Math.sin(north) * off,
+        tz = cz - Math.cos(north) * off;
+      let lo = 5,
+        hi = Math.max(W.w, W.h) * 12;
+      if (!fits(hi, tx, tz)) continue;
+      for (let it = 0; it < 26; it++) {
+        const m = (lo + hi) / 2;
+        if (fits(m, tx, tz)) hi = m;
+        else lo = m;
       }
-      return best;
-    };
-    let best = solve(north);
-    // a long map on a tall screen (the 2:1 World Map in portrait) turns a quarter
-    // so its long axis runs down the screen, when that fills clearly more of it
-    const bw = box.x1 - box.x0,
-      bh = box.z1 - box.z0;
-    const earth = typeof g.params?.preset === 'string' && g.params.preset === 'earth';
-    if (!earth && ((vh > vw * 1.15 && bw > bh * 1.3) || (vw > vh * 1.15 && bh > bw * 1.3))) {
-      const turned = solve(north + Math.PI / 2);
-      if (turned && (!best || turned.d < best.d * 0.95)) best = turned;
+      if (!best || hi < best.d) best = { d: hi, tx, tz };
     }
-    if (!best) best = { d: rig.maxDist, tx: W.w / 2, tz: W.h / 2, yaw: north };
+    if (!best) best = { d: rig.maxDist, tx: W.w / 2, tz: W.h / 2 };
     const d = best.d * 1.02;
-    this._overview = { ...prev, dist: prev.dist, target: d };
-    rig.follow = null;
+    if (tall && this._landCols?.length) {
+      // how much of the map's width the screen holds at the target, then the
+      // window over the land's columns that holds the most land
+      place(d, best.tx, best.tz);
+      v.set(best.tx + 100, ty, best.tz).project(cam);
+      const pxPerUnit = Math.max(1e-6, ((v.x * 0.5 + 0.5) * vw - vw / 2) / 100);
+      const half = (right - left) / 2 / pxPerUnit;
+      if (box.x1 - box.x0 > half * 2) {
+        const cols = this._landCols;
+        let bestX = cx,
+          bestN = -1;
+        const stepX = Math.max(1, (box.x1 - box.x0) / 192);
+        for (let x = box.x0 + half; x <= box.x1 - half + 1e-6; x += stepX) {
+          let n = 0;
+          for (const c of cols) if (c.x >= x - half && c.x <= x + half) n += c.n;
+          if (n > bestN || (n === bestN && Math.abs(x - cx) < Math.abs(bestX - cx))) {
+            bestN = n;
+            bestX = x;
+          }
+        }
+        best.tx = bestX;
+      }
+    }
+    this._overview.target = d;
     // maxDist = d makes the rig's auto-pitch reach its top (70°) exactly at d,
     // so pitch + bias equals the 78° the fit was solved for
     rig.maxDist = d;
     rig.goal.x = best.tx;
     rig.goal.z = best.tz;
     rig.goal.dist = d;
-    rig.goal.yaw = best.yaw;
-    this._ovTurned = best.yaw !== north;
-    // the badge explains a turned map once it is on screen (see updateOverview)
-    this._northHint = !!this._ovTurned;
+    rig.goal.yaw = north;
     this._biasGoal = bias;
-    this.syncOverviewBtn();
-    g.audio?.play?.('ui-click', { volume: 0.45 });
   }
 
   // Bounding box of the land (above sea level) plus a small shore margin, cached per world.
@@ -442,6 +519,7 @@ export class UI {
     const key = `${W.w}x${W.h}:${this.game.params?.seed}:${this.game.params?.preset}:${this.game.params?.region || ''}:${this._regenN || 0}`;
     if (this._landBox?.key === key) {
       this._landOutline = this._landBox.outline;
+      this._landCols = this._landBox.cols;
       return this._landBox.box;
     }
     const n = 96;
@@ -454,7 +532,8 @@ export class UI {
     const rowMin = new Map(),
       rowMax = new Map(),
       colMin = new Map(),
-      colMax = new Map();
+      colMax = new Map(),
+      colN = new Map();
     for (let z = sz / 2; z < W.h; z += sz)
       for (let x = sx / 2; x < W.w; x += sx) {
         const h = safe(() => W.heightAt(x, z), 0, 'land box');
@@ -467,6 +546,7 @@ export class UI {
           if (!(rowMax.get(z) >= x)) rowMax.set(z, x);
           if (!(colMin.get(x) <= z)) colMin.set(x, z);
           if (!(colMax.get(x) >= z)) colMax.set(x, z);
+          colN.set(x, (colN.get(x) || 0) + 1);
         }
       }
     // outline: the outermost land sample of every row and column, pushed out by a shore margin
@@ -495,7 +575,9 @@ export class UI {
         }
       }
     }
-    this._landBox = { key, box, outline: this._landOutline };
+    // land samples per column: a portrait Overview centres on the stretch with the most land
+    this._landCols = [...colN].map(([x, n]) => ({ x, n }));
+    this._landBox = { key, box, outline: this._landOutline, cols: this._landCols };
     return box;
   }
 
@@ -1073,6 +1155,11 @@ export class UI {
   resize() {
     if (!this.enabled) return;
     this.toolbar.hideTip(true);
+    // an open Overview frames the land again for the new size or orientation
+    if (this._overview) {
+      clearTimeout(this._ovFitT);
+      this._ovFitT = setTimeout(() => safe(() => this.fitOverview(), null, 'overview refit'), 180);
+    }
   }
 }
 
