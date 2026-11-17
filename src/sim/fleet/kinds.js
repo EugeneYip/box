@@ -1,9 +1,12 @@
+import { VEHICLE } from '../../core/scale.js';
+
 // Vessel and vehicle kinds of the Fleets module. Speeds in tiles per game
 // second, lengths in tiles. `tech` gates who may build it; `sail` ships ride
 // the wind, `oars` are rowed. `size` is the hit radius for the inspector and
 // combat; `dps` the damage a crew deals in a fight.
 // `scale` shrinks the model to the world (ships read beside houses, not over
-// them); length, beam and size below are the scaled, in-world measures.
+// them); length, beam and size below are the scaled measures at design size
+// (round 13); the loop after the table brings them to today's world scale.
 // `draft` is how deep the keel sits (water must be at least this deep where
 // the ship moors), `clear` the open water (tiles to the nearest land) it
 // needs along its route: big ships keep to the sea, wide lakes and estuaries.
@@ -21,6 +24,16 @@ export const KINDS = {
   ram: { cls: 'land', name: 'Battering ram', tech: 'siegecraft', speed: 1.05, turn: 2, hp: 140, crew: 4, capacity: 0, scale: 1.3, length: 1.8, size: 1.0, dps: 0, siege: true },
   catapult: { cls: 'land', name: 'Catapult', tech: 'siegecraft', speed: 1.0, turn: 2, hp: 100, crew: 3, capacity: 0, scale: 1.5, length: 1.95, size: 1.1, dps: 0, siege: true },
 };
+
+// Design sizes to the world's (VEHICLE in src/core/scale.js): the model scale,
+// length, beam and hit size shrink together; speeds stay (tiles per second).
+for (const d of Object.values(KINDS)) {
+  const k = VEHICLE.of(d.cls);
+  d.scale *= k;
+  d.length *= k;
+  if (d.beam) d.beam *= k;
+  d.size *= k;
+}
 
 export const SEA_KINDS = ['fishing', 'cog', 'transport', 'galley', 'explorer', 'carrack'];
 export const LAND_KINDS = ['oxcart', 'caravan', 'ram', 'catapult'];

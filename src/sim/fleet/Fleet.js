@@ -5,7 +5,7 @@ import { KINDS, SEA_KINDS, shipName, craftName, cargoText } from './kinds.js';
 import { missions } from './missions.js';
 import { land } from './land.js';
 import { war } from './war.js';
-import { hullR, hullHalf, segDist, HULL_GAP } from './hull.js';
+import { hullR, hullHalf, segDist, HULL_GAP, PIER_END, PIER, BERTH } from './hull.js';
 
 const _SD = { x: 0, z: 0 };
 
@@ -101,11 +101,13 @@ export class Fleet {
     this.totals = { launched: 0, sunk: 0, colonies: 0, trades: 0, catches: 0, hauls: 0, caravans: 0, stones: 0 };
     this._hash = new Map();
     const area = (w.w * w.h) / (256 * 256);
-    // budgets: vessels and land vehicles in the whole world (scaled with the map)
+    // budgets: vessels and land vehicles in the whole world (scaled with the
+    // map; MORE: the smaller world scale holds more of them, docs/WORLD-SCALE.md)
+    const MORE = 1;
     this.budget = {
-      sea: Math.round(Math.min(220, 70 * Math.pow(area, 0.6))), // ships (fishing boats apart)
-      fishing: Math.round(Math.min(200, 60 * Math.pow(area, 0.6))),
-      land: Math.round(Math.min(120, 36 * Math.pow(area, 0.55))),
+      sea: Math.round(Math.min(220, 70 * Math.pow(area, 0.6)) * MORE), // ships (fishing boats apart)
+      fishing: Math.round(Math.min(200, 60 * Math.pow(area, 0.6)) * MORE),
+      land: Math.round(Math.min(120, 36 * Math.pow(area, 0.55)) * MORE),
       debris: 240,
     };
   }
@@ -243,9 +245,10 @@ export class Fleet {
     const nav = this.nav;
     const dir = ROT_DIR[b.rot ?? 0] || [0, 1];
     let berth = null;
-    for (const d of [3.9, 3.2, 4.6, 2.6]) {
-      const px = b.x + dir[0] * d + dir[1] * 0.85,
-        pz = b.z + dir[1] * d + dir[0] * 0.85;
+    for (const d0 of [3.9, 3.2, 4.6, 2.6]) {
+      const d = d0 * PIER;
+      const px = b.x + dir[0] * d + dir[1] * 0.85 * PIER,
+        pz = b.z + dir[1] * d + dir[0] * 0.85 * PIER;
       berth = nav.waterNear(px, pz, 3, 1);
       if (berth) break;
     }
@@ -1156,8 +1159,8 @@ export class Fleet {
   // drift to: beyond the pier head, on the side she lay.
   _wreckSpot(v, h) {
     const nav = this.nav;
-    const ex = h.x + h.dirX * 3.4,
-      ez = h.z + h.dirZ * 3.4;
+    const ex = h.x + h.dirX * PIER_END,
+      ez = h.z + h.dirZ * PIER_END;
     const px = -h.dirZ,
       pz = h.dirX;
     const ac = (v.x - ex) * px + (v.z - ez) * pz;
@@ -1171,7 +1174,7 @@ export class Fleet {
       [6.5, -3.6 * side],
       [10, 0],
     ]) {
-      const p = nav.waterNear(ex + h.dirX * f + px * sd, ez + h.dirZ * f + pz * sd, 2, 0.5);
+      const p = nav.waterNear(ex + h.dirX * f * BERTH + px * sd * BERTH, ez + h.dirZ * f * BERTH + pz * sd * BERTH, 2, 0.5);
       if (!p || nav.comp(p.x, p.z) !== comp || this._inBerth(p.x, p.z, 0.3)) continue;
       if (Math.hypot(p.x - v.x, p.z - v.z) > 12 || !nav.los(v.x, v.z, p.x, p.z, 0)) continue;
       return p;
@@ -1185,14 +1188,14 @@ export class Fleet {
     // nothing floats in a berth: a ram's splinters there are carried out past the pier head
     const h = this._inBerth(x, z);
     if (h) {
-      const al = (x - h.x - h.dirX * 3.4) * h.dirX + (z - h.z - h.dirZ * 3.4) * h.dirZ;
-      const nx = x + h.dirX * (5.6 - al),
-        nz = z + h.dirZ * (5.6 - al);
+      const al = (x - h.x - h.dirX * PIER_END) * h.dirX + (z - h.z - h.dirZ * PIER_END) * h.dirZ;
+      const nx = x + h.dirX * (5.6 * BERTH - al),
+        nz = z + h.dirZ * (5.6 * BERTH - al);
       if (!this.nav.isWater(nx, nz)) return;
       x = nx;
       z = nz;
     }
-    this.debris.push({ x, z, rot: this.rng() * 6.3, spin: (this.rng() - 0.5) * 0.4, vx: (this.rng() - 0.5) * 0.6, vz: (this.rng() - 0.5) * 0.6, age: 0, life: 70 + this.rng() * 60, size: 0.6 + this.rng() * 0.7, type: i % 4, seed: this.rng() });
+    this.debris.push({ x, z, rot: this.rng() * 6.3, spin: (this.rng() - 0.5) * 0.4, vx: (this.rng() - 0.5) * 0.6, vz: (this.rng() - 0.5) * 0.6, age: 0, life: 70 + this.rng() * 60, size: (0.6 + this.rng() * 0.7) * BERTH, type: i % 4, seed: this.rng() });
   }
   _debrisTick(step) {
     if (!this.debris.length) return;

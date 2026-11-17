@@ -90,7 +90,10 @@ const OVERVIEW_DIST = 110; // camera farther than this: every creature takes the
 const WILD_TARGET = 620; // wild creatures on a 256 x 256 map with no people
 const WILD_FLOOR = 420; // ...and however large the realms grow
 const WILD_FLOOR_BIG = 330; // ...on maps larger than Medium, where the total cap rules
-const UNIT_CAP = 1000; // all creatures on a big map, per unit of popScale (1,600 on Huge 512)
+// all creatures on a big map, per unit of popScale (1,600 on Huge 512 in round
+// 13; the smaller world scale of round 14 holds more of them, see
+// docs/WORLD-SCALE.md)
+const UNIT_CAP = 1000 * 1;
 const HEALTHY = 0.45; // a wild grazer below this share of its capacity gets migrant herds
 
 const KIND_ORDER = { humanoid: 0, animal: 1, monster: 2 };
@@ -1386,10 +1389,10 @@ export class Units {
     const p = {
       kind: opts.kind || 'arrow',
       x0: a.x,
-      y0: a.y + a.def.height * 0.75,
+      y0: a.y + a.def.height * a.def.size * 0.75,
       z0: a.z,
       x1: lx,
-      y1: t.y + t.def.height * 0.5,
+      y1: t.y + t.def.height * t.def.size * 0.5,
       z1: lz,
       t: 0,
       dur,
@@ -1417,8 +1420,8 @@ export class Units {
         if (t && t.alive && Math.hypot(t.x - p.x1, t.z - p.z1) < 0.6 + t.def.radius) {
           const l = Math.hypot(p.x1 - p.x0, p.z1 - p.z0) || 1;
           this.damage(t, p.dmg, src, { knock: 0.3, dirX: (p.x1 - p.x0) / l, dirZ: (p.z1 - p.z0) / l });
-          this.game.fx.emit?.('hit', { x: t.x, y: t.y + t.def.height * 0.5, z: t.z }, { scale: 0.4 });
-          if (t.def.blood) this.game.fx.emit?.('blood', { x: t.x, y: t.y + t.def.height * 0.5, z: t.z }, { scale: 0.4 });
+          this.game.fx.emit?.('hit', { x: t.x, y: t.y + t.def.height * t.def.size * 0.5, z: t.z }, { scale: 0.4 });
+          if (t.def.blood) this.game.fx.emit?.('blood', { x: t.x, y: t.y + t.def.height * t.def.size * 0.5, z: t.z }, { scale: 0.4 });
         } else this.game.fx.emit?.('dust', { x: p.x1, z: p.z1 }, { scale: 0.3 });
         continue;
       }
@@ -1539,7 +1542,7 @@ export class Units {
       }
     }
     this.emote(m, 'heart', 2.5);
-    g.fx.emit?.('heal', { x: m.x, y: m.y + def.height, z: m.z }, { scale: 0.5 });
+    g.fx.emit?.('heal', { x: m.x, y: m.y + def.height * def.size, z: m.z }, { scale: 0.5 });
     this.sfx('birth', m.x, m.z, { volume: 0.35 });
   }
 
@@ -2007,7 +2010,7 @@ export class Units {
         const fire = w.fire[ti];
         if (fire > 0.2) {
           this.damage(u, udt * 8 * fire, null, { cause: 'fire' });
-          if ((slot >> lod) % (5 >> lod) === 0) g.fx.emit?.('fire', { x: u.x, y: u.y + def.height * 0.5, z: u.z }, { scale: 0.35 });
+          if ((slot >> lod) % (5 >> lod) === 0) g.fx.emit?.('fire', { x: u.x, y: u.y + def.height * def.size * 0.5, z: u.z }, { scale: 0.35 });
         }
         if (w.type[ti] === TILE.LAVA) this.damage(u, udt * 60, null, { cause: 'lava' });
         if (!u.alive) continue;

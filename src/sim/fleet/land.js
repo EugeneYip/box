@@ -2,6 +2,7 @@ import { TILE, FLORA_INFO } from '../../world/constants.js';
 import { civPath } from '../civ/pathing.js';
 import { BUILDING_TYPES } from '../civ/catalog.js';
 import { USE } from '../civ/util.js';
+import { BUILDING, VEHICLE } from '../../core/scale.js';
 
 // Land vehicles (mixed into Fleet): ox carts that pool a realm's goods along
 // its roads (The Wheel), trade caravans between realms at peace (Banking),
@@ -719,7 +720,7 @@ export const land = {
       jz = (this.rng() - 0.5) * 0.8;
     const d = Math.hypot(b.x - ax, b.z - az);
     v.anim.arm = 1;
-    this.stones.push({ x0: ax, z0: az, y0: w.heightAt(ax, az) + 0.9, x1: b.x + jx, z1: b.z + jz, y1: (b.y ?? w.heightAt(b.x, b.z)) + 0.6, t: 0, dur: 1.6 + d * 0.1, peak: 1.2 + d * 0.22, b: b.id, kingdom: v.kingdom, dmg: Math.max(38, (b.maxHp || 100) * (BUILDING_TYPES[b.type]?.wall ? 0.24 : 0.14)) * (civ.techMod?.(v.kingdom, 'siege') ?? 1), from: v.id });
+    this.stones.push({ x0: ax, z0: az, y0: w.heightAt(ax, az) + 0.9 * VEHICLE.land, x1: b.x + jx, z1: b.z + jz, y1: (b.y ?? w.heightAt(b.x, b.z)) + 0.6 * BUILDING.scale, t: 0, dur: 1.6 + d * 0.1, peak: 1.2 + d * 0.22, b: b.id, kingdom: v.kingdom, dmg: Math.max(38, (b.maxHp || 100) * (BUILDING_TYPES[b.type]?.wall ? 0.24 : 0.14)) * (civ.techMod?.(v.kingdom, 'siege') ?? 1), from: v.id });
     this.totals.stones++;
     this._sfx('chop', v.x, v.z, 0.5);
   },

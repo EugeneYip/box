@@ -5,6 +5,7 @@ import { bannerGeometry, bannerMaterial } from '../buildings/props.js';
 import { emblemAtlas, EMBLEM_IDS, FIELD_IDS } from '../buildings/emblems.js';
 import { ALL_KINDS, KINDS } from '../../sim/fleet/kinds.js';
 import { smokePuff, RAMP } from '../fx/Effects.js';
+import { VEHICLE } from '../../core/scale.js';
 
 // Draws game.fleet: one instanced batch per vehicle kind (sails, oars, wheels
 // and legs animate in the vertex shader), realm flags with their emblems,
@@ -17,7 +18,7 @@ const DETAIL_DIST = 175; // beyond this camera distance vehicles draw as dots
 const FLAG_DIST = 115;
 const WAKE_DIST = 165;
 const PLUME_TINT = 0xeceff3; // a cool near-white: smoke over the sea reads grey, not brown
-const STONE_SCALE = 0.62; // catapult stone: ~0.38 tiles across, a third of the arm
+const STONE_SCALE = 0.62 * VEHICLE.land; // catapult stone: a third of the arm (~0.38 tiles across at design size)
 
 function smoothstep(e0, e1, x) {
   const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
@@ -286,7 +287,7 @@ export class FleetRenderer {
           }
           if (v.sink > 0) {
             const s = v.sink;
-            y -= s * s * (def.length * 0.35 + 0.8);
+            y -= s * s * (def.length * 0.35 + 0.8 * VEHICLE.sea);
             roll += s * 0.9 * (v.seed > 0.5 ? 1 : -1);
             pitch += s * 0.45 * (v.seed > 0.3 ? 1 : -1);
           }
@@ -590,7 +591,7 @@ export class FleetRenderer {
         if (n >= max) break;
         if (!v.alive || v.state === 'sinking') continue;
         if (Math.abs(v.x - cx) > R || Math.abs(v.z - cz) > R) continue;
-        const sc = base * (v.cls === 'sea' ? (v.def.length > 2.3 ? 1.35 : v.kind === 'fishing' ? 0.7 : 1.1) : 0.75);
+        const sc = base * (v.cls === 'sea' ? (v.def.length > 2.3 * VEHICLE.sea ? 1.35 : v.kind === 'fishing' ? 0.7 : 1.1) : 0.75);
         const y = v.cls === 'sea' ? 0.6 + dist * 0.004 : W.heightAt(v.x, v.z) + 1.2 + dist * 0.004;
         const c = this._kingdomColor(v.kingdom);
         cr = c.r;

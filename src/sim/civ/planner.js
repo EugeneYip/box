@@ -3,6 +3,25 @@ import { BUILDING_TYPES, costOf, canAfford, pay } from './catalog.js';
 import { CULTURES, baseCulture } from './cultures.js';
 import { USE, ROT, ROT_DIR, SPIRAL, spiralCount, clamp, lerp } from './util.js';
 import { civPath } from './pathing.js';
+import { FOOTPRINT } from '../../core/scale.js';
+
+// Village distances follow FOOTPRINT (src/core/scale.js): the numbers below
+// are design distances (round-13 tiles) passed through F / cells().
+const F = FOOTPRINT.scale;
+const cells = (d, min = 1) => FOOTPRINT.cells(d, min);
+// site scoring looks at a circle of this radius round a new hall
+const SITE_R = Math.max(7, cells(11));
+const SITE_K = spiralCount(SITE_R) / spiralCount(11); // its area against round 13's
+// field plots (tiles a side): small, tidy plots round a smaller village
+const PLOT_SIZES = [
+  [4, 3],
+  [3, 4],
+  [4, 4],
+  [5, 3],
+  [3, 5],
+  [5, 4],
+  [4, 5],
+].map(([a, b]) => [cells(a, 2), cells(b, 2)]);
 
 // Village planning: site scoring, building placement along streets, road
 // growth, field plots, city walls and terrain levelling. Mixed into
@@ -152,7 +171,8 @@ export const planner = {
       rocks = 0,
       water = 0,
       foreign = 0;
-    const n = spiralCount(11);
+    const n = spiralCount(SITE_R);
+    const nearR = SITE_R * (9 / 11);
     for (let k = 0; k < n; k++) {
       const [dx, dy, d] = SPIRAL[k];
       const x = tx + dx,
@@ -160,7 +180,7 @@ export const planner = {
       if (!w.inBounds(x, y)) continue;
       const i = y * w.w + x;
       if (w.height[i] < SEA_LEVEL) {
-        if (d <= 9) water++;
+        if (d <= nearR) water++;
         continue;
       }
       const t = w.type[i];
@@ -174,12 +194,12 @@ export const planner = {
       if (opts.kingdom != null && w.owner[i] >= 0 && w.owner[i] !== opts.kingdom) foreign++;
       else if (opts.kingdom == null && w.owner[i] >= 0) foreign++;
     }
-    if (space < (opts.minSpace ?? 120)) return -1;
-    if (foreign > 30) return -1;
-    let s = space * 1.0 + fert * 0.7 + Math.min(trees, 50) * 0.6 + Math.min(rocks, 16) * 1.6;
+    if (space < (opts.minSpace ?? 120) * SITE_K) return -1;
+    if (foreign > 30 * SITE_K) return -1;
+    let s = (space * 1.0 + fert * 0.7 + Math.min(trees, 50 * SITE_K) * 0.6 + Math.min(rocks, 16 * SITE_K) * 1.6) / SITE_K;
     if (water > 2) s += 24;
-    if (water > 120) s -= (water - 120) * 0.6;
-    s -= foreign * 3;
+    if (water > 120 * SITE_K) s -= ((water - 120 * SITE_K) * 0.6) / SITE_K;
+    s -= (foreign * 3) / SITE_K;
     return s;
   },
 
@@ -370,7 +390,7 @@ export const planner = {
       bestS = Infinity;
     const hx = v.cx,
       hz = v.cz;
-    const maxR = v.buildRadius + 2;
+    const maxR = v.buildRadius + FOOTPRINT.dist(2);
     for (let k = 0; k < Math.min(roads.length, limit); k++) {
       const r = roads.length <= limit ? roads[k] : roads[(rng.next() * roads.length) | 0];
       if (this.use[r] !== USE.ROAD) continue;
@@ -526,7 +546,7 @@ export const planner = {
       bs = -Infinity;
     for (const c of cands) {
       const [dx, dy] = ROT_DIR[c.d];
-      const len = 6 + ((rng.next() * 3) | 0);
+      const len = cells(6, 3) + ((rng.next() * cells(3, 1)) | 0);
       let ok = 0;
       let room = 0;
       let ph = w.getHeight(c.x, c.y);
@@ -560,7 +580,7 @@ export const planner = {
         }
         ok = k;
       }
-      if (ok < 3) continue;
+      if (ok < Math.min(3, cells(3, 2))) continue;
       const ex = c.x + dx * ok,
         ey = c.y + dy * ok;
       const outward = Math.hypot(ex - v.cx, ey - v.cz) - Math.hypot(c.x - v.cx, c.y - v.cz);
@@ -669,22 +689,16 @@ export const planner = {
     const w = this.world;
     const W = w.w;
     const rng = this.rng;
-    const sizes = [
-      [4, 3],
-      [3, 4],
-      [4, 4],
-      [5, 3],
-      [3, 5],
-      [5, 4],
-      [4, 5],
-    ];
-    const minD = 4 + v.tier;
-    const maxD = v.buildRadius + 11;
+    const sizes = PLOT_SIZES;
+    const minD = (4 + v.tier) * F + 1.5;
+    const maxD = v.buildRadius + 11 * F;
     let best = null,
       bs = Infinity;
     for (let k = 0; k < 90; k++) {
       let ax, ay;
+      const [sw, sh] = sizes[(rng.next() * sizes.length) | 0];
       if (v.plots.length && rng.chance(0.6)) {
+        // beside an earlier plot, a one-tile path between them
         const p = v.plots[(rng.next() * v.plots.length) | 0];
         const side = rng.int(0, 3);
         const [pw, ph] = [p.x1 - p.x0 + 1, p.y1 - p.y0 + 1];
@@ -692,14 +706,14 @@ export const planner = {
           ax = p.x1 + 2;
           ay = p.y0 + rng.int(-1, ph - 1);
         } else if (side === 1) {
-          ax = p.x0 - 2 - 4;
+          ax = p.x0 - 1 - sw;
           ay = p.y0 + rng.int(-1, ph - 1);
         } else if (side === 2) {
           ax = p.x0 + rng.int(-1, pw - 1);
           ay = p.y1 + 2;
         } else {
           ax = p.x0 + rng.int(-1, pw - 1);
-          ay = p.y0 - 2 - 4;
+          ay = p.y0 - 1 - sh;
         }
       } else {
         const a = rng.float(0, Math.PI * 2),
@@ -707,14 +721,13 @@ export const planner = {
         ax = Math.floor(v.cx + Math.cos(a) * r);
         ay = Math.floor(v.cz + Math.sin(a) * r);
       }
-      const [sw, sh] = sizes[(rng.next() * sizes.length) | 0];
       const x0 = ax,
         y0 = ay;
       if (x0 < 3 || y0 < 3 || x0 + sw > w.w - 3 || y0 + sh > w.h - 3) continue;
       const cx = x0 + sw / 2,
         cy = y0 + sh / 2;
       const d = Math.hypot(cx - v.cx, cy - v.cz);
-      if (d < minD || d > maxD + 3) continue;
+      if (d < minD || d > maxD + 3 * F) continue;
       let ok = true,
         trees = 0,
         fert = 0,
@@ -813,7 +826,7 @@ export const planner = {
   },
 
   // ---------------------------------------------------------------- walls
-  _planWalls(v, maxLen = 72) {
+  _planWalls(v, maxLen = Math.round(72 * F)) {
     for (const s of [1, 0.9]) {
       const plan = this._wallRing(v, s);
       if (plan.length <= maxLen) {
@@ -833,11 +846,14 @@ export const planner = {
     const cx = v.cx,
       cz = v.cz;
     const K = 18;
-    const rad = new Float32Array(K).fill(6);
+    const rMin = Math.max(3.5, 6 * F),
+      rMax = 24 * F;
+    const rad = new Float32Array(K).fill(rMin);
+    const clear = 1.4 + 0.8 * F; // a lane between the last houses and the wall
     const consider = (x, z) => {
       const a = Math.atan2(z - cz, x - cx);
       const k = ((Math.round((a / (Math.PI * 2)) * K) % K) + K) % K;
-      const d = Math.hypot(x - cx, z - cz) + 2.2;
+      const d = Math.hypot(x - cx, z - cz) + clear;
       if (d > rad[k]) rad[k] = d;
     };
     for (const b of v.buildings) {
@@ -849,7 +865,7 @@ export const planner = {
     }
     // smooth & cap
     const r2 = new Float32Array(K);
-    for (let k = 0; k < K; k++) r2[k] = Math.max(6, Math.min(24, Math.max(rad[k], (rad[(k + K - 1) % K] + rad[k] * 2 + rad[(k + 1) % K]) / 4)) * scale);
+    for (let k = 0; k < K; k++) r2[k] = Math.max(rMin, Math.min(rMax, Math.max(rad[k], (rad[(k + K - 1) % K] + rad[k] * 2 + rad[(k + 1) % K]) / 4)) * scale);
     const pts = [];
     for (let k = 0; k < K; k++) {
       const a = (k / K) * Math.PI * 2;
@@ -975,11 +991,13 @@ export const planner = {
   _placeDocks(v, type = 'docks') {
     const w = this.world;
     const W = w.w;
-    const n = spiralCount(Math.min(SPIRAL[SPIRAL.length - 1][2], v.buildRadius + 6));
+    const n = spiralCount(Math.min(SPIRAL[SPIRAL.length - 1][2], v.buildRadius + cells(6, 3)));
     let best = null,
       bs = Infinity;
     const cx = Math.floor(v.cx),
       cy = Math.floor(v.cz);
+    // the pier reaches this many tiles out (the model's 3.3 at BUILDING scale)
+    const reach = Math.max(2, Math.ceil(3 * F + 0.5));
     for (let k = 0; k < n; k += 1) {
       const [dx, dy, d] = SPIRAL[k];
       if (d < 3) continue;
@@ -990,15 +1008,16 @@ export const planner = {
         const fw = rot & 1 ? BUILDING_TYPES[type].h : BUILDING_TYPES[type].w,
           fh = rot & 1 ? BUILDING_TYPES[type].w : BUILDING_TYPES[type].h;
         if (!this._footprintOK(x, y, fw, fh, 1.2)) continue;
-        // the two tiles in front of the door edge and 3 beyond must be water
+        // the tiles in front of the door edge, out past the pier, must be water
+        const across = fz ? fw : fh;
         let water = 0,
           deep = 0;
-        for (let s = 1; s <= 3; s++) {
-          for (let o = 0; o < 2; o++) {
+        for (let s = 1; s <= reach; s++) {
+          for (let o = 0; o < across; o++) {
             let tx, ty;
-            if (fz === 1) [tx, ty] = [x + o, y + 1 + s];
+            if (fz === 1) [tx, ty] = [x + o, y + fh - 1 + s];
             else if (fz === -1) [tx, ty] = [x + o, y - s];
-            else if (fx === 1) [tx, ty] = [x + 1 + s, y + o];
+            else if (fx === 1) [tx, ty] = [x + fw - 1 + s, y + o];
             else [tx, ty] = [x - s, y + o];
             if (!w.inBounds(tx, ty)) continue;
             const h = w.height[ty * W + tx];
@@ -1006,7 +1025,7 @@ export const planner = {
             if (h < SEA_LEVEL - 0.5) deep++;
           }
         }
-        if (water < 6 || deep < 2) continue;
+        if (water < reach * across || deep < Math.max(1, across)) continue;
         const sc = d + this.rng.next();
         if (sc < bs) {
           bs = sc;

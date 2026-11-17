@@ -10,6 +10,19 @@ import { BUILDING_TYPES } from '../../sim/civ/catalog.js';
 import { CULTURES, baseCulture } from '../../sim/civ/cultures.js';
 import { SEA_LEVEL, TILE } from '../../world/constants.js';
 import { hash2 } from '../../core/Random.js';
+import { BUILDING, PROP, UNIT, FOOTPRINT } from '../../core/scale.js';
+
+// Models are drawn at their design size (archetypes.js: a cottage for a 2 x 2
+// plot) and brought to the world by BUILDING.scale in each instance matrix,
+// so shader detail (thatch rows, window grids, construction clip) keeps its
+// proportions. Design footprints (def.dw x def.dh) size frames, footings,
+// ruins and proxies under the same matrix; def.w x def.h are tiles.
+const BS = BUILDING.scale;
+const PS = PROP.scale;
+// walls run tile to tile: their arms keep their length, the rest shrinks
+const _wallS = new THREE.Vector3(1, BS, BS);
+const _bS = new THREE.Vector3(BS, BS, BS);
+const _bridgeS = new THREE.Vector3(1, BS, 1);
 
 // Renders game.civ.buildings as instanced, merged procedural architecture
 // (one InstancedMesh per type x style x level x stage), plus waving banners,
@@ -292,15 +305,17 @@ export class BuildingRenderer {
       col.setHex(civ.kingdomColor(b.kingdom));
       const stage = this._stage(b);
       b._stage = stage;
-      const M = this._m.makeRotationY(b.rotation || 0).setPosition(b.x, b.y, b.z);
+      const M = this._m.makeRotationY(b.rotation || 0).scale(b.type === 'bridge' ? _bridgeS : _bS).setPosition(b.x, b.y, b.z);
+      const dw = def.dw ?? def.w,
+        dh = def.dh ?? def.h;
       if (stage === 'ruin') {
         if (def.wall) continue;
-        push(`ruin|${b.style}|${def.w}|${def.h}|1`, false, M, col, b);
+        push(`ruin|${b.style}|${dw}|${dh}|1`, false, M, col, b);
         continue;
       }
       if (def.wall) {
         const clip = b.constructing;
-        if (b.type === 'wall') push(`wpost|${b.style}`, clip, this._m2.makeTranslation(b.x, b.y, b.z), col, b, { wall: true });
+        if (b.type === 'wall') push(`wpost|${b.style}`, clip, this._m2.makeScale(BS, BS, BS).setPosition(b.x, b.y, b.z), col, b, { wall: true });
         else {
           const a = this._arch(`${b.type}|${b.style}|1`);
           push(`${b.type}|${b.style}|1`, clip, M, col, b, { maxY: a.maxY });
@@ -312,7 +327,7 @@ export class BuildingRenderer {
           if (!nb || nb.village !== b.village) continue;
           if (dx && dy && (wallAt.has(b.ty * world.w + b.tx + dx) || wallAt.has((b.ty + dy) * world.w + b.tx))) continue;
           const yaw = Math.atan2(-dy, dx);
-          const am = this._m2.makeRotationY(yaw).setPosition(b.x, b.y, b.z);
+          const am = this._m2.makeRotationY(yaw).scale(_wallS).setPosition(b.x, b.y, b.z);
           if (dx && dy) am.multiply(this._m3.makeScale(Math.SQRT2, 1, 1));
           push(`warm|${b.style}`, clip, am, col, b, { wall: true });
         }
@@ -324,20 +339,20 @@ export class BuildingRenderer {
       if (stage === 'found' || stage === 'frame' || stage === 'build') {
         // footings, then a timber frame, then walls rising, then the roof;
         // timber and stone stacked by the site until it is done
-        if (stage === 'found') push(`found|${def.w}|${def.h}`, false, M, col, b);
-        else push(`frame|${def.w}|${def.h}|${Math.min(3, Math.max(1, Math.round(a.maxY * 2) / 2))}`, false, M, col, b);
+        if (stage === 'found') push(`found|${dw}|${dh}`, false, M, col, b);
+        else push(`frame|${dw}|${dh}|${Math.min(3, Math.max(1, Math.round(a.maxY * 2) / 2))}`, false, M, col, b);
         if (stage === 'build') push(akey, true, M, col, b, { maxY: a.maxY });
-        const pm = this._m2.copy(M).multiply(new THREE.Matrix4().makeTranslation(def.w / 2 - 0.35, 0, def.h / 2 - 0.3));
+        const pm = this._m2.copy(M).multiply(new THREE.Matrix4().makeTranslation(dw / 2 - 0.35, 0, dh / 2 - 0.3));
         push(`pile`, false, pm, col, b);
         // Engineering: a tower crane over the larger sites
-        if (stage !== 'found' && def.w * def.h >= 4 && civ.hasTech?.(b.kingdom, 'engineering')) {
-          const cm = new THREE.Matrix4().copy(M).multiply(new THREE.Matrix4().makeTranslation(-def.w / 2 + 0.25, 0, -def.h / 2 + 0.25));
+        if (stage !== 'found' && dw * dh >= 4 && civ.hasTech?.(b.kingdom, 'engineering')) {
+          const cm = new THREE.Matrix4().copy(M).multiply(new THREE.Matrix4().makeTranslation(-dw / 2 + 0.25, 0, -dh / 2 + 0.25));
           push('crane', false, cm, col, null);
           civ._firstUse?.(civ.kingdoms[b.kingdom], 'crane', { x: b.x, z: b.z });
         }
       } else {
         push(akey, false, M, col, b);
-        if (stage === 'upg') push(`scaf|${def.w}|${def.h}|${Math.min(3, Math.round(a.maxY * 2) / 2)}`, false, M, col, b);
+        if (stage === 'upg') push(`scaf|${dw}|${dh}|${Math.min(3, Math.round(a.maxY * 2) / 2)}`, false, M, col, b);
         this._collectAnchors(b, a, M, col, decals);
       }
       if (a.base && !a.stilts && stage !== 'found') {
@@ -347,8 +362,8 @@ export class BuildingRenderer {
         const bottom = Math.min(b.groundMin ?? b.y, b.y) - 0.35;
         const fm = new THREE.Matrix4().makeRotationY(b.rotation || 0);
         fm.setPosition(b.x, top, b.z);
-        fm.multiply(new THREE.Matrix4().makeTranslation(bx, 0, bz));
-        fm.multiply(new THREE.Matrix4().makeScale(a.base.w + 0.04, top - bottom, a.base.d + 0.04));
+        fm.multiply(new THREE.Matrix4().makeTranslation(bx * BS, 0, bz * BS));
+        fm.multiply(new THREE.Matrix4().makeScale((a.base.w + 0.04) * BS, top - bottom, (a.base.d + 0.04) * BS));
         footings.push({ m: fm, style: b.style });
       }
     }
@@ -360,12 +375,12 @@ export class BuildingRenderer {
       const h = v?.hall;
       if (!v || !v.alive || !h || !h.alive || h.constructing) continue;
       const r = h.rotation || 0;
-      const side = 1.75;
-      const x = h.x + Math.cos(r) * side + Math.sin(r) * 1.2,
-        z = h.z - Math.sin(r) * side + Math.cos(r) * 1.2;
+      const side = 1.75 * BS;
+      const x = h.x + Math.cos(r) * side + Math.sin(r) * 1.2 * BS,
+        z = h.z - Math.sin(r) * side + Math.cos(r) * 1.2 * BS;
       const gy = world.heightAt(x, z);
-      this.staffs.push([x, gy, z, 2.5]);
-      this.banners.push({ x: x + 0.03, y: gy + 2.45, z, s: 1.45, style: h.style, color: civ.kingdomColor(k.id), k: k.id });
+      this.staffs.push([x, gy, z, 2.5 * BS]);
+      this.banners.push({ x: x + 0.03 * BS, y: gy + 2.45 * BS, z, s: 1.45 * BS, style: h.style, color: civ.kingdomColor(k.id), k: k.id });
     }
     // lampposts along town streets
     for (const v of civ.villages) {
@@ -393,9 +408,9 @@ export class BuildingRenderer {
         if (!ox && !oz) continue;
         const x = tx + 0.5 + ox,
           z = ty + 0.5 + oz;
-        const lm = this._m2.makeRotationY(Math.atan2(-oz, ox) + Math.PI).setPosition(x, world.heightAt(x, z), z);
+        const lm = this._m2.makeRotationY(Math.atan2(-oz, ox) + Math.PI).scale(this._s.set(PS, PS, PS)).setPosition(x, world.heightAt(x, z), z);
         push('lamppost', false, lm, col, null);
-        decals.push([x - ox * 0.4, world.heightAt(x, z), z - oz * 0.4, 0.6]);
+        decals.push([x - ox * 0.4, world.heightAt(x, z), z - oz * 0.4, 0.6 * PS]);
       }
     }
     // write batches
@@ -428,8 +443,10 @@ export class BuildingRenderer {
       let L = proxies.get(key);
       if (!L) proxies.set(key, (L = { m: [], col: [], bs: [] }));
       const a = this._arch(def.wall ? `wpost|${b.style}` : `${b.type}|${b.style}|${Math.min(b.level || 1, def.levels)}|${b.era ?? 1}${b.variant ? '|' + b.variant : ''}`);
-      const hgt = def.wall ? 1.1 : Math.max(0.5, Math.min(def.monument ? 12 : 3, a.maxY)) * (b.constructing ? Math.max(0.2, b.progress) : 1);
-      const pm = this._m2.makeRotationY(b.rotation || 0).setPosition(b.x, b.y, b.z).multiply(this._m3.makeScale(def.w * 0.82, hgt, def.h * 0.82));
+      const hgt = (def.wall ? 1.1 : Math.max(0.5, Math.min(def.monument ? 12 : 3, a.maxY)) * (b.constructing ? Math.max(0.2, b.progress) : 1)) * BS;
+      const pw = def.wall || b.type === 'bridge' ? def.w : (def.dw ?? def.w) * BS,
+        ph = def.wall || b.type === 'bridge' ? def.h : (def.dh ?? def.h) * BS;
+      const pm = this._m2.makeRotationY(b.rotation || 0).setPosition(b.x, b.y, b.z).multiply(this._m3.makeScale(pw * 0.82, hgt, ph * 0.82));
       for (let i = 0; i < 16; i++) L.m.push(pm.elements[i]);
       col.setHex(civ.kingdomColor(b.kingdom));
       L.col.push(col.r, col.g, col.b);
@@ -506,7 +523,7 @@ export class BuildingRenderer {
     }
     for (const c of an.banners) {
       p.set(c.x, c.y, c.z).applyMatrix4(M);
-      this.banners.push({ x: p.x, y: p.y, z: p.z, s: c.s || 1, style: b.style, color: col.getHex(), k: b.kingdom });
+      this.banners.push({ x: p.x, y: p.y, z: p.z, s: (c.s || 1) * BS, style: b.style, color: col.getHex(), k: b.kingdom });
     }
     for (const c of an.blades) {
       const bm = new THREE.Matrix4().copy(M).multiply(new THREE.Matrix4().makeTranslation(c.x, c.y, c.z));
@@ -518,7 +535,7 @@ export class BuildingRenderer {
       const tx = Math.floor(p.x),
         tz = Math.floor(p.z);
       if (!world.inBounds(tx, tz) || world.height[tz * world.w + tx] >= SEA_LEVEL) continue;
-      this.boats.push({ x: p.x, z: p.z, ry: (b.rotation || 0) + (c.ry || 0), style: c.ship ? (b.style === 'frost' || b.style === 'vale' ? 'frost' : 'dune') : b.style, phase: b.seed * 20 + this.boats.length, s: c.ship ? 1.75 : 1 });
+      this.boats.push({ x: p.x, z: p.z, ry: (b.rotation || 0) + (c.ry || 0), style: c.ship ? (b.style === 'frost' || b.style === 'vale' ? 'frost' : 'dune') : b.style, phase: b.seed * 20 + this.boats.length, s: (c.ship ? 1.75 : 1) * BS });
     }
     for (const c of an.lamps) {
       if (c.water) continue;
@@ -529,7 +546,7 @@ export class BuildingRenderer {
       const ti = tz * world.w + tx;
       if (world.height[ti] < SEA_LEVEL + 0.05 || world.type[ti] === TILE.FARMLAND) continue;
       if (world.slopeAt(tx, tz) > 0.5) continue;
-      decals.push([p.x, world.heightAt(p.x, p.z), p.z, Math.min(0.75, (c.r || 1) * 0.5)]);
+      decals.push([p.x, world.heightAt(p.x, p.z), p.z, Math.min(0.75, (c.r || 1) * 0.5) * BS]);
     }
   }
 
@@ -626,9 +643,9 @@ export class BuildingRenderer {
             postSet.add(key);
             if (!F.wall || true) P.posts.push([px, py, pz]);
           }
-          for (const ry of F.wall ? [F.rail[1] * 0.5] : F.rails) P.rails.push([ax, ay + ry, az, bx, by + ry, bz]);
+          for (const ry of F.wall ? [F.rail[1] * 0.5] : F.rails) P.rails.push([ax, ay + ry * PS, az, bx, by + ry * PS, bz]);
         }
-        if (st !== 'dune' && p.tiles.length >= 12) {
+        if (st !== 'dune' && p.tiles.length >= Math.round(12 * Math.max(0.5, FOOTPRINT.scale ** 2))) {
           const ci = Math.floor(cz) * world.w + Math.floor(cx);
           if (world.type[ci] === TILE.FARMLAND) scare.get(st)?.push([cx + 0.1, world.heightAt(cx, cz), cz, hash2(p.x0, p.y0, 5) * 6]);
         }
@@ -659,7 +676,7 @@ export class BuildingRenderer {
       for (let i = 0; i < P.posts.length; i++) {
         const [x, y, z] = P.posts[i];
         const s = F.post;
-        this._m.compose(this._p.set(x, y - 0.06, z), q.setFromAxisAngle(this._up, hash2(Math.round(x * 7), Math.round(z * 7), 3) * 0.4), this._s.set(s[0], s[1] + 0.06, s[2]));
+        this._m.compose(this._p.set(x, y - 0.06, z), q.setFromAxisAngle(this._up, hash2(Math.round(x * 7), Math.round(z * 7), 3) * 0.4), this._s.set(s[0] * PS, s[1] * PS + 0.06, s[2] * PS));
         fm.posts.setMatrixAt(i, this._m);
         this._c.copy(base).multiplyScalar(0.85 + hash2(i, 7, 1) * 0.3);
         fm.posts.setColorAt(i, this._c);
@@ -671,7 +688,7 @@ export class BuildingRenderer {
         dir.normalize();
         q.setFromUnitVectors(X, dir);
         const th = F.rail;
-        this._m.compose(this._p.set((ax + bx) / 2, (ay + by) / 2, (az + bz) / 2), q, this._s.set(len + (F.wall ? th[0] * 0.5 : 0.02), th[1], th[0]));
+        this._m.compose(this._p.set((ax + bx) / 2, (ay + by) / 2, (az + bz) / 2), q, this._s.set(len + (F.wall ? th[0] * 0.5 * PS : 0.02), th[1] * PS, th[0] * PS));
         fm.rails.setMatrixAt(i, this._m);
         this._c.copy(base).multiplyScalar(0.8 + hash2(i, 9, 2) * 0.35);
         fm.rails.setColorAt(i, this._c);
@@ -688,7 +705,7 @@ export class BuildingRenderer {
       const m = this._grow(this.scarecrows, st, list.length);
       for (let i = 0; i < list.length; i++) {
         const [x, y, z, r] = list[i];
-        this._m.compose(this._p.set(x, y, z), q.setFromAxisAngle(this._up, r), this._s.set(1, 1, 1));
+        this._m.compose(this._p.set(x, y, z), q.setFromAxisAngle(this._up, r), this._s.set(PS, PS, PS));
         m.setMatrixAt(i, this._m);
       }
       m.count = list.length;
@@ -716,19 +733,20 @@ export class BuildingRenderer {
       if (!u || !u.alive) continue;
       const h = Math.sin(u.heading || 0),
         c = Math.cos(u.heading || 0);
-      const x = u.x + c * 0.14,
-        z = u.z - h * 0.14;
-      const y = (u.y ?? this.game.world.surfaceAt(u.x, u.z)) + 0.15;
-      staffs.push([x, y, z, 1.85]);
+      const US = UNIT.scale;
+      const x = u.x + c * 0.14 * US,
+        z = u.z - h * 0.14 * US;
+      const y = (u.y ?? this.game.world.surfaceAt(u.x, u.z)) + 0.15 * US;
+      staffs.push([x, y, z, 1.85 * US]);
       const st = CULTURES[baseCulture(civ.kingdoms[a.kingdom]?.culture)]?.style || 'vale';
       let L = per.get(st);
       if (!L) per.set(st, (L = []));
-      L.push({ x: x + 0.02, y: y + 1.8, z, s: 1.7, style: st, color: civ.kingdomColor(a.kingdom), k: a.kingdom });
+      L.push({ x: x + 0.02 * US, y: y + 1.8 * US, z, s: 1.7 * US, style: st, color: civ.kingdomColor(a.kingdom), k: a.kingdom });
     }
     const sm = this._grow(this.staffMap, 's', staffs.length);
     for (let i = 0; i < staffs.length; i++) {
       const [x, y, z, hgt] = staffs[i];
-      this._m.compose(this._p.set(x, y, z), this._q.identity(), this._s.set(1, hgt, 1));
+      this._m.compose(this._p.set(x, y, z), this._q.identity(), this._s.set(BS, hgt, BS));
       sm.setMatrixAt(i, this._m);
     }
     sm.count = staffs.length;
@@ -885,8 +903,8 @@ export class BuildingRenderer {
         if (!b.alive || b.constructing) continue;
         if ((c.x - cx) ** 2 + (c.z - cz) ** 2 > R2) continue;
         if (budget-- <= 0) break;
-        if (real) fx.emit?.('smoke', { x: c.x, y: c.y, z: c.z }, { scale: c.forge ? 0.6 : 0.42 });
-        else this.puffs.emit(c.x, c.y, c.z, 'smoke', c.forge ? 0.85 : 0.6);
+        if (real) fx.emit?.('smoke', { x: c.x, y: c.y, z: c.z }, { scale: (c.forge ? 0.6 : 0.42) * BS });
+        else this.puffs.emit(c.x, c.y, c.z, 'smoke', (c.forge ? 0.85 : 0.6) * BS);
       }
     }
     // burning buildings
@@ -905,21 +923,21 @@ export class BuildingRenderer {
           if (Math.random() < 0.35) {
             const sx = b.x + (Math.random() - 0.5) * b.w * 0.5,
               sz = b.z + (Math.random() - 0.5) * b.h * 0.5;
-            if (real) fx.emit?.('smoke', { x: sx, y: b.y + 0.8, z: sz }, { scale: 0.5 + (1 - b.hp / b.maxHp) });
-            else this.puffs.emit(sx, b.y + 0.8, sz, 'soot', 0.7);
+            if (real) fx.emit?.('smoke', { x: sx, y: b.y + 0.8 * BS, z: sz }, { scale: (0.5 + (1 - b.hp / b.maxHp)) * BS });
+            else this.puffs.emit(sx, b.y + 0.8 * BS, sz, 'soot', 0.7 * BS);
           }
           continue;
         }
         const x = b.x + (Math.random() - 0.5) * b.w * 0.7,
           z = b.z + (Math.random() - 0.5) * b.h * 0.7;
-        const y = b.y + (b.alive ? 0.4 + Math.random() * 0.8 : 0.15);
+        const y = b.y + (b.alive ? 0.4 + Math.random() * 0.8 : 0.15) * BS;
         if (real) {
-          if (b.alive) fx.emit?.('fire', { x, y, z }, { scale: 0.6 + b.burning * 0.6 });
-          if (Math.random() < 0.5) fx.emit?.('smoke', { x, y: y + 0.4, z }, { scale: 0.8 + b.burning });
-          if (Math.random() < 0.08) fx.addLight?.({ x, y: y + 0.5, z }, 0xff7a30, 1.5 * b.burning, 0.6);
+          if (b.alive) fx.emit?.('fire', { x, y, z }, { scale: (0.6 + b.burning * 0.6) * BS });
+          if (Math.random() < 0.5) fx.emit?.('smoke', { x, y: y + 0.4 * BS, z }, { scale: (0.8 + b.burning) * BS });
+          if (Math.random() < 0.08) fx.addLight?.({ x, y: y + 0.5 * BS, z }, 0xff7a30, 1.5 * b.burning, 0.6);
         } else {
-          if (b.alive) this.puffs.emit(x, y, z, 'fire', 0.7 + b.burning * 0.5);
-          if (Math.random() < 0.6) this.puffs.emit(x, y + 0.3, z, 'soot', 0.8 + b.burning * 0.5);
+          if (b.alive) this.puffs.emit(x, y, z, 'fire', (0.7 + b.burning * 0.5) * BS);
+          if (Math.random() < 0.6) this.puffs.emit(x, y + 0.3 * BS, z, 'soot', (0.8 + b.burning * 0.5) * BS);
         }
       }
     }
