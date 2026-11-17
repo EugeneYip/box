@@ -170,6 +170,13 @@ export class Inspector {
   collect(hit) {
     const g = this.game;
     const list = (safe(() => g.inspect(hit), []) || []).filter(Boolean);
+    // a building's village gets its own card too (not only a word in the subtitle)
+    if (!list.some((r) => kindOf(r) === 'village')) {
+      const bi = list.findIndex((r) => kindOf(r) === 'building' && r.building && !isCraft(r));
+      const v = bi >= 0 ? list[bi].village || g.civ?.villages?.[list[bi].building.village] : null;
+      const vr = v && v.alive !== false ? safe(() => g.civ._inspectVillage?.(v, 6), null) : null;
+      if (vr) list.splice(bi + 1, 0, vr);
+    }
     if (!list.some((r) => kindOf(r) === 'kingdom')) {
       const v = list.map((r) => r.village || (r.building ? g.civ?.villages?.[r.building.village] : null)).find(Boolean);
       const k = v ? kingdomOf(g, v.kingdom) : null;
@@ -417,24 +424,47 @@ export class Inspector {
       .join('');
     // people listed under "Inside" are not repeated among the chips
     const occIds = kindOf(r) === 'building' && r.building ? new Set((safe(() => this.occupants(r.building), []) || []).map((o) => o.id)) : null;
-    const seenTitles = new Set([r.title]);
-    const chips = this.results
+    // one chip per thing: the same name may stand for different things (a realm named
+    // after its capital, "Taipei" the realm and "Taipei" the city), and each stays reachable
+    const nameKey = (o) => String(o.title || '').trim().toLowerCase();
+    const seen = new Set([`${kindOf(r)}:${nameKey(r)}`]);
+    const chipList = this.results
       .map((o, i) => ({ o, i }))
       .filter(({ o, i }) => {
-        if (i === this.index || seenTitles.has(o.title)) return false;
+        const key = `${kindOf(o)}:${nameKey(o)}`;
+        if (i === this.index || seen.has(key)) return false;
         if (occIds && o.unit && occIds.has(o.unit.id)) return false;
         // a cart's realm and home town are not things standing here
         if (craft && (kindOf(o) === 'kingdom' || kindOf(o) === 'village')) return false;
-        seenTitles.add(o.title);
+        seen.add(key);
         return true;
-      })
+      });
+    // names shared by things of different kinds say which is which
+    const kindsByName = new Map();
+    for (const o of [r, ...chipList.map((c) => c.o)]) {
+      const n = nameKey(o);
+      if (!kindsByName.has(n)) kindsByName.set(n, new Set());
+      kindsByName.get(n).add(kindOf(o));
+    }
+    const kindWord = (o) => {
+      const kk = kindOf(o);
+      if (kk === 'village') return (['village', 'town', 'city'][o.village?.tier] || 'village');
+      if (kk === 'kingdom') return 'realm';
+      return String(KIND_LABEL[kk] || '').toLowerCase();
+    };
+    const chips = chipList
       .map(({ o, i }) => {
         const c = this.iconFor(o);
-        return `<button class="ws-chip2" type="button" data-i="${i}" style="--tint:${c.tint}" title="${esc(KIND_LABEL[kindOf(o)] || '')}"><span class="ws-chip2__ico">${c.svg}</span><span>${esc(o.title || KIND_LABEL[kindOf(o)])}</span></button>`;
+        const shared = o.title && kindsByName.get(nameKey(o))?.size > 1;
+        const label = o.title ? (shared ? `${o.title} (${kindWord(o)})` : o.title) : KIND_LABEL[kindOf(o)];
+        // a realm's chip carries its banner
+        const ko = kindOf(o) === 'kingdom' && typeof o.kingdom === 'object' ? o.kingdom : null;
+        const ico = ko?.banner ? `<img class="ws-chip2__banner" alt="" src="${bannerURL(ko.banner, ko.color, 28)}">` : c.svg;
+        return `<button class="ws-chip2" type="button" data-i="${i}" style="--tint:${c.tint}" title="${esc(KIND_LABEL[kindOf(o)] || '')}"><span class="ws-chip2__ico">${ico}</span><span>${esc(label)}</span></button>`;
       })
       .join('');
     // each fact once: names shown as chips leave the subtitle and the realm line
-    this._chipNames = new Set([...this.el.ownerDocument.createRange().createContextualFragment(`<div>${chips}</div>`).querySelectorAll('.ws-chip2 > span:last-child')].map((e) => e.textContent.trim().toLowerCase()));
+    this._chipNames = new Set(chipList.map(({ o }) => nameKey(o)).filter(Boolean));
     this._routeNames = routeNames;
     const subShown = r.subtitle ? this.subText(r) : '';
     const following = (u || craft) && this.game.cameraRig.follow === (u || craft);

@@ -738,7 +738,10 @@ export class Modals {
           el('span', { class: 'ws-law__txt' }, el('span', { class: 'ws-row__label', text: def.label }), el('span', { class: 'ws-row__desc', text: def.description })),
           control,
         );
-        rows.push({ row, def, sec, hay: `${def.label} ${def.description} ${c.name} ${def.key}`.toLowerCase() });
+        // searched by word starts ("war" finds "Wars" and "warships", not "toward");
+        // the key's camelCase parts count as words too
+        const words = `${def.label} ${def.description} ${c.name} ${String(def.key).replace(/([a-z])([A-Z])/g, '$1 $2')}`.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+        rows.push({ row, def, sec, words });
         grid.append(row);
       }
       list.append(sec);
@@ -759,7 +762,8 @@ export class Modals {
     search.addEventListener('input', () => {
       const q = search.value.trim().toLowerCase();
       this._lawSearch = q;
-      for (const r of rows) r.row.hidden = !!q && !q.split(/\s+/).every((w) => r.hay.includes(w));
+      const terms = q.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+      for (const r of rows) r.row.hidden = !!terms.length && !terms.every((t) => r.words.some((w) => w.startsWith(t)));
       let any = false;
       for (const [cid, sec] of sections) {
         const vis = [...sec.querySelectorAll('.ws-law')].some((x) => !x.hidden);

@@ -199,6 +199,42 @@
 .ws-insp__title.is-vlong {
   font-size: 14px;
 }
+/* desktop and tablet cards: badge | kind and title | buttons, with the subtitle on
+   its own row under the title and the buttons, so a long name that wraps no longer
+   squeezes the subtitle into a narrow column */
+@media (min-width: 721px) and (min-height: 501px) {
+  .ws-insp__head {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+    column-gap: 0;
+    align-items: start;
+  }
+  .ws-insp__titles {
+    display: contents;
+  }
+  .ws-insp__badge {
+    grid-column: 1;
+    grid-row: 1 / span 3;
+    margin-right: 12px;
+  }
+  .ws-insp__kind {
+    grid-column: 2;
+    grid-row: 1;
+    padding-top: 1px;
+  }
+  .ws-insp__title {
+    grid-column: 2;
+    grid-row: 2;
+  }
+  .ws-insp__sub {
+    grid-column: 2 / -1;
+    grid-row: 3;
+  }
+  .ws-insp__head > .ws-iconbtn {
+    grid-row: 1 / span 2;
+    margin-left: 10px;
+  }
+}
 
 /* ---- Overview on short landscape touch screens: Back pill in the bottom-right
    corner (the camera pad is folded away), so the map can use the full height */
@@ -307,6 +343,106 @@
 .ws-chip.is-armed {
   color: #ffc98a;
   box-shadow: inset 0 0 0 1.5px #ffc98a;
+}
+
+/* ---- title: size chips, then the World Map's regional maps under their own label */
+.ws-title__sizes {
+  display: contents;
+}
+/* 720p and other short desktops: a smaller crest and logo and tighter spacing, so
+   the card (with the regional maps) fits with room to spare */
+@media (max-height: 820px) and (min-height: 501px) {
+  .ws-title__center {
+    padding: 16px 24px;
+  }
+  .ws-title__emblem {
+    width: 64px;
+    height: 64px;
+  }
+  .ws-logo {
+    margin-top: 12px;
+    font-size: clamp(44px, min(8.2vw, 11.5vh), 104px);
+  }
+  .ws-title__rule {
+    margin-top: 12px;
+  }
+  .ws-title__tag {
+    margin-top: 10px;
+  }
+  .ws-title__card {
+    margin-top: 18px;
+    padding: 16px 22px 12px;
+    gap: 10px;
+  }
+  .ws-title__begin {
+    margin-top: 2px;
+  }
+}
+/* phone landscape and other short screens: a compact logo, no crest, and the seed,
+   Begin and links on one row, so Begin is on screen without scrolling; the card
+   scrolls by itself if it still cannot fit */
+@media (max-height: 500px) {
+  .ws-title__center {
+    padding: 8px 16px;
+  }
+  .ws-title__emblem,
+  .ws-title__rule,
+  .ws-title__hint {
+    display: none;
+  }
+  .ws-logo {
+    margin: 0;
+    font-size: clamp(24px, 9vh, 40px);
+    letter-spacing: 0.12em;
+    padding-left: 0.12em;
+    white-space: nowrap;
+  }
+  .ws-logo__sheen {
+    padding-left: 0.12em;
+  }
+  .ws-title__tag {
+    margin-top: 4px;
+    font-size: 10px;
+    letter-spacing: 0.36em;
+    padding-left: 0.36em;
+  }
+  .ws-title__card {
+    margin-top: 8px;
+    padding: 10px 16px;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    justify-items: center;
+    column-gap: 12px;
+    row-gap: 8px;
+    max-height: calc(100vh - 80px);
+    max-height: calc(100dvh - 80px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .ws-title__card.ws-orn::after {
+    display: none;
+  }
+  .ws-title__card > .ws-title__label,
+  .ws-title__card > .ws-chips,
+  .ws-title__sizes > * {
+    grid-column: 1 / -1;
+  }
+  .ws-title__label {
+    font-size: 10px;
+  }
+  .ws-title__seedrow {
+    justify-self: start;
+  }
+  .ws-title__begin {
+    margin-top: 0;
+    min-width: 0;
+    height: 44px;
+    padding: 0 30px;
+  }
+  .ws-title__links {
+    justify-self: end;
+  }
 }
 
 /* ---- phone sheets stay opaque even with blur off (.no-blur .ws-glass was 0.9) */
@@ -425,6 +561,13 @@
   flex: none;
   background: none;
   clip-path: none;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
+}
+/* a realm's chip in the inspector shows its banner */
+.ws-chip2__banner {
+  width: 12px;
+  height: 15px;
+  object-fit: contain;
   filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
 }
 .ws-voyage {

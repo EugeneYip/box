@@ -2,7 +2,7 @@ import { el, esc } from './dom.js';
 import { uiIcon } from './icons.js';
 import { emblemSvg } from './TopBar.js';
 import { PRESETS, PRESET_NAMES, bootNote } from './Panels.js';
-import { WORLD_SIZES, isWidePreset, sizeForPreset, earthChoices, earthChoice, earthLabel } from '../core/params.js';
+import { WORLD_SIZES, EARTH_DEFAULT_SIZE, isWidePreset, sizeForPreset, earthChoices, earthChoice, earthLabel } from '../core/params.js';
 
 // Title screen over the live world. The camera slowly orbits while the
 // player picks a landmass; choosing one re-seeds the world behind the logo.
@@ -28,29 +28,17 @@ export class TitleScreen {
         p.name,
       ),
     );
-    this.seedEl = el('span', { class: 'ws-title__seed', text: String(g.params.seed) });
-    // the World Map offers its own sizes: the whole Earth (2:1) and the regional maps
+    this.seed = g.params.seed;
+    this.seedEl = el('span', { class: 'ws-title__seed', text: String(this.seed) });
+    // the size chips follow the chosen landmass: the World Map offers the whole
+    // Earth (2:1) and the regional maps, the other landmasses the square sizes.
+    // Picking a landmass of the other shape swaps the chips at once; the world
+    // then reloads a single time, with the size picked (or on Begin).
+    this.pending = null;
     const wide = isWidePreset(g.params.preset);
-    const sizeList = wide ? earthChoices() : WORLD_SIZES;
-    this.sizeId = wide ? earthChoice(g.params.size, g.params.region)?.id : WORLD_SIZES.find((z) => z.size === g.world.w)?.id;
-    this.sizeBtns = sizeList.map((z) =>
-      el(
-        'button',
-        {
-          class: 'ws-chip ws-chip--size' + (z.id === this.sizeId ? ' is-on' : ''),
-          type: 'button',
-          'data-id': z.id,
-          'aria-label': z.region ? `${z.name} regional map, ${z.w} by ${z.h} tiles` : z.h ? `${z.name} world, ${z.w} by ${z.h} tiles` : `${z.name} world, ${z.size} tiles`,
-          onclick: () => this.chooseSize(z),
-        },
-        z.name,
-      ),
-    );
-    // (one wrapping group, the regional maps after a thin divider, so the card
-    // stays short enough for a 720-pixel-high screen)
-    const regionBtns = this.sizeBtns.filter((b, k) => sizeList[k].region);
-    const divider = regionBtns.length ? [el('span', { 'aria-hidden': 'true', style: 'align-self:center;width:1px;height:18px;margin:0 4px;background:rgba(255,240,210,0.25)' })] : [];
-    const sizeRows = [el('div', { class: 'ws-chips ws-chips--sizes', role: 'radiogroup', 'aria-label': regionBtns.length ? 'World size or regional map' : 'World size' }, ...this.sizeBtns.filter((b, k) => !sizeList[k].region), ...divider, ...regionBtns)];
+    this.curSizeId = wide ? earthChoice(g.params.size, g.params.region)?.id : WORLD_SIZES.find((z) => z.size === g.world.w)?.id;
+    this.sizeBox = el('div', { class: 'ws-title__sizes' });
+    this.buildSizes(wide, this.curSizeId);
     this.el = el(
       'div',
       { class: 'ws-title', role: 'dialog', 'aria-label': 'Worldseed' },
@@ -67,8 +55,7 @@ export class TitleScreen {
           { class: 'ws-title__card ws-glass ws-orn' },
           el('div', { class: 'ws-title__label', text: 'Choose your landmass' }),
           el('div', { class: 'ws-chips', role: 'radiogroup' }, ...this.presetBtns),
-          el('div', { class: 'ws-title__label ws-title__label--sub', text: 'World size' }),
-          ...sizeRows,
+          this.sizeBox,
           el(
             'div',
             { class: 'ws-title__seedrow' },
@@ -98,39 +85,81 @@ export class TitleScreen {
     this._yaw = rig.goal.yaw;
   }
 
+  // The size chips (and, for the World Map, the regional maps under their own label).
+  buildSizes(wide, selectedId) {
+    const list = wide ? earthChoices() : WORLD_SIZES;
+    this.sizeList = list;
+    this.sizeId = selectedId;
+    this.sizeBtns = list.map((z) =>
+      el(
+        'button',
+        {
+          class: 'ws-chip ws-chip--size' + (z.id === selectedId ? ' is-on' : ''),
+          type: 'button',
+          role: 'radio',
+          'aria-checked': z.id === selectedId ? 'true' : 'false',
+          'data-id': z.id,
+          'aria-label': z.region ? `${z.name} regional map, ${z.w} by ${z.h} tiles` : z.h ? `${z.name} world, ${z.w} by ${z.h} tiles` : `${z.name} world, ${z.size} tiles`,
+          onclick: () => this.chooseSize(z),
+        },
+        z.name,
+      ),
+    );
+    const whole = this.sizeBtns.filter((b, k) => !list[k].region);
+    const regions = this.sizeBtns.filter((b, k) => list[k].region);
+    const rows = [el('div', { class: 'ws-title__label ws-title__label--sub', text: 'World size' }), el('div', { class: 'ws-chips ws-chips--sizes', role: 'radiogroup', 'aria-label': 'World size' }, ...whole)];
+    if (regions.length) rows.push(el('div', { class: 'ws-title__label ws-title__label--sub ws-title__label--regions', text: 'Regional maps' }), el('div', { class: 'ws-chips ws-chips--sizes ws-chips--regions', role: 'radiogroup', 'aria-label': 'Regional maps' }, ...regions));
+    this.sizeBox.replaceChildren(...rows);
+  }
+
+  markSize(id) {
+    this.sizeId = id;
+    for (const b of this.sizeBtns) {
+      b.classList.toggle('is-on', b.dataset.id === id);
+      b.setAttribute('aria-checked', b.dataset.id === id ? 'true' : 'false');
+    }
+  }
+
   choosePreset(id) {
     const g = this.game;
     this.presetBtns.forEach((b) => b.classList.toggle('is-on', b.dataset.id === id));
-    if (id === g.params.preset) return;
-    const from = g.params.preset || 'continent';
-    if (isWidePreset(id) !== isWidePreset(from)) {
-      // into or out of the 2:1 World Map: reload in its shape, keeping the seed,
-      // with the size mapped the same way New World and the game map it
-      const size = sizeForPreset(g.params.size ?? g.world.w, from, id);
-      const z = WORLD_SIZES.find((s) => s.size === size);
-      const q = new URLSearchParams(location.search);
-      q.set('preset', id);
-      q.set('seed', g.params.seed);
-      q.set('size', size);
-      for (const k of ['cam', 'hour', 'ff', 'title', 'region']) q.delete(k);
-      const label = isWidePreset(id) ? earthLabel(size) : `Seeding ${/^[aeiou]/i.test(PRESET_NAMES[id] || '') ? 'an' : 'a'} ${PRESET_NAMES[id] || 'new'} world${z ? ` · ${z.name}` : ''}`;
-      bootNote(label);
-      const vl = this.ui.veil.querySelector('.ws-veil__label');
-      if (vl) vl.textContent = label;
-      this.ui.veil.classList.add('is-shown');
-      setTimeout(() => (location.search = q.toString()), 320);
+    const cur = g.params.preset || 'continent';
+    if (isWidePreset(id) !== isWidePreset(cur)) {
+      // into or out of the 2:1 World Map: its sizes show now, with the size mapped
+      // the same way New World and the game map it; nothing reloads until a size
+      // is picked or Begin is pressed
+      if (!this.pending) {
+        const size = sizeForPreset(g.params.size ?? g.world.w, cur, id);
+        this.buildSizes(isWidePreset(id), isWidePreset(id) ? earthChoice(size)?.id : WORLD_SIZES.find((s) => s.size === size)?.id);
+      }
+      this.pending = { preset: id };
+      this.el.classList.add('is-pending');
       return;
     }
-    this.ui.regenerate(g.params.seed, id, g.params.civs, { quiet: true, after: () => (this.seedEl.textContent = String(g.params.seed)) });
+    if (this.pending) {
+      // back to the shape of the world behind the logo
+      this.pending = null;
+      this.el.classList.remove('is-pending');
+      this.buildSizes(isWidePreset(cur), this.curSizeId);
+    }
+    if (id === cur) return;
+    this.ui.regenerate(g.params.seed, id, g.params.civs, { quiet: true, after: () => (this.seedEl.textContent = String((this.seed = g.params.seed))) });
   }
 
   chooseSize(z) {
-    const g = this.game;
-    this.sizeBtns.forEach((b) => b.classList.toggle('is-on', b.dataset.id === z.id));
-    if (z.id === this.sizeId) return;
+    this.markSize(z.id);
+    if (!this.pending && z.id === this.curSizeId) return;
+    this.reload(this.pending?.preset || this.game.params.preset || 'continent', z, false);
+  }
+
+  // Reload into a world of another shape or size (the world's dimensions are fixed
+  // once built), back to this screen or, from Begin, straight into the world.
+  reload(preset, z, intoWorld) {
+    const wide = isWidePreset(preset);
+    if (!z) z = wide ? earthChoice(EARTH_DEFAULT_SIZE) : WORLD_SIZES.find((s) => s.id === 'medium');
     const q = new URLSearchParams(location.search);
-    q.set('seed', g.params.seed);
-    q.set('preset', g.params.preset || 'continent');
+    q.set('seed', this.seed);
+    q.set('preset', preset);
     // a regional map is named by ?region= (its size is implied)
     if (z.region) {
       q.set('region', z.region);
@@ -139,9 +168,12 @@ export class TitleScreen {
       q.set('size', z.size);
       q.delete('region');
     }
-    for (const k of ['cam', 'hour', 'ff', 'title']) q.delete(k);
+    for (const k of ['cam', 'hour', 'ff']) q.delete(k);
+    if (intoWorld) q.set('title', '0');
+    else q.delete('title');
+    const name = PRESET_NAMES[preset] || 'new';
+    const text = wide ? earthLabel(z.size, z.region) : preset === (this.game.params.preset || 'continent') ? `Shaping a ${z.name.toLowerCase()} world` : `Seeding ${/^[aeiou]/i.test(name) ? 'an' : 'a'} ${name} world · ${z.name}`;
     const label = this.ui.veil.querySelector('.ws-veil__label');
-    const text = isWidePreset(g.params.preset) ? earthLabel(z.size, z.region) : `Shaping a ${z.name.toLowerCase()} world`;
     if (label) label.textContent = text;
     bootNote(text);
     this.ui.veil.classList.add('is-shown');
@@ -151,11 +183,22 @@ export class TitleScreen {
   reroll() {
     const g = this.game;
     const seed = Math.floor(Math.random() * 1e9);
-    this.ui.regenerate(seed, g.params.preset, g.params.civs, { quiet: true, after: () => (this.seedEl.textContent = String(g.params.seed)) });
+    if (this.pending) {
+      // the reload carries it
+      this.seed = seed;
+      this.seedEl.textContent = String(seed);
+      return;
+    }
+    this.ui.regenerate(seed, g.params.preset, g.params.civs, { quiet: true, after: () => (this.seedEl.textContent = String((this.seed = g.params.seed))) });
   }
 
   begin() {
     if (!this.active) return;
+    if (this.pending) {
+      // a landmass of the other shape was picked: build it once, then play
+      this.active = false;
+      return this.reload(this.pending.preset, this.sizeList.find((z) => z.id === this.sizeId), true);
+    }
     this.active = false;
     const g = this.game;
     this.el.classList.add('is-leaving');
