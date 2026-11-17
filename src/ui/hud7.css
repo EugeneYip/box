@@ -1239,3 +1239,34 @@
 .ws-toast.is-front {
   z-index: 55;
 }
+
+/* New World: the starting-villages slider spans its column, its value beside it,
+   and the Auto pill ("Auto (real places)" on the World Map) has its own line
+   under them, the same for every landmass; the size note keeps room for two
+   lines (three on phones), so picking a size or a regional map never makes
+   the dialog jump */
+.ws-newworld .ws-field-row .ws-row__ctl {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 10px;
+  row-gap: 8px;
+}
+.ws-newworld .ws-field-row .ws-row__ctl .ws-range {
+  width: 100%;
+  min-width: 0;
+}
+.ws-newworld .ws-field-row .ws-civauto {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+.ws-newworld .ws-size__note {
+  display: block;
+  min-height: calc(2 * 1.4em);
+  line-height: 1.4;
+}
+@media (max-width: 720px) {
+  .ws-newworld .ws-size__note {
+    min-height: calc(3 * 1.4em);
+  }
+}
