@@ -1906,7 +1906,8 @@ export class Units {
       // round-14 world scale people are small on screen, so those farther than
       // this (most of a mid-zoom view) update at the distant rate; power saver
       // narrows it further
-      const lr = Math.min(80, Math.max(30, cam.dist * 0.8)) * (g.settings?.powerSaver ? 0.6 : 1);
+      // (and at 8x and above, when nobody follows a single walker, narrower still)
+      const lr = (Math.min(64, Math.max(24, cam.dist * 0.65)) * (g.settings?.powerSaver ? 0.6 : 1)) / Math.sqrt(stepK);
       focus.lr2 = lr * lr;
     }
     const lr2 = focus.lr2 ?? focus.r2;

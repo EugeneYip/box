@@ -520,10 +520,13 @@ export const land = {
     const w = this.world;
     if (!v.battery || v.battery.vid !== village.id || (v.batT = (v.batT ?? 0) - step) <= 0 || v.battery.stuck > 8) {
       v.batT = 14;
-      v.battery = this._batterySite(v, village);
+      // (a search that found nothing is remembered for a few seconds too: it
+      // ran every tick for every engine before a town without room for one)
+      v.battery = this._batterySite(v, village) || { none: true, vid: village.id, stuck: 0 };
+      if (v.battery.none) v.batT = 4;
     }
     const bt = v.battery;
-    if (!bt) return false;
+    if (!bt || bt.none) return false;
     const dx = bt.x - v.x,
       dz = bt.z - v.z;
     const d = Math.hypot(dx, dz);

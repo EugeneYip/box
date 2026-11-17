@@ -1103,7 +1103,9 @@ export class Civilization {
   // 0 = empty world .. 1 = at the performance budget (units and buildings)
   _crowd() {
     const t = this.game.time.total;
-    if (this._crowdT === t) return this._crowdV;
+    // (re-counted at most twice a game second: with the round-14 budgets it walks
+    // well over a thousand buildings, and every tick asked)
+    if (this._crowdT != null && t >= this._crowdT && t - this._crowdT < 0.5) return this._crowdV;
     const humans = this.game.units.count?.('human') ?? 0;
     let blds = 0;
     for (const b of this.buildings) if (b.alive && !BUILDING_TYPES[b.type].wall) blds++; // walls are capped separately

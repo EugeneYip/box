@@ -567,6 +567,7 @@ export class UnitRenderer {
     const dotsOnly = !!(g.view?.far || (g.view?.zoom01 ?? 0) > 0.82 || (g.cameraRig.cur?.dist ?? 0) > DOTS_DIST);
     this._hiN = 0;
     const shadowsOn = camDist < SHADOW_ZOOM;
+    const shR2 = (SHADOW_RANGE * (saver ? 0.6 : 1)) ** 2;
     this.dotsOnly = dotsOnly;
     const camT = g.cameraRig.target;
     // held weapons and tools grow as the camera pulls back so they read at play zoom
@@ -719,7 +720,7 @@ export class UnitRenderer {
         const pm = this.pick(rm, pxH, rs);
         // shadow-map casters: near the camera target at close zoom, never the tiny
         // models (from mid zoom out the ground blob shadow carries it)
-        const near = shadowsOn && rs.lv !== 2 && (ix - camT.x) ** 2 + (iz - camT.z) ** 2 < SHADOW_RANGE * SHADOW_RANGE;
+        const near = shadowsOn && rs.lv !== 2 && (ix - camT.x) ** 2 + (iz - camT.z) ** 2 < shR2; // (power saver: a shorter shadow range)
         const apUse = pm.tiny ? (pm.mesh.name.endsWith(':mid') ? rs.apMid : rs.apTiny) || rs.ap : rs.ap;
         pm.write(this._m, Ps, apUse, Math.min(1, flash), lod, glow, near);
         if (hrs) {
