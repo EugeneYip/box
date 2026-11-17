@@ -235,10 +235,38 @@ export const brain = {
       u.target = { x, z };
       return true;
     }
+    // cached paths: villagers walk the same few routes (home, field, store,
+    // woods) over and over; a route found in the last few game seconds from
+    // the same tile to the same tile is reused (paths are read-only; a
+    // walker blocked by something new simply asks again)
+    const now = this.game.time.total;
+    const PC = this._pathCache || (this._pathCache = new Map());
+    if (now - (this._pathCacheT ?? -1e9) > 12 || PC.size > 6000 || this._pathCacheV !== this.version) {
+      if (now - (this._pathCacheT ?? -1e9) > 12 || PC.size > 6000 || now - (this._pathCacheVT ?? -1e9) > 3) {
+        PC.clear();
+        this._pathCacheT = now;
+        this._pathCacheV = this.version;
+        this._pathCacheVT = now;
+      }
+    }
+    const key = (w.clampTy(sy) * w.w + w.clampTx(sx)) * w.size + gy * w.w + gx + (long ? 0.5 : 0);
+    const hit = PC.get(key);
+    if (hit !== undefined) {
+      if (!hit) {
+        u.target = null;
+        u.path = null;
+        return false;
+      }
+      u.path = hit;
+      u.pathIdx = 0;
+      u.target = { x, z };
+      return true;
+    }
     if (long ? this._longBudget <= 0 : this._pathBudget <= 0) return WAIT;
     if (long) this._longBudget--;
     else this._pathBudget--;
     const p = civPath(w, w.clampTx(sx), w.clampTy(sy), gx, gy, this._walkCost(), long ? 32000 : 3200, 0.5);
+    PC.set(key, p || null);
     if (!p) {
       u.target = null;
       u.path = null;

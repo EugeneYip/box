@@ -90,7 +90,10 @@ const OVERVIEW_DIST = 110; // camera farther than this: every creature takes the
 const WILD_TARGET = 620; // wild creatures on a 256 x 256 map with no people
 const WILD_FLOOR = 420; // ...and however large the realms grow
 const WILD_FLOOR_BIG = 330; // ...on maps larger than Medium, where the total cap rules
-const UNIT_CAP = 1000; // all creatures on a big map, per unit of popScale (1,600 on Huge 512)
+// all creatures on a big map, per unit of popScale (1,600 on Huge 512 in round
+// 13; the smaller world scale of round 14 holds more of them, see
+// docs/WORLD-SCALE.md)
+const UNIT_CAP = 1000 * 1.6;
 const HEALTHY = 0.45; // a wild grazer below this share of its capacity gets migrant herds
 
 const KIND_ORDER = { humanoid: 0, animal: 1, monster: 2 };
@@ -547,6 +550,9 @@ export class Units {
       _homeB: null,
       _homeT: -99,
       _simT: g.time.total, // game time of its last full update (level of detail)
+      _mvx: 0, // a distant walker's stride, shown in steps between its updates
+      _mvz: 0,
+      _mvn: 0,
       _forager: null,
       _foraged: false,
     };
@@ -1386,10 +1392,10 @@ export class Units {
     const p = {
       kind: opts.kind || 'arrow',
       x0: a.x,
-      y0: a.y + a.def.height * 0.75,
+      y0: a.y + a.def.height * a.def.size * 0.75,
       z0: a.z,
       x1: lx,
-      y1: t.y + t.def.height * 0.5,
+      y1: t.y + t.def.height * t.def.size * 0.5,
       z1: lz,
       t: 0,
       dur,
@@ -1417,8 +1423,8 @@ export class Units {
         if (t && t.alive && Math.hypot(t.x - p.x1, t.z - p.z1) < 0.6 + t.def.radius) {
           const l = Math.hypot(p.x1 - p.x0, p.z1 - p.z0) || 1;
           this.damage(t, p.dmg, src, { knock: 0.3, dirX: (p.x1 - p.x0) / l, dirZ: (p.z1 - p.z0) / l });
-          this.game.fx.emit?.('hit', { x: t.x, y: t.y + t.def.height * 0.5, z: t.z }, { scale: 0.4 });
-          if (t.def.blood) this.game.fx.emit?.('blood', { x: t.x, y: t.y + t.def.height * 0.5, z: t.z }, { scale: 0.4 });
+          this.game.fx.emit?.('hit', { x: t.x, y: t.y + t.def.height * t.def.size * 0.5, z: t.z }, { scale: 0.4 });
+          if (t.def.blood) this.game.fx.emit?.('blood', { x: t.x, y: t.y + t.def.height * t.def.size * 0.5, z: t.z }, { scale: 0.4 });
         } else this.game.fx.emit?.('dust', { x: p.x1, z: p.z1 }, { scale: 0.3 });
         continue;
       }
@@ -1539,7 +1545,7 @@ export class Units {
       }
     }
     this.emote(m, 'heart', 2.5);
-    g.fx.emit?.('heal', { x: m.x, y: m.y + def.height, z: m.z }, { scale: 0.5 });
+    g.fx.emit?.('heal', { x: m.x, y: m.y + def.height * def.size, z: m.z }, { scale: 0.5 });
     this.sfx('birth', m.x, m.z, { volume: 0.35 });
   }
 
@@ -1896,7 +1902,15 @@ export class Units {
       focus.z = cam.z;
       const r = Math.max(36, cam.dist * 1.15);
       focus.r2 = r * r;
+      // full-rate thinking and walking only round the camera's target: at the
+      // round-14 world scale people are small on screen, so those farther than
+      // this (most of a mid-zoom view) update at the distant rate; power saver
+      // narrows it further
+      // (and at 8x and above, when nobody follows a single walker, narrower still)
+      const lr = (Math.min(64, Math.max(24, cam.dist * 0.65)) * (g.settings?.powerSaver ? 0.6 : 1)) / Math.sqrt(stepK);
+      focus.lr2 = lr * lr;
     }
+    const lr2 = focus.lr2 ?? focus.r2;
     const yearDt = dt / YEAR;
     const list = this.list;
     const lifeLaw = typeof g.laws?.lifeLifespan === 'number' ? g.laws.lifeLifespan : 1;
@@ -1950,10 +1964,22 @@ export class Units {
         fdz0 = u.z - focus.z;
       const fd2 = fdx0 * fdx0 + fdz0 * fdz0;
       let lod = 0;
-      if (!u.combat && (overview || fd2 > focus.r2) && def.habitat !== 'air' && !BRAIN_TICKS[def.brain]) lod = !u.target && !u.path && (overview || fd2 > focus.r2 * 4) ? 2 : 1;
+      if (!u.combat && (overview || fd2 > lr2) && def.habitat !== 'air' && !BRAIN_TICKS[def.brain]) lod = !u.target && !u.path && (overview || fd2 > lr2 * 4) ? 2 : 1;
       if (lod && (slot & ((1 << lod) - 1)) !== 0 && u.thinkT > 0.05) {
         u.anim += dt * (u.moving ? 1 : 0.35);
+        // its last stride is shown in even steps, one a tick, so a distant
+        // walker glides instead of hopping every other tick
+        if (u._mvn > 0) {
+          u.x += u._mvx;
+          u.z += u._mvz;
+          u._mvn--;
+        }
         continue;
+      }
+      if (u._mvn > 0) {
+        u.x += u._mvx * u._mvn;
+        u.z += u._mvz * u._mvn;
+        u._mvn = 0;
       }
       const el = now - u._simT;
       const udt = el > 1e-4 ? (el < 1.2 ? el : 1.2) : dt;
@@ -2007,7 +2033,7 @@ export class Units {
         const fire = w.fire[ti];
         if (fire > 0.2) {
           this.damage(u, udt * 8 * fire, null, { cause: 'fire' });
-          if ((slot >> lod) % (5 >> lod) === 0) g.fx.emit?.('fire', { x: u.x, y: u.y + def.height * 0.5, z: u.z }, { scale: 0.35 });
+          if ((slot >> lod) % (5 >> lod) === 0) g.fx.emit?.('fire', { x: u.x, y: u.y + def.height * def.size * 0.5, z: u.z }, { scale: 0.35 });
         }
         if (w.type[ti] === TILE.LAVA) this.damage(u, udt * 60, null, { cause: 'lava' });
         if (!u.alive) continue;
@@ -2039,7 +2065,7 @@ export class Units {
       }
       // ---- combat & thinking
       if (u.combat) this._combatTick(u, udt, now);
-      u._far = (overview || fdx0 * fdx0 + fdz0 * fdz0 > focus.r2) && !u.combat;
+      u._far = (overview || fd2 > lr2) && !u.combat;
       u.thinkT -= udt;
       if (u.thinkT <= 0) {
         if (budgetOn && this._frameThinkMs > THINK_BUDGET_MS && !u.combat) {
@@ -2077,9 +2103,19 @@ export class Units {
       else if (u.x > w.w - 0.01) u.x = w.w - 0.01;
       if (u.z < 0.01) u.z = 0.01;
       else if (u.z > w.h - 0.01) u.z = w.h - 0.01;
-      u.y = this._groundY(u);
       const moved = Math.hypot(u.x - u.px, u.z - u.pz) / udt;
       u.speedNow += (moved - u.speedNow) * Math.min(1, udt * 8);
+      if (lod && moved > 0) {
+        // the stride of a distant walker (updated every 2nd or 4th tick) is
+        // shown over the ticks until its next update (see the skip above)
+        const n = 1 << lod;
+        u._mvx = (u.x - u.px) / n;
+        u._mvz = (u.z - u.pz) / n;
+        u._mvn = n - 1;
+        u.x = u.px + u._mvx;
+        u.z = u.pz + u._mvz;
+      }
+      u.y = this._groundY(u);
       u.anim += dt * (u.moving ? 1 : 0.35);
       if (u.state === 'walk' && !u.moving && !u.target) u.state = 'idle';
       if (u.swimming && u.state !== 'attack' && u.state !== 'flee') u.state = 'swim';

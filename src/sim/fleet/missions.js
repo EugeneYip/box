@@ -1,7 +1,7 @@
 import { SEA_LEVEL, TILE } from '../../world/constants.js';
 import { KINDS, STUB_KINDS } from './kinds.js';
 import { pathLength } from './nav.js';
-import { hullR, hullHalf, segDist } from './hull.js';
+import { hullR, hullHalf, segDist, PIER_END, PIER, BERTH } from './hull.js';
 import { regionName } from '../disasters/util.js';
 
 const YEAR = 30;
@@ -175,8 +175,8 @@ export const missions = {
     return (h.level >= 2 ? 4 : 2) + (seafaring ? 1 : 0);
   },
   berthed(h, self = null) {
-    const ex = h.x + h.dirX * 3.4,
-      ez = h.z + h.dirZ * 3.4;
+    const ex = h.x + h.dirX * PIER_END,
+      ez = h.z + h.dirZ * PIER_END;
     let n = 0;
     for (const o of this.list) {
       if (!o.alive || o === self || o.cls !== 'sea' || o.state === 'sinking' || o.kind === 'fishing' || o.roads) continue;
@@ -184,7 +184,7 @@ export const missions = {
       if (o.state === 'moored') (ox = o.x), (oz = o.z);
       else if (o.state === 'sail' && o.dest?.berth && (o.mission?.phase === 'home' || o.mission?.phase === 'out')) (ox = o.dest.x), (oz = o.dest.z);
       else continue;
-      if (Math.hypot(ox - ex, oz - ez) < 5.5) n++;
+      if (Math.hypot(ox - ex, oz - ez) < 5.5 * BERTH) n++;
     }
     return n;
   },
@@ -219,8 +219,8 @@ export const missions = {
     if (this.berthed(h, self) >= this.harbourCap(h)) return null;
     const px = -h.dirZ,
       pz = h.dirX;
-    const ex = h.x + h.dirX * 3.4,
-      ez = h.z + h.dirZ * 3.4; // the end of the pier
+    const ex = h.x + h.dirX * PIER_END,
+      ez = h.z + h.dirZ * PIER_END; // the end of the pier
     const taken = (x, z) => {
       for (const o of this.list) {
         if (!o.alive || o === self || o.cls !== 'sea' || o.state === 'sinking') continue;
@@ -234,20 +234,21 @@ export const missions = {
           ddz = oz - z;
         const along = Math.abs(ddx * h.dirX + ddz * h.dirZ),
           across = Math.abs(ddx * px + ddz * pz);
-        if (along < (L + o.def.length) * 0.5 + 0.25 && across < ((def.beam || 0.5) + (o.def.beam || 0.5)) * 0.5 + 0.35) return true;
+        if (along < (L + o.def.length) * 0.5 + 0.25 * BERTH && across < ((def.beam || 0.5 * BERTH) + (o.def.beam || 0.5 * BERTH)) * 0.5 + 0.35 * BERTH) return true;
       }
       return false;
     };
-    const B = (def.beam || 0.5) + 0.45;
+    const k = BERTH;
+    const B = (def.beam || 0.5 * k) + 0.45 * k;
     const slots = [
-      [L / 2 + 0.45, 0],
-      [L * 0.25, B + 0.1],
-      [L * 0.25, -B - 0.1],
-      [L * 1.5 + 0.9, 0],
-      [L * 0.35 + 0.4, B * 2 + 0.2],
-      [L * 0.35 + 0.4, -B * 2 - 0.2],
-      [L * 1.25 + 0.7, B + 0.1],
-      [L * 1.25 + 0.7, -B - 0.1],
+      [L / 2 + 0.45 * k, 0],
+      [L * 0.25, B + 0.1 * k],
+      [L * 0.25, -B - 0.1 * k],
+      [L * 1.5 + 0.9 * k, 0],
+      [L * 0.35 + 0.4 * k, B * 2 + 0.2 * k],
+      [L * 0.35 + 0.4 * k, -B * 2 - 0.2 * k],
+      [L * 1.25 + 0.7 * k, B + 0.1 * k],
+      [L * 1.25 + 0.7 * k, -B - 0.1 * k],
     ];
     for (const [f, sd] of slots) {
       const x = ex + h.dirX * f + px * sd,
@@ -275,23 +276,23 @@ export const missions = {
       }
       return false;
     };
-    for (const f of [2.2])
-      for (const sd of [0.7, -0.7]) {
+    for (const f of [2.2 * PIER])
+      for (const sd of [0.7 * PIER, -0.7 * PIER]) {
         const x = h.x + h.dirX * f + px * sd,
           z = h.z + h.dirZ * f + pz * sd;
         if (!this._hullFits(x, z, h.dirX, h.dirZ, def)) continue;
-        if (!taken(x, z, 1.05)) return { x, z, berth: true };
+        if (!taken(x, z, 1.05 * BERTH)) return { x, z, berth: true };
       }
     // off the shore beside the jetty, in the shallows either side of it
     const nav = this.nav;
-    for (const r of [3.2, 4.2, 5.2])
+    for (const r of [3.2 * PIER, 4.2 * PIER, 5.2 * PIER])
       for (const a of [1.15, -1.15, 1.4, -1.4, 0.85, -0.85]) {
         const ang = Math.atan2(h.dirZ, h.dirX) + a;
         const x = h.x + Math.cos(ang) * r,
           z = h.z + Math.sin(ang) * r;
         if (!this._hullFits(x, z, Math.cos(ang), Math.sin(ang), def)) continue;
         if (nav.comp(x, z) !== h.water || !nav.los(h.berth.x, h.berth.z, x, z, 0)) continue;
-        if (!taken(x, z, 1.5)) return { x, z, berth: true };
+        if (!taken(x, z, 1.5 * BERTH)) return { x, z, berth: true };
       }
     return null;
   },
@@ -376,14 +377,14 @@ export const missions = {
     let Z = this._bz;
     if (!Z || Z.t !== now) Z = this._bz = { t: now, L: this.harbours() };
     for (const h of Z.L) {
-      const ex = h.x + h.dirX * 3.4,
-        ez = h.z + h.dirZ * 3.4;
+      const ex = h.x + h.dirX * PIER_END,
+        ez = h.z + h.dirZ * PIER_END;
       const dx = x - ex,
         dz = z - ez;
       if (Math.abs(dx) > 9 || Math.abs(dz) > 9) continue;
       const al = dx * h.dirX + dz * h.dirZ,
         ac = -dx * h.dirZ + dz * h.dirX;
-      if (al > -3.6 - pad && al < 5 + pad && Math.abs(ac) < 2.7 + pad) return h;
+      if (al > -PIER_END - 0.2 * PIER - pad && al < 5 * BERTH + pad && Math.abs(ac) < 2.7 * BERTH + pad) return h;
     }
     return null;
   },

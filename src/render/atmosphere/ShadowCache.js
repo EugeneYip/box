@@ -143,6 +143,11 @@ export class ShadowCache {
         const g = this.game;
         off(g.vegetation?.group || g.scene.getObjectByName('vegetation'));
         off(g.buildings?.group || g.scene.getObjectByName('civ-buildings'));
+        // the whole map in view: the terrain's own cast shadows are a pixel or
+        // two at most, while each of its chunks (a hundred and more on big
+        // maps) is a draw call in every refresh; relief comes from its
+        // shading instead (docs/WORLD-SCALE.md: shadows only near the camera)
+        off(g.terrain?.group || g.scene.getObjectByName('terrain'));
       }
     } else {
       sh.needsUpdate = false;

@@ -12,6 +12,7 @@ import { tech, ERAS, TECHS, techById, LAST_ERA } from './tech.js';
 import { modern } from './modern.js';
 import { culture, TRAIT_INFO } from './culture.js';
 import { realms } from './realms.js';
+import { FOOTPRINT } from '../../core/scale.js';
 
 // Civilization simulation: villages that grow from hamlets into walled
 // cities, kingdoms with rulers, borders, diplomacy and war.
@@ -65,18 +66,23 @@ function monumentTitle(type, style, variant) {
   return MONUMENT_TITLES[type]?.[style]?.[variant % 3] || null;
 }
 
+// Round 14 (docs/WORLD-SCALE.md): at the smaller world scale a village takes
+// about a third of the land it did, so the world holds more of them: the
+// people, building and village budgets grow by BUDGET (people 1.6x, villages
+// 1.8x, buildings 1.7x per map area).
+const BUDGET = { humans: 1.6, buildings: 1.7, villages: 1.8, start: 1.34 };
 function budgets(w, h, area = w * h) {
   const a = area / (256 * 256);
-  const humans = Math.round(Math.min(900, 850 * Math.pow(a, 0.04)));
+  const humans = Math.round(Math.min(900, 850 * Math.pow(a, 0.04)) * BUDGET.humans);
   return {
     area: a,
     humans,
-    buildings: Math.round(Math.min(920, 300 * Math.pow(a, 0.8))),
+    buildings: Math.round(Math.min(920, 300 * Math.pow(a, 0.8)) * BUDGET.buildings),
     // the people budget hardly grows with the map, so neither may the number
-    // of villages sharing it: about 26 people a village, as on a Medium map
+    // of villages sharing it: about 23 people a village on a Medium map
     // (the World Map had 55 villages of 15 and no cities)
-    villages: Math.round(Math.min(30 * Math.pow(a, 0.55), humans / 26)),
-    startVillages: Math.max(1, Math.round(3 * Math.pow(a, 0.7))),
+    villages: Math.round(Math.min(30 * Math.pow(a, 0.55), humans / BUDGET.humans / 26) * BUDGET.villages),
+    startVillages: Math.max(1, Math.round(3 * Math.pow(a, 0.7) * BUDGET.start)),
   };
 }
 
@@ -310,8 +316,8 @@ export class Civilization {
       plots: [],
       fieldCount: 0,
       roadTiles: [],
-      radius: 9,
-      buildRadius: 7,
+      radius: 9 * FOOTPRINT.scale,
+      buildRadius: 7 * FOOTPRINT.scale,
       tier: 0,
       founded: this.game.time.total,
       lastExpand: this.game.time.total,
@@ -385,14 +391,15 @@ export class Civilization {
       fy = hy + 1 + dz * 2;
     const px = dz,
       pz = dx;
-    this._street(v, fx, fy, px, pz, 6);
-    this._street(v, fx - px, fy - pz, -px, -pz, 5);
-    this._street(v, fx + dx, fy + dz, dx, dz, 5);
+    const sl = (n) => FOOTPRINT.cells(n, 3);
+    this._street(v, fx, fy, px, pz, sl(6));
+    this._street(v, fx - px, fy - pz, -px, -pz, sl(5));
+    this._street(v, fx + dx, fy + dz, dx, dz, sl(5));
     if (this.rng.chance(0.6)) {
       // a back lane so the village does not grow on one side only
       const bx = hx + 1 - dx * 2,
         by = hy + 1 - dz * 2;
-      this._street(v, bx, by, -dx, -dz, 4);
+      this._street(v, bx, by, -dx, -dz, sl(4));
     }
 
     if (opts.starter) {
@@ -509,10 +516,11 @@ export class Civilization {
     for (const o of this.villages) {
       if (o.alive || o.resettled) continue;
       const d = geoDist(this.world, o.cx, o.cz, v.cx, v.cz);
-      if (d < 14 || d > 60 || o.landId !== v.landId) continue;
+      const F = FOOTPRINT.scale;
+      if (d < 14 * F || d > 60 * F || o.landId !== v.landId) continue;
       const i = Math.floor(o.cz) * w.w + Math.floor(o.cx);
       if (w.owner[i] >= 0 && w.owner[i] !== v.kingdom) continue;
-      if (this.villages.some((x) => x.alive && geoDist(this.world, x.cx, x.cz, o.cx, o.cz) < 14)) continue;
+      if (this.villages.some((x) => x.alive && geoDist(this.world, x.cx, x.cz, o.cx, o.cz) < 14 * F)) continue;
       const sc = 400 - d;
       if (sc > bs) {
         bs = sc;
@@ -521,7 +529,8 @@ export class Civilization {
     }
     if (best) return best;
     // (a big map's settlers go further: the same villages cover wider land)
-    const spread = this._villageSpread();
+    // (villages are FOOTPRINT-sized: they settle closer together, more of them)
+    const spread = this._villageSpread() * FOOTPRINT.scale;
     const reach = (this._crowd() > 0.6 ? 70 : 44) * spread; // a full realm looks further afield
     const gap = 18 * spread;
     for (let k = 0; k < 90; k++) {
@@ -757,8 +766,10 @@ export class Civilization {
     v.housing = housing;
     v.houses = houses;
     v.foodCap = Math.round(foodCap * this.techMod(v.kingdom, 'foodCap'));
-    v.buildRadius = 7 + v.tier * 2.5 + Math.sqrt(v.buildings.length) * 0.9;
-    v.radius = clamp(7 + 2.1 * Math.sqrt(v.pop) + v.tier * 2, 8, 24);
+    // (design distances to tiles: villages pack into smaller circles at the world's scale)
+    const F = FOOTPRINT.scale;
+    v.buildRadius = (7 + v.tier * 2.5 + Math.sqrt(v.buildings.length) * 0.9) * F;
+    v.radius = clamp(7 + 2.1 * Math.sqrt(v.pop) + v.tier * 2, 8, 24) * F;
     v.population = v.pop;
     v.x = v.cx;
     v.z = v.cz;
@@ -1041,7 +1052,7 @@ export class Civilization {
       v.groveCheck = now;
       let mature = 0,
         young = 0;
-      w.forEachInRadius(v.cx, v.cz, Math.min(28, v.buildRadius + 14), (x, y, d, i) => {
+      w.forEachInRadius(v.cx, v.cz, Math.min(28, v.buildRadius + 14 * FOOTPRINT.scale), (x, y, d, i) => {
         const f = w.flora[i];
         if (f && FLORA_INFO[f].isTree) {
           if (w.floraGrowth[i] >= 0.6) mature++;
@@ -1049,14 +1060,14 @@ export class Civilization {
         }
       });
       v.trees = mature;
-      const want = 95 + v.tier * 20;
+      const want = (95 + v.tier * 20) * FOOTPRINT.scale;
       if (mature + young < want) {
         const species = { vale: [FLORA.OAK, FLORA.BIRCH], dune: [FLORA.PALM, FLORA.ACACIA], frost: [FLORA.PINE, FLORA.PINE], mire: [FLORA.JUNGLE_TREE, FLORA.SWAMP_TREE] }[baseCulture(v.culture)] || [FLORA.OAK];
         if (v.groveAngle == null) v.groveAngle = this.rng.float(0, Math.PI * 2);
         let planted = 0;
         for (let k = 0; k < 80 && planted < 14; k++) {
           const a = v.groveAngle + this.rng.float(-1.3, 1.3);
-          const r = v.buildRadius + 2 + this.rng.next() * 9;
+          const r = v.buildRadius + (2 + this.rng.next() * 9) * FOOTPRINT.scale;
           const x = Math.floor(v.cx + Math.cos(a) * r),
             y = Math.floor(v.cz + Math.sin(a) * r);
           if (!w.inBounds(x, y)) continue;
@@ -1100,7 +1111,9 @@ export class Civilization {
   // 0 = empty world .. 1 = at the performance budget (units and buildings)
   _crowd() {
     const t = this.game.time.total;
-    if (this._crowdT === t) return this._crowdV;
+    // (re-counted at most twice a game second: with the round-14 budgets it walks
+    // well over a thousand buildings, and every tick asked)
+    if (this._crowdT != null && t >= this._crowdT && t - this._crowdT < 0.5) return this._crowdV;
     const humans = this.game.units.count?.('human') ?? 0;
     let blds = 0;
     for (const b of this.buildings) if (b.alive && !BUILDING_TYPES[b.type].wall) blds++; // walls are capped separately
@@ -1381,7 +1394,7 @@ export class Civilization {
       const tx = this.rng.int(16, w.w - 17),
         ty = this.rng.int(16, w.h - 17);
       if (w.owner[ty * w.w + tx] >= 0) continue;
-      if (this.villages.some((v) => v.alive && geoDist(this.world, v.cx, v.cz, tx, ty) < 30)) continue;
+      if (this.villages.some((v) => v.alive && geoDist(this.world, v.cx, v.cz, tx, ty) < 30 * FOOTPRINT.scale)) continue;
       if (this._scoreSite(tx, ty, { minSpace: 110 }) < 0) continue;
       const cultureId = this._realCultureAt?.(tx, ty) || this._cultureAt(tx, ty);
       const v = this.foundVillage(tx, ty, { culture: cultureId, settlers: this.rng.int(6, 9), silent: true, kingdom: null, wanderers: true });

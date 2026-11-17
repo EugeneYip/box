@@ -2,10 +2,19 @@
 // A hull as a capsule: its keel line (the centre plus or minus hullHalf along
 // the heading) swept by hullR. Long hulls keep apart end to end and side by
 // side alike, which a circle per ship cannot do.
-export const HULL_PAD = 0.12; // a hand's breadth of water round every hull
-export const HULL_GAP = 0.1; // and between two hulls
+import { BUILDING, VEHICLE } from '../../core/scale.js';
+
+const VS = VEHICLE.sea;
+export const HULL_PAD = 0.12 * VS; // a hand's breadth of water round every hull
+export const HULL_GAP = 0.1 * VS; // and between two hulls
+// The end of a jetty's pier from the docks' centre (the docks model's pier
+// reaches 3.4 design units out), and the berth geometry round it: design
+// distances at round-13 ship size, scaled with the hulls.
+export const PIER_END = 3.4 * BUILDING.scale;
+export const PIER = BUILDING.scale;
+export const BERTH = VS;
 export function hullR(v) {
-  return (v.def.beam || 0.5) * 0.5 + HULL_PAD;
+  return (v.def.beam || 0.5 * VEHICLE.of(v.cls)) * 0.5 + HULL_PAD;
 }
 export function hullHalf(v) {
   return Math.max(0, v.def.length * 0.5 - hullR(v) * 0.8);

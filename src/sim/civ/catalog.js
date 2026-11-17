@@ -1,8 +1,14 @@
+import { FOOTPRINT } from '../../core/scale.js';
+
 // Building catalogue: footprints (tiles, before rotation), costs, hit points,
 // housing and build times per level. Levels are 1-based.
 //
 // Footprint convention: the building's front (door) faces local +Z. A
 // rotation of 90° / 270° swaps the tile footprint (w <-> h).
+//
+// w x h below are design footprints (the round-13 plot a model is drawn for);
+// the end of this table keeps them as dw x dh and sets w x h to the tiles the
+// building takes at today's scale (FOOTPRINT in src/core/scale.js).
 
 export const BUILDING_TYPES = {
   hall: {
@@ -87,6 +93,17 @@ export const BUILDING_TYPES = {
   spaceport: { names: ['Spaceport'], kind: 'spaceport', w: 4, h: 4, levels: 1, hp: [900], buildTime: [90], cost: [{ stone: 60, gold: 80 }], tech: ['orbital'], modern: true },
 };
 export const MODERN_TYPES = Object.keys(BUILDING_TYPES).filter((t) => BUILDING_TYPES[t].modern);
+
+// Design footprints to tiles. The hall keeps its 3 x 3 plot: a smaller hall
+// stands on a square, and the village centre stays where the planner and
+// the realm seeding expect it. Walls, towers, gates and bridges are one tile.
+for (const [id, d] of Object.entries(BUILDING_TYPES)) {
+  d.dw = d.w;
+  d.dh = d.h;
+  if (id === 'hall' || d.wall || id === 'bridge') continue;
+  d.w = FOOTPRINT.tiles(d.w);
+  d.h = FOOTPRINT.tiles(d.h);
+}
 
 export const BUILDING_LABEL = {
   vale: { academy: ['Royal Academy'], wonder: ['Great Spire Footings', 'Rising Spire', 'Great Spire'], colossus: ['Founder Pedestal', 'Rising Founder', 'Colossus of the Founder'], statue: ['Hero Statue'], hall: ['Longhall', 'Town Hall', 'Castle Keep'], house: ['Thatched Cottage', 'Timber House', 'Manor House'], temple: ['Wayside Chapel', 'Stone Chapel'] },

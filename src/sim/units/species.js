@@ -1,4 +1,5 @@
 import { TILE } from '../../world/constants.js';
+import { UNIT } from '../../core/scale.js';
 
 // Species registry and the built-in Worldseed fauna. Units.js re-exports
 // SPECIES / registerSpecies (the public contract); other modules may register
@@ -69,6 +70,11 @@ export function registerSpecies(def) {
     _wade: null, // cached wading depth (Units.js)
     ...def,
   };
+  // design sizes (a person 0.6 tall) to the world's scale (src/core/scale.js):
+  // the model, the body radius and the melee reach shrink together
+  base.size *= UNIT.scale;
+  base.radius *= UNIT.scale;
+  base.attackRange = UNIT.reach(base.attackRange);
   if (!base.brain) {
     base.brain =
       base.kind === 'humanoid'
@@ -84,7 +90,8 @@ export function registerSpecies(def) {
 }
 
 // ---------------------------------------------------------------------------
-// Built-in species. Sizes are in world units (one tile = 1, a human ~0.6 tall).
+// Built-in species. Sizes are design sizes (one tile = 1, a human 0.6 tall);
+// registerSpecies scales them to the world (UNIT in src/core/scale.js).
 registerSpecies({
   id: 'human', name: 'Human', kind: 'humanoid', diet: 'omnivore', brain: 'human',
   speed: 1.3, runMul: 1.65, hp: 40, damage: 4, attackRange: 0.55, attackCooldown: 1.0,

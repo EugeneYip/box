@@ -12,6 +12,7 @@ import { TINY, MID } from './models/tiny.js';
 import { horseModel, SADDLE_Y, SADDLE_Z } from './models/horse.js';
 import { MATERIALS, WEAPON_TOOL } from '../../sim/units/items.js';
 import { STATUS_BY_ID } from '../../sim/units/statuses.js';
+import { UNIT } from '../../core/scale.js';
 const HAT_TINT = [null, 0xe6c870, 0xc4ccd6, 0xf2c14e, 0x5d5a3a, 0x5b3a26, null, 0xf0c030];
 const SHADOW_RANGE = 60; // creatures farther than this from the camera target cast no shadow-map shadow
 const LOD_HI = 64, LOD_LO = 30; // on-screen height (px) thresholds for hi / lo / tiny models
@@ -566,6 +567,7 @@ export class UnitRenderer {
     const dotsOnly = !!(g.view?.far || (g.view?.zoom01 ?? 0) > 0.82 || (g.cameraRig.cur?.dist ?? 0) > DOTS_DIST);
     this._hiN = 0;
     const shadowsOn = camDist < SHADOW_ZOOM;
+    const shR2 = (SHADOW_RANGE * (saver ? 0.6 : 1)) ** 2;
     this.dotsOnly = dotsOnly;
     const camT = g.cameraRig.target;
     // held weapons and tools grow as the camera pulls back so they read at play zoom
@@ -718,7 +720,7 @@ export class UnitRenderer {
         const pm = this.pick(rm, pxH, rs);
         // shadow-map casters: near the camera target at close zoom, never the tiny
         // models (from mid zoom out the ground blob shadow carries it)
-        const near = shadowsOn && rs.lv !== 2 && (ix - camT.x) ** 2 + (iz - camT.z) ** 2 < SHADOW_RANGE * SHADOW_RANGE;
+        const near = shadowsOn && rs.lv !== 2 && (ix - camT.x) ** 2 + (iz - camT.z) ** 2 < shR2; // (power saver: a shorter shadow range)
         const apUse = pm.tiny ? (pm.mesh.name.endsWith(':mid') ? rs.apMid : rs.apTiny) || rs.ap : rs.ap;
         pm.write(this._m, Ps, apUse, Math.min(1, flash), lod, glow, near);
         if (hrs) {
@@ -787,7 +789,7 @@ export class UnitRenderer {
           if (step !== rs.step) {
             rs.step = step;
             const sx = (step % 2 ? 0.2 : -0.2) * scale;
-            g.fx.emit?.('dust', { x: ix + Math.cos(heading) * sx, y: ground, z: iz - Math.sin(heading) * sx }, { scale: 0.7 });
+            g.fx.emit?.('dust', { x: ix + Math.cos(heading) * sx, y: ground, z: iz - Math.sin(heading) * sx }, { scale: 0.7 * UNIT.scale });
             if (dCam < 30) g.cameraRig.addShake?.(0.06);
           }
         }

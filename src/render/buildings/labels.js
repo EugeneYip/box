@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { drawBanner, bannerDataURL } from './emblems.js';
+import { BUILDING } from '../../core/scale.js';
 
 // Floating map labels: kingdom names over capitals (mid and far zoom), village
 // names (mid zoom), and crossed-swords markers over active battles. Canvas
@@ -272,7 +273,7 @@ export class Labels {
       }
       const ax = k.labelX ?? v.cx,
         az = k.labelZ ?? v.cz;
-      const y = w.surfaceAt(ax, az) + 2.5 + D * 0.03;
+      const y = w.surfaceAt(ax, az) + 2.5 * BUILDING.scale + D * 0.03;
       s.position.set(ax, y, az);
       const dist = cam.distanceTo(s.position);
       const many = this.kLabels.size > 9 ? Math.max(0.45, 1 - (this.kLabels.size - 9) * 0.03) : 1;
@@ -290,7 +291,7 @@ export class Labels {
         s.userData.fade = 0;
         continue;
       }
-      const y = w.surfaceAt(v.cx, v.cz) + 1.6 + D * 0.02;
+      const y = w.surfaceAt(v.cx, v.cz) + 1.6 * BUILDING.scale + D * 0.02;
       s.position.set(v.cx, y, v.cz);
       const dist = cam.distanceTo(s.position);
       const h = Math.max(0.6, dist * 0.02);
