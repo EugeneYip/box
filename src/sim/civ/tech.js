@@ -109,7 +109,7 @@ const MASTERY_SHARE = 0.3;
 // little (CARRY). Tuned against in-browser Medium runs (the headless
 // census researches about twice as fast as the full game).
 const MOMENTUM = 2;
-const CARRY = 0.7;
+const CARRY = 0.3;
 
 // Extra research on big maps (planner _bigMap: none on Medium): their realms
 // stay small and far apart, and on their own reached the Enlightened arts
