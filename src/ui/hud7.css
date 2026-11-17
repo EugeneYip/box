@@ -981,3 +981,248 @@
   stroke: rgba(10, 12, 19, 0.85);
   stroke-width: 1.2;
 }
+
+/* ==========================================================================
+   Round 14: a top bar of fixed width
+   Each panel keeps one width per breakpoint whatever it shows: the clock's
+   text column, the world line and every stat value have room for the longest
+   value they take (Year 9999 23:55, "Autumn · 24 yrs left", "9,999" or
+   "38.4k"), a long place name ends in an ellipsis, and the actual-speed and
+   power-saver badges ride on the speed control's corner instead of joining
+   the row. Figures are tabular, so a ticking number never shuffles.
+   ========================================================================== */
+:root {
+  --ws-brandtxt: 138px;
+  --ws-clocktxt: 140px;
+  --ws-wordmark: 120px;
+}
+/* brand: the wordmark and world line share one fixed column */
+.ws-brand__txt {
+  flex: none;
+  width: var(--ws-brandtxt);
+}
+/* the place keeps its name; a long seed gives way first ("North America · Seed 42…"),
+   and the whole line is in the tooltip */
+.ws-brand__place {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ws-brand__seed {
+  flex: 0 1000 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: pre;
+}
+/* clock: the year on the left, the time pinned right, the season line below */
+.ws-clock__txt {
+  flex: none;
+  width: var(--ws-clocktxt);
+  min-width: 0;
+}
+.ws-clock__year {
+  min-width: 0;
+}
+.ws-clock__yr {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+.ws-clock__tod {
+  flex: none;
+  margin-left: auto;
+}
+.ws-clock__day {
+  min-width: 0;
+  overflow: hidden;
+}
+.ws-clock__day > * {
+  flex: none;
+}
+.ws-clock__day .ws-clock__epoch {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* the speed badges: on the corner, out of the row */
+.ws-speed {
+  position: relative;
+}
+.ws-speed__flags {
+  position: absolute;
+  top: -9px;
+  right: -6px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  z-index: 2;
+  pointer-events: none;
+}
+.ws-clock .ws-speed__eff {
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 9px;
+  font-size: 10px;
+  line-height: 1;
+  background: #3b2a12;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 180, 90, 0.55),
+    0 2px 6px rgba(0, 0, 0, 0.45);
+}
+.ws-clock .ws-leaf {
+  width: 18px;
+  height: 18px;
+  font-size: 11px;
+  background: #1c3320;
+  box-shadow:
+    inset 0 0 0 1px rgba(159, 224, 138, 0.55),
+    0 2px 6px rgba(0, 0, 0, 0.45);
+}
+.is-touch .ws-clock .ws-speed__eff,
+.is-touch .ws-clock .ws-leaf {
+  pointer-events: none;
+}
+/* stats: each value keeps room for its longest figure */
+.ws-stat__v {
+  min-width: 3ch;
+  text-align: left;
+}
+.ws-stat__v.is-wide {
+  min-width: 4.5ch;
+}
+
+/* what each width can afford: the clock is centred, so the brand plate and
+   the stats each get half the bar minus half the clock */
+@media (min-width: 1500px) and (max-width: 1599px) {
+  .ws-stat__k {
+    display: none;
+  }
+  .ws-stat__txt {
+    gap: 0;
+  }
+}
+@media (max-width: 1599px) and (min-width: 721px) {
+  .ws-stat {
+    padding: 0 7px 0 5px;
+    gap: 6px;
+  }
+  .ws-stat__ico {
+    font-size: 18px;
+  }
+  .ws-seg {
+    grid-template-columns: repeat(5, 36px);
+  }
+  .ws-seg__thumb {
+    width: 30px;
+    transform: translateX(calc(var(--idx) * 36px));
+  }
+}
+@media (max-width: 1320px) and (min-width: 721px) {
+  :root {
+    --ws-brandtxt: 134px;
+    --ws-clocktxt: 134px;
+  }
+  .ws-brand__id {
+    padding-right: 6px;
+  }
+  .ws-clock__day,
+  .ws-clock__day .ws-season__name {
+    font-size: 11px;
+  }
+  .ws-clock__dial {
+    width: 38px;
+    height: 38px;
+  }
+  .ws-seg {
+    grid-template-columns: repeat(5, 34px);
+  }
+  .ws-seg__thumb {
+    width: 28px;
+    transform: translateX(calc(var(--idx) * 34px));
+  }
+  .ws-stat__v {
+    font-size: 14px;
+  }
+}
+@media (max-width: 1240px) and (min-width: 721px), (max-height: 500px) and (min-width: 721px) {
+  :root {
+    --ws-brandtxt: var(--ws-wordmark, 128px);
+    --ws-clocktxt: 126px;
+  }
+  .ws-brand__world {
+    display: none;
+  }
+  .ws-clock__year {
+    font-size: 14px;
+  }
+  .ws-clock__day,
+  .ws-clock__day .ws-season__name {
+    font-size: 10.5px;
+  }
+  .ws-clock__dial {
+    width: 34px;
+    height: 34px;
+  }
+  .ws-clock__time {
+    gap: 8px;
+  }
+  .ws-seg {
+    grid-template-columns: repeat(5, 32px);
+  }
+  .ws-seg__thumb {
+    width: 26px;
+    transform: translateX(calc(var(--idx) * 32px));
+  }
+  .ws-stat {
+    padding: 0 6px 0 4px;
+    gap: 5px;
+  }
+  .ws-stat__ico {
+    font-size: 16px;
+  }
+  .ws-stat__v {
+    font-size: 13px;
+  }
+}
+/* narrow desktop windows: one speed button that cycles (keys 1-5 still pick a speed) */
+@media (max-width: 1200px) and (min-width: 721px) {
+  .ws-seg {
+    display: none;
+  }
+  .ws-speed__cycle {
+    display: inline-flex;
+    align-items: baseline;
+    justify-content: center;
+    white-space: nowrap;
+    line-height: 36px;
+    min-width: 52px;
+    height: 36px;
+    padding: 0 10px;
+    border-radius: 10px;
+    font-weight: 700;
+    font-size: 13.5px;
+    font-variant-numeric: tabular-nums;
+    color: var(--ws-gold-hi);
+    background: rgba(0, 0, 0, 0.3);
+    box-shadow: inset 0 0 0 1px rgba(251, 229, 173, 0.45);
+  }
+  .ws-speed__cycle small {
+    font-size: 10px;
+    margin-left: 1px;
+  }
+}
+@media (max-width: 1100px) and (min-width: 721px) {
+  .ws-stat {
+    padding: 0 4px 0 3px;
+    gap: 4px;
+  }
+}
+@media (max-width: 720px) {
+  :root {
+    --ws-clocktxt: 136px;
+  }
+}

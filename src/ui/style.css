@@ -671,6 +671,9 @@ body {
   color: transparent;
 }
 .ws-brand__world {
+  display: flex;
+  min-width: 0;
+  overflow: hidden;
   font-size: 11px;
   color: var(--ws-ink-3);
   white-space: nowrap;
