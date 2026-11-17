@@ -199,10 +199,10 @@
 .ws-insp__title.is-vlong {
   font-size: 14px;
 }
-/* desktop and tablet cards: badge | kind and title | buttons, with the subtitle on
-   its own row under the title and the buttons, so a long name that wraps no longer
-   squeezes the subtitle into a narrow column */
-@media (min-width: 721px) and (min-height: 501px) {
+/* desktop, tablet and phone cards: badge | kind and title | buttons, with the
+   subtitle on its own row across the whole card (under the badge too), so a long
+   name that wraps no longer squeezes the subtitle into a narrow column */
+@media (min-width: 721px) and (min-height: 501px), (max-width: 720px) {
   .ws-insp__head {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr) auto auto auto;
@@ -214,7 +214,7 @@
   }
   .ws-insp__badge {
     grid-column: 1;
-    grid-row: 1 / span 3;
+    grid-row: 1 / span 2;
     margin-right: 12px;
   }
   .ws-insp__kind {
@@ -227,8 +227,9 @@
     grid-row: 2;
   }
   .ws-insp__sub {
-    grid-column: 2 / -1;
+    grid-column: 1 / -1;
     grid-row: 3;
+    margin-top: 8px;
   }
   .ws-insp__head > .ws-iconbtn {
     grid-row: 1 / span 2;
