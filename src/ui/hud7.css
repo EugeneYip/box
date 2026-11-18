@@ -1002,6 +1002,7 @@
 }
 .ws-tech__col.is-capped {
   opacity: 0.45;
+}
 /* ==========================================================================
    Round 14: a top bar of fixed width
    Each panel keeps one width per breakpoint whatever it shows: the clock's
@@ -1289,4 +1290,10 @@
   .ws-newworld .ws-size__note {
     min-height: calc(3 * 1.4em);
   }
+}
+/* the season name keeps the room of its longest word ("Summer", "Autumn"),
+   so the separator and the years left hold still as the seasons turn */
+.ws-clock__day .ws-season__name {
+  display: inline-block;
+  min-width: 4.6em;
 }

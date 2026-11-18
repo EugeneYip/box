@@ -2,6 +2,7 @@ import { TILE, TILE_INFO, FLORA, SEA_LEVEL } from '../../world/constants.js';
 import { geoInfo, geoRegion, geoTile } from '../../world/geo.js';
 import { HERALDRY, colorDist, realStyleName, REAL_TITLE } from './cultures.js';
 import { realmsFor, regionStyle } from './places/index.js';
+import { peopleCultureId } from './peoples.js';
 import { USE, SPIRAL, spiralCount, clamp, YEAR } from './util.js';
 
 // Real realms on World Map worlds (contract: docs/REGIONS.md section 3).
@@ -60,11 +61,17 @@ export const realms = {
     // never less than a village's own reach on the smaller whole-Earth maps
     this._placeReach = { own: clamp(4.5 * tpd, 9, 20), any: clamp(3.5 * tpd, 7, 16), bonus: 4 };
 
-    // 1. capitals, most important realm first
+    // 1. capitals, most important realm first; a realm with cities that must
+    // exist at the start (docs/REGIONS.md section 4) is seated whatever its
+    // rank, without taking the place of a realm that would be seated anyway
     const seated = [];
-    for (let i = 0; i < data.length && seated.length < maxRealms && seated.length < maxVillages; i++) {
+    const forceMust = n == null;
+    let regular = 0;
+    for (let i = 0; i < data.length; i++) {
       const r = data[i];
       if (r.seed === false) continue; // listed for its place names only
+      const full = regular >= maxRealms || regular >= maxVillages;
+      if (full && !(forceMust && r.must?.length)) continue;
       const seats = r.edge ? [r.capital, ...r.cities] : [r.capital];
       let site = null,
         seat = null,
@@ -78,37 +85,65 @@ export const realms = {
         }
         if (++tries >= 3) break;
       }
-      if (!site) continue;
-      const culture = r.culture || this._cultureAt(site.x, site.y);
-      const v = this.foundVillage(site.x, site.y, {
-        culture,
+      // (a realm with cities that must exist is seated at its capital, nudged
+      // as far as it takes)
+      const forced = forceMust && r.must?.length && !site && geoTile(w, r.capital.lon, r.capital.lat);
+      if (!site && !forced) continue;
+      const at = site || geoTile(w, r.capital.lon, r.capital.lat);
+      const opts = {
+        culture: this._realCulture(r, Math.floor(at.x), Math.floor(at.z ?? at.y)),
         starter: true,
         settlers: 11 + rng.int(0, 1),
         silent: true,
         searchR: 1,
-        name: seat.name,
+        name: (seat || r.capital).name,
         realmName: r.name,
         realmIdx: i,
-        color: r.color != null ? this._nearestTincture(r.color, site.x, site.y) : null,
-      });
+        color: r.color != null ? this._nearestTincture(r.color, at.x, at.z ?? at.y) : null,
+      };
+      const v = site ? this.foundVillage(site.x, site.y, opts) : this._seedMustCity(null, r.capital, opts);
       if (v) {
         const k = this.kingdoms[v.kingdom];
         k.seeded = true; // a real country of the start (sturdier: politics.js)
-        seated.push({ k, r, seat, next: 0, given: 0 });
+        seated.push({ k, r, seat, next: 0, given: 0, extra: full });
+        if (!full) regular++;
       }
     }
     if (!seated.length) return false;
 
-    // 2. a few of each realm's largest cities: the bigger the realm (the
+    // 2. the cities that must exist at the start (docs/REGIONS.md section 4),
+    // wherever they fall inside the window, at or near their real places:
+    // in addition to the usual villages, closer than the usual spacing when
+    // they must be, never skipped. They are laid out before the usual cities
+    // so that they find room near their real places, but the usual cities
+    // below ignore them (and realms seated only for them) when spacing, so
+    // the usual starting villages stay as they were.
+    if (forceMust) {
+      for (const e of seated) {
+        if (e.extra) this.villages[e.k.capital]._must = true;
+        for (const name of e.r.must || []) {
+          if (e.k.villages.some((id) => this.villages[id]?.alive && this.villages[id].name === name)) continue;
+          const c = name === e.r.capital.name ? e.r.capital : e.r.cities.find((p) => p.name === name);
+          if (!c || !geoTile(w, c.lon, c.lat)) continue; // outside the window
+          const v = this._seedMustCity(e.k, c);
+          // (a realm's old seat, Nanjing when the ROC sits at Taipei, keeps
+          // its neighbours apart as before but takes no usual town's place)
+          if (v) v[name === e.r.oldSeat ? '_oldSeat' : '_must'] = true;
+        }
+      }
+      this._gapIgnoreMust = true;
+    }
+
+    // 3. a few of each realm's largest cities: the bigger the realm (the
     // earlier in the list), the more it gets; the first two share alike (the
     // Mainland Region and the ROC on the Asian maps)
-    let villages = seated.length;
+    let villages = regular;
     seated.forEach((e, rank) => (e.weight = 1 / (1 + 0.35 * Math.max(0, rank - 1))));
     while (villages < maxVillages) {
       let best = null,
         bs = -1;
       for (const e of seated) {
-        if (e.done) continue;
+        if (e.done || e.extra) continue;
         const sc = e.weight / (1 + e.given);
         if (sc > bs) {
           bs = sc;
@@ -119,10 +154,26 @@ export const realms = {
       let ok = false;
       while (best.next < best.r.cities.length) {
         const c = best.r.cities[best.next++];
-        if (c === best.seat || !geoTile(w, c.lon, c.lat)) continue;
+        const p = c === best.seat ? null : geoTile(w, c.lon, c.lat);
+        if (!p) continue;
+        // a city laid out above as one that must exist counts as one of the
+        // usual ones when it would have been placed anyway
+        const have = best.k.villages.map((id) => this.villages[id]).find((o) => o?.alive && (o._must || o._oldSeat) && o.name === c.name);
+        if (have) {
+          if (have._oldSeat || !this._realGapOK(p.x, p.z, best.k.id, this._landNear(Math.floor(p.x), Math.floor(p.z), reach))) continue;
+          ok = true;
+          best.given++;
+          villages++;
+          break;
+        }
         const site = this._realSite(c.lon, c.lat, reach, best.k.id);
-        if (!site) continue;
-        const v = this.foundVillage(site.x, site.y, { kingdom: best.k.id, culture: best.k.culture, starter: true, settlers: 9 + rng.int(0, 1), silent: true, searchR: 1, name: c.name });
+        let v = null;
+        if (site) v = this.foundVillage(site.x, site.y, { kingdom: best.k.id, culture: best.k.culture, starter: true, settlers: 9 + rng.int(0, 1), silent: true, searchR: 1, name: c.name });
+        // a usual city crowded only by a must-exist city's houses is still
+        // placed, nudged like one (Los Angeles beside San Diego on Large)
+        else if (this._gapIgnoreMust && this.villages.some((o) => o._must && o.alive && Math.hypot(o.cx - p.x, o.cz - p.z) < reach)) {
+          if (this._realGapOK(p.x, p.z, best.k.id, this._landNear(Math.floor(p.x), Math.floor(p.z), reach))) v = this._seedMustCity(best.k, c);
+        }
         if (v) {
           ok = true;
           best.given++;
@@ -132,8 +183,144 @@ export const realms = {
       }
       if (!ok) best.done = true;
     }
+
+    this._gapIgnoreMust = false;
+    for (const v of this.villages) delete v._must, delete v._oldSeat;
     this._kingdomTotals?.(); // realm cards show their people from the first frame
     return true;
+  },
+
+  // A city that must exist at the start: at its real place when the usual
+  // spacing allows, else at the nearest site a few tiles from its neighbours
+  // (closer on the smaller whole-Earth maps; rugged ground is levelled), else
+  // at any room for a hall within a dozen tiles. `opts` are foundVillage's
+  // (a realm's seat passes its realm's name and colors).
+  _seedMustCity(k, c, opts = {}) {
+    const base = { kingdom: k ? k.id : null, culture: k?.culture, starter: true, settlers: 9 + this.rng.int(0, 1), silent: true, name: c.name, ...opts };
+    const avoid = [];
+    for (const far of [false, true]) {
+      for (let t = 0; t < 4; t++) {
+        const site = this._mustSite(c.lon, c.lat, k ? k.id : -1, avoid, far);
+        if (!site) break;
+        avoid.push(site);
+        if (site.mode > 0) this._levelSite(site.x, site.y);
+        const v = this.foundVillage(site.x, site.y, { ...base, searchR: 2 });
+        if (v) return v;
+      }
+      // an island too small for a hall at this map size (Puerto Rico on the
+      // whole Earth) gets a little more shore rather than the city going to
+      // a neighbour's land
+      if (!far) {
+        const pad = this._islandPad(c.lon, c.lat);
+        const v = pad && this.foundVillage(pad.x, pad.y, { ...base, searchR: 1 });
+        if (v) return v;
+      }
+    }
+    const p = geoTile(this.world, c.lon, c.lat);
+    return p ? this.foundVillage(Math.floor(p.x), Math.floor(p.z), { ...base, searchR: 12 }) : null;
+  },
+
+  // A 3x3 pad of low grassy shore within a few tiles of a real place, for a
+  // city on an island that is only a tile or two at this map size (Puerto
+  // Rico on the whole Earth) or on a coast that its neighbours have filled
+  // (Korea on the Large map): the nearest unused block that touches real land
+  // and keeps clear of other halls is raised just above the sea. Null when
+  // there is none.
+  _islandPad(lon, lat) {
+    const w = this.world;
+    const p = geoTile(w, lon, lat);
+    if (!p) return null;
+    const cx = Math.floor(p.x),
+      cz = Math.floor(p.z);
+    let at = null;
+    const n = spiralCount(4);
+    for (let k = 0; k < n && !at; k++) {
+      const [dx, dy] = SPIRAL[k];
+      const x = cx + dx,
+        y = cz + dy;
+      if (x < 7 || y < 7 || x > w.w - 8 || y > w.h - 8) continue;
+      let land = 0,
+        ok = true;
+      for (let yy = y - 2; yy <= y + 2 && ok; yy++)
+        for (let xx = x - 2; xx <= x + 2; xx++) {
+          const i = yy * w.w + xx;
+          const inner = Math.abs(xx - x) <= 1 && Math.abs(yy - y) <= 1;
+          if (inner ? this.use[i] !== USE.FREE : this.use[i] === USE.BUILDING) {
+            ok = false;
+            break;
+          }
+          if (!inner) continue;
+          const t = w.type[i];
+          if (t === TILE.LAVA || t === TILE.ICE) ok = false;
+          if (w.height[i] >= SEA_LEVEL) land++;
+        }
+      if (!ok || !land) continue;
+      if (this.villages.some((v) => v.alive && Math.hypot(v.cx - x - 0.5, v.cz - y - 0.5) < 2.6)) continue;
+      at = { x, y };
+    }
+    if (!at) return null;
+    for (let yy = at.y - 1; yy <= at.y + 1; yy++)
+      for (let xx = at.x - 1; xx <= at.x + 1; xx++) {
+        const i = yy * w.w + xx;
+        if (w.height[i] < SEA_LEVEL + 0.3) w.height[i] = SEA_LEVEL + 0.3;
+        const t = w.type[i];
+        if (!TILE_INFO[t]?.buildable || t === TILE.SAND || t === TILE.ROCK || t === TILE.SNOW) w.setType(xx, yy, TILE.GRASS);
+        const f = w.flora[i];
+        if (f === FLORA.BOULDER || f === FLORA.ROCK_SMALL) w.setFlora(xx, yy, FLORA.NONE);
+      }
+    w.markDirty('height', at.x - 2, at.y - 2, at.x + 2, at.y + 2);
+    this._heightTouched(at.x - 3, at.y - 3, at.x + 3, at.y + 3);
+    this._computeLand?.();
+    return at;
+  },
+
+  _mustSite(lon, lat, kingdom, avoid = [], far = false) {
+    const w = this.world;
+    const p = geoTile(w, lon, lat);
+    if (!p) return null;
+    const cx = Math.floor(p.x),
+      cz = Math.floor(p.z);
+    const reach = clamp(Math.round(0.15 * this._tilesPerDegree()), 6, 16);
+    const small = this._tilesPerDegree() < 2; // Large: a country spans a few tiles
+    // near the real place first, with the spacing eased step by step, then
+    // further out
+    const tight = small ? 0.34 : 0.45;
+    const steps = far
+      ? [
+          [tight, reach],
+          [tight, reach + 4],
+          [0.3, reach + 8],
+        ]
+      : [
+          [1, 3],
+          [0.7, 4],
+          [0.5, 5],
+          [tight, 5],
+          [0.27, 5],
+        ];
+    for (const [gs, R] of steps) {
+      const site = this._realSiteScan(cx, cz, R, kingdom, gs, avoid);
+      if (site) return site;
+    }
+    return null;
+  },
+
+  // The culture of a real realm: its people ('vale~japanese': the Japanese,
+  // in the game's timber-and-tile style, named from the Japanese pool), in
+  // the style the data asks for when it overrides one; the land's own culture
+  // only for a realm with no people listed.
+  _realCulture(r, x, y) {
+    const id = r.people ? peopleCultureId(r.people, r.culture) : null;
+    return id || r.culture || this._cultureAt(x, y);
+  },
+
+  // The people of the real land at a tile (wanderers who settle there later),
+  // or null where no real place is near.
+  _realCultureAt(x, z) {
+    if (!this._realMapOn()) return null;
+    const idx = this._placeRealmAt(x, z);
+    const r = idx >= 0 ? this._realmData()?.[idx] : null;
+    return r ? this._realCulture(r, x, z) : null;
   },
 
   // A hall site (centre tile) near a real place: the nearest buildable spot
@@ -161,7 +348,7 @@ export const realms = {
   // The nearest site, preferring (by a tile or two) gentle buildable ground
   // with room around it (mode 0) over steeper buildable ground (1) and over
   // any dry land that needs levelling (2).
-  _realSiteScan(cx, cz, reach, kingdom) {
+  _realSiteScan(cx, cz, reach, kingdom, gapScale = 1, avoid = null) {
     const w = this.world;
     let best = null,
       bs = -Infinity;
@@ -172,8 +359,9 @@ export const realms = {
       const x = cx + dx,
         y = cz + dy;
       if (x < 5 || y < 5 || x > w.w - 6 || y > w.h - 6) continue;
+      if (avoid?.length && avoid.some((a) => Math.abs(a.x - x) <= 1 && Math.abs(a.y - y) <= 1)) continue;
       if (!this._dryPad(x, y)) continue;
-      if (!this._realGapOK(x + 0.5, y + 0.5, kingdom, this.landId[y * w.w + x])) continue;
+      if (!this._realGapOK(x + 0.5, y + 0.5, kingdom, this.landId[y * w.w + x], gapScale)) continue;
       let mode = 2;
       if (this._footprintOK(x - 1, y - 1, 3, 3, 1.3) && this._roomAround(x, y, 0) >= 24) mode = 0;
       else if (this._footprintOK(x - 1, y - 1, 3, 3, 2.6) && this._roomAround(x, y, 1) >= 12) mode = 1;
@@ -252,11 +440,11 @@ export const realms = {
 
   // No village too near (centre coordinates): wider gaps between realms on
   // one landmass than within a realm or across water.
-  _realGapOK(cx, cz, kingdom, land) {
+  _realGapOK(cx, cz, kingdom, land, scale = 1) {
     for (const v of this.villages) {
-      if (!v.alive) continue;
+      if (!v.alive || (v._must && this._gapIgnoreMust)) continue;
       const d = Math.hypot(v.cx - cx, v.cz - cz);
-      const gap = v.kingdom === kingdom ? GAP_SAME : v.landId === land ? GAP_LAND : GAP_SEA;
+      const gap = scale * (v.kingdom === kingdom ? GAP_SAME : v.landId === land ? GAP_LAND : GAP_SEA);
       if (d < gap) return false;
     }
     return true;
