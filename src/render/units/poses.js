@@ -275,6 +275,7 @@ export function poseHumanoid(u, rs, c, P, model) {
     P[5] = -0.1;
     P[7] = -0.1;
   }
+  if (!heavy && dailyPose(u, rs, c, P, act, st, now, sd)) return;
   if (act === 'talk') {
     P[7] = -0.55 + 0.35 * sin(now * 3.1 + sd);
     P[8] = -0.28 - 0.18 * sin(now * 2.3 + sd);
@@ -289,6 +290,188 @@ export function poseHumanoid(u, rs, c, P, model) {
   } else if (u.combat) {
     P[0] = 0.12;
     P[3] = -0.35;
+  }
+}
+
+// Daily life poses (docs/DAILY-LIFE.md; activities from src/sim/units/daily.js).
+// Sitting on the ground: the hips drop, legs out in front.
+function sit(rs, P) {
+  rs.rootY = -0.135;
+  P[9] = -1.5;
+  P[10] = -1.42;
+  P[0] = -0.06;
+  P[5] = -0.55;
+  P[7] = -0.55;
+  P[6] = -0.05;
+  P[8] = 0.05;
+  rs.k = 12;
+}
+function dailyPose(u, rs, c, P, act, st, now, sd) {
+  if (st === 'eat' && u.def.kind === 'humanoid') {
+    // sitting to a meal: a bite every couple of seconds
+    sit(rs, P);
+    const p = frac(now / 2.3 + c.seed);
+    P[7] = track(p, [[0, -0.7], [0.35, -0.75], [0.5, -2.1], [0.68, -2.05], [0.85, -0.75], [1, -0.7]]);
+    P[8] = 0.28;
+    P[5] = -0.75;
+    P[6] = -0.25;
+    P[3] = 0.18 - 0.1 * Math.max(0, sin(p * TAU));
+    return true;
+  }
+  switch (act) {
+    case 'laugh': {
+      // head back, hand to the belly, shoulders shaking
+      P[0] = -0.12;
+      P[3] = -0.32 + 0.05 * sin(now * 19 + sd);
+      P[1] = 0.05 * sin(now * 17 + sd);
+      P[5] = -0.45;
+      P[6] = -0.35;
+      P[7] = -0.5 + 0.08 * sin(now * 15);
+      P[8] = 0.35;
+      rs.rootY = Math.abs(sin(now * 9 + sd)) * 0.006;
+      rs.k = 26;
+      return true;
+    }
+    case 'sing': {
+      // chin up, one arm out, swaying
+      P[3] = -0.34;
+      P[2] = 0.09 * sin(now * 1.9 + sd);
+      P[7] = -1.25 + 0.2 * sin(now * 1.9 + sd);
+      P[8] = -0.75;
+      P[5] = -0.2;
+      P[4] = 0.15 * sin(now * 0.95 + sd);
+      return true;
+    }
+    case 'dance': {
+      // a circle dance: arms up, stepping, turning
+      const ph = now * 6 + sd;
+      P[5] = -2.5 + 0.35 * sin(ph);
+      P[7] = -2.5 - 0.35 * sin(ph);
+      P[6] = 0.35;
+      P[8] = -0.35;
+      P[9] = -0.55 * Math.max(0, sin(ph));
+      P[10] = -0.55 * Math.max(0, -sin(ph));
+      P[2] = 0.1 * sin(ph * 0.5);
+      P[3] = -0.15;
+      rs.rootY = Math.abs(sin(ph)) * 0.03;
+      rs.rootYaw = (now * 1.6 + sd) % TAU;
+      rs.k = 22;
+      return true;
+    }
+    case 'cheer': {
+      // arms raised, hopping
+      const ph = now * 7 + sd;
+      P[5] = -2.85 + 0.25 * sin(ph);
+      P[7] = -2.85 + 0.25 * sin(ph + 1);
+      P[6] = 0.3;
+      P[8] = -0.3;
+      P[3] = -0.3;
+      rs.rootY = Math.max(0, sin(ph)) * 0.045;
+      rs.k = 24;
+      return true;
+    }
+    case 'pray': {
+      // kneeling, bowed, hands together
+      rs.rootY = -0.07;
+      P[9] = -1.45;
+      P[10] = -1.45;
+      P[0] = 0.42 + 0.06 * sin(now * 0.8 + sd);
+      P[3] = 0.45;
+      P[5] = -0.95;
+      P[7] = -0.95;
+      P[6] = -0.42;
+      P[8] = 0.42;
+      rs.k = 10;
+      return true;
+    }
+    case 'think': {
+      // hand to the chin, the other arm across
+      P[7] = -2.05;
+      P[8] = 0.42;
+      P[13] = 0.2;
+      P[5] = -0.55;
+      P[6] = -0.45;
+      P[3] = -0.12 + 0.05 * sin(now * 0.6 + sd);
+      P[4] = 0.25 * sin(now * 0.3 + sd);
+      rs.k = 10;
+      return true;
+    }
+    case 'read': {
+      // sitting with a book open in both hands
+      sit(rs, P);
+      P[5] = -1.05;
+      P[7] = -1.05;
+      P[6] = -0.3;
+      P[8] = 0.3;
+      P[3] = 0.42;
+      P[4] = 0.08 * sin(now * 0.4 + sd);
+      return true;
+    }
+    case 'sit':
+    case 'court': {
+      if (act === 'court' && c.speed > 0.06) return false;
+      sit(rs, P);
+      P[3] = act === 'sit' ? 0.4 : 0.05 * sin(now * 1.3 + sd);
+      if (act === 'court') {
+        P[7] = -0.75 + 0.15 * sin(now * 1.1 + sd);
+        P[4] = 0.15 * sin(now * 0.7 + sd);
+      }
+      return true;
+    }
+    case 'wait': {
+      // standing still, hands behind the back, looking ahead
+      P[5] = 0.45;
+      P[7] = 0.45;
+      P[6] = -0.12;
+      P[8] = 0.12;
+      P[3] = -0.05;
+      P[4] = rs.lookY * 0.3;
+      P[2] = 0.03 * sin(now * 0.5 + sd);
+      return true;
+    }
+    case 'shop': {
+      // at a stall: pointing, weighing the goods
+      P[7] = -1.0 + 0.25 * sin(now * 2.2 + sd);
+      P[8] = -0.1;
+      P[5] = -0.6 + 0.15 * sin(now * 1.7 + sd);
+      P[6] = -0.2;
+      P[3] = 0.18;
+      return true;
+    }
+    case 'mourn': {
+      // head bowed, arms hanging heavy
+      P[0] = 0.22;
+      P[3] = 0.6;
+      P[5] = -0.25;
+      P[7] = -0.25;
+      P[6] = -0.12;
+      P[8] = 0.12;
+      P[11] = sin(now * 0.9 + sd) * 0.02;
+      rs.k = 8;
+      return true;
+    }
+    case 'mind': {
+      // stooping to a child, a hand held out
+      P[0] = 0.38;
+      P[3] = 0.3;
+      P[7] = -0.95 + 0.1 * sin(now * 1.5 + sd);
+      P[8] = 0.1;
+      P[5] = -0.3;
+      P[9] = -0.25;
+      P[10] = 0.1;
+      return true;
+    }
+    case 'play': {
+      // a breather between dashes: hands on knees
+      P[0] = 0.45;
+      P[3] = -0.2;
+      P[5] = -0.55;
+      P[7] = -0.55;
+      rs.rootY = Math.abs(sin(now * 8 + sd)) * 0.01;
+      return true;
+    }
+    default:
+      return false;
   }
 }
 

@@ -29,6 +29,21 @@ const SHADOW_ZOOM = 70; // creatures cast shadow-map shadows only when the camer
 // ambient (AmbientFauna: addFlock / addSchool / scare), corpses (short-lived list).
 const POSE = { humanoid: poseHumanoid, quad: poseQuad, chicken: poseChicken, serpent: poseSerpent, wyrm: poseWyrm };
 const TAU = Math.PI * 2;
+// daily life icons: [icon, share of the pulse shown, pulses per second, floats up, size]
+const DAILY_ICON = {
+  sing: [EMOTE.note, 0.55, 0.45, true, 0.8],
+  dance: [EMOTE.note, 0.6, 0.55, true, 0.8],
+  laugh: [EMOTE.laugh, 0.5, 0.4, false, 0.85],
+  eat: [EMOTE.meal, 0.3, 0.12, false, 0.8],
+  think: [EMOTE.think, 0.55, 0.15, false, 0.9],
+  wait: [EMOTE.wait, 0.4, 0.14, false, 0.75],
+  shop: [EMOTE.coin, 0.3, 0.2, false, 0.7],
+  cheer: [EMOTE.cheer, 0.6, 0.5, true, 0.95],
+  talk: [EMOTE.chat, 0.22, 0.18, false, 0.75],
+  pray: [EMOTE.sparkle, 0.35, 0.16, true, 0.6],
+  mourn: [EMOTE.mourning, 0.45, 0.14, false, 0.75],
+  court: [EMOTE.heart, 0.3, 0.16, true, 0.7],
+};
 const EMOTE_KIND = { heart: EMOTE.heart, zzz: EMOTE.zzz, alert: EMOTE.alert, anger: EMOTE.anger, sparkle: EMOTE.sparkle, note: EMOTE.note, chat: EMOTE.chat, skull: EMOTE.skull };
 
 function h1(n, s = 0) {
@@ -595,7 +610,7 @@ export class UnitRenderer {
 
     for (let li = 0; li < U.list.length; li++) {
       const u = U.list[li];
-      if (!u.alive || u.data.hidden || u.data.inside === true || u.hidden || u.data.aboard != null) continue;
+      if (!u.alive || u._hid || u.data.hidden || u.data.inside === true || u.hidden || u.data.aboard != null) continue;
       const rm = this.modelFor(u);
       const md = rm.def;
       let rs = u._rs;
@@ -865,6 +880,19 @@ export class UnitRenderer {
           ov.emotes.add(ix + t * 0.1, top + t * 0.25, iz, esz * (0.7 + t * 0.4), EMOTE.zzz, ea * Math.sin(t * Math.PI) * 0.95, 0);
         } else if (u.mad > simNow) {
           ov.emotes.add(ix, top + 0.05, iz, esz * (0.9 + 0.12 * Math.sin(now * 8)), EMOTE.anger, ea, 0);
+        } else if ((u.activity || u._singUntil > simNow) && md.id === 'human') {
+          // daily life: small icons in pulses, so a crowd is not all icons
+          const act = u._singUntil > simNow && u.state === 'work' ? 'sing' : u.state === 'eat' ? 'eat' : u.activity;
+          const ic = DAILY_ICON[act];
+          if (ic) {
+            const t = (now * ic[2] + rs.seed * 7.3) % 1;
+            if (t < ic[1]) {
+              const k = t / ic[1];
+              const rise = ic[3] ? k * 0.22 : 0;
+              const side = ic[3] ? Math.sin(k * 6 + rs.seed * 9) * 0.06 : 0;
+              ov.emotes.add(ix + this._camRight.x * side, top + 0.04 + rise, iz + this._camRight.z * side, esz * (ic[4] || 0.85) * Math.min(1, k * 5), ic[0], ea * Math.sin(k * Math.PI) * 0.95, ic[3] ? Math.sin(now * 4 + rs.seed) * 0.15 : 0);
+            }
+          }
         }
         // status conditions: a small icon beside the head when close or selected
         if (u.statuses && u.statuses.size && dCam < 34 && !(g.selected?.ref === u || g.cameraRig.follow === u)) {

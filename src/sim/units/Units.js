@@ -8,6 +8,7 @@ import { installDepth } from './depth.js';
 import { installEditing } from './edit.js';
 import { installRoles, ROLE_NAMES } from './roles.js';
 import { installNeeds } from './needs.js';
+import { installDaily, animalLabel } from './daily.js';
 
 // Core creature simulation (owned by the Life module; the Civilization module
 // programs humanoid behaviour through registerBrain / unit.job).
@@ -129,6 +130,7 @@ export class Units {
     this._frameThinkMs = 0;
     this._ticksThisFrame = 0;
     this._initGrid();
+    this._installDaily();
   }
 
   // Coarse per-tick grid of cells holding anything that could threaten a
@@ -555,6 +557,16 @@ export class Units {
       _mvn: 0,
       _forager: null,
       _foraged: false,
+      // daily life (daily.js)
+      _dl: null,
+      _dlNext: 0,
+      _hid: false,
+      _meal: -1,
+      _privyT: null,
+      _spSeen: undefined,
+      _hitAt: -99,
+      _singUntil: 0,
+      _celeSeen: null,
     };
     if (def.habitat === 'air') {
       u.alt = opts.alt ?? 6;
@@ -1822,7 +1834,7 @@ export class Units {
     u._lastThink = now;
     // tiredness, sleep and famine foraging, then tech roles, act before the village brain
     // (whoever they take over still eats from the town's store, as the brain would feed them)
-    if (u.species === 'human' && ((u._ext && this._needsThink(u, now)) || this._roleThink(u, now))) {
+    if (u.species === 'human' && ((u._ext && this._needsThink(u, now)) || this._roleThink(u, now) || (u._ext && this._dailyThink(u, now, elapsed)))) {
       this._fedFromStore(u);
       return;
     }
@@ -1870,6 +1882,7 @@ export class Units {
     const budgetOn = ++this._ticksThisFrame <= 64;
     if (this._tickN % 75 === 0) this.herds.tick(now);
     if (this._tickN % 150 === 7) this._rolesTick();
+    if (this._tickN % 90 === 11) this._dailyTick();
     // champions once a game minute (at any game speed)
     if (!(now - this._champT < 60) || now < this._champT) {
       this._champT = now;
@@ -2344,7 +2357,7 @@ export class Units {
     const now = this.game.time.total;
     if (!u.alive) return 'Dead';
     if (u.mad > now) return u.combat ? 'Rampaging' : 'Raging';
-    if (u.sleeping) return 'Sleeping';
+    if (u.sleeping) return u._nap ? 'Napping' : 'Sleeping';
     if (u.combat) {
       const t = this.byId.get(u.combat.target);
       const who = t ? (t.name || t.def.name) : 'foe';
@@ -2353,7 +2366,12 @@ export class Units {
     if (u.data.aboard != null) return 'At sea';
     if (u.state === 'flee') return 'Fleeing';
     if (u.swimming) return 'Swimming';
-    if (u.state === 'eat') return u.def.diet === 'herbivore' ? 'Grazing' : 'Feeding';
+    if (u._dl) {
+      const dl = this._dailyLabel(u);
+      if (dl) return dl;
+    }
+    if (u.state === 'work' && u._singUntil > now) return u.job === 'farmer' ? 'Singing at the harvest' : 'Singing at work';
+    if (u.state === 'eat') return u.def.kind === 'humanoid' ? 'Eating' : u.def.diet === 'herbivore' ? 'Grazing' : 'Feeding';
     if (u.state === 'work') {
       const a = u.data.workAnim;
       return a === 'chop' ? 'Chopping wood' : a === 'dig' ? 'Mining' : a === 'hammer' ? 'Building' : a === 'harvest' ? 'Harvesting' : a === 'fish' ? 'Fishing' : a === 'heal' ? 'Tending the sick' : 'Working';
@@ -2366,6 +2384,10 @@ export class Units {
     if (u.activity === 'talk') return 'Chatting';
     if (u.activity === 'fish') return 'Fishing';
     if (u.def.habitat === 'air') return u.data.breath > now ? 'Breathing fire' : 'Soaring';
+    const al = animalLabel(this, u, now);
+    if (al) return al;
+    const wl = this._walkLabel(u);
+    if (wl) return wl;
     if (u.moving) return u.state === 'run' ? 'Running' : 'Wandering';
     return 'Resting';
   }
@@ -2388,7 +2410,7 @@ export class Units {
       // people inside a building or aboard a ship are not drawn: picking them
       // from the map would steal the tap from the building (reach them through
       // the building card's "Inside" chips instead)
-      if (o.data && (o.data.inside || o.data.aboard != null)) return;
+      if (o._hid || (o.data && (o.data.inside || o.data.aboard != null))) return;
       const r = 0.6 + o.def.radius * 1.5;
       if (d2 > r * r) return;
       const s = d2 / (r * r) - (KIND_ORDER[o.def.kind] === 2 ? 0.2 : 0);
@@ -2472,5 +2494,6 @@ installDepth(Units);
 installEditing(Units);
 installRoles(Units);
 installNeeds(Units);
+installDaily(Units);
 
 export { FLORA, FLORA_INFO };
