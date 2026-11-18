@@ -1244,7 +1244,8 @@ export class Civilization {
         else mat = 'wood';
         smithy.wood -= 2;
         const quality = this.rng.chance(0.06 + (k.era || 0) * 0.04) ? 'fine' : this.rng.chance(0.02 * (k.era || 0)) ? 'masterwork' : 'common';
-        const kindOf = { weapon: k.culture === 'frost' ? 'axe' : k.culture === 'mire' ? 'spear' : 'sword', armor: (k.era || 0) >= 2 ? 'plate' : 'mail', tool: 'hammer', trinket: this.rng.chance(0.5) ? 'amulet' : 'ring' };
+        const kb = baseCulture(k.culture);
+        const kindOf = { weapon: kb === 'frost' ? 'axe' : kb === 'mire' ? 'spear' : 'sword', armor: (k.era || 0) >= 2 ? 'plate' : 'mail', tool: 'hammer', trinket: this.rng.chance(0.5) ? 'amulet' : 'ring' };
         const item = real ? U.makeItem({ slot, kind: kindOf[slot], material: mat, quality, origin: smithy.name }) : { id: 'ci' + this._nextBid++, slot, kind: kindOf[slot], material: mat, quality, power: { weapon: 6, armor: 5, tool: 4, trinket: 2 }[slot] * ({ wood: 0.6, stone: 0.8, bronze: 1, iron: 1.3, steel: 1.6 }[mat] || 1), name: `${mat} ${kindOf[slot]}` };
         armory.push(item);
         // the smith learns the craft

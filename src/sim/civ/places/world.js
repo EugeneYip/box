@@ -1,16 +1,18 @@
 // Real realms on the whole-Earth World Map, most important first (a smaller
 // map seeds only the first ones that fit). China is split between the
-// Mainland Region (north) and the ROC (south and Taiwan).
+// Mainland Region (north) and the ROC (south and Taiwan); on the whole Earth
+// the ROC is seated at Taipei, its temporary capital. Realms with cities that
+// must exist at the start (`must`) are seated on every size.
 import { country } from './countries.js';
 
 export default [
-  country('mainland'),
-  country('roc'),
-  country('united-states'),
+  country('mainland', { must: true }),
+  country('roc', { capital: 'Taipei', must: true }),
+  country('united-states', { must: true }),
   country('india'),
   country('russia'),
   country('brazil'),
-  country('japan'),
+  country('japan', { must: true }),
   country('australia', { first: ['Melbourne', 'Perth', 'Sydney'] }),
   country('egypt'),
   country('france'),
@@ -30,7 +32,7 @@ export default [
   country('kenya'),
   country('spain'),
   country('italy'),
-  country('south-korea'),
+  country('south-korea', { must: true }),
   country('colombia'),
   country('peru'),
   country('thailand'),
@@ -61,7 +63,7 @@ export default [
   country('bolivia'),
   country('cuba'),
   country('greece'),
-  country('north-korea'),
+  country('north-korea', { must: true }),
   country('mali'),
   country('ghana'),
   country('madagascar'),

@@ -1,4 +1,5 @@
 import { TILE } from '../../world/constants.js';
+import { realPersonName } from './peoples.js';
 
 // Original Worldseed cultures. Each has its own homeland biomes, naming
 // language, ruler titles, kingdom forms and an architecture style id that the
@@ -97,6 +98,10 @@ export function baseCulture(id) {
 }
 
 export function personName(culture, sex, rng) {
+  // World Map peoples ('vale~japanese') take names from their own language;
+  // the game's own cultures (square maps) keep their generated names
+  const real = realPersonName(culture, sex, rng);
+  if (real) return real;
   const c = CULTURES[baseCulture(culture)];
   const s = c.syl[sex === 'f' ? 'f' : 'm'];
   return joinName(pick(rng, s[0]), pick(rng, s[1]));

@@ -1,15 +1,13 @@
 // Real realms on the Japan map: the eight traditional regions, each seated at
-// its largest city, plus the Korean realm whose south coast lies inside the
-// window (seated at Busan when Seoul is outside it). Most important first.
+// its largest city. The map holds Japanese land only (docs/REGIONS.md
+// section 4: Korea and the Russian Far East are open sea). Most important first.
 // Each region lists its cities and then many smaller towns (in Japanese
 // romanization), so that villages founded later nearly always take a real
-// name. The last three entries (`seed: false`) only name the mainland coast
-// at the window's north-west edge: North Korea's east coast, the Russian
-// Far East and the Chinese border country.
+// name.
 import { place as P } from './countries.js';
 
 const DAIMYO = { m: 'Daimyo', f: 'Daimyo' };
-const R = (name, capital, cities, extra = {}) => ({ name, capital: P(...capital), cities: cities.map((c) => P(...c)), lang: 'ja', title: DAIMYO, ...extra });
+const R = (name, capital, cities, extra = {}) => ({ name, capital: P(...capital), cities: cities.map((c) => P(...c)), lang: 'ja', people: 'japanese', title: DAIMYO, ...extra });
 
 export default [
   R('Kanto', ['Tokyo', 139.69, 35.69], [
@@ -135,38 +133,4 @@ export default [
     ['Aki', 133.91, 33.5], ['Tosa', 133.43, 33.49], ['Tosashimizu', 132.96, 32.78], ['Nakatosa', 133.23, 33.33],
     ['Kuroshio', 133.01, 33.03], ['Ainan', 132.58, 32.96], ['Kamiyama', 134.35, 33.97], ['Iya', 133.83, 33.88],
   ]),
-  R('South Korea', ['Seoul', 126.98, 37.57], [
-    ['Busan', 129.08, 35.18], ['Ulsan', 129.31, 35.54], ['Daegu', 128.6, 35.87], ['Changwon', 128.68, 35.23],
-    ['Pohang', 129.34, 36.02], ['Gwangju', 126.85, 35.16], ['Jinju', 128.11, 35.18], ['Gyeongju', 129.22, 35.86],
-    ['Geoje', 128.62, 34.88], ['Tongyeong', 128.43, 34.85], ['Yeosu', 127.66, 34.76], ['Mokpo', 126.39, 34.81],
-    ['Jeju', 126.53, 33.5], ['Gangneung', 128.88, 37.75], ['Andong', 128.73, 36.57], ['Daejeon', 127.38, 36.35],
-    ['Suncheon', 127.49, 34.95], ['Gimhae', 128.89, 35.23], ['Samcheok', 129.17, 37.45], ['Uljin', 129.4, 36.99],
-    ['Yangsan', 129.04, 35.34], ['Miryang', 128.75, 35.5], ['Gumi', 128.34, 36.12], ['Gimcheon', 128.11, 36.14],
-    ['Yeongcheon', 128.94, 35.97], ['Gyeongsan', 128.74, 35.83], ['Sangju', 128.16, 36.41], ['Yeongju', 128.62, 36.81],
-    ['Mungyeong', 128.19, 36.59], ['Yeongdeok', 129.37, 36.42], ['Donghae', 129.11, 37.52], ['Taebaek', 128.99, 37.16],
-    ['Sokcho', 128.59, 38.21], ['Yangyang', 128.62, 38.08], ['Sacheon', 128.06, 35.0], ['Haman', 128.41, 35.27],
-    ['Changnyeong', 128.49, 35.54], ['Hapcheon', 128.17, 35.57], ['Goseong', 128.32, 34.97], ['Uiseong', 128.7, 36.35],
-    ['Cheongdo', 128.73, 35.65], ['Gijang', 129.22, 35.24], ['Jinhae', 128.7, 35.13], ['Ulleung', 130.9, 37.48],
-    ['Bonghwa', 128.73, 36.89], ['Yeongyang', 129.11, 36.67], ['Cheongsong', 129.06, 36.43], ['Jeongseon', 128.66, 37.38],
-  ], { edge: true, lang: 'ko', title: { m: 'King', f: 'Queen' } }),
-  R('North Korea', ['Pyongyang', 125.75, 39.03], [
-    ['Chongjin', 129.78, 41.8], ['Kimchaek', 129.19, 40.67], ['Rason', 130.3, 42.26], ['Hyesan', 128.18, 41.4],
-    ['Tanchon', 128.91, 40.46], ['Kilju', 129.33, 40.96], ['Hoeryong', 129.75, 42.44], ['Musan', 129.21, 42.23],
-    ['Onsong', 129.99, 42.96], ['Kyongsong', 129.62, 41.6], ['Hwadae', 129.55, 40.82], ['Riwon', 128.67, 40.32],
-    ['Pochon', 128.33, 41.1], ['Samjiyon', 128.32, 41.81], ['Myongchon', 129.42, 41.1], ['Puryong', 129.68, 42.06],
-  ], { seed: false, lang: 'ko', title: null }),
-  R('Russia', ['Moscow', 37.62, 55.76], [
-    ['Vladivostok', 131.89, 43.12], ['Nakhodka', 132.87, 42.82], ['Ussuriysk', 131.95, 43.8], ['Artyom', 132.19, 43.36],
-    ['Partizansk', 133.13, 43.13], ['Bolshoy Kamen', 132.35, 43.11], ['Arsenyev', 133.27, 44.16], ['Spassk-Dalny', 132.81, 44.6],
-    ['Lesozavodsk', 133.42, 45.47], ['Dalnegorsk', 135.57, 44.56], ['Dalnerechensk', 133.72, 45.93], ['Kavalerovo', 135.06, 44.27],
-    ['Olga', 135.29, 43.74], ['Preobrazheniye', 133.9, 42.9], ['Slavyanka', 131.36, 42.86], ['Posyet', 130.8, 42.65],
-    ['Plastun', 136.29, 44.73], ['Terney', 136.6, 45.05], ['Lazo', 133.92, 43.38], ['Kirovsky', 133.53, 45.09],
-    ['Khorol', 132.08, 44.43], ['Pogranichny', 131.38, 44.4], ['Yuzhno-Kurilsk', 145.86, 44.03], ['Kraskino', 130.79, 42.71],
-  ], { seed: false, lang: 'ru', title: null }),
-  R('Mainland Region', ['Beijing', 116.4, 39.9], [
-    ['Yanji', 129.51, 42.89], ['Hunchun', 130.37, 42.87], ['Tumen', 129.85, 42.97], ['Dunhua', 128.23, 43.37],
-    ['Mudanjiang', 129.63, 44.55], ['Jixi', 130.97, 45.3], ['Suifenhe', 131.15, 44.4], ['Dongning', 131.12, 44.06],
-    ['Longjing', 129.42, 42.77], ['Helong', 129.0, 42.53], ['Wangqing', 129.76, 43.31], ['Hailin', 129.38, 44.59],
-    ['Muling', 130.52, 44.92], ['Mishan', 131.85, 45.55], ['Ning\'an', 129.47, 44.34], ['Antu', 128.9, 43.11],
-  ], { seed: false, lang: 'zh', title: null }),
 ];

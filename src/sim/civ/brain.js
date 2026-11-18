@@ -507,7 +507,7 @@ export const brain = {
     const w = this.world;
     let t = d.task;
     if (!t || t.kind !== 'plant-tree') {
-      const species = { vale: [FLORA.OAK, FLORA.BIRCH], dune: [FLORA.PALM, FLORA.ACACIA], frost: [FLORA.PINE, FLORA.PINE], mire: [FLORA.JUNGLE_TREE, FLORA.SWAMP_TREE] }[v.culture] || [FLORA.OAK];
+      const species = { vale: [FLORA.OAK, FLORA.BIRCH], dune: [FLORA.PALM, FLORA.ACACIA], frost: [FLORA.PINE, FLORA.PINE], mire: [FLORA.JUNGLE_TREE, FLORA.SWAMP_TREE] }[String(v.culture).split('~')[0]] || [FLORA.OAK];
       let spot = -1;
       // woodlots cluster on one side of the village so they read as groves
       if (v.groveAngle == null) v.groveAngle = this.rng.float(0, Math.PI * 2);
