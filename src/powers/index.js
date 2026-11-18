@@ -4,6 +4,7 @@ import './terrainPowers.js';
 import './naturePowers.js';
 import './lifePowers.js';
 import './civPowers.js';
+import './techPowers.js';
 import './disasterPowers.js';
 import './worldPowers.js';
 import './weatherPowers.js';

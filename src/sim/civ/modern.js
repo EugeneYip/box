@@ -285,7 +285,7 @@ export const modern = {
       v.hasWaterworks = ww;
       v.tallMul = Math.min(2, 1 + (ww ? 0.1 : 0) + Math.min(4, apt) * 0.08 + Math.min(3, sky) * 0.12 + Math.min(1, arc) * 0.45);
       // a factory's wares sell in the realm's markets
-      if (fac) v.gold += fac * 0.05 * dt * this.techMod(v.kingdom, 'gold');
+      if (fac && !(v.blackoutUntil > now)) v.gold += fac * 0.05 * dt * this.techMod(v.kingdom, 'gold'); // (idle in a blackout)
     }
     const F = this.game.fleet;
     for (const k of this.kingdoms) {

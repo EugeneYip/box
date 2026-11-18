@@ -381,6 +381,8 @@ export const breadth = {
       for (const b of v.buildings) if (b.alive && !b.constructing && BREADTH_TYPES.has(b.type)) here[b.type] = (here[b.type] || 0) + 1;
       if (v.dry == null || now - (v.landT || -1e9) > 60) this._surveyLand(v);
       // the guards
+      // Blackout (god power): the town's power stays off until it ends
+      if (v.blackoutUntil > now) v.powered = false;
       const G = v.guard || (v.guard = { fire: 0, quake: 0, flood: 0, storm: 0, meteor: 0 });
       const fs = here.firestation ? 1 : R?.get('firestation') ? 0.55 : 0;
       G.fire = has('firebrigade') ? (has('fireengines') && fs ? 0.6 + 0.3 * fs : 0.25 + 0.35 * fs) + (has('buildcodes') ? 0.08 : 0) : 0;
@@ -537,7 +539,7 @@ export const breadth = {
       let from = null;
       for (const o of vs) if (o !== to && o.food > o.pop * 3 + 20 && (!from || o.food > from.food)) from = o;
       // the cannery's own stores: a little even when no town has plenty
-      const amt = from ? Math.min(from.food - (from.pop * 3 + 10), to.pop * 3 + 10) : to.pop * 0.6;
+      const amt = from ? Math.min(from.food - (from.pop * 3 + 10), to.pop * 3 + 10) : to.pop * 0.05;
       if (amt <= 2) continue;
       if (from) from.food -= amt;
       to.food += amt * 0.95;
@@ -634,10 +636,7 @@ export const breadth = {
     const wt = g.env?.weather?.type;
     let danger = wt === 'storm' ? 'storm' : null;
     if (!danger)
-      for (const e of g.disasters?.active || []) {
-        const n = e?.constructor?.name;
-        if (n === 'Tornado' || n === 'Tsunami') danger = n.toLowerCase();
-      }
+      for (const e of g.disasters?.active || []) if (e?.kind === 'tornado' || e?.kind === 'tsunami') danger = e.kind;
     if (!danger) return;
     if (!(k.stormWarnUntil > now)) {
       const pos = this._kingdomPos?.(k);

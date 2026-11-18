@@ -232,13 +232,13 @@ export class Disasters {
     return this.add(new Earthquake(this, x, z, radius));
   }
   tornado(x, z, opts) {
-    return this.add(new Tornado(this, x, z, opts));
+    return this.add(Object.assign(new Tornado(this, x, z, opts), { kind: 'tornado' })); // (kind: Civ's weather stations read it)
   }
   volcano(x, z, radius = 9) {
     return this.add(new Volcano(this, x, z, radius));
   }
   tsunami(x, z, opts) {
-    return this.add(new Tsunami(this, x, z, opts));
+    return this.add(Object.assign(new Tsunami(this, x, z, opts), { kind: 'tsunami' }));
   }
   pourLava(tx, ty, amount = 0.5) {
     this.lava.pour(tx, ty, amount, 1);

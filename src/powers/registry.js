@@ -24,6 +24,7 @@ export const CATEGORIES = [
   { id: 'nature', name: 'Nature' },
   { id: 'life', name: 'Life' },
   { id: 'civ', name: 'Peoples' },
+  { id: 'tech', name: 'Technology' },
   { id: 'disaster', name: 'Wrath' },
   { id: 'world', name: 'World' },
 ];
