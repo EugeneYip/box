@@ -148,9 +148,15 @@ export class Favorites {
       if (cap) e.at = { x: cap.cx ?? cap.x, z: cap.cz ?? cap.z };
     }
     if (snap) e.snap = snap;
+    else if (this.describe && e.died == null && !e.missing) {
+      // what the list says about it, kept for when it is gone
+      const d = safe(() => this.describe(e), null, 'favorites describe');
+      if (d && !d.gone) e.snap = { sub: d.sub, place: d.place, color: d.color };
+    }
   }
   markGone(e) {
     if (e.died != null) return;
+    this.touch(e);
     const r = e.ref;
     e.died = e.kind === 'unit' && Number.isFinite(r?.deathTime) ? Math.floor(r.deathTime / YEAR) + 1 : this.year();
     this.version++;

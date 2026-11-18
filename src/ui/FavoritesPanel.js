@@ -25,6 +25,7 @@ export class FavoritesPanel {
     this.ui = ui;
     this.game = ui.game;
     this.store = store;
+    store.describe = (e) => this.info(e);
     this.el = el('aside', { class: 'ws-side ws-glass ws-orn ws-favs', 'aria-label': 'Favorites' });
     this.countEl = el('span', { class: 'ws-side__count', text: '0' });
     this.list = el('div', { class: 'ws-side__list ws-favs__list', role: 'list' });
