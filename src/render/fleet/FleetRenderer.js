@@ -6,6 +6,7 @@ import { emblemAtlas, EMBLEM_IDS, FIELD_IDS } from '../buildings/emblems.js';
 import { ALL_KINDS, KINDS } from '../../sim/fleet/kinds.js';
 import { smokePuff, RAMP } from '../fx/Effects.js';
 import { AirPlaceholder } from './AirPlaceholder.js';
+import './modernModels.js';
 import { VEHICLE } from '../../core/scale.js';
 import { geoWrapOn } from '../../world/geo.js';
 

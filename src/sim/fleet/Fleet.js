@@ -1,7 +1,7 @@
 import { SEA_LEVEL, TILE } from '../../world/constants.js';
 import { mulberry32 } from '../../core/Random.js';
 import { WaterNav, pathLength } from './nav.js';
-import { KINDS, SEA_KINDS, STUB_KINDS, stubDef, shipName, craftName, cargoText } from './kinds.js';
+import { KINDS, AIR_KINDS, SEA_KINDS, shipName, craftName, cargoText } from './kinds.js';
 import { missions } from './missions.js';
 import { land } from './land.js';
 import { war } from './war.js';
@@ -145,6 +145,13 @@ export class Fleet {
   hasTech(kid, id) {
     return !!this.game.civ?.hasTech?.(kid, id);
   }
+  // May a realm build this kind: its art learned and (for the modern kinds
+  // that carry one) its era reached.
+  canUse(kid, kind) {
+    const d = KINDS[kind] || AIR_KINDS[kind];
+    if (!d || !this.hasTech(kid, d.tech)) return false;
+    return !d.era || (this.kingdom(kid)?.era ?? 0) >= d.era;
+  }
   kingdom(kid) {
     return this.game.civ?.kingdoms?.[kid] || null;
   }
@@ -211,6 +218,22 @@ export class Fleet {
       drone: 'sends its first delivery drones over its towns',
       skytaxi: 'flies its first sky taxis between its towns',
       rocket: 'launches its first rocket',
+      tanker: 'launches its first tanker',
+      liner: 'launches its first cruise liner, lit from stem to stern',
+      icebreaker: 'sends an icebreaker into the frozen sea',
+      submarine: 'sends its first submarines on patrol',
+      patrol: 'launches its first destroyers',
+      hovercraft: 'runs its first hovercraft over the shallows',
+      hydrofoil: 'runs its first hydrofoil ferries',
+      research: 'sends out its first research vessel',
+      trimaran: 'launches its first solar trimarans',
+      autocargo: 'launches its first crewless cargo ships',
+      fireengine: 'sends its first fire engines racing to a fire',
+      ambulance: 'sends its first ambulances through the streets',
+      tractor: 'puts its first tractors in the fields',
+      tram: 'runs its first trams through its towns',
+      bus: 'runs its first buses through its towns',
+      helicopter: 'flies its first rescue helicopter to a disaster',
     }[kind];
     if (!what) return;
     const n = this.kname(kid);
@@ -351,7 +374,7 @@ export class Fleet {
   }
   count(kid = null, kind = null) {
     let n = 0;
-    for (const v of this.list) if (v.alive && (kid == null || v.kingdom === kid) && (kind == null || v.kind === kind)) n++;
+    for (const v of this.list) if (v.alive && (kid == null || v.kingdom === kid) && (kind == null || v.kind === kind || v.role === kind)) n++;
     return n;
   }
   get(id) {
@@ -360,12 +383,12 @@ export class Fleet {
   // ships against the sea budget (fishing boats have a budget of their own)
   seaCount() {
     let n = 0;
-    for (const v of this.list) if (v.alive && v.cls === 'sea' && v.kind !== 'fishing') n++;
+    for (const v of this.list) if (v.alive && v.cls === 'sea' && v.role !== 'fishing') n++;
     return n;
   }
   fishCount() {
     let n = 0;
-    for (const v of this.list) if (v.alive && v.kind === 'fishing') n++;
+    for (const v of this.list) if (v.alive && v.role === 'fishing') n++;
     return n;
   }
   landCount() {
@@ -402,19 +425,24 @@ export class Fleet {
   }
 
   spawn(kind, kid, x, z, opts = {}) {
-    // a modern stub runs as its base kind with its own stats (kinds.js STUB_KINDS)
-    const model = opts.model && STUB_KINDS[opts.model]?.base === kind ? opts.model : null;
-    const def = model ? stubDef(model) : KINDS[kind];
+    // a modern kind may be asked for in place of the old kind whose routine it
+    // runs (spawn('galley', ..., {model: 'ironclad'})): it is born as itself,
+    // with `role` naming the routine (kinds.js)
+    const model = opts.model && KINDS[opts.model] ? opts.model : null;
+    if (model) kind = model;
+    const def = KINDS[kind];
     if (!def) return null;
+    const modern = def.role !== kind;
     const v = {
       id: this._nextId++,
       kind,
-      model: model || kind,
+      role: def.role,
+      model: kind,
       def,
       cls: def.cls,
       _gw: null, // cached give-way (see _giveWayCached)
       kingdom: kid,
-      name: def.cls === 'sea' ? shipName(this.rng, kind) : model ? `${def.name}${opts.home != null && this.game.civ?.villages?.[opts.home] ? ' of ' + this.game.civ.villages[opts.home].name : ''}` : craftName(this.rng, kind, this.game.civ?.villages?.[opts.home]?.name),
+      name: def.cls === 'sea' ? shipName(this.rng, def.role) : modern ? `${def.name}${opts.home != null && this.game.civ?.villages?.[opts.home] ? ' of ' + this.game.civ.villages[opts.home].name : ''}` : craftName(this.rng, kind, this.game.civ?.villages?.[opts.home]?.name),
       home: opts.home ?? -1,
       harbour: opts.harbour ?? null,
       village: opts.home ?? -1,
@@ -452,7 +480,7 @@ export class Fleet {
     this.byId.set(v.id, v);
     this.totals.launched++;
     this.version++;
-    this.first(kid, model || kind, { x, z });
+    this.first(kid, kind, { x, z });
     this.game.events.emit('fleet:launched', { vessel: v, kind, model: v.model, kingdom: kid });
     return v;
   }
@@ -571,7 +599,7 @@ export class Fleet {
   }
   // Water route for a vessel from where it is to (gx, gz).
   seaPath(v, gx, gz, maxLen = Infinity) {
-    const big = !!(v.def.big || v.kind === 'galley' || v.kind === 'carrack');
+    const big = !!(v.def.big || v.role === 'galley' || v.role === 'carrack');
     const minClear = v.def.clear || 0;
     let p = this.nav.findPath(v.x, v.z, gx, gz, { big, maxLen, minClear });
     // cogs and transports may thread a channel to get home; great ships may not
@@ -1033,9 +1061,9 @@ export class Fleet {
     const sailing = v.state === 'sail' || v.state === 'patrol';
     a.furl += ((sailing && !night ? 0 : 1) - a.furl) * Math.min(1, step * 1.2);
     a.fill = this._sailFill(v);
-    const rowing = def.oars && (v.state === 'sail' || v.state === 'patrol') && (v.kind === 'galley' || v.speed > 0.1);
+    const rowing = def.oars && (v.state === 'sail' || v.state === 'patrol') && (v.role === 'galley' || v.speed > 0.1);
     a.oar += ((rowing ? 1 : 0) - a.oar) * Math.min(1, step * 2);
-    a.row += step * (v.kind === 'galley' ? 3.2 : 2.4) * (0.4 + Math.min(1, v.speed / def.speed));
+    a.row += step * (v.role === 'galley' ? 3.2 : 2.4) * (0.4 + Math.min(1, v.speed / def.speed));
   }
 
   // Round world: a vessel that sails off one edge of the whole-Earth map comes
@@ -1059,7 +1087,7 @@ export class Fleet {
     if (C.log.length > 400) C.log.shift();
     this.game.events.emit('fleet:crossed', { vessel: v, id: v.id, kind: v.kind, kingdom: v.kingdom, x: v.x, z: v.z, dir });
     // a realm's first ship across the ocean seam is remembered
-    if (v.kind !== 'fishing' && !this.firsts.has(v.kingdom + '|cross')) {
+    if (v.role !== 'fishing' && !this.firsts.has(v.kingdom + '|cross')) {
       this.firsts.add(v.kingdom + '|cross');
       const n = this.kname(v.kingdom);
       const nm = v.name ? `the ${v.def.name.toLowerCase()} ${v.name}` : `a ${v.def.name.toLowerCase()}`;
@@ -1091,7 +1119,7 @@ export class Fleet {
     // engines: steam and motor ships care little for the wind
     if (def.sail === false) return 1.05;
     let f = 0.8 + (along * 0.5 + 0.5) * 0.35 * (0.6 + s);
-    if (def.oars) f = Math.max(f, v.kind === 'galley' ? 1 : 0.95);
+    if (def.oars) f = Math.max(f, v.role === 'galley' ? 1 : 0.95);
     return Math.max(0.6, Math.min(1.3, f));
   }
   _sailFill(v) {
@@ -1153,23 +1181,23 @@ export class Fleet {
       else if (v.def.siege) this.history(`${Who} loses ${nm} before the walls`, 'war', pos);
       return;
     }
-    if (cause === 'battle' && by && v.kind === 'fishing') {
-      this.history(`${Who}'s fishing boat is sunk by galleys of ${this.kname(by.kingdom)}`, 'war', pos);
-    } else if (cause === 'battle' && by && (v.kind === 'galley' || v.kind === 'cog')) {
+    if (cause === 'battle' && by && v.role === 'fishing') {
+      this.history(`${Who}'s fishing boat is sunk by ${by.kind === 'galley' ? 'galleys' : 'warships'} of ${this.kname(by.kingdom)}`, 'war', pos);
+    } else if (cause === 'battle' && by && (v.role === 'galley' || v.role === 'cog')) {
       const key = 'sunkh' + v.kingdom + '-' + by.kingdom;
       const now = this.game.time.total;
       this._histT = this._histT || new Map();
       if (now - (this._histT.get(key) ?? -1e9) > 300) {
         this._histT.set(key, now);
-        this.history(`${nm[0].toUpperCase() + nm.slice(1)} of ${who} is sunk by galleys of ${this.kname(by.kingdom)}`, 'war', pos);
+        this.history(`${nm[0].toUpperCase() + nm.slice(1)} of ${who} is sunk by ${by.kind === 'galley' ? 'galleys' : 'warships'} of ${this.kname(by.kingdom)}`, 'war', pos);
       }
     } else if (cause === 'battle' && by) {
-      this.note(`⚓ ${nm[0].toUpperCase() + nm.slice(1)} of ${who} is sunk by galleys of ${this.kname(by.kingdom)}`, 'war', pos, 'sunk' + v.kingdom + '-' + by.kingdom, 400);
+      this.note(`⚓ ${nm[0].toUpperCase() + nm.slice(1)} of ${who} is sunk by ${by.kind === 'galley' ? 'galleys' : 'warships'} of ${this.kname(by.kingdom)}`, 'war', pos, 'sunk' + v.kingdom + '-' + by.kingdom, 400);
     } else if (cause === 'storm' || cause === 'lightning') {
       this.note(`🌊 ${nm[0].toUpperCase() + nm.slice(1)} of ${who} founders in the storm`, 'disaster', pos, 'stormsink' + v.kingdom, 60);
     } else if (cause === 'serpent' || cause === 'monster') {
       this.note(`🌊 A sea monster drags ${nm} of ${who} beneath the waves`, 'disaster', pos, 'serpent' + v.kingdom, 60);
-    } else if (v.kind !== 'fishing' || cause === 'meteor' || cause === 'smite' || cause === 'tornado') {
+    } else if (v.role !== 'fishing' || cause === 'meteor' || cause === 'smite' || cause === 'tornado') {
       const why = { meteor: 'struck by a falling star', smite: 'smitten by the heavens', tornado: 'torn apart by a waterspout', tsunami: 'swamped by a great wave', aground: 'runs aground and breaks up', fire: 'burns to the waterline' }[cause] || 'is lost at sea';
       this.note(`🌊 ${nm[0].toUpperCase() + nm.slice(1)} of ${who} ${why.startsWith('runs') || why.startsWith('burns') || why.startsWith('is') ? why : 'is ' + why}`, 'disaster', pos, 'lost' + v.kingdom + cause, 60);
     }
@@ -1399,7 +1427,7 @@ export class Fleet {
     const k = this.kingdom(v.kingdom);
     const def = v.def;
     const home = civ?.villages?.[v.home];
-    const stats = [['Health', `${Math.max(0, Math.ceil(v.hp))} / ${v.maxHp}`], ['Doing', this.doingText(v)], ['Crew', v.kind === 'galley' ? `${v.crew} oarsmen and marines` : v.crew]];
+    const stats = [['Health', `${Math.max(0, Math.ceil(v.hp))} / ${v.maxHp}`], ['Doing', this.doingText(v)], ['Crew', v.kind === 'galley' ? `${v.crew} oarsmen and marines` : v.crew === 0 ? 'None (it steers itself)' : v.crew]];
     if (def.capacity || v.cargo) stats.push(['Cargo', cargoText(v.cargo)]);
     const aboard = v.cls === 'sea' ? this.aboard(v).length : 0;
     if (aboard) stats.push(['Aboard', `${aboard} ${v.cargo?.army ? 'soldiers' : 'passengers'}`]);
@@ -1455,8 +1483,8 @@ export class Fleet {
       case 'caravan':
         return m.phase === 'home' ? 'Returning with coin' : 'Bringing goods to a neighbour';
       case 'siege':
-        if (v.model !== v.kind && v.siegeTarget) return v.kind === 'catapult' ? 'Shelling the walls' : 'Firing on the gates';
-        return v.siegeTarget ? (v.kind === 'catapult' ? 'Hurling stones at the walls' : 'Battering the gates') : 'Rolling with the army';
+        if (v.def.gun && v.siegeTarget) return v.role === 'catapult' ? 'Shelling the walls' : 'Firing on the gates';
+        return v.siegeTarget ? (v.role === 'catapult' ? 'Hurling stones at the walls' : 'Battering the gates') : 'Rolling with the army';
       case 'train':
         return m.phase === 'home' ? 'Running back down the line' : `Carrying ${cargoText(v.cargo)} along the line`;
       case 'drive':
@@ -1482,7 +1510,7 @@ export class Fleet {
     const out = [];
     for (const v of this.list) {
       if (!v.alive || !v.path || v.state !== 'sail') continue;
-      if (v.kind !== 'cog' && v.kind !== 'carrack') continue;
+      if (v.role !== 'cog' && v.role !== 'carrack') continue;
       out.push({ id: v.id, kingdom: v.kingdom, path: v.path });
     }
     return out;

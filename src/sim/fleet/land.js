@@ -307,7 +307,7 @@ export const land = {
     const m = v.mission;
     if (!m) return this.remove(v);
     if (m.phase === 'home') {
-      if (v.kind === 'caravan') {
+      if (v.role === 'caravan') {
         const home = civ.villages[m.from];
         if (home?.alive) home.gold = (home.gold || 0) + 10 * (civ.techMod?.(v.kingdom, 'gold') ?? 1) * 0.67;
       }
@@ -319,7 +319,7 @@ export const land = {
     const to = civ.villages[m.to];
     if (m.type === 'train') return this._trainArrive(v, m, to);
     if (m.type === 'drive') return this.remove(v);
-    if (v.kind === 'oxcart') {
+    if (v.role === 'oxcart') {
       if (to?.alive && v.cargo) for (const [r, n] of Object.entries(v.cargo)) to[r] = (to[r] || 0) + n;
       this.game.events.emit('fleet:delivered', { vehicle: v, kind: v.kind, kingdom: v.kingdom, from: m.from, to: m.to, cargo: v.cargo });
       v.cargo = null;
@@ -334,7 +334,7 @@ export const land = {
       } else this.remove(v);
       return;
     }
-    if (v.kind === 'caravan') {
+    if (v.role === 'caravan') {
       if (to?.alive) {
         to.gold = (to.gold || 0) + 8;
         const r = civ.rel?.(v.kingdom, to.kingdom);
@@ -447,7 +447,7 @@ export const land = {
     if (b) {
       const d = Math.hypot(b.x - v.x, b.z - v.z);
       const edge = Math.max(b.w, b.h) * 0.5;
-      if (v.kind === 'catapult') {
+      if (v.role === 'catapult') {
         if (this._battery(v, b, target, step)) return;
         // no battery to be had: shoot only from open ground fit for one
         if (d <= 10 && d >= 3.5 && this._batteryGround(v.x, v.z, target, true) >= 3) {
@@ -495,7 +495,7 @@ export const land = {
       v.speed *= Math.exp(-step * 2);
       return;
     }
-    if (bearer && Math.hypot(bearer.x - v.x, bearer.z - v.z) < (v.kind === 'ram' ? 2.5 : 4.5) && army.state !== 'siege') {
+    if (bearer && Math.hypot(bearer.x - v.x, bearer.z - v.z) < (v.role === 'ram' ? 2.5 : 4.5) && army.state !== 'siege') {
       v.speed *= Math.exp(-step * 2);
       return;
     }
@@ -710,7 +710,7 @@ export const land = {
       const d = Math.hypot(b.x - v.x, b.z - v.z);
       if (d > 26) continue;
       let sc = d;
-      if (def?.wall) sc -= b.type === 'gate' ? (v.kind === 'ram' ? 12 : 4) : 6;
+      if (def?.wall) sc -= b.type === 'gate' ? (v.role === 'ram' ? 12 : 4) : 6;
       else if (b.type === 'hall') sc -= 3;
       else if (b.type === 'watchtower') sc -= 2;
       if (sc < bs) {
@@ -769,8 +769,8 @@ export const land = {
     const what = def?.wall ? 'walls' : b.type === 'hall' ? 'great hall' : null;
     if (!what) return;
     const n = this.kname(v.kingdom);
-    const by = v.kind === 'catapult' ? 'Catapult stones' : 'A battering ram';
-    this.note(`⚔ ${by} of ${n} ${v.kind === 'catapult' ? 'breach' : 'breaches'} the ${what} of ${vil.name}`, 'war', { x: b.x, z: b.z }, 'breach' + vil.id, 120);
+    const by = v.role === 'catapult' ? 'Catapult stones' : 'A battering ram';
+    this.note(`⚔ ${by} of ${n} ${v.role === 'catapult' ? 'breach' : 'breaches'} the ${what} of ${vil.name}`, 'war', { x: b.x, z: b.z }, 'breach' + vil.id, 120);
   },
 };
 

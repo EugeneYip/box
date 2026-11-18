@@ -23,73 +23,99 @@ export const KINDS = {
   caravan: { cls: 'land', name: 'Trade caravan', tech: 'banking', speed: 1.1, turn: 3, hp: 50, crew: 2, capacity: 30, scale: 1.3, length: 1.0, size: 0.8, dps: 0 },
   ram: { cls: 'land', name: 'Battering ram', tech: 'siegecraft', speed: 1.05, turn: 2, hp: 140, crew: 4, capacity: 0, scale: 1.3, length: 1.8, size: 1.0, dps: 0, siege: true },
   catapult: { cls: 'land', name: 'Catapult', tech: 'siegecraft', speed: 1.0, turn: 2, hp: 100, crew: 3, capacity: 0, scale: 1.5, length: 1.95, size: 1.1, dps: 0, siege: true },
+  // ---------------------------------------------------------------- modern water (docs/MODERN-ERAS.md, docs/TECH-BREADTH.md section 4)
+  // `role` is the old kind whose routines a modern kind runs (trade like a
+  // cog, war like a galley, ...); `era` holds a kind back until its realm has
+  // reached that era as well as learned its art.
+  steamer: { cls: 'sea', role: 'cog', name: 'Steamship', tech: 'steampower', era: 4, speed: 2.3, turn: 1.1, hp: 170, crew: 12, capacity: 90, scale: 0.75, length: 2.25, beam: 0.5, draft: 0.45, clear: 1.6, size: 0.95, dps: 2, sail: false, smoke: true },
+  freighter: { cls: 'sea', role: 'cog', name: 'Motor freighter', tech: 'combustion', era: 5, speed: 2.6, turn: 1.0, hp: 210, crew: 14, capacity: 140, scale: 0.75, length: 2.55, beam: 0.52, draft: 0.5, clear: 1.8, size: 1.05, dps: 2, sail: false, smoke: true },
+  container: { cls: 'sea', role: 'carrack', name: 'Container ship', tech: 'containers', era: 6, speed: 2.8, turn: 0.75, hp: 340, crew: 20, capacity: 300, scale: 0.75, length: 3.45, beam: 0.66, draft: 0.75, clear: 3, size: 1.4, dps: 2, sail: false, big: true },
+  tanker: { cls: 'sea', role: 'carrack', name: 'Tanker', tech: 'containers', era: 6, speed: 2.5, turn: 0.7, hp: 320, crew: 18, capacity: 260, scale: 0.75, length: 3.3, beam: 0.66, draft: 0.8, clear: 3, size: 1.35, dps: 1, sail: false, big: true },
+  liner: { cls: 'sea', role: 'cog', name: 'Cruise liner', tech: 'combustion', era: 6, speed: 2.7, turn: 0.8, hp: 300, crew: 60, capacity: 120, scale: 0.75, length: 3.15, beam: 0.62, draft: 0.7, clear: 2.6, size: 1.3, dps: 0, sail: false, big: true, liner: true },
+  icebreaker: { cls: 'sea', role: 'icebreaker', name: 'Icebreaker', tech: 'combustion', era: 5, speed: 2.0, turn: 1.1, hp: 360, crew: 30, capacity: 20, scale: 0.75, length: 2.1, beam: 0.56, draft: 0.5, clear: 1.6, size: 1.0, dps: 1, sail: false, smoke: true },
+  submarine: { cls: 'sea', role: 'galley', name: 'Submarine', tech: 'battleships', era: 6, speed: 2.4, turn: 1.2, hp: 220, crew: 40, capacity: 0, scale: 0.75, length: 1.95, beam: 0.3, draft: 0.5, clear: 2, size: 0.9, dps: 26, sail: false, war: true, sub: true },
+  patrol: { cls: 'sea', role: 'galley', name: 'Destroyer', tech: 'battleships', era: 5, speed: 3.0, turn: 1.6, hp: 260, crew: 60, capacity: 0, scale: 0.75, length: 2.1, beam: 0.4, draft: 0.45, clear: 1.6, size: 0.95, dps: 20, sail: false, war: true, smoke: true, escort: true },
+  hovercraft: { cls: 'sea', role: 'hover', name: 'Hovercraft', tech: 'combustion', era: 6, speed: 3.2, turn: 2.2, hp: 90, crew: 4, capacity: 30, scale: 0.75, length: 1.2, beam: 0.6, draft: 0.05, clear: 0, size: 0.6, dps: 0, sail: false, small: true },
+  hydrofoil: { cls: 'sea', role: 'cog', name: 'Hydrofoil ferry', tech: 'combustion', era: 6, speed: 3.6, turn: 1.4, hp: 110, crew: 6, capacity: 40, scale: 0.75, length: 1.5, beam: 0.36, draft: 0.25, clear: 1, size: 0.7, dps: 0, sail: false, ferry: true },
+  research: { cls: 'sea', role: 'explorer', name: 'Research vessel', tech: 'computing', era: 6, speed: 2.4, turn: 1.2, hp: 160, crew: 24, capacity: 6, scale: 0.75, length: 1.95, beam: 0.46, draft: 0.45, clear: 1.6, size: 0.9, dps: 0, sail: false, big: true },
+  trimaran: { cls: 'sea', role: 'cog', name: 'Solar trimaran', tech: 'fusion', era: 7, speed: 3.0, turn: 1.2, hp: 200, crew: 8, capacity: 120, scale: 0.75, length: 2.1, beam: 0.8, draft: 0.35, clear: 1.6, size: 1.0, dps: 0, sail: false },
+  autocargo: { cls: 'sea', role: 'carrack', name: 'Autonomous cargo ship', tech: 'robotics', era: 7, speed: 3.1, turn: 0.8, hp: 320, crew: 0, capacity: 320, scale: 0.75, length: 3.15, beam: 0.6, draft: 0.7, clear: 2.6, size: 1.3, dps: 0, sail: false, big: true },
+  ironclad: { cls: 'sea', role: 'galley', name: 'Ironclad', tech: 'ironclads', era: 4, speed: 2.35, turn: 1.2, hp: 320, crew: 60, capacity: 0, scale: 0.75, length: 2.25, beam: 0.52, draft: 0.45, clear: 2, size: 1.0, dps: 22, sail: false, war: true, smoke: true },
+  battleship: { cls: 'sea', role: 'galley', name: 'Battleship', tech: 'battleships', era: 5, speed: 2.55, turn: 0.9, hp: 520, crew: 120, capacity: 0, scale: 0.75, length: 3.3, beam: 0.62, draft: 0.7, clear: 2.6, size: 1.35, dps: 34, sail: false, war: true, big: true, smoke: true },
+  carrier: { cls: 'sea', role: 'galley', name: 'Aircraft carrier', tech: 'carriers', era: 6, speed: 2.45, turn: 0.75, hp: 620, crew: 200, capacity: 0, scale: 0.75, length: 3.6, beam: 0.8, draft: 0.75, clear: 3, size: 1.5, dps: 30, sail: false, war: true, big: true, carrier: true },
+  // ---------------------------------------------------------------- modern land
+  // trains run along civ.railLines(); a train is drawn as its engine and the
+  // cars that follow it along the rails (`cars`)
+  train: { cls: 'land', role: 'train', name: 'Steam train', tech: 'railways', speed: 3.4, turn: 6, hp: 120, crew: 2, capacity: 80, scale: 1, length: 1.0, size: 0.8, dps: 0, rail: true, smoke: true, cars: 4 },
+  maglev: { cls: 'land', role: 'train', name: 'Maglev train', tech: 'maglev', speed: 6.5, turn: 8, hp: 160, crew: 1, capacity: 120, scale: 1, length: 1.25, size: 0.9, dps: 0, rail: true, cars: 3 },
+  truck: { cls: 'land', role: 'oxcart', name: 'Truck', tech: 'combustion', speed: 2.4, turn: 3, hp: 70, crew: 1, capacity: 48, scale: 1, length: 1.0, size: 0.6, dps: 0 },
+  car: { cls: 'land', role: 'car', name: 'Car', tech: 'combustion', speed: 2.6, turn: 4, hp: 40, crew: 1, capacity: 4, scale: 1, length: 0.6, size: 0.45, dps: 0 },
+  cannon: { cls: 'land', role: 'catapult', name: 'Cannon', tech: 'gunpowder', speed: 1.1, turn: 2, hp: 140, crew: 3, capacity: 0, scale: 1.3, length: 1.4, size: 1.0, dps: 0, siege: true, gun: true },
+  artillery: { cls: 'land', role: 'catapult', name: 'Artillery', tech: 'battleships', speed: 1.35, turn: 2, hp: 190, crew: 4, capacity: 0, scale: 1.3, length: 1.5, size: 1.0, dps: 0, siege: true, gun: true },
+  tank: { cls: 'land', role: 'ram', name: 'Tank', tech: 'battleships', speed: 1.7, turn: 2, hp: 420, crew: 4, capacity: 0, scale: 1.3, length: 1.4, size: 1.0, dps: 0, siege: true, gun: true },
+  // civic vehicles (docs/TECH-BREADTH.md section 3)
+  fireengine: { cls: 'land', role: 'service', name: 'Fire engine', tech: 'fireengines', speed: 3.2, turn: 4, hp: 90, crew: 4, capacity: 0, scale: 1, length: 1.05, size: 0.65, dps: 0, siren: true },
+  ambulance: { cls: 'land', role: 'service', name: 'Ambulance', tech: 'antibiotics', speed: 3.0, turn: 4, hp: 60, crew: 2, capacity: 2, scale: 1, length: 0.85, size: 0.55, dps: 0, siren: true },
+  tractor: { cls: 'land', role: 'service', name: 'Tractor', tech: 'tractors', speed: 0.9, turn: 3, hp: 60, crew: 1, capacity: 0, scale: 1, length: 0.7, size: 0.5, dps: 0 },
+  tram: { cls: 'land', role: 'service', name: 'Tram', tech: 'transit', speed: 1.7, turn: 5, hp: 90, crew: 1, capacity: 40, scale: 1, length: 1.3, size: 0.7, dps: 0 },
+  bus: { cls: 'land', role: 'service', name: 'Bus', tech: 'transit', speed: 2.0, turn: 4, hp: 80, crew: 1, capacity: 36, scale: 1, length: 1.15, size: 0.65, dps: 0 },
 };
 
 // Design sizes to the world's (VEHICLE in src/core/scale.js): the model scale,
 // length, beam and hit size shrink together; speeds stay (tiles per second).
-for (const d of Object.values(KINDS)) {
-  const k = VEHICLE.of(d.cls);
-  d.scale *= k;
-  d.length *= k;
-  if (d.beam) d.beam *= k;
-  d.size *= k;
+// Every kind's `role` is the routine it runs (an old kind is its own role).
+for (const [k, d] of Object.entries(KINDS)) {
+  const s = VEHICLE.of(d.cls);
+  d.scale *= s;
+  d.length *= s;
+  if (d.beam) d.beam *= s;
+  d.size *= s;
+  d.kind = k;
+  if (!d.role) d.role = k;
 }
 
-export const SEA_KINDS = ['fishing', 'cog', 'transport', 'galley', 'explorer', 'carrack'];
-export const LAND_KINDS = ['oxcart', 'caravan', 'ram', 'catapult'];
+export const SEA_KINDS = ['fishing', 'cog', 'transport', 'galley', 'explorer', 'carrack', 'steamer', 'freighter', 'container', 'tanker', 'liner', 'icebreaker', 'submarine', 'patrol', 'hovercraft', 'hydrofoil', 'research', 'trimaran', 'autocargo', 'ironclad', 'battleship', 'carrier'];
+export const LAND_KINDS = ['oxcart', 'caravan', 'ram', 'catapult', 'train', 'maglev', 'truck', 'car', 'cannon', 'artillery', 'tank', 'fireengine', 'ambulance', 'tractor', 'tram', 'bus'];
 export const ALL_KINDS = [...SEA_KINDS, ...LAND_KINDS];
 
-// ---------------------------------------------------------------- modern and future (docs/MODERN-ERAS.md)
-// STUBS until the Fleets module gives each its own model and behaviour. A
-// stub with a `base` runs as that existing kind: it is spawned as the base
-// kind (so every routine and the renderer's batches handle it), with its own
-// name, speed, strength and capacity, and `vehicle.model` naming what it
-// really is (the renderer and the inspector can key on it). Air and space
-// stubs (`cls` 'air' / 'space') have no base: they fly as plain records in
-// fleet.air (straight routes at an altitude) and fleet.orbit (satellites,
-// stations), which the air layer will draw. To make a stub real: add the kind
-// to KINDS and to SEA_KINDS / LAND_KINDS with its model, and delete it here.
-export const STUB_KINDS = {
-  // sea: cogs give way to steamers, freighters and container ships
-  steamer: { base: 'cog', name: 'Steamship', tech: 'steampower', speed: 2.3, capacity: 90, hp: 170, smoke: true, sail: false },
-  freighter: { base: 'cog', name: 'Motor freighter', tech: 'combustion', speed: 2.6, capacity: 140, hp: 210, smoke: true, sail: false },
-  container: { base: 'carrack', name: 'Container ship', tech: 'containers', speed: 2.8, capacity: 300, hp: 340, sail: false },
-  ironclad: { base: 'galley', name: 'Ironclad', tech: 'ironclads', speed: 2.35, hp: 320, dps: 22, smoke: true, sail: false, oars: false },
-  battleship: { base: 'galley', name: 'Battleship', tech: 'battleships', speed: 2.55, hp: 520, dps: 34, sail: false, oars: false },
-  carrier: { base: 'galley', name: 'Aircraft carrier', tech: 'carriers', speed: 2.45, hp: 620, dps: 30, sail: false, oars: false },
-  // land: carts give way to trains and trucks; siege engines to guns and armour
-  train: { base: 'oxcart', name: 'Steam train', tech: 'railways', speed: 3.4, capacity: 80, hp: 120, rail: true },
-  maglev: { base: 'oxcart', name: 'Maglev train', tech: 'maglev', speed: 6.5, capacity: 120, hp: 160, rail: true },
-  truck: { base: 'oxcart', name: 'Truck', tech: 'combustion', speed: 2.4, capacity: 48, hp: 70 },
-  car: { base: 'oxcart', name: 'Car', tech: 'combustion', speed: 2.6, capacity: 4, hp: 40 },
-  cannon: { base: 'catapult', name: 'Cannon', tech: 'gunpowder', speed: 1.1, hp: 140 },
-  tank: { base: 'ram', name: 'Tank', tech: 'battleships', speed: 1.7, hp: 420 },
-  artillery: { base: 'catapult', name: 'Artillery', tech: 'battleships', speed: 1.35, hp: 190 },
-  // air (no terrain pathing: straight or gently curved routes at altitude)
-  plane: { cls: 'air', name: 'Transport plane', tech: 'flight', speed: 6, alt: 6, capacity: 20, hp: 60 },
-  biplane: { cls: 'air', name: 'Biplane', tech: 'flight', speed: 7, alt: 5, hp: 50, war: true },
-  airliner: { cls: 'air', name: 'Jet airliner', tech: 'jets', speed: 14, alt: 11, capacity: 60, hp: 120 },
-  jet: { cls: 'air', name: 'Jet fighter', tech: 'jets', speed: 18, alt: 9, hp: 90, war: true },
-  drone: { cls: 'air', name: 'Delivery drone', tech: 'robotics', speed: 3.5, alt: 2.2, capacity: 2, hp: 10 },
-  skytaxi: { cls: 'air', name: 'Sky taxi', tech: 'vtol', speed: 8, alt: 4.5, capacity: 4, hp: 60 },
-  // space
-  rocket: { cls: 'space', name: 'Rocket', tech: 'rocketry', speed: 4, hp: 80 },
-  satellite: { cls: 'space', name: 'Satellite', tech: 'rocketry', hp: 20 },
-  station: { cls: 'space', name: 'Orbital station', tech: 'orbital', hp: 400 },
-  starship: { cls: 'space', name: 'Colony starship', tech: 'starships', speed: 3, hp: 600 },
+// ---------------------------------------------------------------- the air and space (air.js)
+// Aircraft fly as plain records in fleet.air (straight or gently curved
+// routes at an altitude, no terrain pathing), taking off from and landing at
+// airfields and airports; rockets climb from launch pads; satellites and
+// stations circle in fleet.orbit.
+export const AIR_KINDS = {
+  plane: { cls: 'air', name: 'Transport plane', tech: 'flight', speed: 6, alt: 6, capacity: 20, hp: 60, length: 1.1, size: 0.7, prop: true },
+  biplane: { cls: 'air', name: 'Biplane', tech: 'flight', speed: 7, alt: 5, hp: 50, war: true, length: 0.8, size: 0.6, prop: true },
+  airliner: { cls: 'air', name: 'Jet airliner', tech: 'jets', speed: 14, alt: 11, capacity: 60, hp: 120, length: 1.6, size: 0.9, jet: true },
+  jet: { cls: 'air', name: 'Jet fighter', tech: 'jets', speed: 18, alt: 9, hp: 90, war: true, length: 0.9, size: 0.6, jet: true },
+  drone: { cls: 'air', name: 'Delivery drone', tech: 'robotics', speed: 3.5, alt: 2.2, capacity: 2, hp: 10, length: 0.3, size: 0.3, vtol: true },
+  skytaxi: { cls: 'air', name: 'Sky taxi', tech: 'vtol', speed: 8, alt: 4.5, capacity: 4, hp: 60, length: 0.7, size: 0.5, vtol: true },
+  helicopter: { cls: 'air', name: 'Rescue helicopter', tech: 'flight', era: 5, speed: 5, alt: 4, capacity: 4, hp: 60, length: 0.8, size: 0.55, vtol: true },
+  rocket: { cls: 'space', name: 'Rocket', tech: 'rocketry', speed: 4, hp: 80, length: 1.6, size: 0.5 },
+  satellite: { cls: 'space', name: 'Satellite', tech: 'rocketry', hp: 20, length: 0.3, size: 0.3 },
+  station: { cls: 'space', name: 'Orbital station', tech: 'orbital', hp: 400, length: 1, size: 1 },
+  starship: { cls: 'space', name: 'Colony starship', tech: 'starships', speed: 3, hp: 600, length: 2.6, size: 0.8 },
 };
-const _stubDefs = new Map();
-// The def a stub vehicle runs with: its base kind's, with the stub's own stats.
-export function stubDef(model) {
-  let d = _stubDefs.get(model);
-  if (d) return d;
-  const s = STUB_KINDS[model];
-  if (!s) return null;
-  const base = s.base ? KINDS[s.base] : null;
-  d = { ...(base || { cls: s.cls, turn: 2, crew: 1, capacity: 0, scale: 1, length: 1, size: 0.6, dps: 0 }), ...s, model, stub: true };
-  if (base) d.cls = base.cls;
-  _stubDefs.set(model, d);
-  return d;
+for (const [k, d] of Object.entries(AIR_KINDS)) {
+  const s = VEHICLE.air;
+  d.scale = s;
+  d.length *= s;
+  d.size *= s;
+  d.kind = k;
+  d.role = k;
+  d.turn = 2;
+  d.crew = 1;
+  d.dps = 0;
+  if (d.capacity == null) d.capacity = 0;
+}
+// (the first round-14 sim called the aircraft and space kinds stubs)
+export const STUB_KINDS = AIR_KINDS;
+export function stubDef(kind) {
+  return AIR_KINDS[kind] || null;
+}
+// Any kind's def: water, land, air or space.
+export function kindDef(kind) {
+  return KINDS[kind] || AIR_KINDS[kind] || null;
 }
 
 // Proud names for ships (the chronicle and the inspector use them).

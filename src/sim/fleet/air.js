@@ -31,10 +31,15 @@ const YEAR = 30;
 //          as a share of the world), speed, tilt}]  for the night sky
 export const air = {
   // ------------------------------------------------------------------ newest kinds
+  // A war fleet of the era: battleships with destroyers to screen them,
+  // submarines and, once known, a carrier (one per realm at a time).
   warModel(kid) {
-    if (this.hasTech(kid, 'carriers') && this.rng() < 0.4) return 'carrier';
-    if (this.hasTech(kid, 'battleships')) return 'battleship';
-    if (this.hasTech(kid, 'ironclads')) return 'ironclad';
+    const r = this.rng();
+    if (this.canUse(kid, 'carrier') && r < 0.3 && this.count(kid, 'carrier') < 1) return 'carrier';
+    if (this.canUse(kid, 'submarine') && r < 0.5) return 'submarine';
+    if (this.canUse(kid, 'patrol') && r < 0.75) return 'patrol';
+    if (this.canUse(kid, 'battleship')) return 'battleship';
+    if (this.canUse(kid, 'ironclad')) return 'ironclad';
     return null;
   },
   siegeModel(kid, kind) {
@@ -44,12 +49,18 @@ export const air = {
   },
   // Sea trade: the newest hull most of the time, the one before it now and
   // then (older kinds give way gradually, never all at once).
-  tradeModel(kid) {
+  // Atomic realms add tankers to the bulk trade, the Future crewless cargo
+  // ships and solar trimarans; `o.passengers` (a friendly port of another
+  // realm) may sail a cruise liner, `o.short` a hydrofoil ferry.
+  tradeModel(kid, o = {}) {
     const L = [];
-    if (this.hasTech(kid, 'steampower')) L.push('steamer');
-    if (this.hasTech(kid, 'combustion')) L.push('freighter');
-    if (this.hasTech(kid, 'containers')) L.push('container');
+    if (this.canUse(kid, 'steamer')) L.push('steamer');
+    if (this.canUse(kid, 'freighter')) L.push('freighter');
+    if (this.canUse(kid, 'container')) L.push(this.canUse(kid, 'tanker') && this.rng() < 0.35 ? 'tanker' : 'container');
+    if (this.canUse(kid, 'autocargo')) L.push(this.rng() < 0.5 ? 'trimaran' : 'autocargo');
     if (!L.length) return null;
+    if (o.passengers && this.canUse(kid, 'liner') && this.rng() < 0.3 && this.count(kid, 'liner') < 2) return 'liner';
+    if (o.short && this.canUse(kid, 'hydrofoil') && this.rng() < 0.4 && this.count(kid, 'hydrofoil') < 3) return 'hydrofoil';
     const r = this.rng();
     return r < 0.7 || L.length === 1 ? L[L.length - 1] : L[L.length - 2];
   },
