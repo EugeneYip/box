@@ -112,3 +112,12 @@ visible at mid zoom; at far zoom it reduces to thin lines.
 - `civEraCap` holds realms at the chosen era.
 - Frame and tick cost stay within the round-13 budgets on Medium and Vast
   (see `docs/WORLD-SCALE.md`).
+
+## Round 14 additions
+
+See `docs/TECH-BREADTH.md` for the food, medicine, biome, city-development
+and urban-planning branches, urban renewal and heritage, the new units
+(firefighters, doctors, tractors, fire engines, ambulances, trams, rescue
+helicopters), the advanced boats (tankers, cruise liners, icebreakers,
+submarines, patrol boats, hovercraft, hydrofoils, research vessels, solar
+trimarans, autonomous cargo ships) and the new "Technology" god powers.
