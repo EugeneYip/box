@@ -507,7 +507,7 @@ export function installRoles(Units) {
       } catch (err) {
         /* diplomacy is Civ's; best effort */
       }
-      if (u._trips === 1 || u._trips % 10 === 0) this.log(u, `Carried word to ${civ.kingdomName?.(tv.kingdom) || 'a neighbour'} at ${tv.name}`);
+      if (u._trips === 1 || u._trips % 10 === 0) this.log(u, `Carried word to ${civ.kingdomName?.(tv.kingdom) || 'a neighbor'} at ${tv.name}`);
     } else if (u._trips === 1) this.log(u, `Rode with news to ${tv.name}`);
     this.addXP(u, 1);
   };

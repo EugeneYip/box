@@ -16,7 +16,7 @@ const FIRST = {
   barn: 'raises its first farmstead barn',
   kiln: 'fires its first kiln',
   docks: 'builds its first fishing jetty',
-  harbour: 'opens its first harbour',
+  harbour: 'opens its first harbor',
   waterwheel: 'turns its first water wheel by the fields',
   stables: 'opens its first stables',
   bloomery: 'lights its first bloomery',

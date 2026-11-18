@@ -60,7 +60,7 @@ export function colourName(hex) {
     l = (mx + mn) / 2,
     d = mx - mn;
   const s = d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1));
-  if (s < 0.14) return l > 0.82 ? 'white' : l < 0.18 ? 'sable black' : l > 0.55 ? 'silver grey' : 'slate grey';
+  if (s < 0.14) return l > 0.82 ? 'white' : l < 0.18 ? 'sable black' : l > 0.55 ? 'silver gray' : 'slate gray';
   let h = 0;
   if (d) h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
   h = (h * 60 + 360) % 360;

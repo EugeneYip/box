@@ -30,7 +30,7 @@ export const TRAITS = [
   T('gentle', 'Gentle', 'spirit', 'Kind and slow to anger.', 'leaf', 0.06, { aggression: 0.6, diplomacy: 1.3 }, 'cruel'),
   T('cruel', 'Cruel', 'spirit', 'Delights in the suffering of others.', 'skull', 0.03, { aggression: 1.5, damage: 1.1, diplomacy: 0.7 }, 'gentle'),
   T('greedy', 'Greedy', 'spirit', 'Hoards whatever they can.', 'coin', 0.05, { work: 1.1, diplomacy: 0.85 }, 'generous'),
-  T('generous', 'Generous', 'spirit', 'Shares freely with neighbours.', 'gift', 0.05, { diplomacy: 1.2 }, 'greedy'),
+  T('generous', 'Generous', 'spirit', 'Shares freely with neighbors.', 'gift', 0.05, { diplomacy: 1.2 }, 'greedy'),
   T('devout', 'Devout', 'spirit', 'Faith keeps them steady.', 'candle', 0.05, { fear: 0.8, lifespan: 1.05 }),
   T('restless', 'Restless', 'spirit', 'Always wandering, never settled.', 'boot', 0.05, { speed: 1.05, work: 0.95 }),
   T('loyal', 'Loyal', 'spirit', 'Stands by their people through anything.', 'banner', 0.05, { diplomacy: 1.1, fear: 0.9 }),

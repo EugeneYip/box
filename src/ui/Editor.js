@@ -17,7 +17,7 @@ import { bannerURL, emblemFace, EMBLEM_IDS, FIELD_IDS } from './banner.js';
 
 const fn = (o, name) => typeof o?.[name] === 'function';
 const OPEN_DEFAULT = {
-  kingdom: ['Name', 'Colours'],
+  kingdom: ['Name', 'Colors'],
   village: ['Name', 'Allegiance', 'Policies', 'Village name'],
   unit: ['Name', 'Blessings'],
 };
@@ -214,16 +214,16 @@ export class Editor {
       const prev = k.color;
       if (hex === prev) return;
       if (!safe(() => civ.setKingdomColor(id, hex), false)) return;
-      this.applied(`Colours changed${k.colorName ? ` to ${realmColourText(k.colorName, k.color)}` : ''}`, () => civ.setKingdomColor(id, prev));
+      this.applied(`Colors changed${k.colorName ? ` to ${realmColourText(k.colorName, k.color)}` : ''}`, () => civ.setKingdomColor(id, prev));
     };
     const sugg = safe(() => civ.kingdomColorSuggestions?.(id), null) || [];
     // 13 + the picker = two rows of 7; on touch (44 px swatches) 11 + the picker = two rows of 6
     const nSw = this.ui.root?.classList.contains('is-touch') ? 11 : 13;
     for (const hex of [k.color, ...sugg.filter((h) => h !== k.color)].slice(0, nSw))
       sw.append(el('button', { class: 'ws-swatch', type: 'button', 'data-hex': hex, style: `--c:${hexCss(hex)}`, 'aria-label': hexCss(hex), disabled: okColor ? null : true, onclick: () => setColor(hex) }));
-    const picker = el('input', { type: 'color', class: 'ws-colorpick', 'aria-label': 'Custom colour', disabled: okColor ? null : true });
+    const picker = el('input', { type: 'color', class: 'ws-colorpick', 'aria-label': 'Custom color', disabled: okColor ? null : true });
     picker.addEventListener('change', () => setColor(parseInt(picker.value.slice(1), 16)));
-    const custom = el('label', { class: 'ws-swatch ws-swatch--custom', 'data-tip': 'Pick any colour' }, picker, el('span', { html: uiIcon('plus') }));
+    const custom = el('label', { class: 'ws-swatch ws-swatch--custom', 'data-tip': 'Pick any color' }, picker, el('span', { html: uiIcon('plus') }));
     sw.append(custom);
     this.sync(() => {
       let hit = false;
@@ -238,7 +238,7 @@ export class Editor {
       custom.classList.toggle('is-picked', !hit);
       picker.value = hexCss(k.color);
     });
-    box.append(this.section('Colours', [sw, okColor ? null : this.missing()], { summary: () => realmColourText(k.colorName || '', k.color), keep: true }));
+    box.append(this.section('Colors', [sw, okColor ? null : this.missing()], { summary: () => realmColourText(k.colorName || '', k.color), keep: true }));
 
     // banner
     const okBanner = fn(civ, 'setKingdomBanner');
@@ -479,7 +479,7 @@ export class Editor {
         [
           this.toggle('Immortal', () => flag('immortal'), okF, (v) => setF('immortal', v, v ? 'Made immortal' : 'Mortal again'), isRuler ? 'No death from age, hunger or wounds. Immortal rulers step down after 60 years on the throne.' : 'No death from age, hunger or wounds'),
           this.toggle('Pacifist', () => flag('pacifist'), okF, (v) => setF('pacifist', v, v ? 'Swears off violence' : 'Will fight again'), 'Never starts a fight'),
-          this.toggle('Ageless', () => flag('frozenAge'), okF, (v) => setF('frozenAge', v, v ? 'Age frozen' : 'Ageing resumes'), 'Stops growing older'),
+          this.toggle('Ageless', () => flag('frozenAge'), okF, (v) => setF('frozenAge', v, v ? 'Age frozen' : 'Aging resumes'), 'Stops growing older'),
           okF ? null : this.missing(),
         ],
         { summary: () => ['immortal', 'pacifist', 'frozenAge'].filter(flag).map((f) => ({ immortal: 'Immortal', pacifist: 'Pacifist', frozenAge: 'Ageless' })[f]).join(' · ') || 'None' },

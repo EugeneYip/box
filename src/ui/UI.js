@@ -5,6 +5,8 @@ import './hud3.css';
 import './hud4.css';
 import './hud5.css';
 import './hud6.css';
+// (hud8 before hud7: a rule in hud7 is left open and would swallow what follows)
+import './hud8.css';
 import './hud7.css';
 import { CATEGORIES, listPowers, getPower } from '../powers/registry.js';
 import { el, safe, hexCss } from './dom.js';
@@ -17,6 +19,8 @@ import { Feed } from './Feed.js';
 import { Modals, KingdomsPanel } from './Panels.js';
 import { TitleScreen } from './TitleScreen.js';
 import { ChroniclePanel } from './Chronicle.js';
+import { Favorites } from './favorites.js';
+import { FavoritesPanel } from './FavoritesPanel.js';
 import { Onboarding } from './Onboarding.js';
 import { CameraPad } from './CameraPad.js';
 import { Popover } from './Popover.js';
@@ -49,7 +53,7 @@ const PREF_KEY = 'worldseed.ui.v1';
 //   right     inspector               bottom      god-powers dock, minimap
 // Everything is hidden with ?ui=0; ?title=0 skips the title screen.
 // Debug / tooling hooks: game.ui.debugShowTooltip(id), game.ui.debugHover(x,y),
-// game.ui.open('settings'|'newworld'|'help'|'kingdoms'), game.ui.setCategory(id),
+// game.ui.open('settings'|'newworld'|'help'|'kingdoms'|'favorites'), game.ui.setCategory(id),
 // game.ui.inspectAt(x,z), game.ui.begin().
 export class UI {
   constructor(game) {
@@ -76,12 +80,16 @@ export class UI {
     this.modals = new Modals(this);
     this.chronicle = new ChroniclePanel(this);
     this.kingdoms = new KingdomsPanel(this);
+    // Favorites (P): the store is game.favorites (serialize / restore for saves)
+    this.favorites = new Favorites(game);
+    game.favorites = this.favorites;
+    this.favPanel = new FavoritesPanel(this, this.favorites);
     this.topbar = new TopBar(this);
     this.toolbar = new Toolbar(this);
     this.minimap = new Minimap(this);
     this.inspector = new Inspector(this);
     this.feed = new Feed(this);
-    this.hud.append(this.topbar.el, this.feed.el, this.kingdoms.el, this.chronicle.el, this.inspector.el, this.minimap.wrap, this.toolbar.el, this.toastEl);
+    this.hud.append(this.topbar.el, this.feed.el, this.kingdoms.el, this.chronicle.el, this.favPanel.el, this.inspector.el, this.minimap.wrap, this.toolbar.el, this.toastEl);
     root.append(this.modals.layer, this.veil);
     this.onboarding = new Onboarding(this);
     this.popover = new Popover(this);
@@ -97,6 +105,15 @@ export class UI {
       el('span', { class: 'ws-overview__txt', text: 'Overview' }),
     );
     this.hud.append(this.overviewBtn);
+    // Favorites (P): a star button in the corner opposite the Overview
+    this.favBtn = el(
+      'button',
+      { class: 'ws-favbtn ws-glass', type: 'button', 'aria-label': 'Favorites (P)', 'aria-expanded': 'false', 'data-tip': 'Favorites · P', onclick: () => this.favPanel.toggle() },
+      el('span', { class: 'ws-favbtn__ico', html: uiIcon('star-on') }),
+      el('span', { class: 'ws-favbtn__txt', text: 'Favorites' }),
+      el('b', { class: 'ws-favbtn__n', hidden: true }),
+    );
+    this.hud.append(this.favBtn);
     // north arrow for a turned Overview (the 2:1 World Map on tall screens)
     this.northEl = el('div', { class: 'ws-north ws-glass', role: 'img', 'aria-label': 'North', 'data-tip': 'North' }, el('i', { class: 'ws-north__arrow', html: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 16.5 13h-9z" fill="currentColor"/><path d="M12 20.5 7.5 13h9z" fill="currentColor" opacity=".35"/></svg>' }), el('b', { text: 'N' }));
     this.hud.append(this.northEl);
@@ -110,7 +127,7 @@ export class UI {
       this.campad = new CameraPad(this);
       this.hud.append(this.campad.el);
     }
-    this.parts = [this.topbar, this.toolbar, this.minimap, this.inspector, this.feed, this.kingdoms, this.onboarding, this.ageChip];
+    this.parts = [this.topbar, this.toolbar, this.minimap, this.inspector, this.feed, this.kingdoms, this.favPanel, this.onboarding, this.ageChip];
     this._paintT = 0;
 
     // initial prefs (audio/time only when not forced by URL params)
@@ -1000,9 +1017,10 @@ export class UI {
         e.stopPropagation();
       } else if (this.game.activePower) {
         /* let Input deselect the power */
-      } else if (this.kingdoms.open || this.chronicle.open) {
+      } else if (this.kingdoms.open || this.chronicle.open || this.favPanel.open) {
         this.kingdoms.toggle(false);
         this.chronicle.toggle(false);
+        this.favPanel.toggle(false);
         e.stopPropagation();
       } else if (this.inspector.open) {
         if (this.inspector.editing) this.inspector.stopEdit();
@@ -1058,6 +1076,9 @@ export class UI {
       case 'KeyJ':
         this.chronicle.toggle();
         break;
+      case 'KeyP':
+        this.favPanel.toggle();
+        break;
       case 'KeyL':
         this.modals.toggle('laws');
         break;
@@ -1094,6 +1115,7 @@ export class UI {
   open(name) {
     if (name === 'kingdoms') this.kingdoms.toggle(true);
     else if (name === 'chronicle') this.chronicle.toggle(true);
+    else if (name === 'favorites') this.favPanel.toggle(true);
     else this.modals.open(name);
   }
   setCategory(id) {

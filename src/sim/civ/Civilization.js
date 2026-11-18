@@ -1376,7 +1376,7 @@ export class Civilization {
     }
     if (item.legendary && !item.chronicled) {
       item.chronicled = true;
-      this._history(`${item.name} is laid in the armoury of ${this._kn(k)}`, 'info', v ? { x: v.cx, z: v.cz } : null);
+      this._history(`${item.name} is laid in the armory of ${this._kn(k)}`, 'info', v ? { x: v.cx, z: v.cz } : null);
     }
     return true;
   }

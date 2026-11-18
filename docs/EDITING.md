@@ -48,3 +48,9 @@ recoloured kingdom keeps its colour).
 - Changes apply immediately (no save button) with a toast, and are undoable for 10 s from the toast.
 - Text inputs must not trigger game hotkeys while focused. 44 px targets on touch.
 - The inspector must not re-render the edit card while the player is typing.
+
+## Favorites (round 14, `src/ui/favorites.js`, `src/ui/FavoritesPanel.js`)
+
+- The inspector star works on creature, village, realm and vehicle cards. A creature's star is still `u.data.favorite` (set through `units.setFavorite`); villages, realms and vehicles are held by reference in `game.favorites` (`has(kind, ref)`, `set(kind, ref, on)`, `toggle`, `remove(key)`, `list()`; kinds `unit | village | realm | vehicle`).
+- The Favorites panel (P, or the star button in the bottom-left corner; on touch screens a round star button on the right) lists them in groups and refreshes once a second while open. A favorite that dies stays listed ("Died in Year N", "Fell", "Abandoned", "Lost") until removed.
+- There is no world save file: a reload rebuilds the world from its seed. Favorites are kept in the browser per world (preset, region, size, seed) and find the same realms, villages, founding creatures and craft again when that world is rebuilt; anything not in the rebuilt world shows as "Not in this world". `game.favorites.serialize()` / `restore(data)` are there for a save format.

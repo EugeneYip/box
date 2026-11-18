@@ -29,19 +29,19 @@ export const LAST_ERA = ERAS.length - 1;
 // permits (Civ); vehicles listed are run by the Fleets module.
 export const TECHS = [
   // Hearth
-  { id: 'agriculture', name: 'Agriculture', era: 0, cost: 60, requires: [], description: 'Ploughs and seed-saving: richer harvests.', effects: { harvest: 1.15 }, unlocks: ['Ploughed field rows', 'Farmstead barns'], builds: ['barn'] },
+  { id: 'agriculture', name: 'Agriculture', era: 0, cost: 60, requires: [], description: 'Plows and seed-saving: richer harvests.', effects: { harvest: 1.15 }, unlocks: ['Plowed field rows', 'Farmstead barns'], builds: ['barn'] },
   { id: 'masonry', name: 'Masonry', era: 0, cost: 70, requires: [], description: 'Cut stone for footings and walls.', effects: { stone: 1.2 }, unlocks: ['Stone footings and stone houses', 'A paved village square', 'Sturdier, fire-resistant buildings'], builds: ['plaza'] },
   { id: 'pottery', name: 'Pottery', era: 0, cost: 60, requires: [], description: 'Fired jars keep grain longer.', effects: { foodCap: 1.25 }, unlocks: ['Kilns', 'Granaries full of jars'], builds: ['kiln'] },
   { id: 'fishing', name: 'Fishing', era: 0, cost: 55, requires: [], description: 'Nets and weirs fill the larder.', effects: { fish: 1.3 }, unlocks: ['Fishing jetties', 'Fishing boats over the shoals'], builds: ['docks'] },
   { id: 'wheel', name: 'The Wheel', era: 0, cost: 80, requires: ['agriculture'], description: 'Axles and spoked wheels: ox carts carry the harvest.', effects: { work: 1.03 }, unlocks: ['Ox carts hauling wood, stone, food and ore between villages'] },
   // Bronze
   { id: 'bronzeworking', name: 'Bronzeworking', era: 1, cost: 210, requires: ['masonry'], description: 'Bronze tools and blades.', effects: { material: 'bronze', work: 1.08 }, unlocks: ['A forge with a glowing hearth', 'Bronze arms and tools'] },
-  { id: 'sailing', name: 'Sailing', era: 1, cost: 200, requires: ['fishing'], description: 'Harbours and sea-going ships.', effects: { fish: 1.2 }, unlocks: ['Harbours', 'Trading cogs between friendly ports', 'Transport ships for settlers and armies'], builds: ['harbour'] },
+  { id: 'sailing', name: 'Sailing', era: 1, cost: 200, requires: ['fishing'], description: 'Harbors and sea-going ships.', effects: { fish: 1.2 }, unlocks: ['Harbors', 'Trading cogs between friendly ports', 'Transport ships for settlers and armies'], builds: ['harbour'] },
   { id: 'writing', name: 'Writing', era: 1, cost: 220, requires: ['pottery'], description: 'Scribes and libraries.', effects: { research: 1.15 }, unlocks: ['Libraries', 'Scribes carrying scrolls'], builds: ['library'] },
   { id: 'irrigation', name: 'Irrigation', era: 1, cost: 190, requires: ['agriculture'], description: 'Channels water the fields.', effects: { harvest: 1.15 }, unlocks: ['Irrigation channels beside the fields', 'Water wheels'], builds: ['waterwheel'] },
   { id: 'horsemanship', name: 'Horsemanship', era: 1, cost: 180, requires: ['agriculture'], description: 'Riders carry news and armies further.', effects: { march: 1.15 }, unlocks: ['Stables', 'Mounted messengers on the roads', 'Cavalry'], builds: ['stables'] },
   // Iron
-  { id: 'ironworking', name: 'Ironworking', era: 2, cost: 520, requires: ['bronzeworking'], description: 'Iron arms and armour.', effects: { material: 'iron', work: 1.08 }, unlocks: ['A smoking bloomery', 'Iron arms and armour'], builds: ['bloomery'] },
+  { id: 'ironworking', name: 'Ironworking', era: 2, cost: 520, requires: ['bronzeworking'], description: 'Iron arms and armor.', effects: { material: 'iron', work: 1.08 }, unlocks: ['A smoking bloomery', 'Iron arms and armor'], builds: ['bloomery'] },
   { id: 'fortification', name: 'Fortification', era: 2, cost: 480, requires: ['masonry', 'bronzeworking'], description: 'Curtain walls, gates and towers.', effects: { walls: true }, unlocks: ['Town walls and gatehouses', 'Watchtowers whose archers shoot at raiders'], builds: ['walls'] },
   { id: 'medicine', name: 'Medicine', era: 2, cost: 460, requires: ['writing'], description: 'Healers: more children live to grow up.', effects: { birth: 1.2 }, unlocks: ["A healer's house with an herb garden", 'Healers who tend the sick and wounded'], builds: ['healer'] },
   { id: 'mathematics', name: 'Mathematics', era: 2, cost: 470, requires: ['writing'], description: 'Numbers speed every inquiry.', effects: { research: 1.15 }, unlocks: ["Surveyors' straight roads linking the realm's villages"] },
@@ -49,7 +49,7 @@ export const TECHS = [
   { id: 'shipbuilding', name: 'Shipbuilding', era: 2, cost: 560, requires: ['sailing', 'ironworking'], description: 'Keels and ribs on the slipway: ships of war.', effects: { fish: 1.05 }, unlocks: ['A shipyard slipway with a hull on the stocks', 'War galleys'], builds: ['shipyard'] },
   { id: 'siegecraft', name: 'Siegecraft', era: 2, cost: 540, requires: ['fortification', 'mathematics'], description: 'Rams and catapults to break walls.', effects: { siege: 1.6 }, unlocks: ['Battering rams and catapults with the armies'] },
   // Enlightened
-  { id: 'steelworking', name: 'Steelworking', era: 3, cost: 1000, requires: ['ironworking'], description: 'Steel: the finest blades.', effects: { material: 'steel' }, unlocks: ['A foundry', 'Steel arms and armour'], builds: ['foundry'] },
+  { id: 'steelworking', name: 'Steelworking', era: 3, cost: 1000, requires: ['ironworking'], description: 'Steel: the finest blades.', effects: { material: 'steel' }, unlocks: ['A foundry', 'Steel arms and armor'], builds: ['foundry'] },
   { id: 'philosophy', name: 'Philosophy', era: 3, cost: 900, requires: ['mathematics', 'medicine'], description: 'Wise laws keep provinces loyal.', effects: { loyalty: 7 }, unlocks: ['A forum where citizens gather'], builds: ['forum'] },
   { id: 'banking', name: 'Banking', era: 3, cost: 940, requires: ['mathematics'], description: 'Coin works harder: markets prosper.', effects: { gold: 1.5 }, unlocks: ['A market hall with stalls and a counting house', 'Trade caravans between realms at peace'], builds: ['markethall'] },
   { id: 'engineering', name: 'Engineering', era: 3, cost: 960, requires: ['architecture'], description: 'Cranes and mills: faster building.', effects: { build: 1.25 }, unlocks: ['Watermills on the rivers', 'Cranes over building sites'], builds: ['watermill'] },
@@ -65,20 +65,20 @@ export const TECHS = [
   { id: 'railways', name: 'Railways', era: 4, cost: 37700, requires: ['steampower', 'architecture'], description: 'Iron rails link the towns of the realm.', effects: { march: 1.1 }, unlocks: ['Rail lines between the towns of the realm', 'Railway stations', 'Steam trains carrying goods and people'], builds: ['station'] },
   { id: 'industry', name: 'Industry', era: 4, cost: 36400, requires: ['steampower', 'banking'], description: 'Factories and their workers: production on a new scale.', effects: { work: 1.12, gold: 1.15 }, unlocks: ['Factories with smoking chimneys', "Workers' row houses", 'A haze of smoke near the factories'], builds: ['factory', 'rowhouse'] },
   { id: 'sanitation', name: 'Sanitation', era: 4, cost: 34000, requires: ['medicine', 'engineering'], description: 'Clean water and sewers: towns grow and plague retreats.', effects: { birth: 1.08 }, unlocks: ['Waterworks, sewers and public baths', 'Bigger towns', 'Far fewer deaths from plague'], builds: ['waterworks'] },
-  { id: 'ironclads', name: 'Ironclads', era: 4, cost: 40300, requires: ['gunpowder', 'steampower', 'steelworking'], description: 'Armoured steam warships with cannon.', effects: {}, unlocks: ['Ironclad steam warships with cannon'] },
+  { id: 'ironclads', name: 'Ironclads', era: 4, cost: 40300, requires: ['gunpowder', 'steampower', 'steelworking'], description: 'Armored steam warships with cannon.', effects: {}, unlocks: ['Ironclad steam warships with cannon'] },
   // Modern
   { id: 'electricity', name: 'Electricity', era: 5, cost: 52800, requires: ['industry'], description: 'Power stations light the streets and drive the machines.', effects: { work: 1.1, research: 1.1 }, unlocks: ['Power stations', 'Pylons and power lines to the towns', 'Street lights and lit windows at night'], builds: ['powerstation', 'pylon'] },
   { id: 'combustion', name: 'Combustion Engine', era: 5, cost: 55200, requires: ['industry', 'railways'], description: 'Engines on the roads and at sea.', effects: { work: 1.04 }, unlocks: ['Trucks and cars on the roads', 'Motor freighters at sea'] },
   { id: 'flight', name: 'Flight', era: 5, cost: 60000, requires: ['combustion'], description: 'Wings of canvas and wire.', effects: { march: 1.05 }, unlocks: ['Airfields', 'Mail and transport planes between towns', 'Biplanes that scout and strafe in war'], builds: ['airfield'] },
   { id: 'radio', name: 'Radio', era: 5, cost: 54000, requires: ['electricity'], description: 'Voices through the air: news and treaties travel fast.', effects: { research: 1.04, diplomacy: 1.6 }, unlocks: ['Radio masts with blinking lights', 'Faster diplomacy; allies answer sooner'], builds: ['radiomast'] },
   { id: 'concrete', name: 'Reinforced Concrete', era: 5, cost: 52800, requires: ['industry', 'architecture'], description: 'Steel and concrete: towns grow upward.', effects: { build: 1.1 }, unlocks: ['Apartment blocks', 'Taller, larger towns on the same land'], builds: ['apartment'] },
-  { id: 'battleships', name: 'Battleships', era: 5, cost: 62400, requires: ['ironclads', 'electricity'], description: 'Steel turrets at sea, armour on land.', effects: { siegeFire: 1.2 }, unlocks: ['Steel battleships with turrets', 'Tanks and artillery with the armies'] },
+  { id: 'battleships', name: 'Battleships', era: 5, cost: 62400, requires: ['ironclads', 'electricity'], description: 'Steel turrets at sea, armor on land.', effects: { siegeFire: 1.2 }, unlocks: ['Steel battleships with turrets', 'Tanks and artillery with the armies'] },
   // Atomic
   { id: 'jets', name: 'Jet Engines', era: 6, cost: 112000, requires: ['flight', 'electricity'], description: 'Jets cross the world in hours.', effects: { gold: 1.1 }, unlocks: ['Airports with runways', 'Jet airliners between realms at peace', 'Jet fighters in war'], builds: ['airport'] },
   { id: 'rocketry', name: 'Rocketry', era: 6, cost: 124800, requires: ['jets', 'radio'], description: 'Rockets climb to orbit.', effects: { research: 1.03 }, unlocks: ['Launch pads', 'Rockets lifting off on plumes of fire', 'Satellites crossing the night sky, each one speeding research'], builds: ['launchpad'] },
   { id: 'computing', name: 'Computing', era: 6, cost: 115200, requires: ['radio', 'concrete'], description: 'Thinking machines speed every inquiry.', effects: { research: 1.3 }, unlocks: ['Research campuses', 'Glowing screens in the windows'], builds: ['campus'] },
   { id: 'containers', name: 'Container Shipping', era: 6, cost: 108800, requires: ['combustion', 'concrete'], description: 'Boxes by the thousand: bulk sea trade.', effects: { gold: 1.15 }, unlocks: ['Container ships', 'Ports with gantry cranes and stacked containers'], builds: ['containerport'] },
-  { id: 'skyscrapers', name: 'Skyscrapers', era: 6, cost: 112000, requires: ['concrete', 'electricity'], description: 'Towers of steel and glass at the heart of the city.', effects: { build: 1.05 }, unlocks: ['High-rise towers at city centres', 'Larger cities'], builds: ['skyscraper'] },
+  { id: 'skyscrapers', name: 'Skyscrapers', era: 6, cost: 112000, requires: ['concrete', 'electricity'], description: 'Towers of steel and glass at the heart of the city.', effects: { build: 1.05 }, unlocks: ['High-rise towers at city centers', 'Larger cities'], builds: ['skyscraper'] },
   { id: 'carriers', name: 'Carriers', era: 6, cost: 124800, requires: ['battleships', 'jets'], description: 'Floating airfields.', effects: {}, unlocks: ['Aircraft carriers that launch and recover jets'] },
   { id: 'nuclear', name: 'Nuclear Power', era: 6, cost: 128000, requires: ['electricity', 'computing'], description: 'Power from the atom, and never its weapons.', effects: { work: 1.2 }, unlocks: ['Power plants with cooling towers and steam', 'A large boost to work'], builds: ['nuclear'] },
   // Future
@@ -87,7 +87,7 @@ export const TECHS = [
   { id: 'robotics', name: 'Robotics', era: 7, cost: 200000, requires: ['computing'], description: 'Machines that build and carry.', effects: { build: 1.25, work: 1.08 }, unlocks: ['Delivery drones over the towns', 'Robot workers'] },
   { id: 'vtol', name: 'VTOL Transport', era: 7, cost: 220000, requires: ['jets', 'robotics'], description: 'Craft that rise straight up.', effects: { march: 1.05 }, unlocks: ['Sky taxis and VTOL transports between towns'] },
   { id: 'arcology', name: 'Arcology', era: 7, cost: 230000, requires: ['skyscrapers', 'fusion'], description: 'Whole cities in one green tower.', effects: { foodCap: 1.2 }, unlocks: ['Arcologies: vast green tower-cities', 'Very large cities'], builds: ['arcology'] },
-  { id: 'orbital', name: 'Orbital Industry', era: 7, cost: 240000, requires: ['rocketry', 'fusion'], description: 'Factories and harbours in orbit.', effects: { research: 1.12, gold: 1.25 }, unlocks: ['A spaceport where reusable rockets land', 'An orbital station in the sky'], builds: ['spaceport'] },
+  { id: 'orbital', name: 'Orbital Industry', era: 7, cost: 240000, requires: ['rocketry', 'fusion'], description: 'Factories and harbors in orbit.', effects: { research: 1.12, gold: 1.25 }, unlocks: ['A spaceport where reusable rockets land', 'An orbital station in the sky'], builds: ['spaceport'] },
   { id: 'starships', name: 'Starships', era: 7, cost: 270000, requires: ['orbital', 'arcology'], description: 'Colony ships for the stars.', effects: { research: 1.05 }, unlocks: ['Colony starships launched to the stars'] },
   // ---- Breadth (docs/TECH-BREADTH.md): food, medicine, the land's biomes,
   // city development, urban planning and defense against the sky. These are
@@ -533,7 +533,7 @@ export const tech = {
   _gainMastery(k) {
     k.mastery = (k.mastery || 0) + 1;
     this._history(`📜 ${this._kn(k)} attains Mastery ${k.mastery}`, 'info', this._kingdomPos(k));
-    const unlock = { 2: 'statues of its heroes rise', 3: 'a second great work may begin', 4: 'its halls are gilded', 6: 'scholars found an academy', 8: 'its harbours fill with ships', 10: 'lamps line its grand roads' }[k.mastery];
+    const unlock = { 2: 'statues of its heroes rise', 3: 'a second great work may begin', 4: 'its halls are gilded', 6: 'scholars found an academy', 8: 'its harbors fill with ships', 10: 'lamps line its grand roads' }[k.mastery];
     if (unlock || k.mastery % 3 === 0) this._note(`📜 ${this._kn(k)} attains Mastery ${k.mastery}${unlock ? ': ' + unlock : ''}`, 'good', this._kingdomPos(k), 'mastery' + k.id, 1);
   },
 

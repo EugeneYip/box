@@ -330,7 +330,7 @@ export class Fleet {
       dirZ: dir[1],
       berth: berth && water >= 0 ? berth : null,
       water,
-      name: v?.name || 'the harbour',
+      name: v?.name || 'the harbor',
       landId: v?.landId ?? -1,
       navV: nav.version,
     };
@@ -1539,7 +1539,7 @@ export class Fleet {
       case 'chart':
         return m.phase === 'home' ? 'Returning with new charts' : 'Charting distant coasts';
       case 'patrol':
-        return v.target ? 'Engaging the enemy' : m.blockade != null ? 'Blockading an enemy harbour' : 'Patrolling the sea lanes';
+        return v.target ? 'Engaging the enemy' : m.blockade != null ? 'Blockading an enemy harbor' : 'Patrolling the sea lanes';
       case 'voyage':
         return m.phase === 'home' ? 'Returning home' : 'On a voyage';
       case 'home':
@@ -1547,7 +1547,7 @@ export class Fleet {
       case 'haul':
         return m.phase === 'home' ? 'Returning empty' : `Hauling ${cargoText(v.cargo)}`;
       case 'caravan':
-        return m.phase === 'home' ? 'Returning with coin' : 'Bringing goods to a neighbour';
+        return m.phase === 'home' ? 'Returning with coin' : 'Bringing goods to a neighbor';
       case 'siege':
         if (v.def.gun && v.siegeTarget) return v.role === 'catapult' ? 'Shelling the walls' : 'Firing on the gates';
         return v.siegeTarget ? (v.role === 'catapult' ? 'Hurling stones at the walls' : 'Battering the gates') : 'Rolling with the army';
