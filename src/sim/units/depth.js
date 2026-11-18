@@ -128,6 +128,9 @@ export function installDepth(Units) {
         const v = STATUS_BY_ID[id]?.mods?.[key];
         if (v != null) m *= v;
       }
+    // daily life (daily.js): villagers who keep a day's rhythm (a full night's
+    // sleep, meals, evenings off) work at a steadier pace in their shorter day
+    if (key === 'work' && u?._ext && u.species === 'human' && this.game.settings?.dayNight) m *= 1.35;
     return m;
   };
   P._refreshMods = function (u) {

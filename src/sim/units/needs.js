@@ -234,6 +234,8 @@ export function installNeeds(Units) {
   P._insideTick = function (u, dt, now, tickN) {
     u.energy = Math.min(1, u.energy + dt * SLEEP_GAIN);
     u.hunger = Math.min(1, u.hunger + dt * u.def.hungerRate * 0.4);
+    // children grow up through the night too (the village brain ages them by day)
+    if (u.age < 16 && !u.flags?.frozenAge && !u.data.frozenAge) u.age += (dt / 30) * 1.7;
     if ((tickN + u.id) % 15 !== 0) return;
     const g = this.game;
     const b = g.civ?._bById?.get(u._homeB);
