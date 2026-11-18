@@ -577,6 +577,7 @@ export class Units {
       _spSeen: undefined,
       _hitAt: -99,
       _singUntil: 0,
+      _envN: 0,
       _celeSeen: null,
       _brigade: 0,
       _space: 0,
@@ -1049,6 +1050,38 @@ export class Units {
     u.x = nx;
     u.z = nz;
     u.moving = true;
+    // a long step (a distant walker updates every 2nd or 4th tick, coarse
+    // steps at high speed) carries on along the path past the waypoint it
+    // reached, instead of stopping there until its next update
+    let rest = u.spd * facing * dt - stepLen;
+    if (rest > 0.03 && stepLen >= d - 1e-4 && u.path) this._carryOn(u, rest, clx, clz);
+  }
+  _carryOn(u, rest, clx, clz) {
+    const w = this.game.world;
+    for (let hop = 0; hop < 6 && rest > 0.03 && u.path && u.pathIdx < u.path.length - 1; hop++) {
+      u.pathIdx++;
+      const i = u.path[u.pathIdx];
+      let tx = (i % w.w) + 0.5,
+        tz = Math.floor(i / w.w) + 0.5;
+      const fin = u.pathIdx === u.path.length - 1;
+      if (fin && u.target) {
+        tx = u.target.x;
+        tz = u.target.z;
+      }
+      const dx = tx - u.x,
+        dz = tz - u.z;
+      const d = Math.hypot(dx, dz);
+      if (d < 1e-4) continue;
+      const st = Math.min(d, rest);
+      const nx = u.x + (dx / d) * st,
+        nz = u.z + (dz / d) * st;
+      if (!this.canStand(u, clx(nx), clz(nz))) break;
+      u.x = nx;
+      u.z = nz;
+      u.heading = Math.atan2(dx, dz);
+      rest -= st;
+      if (st < d) break;
+    }
   }
 
   // Personal space (staggered: each unit every 4th tick). Herd-mates keep a
@@ -2027,7 +2060,7 @@ export class Units {
         fdz0 = u.z - focus.z;
       const fd2 = fdx0 * fdx0 + fdz0 * fdz0;
       let lod = 0;
-      if (!u.combat && (overview || fd2 > lr2) && def.habitat !== 'air' && !BRAIN_TICKS[def.brain]) lod = !u.target && !u.path && (overview || fd2 > lr2 * 4) ? 2 : 1;
+      if (!u.combat && (overview || fd2 > lr2) && def.habitat !== 'air' && !BRAIN_TICKS[def.brain]) lod = overview || fd2 > lr2 * 4 ? 2 : 1;
       if (lod && (slot & ((1 << lod) - 1)) !== 0 && u.thinkT > 0.05) {
         u.anim += dt * (u.moving ? 1 : 0.35);
         // its last stride is shown in even steps, one a tick, so a distant
@@ -2079,7 +2112,22 @@ export class Units {
       const tx = Math.min(w.w - 1, Math.max(0, Math.floor(u.x))),
         ty = Math.min(w.h - 1, Math.max(0, Math.floor(u.z)));
       const ti = ty * w.w + tx;
-      if (def.habitat === 'land') {
+      // standing still: the ground and the water around stay as they were
+      // (checked again every 8th update, for floods and terrain edits)
+      const still = u.x === u._ex && u.z === u._ez && (u._envN = (u._envN + 1) & 7) !== 0;
+      if (def.habitat === 'land' && still) {
+        const fire = w.fire[ti];
+        if (fire > 0.2) {
+          this.damage(u, udt * 8 * fire, null, { cause: 'fire' });
+          if ((slot >> lod) % (5 >> lod) === 0) g.fx.emit?.('fire', { x: u.x, y: u.y + def.height * def.size * 0.5, z: u.z }, { scale: 0.35 });
+        }
+        if (u.swimming) {
+          if (u._ext && u._farSea) u.energy = Math.max(0, u.energy - udt * 0.012);
+          if (!def.canSwim || u.energy <= 0.01) this.damage(u, udt * (def.canSwim ? 2 : 12), null, { cause: 'drowned' });
+        }
+        if (w.type[ti] === TILE.LAVA) this.damage(u, udt * 60, null, { cause: 'lava' });
+        if (!u.alive) continue;
+      } else if (def.habitat === 'land') {
         const h = w.heightAt(u.x, u.z);
         // a jetty, dock or bridge over the water is a deck to stand on
         const deck = h < SEA_LEVEL && w.building[ti] >= 0;
@@ -2178,7 +2226,7 @@ export class Units {
         u.x = u.px + u._mvx;
         u.z = u.pz + u._mvz;
       }
-      u.y = this._groundY(u);
+      if (!still || def.habitat === 'air' || u.x !== u._ex || u.z !== u._ez) u.y = this._groundY(u);
       u.anim += dt * (u.moving ? 1 : 0.35);
       if (u.state === 'walk' && !u.moving && !u.target) u.state = 'idle';
       if (u.swimming && u.state !== 'attack' && u.state !== 'flee') u.state = 'swim';

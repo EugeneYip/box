@@ -26,7 +26,7 @@ export function installPeople(Units) {
     const v = civ?.villages?.[u.village];
     if (role === 'astronaut' && u._space > 0) return this._astronaut(u, now, v);
     if (u.combat || u.state === 'flee' || u.data.inside || u.age < u.def.maturity) return false;
-    if (role === 'firefighter' || u._brigade > now) return this._fireThink(u, now, v);
+    if (role === 'firefighter' || u._brigade > now) return v && v.alive && this._dlThreat(u, v) ? false : this._fireThink(u, now, v);
     if (!v || !v.alive) return false;
     switch (role) {
       case 'doctor':

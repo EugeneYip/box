@@ -451,7 +451,7 @@ export function installDaily(Units) {
       return true;
     }
     // meals: breakfast after waking, lunch at midday, supper at dusk
-    const mi = h >= wake && h < wake + 1.4 ? 0 : h >= 11.7 && h < 13.3 ? 1 : h >= 16.7 && h < 18.3 ? 2 : -1;
+    const mi = h >= wake && h < wake + 1.4 ? 0 : h >= 11.7 && h < 13.3 ? 1 : h >= 16.2 && h < 17.3 ? 2 : -1;
     if (mi >= 0 && !guard) {
       const key = c.day * 4 + mi;
       if (u._meal !== key) {
@@ -460,7 +460,7 @@ export function installDaily(Units) {
         // lunch where the work is (or at the market); breakfast and supper at home
         if (mi === 1 && (working || u.job)) this._dlStart(u, 'eat', 7 + rng() * 5, { lab, act: 'eat' });
         else if (mi === 1 && pl.market && rng() < 0.5) this._dlStart(u, 'eat', 8 + rng() * 5, { x: pl.market.doorX + (rng() - 0.5) * 2, z: pl.market.doorZ + (rng() - 0.5) * 2, lab: 'Eating at the market', go: 'Walking to the market', act: 'eat' });
-        else this._dlStart(u, 'eat', 8 + rng() * 6, { x: hx + (rng() - 0.5) * 1.2, z: hz + (rng() - 0.5) * 1.2, lab, go: 'Walking home', act: 'eat' });
+        else this._dlStart(u, 'eat', 6 + rng() * 4, { x: hx + (rng() - 0.5) * 1.2, z: hz + (rng() - 0.5) * 1.2, lab, go: 'Walking home', act: 'eat' });
         u._dl.meal = meal;
         return true;
       }
@@ -473,7 +473,7 @@ export function installDaily(Units) {
         if (!guard || rng() < 0.5) return this._dlPrivy(u, v, pl);
       }
     }
-    const evening = h >= 17.3 + hash(u.id, 6) * 0.7 && h < bed;
+    const evening = h >= 16.9 + hash(u.id, 6) * 0.6 && h < bed;
     if (evening && !guard) return this._dlEvening(u, now, v, pl, child, bed, h);
     // children by day: play with the others, now and then
     if (child) {
