@@ -124,6 +124,7 @@ export function buildingLabel(b) {
 export function costOf(type, level = 1, culture = null) {
   const def = BUILDING_TYPES[type];
   const c = def?.cost?.[Math.min(level, def.levels) - 1] || {};
+  culture = culture && String(culture).split('~')[0]; // a people keeps its style ('dune~mexican')
   if (culture === 'dune' && c.wood) return { ...c, wood: Math.ceil(c.wood * 0.5) };
   // Hrimfolk raise fieldstone and turf walls: less timber, more stone.
   if (culture === 'frost' && c.wood) return { ...c, wood: Math.ceil(c.wood * 0.5), stone: (c.stone || 0) + Math.ceil(c.wood * 0.3) };

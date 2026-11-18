@@ -17,19 +17,22 @@ export const COUNTRIES = {
     ['Tianjin', 117.2, 39.13], ["Xi'an", 108.94, 34.34], ['Shenyang', 123.43, 41.8], ['Harbin', 126.63, 45.75],
     ['Zhengzhou', 113.62, 34.75], ['Qingdao', 120.38, 36.07], ['Jinan', 117.0, 36.65], ['Dalian', 121.61, 38.91],
     ['Changchun', 125.32, 43.82], ['Shijiazhuang', 114.51, 38.04], ['Taiyuan', 112.55, 37.87], ['Lanzhou', 103.83, 36.06],
-    ['Ürümqi', 87.62, 43.83], ['Hohhot', 111.75, 40.84], ['Yinchuan', 106.23, 38.49], ['Xining', 101.78, 36.62],
+    ['Urumqi', 87.62, 43.83], ['Hohhot', 111.75, 40.84], ['Yinchuan', 106.23, 38.49], ['Xining', 101.78, 36.62],
     ['Kashgar', 75.99, 39.47], ['Baotou', 109.84, 40.66], ['Luoyang', 112.45, 34.62], ['Xuzhou', 117.18, 34.26],
     ['Qiqihar', 123.92, 47.35], ['Hailar', 119.77, 49.21], ['Hami', 93.51, 42.82], ['Jiuquan', 98.49, 39.73],
     ['Golmud', 94.9, 36.4], ['Yan\'an', 109.49, 36.59], ['Datong', 113.3, 40.09], ['Mudanjiang', 129.63, 44.55],
+    ['Chongqing', 106.55, 29.56], ['Nanning', 108.37, 22.82], ['Lhasa', 91.11, 29.65],
+    ['Shigatse', 88.88, 29.27], ['Wanzhou', 108.41, 30.81], ['Fuling', 107.39, 29.7], ['Beihai', 109.12, 21.48],
+    ['Baise', 106.62, 23.9], ['Nyingchi', 94.36, 29.65],
   ]),
   roc: R('ROC', ['Nanjing', 118.8, 32.06], [
-    ['Taipei', 121.56, 25.04], ['Shanghai', 121.47, 31.23], ['Guangzhou', 113.26, 23.13], ['Chongqing', 106.55, 29.56],
+    ['Taipei', 121.56, 25.04], ['Shanghai', 121.47, 31.23], ['Guangzhou', 113.26, 23.13],
     ['Wuhan', 114.31, 30.59], ['Chengdu', 104.07, 30.67], ['Hong Kong', 114.17, 22.32], ['Hangzhou', 120.16, 30.27],
     ['Kunming', 102.83, 24.88], ['Changsha', 112.94, 28.23], ['Xiamen', 118.09, 24.48], ['Fuzhou', 119.3, 26.08],
-    ['Nanning', 108.37, 22.82], ['Kaohsiung', 120.3, 22.63], ['Lhasa', 91.11, 29.65], ['Guiyang', 106.63, 26.65],
+    ['Kaohsiung', 120.3, 22.63], ['Guiyang', 106.63, 26.65],
     ['Nanchang', 115.86, 28.68], ['Hefei', 117.23, 31.82], ['Shenzhen', 114.06, 22.54], ['Haikou', 110.35, 20.02],
     ['Taichung', 120.68, 24.15], ['Ningbo', 121.55, 29.87], ['Suzhou', 120.62, 31.3], ['Wenzhou', 120.7, 28.0],
-    ['Guilin', 110.29, 25.27], ['Shantou', 116.68, 23.35], ['Yichang', 111.29, 30.69], ['Shigatse', 88.88, 29.27],
+    ['Guilin', 110.29, 25.27], ['Shantou', 116.68, 23.35], ['Yichang', 111.29, 30.69],
     ['Sanya', 109.51, 18.25], ['Lijiang', 100.23, 26.87], ['Zhanjiang', 110.36, 21.27], ['Xiangyang', 112.14, 32.04],
   ]),
   japan: R('Japan', ['Tokyo', 139.69, 35.69], [
@@ -651,6 +654,8 @@ export const COUNTRIES = {
     ['Rapid City', -103.23, 44.08], ['Duluth', -92.1, 46.79], ['Raleigh', -78.64, 35.78],
     ['Savannah', -81.1, 32.08], ['Corpus Christi', -97.4, 27.8], ['Little Rock', -92.29, 34.75], ['Des Moines', -93.61, 41.59],
     ['Nome', -165.41, 64.5], ['Utqiagvik', -156.79, 71.29], ['Bethel', -161.76, 60.79], ['Hilo', -155.09, 19.72],
+    ['San Juan', -66.11, 18.47], ['Ponce', -66.61, 18.01], ['Mayagüez', -67.14, 18.2], ['Arecibo', -66.72, 18.47],
+    ['Humacao', -65.83, 18.15], ['Aguadilla', -67.15, 18.43], ['Fajardo', -65.65, 18.33],
   ]),
   canada: R('Canada', ['Ottawa', -75.7, 45.42], [
     ['Toronto', -79.38, 43.65], ['Vancouver', -123.12, 49.28], ['Montreal', -73.57, 45.5], ['Calgary', -114.07, 51.05],
@@ -727,10 +732,6 @@ export const COUNTRIES = {
   bahamas: R('Bahamas', ['Nassau', -77.35, 25.05], [
     ['Freeport', -78.7, 26.53], ['Marsh Harbour', -77.06, 26.54], ['George Town', -75.78, 23.51], ['Andros Town', -77.8, 24.7],
     ['Matthew Town', -73.67, 20.95], ['Alice Town', -79.3, 25.73], ['Clarence Town', -74.98, 23.1],
-  ]),
-  'puerto-rico': R('Puerto Rico', ['San Juan', -66.11, 18.47], [
-    ['Ponce', -66.61, 18.01], ['Mayagüez', -67.14, 18.2], ['Arecibo', -66.72, 18.47], ['Humacao', -65.83, 18.15],
-    ['Aguadilla', -67.15, 18.43], ['Fajardo', -65.65, 18.33],
   ]),
   greenland: R('Greenland', ['Nuuk', -51.72, 64.18], [
     ['Sisimiut', -53.67, 66.94], ['Ilulissat', -51.1, 69.22], ['Qaqortoq', -46.03, 60.72], ['Tasiilaq', -37.64, 65.61],
@@ -810,7 +811,8 @@ export const COUNTRIES = {
 
 // The naming style for a country's land when its real names run out (see
 // realStyleName in cultures.js): Japanese, Korean, Chinese pinyin,
-// Vietnamese, Thai, Malay, Russian and Hindustani forms. Countries not
+// Vietnamese, Thai, Malay, Russian and Hindustani forms, and English,
+// French, German, Spanish, Italian and Portuguese ones. Countries not
 // listed fall back to the culture of the land.
 const LANG = {
   japan: 'ja',
@@ -837,6 +839,40 @@ const LANG = {
   pakistan: 'hi',
   bangladesh: 'hi',
   nepal: 'hi',
+  'united-kingdom': 'en',
+  ireland: 'en',
+  'united-states': 'en',
+  canada: 'en',
+  australia: 'en',
+  'new-zealand': 'en',
+  france: 'fr',
+  belgium: 'fr',
+  haiti: 'fr',
+  germany: 'de',
+  austria: 'de',
+  switzerland: 'de',
+  spain: 'es',
+  mexico: 'es',
+  guatemala: 'es',
+  honduras: 'es',
+  'el-salvador': 'es',
+  nicaragua: 'es',
+  'costa-rica': 'es',
+  panama: 'es',
+  cuba: 'es',
+  'dominican-republic': 'es',
+  colombia: 'es',
+  venezuela: 'es',
+  peru: 'es',
+  chile: 'es',
+  argentina: 'es',
+  bolivia: 'es',
+  ecuador: 'es',
+  paraguay: 'es',
+  uruguay: 'es',
+  italy: 'it',
+  portugal: 'pt',
+  brazil: 'pt',
 };
 
 // Ruler titles where a region-appropriate one reads naturally; every other
@@ -864,23 +900,81 @@ const TITLE = {
   india: { m: 'Maharaja', f: 'Maharani' },
 };
 
+// The people of each country (src/sim/civ/peoples.js): its building style
+// and the pool its personal names come from. Every country is listed.
+const CENTRAL_AMERICAN = 'centralamerican';
+const PEOPLE = {
+  mainland: 'chinese', roc: 'roc', japan: 'japanese', 'south-korea': 'korean', 'north-korea': 'korean', mongolia: 'mongolian',
+  vietnam: 'vietnamese', laos: 'lao', cambodia: 'khmer', thailand: 'thai', myanmar: 'burmese', malaysia: 'malay', singapore: 'singaporean',
+  brunei: 'malay', indonesia: 'indonesian', 'timor-leste': 'timorese', philippines: 'filipino', 'papua-new-guinea': 'papuan',
+  india: 'indian', pakistan: 'pakistani', bangladesh: 'bangladeshi', nepal: 'nepali', bhutan: 'bhutanese', 'sri-lanka': 'srilankan',
+  afghanistan: 'afghan', kazakhstan: 'kazakh', uzbekistan: 'uzbek', turkmenistan: 'turkmen', kyrgyzstan: 'kyrgyz', tajikistan: 'tajik',
+  iran: 'iranian', iraq: 'iraqi', 'saudi-arabia': 'saudi', turkey: 'turkish', syria: 'syrian', jordan: 'jordanian', israel: 'israeli',
+  lebanon: 'lebanese', kuwait: 'gulf', qatar: 'gulf', uae: 'gulf', oman: 'omani', yemen: 'yemeni', azerbaijan: 'azerbaijani',
+  georgia: 'georgian', armenia: 'armenian', cyprus: 'cypriot', russia: 'russian', germany: 'german', 'united-kingdom': 'british',
+  france: 'french', italy: 'italian', spain: 'spanish', portugal: 'portuguese', netherlands: 'dutch', belgium: 'belgian', switzerland: 'swiss',
+  austria: 'austrian', czechia: 'czech', slovakia: 'slovak', hungary: 'hungarian', poland: 'polish', denmark: 'danish', norway: 'norwegian',
+  sweden: 'swedish', finland: 'finnish', iceland: 'icelandic', ireland: 'irish', belarus: 'belarusian', ukraine: 'ukrainian',
+  moldova: 'moldovan', romania: 'romanian', bulgaria: 'bulgarian', serbia: 'serbian', croatia: 'croatian', slovenia: 'slovene',
+  bosnia: 'bosnian', montenegro: 'montenegrin', albania: 'albanian', 'north-macedonia': 'macedonian', greece: 'greek', estonia: 'estonian',
+  latvia: 'latvian', lithuania: 'lithuanian', egypt: 'egyptian', libya: 'libyan', tunisia: 'tunisian', algeria: 'algerian', morocco: 'moroccan',
+  mauritania: 'mauritanian', mali: 'sahelian', niger: 'sahelian', chad: 'sahelian', sudan: 'sudanese', 'south-sudan': 'eastafrican',
+  ethiopia: 'ethiopian', somalia: 'somali', kenya: 'eastafrican', uganda: 'eastafrican', tanzania: 'eastafrican', nigeria: 'westafrican',
+  ghana: 'westafrican', 'ivory-coast': 'westafrican', senegal: 'westafrican', cameroon: 'centralafrican', 'central-african-republic': 'centralafrican',
+  'dr-congo': 'centralafrican', angola: 'southernafrican', zambia: 'southernafrican', zimbabwe: 'southernafrican', mozambique: 'southernafrican',
+  namibia: 'southernafrican', botswana: 'southernafrican', 'south-africa': 'southafrican', madagascar: 'malagasy', australia: 'australian',
+  'new-zealand': 'newzealander', 'united-states': 'american', canada: 'canadian', mexico: 'mexican', guatemala: CENTRAL_AMERICAN,
+  belize: 'westindian', honduras: CENTRAL_AMERICAN, 'el-salvador': CENTRAL_AMERICAN, nicaragua: CENTRAL_AMERICAN, 'costa-rica': CENTRAL_AMERICAN,
+  panama: CENTRAL_AMERICAN, cuba: 'caribbean', jamaica: 'westindian', haiti: 'haitian', 'dominican-republic': 'caribbean', bahamas: 'westindian',
+  greenland: 'greenlandic', brazil: 'brazilian', argentina: 'argentine', colombia: 'southamerican', venezuela: 'southamerican', peru: 'andean',
+  chile: 'southamerican', bolivia: 'andean', ecuador: 'andean', paraguay: 'southamerican', uruguay: 'southamerican', guyana: 'guyanese',
+};
+
+// Cities that exist at the start on the whole Earth, Great East Asia and
+// North America (docs/REGIONS.md section 4), wherever they fall inside the
+// window: placed after the usual starting villages, closer than the usual
+// spacing when they must be, never skipped. A region asks for them with
+// `must: true`.
+const MUST = {
+  mainland: ['Shenyang', 'Harbin', 'Urumqi', 'Lhasa', 'Chongqing', 'Nanning'],
+  'north-korea': ['Pyongyang', 'Hamhung'],
+  'south-korea': ['Seoul'],
+  japan: ['Sapporo', 'Kumamoto'],
+  'united-states': ['Anchorage', 'Seattle', 'San Diego', 'Houston', 'Chicago', 'Denver', 'San Juan'],
+  roc: ['Hong Kong', 'Haikou', 'Fuzhou'],
+};
+
 // Copy of a country definition for one region: `first` lists city names to
 // move to the front (the cities that should be seeded first on that map),
 // `edge: true` lets a realm whose capital lies outside the window take its
 // first city inside the window as its seat, and `only` keeps just the named
 // cities. `seed: false` lists a country's places for naming only (its land
-// lies at the window's edge; a realm may still rise there later).
+// lies at the window's edge; a realm may still rise there later). `must`
+// asks for the cities that must exist at the start (MUST above).
 export function country(id, opts = {}) {
   const c = COUNTRIES[id];
   if (!c) throw new Error('unknown country ' + id);
   let cities = c.cities.slice();
+  let capital = { ...c.capital };
+  // `capital` seats the realm at another of its cities (the ROC at Taipei on
+  // the whole Earth); the old seat becomes its first city
+  if (opts.capital && opts.capital !== capital.name) {
+    const seat = cities.find((p) => p.name === opts.capital);
+    if (seat) {
+      cities = [capital, ...cities.filter((p) => p !== seat)];
+      capital = { ...seat };
+    }
+  }
+  // `drop` leaves out cities whose land the map does not hold (islands on
+  // the Asia Mainland map)
+  if (opts.drop) cities = cities.filter((p) => !opts.drop.includes(p.name));
   if (opts.only) cities = cities.filter((p) => opts.only.includes(p.name));
   if (opts.first) {
     const front = opts.first.map((n) => cities.find((p) => p.name === n)).filter(Boolean);
     cities = [...front, ...cities.filter((p) => !front.includes(p))];
   }
   if (opts.extra) cities.push(...opts.extra.map((p) => P(...p)));
-  const out = { name: opts.name || c.name, capital: { ...c.capital }, cities };
+  const out = { name: opts.name || c.name, capital, cities, id };
   if (opts.edge) out.edge = true;
   if (opts.color != null) out.color = opts.color;
   if (opts.culture) out.culture = opts.culture;
@@ -889,6 +983,14 @@ export function country(id, opts = {}) {
   if (lang) out.lang = lang;
   const title = opts.title || TITLE[id];
   if (title) out.title = title;
+  const people = opts.people || PEOPLE[id];
+  if (people) out.people = people;
+  if (opts.must && MUST[id]) out.must = MUST[id].slice();
+  // a realm seated elsewhere keeps its old seat among its starting towns
+  if (out.must && capital.name !== c.capital.name) {
+    out.must.push(c.capital.name);
+    out.oldSeat = c.capital.name;
+  }
   return out;
 }
 

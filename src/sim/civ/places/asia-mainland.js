@@ -1,51 +1,15 @@
-// Real realms on the Asia Mainland map (continental Asia), most important
-// first. Edge realms are seated at their first city inside the window when
-// their capital lies outside it (Russia by its southern cities).
+// Real realms on the Asia Mainland map: the East Asian mainland only
+// (docs/REGIONS.md section 4). China (the Mainland Region in the north, the
+// ROC's mainland lands in the south, with its seat at Nanjing), Mongolia and
+// the Korean peninsula; no island cities. Other countries' land at the edges
+// is unclaimed wilderness: no realm of theirs is seeded and they name no
+// places. Most important first.
 import { country } from './countries.js';
 
 export default [
   country('mainland'),
-  country('roc'),
-  country('india'),
-  country('kazakhstan'),
-  country('iran'),
-  country('pakistan'),
+  country('roc', { drop: ['Taipei', 'Kaohsiung', 'Taichung', 'Haikou', 'Sanya'] }),
+  country('south-korea', { drop: ['Jeju'] }),
   country('mongolia'),
-  country('russia', {
-    edge: true,
-    first: ['Novosibirsk', 'Omsk', 'Irkutsk', 'Krasnoyarsk', 'Yekaterinburg', 'Chelyabinsk', 'Barnaul', 'Orenburg', 'Vladivostok', 'Khabarovsk', 'Chita', 'Ulan-Ude', 'Volgograd', 'Astrakhan', 'Samara', 'Ufa', 'Tomsk', 'Kemerovo', 'Kyzyl', 'Blagoveshchensk', 'Tyumen', 'Saratov', 'Rostov-on-Don', 'Krasnodar', 'Makhachkala'],
-  }),
-  country('afghanistan'),
-  country('uzbekistan'),
-  country('turkmenistan'),
-  country('kyrgyzstan'),
-  country('south-korea'),
-  country('saudi-arabia'),
-  country('bangladesh'),
-  country('myanmar'),
-  country('thailand'),
-  country('vietnam'),
-  country('nepal'),
-  country('tajikistan'),
   country('north-korea'),
-  country('iraq'),
-  country('turkey', { edge: true, first: ['Erzurum', 'Van', 'Diyarbakır', 'Trabzon', 'Gaziantep', 'Malatya', 'Sivas', 'Samsun', 'Kayseri', 'Adana'] }),
-  country('laos'),
-  country('cambodia'),
-  country('bhutan'),
-  country('sri-lanka'),
-  country('oman'),
-  country('yemen'),
-  country('uae'),
-  country('syria'),
-  country('azerbaijan'),
-  country('georgia'),
-  country('armenia'),
-  country('jordan'),
-  country('israel'),
-  country('kuwait'),
-  country('qatar'),
-  country('lebanon'),
-  country('malaysia', { edge: true }),
-  country('japan', { edge: true, first: ['Fukuoka', 'Hiroshima', 'Osaka', 'Kyoto', 'Nagoya', 'Kanazawa', 'Niigata', 'Sendai', 'Sapporo'] }),
 ];
