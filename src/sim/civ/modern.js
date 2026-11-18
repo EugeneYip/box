@@ -3,6 +3,7 @@ import { BUILDING_TYPES } from './catalog.js';
 import { USE, YEAR, clamp } from './util.js';
 import { civPath } from './pathing.js';
 import { TECHS } from './tech.js';
+import { BREADTH_FIRST } from './breadth.js';
 
 // Modern and future eras (docs/MODERN-ERAS.md, the parts owned by Civ):
 // the buildings of eras 4-7 and where the planner puts them, taller towns,
@@ -62,6 +63,7 @@ export const MODERN_FIRST = {
   starship: 'launches a colony starship to the stars',
   airtrade: 'flies its first cargo between towns',
   sortie: 'sends aircraft against its enemies',
+  ...BREADTH_FIRST,
 };
 
 const MODERN_TECHS = TECHS.filter((t) => t.era >= 4).map((t) => t.id);
@@ -110,17 +112,7 @@ export const modern = {
     this._hazeC = { t: now, list };
     return list;
   },
-  // Plague bites less in a realm of physicians, far less with sewers and clean water.
-  plagueResist(u) {
-    const v = this.villages[u?.village];
-    if (!v?.alive) return 1;
-    const kid = v.kingdom;
-    let f = 1;
-    if (this.hasTech(kid, 'medicine')) f = 0.85;
-    if (this.hasTech(kid, 'sanitation')) f = 0.45;
-    if (v.hasWaterworks) f = 0.3;
-    return f;
-  },
+  // (plagueResist: physicians, sewers and clean water, hospitals: breadth.js)
   // A modern world holds a few more people (its towns grow taller): up to
   // 12% over the people budget once a realm reaches the Future.
   _modernPeople() {
@@ -142,6 +134,8 @@ export const modern = {
   // Called from _planUnlocks with the planner's helpers. The rarer works go
   // to the capital and the cities, once per realm; the common ones to towns.
   _planModern(v, K, room, build, upgrade, count) {
+    // the food, medicine, land, city and planning branches (breadth.js)
+    this._planBreadth(v, K, room, build, upgrade, count);
     if (!this._anyModern(K)) return;
     const kid = K.id;
     const has = (t) => K.techs.has(t);
@@ -169,7 +163,9 @@ export const modern = {
     // Sanitation: waterworks and sewers
     if (room() && has('sanitation') && (town || pop >= 30) && count('waterworks') === 0) tryBuild('waterworks', () => this._placeByWater(v, 'waterworks') || this.placeAlongRoad(v, 'waterworks'));
     // Industry: factories on the edge of town, row houses for their workers
-    if (room() && has('industry') && town && count('factory') < (city ? 2 : 1)) tryBuild('factory', out('factory', 4, 5));
+    // (Zoning: the factories stand well away from the homes, in their own district)
+    const zoned = has('zoning');
+    if (room() && has('industry') && town && count('factory') < (city ? 2 : 1)) tryBuild('factory', out('factory', zoned ? 7 : 4, zoned ? 9 : 5));
     if (room() && has('industry') && town && count('factory') > 0 && count('rowhouse') < 1 + v.tier && v.housing - pop < 4) tryBuild('rowhouse');
     // Electricity: a power station for every few towns; later the atom and fusion
     const plants = rc('powerstation') + rc('nuclear') + rc('fusion');
@@ -289,7 +285,7 @@ export const modern = {
       v.hasWaterworks = ww;
       v.tallMul = Math.min(2, 1 + (ww ? 0.1 : 0) + Math.min(4, apt) * 0.08 + Math.min(3, sky) * 0.12 + Math.min(1, arc) * 0.45);
       // a factory's wares sell in the realm's markets
-      if (fac) v.gold += fac * 0.05 * dt * this.techMod(v.kingdom, 'gold');
+      if (fac && !(v.blackoutUntil > now)) v.gold += fac * 0.05 * dt * this.techMod(v.kingdom, 'gold'); // (idle in a blackout)
     }
     const F = this.game.fleet;
     for (const k of this.kingdoms) {
@@ -344,6 +340,7 @@ export const modern = {
       this._railEnds();
       this.infraVersion++;
     }
+    this._breadthTick(dt);
   },
 
   // ------------------------------------------------------------ soldiers

@@ -53,6 +53,8 @@ export const LAWS = [
   B('civTechnology', 'civilization', 'Knowledge', 'Kingdoms research technologies and advance through eras.', true, 'civ'),
   N('civTechSpeed', 'civilization', 'Research speed', 'How quickly kingdoms gain knowledge.', 1, 0.25, 4, 0.25, 'civ'),
   S('civEraCap', 'civilization', 'Latest era', 'The latest era realms may reach, from Hearth to Future. Choose Enlightened for a world that never leaves the age of sail and steel.', 7, ['Hearth', 'Bronze', 'Iron', 'Enlightened', 'Industrial', 'Modern', 'Atomic', 'Future'], 'civ'),
+  S('civRenewal', 'civilization', 'Urban renewal', 'From Zoning on, old low houses are rebuilt denser on the same ground and outgrown walls give way to ring roads; heritage buildings always stay.', 2, ['Off', 'Slow', 'Normal'], 'civ'),
+  B('civSkyShield', 'civilization', 'Planetary defense', 'Realms with Planetary Defense break up meteors falling on their towns. Off lets every meteor land.', true, 'civ'),
   B('civRoads', 'civilization', 'Roads', 'Villages pave paths between their buildings and neighbours.', true, 'civ'),
   B('civWalls', 'civilization', 'Fortifications', 'Cities raise walls, gates and watchtowers.', true, 'civ'),
   B('fleetSailing', 'civilization', 'Ships', 'Realms launch fishing boats, trading cogs, transports and great ships.', true, 'fleet'),

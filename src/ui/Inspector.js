@@ -487,6 +487,9 @@ export class Inspector {
     const fav = !!u?.data?.favorite;
     const realmK = !u && (k === 'village' || k === 'kingdom' || k === 'building') ? (typeof r.kingdom === 'object' && r.kingdom) || kingdomOf(this.game, (r.village || this.game.civ?.villages?.[r.building?.village])?.kingdom) : null;
     if (realmK) actions.unshift(`<button class="ws-btn ws-btn--sm" type="button" data-act="tech" data-k="${realmK.id}">${uiIcon('chronicle')}<span>Technology</span></button>`);
+    // a building may be marked or unmarked as heritage (never replaced by renewal)
+    const hb = k === 'building' && r.building?.alive && !craft && this.game.civ?.setHeritage ? r.building : null;
+    if (hb) actions.push(`<button class="ws-btn ws-btn--sm ws-btn--ghost${hb.heritage ? ' is-on' : ''}" type="button" data-act="heritage" data-tip="${hb.heritage ? 'Heritage: never rebuilt. Click to unmark' : 'Mark as heritage: never rebuilt by urban renewal'}">${uiIcon(hb.heritage ? 'star-on' : 'star')}<span>Heritage</span></button>`);
 
     this.el.style.setProperty('--tint', ic.tint);
     this.el.innerHTML = `
@@ -587,6 +590,12 @@ export class Inspector {
           b.setAttribute('aria-label', u.data.favorite ? 'Unstar' : 'Star this creature');
           b.dataset.tip = u.data.favorite ? 'Favourite' : 'Mark as favourite';
         } else this.render();
+      } else if (act === 'heritage' && r.building) {
+        const bld = r.building;
+        safe(() => this.game.civ.setHeritage(bld, !bld.heritage), null, 'heritage');
+        const fresh = safe(() => this.game.civ.inspect({ x: bld.x, z: bld.z, tx: Math.floor(bld.x), ty: Math.floor(bld.z) }), null);
+        if (fresh?.building === bld) r.stats = fresh.stats;
+        this.render();
       } else if (act === 'tech') this.ui.modals.open('tech', { kingdom: +b.dataset.k });
       else if (act === 'occupant') {
         const id = +b.dataset.uid;

@@ -113,6 +113,15 @@ export class Meteor {
       play(g, 'meteor', { x: this.x, z: this.z }, 0.9);
     }
     const u = Math.min(1, this.t / this.T);
+    // Planetary Defense: a stone falling on a protected town is broken up
+    // high in the sky by the tracking station's beams (Civ breadth.js)
+    if (u > 0.5 && !this._shieldChecked) {
+      this._shieldChecked = true;
+      if (g.civ?.skyShieldAt?.(this.x, this.z)) {
+        this._breakUp();
+        return false;
+      }
+    }
     // slight acceleration toward the ground
     const e = u * (0.75 + 0.25 * u);
     this.prev.copy(this.pos);
@@ -309,6 +318,24 @@ export class Meteor {
 
   dispose() {
     this.game.scene.remove(this.mesh);
+  }
+
+  // Broken into harmless fragments in the sky: a flash, sparks and a little smoke.
+  _breakUp() {
+    const g = this.game;
+    const fx = g.fx;
+    g.scene.remove(this.mesh);
+    const p = this.pos;
+    try {
+      glowFlash(fx, p.x, p.y, p.z, 2 + this.size * 0.6, { life: 0.35, bright: 1.6, color: 0xbfe8ff, from: 0.4, soft: 0 });
+      sparks(fx, p.x, p.y, p.z, 26, { speed: 7, gravity: 5, size: 1.6 });
+      smokePuff(fx, p.x, p.y, p.z, { size: 1.2, ramp: RAMP.SMOKE_DARK, rise: 0.2, life: 2, drift: 1 });
+      fx.addLight?.({ x: p.x, y: p.y, z: p.z }, 0x9fd8ff, 4, 0.8);
+    } catch (e) {
+      /* visuals are best-effort */
+    }
+    play(g, 'thunder', { x: this.x, z: this.z }, 0.5);
+    g.civ?.meteorStopped?.(this.x, this.z);
   }
 }
 

@@ -141,7 +141,7 @@ export class PlagueSim {
         continue;
       }
       // recovery chance after the crisis
-      if (p.t > 18 && rng.next() < step * 0.035) {
+      if (p.t > 18 && rng.next() < step * 0.035 * (g.civ?.plagueCure?.(u) ?? 1)) {
         this.cure(u);
         continue;
       }
@@ -150,7 +150,8 @@ export class PlagueSim {
       if (law(g, 'calamityPlague', true) && rng.next() < step * 1.4) {
         const near = g.units.query(u.x, u.z, SPREAD_RADIUS);
         for (const o of near) {
-          if (o !== u && this.canCatch(o) && rng.next() < Math.min(0.95, 0.35 * ageMod(g, "plague", 1)) * resist) this.infect(o, Math.max(0.6, p.severity * (0.85 + rng.next() * 0.3)));
+          // (vaccination guards the healthy; quarantine keeps it within a town: Civ breadth.js)
+          if (o !== u && this.canCatch(o) && rng.next() < Math.min(0.95, 0.35 * ageMod(g, "plague", 1)) * resist * (g.civ?.plagueCatch?.(o, u) ?? 1)) this.infect(o, Math.max(0.6, p.severity * (0.85 + rng.next() * 0.3)));
         }
       }
     }

@@ -10,6 +10,8 @@ import { editing } from './editing.js';
 import { unlocks } from './unlocks.js';
 import { tech, ERAS, TECHS, techById, LAST_ERA } from './tech.js';
 import { modern } from './modern.js';
+import { breadth } from './breadth.js';
+import { renewal } from './renewal.js';
 import { culture, TRAIT_INFO } from './culture.js';
 import { realms } from './realms.js';
 import { FOOTPRINT } from '../../core/scale.js';
@@ -267,6 +269,7 @@ export class Civilization {
 
   _onDeath(u, cause) {
     if (!u || u.species !== 'human') return;
+    this._deathNote(u, cause);
     const v = this.villages[u.village];
     v?.members.delete(u);
     const t = u.data?.civ?.task;
@@ -819,7 +822,7 @@ export class Civilization {
     const winter = season >= 3;
     const mods = g.age?.mods || {};
     // winter: hearths burn and nothing grows, the granaries carry the village
-    const yearNeed = (adults * 2 + kids * 1.3) * (winter ? 1.2 : 1);
+    const yearNeed = (adults * 2 + kids * 1.3) * (winter ? v.winterNeed ?? 1.2 : 1); // (cold building and vertical farms ease it: breadth.js)
     // rationing: the cooks keep a reserve of a year and a half of food, more
     // through the long winter, in a war or a lean age; below it meals are
     // smaller (hunger settles higher, up to about 0.6) and the store lasts
@@ -830,12 +833,12 @@ export class Civilization {
     v.food -= eat;
     // upkeep: firewood for every hearth and timber to keep roofs mended
     const nb = v.buildings.length;
-    v.wood = Math.max(0, v.wood - ((pop * (winter ? 0.2 : 0.09) + nb * 0.035) / YEAR) * dt);
+    v.wood = Math.max(0, v.wood - ((pop * (winter ? 0.2 * (v.winterNeed ?? 1.2) / 1.2 : 0.09) + nb * 0.035) / YEAR) * dt);
     // storage: what does not fit in the stores rots or is carted off
     v.woodCap = 90 + (v.hasWorkshop ? 90 : 0) + (v.hall ? v.hall.level * 40 : 0) + v.tier * 40;
     v.stoneCap = 70 + (v.hasWorkshop ? 80 : 0) + (v.hall ? v.hall.level * 35 : 0) + v.tier * 40;
     // food spoils: a little always, a lot when the granaries are full to bursting
-    v.food -= v.food * ((0.03 + (v.food > v.foodCap * 0.8 ? 0.12 : 0)) / YEAR) * dt;
+    v.food -= v.food * ((0.03 + (v.food > v.foodCap * 0.8 ? 0.12 : 0)) * (v.spoil ?? 1) / YEAR) * dt; // (Preservation keeps it: breadth.js)
     if (v.wood > v.woodCap) {
       const extra = v.wood - v.woodCap;
       v.wood = v.woodCap;
@@ -1027,7 +1030,7 @@ export class Civilization {
     // bright plaster and banners, in whatever era it builds)
     const gild = (K0?.mastery || 0) >= 4 && (K0.capital === v.id || v.tier >= 1);
     if (this.rng.chance(0.06 * dt)) {
-      const old = v.buildings.find((b) => b.alive && !b.constructing && ((b.era ?? 0) < era || (gild && !b.gilded)));
+      const old = v.buildings.find((b) => b.alive && !b.constructing && !b.heritage && ((b.era ?? 0) < era || (gild && !b.gilded))); // (heritage keeps its era's look)
       if (old) {
         if ((old.era ?? 0) < era) old.era = Math.min(era, (old.era ?? 0) + 1);
         else old.gilded = true;
@@ -1095,7 +1098,7 @@ export class Civilization {
       let far = null,
         fd = -1;
       for (const b of v.buildings) {
-        if (!b.alive || b.type !== 'house' || b.constructing || b.abandoned) continue;
+        if (!b.alive || b.type !== 'house' || b.constructing || b.abandoned || b.heritage) continue;
         const d = Math.hypot(b.x - v.cx, b.z - v.cz);
         if (d > fd) {
           fd = d;
@@ -1565,7 +1568,7 @@ export class Civilization {
     // the realm's messenger keeps riding; a healer's house keeps its healer
     give('messenger', members.filter((u) => u.job === 'messenger').length);
     if (n >= 8 && v.buildings.some((b) => b.alive && b.type === 'healer' && !b.constructing)) give('healer', 1);
-    give('farmer', v.fieldCount ? Math.max(1, Math.min(Math.ceil(v.fieldCount / (foodFull ? 14 : ctr('Pastoral') ? 7 : 9)), n * 0.5)) : 0);
+    give('farmer', v.fieldCount ? Math.max(1, Math.min(Math.ceil(v.fieldCount / ((foodFull ? 14 : ctr('Pastoral') ? 7 : 9) * (v.farmEase || 1))), n * 0.5)) : 0); // (tractors: fewer farmers, breadth.js)
     // a martial people keeps its warband before any other trade but the fields
     // (on the World Map's big farming towns the woodcutters and builders took
     // the hands first, and Martial towns kept no more soldiers than others)
@@ -2099,7 +2102,7 @@ export class Civilization {
       if (cause === 'fire' || cause === 'lava' || cause === 'lightning' || cause === 'meteor' || cause === 'explosion') {
         b.burning = Math.max(b.burning, cause === 'lava' ? 1 : cause === 'fire' ? 0.5 : 0.6);
       }
-      this.damageBuilding(b, amount * k * mult, cause);
+      this.damageBuilding(b, amount * k * mult * this._bGuard(b, cause), cause);
     }
   }
 
@@ -2117,6 +2120,7 @@ export class Civilization {
     b.alive = false;
     b.ruin = true;
     b.ruinT = this.game.time.total;
+    this._lossNote(b, cause);
     if (!this.law('miscRuins')) b.ruinT -= YEAR * 10; // no lasting ruins: cleared on the next sweep
     b.hp = 0;
     b.constructing = false;
@@ -2183,9 +2187,11 @@ export class Civilization {
       }
       if (b.burning > 0) {
         const def = BUILDING_TYPES[b.type];
-        this.damageBuilding(b, b.burning * (def.wall ? 1.5 : 4.5) * dt, 'fire');
+        // fire brigades and fire engines (breadth.js: the town's fire guard)
+        const fg = this.villages[b.village]?.guard?.fire || 0;
+        this.damageBuilding(b, b.burning * (def.wall ? 1.5 : 4.5) * (1 - 0.5 * fg) * dt, 'fire');
         if (!b.alive) continue;
-        b.burning = clamp(b.burning + (wet ? -0.15 * wet : 0.015) * dt, 0, 1);
+        b.burning = clamp(b.burning + (wet ? -0.15 * wet : 0.015) * dt - fg * 0.35 * dt, 0, 1);
         if (b.burning > 0.55 && this.rng.chance(0.04 * dt)) {
           const tx = b.tx + this.rng.int(-1, b.w),
             ty = b.ty + this.rng.int(-1, b.h);
@@ -2195,7 +2201,7 @@ export class Civilization {
       }
       // flooded
       const ci = Math.floor(b.z) * w.w + Math.floor(b.x);
-      if (b.type !== 'docks' && w.height[ci] < SEA_LEVEL - 0.15) this.destroyBuilding(b, 'flood');
+      if (b.type !== 'docks' && w.height[ci] < SEA_LEVEL - 0.15 - (this.villages[b.village]?.guard?.flood || 0) * 0.8) this.destroyBuilding(b, 'flood'); // (levees hold the water back)
     }
     if (removed) {
       for (const b of this.buildings) {
@@ -2233,7 +2239,7 @@ export class Civilization {
         }
       const avg = sum / n;
       if (Math.abs(avg - b.y) > 0.2) {
-        if (hmax - hmin > 2.2) this.damageBuilding(b, b.maxHp * 0.6, 'quake');
+        if (hmax - hmin > 2.2) this.damageBuilding(b, b.maxHp * 0.6 * this._bGuard(b, 'quake'), 'quake');
         if (!b.alive) continue;
         b.y = avg;
       }
@@ -2636,6 +2642,7 @@ export class Civilization {
       // the building's own era (the realm's era is shown by the UI separately)
       const be = Math.min(b.builtEra ?? b.era ?? 0, k?.era ?? LAST_ERA);
       stats.push(['Built in', `${ERAS[be]?.name || 'Hearth'} era${b.gilded ? ', since gilded' : ''}`]);
+      if (b.heritage) stats.push(['Heritage', `built Year ${b.heritage.built ?? Math.floor((b.builtAt || 0) / YEAR)}`]);
       if (b.type === 'hall' && v) {
         // wood / stone / gold / ore appear in the UI's "Village stores" section
         stats.push(['Population', v.pop], ['Food', `${Math.floor(v.food)} / ${v.foodCap}`]);
@@ -2742,5 +2749,5 @@ export class Civilization {
   }
 }
 
-Object.assign(Civilization.prototype, planner, brain, politics, tech, culture, editing, unlocks, realms, modern);
+Object.assign(Civilization.prototype, planner, brain, politics, tech, culture, editing, unlocks, realms, modern, breadth, renewal);
 export { ERAS, TECHS, techById, TRAIT_INFO };
