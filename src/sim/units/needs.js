@@ -113,10 +113,15 @@ export function installNeeds(Units) {
     const ride = d.ride && (d.ride.phase === 'out' || d.ride.phase === 'back');
     const army = d.civ?.army != null;
     const guard = u.job === 'soldier' && (u.id & 1) === 0; // half the soldiers keep the watch
+    // settlers on the way to found a village, and newcomers walking in to
+    // their new town, are not home yet: they press on (they used to turn back
+    // to sleep in the town they had left, a long walk each way every night,
+    // and many expeditions ran out of time and gave up)
+    const travel = d.civ?.task && (d.civ.task.kind === 'migrate' || d.civ.task.kind === 'arrive');
     // night: home to bed at the person's bedtime (daily.js: later in summer,
     // earlier in winter and in the rain; children first); riders on the road
     // and armies on the march press on
-    if (!guard && !army && !ride && this._bedtime(u)) {
+    if (!guard && !army && !ride && !travel && this._bedtime(u)) {
       if (u._dl) this._dlEnd(u);
       const b = this._homeOf(u, v);
       if (!b) return this._nap0(u);

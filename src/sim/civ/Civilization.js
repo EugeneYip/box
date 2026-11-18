@@ -1568,7 +1568,11 @@ export class Civilization {
     // the realm's messenger keeps riding; a healer's house keeps its healer
     give('messenger', members.filter((u) => u.job === 'messenger').length);
     if (n >= 8 && v.buildings.some((b) => b.alive && b.type === 'healer' && !b.constructing)) give('healer', 1);
-    give('farmer', v.fieldCount ? Math.max(1, Math.min(Math.ceil(v.fieldCount / ((foodFull ? 14 : ctr('Pastoral') ? 7 : 9) * (v.farmEase || 1))), n * 0.5)) : 0); // (tractors: fewer farmers, breadth.js)
+    // with the clock running villagers keep a day's rhythm (daily life: a full
+    // night's sleep, meals, evenings off), so more hands share the fields: a
+    // farmer's day is about half as long as when they worked until tired
+    const shift = this.game.settings?.dayNight ? 1.6 : 1;
+    give('farmer', v.fieldCount ? Math.max(1, Math.min(Math.ceil((v.fieldCount * shift) / ((foodFull ? 14 : ctr('Pastoral') ? 7 : 9) * (v.farmEase || 1))), n * (shift > 1 ? 0.6 : 0.5))) : 0); // (tractors: fewer farmers, breadth.js)
     // a martial people keeps its warband before any other trade but the fields
     // (on the World Map's big farming towns the woodcutters and builders took
     // the hands first, and Martial towns kept no more soldiers than others)
@@ -1580,7 +1584,7 @@ export class Civilization {
     const drafting = this.game.time.total - (v.draft ?? -99) < 45;
     // a people's ways show in its trades: martial folk keep many under arms
     if (atWar) give('soldier', Math.max(3, n * Math.min(0.55, (drafting ? 0.32 : 0.2) * lean)) + (v.hasBarracks ? 3 : 0));
-    give('builder', sites ? Math.min(Math.max(1, Math.ceil(sites * 1.1)), 1 + Math.floor(n / 6)) : repairs ? 1 : 0);
+    give('builder', sites ? Math.min(Math.max(1, Math.ceil(sites * 1.1 * shift)), 1 + Math.floor((n * shift) / 6)) : repairs ? 1 : 0);
     // an empty woodshed stops all building: send more hands to the woods
     const woodsCap = (v.trees ?? 99) < 20 ? 1 : (v.trees ?? 99) < 45 ? 2 : (v.trees ?? 99) < 75 ? 3 : 9;
     give('woodcutter', Math.min(woodsCap, woodFull ? (n >= 6 ? 1 : 0) : v.wood < 15 ? 1 + Math.floor(n / 7) : v.wood < 40 + v.tier * 30 ? 1 + Math.floor(n / 9) : n >= 4 ? 1 + Math.floor(n / 16) : 0));
@@ -1589,12 +1593,12 @@ export class Civilization {
     // the rest go where they are most useful; anyone left over keeps the town lively
     let guard = 0;
     while (left > 0 && guard++ < 200) {
-      if (v.fieldCount > want.farmer * 7 && !foodFull) give('farmer', 1);
-      else if (sites > want.builder * 1.5) give('builder', 1);
+      if (v.fieldCount * shift > want.farmer * 7 && !foodFull) give('farmer', 1);
+      else if (sites * shift > want.builder * 1.5) give('builder', 1);
       else if (!stoneFull && (v.hasRock !== false || v.quarry >= 0) && want.miner < 2 + n / 8) give('miner', 1);
       else if (!woodFull && want.woodcutter < 2 + n / 6) give('woodcutter', 1);
       else if (v.docks && want.fisher < v.docks * 3 && !foodFull) give('fisher', 1);
-      else if (v.fieldCount > want.farmer * 4) give('farmer', 1);
+      else if (v.fieldCount * shift > want.farmer * 4) give('farmer', 1);
       else if (want.builder < 2 + n / 10) give('builder', 1);
       else break;
     }

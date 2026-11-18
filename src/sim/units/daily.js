@@ -442,10 +442,14 @@ export function installDaily(Units) {
       u._spSeen = sp ?? null;
       if (sp != null) v._cele = { k: 'wedding', until: now + 30, x: u.x, z: u.z };
     }
-    // celebrations: a birth, a wedding, peace won
+    // celebrations: a birth, a wedding, peace won. The near neighbors who are
+    // free join a birth or a wedding (workers keep at it); the whole town
+    // turns out for peace. (Everyone within ten tiles, at work or not, used to
+    // drop everything for every birth, and "Celebrating" became a growing
+    // town's most common label.)
     const ce = v._cele;
-    if (ce && now < ce.until && !guard && u._celeSeen !== ce && (ce.k === 'peace' || (ce.x - u.x) ** 2 + (ce.z - u.z) ** 2 < 100) && rng() < 0.5) {
-      u._celeSeen = ce;
+    // (one chance per person per celebration, not a new roll every decision)
+    if (ce && now < ce.until && !guard && u._celeSeen !== ce && (ce.k === 'peace' || (!working && (ce.x - u.x) ** 2 + (ce.z - u.z) ** 2 < 36)) && ((u._celeSeen = ce), rng() < (ce.k === 'peace' ? 0.5 : 0.35))) {
       const lab = ce.k === 'birth' ? 'Celebrating a birth' : ce.k === 'wedding' ? 'Celebrating a wedding' : 'Celebrating the peace';
       this._dlStart(u, 'cheer', 6 + rng() * 6, { x: ce.x + (rng() - 0.5) * 2.4, z: ce.z + (rng() - 0.5) * 2.4, lab, go: 'Joining the celebration', fx: ce.x, fz: ce.z, act: 'cheer' });
       return true;
