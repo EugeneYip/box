@@ -1,5 +1,9 @@
 import { registerPower } from './registry.js';
 import { KINDS, AIR_KINDS, SEA_KINDS, LAND_KINDS } from '../sim/fleet/kinds.js';
+import { techById } from '../sim/civ/tech.js';
+import { uiIcon, vehicleIconName } from '../ui/icons.js';
+import { eraNames } from '../ui/depth.js';
+import { pluralName } from './techPowers.js';
 
 // Technology powers (category 'tech', docs/TECH-BREADTH.md section 5) owned
 // by the Fleets module: Spawn Vehicle, Launch and Solar Storm. Ids are stable.
@@ -23,63 +27,167 @@ const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 // ------------------------------------------------------------------ Spawn Vehicle
 // Every kind, from a fishing boat to a colony starship, in era order.
 const GROUPS = [
-  ['Sea', SEA_KINDS.map((k) => [k, KINDS[k].name])],
-  ['Land', LAND_KINDS.map((k) => [k, KINDS[k].name])],
-  ['Air', ['plane', 'biplane', 'airliner', 'jet', 'helicopter', 'drone', 'skytaxi'].map((k) => [k, AIR_KINDS[k].name])],
-  ['Space', ['rocket', 'satellite', 'station', 'starship'].map((k) => [k, AIR_KINDS[k].name])],
+  ['sea', 'Sea', SEA_KINDS],
+  ['land', 'Land', LAND_KINDS],
+  ['air', 'Air', ['plane', 'biplane', 'airliner', 'jet', 'helicopter', 'drone', 'skytaxi']],
+  ['space', 'Space', ['rocket', 'satellite', 'station', 'starship']],
 ];
+const defOf = (k) => KINDS[k] || AIR_KINDS[k];
+const eraOfKind = (k) => {
+  const d = defOf(k);
+  return Number.isFinite(techById[d?.tech]?.era) ? techById[d.tech].era : Number.isFinite(d?.era) ? d.era : 0;
+};
+const groupOf = (k) => (GROUPS.find(([, , list]) => list.includes(k)) || GROUPS[0])[0];
+// "a steamship", "an icebreaker"
+const withArticle = (name) => (/^[aeiou]/i.test(name) ? 'an ' : 'a ') + name;
 let chosen = 'steamer';
+let picked = false; // once a kind is picked the chooser folds to one pill
+let tab = 'sea';
 let panel = null;
+let gRef = null;
+let placeT = 0;
 
+// The chooser docks as a strip above the power's name bar (or the tray), so it
+// never covers the middle of the map, and folds to a pill once a kind is picked.
+function place() {
+  if (!panel) return;
+  const vh = innerHeight;
+  const vis = (e) => {
+    if (!e) return null;
+    const r = e.getBoundingClientRect();
+    const cs = getComputedStyle(e);
+    return r.height > 0 && cs.visibility !== 'hidden' && +cs.opacity > 0.05 && cs.display !== 'none' ? r : null;
+  };
+  const bEl = document.querySelector('.ws-brush.is-shown');
+  const bR = bEl?.getBoundingClientRect();
+  const brush = bR && bR.height > 0 && getComputedStyle(bEl).display !== 'none' ? bR : null;
+  const dock = vis(document.querySelector('.ws-dock__panel')) || vis(document.querySelector('.ws-dock'));
+  let top = vh - 12;
+  if (dock) top = Math.min(top, dock.top);
+  if (brush && brush.bottom <= top + 4) top = Math.min(top, brush.top);
+  panel.style.bottom = Math.round(vh - top + 8) + 'px';
+}
 function openChooser(g) {
   closeChooser();
-  const host = g.ui?.layer || document.body;
+  gRef = g;
+  tab = groupOf(chosen);
+  const host = g.ui?.layer || g.ui?.root || document.body;
   panel = document.createElement('div');
-  panel.className = 'ws-glass ws-vehpick';
-  panel.setAttribute('role', 'listbox');
-  panel.setAttribute('aria-label', 'Vehicle to spawn');
-  Object.assign(panel.style, { position: 'absolute', left: '50%', bottom: 'calc(var(--ws-tile, 56px) * 2 + 48px)', transform: 'translateX(-50%)', maxWidth: 'min(720px, calc(100vw - 32px))', maxHeight: '38vh', overflowY: 'auto', padding: '8px 10px', borderRadius: '12px', zIndex: 30, font: '12px/1.3 Inter, system-ui, sans-serif', color: '#f2ead8', pointerEvents: 'auto' });
-  for (const [title, list] of GROUPS) {
-    const row = document.createElement('div');
-    row.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin:3px 0';
-    const h = document.createElement('b');
-    h.textContent = title;
-    h.style.cssText = 'width:44px;opacity:.75;font-weight:600';
-    row.append(h);
-    for (const [id, name] of list) {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.textContent = name;
-      b.dataset.kind = id;
-      b.setAttribute('role', 'option');
-      b.style.cssText = 'border:1px solid rgba(255,255,255,.18);border-radius:8px;padding:3px 7px;background:rgba(255,255,255,.06);color:inherit;font:inherit;cursor:pointer';
-      b.onclick = (e) => {
-        e.stopPropagation();
-        chosen = id;
-        sync();
-        g.audio?.play?.('ui-click', { volume: 0.4 });
-      };
-      row.append(b);
-    }
-    panel.append(row);
-  }
-  const hint = document.createElement('div');
-  hint.style.cssText = 'opacity:.7;margin-top:4px';
-  hint.textContent = 'Click the map to drop it there. It joins the nearest realm.';
-  panel.append(hint);
+  panel.className = 'ws-vehpick ws-glass';
   host.append(panel);
-  sync();
+  render();
+  place();
+  placeT = setInterval(place, 400);
+  addEventListener('resize', place);
 }
-function sync() {
+function render() {
   if (!panel) return;
-  for (const b of panel.querySelectorAll('button')) {
-    const on = b.dataset.kind === chosen;
-    b.setAttribute('aria-selected', on ? 'true' : 'false');
-    b.style.background = on ? 'rgba(233,199,123,.85)' : 'rgba(255,255,255,.06)';
-    b.style.color = on ? '#1c1810' : 'inherit';
+  const eras = eraNames();
+  panel.classList.toggle('is-folded', picked);
+  if (picked) {
+    const d = defOf(chosen);
+    panel.removeAttribute('role');
+    panel.innerHTML = `<button class="ws-vehpick__pill" type="button" aria-expanded="false" aria-label="Vehicle: ${d.name}. Change vehicle" data-tip="Change vehicle"><span class="ws-vehpick__ico">${uiIcon(vehicleIconName(d))}</span><span class="ws-vehpick__pname">${d.name}</span><small>${eras[eraOfKind(chosen)] || ''}</small><span class="ws-vehpick__chg">Change ${uiIcon('chev-up')}</span></button>`;
+    panel.querySelector('button').onclick = (e) => {
+      e.stopPropagation();
+      picked = false;
+      render();
+      place();
+      panel.querySelector('.ws-vehpick__opt.is-on')?.focus({ preventScroll: true });
+    };
+    return;
+  }
+  const list = GROUPS.find(([id]) => id === tab)[2];
+  panel.innerHTML = `
+    <div class="ws-vehpick__head">
+      <div class="ws-vehpick__tabs" role="tablist" aria-label="Kind of vehicle">${GROUPS.map(([id, label]) => `<button class="ws-vehpick__tab${id === tab ? ' is-on' : ''}" type="button" role="tab" aria-selected="${id === tab}" tabindex="${id === tab ? 0 : -1}" data-tab="${id}">${label}</button>`).join('')}</div>
+      <span class="ws-vehpick__hint">Pick one, then click the map. It joins the nearest realm.</span>
+    </div>
+    <div class="ws-vehpick__row" role="listbox" aria-label="Vehicle to spawn" aria-orientation="horizontal">${list
+      .map((k) => {
+        const d = defOf(k);
+        const era = eraOfKind(k);
+        const on = k === chosen;
+        const need = techById[d.tech]?.name;
+        return `<button class="ws-vehpick__opt${on ? ' is-on' : ''}" type="button" role="option" aria-selected="${on}" tabindex="${on || (!list.includes(chosen) && k === list[0]) ? 0 : -1}" data-kind="${k}" title="${d.name}: ${eras[era] || ''} era${need ? ' · realms build it once they know ' + need : ''}"><span class="ws-vehpick__ico">${uiIcon(vehicleIconName(d))}</span><span class="ws-vehpick__txt"><b>${d.name}</b><small>${eras[era] || ''}${need ? ' · ' + need : ''}</small></span></button>`;
+      })
+      .join('')}</div>`;
+  for (const b of panel.querySelectorAll('.ws-vehpick__tab')) {
+    b.onclick = (e) => {
+      e.stopPropagation();
+      tab = b.dataset.tab;
+      render();
+      panel.querySelector('.ws-vehpick__tab.is-on')?.focus({ preventScroll: true });
+    };
+  }
+  for (const b of panel.querySelectorAll('.ws-vehpick__opt')) {
+    b.onclick = (e) => {
+      e.stopPropagation();
+      choose(b.dataset.kind, true);
+    };
+  }
+  panel.onkeydown = onKey;
+  // the chosen kind scrolls into view
+  const on = panel.querySelector('.ws-vehpick__opt.is-on');
+  if (on) {
+    const row = on.parentElement;
+    row.scrollLeft = Math.max(0, on.offsetLeft - row.clientWidth / 2 + on.offsetWidth / 2);
+  }
+}
+function choose(k, fold) {
+  chosen = k;
+  if (fold) picked = true;
+  render();
+  place();
+  gRef?.audio?.play?.('ui-click', { volume: 0.4 });
+  if (fold) panel?.querySelector('.ws-vehpick__pill')?.focus({ preventScroll: true });
+}
+// arrow keys: left/right walk the kinds (or the tabs), up/down change the tab,
+// Enter or Space picks
+function onKey(e) {
+  const t = e.target;
+  const isTab = t.classList?.contains('ws-vehpick__tab');
+  const isOpt = t.classList?.contains('ws-vehpick__opt');
+  if (!isTab && !isOpt) return;
+  const sib = [...t.parentElement.children];
+  const i = sib.indexOf(t);
+  let j = null;
+  if (e.key === 'ArrowRight') j = Math.min(sib.length - 1, i + 1);
+  else if (e.key === 'ArrowLeft') j = Math.max(0, i - 1);
+  else if (e.key === 'Home') j = 0;
+  else if (e.key === 'End') j = sib.length - 1;
+  if (j != null) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (isTab) {
+      tab = sib[j].dataset.tab;
+      render();
+      panel.querySelector('.ws-vehpick__tab.is-on')?.focus();
+    } else {
+      chosen = sib[j].dataset.kind;
+      render();
+      panel.querySelector('.ws-vehpick__opt.is-on')?.focus();
+    }
+    return;
+  }
+  if (isOpt && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+    e.preventDefault();
+    e.stopPropagation();
+    const gi = GROUPS.findIndex(([id]) => id === tab);
+    tab = GROUPS[(gi + (e.key === 'ArrowDown' ? 1 : GROUPS.length - 1)) % GROUPS.length][0];
+    render();
+    (panel.querySelector('.ws-vehpick__opt.is-on') || panel.querySelector('.ws-vehpick__opt'))?.focus();
+    return;
+  }
+  if (isOpt && (e.key === 'Enter' || e.key === ' ')) {
+    e.preventDefault();
+    e.stopPropagation();
+    choose(t.dataset.kind, true);
   }
 }
 function closeChooser() {
+  clearInterval(placeT);
+  removeEventListener('resize', place);
   panel?.remove();
   panel = null;
 }
@@ -103,7 +211,7 @@ registerPower({
     if (!v) return g.notify?.(cap(F.lastRefusal || 'it cannot go there') + '.', 'bad', { x: c.x, z: c.z });
     g.fx?.emit?.('spawn', { x: c.x, z: c.z }, { scale: 0.8 });
     g.audio?.play?.('spawn', { pos: { x: c.x, z: c.z }, volume: 0.5 });
-    g.notify?.(`A ${def.name.toLowerCase()} joins ${theK(g.civ, k.id)}.`, 'good', { x: c.x, z: c.z });
+    g.notify?.(`${cap(withArticle(def.name.toLowerCase()))} joins ${theK(g.civ, k.id)}.`, 'good', { x: c.x, z: c.z });
   },
 });
 
@@ -128,7 +236,7 @@ registerPower({
       if (b.type === 'spaceport' && !port) port = b;
       if (b.type === 'launchpad' && !pad) pad = b;
     }
-    if (!pad && !port) return g.notify?.(`${cap(theK(civ, k.id))} has no launch pad.`, 'bad', { x: c.x, z: c.z });
+    if (!pad && !port) return g.notify?.(`${cap(theK(civ, k.id))} ${pluralName(theK(civ, k.id)) ? 'have' : 'has'} no launch pad.`, 'bad', { x: c.x, z: c.z });
     const has = (t) => k.techs?.has?.(t);
     const payload = port && has('starships') ? 'starship' : port && has('orbital') && !k.orbitalStation ? 'station' : 'satellite';
     const site = payload === 'satellite' ? pad || port : port;
@@ -137,7 +245,8 @@ registerPower({
     // the realm's own clock for launches restarts (Civ reads it)
     k.launchT = g.time.total;
     if (payload === 'starship') k.starshipT = g.time.total;
-    g.notify?.(`${cap(theK(civ, k.id))} launches ${payload === 'starship' ? 'a colony starship' : payload === 'station' ? 'its orbital station' : 'a satellite'}.`, 'good', { x: site.x, z: site.z });
+    const pl = pluralName(theK(civ, k.id));
+    g.notify?.(`${cap(theK(civ, k.id))} ${pl ? 'launch' : 'launches'} ${payload === 'starship' ? 'a colony starship' : payload === 'station' ? (pl ? 'their' : 'its') + ' orbital station' : 'a satellite'}.`, 'good', { x: site.x, z: site.z });
   },
 });
 
@@ -155,7 +264,7 @@ registerPower({
     if (!F?.solarStormStart) return;
     F.solarStormStart(75);
     g.audio?.play?.('thunder', { volume: 0.3 });
-    const text = '☀ A solar storm breaks: auroras light the sky, satellites tumble and aircraft are grounded';
+    const text = 'A solar storm breaks: auroras light the sky, satellites tumble and aircraft are grounded';
     if (g.civ?._note) g.civ._note(text, 'disaster', { x: c.x, z: c.z }, 'solarstorm', 30);
     else g.notify?.(text, 'disaster', { x: c.x, z: c.z });
   },

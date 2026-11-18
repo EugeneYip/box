@@ -87,6 +87,10 @@ export class FavoritesPanel {
       // phones: the inspector sheet makes way for the list
       if (isPhone() && ui.inspector?.open) ui.inspector.close();
     }
+    if (!open && this.pending?.size) {
+      this.pending.clear();
+      this.render();
+    }
     this.el.classList.toggle('is-open', open);
     ui.root.classList.toggle('has-side', open || !!ui.kingdoms?.open || !!ui.chronicle?.open);
     if (ui.favBtn) {
@@ -240,11 +244,14 @@ export class FavoritesPanel {
       'button',
       { class: 'ws-favs__main', type: 'button', 'data-act': 'show' },
       R.badge,
-      el('span', { class: 'ws-favs__body' }, el('span', { class: 'ws-favs__line' }, R.name, R.lvl), R.sub, el('span', { class: 'ws-favs__line ws-favs__now' }, R.doing, R.meter)),
+      el('span', { class: 'ws-favs__body' }, el('span', { class: 'ws-favs__line' }, R.name, R.lvl), R.sub),
     );
+    // (the status line repeats the row's own action; the main button carries the label)
+    R.now = el('button', { class: 'ws-favs__now', type: 'button', 'data-act': 'show', tabindex: '-1', 'aria-hidden': 'true' }, R.doing, R.meter);
     R.follow = el('button', { class: 'ws-iconbtn ws-iconbtn--sm ws-favs__follow', type: 'button', 'data-act': 'follow', html: uiIcon('follow') });
     R.star = el('button', { class: 'ws-iconbtn ws-iconbtn--sm ws-favs__star is-on', type: 'button', 'data-act': 'unstar', html: uiIcon('star-on') });
-    R.el = el('div', { class: 'ws-favs__row', role: 'listitem', 'data-key': e.key }, R.main, el('span', { class: 'ws-favs__acts' }, R.follow, R.star));
+    R.undo = el('button', { class: 'ws-btn ws-btn--sm ws-favs__undo', type: 'button', 'data-act': 'undo', hidden: true, text: 'Undo' });
+    R.el = el('div', { class: 'ws-favs__row', role: 'listitem', 'data-key': e.key }, R.main, el('span', { class: 'ws-favs__acts' }, R.follow, R.star, R.undo), R.now);
     return R;
   }
 
@@ -256,12 +263,23 @@ export class FavoritesPanel {
     this.list.hidden = !all.length;
     const rig = this.game.cameraRig;
     const seen = new Set();
+    const now = performance.now();
+    this.pending ||= new Map();
+    this.seq ||= new Map();
+    for (const [key, P] of this.pending) if (now > P.until || this.store.map.has(key)) this.pending.delete(key);
+    const hasAny = all.length > 0 || this.pending.size > 0;
+    this.empty.hidden = hasAny;
+    this.list.hidden = !hasAny;
+    for (const e of all) if (!this.seq.has(e.key)) this.seq.set(e.key, this.seq.size);
     for (const [kind] of GROUPS) {
       const G = this.groups.get(kind);
-      // the living first (oldest star first), then the lost
-      const rows = all.filter((e) => e.kind === kind).sort((a, b) => (a.died != null || a.missing) - (b.died != null || b.missing) || 0);
+      // the living first (oldest star first), then the lost; a row just
+      // unstarred keeps its place until it fades
+      const lost = (e) => (e.died != null || e.missing ? 1 : 0);
+      const live = all.filter((e) => e.kind === kind);
+      const rows = [...live, ...[...this.pending.values()].filter((P) => P.e.kind === kind).map((P) => P.e)].sort((a, b) => lost(a) - lost(b) || (this.seq.get(a.key) ?? 1e9) - (this.seq.get(b.key) ?? 1e9));
       G.wrap.hidden = !rows.length;
-      if (G.count.textContent !== String(rows.length)) G.count.textContent = String(rows.length);
+      if (G.count.textContent !== String(live.length)) G.count.textContent = String(live.length);
       let prev = null;
       for (const e of rows) {
         seen.add(e.key);
@@ -275,6 +293,14 @@ export class FavoritesPanel {
         const info = safe(() => this.info(e), null, 'favorite info') || { name: e.name || '?', sub: '', place: '', doing: '', gone: true };
         if (!info.gone) e.snap = { sub: info.sub, place: info.place, color: info.color };
         this.paint(R, e, info, rig);
+        const off = this.pending.has(e.key);
+        if (R.sig.off !== off) {
+          R.sig.off = off;
+          R.el.classList.toggle('is-unstarred', off);
+          R.star.hidden = off;
+          R.undo.hidden = !off;
+          R.undo.setAttribute('aria-label', `Undo: star ${info.name} again`);
+        }
         const want = prev ? prev.nextSibling : G.box.firstChild;
         if (want !== R.el) G.box.insertBefore(R.el, want);
         prev = R.el;
@@ -368,9 +394,11 @@ export class FavoritesPanel {
     const b = ev.target.closest('button[data-act]');
     if (!b) return;
     const row = b.closest('.ws-favs__row');
+    if (row && b.dataset.act === 'undo') return this.pending?.get(row.dataset.key)?.back();
     const e = row && this.store.map.get(row.dataset.key);
     if (!e) return;
     const act = b.dataset.act;
+    if (act === 'undo') return this.pending?.get(row.dataset.key)?.back();
     if (act === 'unstar') this.unstar(e);
     else if (act === 'follow' && e.ref && this.game.cameraRig.follow === e.ref) {
       this.game.cameraRig.follow = null;
@@ -398,19 +426,27 @@ export class FavoritesPanel {
 
   unstar(e) {
     const info = safe(() => this.info(e), null) || { name: e.name || 'It' };
+    const hadFocus = this.rows.get(e.key)?.el.contains(document.activeElement);
     this.store.remove(e.key);
     if (this.ui.inspector?.open) safe(() => this.ui.inspector.render(), null, 'inspector star');
-    this.render();
-    // undo for a moment, as with edits
+    // the row stays where it was, dimmed, with Undo beside it, so the list
+    // never jumps under the pointer; it goes once the list is next tidied
     const kind = e.kind,
       ref = e.ref;
     const back = () => {
+      this.pending?.delete(e.key);
       if (ref && e.died == null && !e.missing) this.store.set(kind, ref, true);
       else this.store.map.set(e.key, e), this.store.changed();
       if (this.open) this.render();
       if (this.ui.inspector?.open) safe(() => this.ui.inspector.render(), null, 'inspector star');
     };
-    if (typeof this.ui.undoToast === 'function') this.ui.undoToast(`${info.name} removed from Favorites`, back);
+    if (this.open) {
+      this.pending ||= new Map();
+      this.pending.set(e.key, { e, back, until: performance.now() + 7000 });
+      this.render();
+      if (hadFocus) this.rows.get(e.key)?.undo.focus();
+      this.ui.announce?.(`${info.name} removed from Favorites`);
+    } else if (typeof this.ui.undoToast === 'function') this.ui.undoToast(`${info.name} removed from Favorites`, back);
     else this.ui.toast(`${info.name} removed from Favorites`);
   }
 

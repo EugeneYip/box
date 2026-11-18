@@ -1,0 +1,610 @@
+/* Round 14 UI pass: heritage switch row, the docked Spawn Vehicle chooser,
+   phone sheets that clear the camera pad and the powers dock, keyboard focus,
+   opaque modals and the smaller fixes. Loaded last. */
+
+/* ---- inspector: the action row wraps; Heritage is a full-width switch row */
+.ws-insp__actions {
+  flex-wrap: wrap;
+}
+.ws-insp__actions .ws-btn {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.ws-insp__actions .ws-btn > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ws-insp__actions .ws-insp__heritage {
+  flex: 1 0 100%;
+  order: 9;
+  justify-content: flex-start;
+}
+.ws-insp__heritage > span {
+  flex: 1;
+  text-align: left;
+}
+.ws-insp__actions .ws-insp__heritage.is-on {
+  color: var(--ws-ink);
+  background: rgba(235, 201, 119, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(235, 201, 119, 0.5);
+}
+.ws-insp__heritage .ico {
+  color: var(--ws-gold);
+}
+.ws-insp__sw {
+  position: relative;
+  flex: none;
+  width: 30px;
+  height: 17px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.16);
+  transition: background 0.18s;
+}
+.ws-insp__sw b {
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--ws-ink-2);
+  transition: transform 0.18s var(--ws-ease);
+}
+.ws-insp__heritage.is-on .ws-insp__sw {
+  background: var(--ws-gold);
+}
+.ws-insp__heritage.is-on .ws-insp__sw b {
+  transform: translateX(13px);
+  background: #1d1608;
+}
+.ws-insp__heritage em {
+  min-width: 24px;
+  font-style: normal;
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-align: right;
+  text-transform: uppercase;
+  color: var(--ws-ink-3);
+}
+.ws-insp__heritage.is-on em {
+  color: var(--ws-gold-hi);
+}
+
+/* ---- Spawn Vehicle: a strip docked above the power's name bar */
+.ws-vehpick {
+  position: absolute;
+  left: 50%;
+  bottom: 170px;
+  z-index: 30;
+  width: min(760px, calc(100vw - 24px));
+  padding: 8px 10px 8px;
+  transform: translateX(-50%);
+  color: var(--ws-ink);
+  font: 12px/1.3 var(--ws-font);
+  pointer-events: auto;
+  background: linear-gradient(180deg, rgba(31, 35, 50, 0.97), rgba(14, 16, 25, 0.98));
+}
+.ws-vehpick.is-folded {
+  width: auto;
+  padding: 3px;
+  border-radius: 999px;
+}
+.ws-vehpick__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+.ws-vehpick__tabs {
+  display: flex;
+  flex: none;
+  gap: 4px;
+}
+.ws-vehpick__tab {
+  min-width: 58px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 8px;
+  color: var(--ws-ink-2);
+  font: 600 12px/1 var(--ws-font);
+  letter-spacing: 0.04em;
+  background: transparent;
+  box-shadow: inset 0 0 0 1px rgba(255, 240, 210, 0.12);
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+.ws-vehpick__tab:hover {
+  color: var(--ws-ink);
+  background: rgba(255, 247, 230, 0.08);
+}
+.ws-vehpick__tab.is-on {
+  color: #1d1608;
+  background: linear-gradient(180deg, var(--ws-gold-hi), var(--ws-gold));
+  box-shadow: none;
+}
+.ws-vehpick__hint {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ws-ink-3);
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ws-vehpick__row {
+  display: flex;
+  gap: 6px;
+  padding: 2px 2px 4px;
+  overflow-x: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(235, 201, 119, 0.4) transparent;
+}
+.ws-vehpick__opt {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  padding: 0 12px 0 6px;
+  border-radius: 10px;
+  color: var(--ws-ink);
+  font: inherit;
+  text-align: left;
+  background: rgba(255, 247, 230, 0.05);
+  box-shadow: inset 0 0 0 1px rgba(255, 240, 210, 0.12);
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    box-shadow 0.15s;
+}
+.ws-vehpick__opt:hover {
+  background: rgba(255, 247, 230, 0.11);
+  box-shadow: inset 0 0 0 1px rgba(251, 229, 173, 0.4);
+}
+.ws-vehpick__opt.is-on {
+  color: #1d1608;
+  background: linear-gradient(180deg, rgba(251, 229, 173, 0.97), rgba(235, 201, 119, 0.95));
+  box-shadow: 0 0 14px rgba(235, 201, 119, 0.3);
+}
+.ws-vehpick__ico {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  font-size: 21px;
+  background: rgba(0, 0, 0, 0.28);
+  --tint: #b9d4ff;
+}
+.ws-vehpick__opt.is-on .ws-vehpick__ico {
+  background: rgba(29, 22, 8, 0.14);
+  --tint: rgba(29, 22, 8, 0.25);
+}
+.ws-vehpick__txt {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  white-space: nowrap;
+}
+.ws-vehpick__txt b {
+  font-weight: 600;
+  font-size: 12.5px;
+}
+.ws-vehpick__txt small {
+  color: var(--ws-ink-3);
+  font-size: 10.5px;
+}
+.ws-vehpick__opt.is-on small {
+  color: rgba(29, 22, 8, 0.72);
+}
+.ws-vehpick button:focus-visible {
+  outline: 2px solid var(--ws-gold-hi);
+  outline-offset: 2px;
+}
+.ws-vehpick__pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 14px 0 4px;
+  border-radius: 999px;
+  color: var(--ws-ink);
+  font: 600 13px/1 var(--ws-font);
+  background: transparent;
+  cursor: pointer;
+}
+.ws-vehpick__pill .ws-vehpick__ico {
+  border-radius: 50%;
+}
+.ws-vehpick__pill small {
+  color: var(--ws-ink-3);
+  font-weight: 500;
+  font-size: 11px;
+}
+.ws-vehpick__chg {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 4px;
+  padding-left: 10px;
+  border-left: 1px solid var(--ws-line);
+  color: var(--ws-gold);
+  font-size: 12px;
+}
+.ws-vehpick__chg .ico {
+  font-size: 13px;
+}
+.ws-vehpick__pill:hover .ws-vehpick__chg {
+  color: var(--ws-gold-hi);
+}
+@media (max-width: 720px) {
+  .ws-vehpick__hint {
+    display: none;
+  }
+  .ws-vehpick__tabs {
+    flex: 1;
+  }
+  .ws-vehpick__tab {
+    flex: 1;
+    min-width: 0;
+    height: 40px;
+  }
+}
+
+/* ---- phones: an open side sheet (Favorites, Realms, Chronicle) takes the
+   camera pad, the nav rail and the powers dock out of its way */
+@media (max-width: 720px), (max-height: 500px) {
+  .has-side .ws-campad {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none !important;
+  }
+  .ws-side.is-open {
+    transform: none;
+  }
+}
+@media (max-width: 720px) {
+  .has-side .ws-brand {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none !important;
+  }
+}
+@media (max-height: 500px) and (min-width: 721px) {
+  .has-side .ws-dock,
+  .has-side .ws-favbtn {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none !important;
+  }
+  .ws-side {
+    left: max(var(--ws-edge), env(safe-area-inset-left));
+    bottom: 8px;
+    max-height: none;
+  }
+}
+
+/* ---- Favorites rows: name and place above, the live status on its own
+   full-width line below; an unstarred row stays put, dimmed, with Undo */
+.ws-favs__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'main acts'
+    'now now';
+}
+.ws-favs__main {
+  grid-area: main;
+  padding-bottom: 4px;
+}
+.ws-favs__acts {
+  grid-area: acts;
+}
+.ws-favs__now {
+  grid-area: now;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  padding: 0 12px 8px 13px;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.ws-favs__now .ws-favs__doing {
+  flex: 1;
+}
+.ws-favs__row.is-unstarred {
+  background: rgba(0, 0, 0, 0.12);
+}
+.ws-favs__row.is-unstarred .ws-favs__main,
+.ws-favs__row.is-unstarred .ws-favs__now {
+  opacity: 0.42;
+  filter: grayscale(0.7);
+}
+.ws-favs__row.is-unstarred::before {
+  opacity: 0.25;
+}
+.ws-favs__row.is-unstarred .ws-favs__follow {
+  display: none;
+}
+.ws-favs__acts .ws-favs__undo {
+  height: 30px;
+  margin: 0 4px 0 0;
+  padding: 0 12px;
+}
+.is-touch .ws-favs__acts .ws-favs__undo {
+  height: 44px;
+}
+/* the HUD button keeps the badge's slot, so it does not grow when the count appears */
+.ws-favbtn__n[hidden] {
+  display: grid;
+  visibility: hidden;
+}
+
+/* ---- Tech panel: the second line of study, side arts marked by branch,
+   era headers that stay in view */
+.ws-tech__also {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--ws-line);
+}
+.ws-tech__alsoico {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  font-size: 16px;
+  color: #bfe6a0;
+  background: rgba(150, 210, 120, 0.12);
+  --tint: #9fd27a;
+}
+.ws-tech__alsotxt {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.ws-tech__alsotxt small {
+  color: var(--ws-ink-3);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.ws-tech__alsotxt span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ws-tech__also .ws-tech__alsometer {
+  flex: 1;
+  min-width: 60px;
+  max-width: 220px;
+  margin: 0 0 0 auto;
+}
+.ws-tech__alsometer i {
+  background: linear-gradient(90deg, #6fae55, #bfe6a0);
+}
+.ws-tech__alsopct {
+  flex: none;
+  min-width: 34px;
+  color: #bfe6a0;
+  font-size: 12px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.ws-tech__era {
+  position: sticky;
+  top: -6px;
+  z-index: 2;
+  margin: 0 -2px;
+  padding: 8px 2px 6px;
+  background: rgb(19, 22, 33);
+}
+.ws-tech__sidehead {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 4px 2px 0;
+  border-top: 1px dashed rgba(159, 210, 122, 0.3);
+  color: #bfe6a0;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.ws-tech__sidehead small {
+  color: var(--ws-ink-3);
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.ws-techcard.is-side {
+  box-shadow: inset 2px 0 0 rgba(159, 210, 122, 0.55);
+}
+.ws-techcard__branch {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 6px;
+  color: #cdeab4;
+  font: 600 9.5px/1.4 var(--ws-font);
+  font-style: normal;
+  letter-spacing: 0.04em;
+  background: rgba(150, 210, 120, 0.14);
+}
+.ws-techcard__branch.is-medicine {
+  color: #ffc4d2;
+  background: rgba(255, 138, 168, 0.14);
+}
+.ws-techcard__branch.is-land {
+  color: #f0d6a6;
+  background: rgba(224, 164, 106, 0.16);
+}
+.ws-techcard__branch.is-city {
+  color: #c9d8ff;
+  background: rgba(147, 180, 255, 0.15);
+}
+.ws-techcard__branch.is-urban {
+  color: #b8ecf4;
+  background: rgba(127, 220, 236, 0.14);
+}
+
+/* ---- modals opaque enough that the HUD never shows through their text */
+.ws-modal.ws-glass {
+  background: linear-gradient(180deg, rgba(255, 246, 226, 0.05), rgba(255, 246, 226, 0) 46%), linear-gradient(180deg, rgba(27, 31, 45, 0.975), rgba(12, 14, 22, 0.985));
+}
+
+/* ---- closed panels leave the Tab order; keyboard focus is always visible */
+.ws-side:not(.is-open),
+.ws-insp:not(.is-open),
+.ws-brush:not(.is-shown) {
+  visibility: hidden;
+  transition:
+    opacity 0.22s,
+    transform 0.3s var(--ws-ease),
+    visibility 0s linear 0.3s;
+}
+.ws-side.is-open,
+.ws-insp.is-open,
+.ws-brush.is-shown {
+  visibility: visible;
+  transition:
+    opacity 0.22s,
+    transform 0.3s var(--ws-ease),
+    visibility 0s;
+}
+.ws-root button:focus-visible,
+.ws-root a:focus-visible,
+.ws-root [tabindex]:focus-visible,
+.ws-root select:focus-visible,
+.ws-root input:not(.ws-switch__in):focus-visible {
+  outline: 2px solid var(--ws-gold-hi);
+  outline-offset: 2px;
+}
+
+/* ---- title screen: Round world is a switch row, as in New World */
+.ws-wraprow {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 12px;
+  color: var(--ws-ink);
+  font: inherit;
+  text-align: left;
+  background: rgba(255, 247, 230, 0.04);
+  box-shadow: inset 0 0 0 1px var(--ws-line);
+}
+.ws-wraprow:hover {
+  background: rgba(255, 247, 230, 0.07);
+}
+.ws-wraprow .ws-row__desc {
+  display: block;
+}
+.ws-wraprow.is-on .ws-switch__track {
+  background: linear-gradient(180deg, #f3d488, #c99640);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    0 0 14px rgba(235, 201, 119, 0.35);
+}
+.ws-wraprow.is-on .ws-switch__knob {
+  transform: translateX(18px);
+  background: #fffaf0;
+}
+
+/* ---- laws: a long description opens in place; era marks under Latest era */
+.ws-lawcard.is-expanded .ws-row__desc {
+  display: block;
+  -webkit-line-clamp: unset;
+  overflow: visible;
+}
+.ws-lawcard__more {
+  display: inline;
+  margin: 2px 0 0;
+  padding: 0;
+  color: var(--ws-gold);
+  font: 600 11px/1.3 var(--ws-font);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.ws-lawcard__more:hover {
+  color: var(--ws-gold-hi);
+  text-decoration: underline;
+}
+.is-touch .ws-lawcard__more {
+  min-height: 32px;
+}
+.ws-eraslider {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.ws-eraslider .ws-range {
+  width: 100%;
+}
+.ws-eramarks {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 6px;
+  pointer-events: none;
+}
+.ws-eramarks i {
+  position: relative;
+  width: 0;
+  color: var(--ws-ink-3);
+  font: 600 9px/1 var(--ws-font);
+  font-style: normal;
+}
+.ws-eramarks i::before {
+  content: '';
+  position: absolute;
+  left: -0.5px;
+  top: -3px;
+  width: 1px;
+  height: 4px;
+  background: var(--ws-ink-3);
+}
+.ws-eramarks i span {
+  position: absolute;
+  top: 3px;
+  left: 0;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+.ws-eramarks i:first-child span {
+  left: -6px;
+  transform: none;
+}
+.ws-eramarks i:last-child span {
+  left: 6px;
+  transform: translateX(-100%);
+}
+.ws-eramarks i.is-on::before {
+  top: -4px;
+  width: 3px;
+  height: 6px;
+  left: -1.5px;
+  border-radius: 2px;
+  background: var(--ws-gold-hi);
+}
+.ws-eramarks i.is-on {
+  color: var(--ws-gold-hi);
+}

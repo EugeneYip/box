@@ -116,14 +116,16 @@ export class TitleScreen {
       this.wrapBtn = el(
         'button',
         {
-          class: 'ws-chip ws-chip--wrap' + (this.wrapOn ? ' is-on' : ''),
+          class: 'ws-row ws-wraprow' + (this.wrapOn ? ' is-on' : ''),
           type: 'button',
           role: 'switch',
           'aria-checked': this.wrapOn ? 'true' : 'false',
           title: 'Ships cross the Atlantic through the left and right edges, as on the real Earth',
           onclick: () => this.toggleWrap(),
         },
-        'Round world: sail across the map’s edge',
+        // the same switch row as New World's, not a chip that reads like a size
+        el('span', { class: 'ws-row__txt' }, el('span', { class: 'ws-row__label', text: 'Round world' }), el('span', { class: 'ws-row__desc', text: 'Sail across the map’s left and right edges' })),
+        el('span', { class: 'ws-switch' }, el('span', { class: 'ws-switch__track' }, el('span', { class: 'ws-switch__knob' }))),
       );
       this.wrapRow = el('div', { class: 'ws-chips ws-chips--wrap', style: 'margin-top:6px' }, this.wrapBtn);
       rows.push(this.wrapRow);

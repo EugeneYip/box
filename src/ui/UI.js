@@ -8,6 +8,7 @@ import './hud6.css';
 // (hud8 before hud7: a rule in hud7 is left open and would swallow what follows)
 import './hud8.css';
 import './hud7.css';
+import './hud9.css';
 import { CATEGORIES, listPowers, getPower } from '../powers/registry.js';
 import { el, safe, hexCss } from './dom.js';
 import { SEA_LEVEL } from '../world/constants.js';

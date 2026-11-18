@@ -731,7 +731,19 @@ export class Modals {
             out.textContent = fmtLaw(def, +r.value);
             g.setLaw?.(def.key, +r.value);
           });
-          control = el('span', { class: 'ws-row__ctl' }, r, out);
+          // Latest era: a mark for each era under the slider
+          const marks =
+            def.key === 'civEraCap' && Array.isArray(def.labels)
+              ? el('span', { class: 'ws-eramarks', 'aria-hidden': 'true' }, ...def.labels.map((n, i) => el('i', { class: i === Math.round(v) ? 'is-on' : '', title: n }, el('span', { text: i === 0 || i === def.labels.length - 1 ? n : '' }))))
+              : null;
+          control = el('span', { class: 'ws-row__ctl' }, marks ? el('span', { class: 'ws-eraslider' }, r, marks) : r, out);
+          if (marks)
+            r.addEventListener('input', () => {
+              const cur = Math.round(+r.value);
+              [...marks.children].forEach((m, i) => {
+                m.classList.toggle('is-on', i === cur);
+              });
+            });
           ctl.set(def.key, (nv) => {
             r.value = nv;
             paint();
@@ -746,6 +758,18 @@ export class Modals {
           el('span', { class: 'ws-law__txt' }, el('span', { class: 'ws-row__label', text: def.label }), el('span', { class: 'ws-row__desc', text: def.description })),
           control,
         );
+        // a long description opens in place (mouse and touch alike), never only in a tooltip
+        if (String(def.description || '').length > 64) {
+          const more = el('button', { class: 'ws-lawcard__more', type: 'button', 'aria-expanded': 'false', text: 'More' });
+          more.addEventListener('click', (ev) => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            const open = row.classList.toggle('is-expanded');
+            more.textContent = open ? 'Less' : 'More';
+            more.setAttribute('aria-expanded', open ? 'true' : 'false');
+          });
+          row.querySelector('.ws-law__txt').append(more);
+        }
         // searched by word starts ("war" finds "Wars" and "warships", not "toward");
         // the key's camelCase parts count as words too
         const words = `${def.label} ${def.description} ${c.name} ${String(def.key).replace(/([a-z])([A-Z])/g, '$1 $2')}`.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
@@ -849,7 +873,7 @@ export class Modals {
         [k('1', '2', '3', '4', '5'), 'Speed 1× – 16×'],
       ]],
       ['Panels', [
-        [k('K'), 'Kingdoms'],
+        [k('K'), 'Realms'],
         [k('J'), 'Chronicle'],
         [k('P'), 'Favorites'],
         [k('L'), 'World laws'],
@@ -917,7 +941,7 @@ export class KingdomsPanel {
   constructor(ui) {
     this.ui = ui;
     this.game = ui.game;
-    this.el = el('aside', { class: 'ws-side ws-glass ws-orn', 'aria-label': 'Kingdoms' });
+    this.el = el('aside', { class: 'ws-side ws-glass ws-orn', 'aria-label': 'Realms' });
     this.countEl = el('span', { class: 'ws-side__count', text: '0' });
     this.list = el('div', { class: 'ws-side__list' });
     this.empty = el(
@@ -925,7 +949,7 @@ export class KingdomsPanel {
       { class: 'ws-empty' },
       el('div', { class: 'ws-empty__art', html: uiIcon('crown') }),
       el('div', { class: 'ws-empty__title', text: 'No crowns yet' }),
-      el('p', { class: 'ws-empty__txt', text: 'Kingdoms rise as villages grow. Found a settlement and watch a realm take shape.' }),
+      el('p', { class: 'ws-empty__txt', text: 'Realms rise as villages grow. Found a settlement and watch a realm take shape.' }),
       el('button', {
         class: 'ws-btn ws-btn--gold ws-btn--sm',
         type: 'button',
@@ -941,7 +965,7 @@ export class KingdomsPanel {
         'header',
         { class: 'ws-side__head' },
         el('span', { class: 'ws-modal__ico', html: uiIcon('kingdoms') }),
-        el('h2', { class: 'ws-modal__title', text: 'Kingdoms' }),
+        el('h2', { class: 'ws-modal__title', text: 'Realms' }),
         this.countEl,
         el('button', { class: 'ws-iconbtn ws-iconbtn--sm', type: 'button', 'aria-label': 'Close (K)', html: uiIcon('close'), onclick: () => this.toggle(false) }),
       ),
