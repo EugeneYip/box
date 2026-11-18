@@ -35,6 +35,8 @@ export class TitleScreen {
     // Picking a landmass of the other shape swaps the chips at once; the world
     // then reloads a single time, with the size picked (or on Begin).
     this.pending = null;
+    // Round world (docs/ROUND-WORLD.md): on unless this world was made with it off
+    this.wrapOn = g.laws?.worldWrap !== false;
     const wide = isWidePreset(g.params.preset);
     this.curSizeId = wide ? earthChoice(g.params.size, g.params.region)?.id : WORLD_SIZES.find((z) => z.size === g.world.w)?.id;
     this.sizeBox = el('div', { class: 'ws-title__sizes' });
@@ -108,8 +110,47 @@ export class TitleScreen {
     const whole = this.sizeBtns.filter((b, k) => !list[k].region);
     const regions = this.sizeBtns.filter((b, k) => list[k].region);
     const rows = [el('div', { class: 'ws-title__label ws-title__label--sub', text: 'World size' }), el('div', { class: 'ws-chips ws-chips--sizes', role: 'radiogroup', 'aria-label': 'World size' }, ...whole)];
+    // Round world, as in New World: under the whole-Earth sizes, for them only
+    this.wrapRow = null;
+    if (wide) {
+      this.wrapBtn = el(
+        'button',
+        {
+          class: 'ws-chip ws-chip--wrap' + (this.wrapOn ? ' is-on' : ''),
+          type: 'button',
+          role: 'switch',
+          'aria-checked': this.wrapOn ? 'true' : 'false',
+          title: 'Ships cross the Atlantic through the left and right edges, as on the real Earth',
+          onclick: () => this.toggleWrap(),
+        },
+        'Round world: sail across the map’s edge',
+      );
+      this.wrapRow = el('div', { class: 'ws-chips ws-chips--wrap', style: 'margin-top:6px' }, this.wrapBtn);
+      rows.push(this.wrapRow);
+    }
     if (regions.length) rows.push(el('div', { class: 'ws-title__label ws-title__label--sub ws-title__label--regions', text: 'Regional maps' }), el('div', { class: 'ws-chips ws-chips--sizes ws-chips--regions', role: 'radiogroup', 'aria-label': 'Regional maps' }, ...regions));
     this.sizeBox.replaceChildren(...rows);
+    this.syncWrap();
+  }
+
+  // the Round world switch shows only while a whole-Earth size is picked
+  syncWrap() {
+    if (!this.wrapRow) return;
+    const z = this.sizeList.find((c) => c.id === this.sizeId);
+    this.wrapRow.hidden = !!z?.region;
+    this.wrapBtn.classList.toggle('is-on', this.wrapOn);
+    this.wrapBtn.setAttribute('aria-checked', this.wrapOn ? 'true' : 'false');
+  }
+
+  // A whole Earth behind the logo is grown again with the seam open or
+  // closed (the land at the edges differs); otherwise the reload carries it.
+  toggleWrap() {
+    const g = this.game;
+    this.wrapOn = !this.wrapOn;
+    this.syncWrap();
+    if (this.pending || !isWidePreset(g.params.preset) || g.params.region || this.sizeId !== this.curSizeId) return;
+    g.setLaw?.('worldWrap', this.wrapOn);
+    this.ui.regenerate(g.params.seed, g.params.preset, g.params.civs, { quiet: true, after: () => (this.seedEl.textContent = String((this.seed = g.params.seed))) });
   }
 
   markSize(id) {
@@ -118,6 +159,7 @@ export class TitleScreen {
       b.classList.toggle('is-on', b.dataset.id === id);
       b.setAttribute('aria-checked', b.dataset.id === id ? 'true' : 'false');
     }
+    this.syncWrap();
   }
 
   choosePreset(id) {
@@ -168,6 +210,9 @@ export class TitleScreen {
       q.set('size', z.size);
       q.delete('region');
     }
+    // (the whole Earth's Round world switch; regional maps never wrap)
+    if (wide && !z.region && !this.wrapOn) q.set('wrap', '0');
+    else q.delete('wrap');
     for (const k of ['cam', 'hour', 'ff']) q.delete(k);
     if (intoWorld) q.set('title', '0');
     else q.delete('title');
