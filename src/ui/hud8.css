@@ -1,0 +1,375 @@
+/* ==========================================================================
+   Round 14: Favorites panel (src/ui/FavoritesPanel.js). Shares the side-panel
+   slot with Kingdoms and Chronicle (.ws-side), so it never covers the
+   inspector on wide screens; on phones it is a bottom sheet that steps aside
+   when a card opens.
+   ========================================================================== */
+.ws-favs__ico {
+  color: #ffd36a;
+  --tint: #ffd36a;
+  filter: drop-shadow(0 0 6px rgba(255, 211, 106, 0.45));
+}
+.ws-favs__list {
+  gap: 10px;
+}
+.ws-favs__sect[hidden] {
+  display: none;
+}
+.ws-favs__group {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0 2px 6px;
+  font: 700 9.5px var(--ws-font);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ws-ink-3);
+}
+.ws-favs__group small {
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  color: var(--ws-gold);
+  opacity: 0.85;
+}
+.ws-favs__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ws-favs__row {
+  --k: var(--ws-gold);
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  border-radius: 11px;
+  background: rgba(0, 0, 0, 0.2);
+  box-shadow: inset 0 0 0 1px var(--ws-line);
+  transition:
+    background 0.18s,
+    box-shadow 0.18s,
+    opacity 0.2s;
+}
+.ws-favs__row:hover,
+.ws-favs__row:focus-within {
+  background: rgba(255, 247, 230, 0.05);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--k) 55%, transparent);
+}
+/* realm color as a thin edge on the left */
+.ws-favs__row::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 9px;
+  bottom: 9px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--k);
+  opacity: 0.85;
+}
+.ws-favs__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 4px 8px 11px;
+  text-align: left;
+  border-radius: 11px;
+}
+.ws-favs__badge {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  flex: none;
+  border-radius: 11px;
+  font-size: 27px;
+  overflow: hidden;
+  background: radial-gradient(circle at 50% 25%, color-mix(in srgb, var(--tint) 34%, transparent), rgba(0, 0, 0, 0.3) 85%);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tint) 50%, transparent);
+}
+.ws-favs__badge img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.ws-favs__badge.has-banner {
+  background: none;
+  box-shadow: none;
+  overflow: visible;
+}
+.ws-favs__badge.has-banner img {
+  object-fit: contain;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
+}
+.ws-favs__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ws-favs__line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.ws-favs__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--ws-display);
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.03em;
+}
+.ws-favs__lvl {
+  flex: none;
+  display: grid;
+  place-items: center;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: 9px;
+  font: 800 9.5px/1 var(--ws-font);
+  font-style: normal;
+  color: #1d1608;
+  background: linear-gradient(180deg, var(--ws-gold-hi), var(--ws-gold));
+}
+.ws-favs__lvl[hidden] {
+  display: none;
+}
+.ws-favs__sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  color: var(--ws-ink-2);
+}
+.ws-favs__now {
+  justify-content: space-between;
+}
+.ws-favs__doing {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  color: var(--ws-gold-hi);
+  opacity: 0.92;
+}
+.ws-favs__row.is-war .ws-favs__doing {
+  color: #ffab94;
+}
+.ws-favs__meter {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 92px;
+}
+.ws-favs__meter[hidden] {
+  display: none;
+}
+.ws-favs__meter .ws-meter {
+  flex: 1;
+}
+.ws-favs__meter small {
+  min-width: 34px;
+  text-align: right;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ws-ink-3);
+}
+.ws-favs__acts {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  padding: 4px 6px 4px 0;
+}
+.ws-favs__acts [hidden] {
+  display: none;
+}
+.ws-favs__follow.is-on {
+  color: var(--ws-gold-hi);
+  background: rgba(235, 201, 119, 0.16);
+  box-shadow: inset 0 0 0 1px rgba(235, 201, 119, 0.4);
+}
+.ws-favs__star {
+  color: #ffd36a;
+  --tint: #ffd36a;
+}
+.ws-favs__star:hover {
+  color: var(--ws-ink-2);
+}
+/* gone: died, fell, lost or not in this world */
+.ws-favs__row.is-gone {
+  --k: rgba(246, 239, 224, 0.3);
+}
+.ws-favs__row.is-gone .ws-favs__badge {
+  filter: grayscale(1);
+  opacity: 0.6;
+}
+.ws-favs__row.is-gone .ws-favs__name,
+.ws-favs__row.is-gone .ws-favs__sub {
+  color: var(--ws-ink-3);
+}
+.ws-favs__row.is-gone .ws-favs__doing {
+  color: #e8a08a;
+  font-style: italic;
+}
+.ws-favs__empty .ws-empty__txt .ico {
+  display: inline-block;
+  vertical-align: -2px;
+  color: #ffd36a;
+}
+.ws-favs__empty .ws-empty__art {
+  color: #ffd36a;
+}
+
+/* ---- the Favorites button: bottom-left on desktop (the Overview's twin) */
+.ws-favbtn {
+  position: absolute;
+  left: var(--ws-edge);
+  bottom: var(--ws-edge);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 46px;
+  padding: 0 16px 0 12px;
+  border-radius: 14px;
+  font: 700 12px var(--ws-display);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ws-gold-hi);
+  transition:
+    transform 0.2s var(--ws-ease),
+    opacity 0.3s;
+}
+.ws-favbtn:hover {
+  transform: translateY(-2px);
+}
+.ws-favbtn__ico {
+  font-size: 20px;
+  color: #ffd36a;
+  --tint: #ffd36a;
+}
+.ws-favbtn.is-on {
+  box-shadow:
+    inset 0 0 0 1.5px var(--ws-gold),
+    0 0 18px rgba(235, 201, 119, 0.3);
+}
+.ws-favbtn__n {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  font: 800 10px/1 var(--ws-font);
+  letter-spacing: 0;
+  color: #1d1608;
+  background: var(--ws-gold);
+}
+.ws-favbtn__n[hidden] {
+  display: none;
+}
+.is-intro .ws-favbtn,
+.is-photo .ws-favbtn,
+.is-overview .ws-favbtn {
+  opacity: 0;
+  pointer-events: none !important;
+}
+/* touch: a round button, count on its shoulder; tablets put it bottom-right
+   (where the Overview pill is on desktop), clear of the camera pad */
+.is-touch .ws-favbtn {
+  left: auto;
+  right: var(--ws-edge);
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  justify-content: center;
+  border-radius: 14px;
+}
+.is-touch .ws-favbtn__txt {
+  display: none;
+}
+.is-touch .ws-favbtn__ico {
+  font-size: 22px;
+}
+.is-touch .ws-favbtn__n {
+  position: absolute;
+  right: -5px;
+  top: -5px;
+}
+.is-touch.has-minimap .ws-favbtn {
+  right: calc(var(--ws-edge) * 2 + var(--ws-map));
+}
+
+/* phones (portrait): the drawer spans the bottom, so the button sits on the
+   right edge just above it, and steps aside for open sheets and the drawer */
+@media (max-width: 720px) {
+  .ws-favbtn,
+  .is-touch .ws-favbtn {
+    left: auto;
+    right: var(--ws-edge);
+    bottom: calc(max(var(--ws-edge), env(safe-area-inset-bottom)) + 74px);
+    width: 48px;
+    height: 48px;
+    padding: 0;
+    justify-content: center;
+  }
+  .ws-favbtn__txt {
+    display: none;
+  }
+  .ws-favbtn__n {
+    position: absolute;
+    right: -5px;
+    top: -5px;
+  }
+  .has-insp .ws-favbtn,
+  .has-side .ws-favbtn,
+  .ws-dock.is-open ~ .ws-favbtn {
+    opacity: 0;
+    pointer-events: none !important;
+  }
+}
+
+/* touch: 44 px targets */
+.is-touch .ws-favs__acts {
+  flex-direction: row;
+  align-items: center;
+  gap: 0;
+  padding: 0 4px 0 0;
+}
+.is-touch .ws-favs__acts .ws-iconbtn {
+  width: 44px;
+  height: 44px;
+  font-size: 18px;
+}
+.is-touch .ws-favs__main {
+  min-height: 58px;
+}
+
+/* phones (portrait): the sheet holds more of the list, rows a little tighter */
+@media (max-width: 720px) {
+  .ws-favs.is-open {
+    transform: none;
+  }
+  .ws-favs__meter {
+    width: 78px;
+  }
+}
+@media (max-width: 380px) {
+  .ws-favs__meter small {
+    display: none;
+  }
+  .ws-favs__meter {
+    width: 44px;
+  }
+}

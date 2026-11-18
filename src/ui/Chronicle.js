@@ -149,8 +149,9 @@ export class ChroniclePanel {
   toggle(force) {
     const open = force ?? !this.open;
     if (open && this.ui.kingdoms.open) this.ui.kingdoms.toggle(false);
+    if (open && this.ui.favPanel?.open) this.ui.favPanel.toggle(false);
     this.el.classList.toggle('is-open', open);
-    this.ui.root.classList.toggle('has-side', open || this.ui.kingdoms.open);
+    this.ui.root.classList.toggle('has-side', open || this.ui.kingdoms.open || !!this.ui.favPanel?.open);
     if (open) this.renderAll();
   }
 

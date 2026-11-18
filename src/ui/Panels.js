@@ -851,6 +851,7 @@ export class Modals {
       ['Panels', [
         [k('K'), 'Kingdoms'],
         [k('J'), 'Chronicle'],
+        [k('P'), 'Favorites'],
         [k('L'), 'World laws'],
         [k('Y'), 'World ages'],
         [k('M'), 'Overview of the whole world'],
@@ -956,8 +957,9 @@ export class KingdomsPanel {
   toggle(force) {
     const open = force ?? !this.open;
     if (open && this.ui.chronicle?.open) this.ui.chronicle.toggle(false);
+    if (open && this.ui.favPanel?.open) this.ui.favPanel.toggle(false);
     this.el.classList.toggle('is-open', open);
-    this.ui.root.classList.toggle('has-side', open || !!this.ui.chronicle?.open);
+    this.ui.root.classList.toggle('has-side', open || !!this.ui.chronicle?.open || !!this.ui.favPanel?.open);
     if (open) {
       this._t = 0;
       this.render();

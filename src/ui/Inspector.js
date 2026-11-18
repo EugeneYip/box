@@ -9,6 +9,7 @@ import { CULTURES } from '../sim/civ/cultures.js';
 import { Editor } from './Editor.js';
 import { bannerURL } from './banner.js';
 import { YEAR } from '../core/time.js';
+import { favOf } from './favorites.js';
 
 const TRAIT_ICON = { body: 'heart', mind: 'sparkle', spirit: 'fire', gift: 'good', scar: 'shield', trait: 'sparkle' };
 const STATUS_ICON = {
@@ -484,7 +485,10 @@ export class Inspector {
     // the epithet ("the Fierce") only when the title does not carry it already
     const ep0 = u ? u.title || u.data?.title || null : null;
     const epithet = ep0 && !String(r.title || '').toLowerCase().includes(String(ep0).toLowerCase()) ? ep0 : null;
-    const fav = !!u?.data?.favorite;
+    // the star (Favorites, P): creatures, villages, realms and vehicles
+    const favT = favOf(r);
+    const fav = this.isFav(favT);
+    const starBtn = favT ? this.starHtml(favT, fav, r) : '';
     const realmK = !u && (k === 'village' || k === 'kingdom' || k === 'building') ? (typeof r.kingdom === 'object' && r.kingdom) || kingdomOf(this.game, (r.village || this.game.civ?.villages?.[r.building?.village])?.kingdom) : null;
     if (realmK) actions.unshift(`<button class="ws-btn ws-btn--sm" type="button" data-act="tech" data-k="${realmK.id}">${uiIcon('chronicle')}<span>Technology</span></button>`);
 
@@ -499,7 +503,7 @@ export class Inspector {
           ${subShown ? `<div class="ws-insp__sub" data-sub>${craft && ownerK?.banner ? `<img class="ws-crest ws-crest--banner" alt="" src="${bannerURL(ownerK.banner, ownerK.color, 28)}">` : kTint ? `<i class="ws-crest" style="--k:${kTint}"></i>` : ''}<span>${esc(subShown)}</span></div>` : ''}
         </div>
         ${editable ? `<button class="ws-iconbtn ws-iconbtn--sm ws-insp__edit${editing ? ' is-on' : ''}" type="button" aria-label="${editing ? 'Done editing' : 'Edit'}" data-tip="${editing ? 'Done editing' : 'Edit name, colours and more'}" data-act="${editing ? 'edit-done' : 'edit'}">${uiIcon(editing ? 'check' : 'edit')}</button>` : ''}
-        ${u ? `<button class="ws-iconbtn ws-iconbtn--sm ws-insp__fav${fav ? ' is-on' : ''}" type="button" aria-label="${fav ? 'Unstar' : 'Star this creature'}" data-tip="${fav ? 'Favourite' : 'Mark as favourite'}" data-act="fav">${uiIcon(fav ? 'star-on' : 'star')}</button>` : ''}
+        ${starBtn}
         <button class="ws-iconbtn ws-iconbtn--sm ws-insp__x" type="button" aria-label="Close (Esc)" data-act="close">${uiIcon('close')}</button>
       </header>
       ${chips ? `<div class="ws-insp__also" aria-label="Also here">${chips}</div>` : ''}
@@ -575,17 +579,22 @@ export class Inspector {
         if (m) m.hidden = !this.moreOpen;
         b.innerHTML = `<span>${this.moreOpen ? 'Fewer details' : 'More details'}</span>${uiIcon(this.moreOpen ? 'chev-up' : 'chev-down')}`;
         return;
-      } else if (act === 'fav' && u) {
-        u.data = u.data || {};
-        const on = !u.data.favorite;
-        if (typeof this.game.units?.setFavorite === 'function') safe(() => this.game.units.setFavorite(u, on), null, 'favorite');
-        else u.data.favorite = on;
+      } else if (act === 'fav' && favT) {
+        const store = this.ui.favorites;
+        if (store) store.toggle(favT.kind, favT.ref);
+        else if (u) {
+          u.data = u.data || {};
+          if (typeof this.game.units?.setFavorite === 'function') safe(() => this.game.units.setFavorite(u, !u.data.favorite), null, 'favorite');
+          else u.data.favorite = !u.data.favorite;
+        }
+        const on = this.isFav(favT);
+        const name = this.titleOf(this.track) || 'It';
+        this.ui.toast(on ? `${name} added to Favorites${this.ui.root.classList.contains('is-touch') ? '' : ' · P'}` : `${name} removed from Favorites`, 1800);
         if (this.editing) {
           // keep the edit card: flip the star in place
-          b.classList.toggle('is-on', !!u.data.favorite);
-          b.innerHTML = uiIcon(u.data.favorite ? 'star-on' : 'star');
-          b.setAttribute('aria-label', u.data.favorite ? 'Unstar' : 'Star this creature');
-          b.dataset.tip = u.data.favorite ? 'Favourite' : 'Mark as favourite';
+          const tmp = document.createElement('div');
+          tmp.innerHTML = this.starHtml(favT, on, this.track);
+          b.replaceWith(tmp.firstElementChild);
         } else this.render();
       } else if (act === 'tech') this.ui.modals.open('tech', { kingdom: +b.dataset.k });
       else if (act === 'occupant') {
@@ -603,6 +612,20 @@ export class Inspector {
     this._vsig = this.valueSignature();
     this.pin.querySelector('.ws-pin__label').textContent = r.title || '';
     this.pin.style.setProperty('--tint', ic.tint);
+  }
+
+  // ---- the Favorites star
+  isFav(t) {
+    if (!t) return false;
+    const store = this.ui.favorites;
+    return store ? store.has(t.kind, t.ref) : !!t.ref?.data?.favorite;
+  }
+  starHtml(t, on, r) {
+    const noun = t.kind === 'unit' ? 'creature' : t.kind === 'realm' ? 'realm' : t.kind === 'village' ? ['village', 'town', 'city'][t.ref?.tier] || 'village' : t.ref?.cls === 'sea' ? 'ship' : t.ref?.cls === 'air' || t.ref?.cls === 'space' ? 'aircraft' : 'vehicle';
+    const name = this.titleOf(r) || `this ${noun}`;
+    const label = on ? `Unstar ${name} (remove from Favorites)` : `Star this ${noun} (add to Favorites)`;
+    const tip = on ? 'In your Favorites · click to unstar' : 'Star: add to Favorites';
+    return `<button class="ws-iconbtn ws-iconbtn--sm ws-insp__fav${on ? ' is-on' : ''}" type="button" aria-label="${esc(label)}" aria-pressed="${on ? 'true' : 'false'}" data-tip="${esc(tip)}" data-act="fav">${uiIcon(on ? 'star-on' : 'star')}</button>`;
   }
 
   // ---- depth sections (all fields guarded: Life / Civ add them over time)
@@ -854,7 +877,7 @@ export class Inspector {
     const eq = u?.equipment ? Object.values(u.equipment).map((i) => i?.name || i?.id || 0) : null;
     const k = typeof r?.kingdom === 'object' ? r.kingdom : null;
     const keys = (r?.stats || []).map((s) => s?.[0]);
-    return r ? JSON.stringify([r.title, r.subtitle, keys, u?.alive, this.game.cameraRig.follow === u, this.results.map((o) => o.title), u?.job, u?.traits, st, eq, u?.level, u?.bio?.length, u?.data?.favorite, u?.flags, u?.name, k ? [k.motto, k.color, k.name, k.banner?.symbol, k.banner?.field] : null, k?.era, k?.researching, k?.techs?.size, !!(u || r.building) && !!this.portraits.get(u || r.building), this.isCompact(), kindOf(r) === 'building' && r.building ? safe(() => this.occupants(r.building).map((o) => o.id).join(','), '') : '']) : '';
+    return r ? JSON.stringify([r.title, r.subtitle, keys, u?.alive, this.game.cameraRig.follow === u, this.results.map((o) => o.title), u?.job, u?.traits, st, eq, u?.level, u?.bio?.length, this.isFav(favOf(r)), u?.flags, u?.name, k ? [k.motto, k.color, k.name, k.banner?.symbol, k.banner?.field] : null, k?.era, k?.researching, k?.techs?.size, !!(u || r.building) && !!this.portraits.get(u || r.building), this.isCompact(), kindOf(r) === 'building' && r.building ? safe(() => this.occupants(r.building).map((o) => o.id).join(','), '') : '']) : '';
   }
   valueSignature() {
     const r = this.track;
