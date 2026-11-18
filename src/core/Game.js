@@ -46,7 +46,7 @@ export class Game {
     // or a regional map (params.region) with its own dimensions
     const dims = worldDims(params.size, params.preset, params.region);
     this.world = new World(dims.w, dims.h, this.events);
-    generateWorld(this.world, params.seed, { preset: params.preset, region: params.region });
+    generateWorld(this.world, params.seed, { preset: params.preset, region: params.region, wrap: params.wrap ?? true });
 
     this.scene = new THREE.Scene();
     this.clock = new THREE.Clock();
@@ -270,7 +270,7 @@ export class Game {
     this.params.seed = seed;
     this.params.preset = preset;
     this.rng = new Random(seed);
-    generateWorld(this.world, seed, { preset, region });
+    generateWorld(this.world, seed, { preset, region, wrap: this.laws.worldWrap !== false });
     this.ages.reset();
     for (const s of this.allSystems) s.reset?.();
     this.world.flushDirty();

@@ -5,6 +5,9 @@
 //
 // `cost` (optional) adds a per-tile penalty, e.g. to make wading through
 // shallow water possible but less attractive than walking on land.
+// On the Round world (docs/ROUND-WORLD.md) the whole Earth's left and right
+// edges are neighbours, so a path may cross the seam (Greenland, Antarctica).
+import { geoWrapOn } from '../../world/geo.js';
 let gScore = null,
   cameFrom = null,
   stamp = null,
@@ -101,9 +104,11 @@ export function findPath(world, sx, sy, gx, gy, passable, maxNodes = 3000, cost 
   const start = sy * W + sx,
     goal = gy * W + gx;
   if (start === goal) return [goal];
+  const wrap = geoWrapOn(world);
   const h = (x, y) => {
-    const dx = Math.abs(x - gx),
-      dy = Math.abs(y - gy);
+    let dx = Math.abs(x - gx);
+    if (wrap && dx > W / 2) dx = W - dx;
+    const dy = Math.abs(y - gy);
     return dx + dy + (SQRT2 - 2) * Math.min(dx, dy);
   };
   heapN = 0;
@@ -138,13 +143,14 @@ export function findPath(world, sx, sy, gx, gy, passable, maxNodes = 3000, cost 
     for (let dy = -1; dy <= 1; dy++)
       for (let dx = -1; dx <= 1; dx++) {
         if (!dx && !dy) continue;
-        const nx = cx + dx,
-          ny = cy + dy;
+        let nx = cx + dx;
+        const ny = cy + dy;
+        if (wrap && (nx < 0 || nx >= W)) nx = (nx + W) % W; // across the seam
         if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue; // off the map (never passable)
         const ni = ny * W + nx;
         if (closed[ni] === curStamp) continue;
         if (!pass(nx, ny)) continue;
-        if (dx && dy && (!pass(cx + dx, cy) || !pass(cx, cy + dy))) continue;
+        if (dx && dy && (!pass(nx, cy) || !pass(cx, cy + dy))) continue;
         const climb = Math.max(0, height[ni] - ch);
         let g = gScore[cur] + (dx && dy ? SQRT2 : 1) + climb * 0.6;
         if (cost) g += cost(nx, ny);

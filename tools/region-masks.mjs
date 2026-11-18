@@ -21,6 +21,10 @@
 // angular next to the tiles, so their rings are rounded first with Chaikin
 // corner cutting.
 //
+// A region's `lands` (src/world/data/regions.js) keeps only that land: the
+// polygons of the listed countries, or the continental mainland; the rest of
+// the window becomes open sea (docs/REGIONS.md section 4).
+//
 // Encoding (per layer): row-major bits, alternating run lengths starting with
 // a 0 run, each as an unsigned LEB128 varint, then base64. Two layers: land
 // (1 = land) and lakes (1 = lake water inside the land).
@@ -43,16 +47,84 @@ if (!landSrc || !lakeSrc) {
 const SUPER = 2; // mask pixels per tile, each way
 
 // ---- sources -> lists of polygons (arrays of rings of [lon, lat])
+// (each land polygon carries its country's admin-0 code as .a3)
 const landPolys = [];
 {
   const gj = JSON.parse(fs.readFileSync(landSrc, 'utf8'));
   for (const f of gj.features) {
     const g = f.geometry;
     if (!g) continue;
-    if (g.type === 'Polygon') landPolys.push(g.coordinates);
-    else if (g.type === 'MultiPolygon') for (const p of g.coordinates) landPolys.push(p);
+    const a3 = f.properties.ADM0_A3;
+    const add = (p) => ((p.a3 = a3), landPolys.push(p));
+    if (g.type === 'Polygon') add(g.coordinates);
+    else if (g.type === 'MultiPolygon') for (const p of g.coordinates) add(p);
   }
 }
+// Islands the 1:10m countries lack, as rough outlines from their real
+// positions and sizes, added to the land of the country named: the Matsu
+// Islands (Nangan, Beigan, Juguang, Dongyin) and Lesser Kinmen (Lieyu), held
+// by the ROC.
+const blob = (lon, lat, rx, ry, k = [1, 0.85, 1.1, 0.9, 1.05, 0.8, 1, 0.95]) =>
+  [k.map((f, i) => {
+    const a = (i / k.length) * Math.PI * 2;
+    return [lon + Math.cos(a) * rx * f, lat + Math.sin(a) * ry * f];
+  })];
+for (const [a3, lon, lat, rx, ry, k] of [
+  ['TWN', 119.935, 26.155, 0.027, 0.014], // Nangan
+  ['TWN', 120.003, 26.222, 0.024, 0.014, [1.1, 0.8, 1, 1.05, 0.9, 0.85, 1.1, 0.9]], // Beigan
+  ['TWN', 120.49, 26.368, 0.012, 0.008], // Dongyin
+  ['TWN', 119.94, 25.968, 0.008, 0.007], // Xiju
+  ['TWN', 119.976, 25.957, 0.009, 0.008], // Dongju
+  ['TWN', 118.243, 24.428, 0.02, 0.016], // Lieyu (Lesser Kinmen)
+]) {
+  const p = blob(lon, lat, rx, ry, k);
+  p.a3 = a3;
+  landPolys.push(p);
+}
+// The continental mainland (for `lands: 'mainland'`): countries' polygons
+// that share a land border share boundary vertices, so polygons linked by
+// shared vertices form one landmass; the mainland is the landmass with the
+// most land inside the window (Eurasia with Africa on Asia Mainland). Islands,
+// even those split between countries (Borneo, Timor, New Guinea), form
+// landmasses of their own.
+let _landmass = null;
+function landmassOf() {
+  if (_landmass) return _landmass;
+  const parent = landPolys.map((_, i) => i);
+  const find = (i) => {
+    while (parent[i] !== i) i = parent[i] = parent[parent[i]];
+    return i;
+  };
+  const owner = new Map(); // vertex key -> first polygon seen there
+  const shared = new Map(); // polygon pair -> shared vertex count
+  // (all rings: an enclave such as Baikonur shares the hole of its host)
+  landPolys.forEach((poly, pi) => {
+    for (const [x, y] of poly.flat()) {
+      const k = `${x.toFixed(6)},${y.toFixed(6)}`;
+      const o = owner.get(k);
+      if (o == null) owner.set(k, pi);
+      else if (o !== pi) {
+        const pk = o < pi ? `${o}:${pi}` : `${pi}:${o}`;
+        const n = (shared.get(pk) || 0) + 1;
+        shared.set(pk, n);
+        if (n === 2) parent[find(o)] = find(pi);
+      }
+    }
+  });
+  return (_landmass = landPolys.map((_, pi) => find(pi)));
+}
+function mainlandSet(R, PW, PH, hit) {
+  const lm = landmassOf();
+  const label = new Int32Array(PW * PH).fill(-1);
+  landPolys.forEach((poly, pi) => hit(bbox(poly[0])) && fillPoly(label, PW, PH, R, poly, pi));
+  const area = new Map();
+  for (const v of label) if (v >= 0) area.set(lm[v], (area.get(lm[v]) || 0) + 1);
+  let root = -1,
+    best = 0;
+  for (const [r, a] of area) if (a > best) (best = a), (root = r);
+  return new Set(landPolys.map((_, pi) => pi).filter((pi) => lm[pi] === root));
+}
+
 const lakePolys = [];
 {
   const topo = JSON.parse(fs.readFileSync(lakeSrc, 'utf8'));
@@ -110,7 +182,7 @@ function chaikin(ring, n) {
 }
 
 // Even-odd scanline fill of one polygon (all its rings) into mask (OR).
-function fillPoly(mask, PW, PH, R, rings) {
+function fillPoly(mask, PW, PH, R, rings, val = 1) {
   const dLon = R.lonMax - R.lonMin,
     dLat = R.latMax - R.latMin;
   const rows = new Map();
@@ -138,7 +210,7 @@ function fillPoly(mask, PW, PH, R, rings) {
     for (let k = 0; k + 1 < xs.length; k += 2) {
       const a = Math.max(0, Math.ceil(xs[k] - 0.5)),
         b = Math.min(PW - 1, Math.ceil(xs[k + 1] - 0.5) - 1);
-      for (let c = a; c <= b; c++) mask[r * PW + c] = 1;
+      for (let c = a; c <= b; c++) mask[r * PW + c] = val;
     }
   }
 }
@@ -208,12 +280,18 @@ for (const R of EARTH_REGIONS) {
   const m = 0.5; // degrees of margin when picking polygons
   const hit = (b) => b[1] >= R.lonMin - m && b[0] <= R.lonMax + m && b[3] >= R.latMin - m && b[2] <= R.latMax + m;
   const land = new Uint8Array(PW * PH);
-  let nPolys = 0;
-  for (const poly of landPolys) {
-    if (!hit(bbox(poly[0]))) continue;
-    nPolys++;
-    fillPoly(land, PW, PH, R, smooth ? poly.map((r) => chaikin(r, smooth)) : poly);
-  }
+  // (land outside the map's own `lands`: drawn here only to drop the lakes on it)
+  const gone = new Uint8Array(R.lands ? PW * PH : 0);
+  const main = R.lands === 'mainland' ? mainlandSet(R, PW, PH, hit) : null;
+  const keepPoly = (poly, pi) => !R.lands || (main ? main.has(pi) : R.lands.includes(poly.a3));
+  let nPolys = 0,
+    nGone = 0;
+  landPolys.forEach((poly, pi) => {
+    if (!hit(bbox(poly[0]))) return;
+    const keep = keepPoly(poly, pi);
+    keep ? nPolys++ : nGone++;
+    fillPoly(keep ? land : gone, PW, PH, R, smooth ? poly.map((r) => chaikin(r, smooth)) : poly);
+  });
   // lakes: the larger Natural Earth 1:50m lakes (at least ~12 tiles of water)
   const lake = new Uint8Array(PW * PH);
   let nLakes = 0;
@@ -231,6 +309,7 @@ for (const R of EARTH_REGIONS) {
   let nLand = 0,
     nLake = 0;
   for (let i = 0; i < land.length; i++) {
+    if (gone.length && gone[i] && !land[i]) lake[i] = 0; // lakes of removed land are sea
     if (lake[i]) land[i] = 0;
     nLand += land[i];
     nLake += lake[i];
@@ -240,12 +319,12 @@ for (const R of EARTH_REGIONS) {
   const file = `${opt.out}/mask-${R.id}.js`;
   const js = `// Generated by tools/region-masks.mjs from Natural Earth (public domain):
 // 1:10m admin-0 countries (their union is the land) and 1:50m lakes.
-// Do not edit by hand. Region "${R.id}": ${PW} x ${PH} pixels (${SUPER}x the ${R.w} x ${R.h} tile grid)
+// Do not edit by hand. Region "${R.id}"${R.lands ? ` (only ${R.lands === 'mainland' ? 'the continental mainland' : R.lands.join(', ')})` : ''}: ${PW} x ${PH} pixels (${SUPER}x the ${R.w} x ${R.h} tile grid)
 // over lon ${R.lonMin}..${R.lonMax}, lat ${R.latMin}..${R.latMax}.
 // Per layer: row-major, alternating run lengths (0 first) as LEB128 varints, base64.
 export const REGION_MASK = { id: '${R.id}', w: ${PW}, h: ${PH}, lonMin: ${R.lonMin}, lonMax: ${R.lonMax}, latMin: ${R.latMin}, latMax: ${R.latMax}, land: '${L}', lakes: '${K}' };
 `;
   fs.writeFileSync(file, js);
-  console.log(`${file}: ${PW}x${PH}, ${nPolys} polygons, ${nLakes} lakes, land ${((nLand / land.length) * 100).toFixed(1)}%, lakes ${((nLake / land.length) * 100).toFixed(2)}%, ${(js.length / 1024).toFixed(0)} KB, ${Date.now() - t0} ms`);
+  console.log(`${file}: ${PW}x${PH}, ${nPolys} polygons${nGone ? ` (${nGone} removed: ${R.lands === 'mainland' ? 'islands' : 'not ' + R.lands.join('/')})` : ''}, ${nLakes} lakes, land ${((nLand / land.length) * 100).toFixed(1)}%, lakes ${((nLake / land.length) * 100).toFixed(2)}%, ${(js.length / 1024).toFixed(0)} KB, ${Date.now() - t0} ms`);
   if (opt.png) png(`${opt.png}/mask-${R.id}.png`, PW, PH, (i) => (lake[i] ? 120 : land[i] ? 235 : 30));
 }

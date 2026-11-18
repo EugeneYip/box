@@ -210,6 +210,12 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
   // or a regional map (docs/REGIONS.md) with square tiles at its middle latitude
   const REG = options.region && options.region !== 'world' && REGION_MASKS[options.region] ? earthRegion(options.region) : null;
   if (REG && (REG.w !== W || REG.h !== H)) throw new Error(`World Map region ${REG.id} needs a ${REG.w} x ${REG.h} world, got ${W} x ${H}`);
+  // Round world (docs/ROUND-WORLD.md): on the whole Earth with the setting on
+  // (options.wrap, default on) the left and right edges are one seam: land
+  // that crosses longitude -30 (Greenland, Antarctica) runs to both edges and
+  // the two sides meet, so people can walk across. Off, or on a regional map,
+  // the side edges stay closed behind a ring of open sea.
+  const SEAM = !REG && options.wrap !== false;
   const GEO = REG ? { region: REG.id, lonMin: REG.lonMin, lonMax: REG.lonMax, latMin: REG.latMin, latMax: REG.latMax, wrap: false } : { region: 'world', lonMin: LEFT, lonMax: LEFT + 360, latMin: -90, latMax: 90, wrap: true };
   // ---- geometry: tiles per degree, per-row latitude, per-column longitude
   const tpdX = W / (GEO.lonMax - GEO.lonMin),
@@ -398,7 +404,7 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
   // would otherwise be sliced straight by the border on both sides)
   const ringX0 = Math.max(2, Math.round(5 * scale768));
   const sideK = new Float32Array(W).fill(1); // 0 at the side borders .. 1 inland
-  if (!REG) for (let x = 0; x < W; x++) sideK[x] = smoothstep(ringX0 + 1, ringX0 + 34 * scale768, Math.min(x, W - 1 - x));
+  if (!REG && !SEAM) for (let x = 0; x < W; x++) sideK[x] = smoothstep(ringX0 + 1, ringX0 + 34 * scale768, Math.min(x, W - 1 - x));
   for (let x = 0; x < W && !REG; x++) {
     const u = x / tpd;
     const ek = sideK[x];
@@ -407,7 +413,7 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
       for (let y = H - 1; y >= 0 && latY[y] < -58; y--) if (latY[y] > capN) land[y * W + x] = 0;
     }
   }
-  for (let y = 0; y < H && !REG; y++) {
+  for (let y = 0; y < H && !REG && !SEAM; y++) {
     const lat = latY[y];
     if (lat < 66.9 || lat > 86) continue;
     const cutLon = -36 - 7 * smoothstep(70, 82, lat) + nWarp(lat / 1.7 + 9, 2.9) * 2.4;
@@ -425,16 +431,31 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
   // carries it on beyond the border): only real seas meet the edge as water.
   const ringX = REG ? 4 : Math.max(2, Math.round(5 * scale768)), // wide enough that the shore field clamped past the side edges reads as open sea
     ringY = REG ? 4 : Math.max(2, Math.round(3 * scale768));
-  const edgeDist = (x, y) => Math.min(x, W - 1 - x, y, H - 1 - y); // tiles to the border
-  const inRing = (x, y) => x < ringX || x >= W - ringX || y < ringY || y >= H - ringY;
+  // (with the round-world seam only the top and bottom are borders)
+  const edgeDist = SEAM ? (x, y) => Math.min(y, H - 1 - y) : (x, y) => Math.min(x, W - 1 - x, y, H - 1 - y); // tiles to the border
+  const inRing = SEAM ? (x, y) => y < ringY || y >= H - ringY : (x, y) => x < ringX || x >= W - ringX || y < ringY || y >= H - ringY;
+  // distance fields that see across the seam: computed on a copy padded with
+  // the far side's columns, then cropped
+  const PADX = SEAM ? Math.min(W >> 1, Math.round(48 * scale768)) : 0;
+  const distField = (mask, value) => {
+    if (!PADX) return H_.distanceField(mask, W, H, value);
+    const W2 = W + 2 * PADX,
+      m2 = new Uint8Array(W2 * H);
+    for (let y = 0; y < H; y++)
+      for (let x2 = 0; x2 < W2; x2++) m2[y * W2 + x2] = mask[y * W + ((x2 - PADX + W) % W)];
+    const d2 = H_.distanceField(m2, W2, H, value);
+    const d = new Float32Array(N);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) d[y * W + x] = d2[y * W2 + x + PADX];
+    return d;
+  };
   if (!REG)
     for (let y = 0; y < H; y++)
       for (let x = 0; x < W; x++) if (inRing(x, y)) land[y * W + x] = 0;
   _t('land');
 
   // ------------------------------------------------------------- 2. distances
-  const dLand = H_.distanceField(land, W, H, 1); // land tiles: tiles to the sea
-  const dSea = H_.distanceField(land, W, H, 0); // sea tiles: tiles to land
+  const dLand = distField(land, 1); // land tiles: tiles to the sea
+  const dSea = distField(land, 0); // sea tiles: tiles to land
   // open sea vs. enclosed water: connected water bodies larger than a small
   // sea (the Caspian and the Black Sea count as seas) or touching the edge
   const sea = new Uint8Array(N);
@@ -759,6 +780,20 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
   // and tree lines read the elevation the range was drawn with)
   const capLoss = preCap;
   for (let i = 0; i < N; i++) capLoss[i] = Math.max(0, preCap[i] - hgt[i]);
+  // the great `peaks` fronts (the Himalaya, Karakoram, Kunlun): branching
+  // valleys cut back into the ramp and the plateau's rim, every few tiles,
+  // so the front reads as ridged ranges with valleys between them rather
+  // than one wall under a table
+  if (!REG)
+    for (let y = 1; y < H - 1; y++)
+      for (let x = 0; x < W; x++) {
+        const i = y * W + x;
+        const pk = peakK[i];
+        if (!land[i] || pk < 0.05 || hgt[i] < 2.2) continue;
+        const v = ridged(nWarp, x / 3.4 + 11, y / 3.4 - 6) * 0.65 + ridged(nRidge, x / 1.7 - 3, y / 1.7 + 8) * 0.35;
+        const cut = smoothstep(0.6, 0.9, v) * Math.min(1, pk * 1.6);
+        if (cut > 0) hgt[i] -= (hgt[i] - 2.0) * 0.42 * cut;
+      }
   for (const f of REG ? [] : COAST_PLAINS) {
     stamp(f, 1, 0, (i) => {
       if (!land[i]) return;
@@ -1097,7 +1132,9 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
         tx /= tl;
         ty /= tl;
         const s = sAlong[k];
-        const amp = (0.35 + 0.55 * Math.min(1, s / L)) * Math.min(1, s / 3, (L - s) / 2 + 0.2) * MZ;
+        // (the whole Earth: gentle bends about the authored course, so the
+        // great rivers keep their real line instead of wandering wide loops)
+        const amp = (0.35 + 0.55 * Math.min(1, s / L)) * Math.min(1, s / 3, (L - s) / 2 + 0.2) * MZ * (REG ? 1 : 0.4);
         const off = nMeander((s * 0.11) / MZ, seed * 0.01 + R.pts[0][0]) * amp;
         return [p[0] - ty * off, p[1] + tx * off];
       });
@@ -1107,7 +1144,8 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
         const s = sAlong[k] / L;
         // (regional maps: under a tile wide at the source, widening downstream
         // by the river's size and the map's scale)
-        const w = REG ? 0.38 + R.w * WK * Math.pow(s, 0.75) : Math.max(0.16, (0.2 + (R.w - 0.2) * Math.pow(s, 0.65)) * wScale);
+        // (the whole Earth: a channel at most about a tile wide at the mouth)
+        const w = REG ? 0.38 + R.w * WK * Math.pow(s, 0.75) : Math.max(0.16, (0.2 + (R.w - 0.2) * Math.pow(s, 0.65)) * wScale * 0.72);
         const size = Math.min(1, w / 1.1);
         const bed = -(0.32 + 0.45 * size);
         const Rr = w + 3.2 * VW;
@@ -1190,11 +1228,29 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
       const k = Math.min(1, edgeDist(x, y) / ringY); // 0 at the border
       hgt[i] = Math.min(hgt[i], -(REG ? 8 - 3 * k : 8.6 - 4 * k) + fbm(nBank, x / NT / 3, y / NT / 3, 2) * 0.5);
     }
+  // the round-world seam: the two sides meet at the same height (noise,
+  // blurs and slope passes do not see across the edge), blended over a band
+  // on each side; land stays land and sea stays sea
+  if (SEAM) {
+    const B = Math.max(4, Math.round(10 * scale768));
+    for (let y = 0; y < H; y++) {
+      const o = y * W;
+      const d = (hgt[o + W - 1] - hgt[o]) / 2;
+      if (Math.abs(d) < 1e-4) continue;
+      for (let k = 0; k < B; k++) {
+        const wk = 1 - smoothstep(0, B, k);
+        for (const i of [o + k, o + W - 1 - k]) {
+          hgt[i] += i === o + k ? d * wk : -d * wk;
+          hgt[i] = land[i] ? Math.max(0.24, hgt[i]) : Math.min(-0.2, hgt[i]);
+        }
+      }
+    }
+  }
   // ----------------------------------------------------------------- 6. climate
   const wet = new Uint8Array(N);
   for (let i = 0; i < N; i++) wet[i] = hgt[i] < SEA_LEVEL ? 1 : 0;
-  const dWater = H_.distanceField(wet, W, H, 0); // land: tiles to any water
-  const dOcean = H_.distanceField(sea, W, H, 0); // land: tiles to the open sea
+  const dWater = distField(wet, 0); // land: tiles to any water
+  const dOcean = distField(sea, 0); // land: tiles to the open sea
   const warm = new Float32Array(N);
   for (const f of WARMTH) {
     const edge = f.edge ?? 3;
@@ -1231,7 +1287,10 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
   for (const f of F_MOISTURE) {
     const edge = f.edge ?? 2;
     stamp(f, 1, edge * 1.5, (i, d, h, w) => {
-      const k = falloff(d, w, edge, i, 0.5) * (f.k ?? 1);
+      let k = falloff(d, w, edge, i, 0.5) * (f.k ?? 1);
+      // (belowKm [a, b]: only on low ground, fading out between a and b km
+      // with a ragged edge, e.g. a farmed plain up to the foot of the hills)
+      if (f.belowKm && k > 0) k *= 1 - smoothstep(f.belowKm[0], f.belowKm[1], Math.max(0, hgt[i]) / upk[i] + fbm(nMoist, Ud(i) * 14 + 5, Vd(i) * 14 - 2, 3) * (f.belowKm[1] - f.belowKm[0]) * 1.1);
       if (k > 0) moist[i] += (f.m - moist[i]) * k;
     });
   }
@@ -1242,7 +1301,7 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
     for (let x = 0; x < W; x++)
       if (latY[y] < southCut[x] - 0.4 && hgt[y * W + x] < SEA_LEVEL) temp[y * W + x] = Math.max(temp[y * W + x], 0.42);
       else if (!REG || hgt[y * W + x] < SEA_LEVEL) {
-        const ek = 1 - smoothstep(ringY, ringY + 10 * scale768, Math.min(edgeDist(x, y), Math.min(x, W - 1 - x)));
+        const ek = 1 - smoothstep(ringY, ringY + 10 * scale768, Math.min(edgeDist(x, y), SEAM ? 1e9 : Math.min(x, W - 1 - x)));
         if (ek > 0) temp[y * W + x] = Math.max(temp[y * W + x], 0.42 * ek + temp[y * W + x] * (1 - ek));
       }
   // The water's cold slate tint follows temperature: over open sea it fades
@@ -1314,7 +1373,7 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
           }
           // open sea south of Antarctica's far coast, and short of the border
           if (lat < southCut[x] - 0.2) ice = false;
-          if (Math.min(x, W - 1 - x) < ringX + 1 + bn || Math.min(y, H - 1 - y) < ringY + 2 + bn) ice = false;
+          if ((!SEAM && Math.min(x, W - 1 - x) < ringX + 1 + bn) || Math.min(y, H - 1 - y) < ringY + 2 + bn) ice = false;
           if (sideK[x] < 0.35 + bn * 0.25) ice = false;
         }
         if (ice) type[i] = TILE.ICE;
@@ -1373,6 +1432,30 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
       moist[i] = Math.min(moist[i], 0.36);
     }
   }
+  // Europe on the whole Earth: not one forest from Biscay to the Urals, but
+  // open farmland on the lowland plains (most of it between ~45 and 55 N),
+  // heath on the Atlantic fringe and its uplands (Ireland, Britain, Brittany,
+  // Jutland, western Norway) and mixed woods on hills and toward the north
+  if (!REG)
+    for (let y = 0; y < H; y++) {
+      const lat = latY[y];
+      if (lat < 36 || lat > 64) continue;
+      for (let x = 0; x < W; x++) {
+        const lon = lonX[x];
+        if (lon < -11 || lon > 42) continue;
+        const i = y * W + x;
+        const tt = type[i];
+        if (tt !== TILE.FOREST && tt !== TILE.GRASS) continue;
+        const hk = Math.max(0, hgt[i]) / upk[i];
+        const r = clamp01(0.5 + fbm(nMoist, lon / 1.6 + 90, lat / 1.2 - 40, 3) * 1.1 + (hash2(x, y, seed + 41) - 0.5) * 0.18);
+        const east = 1 - 0.5 * smoothstep(28, 40, lon); // (the forest-steppe takes over in the east)
+        const farm = table([[36, 0.3], [41, 0.42], [45, 0.58], [49, 0.66], [53, 0.62], [56, 0.42], [59, 0.18], [62, 0.06]], lat) * (1 - smoothstep(0.3, 0.85, hk)) * east;
+        const heath = lon < 12 && lat > 49.5 && lat < 62 ? Math.max(0.45 * (1 - smoothstep(1.5, 5, dOcean[i] / scale768)), 0.6 * smoothstep(0.25, 0.6, hk)) * (1 - smoothstep(58, 62, lat) * 0.5) : 0;
+        if (r < heath) type[i] = TILE.TUNDRA;
+        else if (r < heath + farm) type[i] = TILE.GRASS;
+        else if (tt === TILE.GRASS && r > 0.82 && hk < 1.2) type[i] = TILE.FOREST; // woods among the fields
+      }
+    }
   H_.despeckleTypes(type, hgt, W, H);
   // (small snow patches dissolve, but not the caps of volcano cones such as
   // Fuji, nor, on regional maps, the white tops of single high peaks)

@@ -23,9 +23,9 @@ const EARTH_SIZE_NOTES = {
   huge: 'Huge: 768 × 384 tiles. A lighter whole Earth.',
   vast: 'Vast: 1024 × 512 tiles. The recommended World Map. Desktop only.',
   'great-east-asia': 'East and Southeast Asia, from Japan to Java.',
-  'asia-mainland': 'Continental Asia, from the Caucasus to Japan.',
-  japan: 'The Japanese archipelago, with the coast of Korea.',
-  taiwan: 'Taiwan, Penghu, Green Island and Orchid Island.',
+  'asia-mainland': 'The East Asian mainland: China, Mongolia and Korea.',
+  japan: 'The Japanese archipelago.',
+  taiwan: 'Taiwan, Penghu, Kinmen, Matsu, Green Island and Orchid Island.',
   europe: 'Iceland to the Urals, Scandinavia to the North African coast.',
   'north-america': 'Alaska and Canada to Panama and the Caribbean.',
 };

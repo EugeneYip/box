@@ -1,5 +1,6 @@
 import { FLORA, FLORA_INFO, TILE, TILE_INFO, SEA_LEVEL, SHALLOW_DEPTH } from '../../world/constants.js';
 import { findPath } from './pathfinding.js';
+import { geoDx, geoWrapOn } from '../../world/geo.js';
 import { SPECIES, registerSpecies } from './species.js';
 import { BRAINS, BRAIN_TICKS } from './brains.js';
 import { makeName, makeMonsterName } from './names.js';
@@ -981,7 +982,7 @@ export class Units {
       u.moving = false;
       return;
     }
-    const dx = tx - u.x,
+    const dx = geoDx(w, u.x, tx), // (the short way round on the Round world)
       dz = tz - u.z;
     const d = Math.hypot(dx, dz);
     if (d < (final ? 0.08 : 0.4)) {
@@ -1029,6 +1030,7 @@ export class Units {
     const stepLen = Math.min(d, u.spd * facing * dt);
     let nx = u.x + (dx / d) * stepLen,
       nz = u.z + (dz / d) * stepLen;
+    if ((nx < 0 || nx >= W) && geoWrapOn(w)) nx = (nx + W) % W; // across the Round world's seam
     const clx = (v) => (v < 0 ? 0 : v >= W ? W - 1 : v | 0),
       clz = (v) => (v < 0 ? 0 : v >= Hh ? Hh - 1 : v | 0);
     if (!this.canStand(u, clx(nx), clz(nz))) {
@@ -2069,6 +2071,7 @@ export class Units {
           u.x += u._mvx;
           u.z += u._mvz;
           u._mvn--;
+          if (u.x < 0 || u.x >= w.w) u.x = ((u.x % w.w) + w.w) % w.w; // (only on the Round world)
         }
         continue;
       }
@@ -2076,6 +2079,7 @@ export class Units {
         u.x += u._mvx * u._mvn;
         u.z += u._mvz * u._mvn;
         u._mvn = 0;
+        if (u.x < 0 || u.x >= w.w) u.x = ((u.x % w.w) + w.w) % w.w; // (only on the Round world)
       }
       const el = now - u._simT;
       const udt = el > 1e-4 ? (el < 1.2 ? el : 1.2) : dt;
@@ -2210,20 +2214,25 @@ export class Units {
         this._flyLocomote(u, dt, now);
       } else if (lod || !u._far || u.combat) this._locomote(u, udt, now);
       else if ((slot & 1) === 0) this._locomote(u, dt * 2, now);
-      if (u.x < 0.01) u.x = 0.01;
+      const wrapX = geoWrapOn(w);
+      if (wrapX && (u.x < 0 || u.x >= w.w)) u.x = ((u.x % w.w) + w.w) % w.w;
+      else if (u.x < 0.01) u.x = 0.01;
       else if (u.x > w.w - 0.01) u.x = w.w - 0.01;
       if (u.z < 0.01) u.z = 0.01;
       else if (u.z > w.h - 0.01) u.z = w.h - 0.01;
-      const moved = Math.hypot(u.x - u.px, u.z - u.pz) / udt;
+      // (a step across the Round world's seam counts the short way round)
+      const mvx = wrapX ? geoDx(w, u.px, u.x) : u.x - u.px;
+      const moved = Math.hypot(mvx, u.z - u.pz) / udt;
       u.speedNow += (moved - u.speedNow) * Math.min(1, udt * 8);
       if (lod && moved > 0) {
         // the stride of a distant walker (updated every 2nd or 4th tick) is
         // shown over the ticks until its next update (see the skip above)
         const n = 1 << lod;
-        u._mvx = (u.x - u.px) / n;
+        u._mvx = mvx / n;
         u._mvz = (u.z - u.pz) / n;
         u._mvn = n - 1;
         u.x = u.px + u._mvx;
+        if (wrapX && (u.x < 0 || u.x >= w.w)) u.x = ((u.x % w.w) + w.w) % w.w;
         u.z = u.pz + u._mvz;
       }
       if (!still || def.habitat === 'air' || u.x !== u._ex || u.z !== u._ez) u.y = this._groundY(u);

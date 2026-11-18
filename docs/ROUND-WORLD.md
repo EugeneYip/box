@@ -48,3 +48,24 @@ Behaviour is exactly as round 13 (edges closed).
   and at least one ship is seen crossing without a visible jump.
 - With the setting off, no unit crosses the seam.
 - Regional maps never show the option and never wrap.
+
+## Implementation notes (round 14, Geography and Landscape)
+
+- Terrain: with the setting on when the world is grown (`wrap` option of
+  `generateWorld`, from `params.wrap` or the law), the whole Earth keeps its
+  sea ring only at the top and bottom. Greenland (about 68–84°N) and
+  Antarctica (about 77–83°S) run to both side edges and meet at the same
+  height (distance fields are computed across the seam, then a short blend
+  evens the two sides). Off, the side ring and the cut-back coasts stay.
+  Switching the law in play keeps the land as grown; the address keeps
+  `wrap=0`, so a reload grows the closed map.
+- Land movement: `findPath` links the two edges and `Units` steps the short
+  way round and wraps positions, so people and animals walk across.
+- Camera: while a closer view (camera distance under about a third of the
+  map) runs past a side edge, `Terrain` draws up to two columns of the far
+  side's chunks one map width over; the terrain shader reads the tiles they
+  copy, and the water reads tiles across the seam in the same band
+  (`uWrapBand`). The skirt's sides drop out of sight while the copies are
+  drawn.
+- The title screen's World Map row has the same Round world switch as New
+  World (whole-Earth sizes only, on by default).
