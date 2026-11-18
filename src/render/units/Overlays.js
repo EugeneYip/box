@@ -6,7 +6,7 @@ import * as THREE from 'three';
 //   - emotes: camera-facing status icons (heart, zzz, !, anger, sparkle, ...)
 //   - projectiles (arrows) and the skywyrm's fire-breath plume
 export const DECAL = { shadow: 0, ring: 1, select: 2, dot: 3, glow: 4 };
-export const EMOTE = { heart: 0, zzz: 1, alert: 2, anger: 3, sparkle: 4, note: 5, chat: 6, skull: 7, burning: 8, sick: 9, chilled: 10, starving: 11, wounded: 12, mourning: 13, inspired: 14, exhausted: 15, glow: 16, star: 17, heal: 18, lure: 19 };
+export const EMOTE = { heart: 0, zzz: 1, alert: 2, anger: 3, sparkle: 4, note: 5, chat: 6, skull: 7, burning: 8, sick: 9, chilled: 10, starving: 11, wounded: 12, mourning: 13, inspired: 14, exhausted: 15, glow: 16, star: 17, heal: 18, lure: 19, laugh: 20, meal: 21, think: 22, wait: 23, coin: 24, cheer: 25, flash: 26, puff: 27, tracer: 28 };
 
 const decalVert = /* glsl */ `
 attribute vec4 iA; // x y z size
@@ -141,7 +141,7 @@ function drawAtlas() {
   const S = 128;
   const cv = document.createElement('canvas');
   cv.width = S * 8;
-  cv.height = S * 3;
+  cv.height = S * 4;
   const g = cv.getContext('2d');
   const cell = (i, fn) => {
     g.save();
@@ -420,6 +420,120 @@ function drawAtlas() {
     g.fillStyle = 'rgba(240,255,235,0.95)';
     g.fill();
   });
+  // ---- daily life (docs/DAILY-LIFE.md) and gunfire
+  cell(EMOTE.laugh, () => {
+    text('ha', 54, '#fff1a8', -10, 10);
+    text('!', 44, '#fff1a8', 34, -14);
+  });
+  cell(EMOTE.meal, () => {
+    // a bowl with steam
+    g.beginPath();
+    g.moveTo(-46, -2);
+    g.quadraticCurveTo(-42, 44, 0, 44);
+    g.quadraticCurveTo(42, 44, 46, -2);
+    g.closePath();
+    outline('#d98a4a');
+    g.beginPath();
+    g.ellipse(0, -2, 46, 10, 0, 0, Math.PI * 2);
+    outline('#f2e6c8', 'rgba(40,24,20,0.85)', 6);
+    g.strokeStyle = 'rgba(255,255,255,0.85)';
+    g.lineWidth = 6;
+    g.lineCap = 'round';
+    for (const x of [-16, 4, 22]) {
+      g.beginPath();
+      g.moveTo(x, -18);
+      g.bezierCurveTo(x - 10, -30, x + 10, -40, x, -54);
+      g.stroke();
+    }
+  });
+  cell(EMOTE.think, () => {
+    g.beginPath();
+    g.ellipse(6, -14, 44, 34, 0, 0, Math.PI * 2);
+    outline('#ffffff');
+    for (const [x, y, r] of [[-30, 30, 9], [-42, 48, 5]]) {
+      g.beginPath();
+      g.arc(x, y, r, 0, Math.PI * 2);
+      outline('#ffffff', 'rgba(40,24,20,0.85)', 5);
+    }
+    text('?', 50, '#6a7aa8', 6, -12);
+  });
+  cell(EMOTE.wait, () => {
+    // an hourglass
+    g.beginPath();
+    g.moveTo(-30, -48);
+    g.lineTo(30, -48);
+    g.lineTo(4, 0);
+    g.lineTo(30, 48);
+    g.lineTo(-30, 48);
+    g.lineTo(-4, 0);
+    g.closePath();
+    outline('#e8eef8');
+    g.fillStyle = '#e0b050';
+    g.beginPath();
+    g.moveTo(-18, 46);
+    g.lineTo(18, 46);
+    g.lineTo(0, 22);
+    g.closePath();
+    g.fill();
+    g.fillRect(-36, -54, 72, 8);
+    g.fillRect(-36, 46, 72, 8);
+  });
+  cell(EMOTE.coin, () => {
+    g.beginPath();
+    g.arc(0, 0, 40, 0, Math.PI * 2);
+    outline('#f2c14e', 'rgba(110,70,10,0.9)', 8);
+    text('$', 52, '#fff3c0', 0, 2);
+  });
+  cell(EMOTE.cheer, () => {
+    // confetti
+    const cols = ['#ff5a7a', '#ffd23a', '#6ad0ff', '#8be07a', '#c88aff'];
+    for (let i = 0; i < 14; i++) {
+      const a = i * 2.39,
+        r = 12 + (i * 37) % 40;
+      g.save();
+      g.translate(Math.cos(a) * r, Math.sin(a) * r);
+      g.rotate(a * 1.7);
+      g.fillStyle = cols[i % cols.length];
+      g.fillRect(-7, -4, 14, 8);
+      g.restore();
+    }
+  });
+  cell(EMOTE.flash, () => {
+    const gr = g.createRadialGradient(0, 0, 0, 0, 0, 60);
+    gr.addColorStop(0, 'rgba(255,255,235,1)');
+    gr.addColorStop(0.25, 'rgba(255,220,120,0.95)');
+    gr.addColorStop(0.6, 'rgba(255,140,40,0.45)');
+    gr.addColorStop(1, 'rgba(255,100,20,0)');
+    g.fillStyle = gr;
+    g.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const a = (i / 10) * Math.PI * 2;
+      const r = i % 2 ? 22 : 62;
+      g.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+    }
+    g.closePath();
+    g.fill();
+  });
+  cell(EMOTE.puff, () => {
+    for (const [x, y, r, a] of [[-14, 8, 34, 0.55], [16, 2, 30, 0.5], [0, -16, 32, 0.6], [4, 14, 26, 0.45]]) {
+      const gr = g.createRadialGradient(x, y, 0, x, y, r);
+      gr.addColorStop(0, `rgba(236,234,228,${a})`);
+      gr.addColorStop(1, 'rgba(220,218,212,0)');
+      g.fillStyle = gr;
+      g.beginPath();
+      g.arc(x, y, r, 0, Math.PI * 2);
+      g.fill();
+    }
+  });
+  cell(EMOTE.tracer, () => {
+    // a horizontal streak (rotated per shot)
+    const gr = g.createLinearGradient(-64, 0, 64, 0);
+    gr.addColorStop(0, 'rgba(255,200,80,0)');
+    gr.addColorStop(0.7, 'rgba(255,230,140,0.9)');
+    gr.addColorStop(1, 'rgba(255,255,230,1)');
+    g.fillStyle = gr;
+    g.fillRect(-64, -5, 128, 10);
+  });
   const tex = new THREE.CanvasTexture(cv);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 4;
@@ -438,8 +552,8 @@ void main() {
   mv.xy += q * iA.w;
   float icon = iB.x;
   vec2 cell = vec2(mod(icon, 8.0), floor(icon / 8.0));
-  vUv = (cell + position.xy + 0.5) / vec2(8.0, 3.0);
-  vUv.y = 1.0 - ((cell.y + 0.5 - position.y) / 3.0);
+  vUv = (cell + position.xy + 0.5) / vec2(8.0, 4.0);
+  vUv.y = 1.0 - ((cell.y + 0.5 - position.y) / 4.0);
   vAlpha = iB.y;
   gl_Position = projectionMatrix * mv;
 }`;

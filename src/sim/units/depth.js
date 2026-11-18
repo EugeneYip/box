@@ -128,6 +128,9 @@ export function installDepth(Units) {
         const v = STATUS_BY_ID[id]?.mods?.[key];
         if (v != null) m *= v;
       }
+    // daily life (daily.js): villagers who keep a day's rhythm (a full night's
+    // sleep, meals, evenings off) work at a steadier pace in their shorter day
+    if (key === 'work' && u?._ext && u.species === 'human' && this.game.settings?.dayNight) m *= 1.35;
     return m;
   };
   P._refreshMods = function (u) {
@@ -448,6 +451,17 @@ export function installDepth(Units) {
       if (s && s.alive) {
         this.log(s, `Outlived ${u.name}`);
         this.addStatus(s, 'mourning', 40);
+        s.data.mourn = u.name;
+      }
+    }
+    // parents grieve a child (daily life: "Mourning Tomas")
+    if (u.def.kind === 'humanoid' && u.age < 30 && u.data?.civ) {
+      for (const pid of [u.data.civ.mother, u.data.civ.father]) {
+        const p = pid != null ? this.byId.get(pid) : null;
+        if (p && p.alive && p !== u) {
+          this.addStatus(p, 'mourning', 30);
+          p.data.mourn = u.name;
+        }
       }
     }
     if (killer && killer.alive) {

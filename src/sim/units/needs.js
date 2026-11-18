@@ -94,6 +94,8 @@ export function installNeeds(Units) {
     const g = this.game;
     const civ = g.civ;
     if (!civ || u.combat || u.state === 'flee' || u.data.aboard != null || u.def.kind !== 'humanoid') return false;
+    // robots work through the night; astronauts in orbit are away
+    if (u.data.robot || u._space > 0) return false;
     const d = u.data;
     // a nap where they stand, until rested enough to go on
     if (u._nap) {
@@ -108,12 +110,14 @@ export function installNeeds(Units) {
     }
     const v = civ.villages?.[u.village];
     if (!v || !v.alive) return false;
-    const day = this.daylight();
     const ride = d.ride && (d.ride.phase === 'out' || d.ride.phase === 'back');
     const army = d.civ?.army != null;
     const guard = u.job === 'soldier' && (u.id & 1) === 0; // half the soldiers keep the watch
-    // night: home to bed (riders on the road and armies on the march press on)
-    if (day < 0.16 && u.energy < 0.92 && !guard && !army && !ride) {
+    // night: home to bed at the person's bedtime (daily.js: later in summer,
+    // earlier in winter and in the rain; children first); riders on the road
+    // and armies on the march press on
+    if (!guard && !army && !ride && this._bedtime(u)) {
+      if (u._dl) this._dlEnd(u);
       const b = this._homeOf(u, v);
       if (!b) return this._nap0(u);
       const dx = b.doorX - u.x,
@@ -197,6 +201,8 @@ export function installNeeds(Units) {
   };
   P._goInside = function (u, b) {
     this.stop(u);
+    if (u._dl) this._dlEnd(u);
+    u.activity = null;
     u.data.inside = true;
     u._away = true;
     u._homeB = b.id;
@@ -228,11 +234,15 @@ export function installNeeds(Units) {
   P._insideTick = function (u, dt, now, tickN) {
     u.energy = Math.min(1, u.energy + dt * SLEEP_GAIN);
     u.hunger = Math.min(1, u.hunger + dt * u.def.hungerRate * 0.4);
+    // children grow up through the night too (the village brain ages them by day)
+    if (u.age < 16 && !u.flags?.frozenAge && !u.data.frozenAge) u.age += (dt / 30) * 1.7;
     if ((tickN + u.id) % 15 !== 0) return;
     const g = this.game;
     const b = g.civ?._bById?.get(u._homeB);
-    const day = this.daylight();
-    let out = !b || !b.alive || (day > 0.28 && u.energy > 0.5) || u.energy >= 0.999 || !g.civ?.villages?.[u.village]?.alive;
+    // wake at the person's hour (a pinned clock: at daylight, or when rested)
+    const live = !!g.settings?.dayNight;
+    const wake = live ? !this._bedtime(u) && u.energy > 0.4 : (this.daylight() > 0.28 && u.energy > 0.5) || u.energy >= 0.999;
+    let out = !b || !b.alive || wake || !g.civ?.villages?.[u.village]?.alive;
     if (!out && b && (b.burning > 0.2 || (b.hp != null && b.maxHp && b.hp < b.maxHp * 0.5))) out = true;
     if (!out && b && u.data.hostile && this.dangerNear(b.doorX, b.doorZ, 6)) {
       out = !!this.nearest(b.doorX, b.doorZ, 6, (o) => {

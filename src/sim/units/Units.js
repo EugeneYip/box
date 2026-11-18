@@ -8,6 +8,8 @@ import { installDepth } from './depth.js';
 import { installEditing } from './edit.js';
 import { installRoles, ROLE_NAMES } from './roles.js';
 import { installNeeds } from './needs.js';
+import { installDaily, animalLabel } from './daily.js';
+import { installPeople } from './people.js';
 
 // Core creature simulation (owned by the Life module; the Civilization module
 // programs humanoid behaviour through registerBrain / unit.job).
@@ -97,6 +99,15 @@ const UNIT_CAP = 1000 * 1.6;
 const HEALTHY = 0.45; // a wild grazer below this share of its capacity gets migrant herds
 
 const KIND_ORDER = { humanoid: 0, animal: 1, monster: 2 };
+// soldiers' guns by era (u.data.gear): seconds between shots, chance to miss,
+// damage per hit (x attackDamage), projectile kind and speed. Kept near the
+// damage a sword arm deals per second, so battles keep their pace.
+const GUN = {
+  musket: { cd: 2.6, miss: 0.35, dmg: 3.2, kind: 'ball', speed: 30 },
+  rifle: { cd: 1.5, miss: 0.2, dmg: 1.6, kind: 'bullet', speed: 45 },
+  fatigues: { cd: 0.75, miss: 0.18, dmg: 0.75, kind: 'bullet', speed: 50 },
+  suit: { cd: 0.8, miss: 0.1, dmg: 0.95, kind: 'beam', speed: 60 },
+};
 
 export class Units {
   constructor(game) {
@@ -129,6 +140,8 @@ export class Units {
     this._frameThinkMs = 0;
     this._ticksThisFrame = 0;
     this._initGrid();
+    this._installDaily();
+    this._installPeople();
   }
 
   // Coarse per-tick grid of cells holding anything that could threaten a
@@ -555,6 +568,19 @@ export class Units {
       _mvn: 0,
       _forager: null,
       _foraged: false,
+      // daily life (daily.js)
+      _dl: null,
+      _dlNext: 0,
+      _hid: false,
+      _meal: -1,
+      _privyT: null,
+      _spSeen: undefined,
+      _hitAt: -99,
+      _singUntil: 0,
+      _envN: 0,
+      _celeSeen: null,
+      _brigade: 0,
+      _space: 0,
     };
     if (def.habitat === 'air') {
       u.alt = opts.alt ?? 6;
@@ -1024,6 +1050,38 @@ export class Units {
     u.x = nx;
     u.z = nz;
     u.moving = true;
+    // a long step (a distant walker updates every 2nd or 4th tick, coarse
+    // steps at high speed) carries on along the path past the waypoint it
+    // reached, instead of stopping there until its next update
+    let rest = u.spd * facing * dt - stepLen;
+    if (rest > 0.03 && stepLen >= d - 1e-4 && u.path) this._carryOn(u, rest, clx, clz);
+  }
+  _carryOn(u, rest, clx, clz) {
+    const w = this.game.world;
+    for (let hop = 0; hop < 6 && rest > 0.03 && u.path && u.pathIdx < u.path.length - 1; hop++) {
+      u.pathIdx++;
+      const i = u.path[u.pathIdx];
+      let tx = (i % w.w) + 0.5,
+        tz = Math.floor(i / w.w) + 0.5;
+      const fin = u.pathIdx === u.path.length - 1;
+      if (fin && u.target) {
+        tx = u.target.x;
+        tz = u.target.z;
+      }
+      const dx = tx - u.x,
+        dz = tz - u.z;
+      const d = Math.hypot(dx, dz);
+      if (d < 1e-4) continue;
+      const st = Math.min(d, rest);
+      const nx = u.x + (dx / d) * st,
+        nz = u.z + (dz / d) * st;
+      if (!this.canStand(u, clx(nx), clz(nz))) break;
+      u.x = nx;
+      u.z = nz;
+      u.heading = Math.atan2(dx, dz);
+      rest -= st;
+      if (st < d) break;
+    }
   }
 
   // Personal space (staggered: each unit every 4th tick). Herd-mates keep a
@@ -1286,6 +1344,18 @@ export class Units {
     const ranged = !!u.data.ranged;
     const tAir = t.def.habitat === 'air' && t.alt > 2.6;
     const reach = u.def.attackRange + t.def.radius * 0.8 + u.def.radius * 0.5;
+    // musketeers and the soldiers after them (u.data.gear / u.data.reach, set by
+    // Civ's modern.js) stand at their reach and fire: a ball or a bullet with a
+    // muzzle flash (and smoke for muskets) that the renderer draws
+    const gun = u.data.reach > 0 && u.def.kind === 'humanoid' ? GUN[u.data.gear] || GUN.rifle : null;
+    if (gun && d > reach * 0.9 && d <= u.data.reach + t.def.radius + 0.2 && !(tAir && t.alt > 6)) {
+      this._face(u, dx, dz, dt);
+      u.target = null;
+      u.path = null;
+      u.state = 'attack';
+      if (u.attackCd <= 0) this._fire(u, t, d, gun);
+      return;
+    }
     if (ranged && d > reach && d < 7 && !tAir) {
       this._face(u, dx, dz, dt);
       u.target = null;
@@ -1329,6 +1399,29 @@ export class Units {
       u.path = null;
       u.target = { x: gx, z: gz };
     }
+  }
+
+  // One shot from a soldier's gun: a miss lands in the dirt beside the target.
+  _fire(u, t, d, gun) {
+    const g = this.game;
+    const rng = g.rng;
+    const now = g.time.total;
+    u.attackCd = gun.cd * rng.float(0.85, 1.2);
+    u.lastAttack = now;
+    if (u.combat) u.combat.struck = true;
+    const miss = rng.chance(gun.miss + Math.min(0.2, d * 0.02));
+    let ox = 0,
+      oz = 0;
+    if (miss) {
+      const a = rng.float(0, Math.PI * 2),
+        r = rng.float(0.7, 1.3);
+      ox = Math.sin(a) * r;
+      oz = Math.cos(a) * r;
+    }
+    const dmg = this.attackDamage(u) * gun.dmg * rng.float(0.8, 1.2);
+    this.shoot(u, t, { kind: gun.kind, speed: gun.speed, arc: 0, damage: dmg, ox, oz, quiet: true });
+    this.sfx('hit', u.x, u.z, { volume: gun.kind === 'ball' ? 0.5 : 0.3, pitch: gun.kind === 'ball' ? 0.55 : gun.kind === 'beam' ? 1.9 : 1.35 });
+    g.events.emit('unit:attack', { unit: u, target: t, damage: miss ? 0 : dmg });
   }
 
   _face(u, dx, dz, dt) {
@@ -1387,8 +1480,8 @@ export class Units {
     const speed = opts.speed ?? 9;
     const dur = Math.max(0.25, d / speed);
     // lead the target a little
-    const lx = t.x + (t.x - t.px) * (dur / this.tickDt) * 0.5,
-      lz = t.z + (t.z - t.pz) * (dur / this.tickDt) * 0.5;
+    const lx = t.x + (t.x - t.px) * (dur / this.tickDt) * 0.5 + (opts.ox || 0),
+      lz = t.z + (t.z - t.pz) * (dur / this.tickDt) * 0.5 + (opts.oz || 0);
     const p = {
       kind: opts.kind || 'arrow',
       x0: a.x,
@@ -1399,14 +1492,14 @@ export class Units {
       z1: lz,
       t: 0,
       dur,
-      arc: Math.min(2.2, d * 0.18),
+      arc: opts.arc ?? Math.min(2.2, d * 0.18),
       from: a.id,
       target: t.id,
       dmg: opts.damage ?? this.attackDamage(a) * 0.8,
     };
     this.projectiles.push(p);
     a.lastAttack = g.time.total;
-    g.audio.play?.('ui-click', { pos: { x: a.x, z: a.z }, volume: 0.25, pitch: 1.8 });
+    if (!opts.quiet) g.audio.play?.('ui-click', { pos: { x: a.x, z: a.z }, volume: 0.25, pitch: 1.8 });
     return p;
   }
 
@@ -1822,7 +1915,7 @@ export class Units {
     u._lastThink = now;
     // tiredness, sleep and famine foraging, then tech roles, act before the village brain
     // (whoever they take over still eats from the town's store, as the brain would feed them)
-    if (u.species === 'human' && ((u._ext && this._needsThink(u, now)) || this._roleThink(u, now))) {
+    if (u.species === 'human' && ((u._ext && this._needsThink(u, now)) || this._roleThink(u, now) || (u._ext && this._dailyThink(u, now, elapsed)))) {
       this._fedFromStore(u);
       return;
     }
@@ -1870,6 +1963,9 @@ export class Units {
     const budgetOn = ++this._ticksThisFrame <= 64;
     if (this._tickN % 75 === 0) this.herds.tick(now);
     if (this._tickN % 150 === 7) this._rolesTick();
+    if (this._tickN % 90 === 11) this._dailyTick();
+    if (this._tickN % 30 === 13) this._brigadeTick();
+    if (this._tickN % 300 === 17) this._robotsTick();
     // champions once a game minute (at any game speed)
     if (!(now - this._champT < 60) || now < this._champT) {
       this._champT = now;
@@ -1964,7 +2060,7 @@ export class Units {
         fdz0 = u.z - focus.z;
       const fd2 = fdx0 * fdx0 + fdz0 * fdz0;
       let lod = 0;
-      if (!u.combat && (overview || fd2 > lr2) && def.habitat !== 'air' && !BRAIN_TICKS[def.brain]) lod = !u.target && !u.path && (overview || fd2 > lr2 * 4) ? 2 : 1;
+      if (!u.combat && (overview || fd2 > lr2) && def.habitat !== 'air' && !BRAIN_TICKS[def.brain]) lod = overview || fd2 > lr2 * 4 ? 2 : 1;
       if (lod && (slot & ((1 << lod) - 1)) !== 0 && u.thinkT > 0.05) {
         u.anim += dt * (u.moving ? 1 : 0.35);
         // its last stride is shown in even steps, one a tick, so a distant
@@ -2016,7 +2112,22 @@ export class Units {
       const tx = Math.min(w.w - 1, Math.max(0, Math.floor(u.x))),
         ty = Math.min(w.h - 1, Math.max(0, Math.floor(u.z)));
       const ti = ty * w.w + tx;
-      if (def.habitat === 'land') {
+      // standing still: the ground and the water around stay as they were
+      // (checked again every 8th update, for floods and terrain edits)
+      const still = u.x === u._ex && u.z === u._ez && (u._envN = (u._envN + 1) & 7) !== 0;
+      if (def.habitat === 'land' && still) {
+        const fire = w.fire[ti];
+        if (fire > 0.2) {
+          this.damage(u, udt * 8 * fire, null, { cause: 'fire' });
+          if ((slot >> lod) % (5 >> lod) === 0) g.fx.emit?.('fire', { x: u.x, y: u.y + def.height * def.size * 0.5, z: u.z }, { scale: 0.35 });
+        }
+        if (u.swimming) {
+          if (u._ext && u._farSea) u.energy = Math.max(0, u.energy - udt * 0.012);
+          if (!def.canSwim || u.energy <= 0.01) this.damage(u, udt * (def.canSwim ? 2 : 12), null, { cause: 'drowned' });
+        }
+        if (w.type[ti] === TILE.LAVA) this.damage(u, udt * 60, null, { cause: 'lava' });
+        if (!u.alive) continue;
+      } else if (def.habitat === 'land') {
         const h = w.heightAt(u.x, u.z);
         // a jetty, dock or bridge over the water is a deck to stand on
         const deck = h < SEA_LEVEL && w.building[ti] >= 0;
@@ -2115,7 +2226,7 @@ export class Units {
         u.x = u.px + u._mvx;
         u.z = u.pz + u._mvz;
       }
-      u.y = this._groundY(u);
+      if (!still || def.habitat === 'air' || u.x !== u._ex || u.z !== u._ez) u.y = this._groundY(u);
       u.anim += dt * (u.moving ? 1 : 0.35);
       if (u.state === 'walk' && !u.moving && !u.target) u.state = 'idle';
       if (u.swimming && u.state !== 'attack' && u.state !== 'flee') u.state = 'swim';
@@ -2344,7 +2455,7 @@ export class Units {
     const now = this.game.time.total;
     if (!u.alive) return 'Dead';
     if (u.mad > now) return u.combat ? 'Rampaging' : 'Raging';
-    if (u.sleeping) return 'Sleeping';
+    if (u.sleeping) return u._nap ? 'Napping' : 'Sleeping';
     if (u.combat) {
       const t = this.byId.get(u.combat.target);
       const who = t ? (t.name || t.def.name) : 'foe';
@@ -2353,7 +2464,16 @@ export class Units {
     if (u.data.aboard != null) return 'At sea';
     if (u.state === 'flee') return 'Fleeing';
     if (u.swimming) return 'Swimming';
-    if (u.state === 'eat') return u.def.diet === 'herbivore' ? 'Grazing' : 'Feeding';
+    if (u.data.role || u._brigade > now) {
+      const pl = this._peopleLabel(u);
+      if (pl) return pl;
+    }
+    if (u._dl) {
+      const dl = this._dailyLabel(u);
+      if (dl) return dl;
+    }
+    if (u.state === 'work' && u._singUntil > now) return u.job === 'farmer' ? 'Singing at the harvest' : 'Singing at work';
+    if (u.state === 'eat') return u.def.kind === 'humanoid' ? 'Eating' : u.def.diet === 'herbivore' ? 'Grazing' : 'Feeding';
     if (u.state === 'work') {
       const a = u.data.workAnim;
       return a === 'chop' ? 'Chopping wood' : a === 'dig' ? 'Mining' : a === 'hammer' ? 'Building' : a === 'harvest' ? 'Harvesting' : a === 'fish' ? 'Fishing' : a === 'heal' ? 'Tending the sick' : 'Working';
@@ -2366,6 +2486,10 @@ export class Units {
     if (u.activity === 'talk') return 'Chatting';
     if (u.activity === 'fish') return 'Fishing';
     if (u.def.habitat === 'air') return u.data.breath > now ? 'Breathing fire' : 'Soaring';
+    const al = animalLabel(this, u, now);
+    if (al) return al;
+    const wl = this._walkLabel(u);
+    if (wl) return wl;
     if (u.moving) return u.state === 'run' ? 'Running' : 'Wandering';
     return 'Resting';
   }
@@ -2388,7 +2512,7 @@ export class Units {
       // people inside a building or aboard a ship are not drawn: picking them
       // from the map would steal the tap from the building (reach them through
       // the building card's "Inside" chips instead)
-      if (o.data && (o.data.inside || o.data.aboard != null)) return;
+      if (o._hid || (o.data && (o.data.inside || o.data.aboard != null))) return;
       const r = 0.6 + o.def.radius * 1.5;
       if (d2 > r * r) return;
       const s = d2 / (r * r) - (KIND_ORDER[o.def.kind] === 2 ? 0.2 : 0);
@@ -2472,5 +2596,7 @@ installDepth(Units);
 installEditing(Units);
 installRoles(Units);
 installNeeds(Units);
+installDaily(Units);
+installPeople(Units);
 
 export { FLORA, FLORA_INFO };
