@@ -630,6 +630,8 @@ export const missions = {
       return;
     }
     if (m.type === 'chart') return this._charted(v);
+    if (m.type === 'ice') return this._iceArrive(v);
+    if (m.type === 'cruise') return (m.phase = 'home'), this._goHome(v);
     if (m.type === 'patrol') {
       v.state = 'patrol';
       return;
@@ -801,6 +803,7 @@ export const missions = {
         if (this.auto.naval && this.law('fleetNaval') && this.hasTech(kid, 'shipbuilding')) this._scheduleNavy(k);
       }
       this._scheduleLand(k);
+      this._scheduleModern(k);
     }
   },
 
@@ -1016,7 +1019,7 @@ export const missions = {
     if (!v) {
       if (this.count(kid, 'explorer') >= this.cap(kid, 'explorer')) return;
       const at = this._launchAt(from, 'explorer');
-      v = this.spawn('explorer', kid, at.x, at.z, { home: from.village, harbour: from.id, heading: Math.atan2(from.dirZ, from.dirX) });
+      v = this.spawn('explorer', kid, at.x, at.z, { home: from.village, harbour: from.id, heading: Math.atan2(from.dirZ, from.dirX), model: this.canUse(kid, 'research') ? 'research' : null });
     }
     v.mission = { type: 'chart', phase: 'out', cell: best };
     v.voyage = { from: from.village, fromHarbour: from.id, to: { x: nav.nx[best], z: nav.nz[best] }, fromName: from.name, toName: 'uncharted waters', t0: now };
@@ -1033,6 +1036,7 @@ export const missions = {
   },
 
   _charted(v) {
+    if (v.kind === 'research') this._surveyed?.(v);
     const kid = v.kingdom;
     const nav = this.nav;
     let set = this.charts.get(kid);

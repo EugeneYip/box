@@ -232,10 +232,12 @@ export const land = {
   // ------------------------------------------------------------------ motion
   _landTick(v, step) {
     const a = v.anim;
-    if (v.def.siege) this._siegeMove(v, step);
+    if (v.def.siege && v.mission?.type !== 'drive') this._siegeMove(v, step);
     else if (v.state === 'move' && v.path) {
       this._follow(v, step, v.def.speed);
       if (v.path == null) this._landArrive(v);
+    } else if (v.state === 'work') {
+      this._serviceWork(v, step);
     } else if (v.state === 'rest') {
       if (v.stateT > 3) {
         if (v.mission?.phase === 'home' && v.path) v.state = 'move';
@@ -319,6 +321,7 @@ export const land = {
     const to = civ.villages[m.to];
     if (m.type === 'train') return this._trainArrive(v, m, to);
     if (m.type === 'drive') return this.remove(v);
+    if (v.role === 'service' && this._serviceArrive(v)) return;
     if (v.role === 'oxcart') {
       if (to?.alive && v.cargo) for (const [r, n] of Object.entries(v.cargo)) to[r] = (to[r] || 0) + n;
       this.game.events.emit('fleet:delivered', { vehicle: v, kind: v.kind, kingdom: v.kingdom, from: m.from, to: m.to, cargo: v.cargo });
