@@ -671,19 +671,28 @@ export class Civilization {
       this._ticksSinceFrame = 0;
     } else this._ticksSinceFrame++;
     this._fxBudget = Math.min(6, this._fxBudget + step * (g.settings?.powerSaver ? 12 : 25));
+    // Many villages (Medium holds about twice round 13's): the village tick,
+    // job assignment and planning run up to half as often, each call covering
+    // the longer interval (the village tick takes it as its dt, planning may
+    // start proportionally more works), so towns grow as before for less
+    // work; each village keeps its own phase, so the work stays spread.
+    let nv = 0;
+    for (const v of this.villages) if (v.alive) nv++;
+    const rate = clamp(nv / 32, 1, 2);
+    this._planMul = rate;
     for (const v of this.villages) {
       if (!v.alive) continue;
-      if ((v._acc += step) >= 1) {
-        v._acc -= 1;
-        this._villageTick(v, 1);
+      if ((v._acc += step) >= rate) {
+        v._acc -= rate;
+        this._villageTick(v, rate);
         if (!v.alive) continue;
       }
-      if ((v._jobAcc += step) >= 2.5) {
-        v._jobAcc -= 2.5;
+      if ((v._jobAcc += step) >= 2.5 * rate) {
+        v._jobAcc -= 2.5 * rate;
         this._assignJobs(v);
       }
-      if ((v._planAcc += step) >= 3) {
-        v._planAcc -= 3;
+      if ((v._planAcc += step) >= 3 * rate) {
+        v._planAcc -= 3 * rate;
         this._plan(v);
       }
       if ((v._loyAcc += step) >= 5) {
@@ -1247,7 +1256,8 @@ export class Civilization {
         else mat = 'wood';
         smithy.wood -= 2;
         const quality = this.rng.chance(0.06 + (k.era || 0) * 0.04) ? 'fine' : this.rng.chance(0.02 * (k.era || 0)) ? 'masterwork' : 'common';
-        const kindOf = { weapon: k.culture === 'frost' ? 'axe' : k.culture === 'mire' ? 'spear' : 'sword', armor: (k.era || 0) >= 2 ? 'plate' : 'mail', tool: 'hammer', trinket: this.rng.chance(0.5) ? 'amulet' : 'ring' };
+        const kb = baseCulture(k.culture);
+        const kindOf = { weapon: kb === 'frost' ? 'axe' : kb === 'mire' ? 'spear' : 'sword', armor: (k.era || 0) >= 2 ? 'plate' : 'mail', tool: 'hammer', trinket: this.rng.chance(0.5) ? 'amulet' : 'ring' };
         const item = real ? U.makeItem({ slot, kind: kindOf[slot], material: mat, quality, origin: smithy.name }) : { id: 'ci' + this._nextBid++, slot, kind: kindOf[slot], material: mat, quality, power: { weapon: 6, armor: 5, tool: 4, trinket: 2 }[slot] * ({ wood: 0.6, stone: 0.8, bronze: 1, iron: 1.3, steel: 1.6 }[mat] || 1), name: `${mat} ${kindOf[slot]}` };
         armory.push(item);
         // the smith learns the craft
@@ -1700,7 +1710,7 @@ export class Civilization {
       return c;
     };
     let actions = 0;
-    const room = () => sites < maxSites && actions < 2;
+    const room = () => sites < maxSites && actions < 2 * (this._planMul || 1);
     const build = (type, placer) => {
       if (frozen && !(type === 'house' && v.housing < (v.frozenHousing ?? 0)) && !(type === 'granary' && count('granary') === 0) && !(count(type) < (v.frozenCounts?.[type] || 0))) return false;
       const cost = costOf(type, 1, v.culture);
@@ -1751,7 +1761,7 @@ export class Civilization {
     }
     // 2 fields (no cost)
     const targetFields = 8 + pop * 1.1;
-    if (v.fieldCount < targetFields && v.plots.filter((p) => p.tiles.some((i) => this.world.type[i] !== TILE.FARMLAND)).length < 2) this._planPlot(v);
+    for (let r = Math.round(this._planMul || 1); r > 0; r--) if (v.fieldCount < targetFields && v.plots.filter((p) => p.tiles.some((i) => this.world.type[i] !== TILE.FARMLAND)).length < 2) this._planPlot(v);
     // 3 civic buildings by size
     if (room() && pop >= 10 && count('granary') === 0) build('granary');
     if (room() && pop >= 12 && count('well') < 1 + Math.floor(pop / 35)) build('well', () => this.placeAlongRoad(v, 'well', this._bias(v, 'well')));

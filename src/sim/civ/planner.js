@@ -690,8 +690,9 @@ export const planner = {
     const w = this.world;
     const t = w.type[i];
     if (FIELD_TYPES.has(t)) return true;
-    if (v.culture === 'dune' && (t === TILE.SAND || t === TILE.DESERT)) return true;
-    if (v.culture === 'frost' && t === TILE.SNOW) return true;
+    const base = baseCulture(v.culture);
+    if (base === 'dune' && (t === TILE.SAND || t === TILE.DESERT)) return true;
+    if (base === 'frost' && t === TILE.SNOW) return true;
     return this._fieldBiomeOK(v, t); // qanats, cold building (breadth.js)
   },
 
