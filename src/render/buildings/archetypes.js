@@ -1,5 +1,6 @@
 import { GeoBuilder, shade, mix } from './geom.js';
-import { modernPlaceholder } from './modernArch.js';
+import { modernModel, modernFallback, modernPalette } from './modernModels.js';
+import { eraHouse, eraHall } from './eraArch.js';
 import { BUILDING_TYPES } from '../../sim/civ/catalog.js';
 
 // Procedural architecture for every building type x culture style x level.
@@ -1663,6 +1664,55 @@ export function lampPost() {
   return { geo: g.build(), anchors: g.anchors };
 }
 
+// Electric street light for powered towns: a steel pole, an arm and a lamp
+// head that shines only at night (glow code 5).
+export function streetLamp() {
+  const g = new GeoBuilder(78);
+  g.box(0, -0.1, 0, 0.045, 1.28, 0.045, 0x5a6068);
+  g.box(0, -0.1, 0, 0.08, 0.16, 0.08, 0x4a4e54);
+  g.beam(0, 1.12, 0, 0.27, 1.18, 0, 0.026, 0x5a6068);
+  g.box(0.29, 1.1, 0, 0.15, 0.045, 0.075, 0x3a3d42);
+  g.box(0.29, 1.085, 0, 0.12, 0.02, 0.055, 0xfff0c8, { glow: 5 });
+  g.anchor('lamps', 0.29, 0, 0, { r: 1.15 });
+  return { geo: g.build(), anchors: g.anchors };
+}
+
+// Gunpowder: a star-shaped bastion round the foot of a wall tower, its four
+// points set between the wall lines, battered walls and a low parapet.
+export function bastionGeometry(style) {
+  const K = PAL[style] || PAL.vale;
+  const g = new GeoBuilder(11);
+  const c = style === 'dune' ? K.wall : K.stone;
+  const top = shade(c, 0.9);
+  const n = 4,
+    pts = [];
+  for (let i = 0; i < n * 2; i++) {
+    const a = Math.PI / 4 + (i * Math.PI) / n;
+    const r = i % 2 ? 0.5 : 1.08;
+    pts.push([Math.cos(a) * r, Math.sin(a) * r]);
+  }
+  const y0 = -0.5,
+    y1 = 0.62,
+    bt = 0.86;
+  for (let i = 0; i < pts.length; i++) {
+    const [ax, az] = pts[i],
+      [bx, bz] = pts[(i + 1) % pts.length];
+    g.quad([ax, y0, az], [bx, y0, bz], [bx * bt, y1, bz * bt], [ax * bt, y1, az * bt], c, 0, 0, [0, 0, 0], 0.1);
+    g.tri([0, y1, 0], [ax * bt, y1, az * bt], [bx * bt, y1, bz * bt], top, 0, 0, [0, y1 - 1, 0]);
+    // the string course and the parapet along each face
+    const k = 0.93;
+    g.beam(ax * k, 0.28, az * k, bx * k, 0.28, bz * k, 0.05, shade(c, 0.78), { thY: 0.04 });
+    g.beam(ax * bt * 0.97, y1 + 0.05, az * bt * 0.97, bx * bt * 0.97, y1 + 0.05, bz * bt * 0.97, 0.06, c, { thY: 0.1 });
+  }
+  // a sentry box on each point
+  for (let i = 0; i < pts.length; i += 2) {
+    const [x, z] = pts[i];
+    g.cyl(x * bt * 0.92, y1, z * bt * 0.92, 0.07, 0.16, 6, c, {});
+    g.cone(x * bt * 0.92, y1 + 0.16, z * bt * 0.92, 0.09, 0.1, 6, K.tile, {});
+  }
+  return g.build();
+}
+
 // Far-zoom proxy: a unit-sized house block in the style's materials, scaled per
 // instance to each building's footprint and height.
 export function proxyGeometry(style) {
@@ -1711,16 +1761,40 @@ const ERA_DRESS = {
     { thatch: 0x9e3c2c, thatch2: 0x7e2c20, tile: 0x9e3c2c, wall: 0xdcc494, glass: 0x3f6e95 },
   ],
 };
-// The modern eras (PLACEHOLDER dress until the towns of each era get their
-// own look, docs/MODERN-ERAS.md): Industrial brick and slate, Modern
-// concrete and steel, Atomic glass and white, Future white and green.
-const MODERN_DRESS = [
-  { wall: 0xa0583e, wall2: 0xb8694a, tile: 0x4a4f57, thatch: 0x4a4f57, thatch2: 0x3c4047, stone: 0x8a8580, stone2: 0x6a6560, glass: 0x7a9ab8, timber: 0x3a3430 },
-  { wall: 0xc8c4bc, wall2: 0xd8d4cc, tile: 0x5a5e66, thatch: 0x5a5e66, thatch2: 0x484c52, stone: 0xa8a49c, stone2: 0x8a8680, glass: 0x8fb4d0, timber: 0x55585e },
-  { wall: 0xe4e6e8, wall2: 0xd0dae2, tile: 0x6a7a8a, thatch: 0x6a7a8a, thatch2: 0x56646f, stone: 0xb8bcc0, stone2: 0x9aa0a6, glass: 0x9cc8e8, timber: 0x6a6e74 },
-  { wall: 0xf2f4f0, wall2: 0xe2efe4, tile: 0x5f9a6a, thatch: 0x5f9a6a, thatch2: 0x4d8058, stone: 0xd4d8d2, stone2: 0xb4bab2, glass: 0xa8e0e8, timber: 0x8a9a8c, accent: 0x3fbfa8 },
-];
-for (const st of Object.keys(ERA_DRESS)) for (let e = 4; e <= 7; e++) ERA_DRESS[st][e] = { ...(ERA_DRESS[st][3] || {}), ...MODERN_DRESS[e - 4] };
+// The modern eras: each culture keeps its own colours within an era.
+//   Industrial (4) brick, iron and slate over the older forms, white trim
+//   Modern (5) concrete and render, dark flat or metal roofs
+//   Atomic (6) glass and steel, pale panels
+//   Future (7) white and green: planted roofs, clean light
+// From the Modern era homes and halls are built anew (eraArch.js); other
+// civic buildings keep their forms in the new materials.
+const MODERN_DRESS = {
+  vale: [
+    { wall: 0xa0583e, wall2: 0xb4664a, timber: 0x6e3426, timber2: 0x7e3a2a, tile: 0x4a4f57, thatch: 0x4a4f57, thatch2: 0x3c4047, stone: 0x9a948a, stone2: 0x77726a, glass: 0x7a9ab8, trim: 0xe8e0cc, door: 0x2f4a3a, metal: 0x3a3d42, plank: 0x6a5040 },
+    { wall: 0xd2ccc0, wall2: 0x9a6e4a, timber: 0x5a5e66, timber2: 0x6a6e74, tile: 0x575b62, thatch: 0x575b62, thatch2: 0x464a50, stone: 0xb0aca4, stone2: 0x8a8680, glass: 0x8fb4d0, trim: 0x5a5e64, accent: 0xb0563c, door: 0xb0563c },
+    { wall: 0xe6e8ea, wall2: 0xb4bcc4, timber: 0x6a7078, timber2: 0x7a8088, tile: 0x60707e, thatch: 0x60707e, thatch2: 0x4e5c68, stone: 0xbcc0c4, stone2: 0x9aa0a6, glass: 0x6fa8d8, trim: 0x3a4048, accent: 0xc0603e, door: 0xc0603e },
+    { wall: 0xf2f4f0, wall2: 0xdfe9df, timber: 0x9aa89c, timber2: 0xa8b4aa, tile: 0x5f9a5a, thatch: 0x5f9a5a, thatch2: 0x4d8048, stone: 0xd4d8d2, stone2: 0xb4bab2, glass: 0x8fd4e0, trim: 0xc8d0c8, accent: 0xd06a48, door: 0xd06a48 },
+  ],
+  dune: [
+    { wall: 0xc89a66, wall2: 0xdcb684, timber: 0x6a4a30, timber2: 0x8a6440, tile: 0x5f9a86, stone: 0xd8c4a0, stone2: 0xb89a72, glass: 0x6a8ea8, trim: 0xf4ecd8, accent: 0x2f8a84, metal: 0x3a3d42 },
+    { wall: 0xf0e8d8, wall2: 0xdccfb6, timber: 0x6a5a48, timber2: 0x7a6a56, tile: 0x2f9a96, stone: 0xe0d4bc, stone2: 0xc2b294, glass: 0x7fb0c8, trim: 0x2f7fb8, accent: 0x2f9e98 },
+    { wall: 0xf6f2ea, wall2: 0xe2d8c6, timber: 0x8a8070, timber2: 0x9a907e, tile: 0xd9a830, stone: 0xe8e0d0, stone2: 0xccc0aa, glass: 0x5fb0c8, trim: 0x8a9298, accent: 0x2fa8b0 },
+    { wall: 0xfaf6ec, wall2: 0xe8eedc, timber: 0x9aa48c, timber2: 0xaab49a, tile: 0x5aa88e, stone: 0xece6d8, stone2: 0xd2cab6, glass: 0x8ad8e0, trim: 0xd0d4c4, accent: 0x3fbfa8 },
+  ],
+  frost: [
+    { wall: 0x7c3c2e, wall2: 0x8e4a38, timber: 0x2e2a28, timber2: 0x3e3834, tile: 0x34393f, thatch: 0x34393f, thatch2: 0x2a2e34, stone: 0x8a857c, stone2: 0x6a655e, glass: 0x7a9ab8, trim: 0xe8e4dc, metal: 0x2e3034 },
+    { wall: 0x5a4434, wall2: 0x8a8478, timber: 0x3a3634, timber2: 0x4a4644, tile: 0x2e343a, thatch: 0x2e343a, thatch2: 0x262a30, stone: 0x9a958c, stone2: 0x7a756c, glass: 0x8aaac4, trim: 0xc09a45, accent: 0xc09a45, door: 0x8a3a2a },
+    { wall: 0x4a4440, wall2: 0x8a9096, timber: 0x30343a, timber2: 0x40444a, tile: 0x262b31, thatch: 0x262b31, thatch2: 0x1e2228, stone: 0xa4a29c, stone2: 0x84827c, glass: 0x6aa0c8, trim: 0xd0a850, accent: 0xd0a850, door: 0x9a3a2a },
+    { wall: 0xe4e6e8, wall2: 0xcad4cc, timber: 0x7a8a7e, timber2: 0x8a9a8e, tile: 0x6f8a4a, thatch: 0x6f8a4a, thatch2: 0x5a7038, stone: 0xc4c8c4, stone2: 0xa4aaa4, glass: 0x8ad0dc, trim: 0xd8b860, accent: 0xd8b860, door: 0x5a7a9a },
+  ],
+  mire: [
+    { wall: 0xdcc898, wall2: 0xc8b07c, timber: 0x4a3a2a, timber2: 0x5e4a34, tile: 0x9a5a3a, thatch: 0x9a5a3a, thatch2: 0x7e4630, stone: 0x9a9480, stone2: 0x7a7462, glass: 0x7a9a90, trim: 0x3f6f4a, door: 0x3f6f4a },
+    { wall: 0xe0d2ae, wall2: 0xb89a6a, timber: 0x5a4a38, timber2: 0x6a5844, tile: 0xa8603a, thatch: 0xa8603a, thatch2: 0x8a4c2e, stone: 0xb0a890, stone2: 0x8e8670, glass: 0x8ab4a8, trim: 0x5a3e26, accent: 0xc8802e, door: 0xc8802e },
+    { wall: 0xece2c8, wall2: 0xa8a080, timber: 0x6a6a5a, timber2: 0x7a7a68, tile: 0x6a7a5a, thatch: 0x6a7a5a, thatch2: 0x566448, stone: 0xc0b8a0, stone2: 0x9e9680, glass: 0x7ab8c0, trim: 0x4a5040, accent: 0xd08a30, door: 0xd08a30 },
+    { wall: 0xf0f0e2, wall2: 0xdce6d0, timber: 0x8a9a7a, timber2: 0x9aaa8a, tile: 0x5f9a5a, thatch: 0x5f9a5a, thatch2: 0x4d8048, stone: 0xd0d0c0, stone2: 0xb0b2a0, glass: 0x8ad4d0, trim: 0xb0b8a0, accent: 0xe0963a, door: 0xe0963a },
+  ],
+};
+for (const st of Object.keys(ERA_DRESS)) for (let e = 4; e <= 7; e++) ERA_DRESS[st][e] = { ...(ERA_DRESS[st][3] || {}), ...MODERN_DRESS[st][e - 4] };
 // Gilding is not an era but mastery (building.gilded): a realm that has
 // mastered its arts gilds its capital and cities (gold leaf, bright
 // plaster, banners) in whatever era it builds.
@@ -1731,6 +1805,8 @@ function gildDress(d) {
 }
 const ROOF_OF = { 0x8f4530: 2, 0x3f4852: 3, 0x4a5a6e: 3, 0x3c4450: 3, 0x4a7e6c: 3, 0xcf9f52: 1, 0x515b67: 3, 0x5b6e86: 3, 0xcfa676: 0, 0x2f9a96: 0, 0xd9a830: 0, 0x6c7e40: 4, 0x7a5a3c: 2, 0x5c9a86: 3, 0xb59a52: 1, 0x7a5a38: 2, 0x9e3c2c: 2, 0x7e2c20: 2, 0x5e4428: 2 };
 for (const [c, k] of Object.entries(ROOF_OF)) if (k) ROOF_KIND.set(+c, k);
+// modern roofs: slate (Industrial), standing seam and corrugated metal, planted green
+for (const [c, k] of Object.entries({ 0x4a4f57: 3, 0x3c4047: 3, 0x34393f: 3, 0x2a2e34: 3, 0x9a5a3a: 2, 0x7e4630: 2, 0x5f9a86: 0, 0x5f9a5a: 4, 0x4d8048: 4, 0x6f8a4a: 4, 0x5a7038: 4, 0x5aa88e: 4, 0xa8603a: 2, 0x8a4c2e: 2 })) ROOF_KIND.set(+c, k);
 const _eraPal = new Map();
 export function eraPalette(style, era, gilded = false) {
   const key = style + era + (gilded ? 'g' : '');
@@ -2346,27 +2422,53 @@ const BUILDERS = {
   gate: (g, K, s) => gatehouse(g, K, s),
 };
 
-export function buildArchetype(type, style, level, era = 1, variant = 0, gilded = false) {
+// A small heritage plaque on a stone post by the front corner of the plot.
+function plaque(g, def) {
+  const dw = def?.dw ?? def?.w ?? 2,
+    dh = def?.dh ?? def?.h ?? 2;
+  const x = dw / 2 - 0.16,
+    z = dh / 2 - 0.1;
+  g.box(x, -0.04, z, 0.16, 0.34, 0.08, 0x8e887c);
+  g.box(x, 0.13, z + 0.042, 0.13, 0.12, 0.012, 0x2f6a8e, { top: 0x2f6a8e });
+  g.box(x, 0.215, z + 0.05, 0.08, 0.018, 0.006, 0xe8d8a0);
+  g.box(x, 0.3, z, 0.19, 0.03, 0.11, 0xa8a294);
+}
+
+export function buildArchetype(type, style, level, era = 1, variant = 0, gilded = false, heritage = false) {
   const K = eraPalette(style, era, gilded);
   const g = new GeoBuilder(type.length * 131 + level * 17 + style.length * 7, { roofKind });
+  const def = BUILDING_TYPES[type];
   const fn = BUILDERS[type];
   let info = {};
-  if (fn) info = fn(g, K, style, level, variant) || {};
-  else if (BUILDING_TYPES[type]?.modern) info = modernPlaceholder(g, BUILDING_TYPES[type].kind || type, level) || {};
+  if (def?.modern) {
+    if (!modernModel(g, def.kind || type, style, level, era)) modernFallback(g, modernPalette(style, era), def, level);
+    // a levelled platform under the whole plot keeps big sites grounded on slopes
+    info = { base: { x: 0, z: 0, w: (def.dw ?? def.w) * 0.9, d: (def.dh ?? def.h) * 0.9 } };
+  } else if (era >= 5 && type === 'house') info = eraHouse(g, K, style, level, era) || {};
+  else if (era >= 5 && type === 'hall') info = eraHall(g, K, style, level, era) || {};
+  else if (fn) info = fn(g, K, style, level, variant) || {};
+  else if (era >= 4) modernFallback(g, modernPalette(style, era), def, level);
   else {
-    // anything without a model of its own: a plain block of its footprint
-    const d = BUILDING_TYPES[type];
-    g.box(0, 0, 0, (d?.w || 1) * 0.8, 0.8, (d?.h || 1) * 0.8, K.wall);
+    // anything without a model of its own: a plain house of its footprint
+    const w = (def?.dw ?? def?.w ?? 1) * 0.78,
+      d = (def?.dh ?? def?.h ?? 1) * 0.72;
+    g.box(0, -0.06, 0, w + 0.06, 0.12, d + 0.06, K.stone2);
+    g.box(0, 0.06, 0, w, 0.6, d, K.wall);
+    g.gable(0, 0.66, 0, w, d, Math.min(0.6, d * 0.5), K.tile, { over: 0.1, th: 0.06, tint: K.roofTint, gable: K.wall2, rows: 3 });
+    doorOn(g, K, 0, 0, w, d, 'F', 0, 0.06, { w: 0.2, h: 0.36 });
+    for (const f of ['L', 'R']) windowOn(g, K, 0, 0, w, d, f, 0, 0.3, {});
   }
+  const modernHome = era >= 5 && (type === 'house' || type === 'hall');
   // every home flies a small pennant in its kingdom's colours
-  if (type === 'house' && !(style === 'mire' && level >= 3)) bannerPole(g, K, 0.88, 0, 0.88, style === 'mire' ? 1.35 : 1.0, { s: 0.55 });
-  if (era >= 3 && (type === 'house' || type === 'hall') && level >= 2) bannerPole(g, K, -0.9, 0, 0.86, 1.25, { s: 0.65 });
+  if (type === 'house' && !modernHome && !(style === 'mire' && level >= 3)) bannerPole(g, K, 0.88, 0, 0.88, style === 'mire' ? 1.35 : 1.0, { s: 0.55 });
+  if (era >= 3 && (type === 'hall' || (type === 'house' && !modernHome)) && level >= 2) bannerPole(g, K, -0.9, 0, 0.86, 1.25, { s: 0.65 });
   // mastery: banners on every civic building and a gilded finial on the hall
   if (gilded && (type === 'temple' || type === 'market' || type === 'barracks' || type === 'library' || type === 'granary' || type === 'workshop')) bannerPole(g, K, 0.95, 0, -0.9, 1.6, { s: 0.85, finial: 0xe2b440 });
   if (gilded && type === 'hall') {
     bannerPole(g, K, 0.95, 0, -0.9, 2.0, { s: 1.0, finial: 0xe2b440 });
     bannerPole(g, K, -0.95, 0, -0.9, 2.0, { s: 1.0, finial: 0xe2b440 });
   }
+  if (heritage) plaque(g, def);
   return { geo: g.build(), anchors: g.anchors, maxY: g.maxY, base: info.base ?? null, stilts: !!info.stilts, pier: !!info.pier };
 }
 
