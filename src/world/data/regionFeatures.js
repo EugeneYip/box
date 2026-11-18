@@ -46,6 +46,15 @@ export const REGION_SETS = [
       { w: 0.06, pts: [[121.65, 25.1, 0.6], [121.85, 25.02, 0.7]] },
       // Hengchun peninsula hills
       { w: 0.06, pts: [[120.85, 22.25, 0.6], [120.8, 22.0, 0.3]] },
+      // tablelands and hills standing out into the western plain, so the
+      // farmland ends along a ragged foot of the hills: Linkou and Taoyuan,
+      // Dadu, Bagua, Douliu, the Tainan hills and Kaohsiung's Shoushan
+      { w: 0.06, pts: [[121.38, 25.06, 0.25], [121.22, 24.95, 0.2], [121.08, 24.85, 0.15]] },
+      { w: 0.035, pts: [[120.63, 24.33, 0.25], [120.58, 24.2, 0.22]] },
+      { w: 0.04, pts: [[120.61, 24.12, 0.35], [120.56, 23.98, 0.4], [120.53, 23.86, 0.25]] },
+      { w: 0.05, pts: [[120.66, 23.78, 0.3], [120.6, 23.62, 0.28], [120.56, 23.48, 0.2]] },
+      { w: 0.05, pts: [[120.52, 23.18, 0.3], [120.44, 23.05, 0.25], [120.4, 22.92, 0.18]] },
+      { w: 0.02, pts: [[120.27, 22.64, 0.35]] },
     ],
     basins: [
       { t: 0.3, edge: 0.04, w: 0.05, pts: [[121.5, 25.05]] }, // Taipei basin
@@ -58,7 +67,9 @@ export const REGION_SETS = [
     ],
     moisture: [
       { m: 0.66, k: 0.95, edge: 0.4, w: 1.2, pts: [[121.0, 24.8], [120.9, 23.2], [120.8, 22.2]] }, // forested Taiwan
-      { m: 0.5, k: 0.8, edge: 0.12, w: 0.12, pts: [[120.4, 24.0], [120.22, 23.35], [120.25, 22.9], [120.5, 22.6]] }, // farmed western plain
+      // farmed western plain, up to the foot of the hills (belowKm: by
+      // elevation, so the farmland's edge follows the foothills' contours)
+      { m: 0.5, k: 0.85, edge: 0.1, w: 0.5, belowKm: [0.14, 0.4], pts: [[121.2, 25.0], [120.98, 24.75], [120.72, 24.35], [120.45, 23.95], [120.27, 23.35], [120.3, 22.9], [120.52, 22.55]] },
     ],
     shelves: [
       // Taiwan Strait: shallow near Taiwan and Penghu, deepening toward the
