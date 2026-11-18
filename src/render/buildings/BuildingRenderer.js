@@ -7,6 +7,7 @@ import { emblemAtlas, EMBLEM_IDS, FIELD_IDS } from './emblems.js';
 import { bannerGeometry, bannerMaterial, bladesGeometry, boatGeometry, FENCE, scarecrowGeometry, glowTexture, PuffSystem } from './props.js';
 import { TerritoryOverlay } from './TerritoryOverlay.js';
 import { InfraRenderer } from './InfraRenderer.js';
+import { GlowSprites, HazeLayer } from './nightAndHaze.js';
 import { BUILDING_TYPES } from '../../sim/civ/catalog.js';
 import { CULTURES, baseCulture } from '../../sim/civ/cultures.js';
 import { SEA_LEVEL, TILE } from '../../world/constants.js';
@@ -247,7 +248,11 @@ export class BuildingRenderer {
     this.boats = [];
     this.burning = [];
     this._fxReal = null;
-    this.infra = new InfraRenderer(game); // rails, maglev and power lines (placeholder lines)
+    this.infra = new InfraRenderer(game, this.uniforms); // rails, maglev, highways, pylons and wires
+    this.lights = [];
+    this.glow = new GlowSprites(this.group); // street lights and floodlights at night, out to mid zoom
+    this.haze = new HazeLayer(this.group); // factory haze over industrial towns
+    this._powerSig = '';
   }
 
   reset() {
@@ -371,7 +376,10 @@ export class BuildingRenderer {
     } else if (kind === 'pile') a = { geo: materialPile('vale'), anchors: null, maxY: 0.3 };
     else if (kind === 'crane') a = craneGeometry();
     else if (kind === 'proxy') a = { geo: proxyGeometry(p1), anchors: null, maxY: 1 };
-    else if (kind === 'lamppost') {
+    else if (kind === 'streetlamp') {
+      const l = streetLamp();
+      a = { geo: l.geo, anchors: l.anchors, maxY: 1.2 };
+    } else if (kind === 'lamppost') {
       const l = lampPost();
       a = { geo: l.geo, anchors: l.anchors, maxY: 0.8 };
     } else if (kind === 'bastion') a = { geo: bastionGeometry(p1), anchors: null, maxY: 0.7 };
@@ -383,7 +391,7 @@ export class BuildingRenderer {
   // which DetailBatch draws an archetype (casters, small pieces, rising sites)
   _detailFor(key, clip) {
     if (clip) return this.dClip;
-    return /^(well|pile|found|ruin|lamppost)/.test(key) ? this.dSmall : this.dSolid;
+    return /^(well|pile|found|ruin|lamppost|streetlamp)/.test(key) ? this.dSmall : this.dSolid;
   }
 
   // ------------------------------------------------------------------ rebuild
@@ -404,6 +412,7 @@ export class BuildingRenderer {
     };
     const footings = [];
     this.chimneys.length = 0;
+    this.lights = []; // x, y, z, size of each glow sprite (street lights, floodlights)
     this.banners.length = 0;
     this.blades.length = 0;
     this.boats.length = 0;
@@ -435,6 +444,8 @@ export class BuildingRenderer {
           const a = this._arch(`${b.type}|${b.style}|1`);
           push(`${b.type}|${b.style}|1`, clip, M, col, b, { maxY: a.maxY });
           if (!clip) this._collectAnchors(b, a, M, col, decals);
+          // Gunpowder: a star-shaped bastion round the tower's foot
+          if (b.type === 'tower' && b.bastion) push(`bastion|${b.style}`, clip, this._m2.makeRotationY(0).scale(_bS).setPosition(b.x, b.y, b.z), col, b, { maxY: 0.8 });
         }
         // arms toward connected neighbours
         for (const [dx, dy] of DIRS8) {
@@ -469,6 +480,15 @@ export class BuildingRenderer {
         push(akey, false, M, col, b);
         if (stage === 'upg') push(`scaf|${dw}|${dh}|${Math.min(3, Math.round(a.maxY * 2) / 2)}`, false, M, col, b);
         this._collectAnchors(b, a, M, col, decals);
+        // heritage in a modern realm: floodlights at the front corners
+        if (b.heritage && (civ.kingdoms[b.kingdom]?.era ?? 0) >= 5) {
+          for (const sx of [-1, 1]) {
+            const p = this._p.set(sx * dw * 0.42, 0, dh * 0.5).applyMatrix4(M);
+            const gy = world.heightAt(p.x, p.z);
+            decals.push([p.x, gy, p.z, 0.55 * BS]);
+            this.lights.push(p.x, gy + 0.08, p.z, 0.45);
+          }
+        }
       }
       if (a.base && !a.stilts && stage !== 'found') {
         const bx = a.base.x || 0,
@@ -501,14 +521,16 @@ export class BuildingRenderer {
     for (const v of civ.villages) {
       if (!v.alive || v.tier < 1) continue;
       col.setHex(civ.kingdomColor(v.kingdom));
-      // a realm of masters lights more of its streets
-      const lampP = 0.11 + Math.min(0.12, (civ.kingdoms[v.kingdom]?.mastery || 0) * 0.015);
+      // a realm of masters lights more of its streets; a powered town lights
+      // them with electric street lights
+      const lit = !!v.powered;
+      const lampP = lit ? 0.3 : 0.11 + Math.min(0.12, (civ.kingdoms[v.kingdom]?.mastery || 0) * 0.015);
       for (const i of v.roadTiles) {
         if (civ.use?.[i] !== 2) continue;
         const tx = i % world.w,
           ty = (i / world.w) | 0;
         if (hash2(tx, ty, 91) > lampP) continue;
-        if (Math.hypot(tx + 0.5 - v.cx, ty + 0.5 - v.cz) > v.radius * 0.8) continue;
+        if (Math.hypot(tx + 0.5 - v.cx, ty + 0.5 - v.cz) > v.radius * (lit ? 0.95 : 0.8)) continue;
         // stand on the road edge next to a building or plot
         let ox = 0,
           oz = 0;
@@ -524,8 +546,15 @@ export class BuildingRenderer {
         const x = tx + 0.5 + ox,
           z = ty + 0.5 + oz;
         const lm = this._m2.makeRotationY(Math.atan2(-oz, ox) + Math.PI).scale(this._s.set(PS, PS, PS)).setPosition(x, world.heightAt(x, z), z);
-        push('lamppost', false, lm, col, null);
-        decals.push([x - ox * 0.4, world.heightAt(x, z), z - oz * 0.4, 0.6 * PS]);
+        const gy = world.heightAt(x, z);
+        if (lit) {
+          push('streetlamp', false, lm, col, null);
+          decals.push([x - ox * 0.75, gy, z - oz * 0.75, 0.75 * PS]);
+          this.lights.push(x - ox * 0.75 * PS, gy + 1.08 * PS, z - oz * 0.75 * PS, 0.9);
+        } else {
+          push('lamppost', false, lm, col, null);
+          decals.push([x - ox * 0.4, gy, z - oz * 0.4, 0.6 * PS]);
+        }
       }
     }
     // write the building models: one batched draw per DetailBatch
@@ -544,7 +573,7 @@ export class BuildingRenderer {
       let L = proxies.get(key);
       if (!L) proxies.set(key, (L = { m: [], col: [], bs: [] }));
       const a = this._arch(def.wall ? `wpost|${b.style}` : archKey(b, def, Math.min(b.level || 1, def.levels)));
-      const hgt = (def.wall ? 1.1 : Math.max(0.5, Math.min(def.monument ? 12 : 3, a.maxY)) * (b.constructing ? Math.max(0.2, b.progress) : 1)) * BS;
+      const hgt = (def.wall ? 1.1 : Math.max(0.5, Math.min(def.monument ? 12 : def.modern ? 7.5 : 3, a.maxY)) * (b.constructing ? Math.max(0.2, b.progress) : 1)) * BS;
       const pw = def.wall || b.type === 'bridge' ? def.w : (def.dw ?? def.w) * BS,
         ph = def.wall || b.type === 'bridge' ? def.h : (def.dh ?? def.h) * BS;
       const pm = this._m2.makeRotationY(b.rotation || 0).setPosition(b.x, b.y, b.z).multiply(this._m3.makeScale(pw * 0.82, hgt, ph * 0.82));
@@ -611,6 +640,7 @@ export class BuildingRenderer {
     this.decals.count = decals.length;
     this.decals.instanceMatrix.needsUpdate = true;
     this._updateBoatsAndBlades(0, true);
+    this.glow.set(this.lights);
   }
 
   _collectAnchors(b, a, M, col, decals) {
@@ -620,7 +650,7 @@ export class BuildingRenderer {
     const p = this._p;
     for (const c of an.chimneys) {
       p.set(c.x, c.y, c.z).applyMatrix4(M);
-      this.chimneys.push({ x: p.x, y: p.y, z: p.z, rate: c.rate || 1, forge: !!c.forge, b, t: Math.random() * 3 });
+      this.chimneys.push({ x: p.x, y: p.y, z: p.z, rate: c.rate || 1, forge: !!c.forge, steam: !!c.steam, b, t: Math.random() * 3 });
     }
     for (const c of an.banners) {
       p.set(c.x, c.y, c.z).applyMatrix4(M);
@@ -665,6 +695,7 @@ export class BuildingRenderer {
       const b = items[i];
       const k = i * stride + off;
       if (!b) {
+        if (det) arr[i * 8 + 3] = 0;
         arr[k] = 0;
         arr[k + 1] = 0;
         arr[k + 2] = 0.37;
@@ -684,12 +715,22 @@ export class BuildingRenderer {
         clipY = batch.extra?.[i]?.wall ? -0.5 + (WALL_H + 0.65) * b.progress : -0.1 + (maxY + 0.15) * t;
       } else if (b.constructing && batch.extra?.[i]?.wall) clipY = -0.5 + (WALL_H + 0.65) * b.progress;
       arr[k + 3] = clipY;
+      if (det) arr[i * 8 + 3] = this._flags(b);
       if (b.burning > 0.02) burning = true;
     }
     if (det) {
       if (batch.inst.value) batch.inst.value.needsUpdate = true;
     } else batch.iState.needsUpdate = true;
     return burning;
+  }
+
+  // instance flags for the shader: 1 lit by electricity (a powered town),
+  // 2 a floodlit heritage building (its realm in the Modern era or later)
+  _flags(b) {
+    const civ = this.game.civ;
+    let f = civ.villages[b.village]?.powered ? 1 : 0;
+    if (b.heritage && (civ.kingdoms[b.kingdom]?.era ?? 0) >= 5) f += 2;
+    return f;
   }
 
   _updateStates() {
@@ -949,6 +990,7 @@ export class BuildingRenderer {
     if (this._lampsOn !== props) {
       this._lampsOn = props;
       this.dSmall.showKey('lamppost', props);
+      this.dSmall.showKey('streetlamp', props);
     }
     for (const fm of this.fenceMeshes.values()) {
       fm.posts.visible = props && fm.posts.count > 0;
@@ -1014,7 +1056,11 @@ export class BuildingRenderer {
         if (!b.alive || b.constructing) continue;
         if ((c.x - cx) ** 2 + (c.z - cz) ** 2 > R2) continue;
         if (budget-- <= 0) break;
-        if (real) fx.emit?.('smoke', { x: c.x, y: c.y, z: c.z }, { scale: (c.forge ? 0.6 : 0.42) * BS });
+        if (c.steam) {
+          // cooling towers breathe white steam
+          if (real) fx.emit?.('steam', { x: c.x, y: c.y, z: c.z }, { scale: 1.4 * BS });
+          else this.puffs.emit(c.x, c.y, c.z, 'smoke', 1.2 * BS);
+        } else if (real) fx.emit?.('smoke', { x: c.x, y: c.y, z: c.z }, { scale: (c.forge ? 0.6 : 0.42) * BS });
         else this.puffs.emit(c.x, c.y, c.z, 'smoke', (c.forge ? 0.85 : 0.6) * BS);
       }
     }
@@ -1121,7 +1167,22 @@ export class BuildingRenderer {
       this._lastFence = now;
       this._rebuildFences();
     }
+    // which towns have power: street lights and electric windows follow it
+    this._powT = (this._powT || 0) - dt;
+    if (this._powT <= 0) {
+      this._powT = 1;
+      let sig = '';
+      for (const v of civ.villages) if (v.alive && v.powered) sig += v.id + ',';
+      for (const b of civ.buildings) if (b.heritage && !b.gone) sig += 'h' + b.id + (civ.kingdoms[b.kingdom]?.era ?? 0);
+      if (sig !== this._powerSig) {
+        this._powerSig = sig;
+        this._ver = -1;
+      }
+    }
     this._applyLod();
+    this.glow.uniforms.uTime.value = this.t;
+    this.glow.update(this.uniforms.uNight.value, !this._far);
+    this.haze.update(dt, civ.haze?.(), (x, z) => Math.max(g.world.heightAt(x, z), SEA_LEVEL), day, this.t);
     this._updateBanners();
     this._updateBoatsAndBlades(dt);
     this._smoke(dt);

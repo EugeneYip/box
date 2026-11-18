@@ -2442,6 +2442,8 @@ export function buildArchetype(type, style, level, era = 1, variant = 0, gilded 
   let info = {};
   if (def?.modern) {
     if (!modernModel(g, def.kind || type, style, level, era)) modernFallback(g, modernPalette(style, era), def, level);
+    // a levelled platform under the whole plot keeps big sites grounded on slopes
+    info = { base: { x: 0, z: 0, w: (def.dw ?? def.w) * 0.9, d: (def.dh ?? def.h) * 0.9 } };
   } else if (era >= 5 && type === 'house') info = eraHouse(g, K, style, level, era) || {};
   else if (era >= 5 && type === 'hall') info = eraHall(g, K, style, level, era) || {};
   else if (fn) info = fn(g, K, style, level, variant) || {};
