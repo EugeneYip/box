@@ -31,6 +31,10 @@ export function landscapeUniforms(game) {
       uAmbCol: { value: new THREE.Color(0.4, 0.55, 0.78) },
       uMoonDirW: { value: new THREE.Vector3(-0.4, 0.7, -0.3).normalize() },
       uWorldSize: { value: new THREE.Vector2(game.world.w, game.world.h) },
+      // Round world seam (Terrain): x = world width when travel wraps (else
+      // 0), y / z = how far past the left / right edge the terrain draws its
+      // copy of the far side, where the water reads tiles across the seam
+      uWrapBand: { value: new THREE.Vector3(0, 0, 0) },
       uHeightTex: { value: null },
       uCloudTex: { value: null },
       uCloudParams: { value: new THREE.Vector4(0, 0, 0.01, 0) },
@@ -178,6 +182,7 @@ uniform vec3 uKeyDir;
 uniform vec3 uAmbCol;
 uniform vec3 uMoonDirW;
 uniform vec2 uWorldSize;
+uniform vec3 uWrapBand;
 uniform sampler2D uCloudTex;
 uniform vec4 uCloudParams;
 uniform float uCloudOn;

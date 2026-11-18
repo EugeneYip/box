@@ -76,23 +76,32 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
 {
   vec3 wp = vWPos;
   vec2 p = wp.xz;
+  // tile data position: on the Round world, within the band past a side edge
+  // where the terrain draws its copy of the far side (uWrapBand: world width
+  // when the world wraps, band widths left and right), the water reads the
+  // tiles across the seam; waves and noise stay in real space (no seam line)
+  vec2 pd = p;
+  if (uWrapBand.x > 0.0) {
+    if (pd.x >= uWorldSize.x && pd.x < uWorldSize.x + uWrapBand.z) pd.x -= uWorldSize.x;
+    else if (pd.x < 0.0 && pd.x > -uWrapBand.y) pd.x += uWorldSize.x;
+  }
   float t = uLTime;
   vec3 V = normalize(cameraPosition - wp);
   float viewDist = length(cameraPosition - wp);
   float fw = length(fwidth(p));
 
   // ---- depth from the height texture (no depth prepass)
-  float hc = hAt(p);
-  vec2 od = max(max(-p, p - uWorldSize), 0.0);
+  float hc = hAt(pd);
+  vec2 od = max(max(-pd, pd - uWorldSize), 0.0);
   float outside = length(od);
   float oscale = max(1.0, max(uWorldSize.x, uWorldSize.y) / 256.0);
   float outK = smoothstep(4.0 * oscale, 70.0 * oscale, outside);
   float depth = mix(max(0.0, -hc), 16.0, outK);
   float e = 0.6;
-  vec2 grad = vec2(hAt(p + vec2(e, 0.0)) - hAt(p - vec2(e, 0.0)), hAt(p + vec2(0.0, e)) - hAt(p - vec2(0.0, e))) / (2.0 * e);
+  vec2 grad = vec2(hAt(pd + vec2(e, 0.0)) - hAt(pd - vec2(e, 0.0)), hAt(pd + vec2(0.0, e)) - hAt(pd - vec2(0.0, e))) / (2.0 * e);
   float gl = length(grad);
   // distance to the coastline: first-order estimate near shore, CPU field farther out
-  vec4 sh = texture2D(uShoreTex, p / uWorldSize);
+  vec4 sh = texture2D(uShoreTex, pd / uWorldSize);
   float edt = sh.r * 16.0;
   float wide = sh.g * 16.0;
   float dGrad = depth / max(gl, 0.22);
@@ -104,10 +113,11 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   float narrow = (1.0 - smoothstep(1.2, 3.6, wide)) * (1.0 - outK) * smoothstep(0.0, 0.22, depth);
 
   // ---- climate: polar water is slate-teal, not tropical turquoise
-  float temp = texture2D(uClimTex, p / uWorldSize).g + (texture2D(uNoise, p * (1.0 / 120.0) + 0.61).r - 0.5) * 0.12;
+  float temp = texture2D(uClimTex, pd / uWorldSize).g + (texture2D(uNoise, p * (1.0 / 120.0) + 0.61).r - 0.5) * 0.12;
   // near the map border the cold slate tint fades out, so polar seas meet the
   // endless outer ocean without a darker band outlining the map rectangle
-  vec2 inB = min(p, uWorldSize - p);
+  vec2 inB = min(pd, uWorldSize - pd);
+  if (uWrapBand.x > 0.0) inB.x = 1e4; // (the seam is no border)
   float borderK = smoothstep(2.0, 16.0, min(inB.x, inB.y));
   gCold = (1.0 - smoothstep(0.22, 0.50, temp)) * (1.0 - outK * 0.5) * mix(0.35, 1.0, borderK);
 
@@ -118,11 +128,11 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   // ---- river flow: downstream direction from the broad valley slope, with the
   // across-channel part removed (sign-invariant, so no seam on the centreline)
   float ee = 0.75;
-  vec2 across = vec2(edtAt(p + vec2(ee, 0.0)) - edtAt(p - vec2(ee, 0.0)), edtAt(p + vec2(0.0, ee)) - edtAt(p - vec2(0.0, ee)));
+  vec2 across = vec2(edtAt(pd + vec2(ee, 0.0)) - edtAt(pd - vec2(ee, 0.0)), edtAt(pd + vec2(0.0, ee)) - edtAt(pd - vec2(0.0, ee)));
   float al = length(across);
   vec2 an = al > 1e-4 ? across / al : vec2(0.0);
   float E = 5.0;
-  vec2 dn = -vec2(hAt(p + vec2(E, 0.0)) - hAt(p - vec2(E, 0.0)), hAt(p + vec2(0.0, E)) - hAt(p - vec2(0.0, E)));
+  vec2 dn = -vec2(hAt(pd + vec2(E, 0.0)) - hAt(pd - vec2(E, 0.0)), hAt(pd + vec2(0.0, E)) - hAt(pd - vec2(0.0, E)));
   dn -= an * dot(dn, an);
   float dl = length(dn);
   vec2 flow = dl > 1e-4 ? dn / dl : vec2(0.7071);
@@ -273,7 +283,7 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
 
   // ---- frozen water (ICE tiles under the surface) - opaque sheet, soft edges
   vec4 iw = texture2D(uNoise, p * (1.0 / 4.3) + 0.19);
-  vec2 iq = p + (fn.rg - 0.5) * 2.0 + (iw.rg - 0.5) * 0.9 - 0.5;
+  vec2 iq = pd + (fn.rg - 0.5) * 2.0 + (iw.rg - 0.5) * 0.9 - 0.5;
   ivec2 ic = ivec2(floor(iq));
   vec2 ifr = smoothstep(0.0, 1.0, fract(iq));
   ivec2 isz = ivec2(uWorldSize) - 1;

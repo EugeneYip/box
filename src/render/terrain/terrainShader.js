@@ -16,18 +16,25 @@ import { WATER_PARS_GLSL } from '../water/waterCommon.js';
 //  5. Territory overlay (soft tint + crisp glowing borders), cloud shadows,
 //     baked large-scale AO, rain wetness, lava / ember emission.
 
+// vWPos is the tile-space position the shading reads: a chunk copied across
+// the Round world's seam (Terrain, drawn one map width to the side) reads the
+// tiles it copies; vWOffX is that shift, for anything measured from the camera.
 export const TERRAIN_VERTEX_PARS = /* glsl */ `
 varying vec3 vWPos;
 varying vec3 vWNormal;
+varying float vWOffX;
 `;
 export const TERRAIN_VERTEX_MAIN = /* glsl */ `
 vWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;
+vWOffX = modelMatrix[3][0];
+vWPos.x -= vWOffX;
 vWNormal = normalize(mat3(modelMatrix) * objectNormal);
 `;
 
 export const TERRAIN_FRAGMENT_PARS = /* glsl */ `
 varying vec3 vWPos;
 varying vec3 vWNormal;
+varying float vWOffX;
 uniform sampler2D uTypeTex;
 uniform sampler2D uClimTex;
 uniform sampler2D uNoise;
@@ -1118,7 +1125,7 @@ void terrainSurface() {
     vec2 sp = p * 7.0;
     vec2 cid = floor(sp);
     float r = hash12(cid);
-    vec3 vd = normalize(cameraPosition - s.p);
+    vec3 vd = normalize(cameraPosition - s.p - vec3(vWOffX, 0.0, 0.0));
     float ph = fract(r * 13.7 + dot(vd, vec3(5.1, 3.7, 4.3)));
     float spark = smoothstep(0.965, 1.0, ph) * smoothstep(0.35, 0.05, length(fract(sp) - 0.5));
     spark *= 1.0 - smoothstep(0.04, 0.14, s.fw);
@@ -1145,7 +1152,7 @@ export const TERRAIN_FRAGMENT_POST = /* glsl */ `
   float depthW = -vWPos.y;
   float cfw = length(fwidth(vWPos.xz));
   if (depthW > 0.0) {
-    vec3 vdir = normalize(vWPos - cameraPosition);
+    vec3 vdir = normalize(vWPos + vec3(vWOffX, 0.0, 0.0) - cameraPosition);
     float viewY = abs(vdir.y);
     // caustics are light: modulate the lit seabed in shallow, sunny water
     float cs = (uDetail > 0.001 ? causticsAt(vWPos.xz, uLTime) * uDetail : 0.0) * (1.0 - smoothstep(0.3, 4.5, depthW)) * smoothstep(0.0, 0.35, depthW) * (1.0 - smoothstep(0.06, 0.25, cfw)) * (1.0 - tCold);

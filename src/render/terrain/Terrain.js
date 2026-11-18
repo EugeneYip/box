@@ -4,6 +4,7 @@ import { getNoiseTextures } from './noiseTextures.js';
 import { patchTerrainMaterial } from './terrainShader.js';
 import { landscapeUniforms, refreshLandscapeUniforms } from '../water/waterCommon.js';
 import { bakeAO } from './bake.js';
+import { geoWrapOn } from '../../world/geo.js';
 
 // Terrain renderer (Landscape).
 //
@@ -14,6 +15,16 @@ import { bakeAO } from './bake.js';
 // normals come from central differences of the same global function, so they
 // are continuous across chunk seams. Edits only rebuild touched chunks.
 // A skirt ring continues the seabed beyond the map edge into the deep ocean.
+//
+// Far away, whole blocks of chunks (256 x 256 tiles) that are all at the
+// coarsest level are drawn as one mesh of the same lattice (no seam, no pop):
+// the Vast overview draws its terrain in 8 calls instead of 128.
+//
+// Round world (docs/ROUND-WORLD.md): while a closer view runs past a side
+// edge of the whole Earth, the chunks of the far side (up to two columns)
+// are drawn again one map width over, so the land across the seam is in
+// view; the shader reads the tiles they copy, and the water reads them in
+// the same band.
 //
 // Shading: one shared MeshStandardMaterial patched with the procedural
 // terrain shader (see terrainShader.js), fed by per-tile data textures.
@@ -121,6 +132,9 @@ export class Terrain {
     this._hpad = null;
     for (let cy = 0; cy < this.ch; cy++)
       for (let cx = 0; cx < this.cw; cx++) this.chunks.push(this._makeChunk(cx, cy));
+    this.blocks = this._makeBlocks();
+    this.ghosts = []; // seam copies (pool)
+    this._v3 = new THREE.Vector3();
     this.skirt = null;
 
     this._dirtyHeight = null;
@@ -161,6 +175,7 @@ export class Terrain {
     refreshLandscapeUniforms(g, dt);
     this._updateDetail();
     this._updateLods();
+    this._updateSeam();
     if (this._dirtyHeight) {
       const r = this._dirtyHeight;
       this._dirtyHeight = null;
@@ -218,6 +233,10 @@ export class Terrain {
       c.dirty.fill(true);
       this._setLod(c, c.lod >= 0 ? c.lod : 1, true);
     }
+    for (const b of this.blocks) {
+      b.dirty = true;
+      if (b.on) this._buildBlock(b);
+    }
     this._buildSkirt();
     this._dirtyHeight = this._dirtyType = this._dirtyFire = this._aoPending = null;
   }
@@ -237,7 +256,9 @@ export class Terrain {
       if (cx0 > x1 || cy0 > y1 || cx0 + CH < x0 || cy0 + CH < y0) continue;
       c.dirty.fill(true);
       this._setLod(c, c.lod, true);
+      if (c.block) c.block.dirty = true;
     }
+    for (const b of this.blocks) if (b.on && b.dirty) this._buildBlock(b);
     if (x0 <= 1 || y0 <= 1 || x1 >= this.w - 2 || y1 >= this.h - 2) touchesEdge = true;
     if (touchesEdge) this._buildSkirt();
     const pad = 20;
@@ -337,9 +358,12 @@ export class Terrain {
     // denser meshes cost triangles without visible gain
     const T0 = 12.0 * bias,
       T1 = 4.0 * bias;
+    // (Round world: a chunk is as near as its copy across the seam)
+    const wrapW = geoWrapOn(g.world) ? this.w : 0;
     for (const c of this.chunks) {
       const b = c.box;
-      const dx = Math.max(b.min.x - cp.x, 0, cp.x - b.max.x);
+      let dx = Math.max(b.min.x - cp.x, 0, cp.x - b.max.x);
+      if (wrapW && dx > 0) dx = Math.min(dx, Math.max(b.min.x + wrapW - cp.x, 0, cp.x - b.max.x - wrapW), Math.max(b.min.x - wrapW - cp.x, 0, cp.x - b.max.x + wrapW));
       const dy = Math.max(b.min.y - cp.y, 0, cp.y - b.max.y);
       const dz = Math.max(b.min.z - cp.z, 0, cp.z - b.max.z);
       const ppu = k / Math.max(1, Math.sqrt(dx * dx + dy * dy + dz * dz));
@@ -354,6 +378,135 @@ export class Terrain {
       }
       if (want !== c.lod) this._setLod(c, want, false);
     }
+    // a block whose chunks are all at the coarsest level draws as one mesh
+    for (const b of this.blocks) {
+      let on = true;
+      for (const c of b.chunks) if (c.lod !== 2) on = false;
+      if (on && b.dirty) this._buildBlock(b);
+      if (on === b.on) continue;
+      b.on = on;
+      b.mesh.visible = on;
+      for (const c of b.chunks) c.mesh.visible = !on;
+    }
+  }
+
+  // Blocks of BLOCK x BLOCK full-size chunks (256 tiles a side) sharing the
+  // coarsest lattice (0.5 vertices per tile), so one block mesh is exactly
+  // its chunks' coarse meshes joined.
+  _makeBlocks() {
+    const CH = this.CHUNK,
+      B = Math.max(2, Math.round(256 / CH));
+    const out = [];
+    for (let by = 0; by * B < this.ch; by++)
+      for (let bx = 0; bx * B < this.cw; bx++) {
+        const list = [];
+        for (let cy = by * B; cy < Math.min(this.ch, (by + 1) * B); cy++)
+          for (let cx = bx * B; cx < Math.min(this.cw, (bx + 1) * B); cx++) list.push(this.chunks[cy * this.cw + cx]);
+        if (list.length < 2 || list.some((c) => c.tilesX !== CH || c.tilesY !== CH)) continue;
+        const nCx = Math.min(this.cw, (bx + 1) * B) - bx * B,
+          nCy = Math.min(this.ch, (by + 1) * B) - by * B;
+        const mesh = new THREE.Mesh(new THREE.BufferGeometry(), this.material);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        mesh.matrixAutoUpdate = false;
+        mesh.visible = false;
+        mesh.name = `terrain-block-${bx}-${by}`;
+        this.group.add(mesh);
+        const b = { cx: bx * B, cy: by * B, tilesX: nCx * CH, tilesY: nCy * CH, mesh, chunks: list, geo: null, dirty: true, on: false, box: new THREE.Box3() };
+        for (const c of list) c.block = b;
+        out.push(b);
+      }
+    return out;
+  }
+  _buildBlock(b) {
+    if (!b.geo) {
+      const res = LOD_RES[2];
+      const nx = Math.round(b.tilesX * res),
+        ny = Math.round(b.tilesY * res);
+      const geo = new THREE.BufferGeometry();
+      const count = (nx + 1) * (ny + 1) + 2 * (nx + ny);
+      geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(count * 3), 3));
+      geo.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(count * 3), 3));
+      geo.setIndex(this._indexFor(nx, ny));
+      geo.boundingBox = new THREE.Box3();
+      geo.boundingSphere = new THREE.Sphere();
+      geo.userData = { nx, ny };
+      b.geo = geo;
+      b.mesh.geometry = geo;
+    }
+    this._buildChunk(b, b.geo);
+    b.dirty = false;
+  }
+
+  // Round world: the visible ground's east-west extent (screen corners cast
+  // onto sea level), and the far side's chunks (up to two columns of them)
+  // drawn past whichever side edge it runs over, with the band they cover
+  // told to the water. Only near the seam: not from the overview distance.
+  _updateSeam() {
+    const g = this.game;
+    const W = this.w;
+    const band = this.uniforms.uWrapBand?.value;
+    const want = [];
+    let bl = 0,
+      br = 0;
+    const wrap = geoWrapOn(g.world);
+    const cam = g.cameraRig?.camera;
+    const near = (g.cameraRig?.cur?.dist ?? 1e9) < 0.35 * Math.max(W, this.h);
+    if (wrap && cam && near) {
+      const o = cam.position,
+        v = this._v3;
+      let x0 = Infinity,
+        x1 = -Infinity;
+      for (let k = 0; k < 6; k++) {
+        v.set(k & 1 ? 1 : -1, k < 2 ? -1 : k < 4 ? 1 : 0.2, 0.5).unproject(cam).sub(o).normalize();
+        const t = v.y < -0.02 ? Math.min(o.y / -v.y, W) : W;
+        const x = o.x + v.x * t;
+        if (x < x0) x0 = x;
+        if (x > x1) x1 = x;
+      }
+      const CH = this.CHUNK,
+        cap = 2 * CH;
+      const needR = x1 > W ? Math.min(cap, x1 - W + 2) : 0,
+        needL = x0 < 0 ? Math.min(cap, 2 - x0) : 0;
+      for (const c of this.chunks) {
+        const ux0 = c.cx * CH,
+          ux1 = ux0 + c.tilesX;
+        if (needR > 0 && ux0 < needR) want.push(c, W), (br = Math.max(br, ux1));
+        if (needL > 0 && ux1 > W - needL) want.push(c, -W), (bl = Math.max(bl, W - ux0));
+      }
+    }
+    // (the skirt's sides sink out of sight only while the copies cover them)
+    const sink = want.length > 0;
+    if (sink !== !!this._skirtSink) {
+      this._skirtSink = sink;
+      this._buildSkirt();
+    }
+    band?.set(wrap ? W : 0, bl, br);
+    let n = 0;
+    for (let k = 0; k < want.length; k += 2) {
+      const u = want[k],
+        dx = want[k + 1];
+      let m = this.ghosts[n];
+      if (!m) {
+        m = new THREE.Mesh(u.mesh.geometry, this.material);
+        m.matrixAutoUpdate = false;
+        m.castShadow = false;
+        m.receiveShadow = true;
+        m.name = 'terrain-seam-copy';
+        m.userData.dx = 0;
+        this.group.add(m);
+        this.ghosts.push(m);
+      }
+      m.geometry = u.mesh.geometry;
+      if (m.userData.dx !== dx) {
+        m.matrix.makeTranslation(dx, 0, 0);
+        m.matrixWorldNeedsUpdate = true;
+        m.userData.dx = dx;
+      }
+      m.visible = true;
+      n++;
+    }
+    for (let k = n; k < this.ghosts.length; k++) this.ghosts[k].visible = false;
   }
 
   // Shared index buffer for an nx x ny grid plus its (double-sided) skirt.
@@ -550,6 +703,7 @@ export class Terrain {
     const ringScale = Math.max(1, Math.max(W, H) / 256);
     const rings = [0, 1.5, 4, 9, 18, 34, 60, 100].map((r) => r * ringScale);
     const deep = MIN_HEIGHT - 6;
+    const seam = !!this._skirtSink;
     const count = ringN * rings.length;
     let geo = this.skirt?.geometry;
     if (!geo) {
@@ -623,7 +777,9 @@ export class Terrain {
         const h0 = world.heightAt(ex, ez);
         const t = Math.min(1, d / (70 * ringScale));
         const s = t * t * (3 - 2 * t);
-        const y = h0 + (deep - h0) * s;
+        // (Round world: past the side edges the far side's chunks are drawn,
+        // so the skirt there drops straight out of sight beneath them)
+        const y = seam && (ex === 0 || ex === W) ? deep - 40 : h0 + (deep - h0) * s;
         const o = (r * ringN + i) * 3;
         pos[o] = ex + ox * d;
         pos[o + 1] = r === 0 ? h0 : y;
