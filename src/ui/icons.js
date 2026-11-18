@@ -492,6 +492,8 @@ const P = {
   // job glyphs (inspector portraits)
   'gift-knowledge': BOOK_OPEN + `<path class="s" d="${sparkle(16, 4.6, 3.6)}"/><path class="s" d="${sparkle(24.6, 6.4, 2)}"/>`,
   blackout: `<path class="f" d="${BULB}"/><path d="${BULB}"/><path d="M12.5 26.5h7M14 29h4"/><path class="th" d="M13.6 12.6l2.4 3 2.4-3"/><path d="M4.5 4.5l23 23"/>`,
+  // the sun flares and an aurora ripples; kept clear of the tile's hotkey corner
+  'solar-storm': `<circle class="f" cx="13" cy="12" r="5.6"/><circle cx="13" cy="12" r="5.6"/><path d="M13 3v1.8M13 19.2V21M4 12h1.8M20.2 12H22M6.6 5.6l1.3 1.3M18.1 17.1l1.3 1.3M6.6 18.4l1.3-1.3M18.1 6.9l1.3-1.3"/><path class="t" d="M3.5 25c3.2-2.4 6.4-2.4 9.6 0s6.4 2.4 9.6 0"/><path class="th" d="M5 28.6c2.6-1.6 5.2-1.6 7.8 0"/><path class="s" d="${sparkle(25.5, 8.5, 3.2)}"/>`,
   'job-woodcutter': '<path d="M9 28 21 8.5"/><path class="f" d="M18.6 6.2c2.8-1.8 6.2-1.4 8 .8-1 3.2-3.6 5.4-6.8 5.8z"/><path d="M18.6 6.2c2.8-1.8 6.2-1.4 8 .8-1 3.2-3.6 5.4-6.8 5.8"/>',
   'job-miner': '<path d="M10 28 19 9"/><path class="f" d="M5.5 12.2C10.4 6.4 19.4 4.8 26.6 9c-6.6-2-13.8-1-21.1 3.2z"/><path d="M5.5 12.2C10.4 6.4 19.4 4.8 26.6 9"/><path class="s" d="M21 25.5l2.4-2.4 3 1.4-1 3.4-3.2.4z"/>',
   'job-farmer': '<path d="M10 28 21 6.5"/><path class="f" d="M21 6.5c4 .2 7 2.6 7.6 6.2-3.2-2-6.6-2.4-9.8-1.6z"/><path d="M21 6.5c4 .2 7 2.6 7.6 6.2-3.2-2-6.6-2.4-9.8-1.6"/>' + WHEAT(7.5, 16, 0.5),

@@ -113,7 +113,7 @@ export function techPanel(ui, kingdomId) {
       const techs = [...inEra.filter((t) => !t.side), ...inEra.filter((t) => t.side)];
       if (!techs.length) continue;
       const beyond = e > cap;
-      const col = el('div', { class: 'ws-tech__col' + (e <= era ? ' is-reached' : '') + (beyond ? ' is-capped' : ''), 'data-tip': beyond ? `Beyond the latest era the World Laws allow (${eras[cap] || ''})` : null }, el('div', { class: `ws-tech__era is-era${e}`, html: `${uiIcon(ERA_ICON[e] || 'chronicle')}<span>${esc(eras[e] || `Era ${e + 1}`)}</span>` }));
+      const col = el('div', { class: 'ws-tech__col' + (e <= era ? ' is-reached' : '') + (e === era ? ' is-cur' : '') + (beyond ? ' is-capped' : ''), 'data-tip': beyond ? `Beyond the latest era the World Laws allow (${eras[cap] || ''})` : null }, el('div', { class: `ws-tech__era is-era${e}`, html: `${uiIcon(ERA_ICON[e] || 'chronicle')}<span>${esc(eras[e] || `Era ${e + 1}`)}</span>` }));
       let sideHead = false;
       for (const t of techs) {
         if (t.side && !sideHead) {
@@ -148,6 +148,13 @@ export function techPanel(ui, kingdomId) {
       grid.append(col);
     }
     body.append(grid);
+    // phones (one column): open at the realm's own era, not at the Hearth era
+    setTimeout(() => {
+      if (!body.isConnected || !matchMedia('(max-width: 720px)').matches) return;
+      const cur = grid.querySelector('.ws-tech__col.is-cur');
+      const sc = body.closest('.ws-modal__body');
+      if (cur && sc && era > 0) sc.scrollTop = cur.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop - 8;
+    }, 80);
   } else if (learned.length) {
     body.append(el('div', { class: 'ws-tech__plain' }, ...learned.map((id) => el('span', { class: 'ws-techchip', html: `${uiIcon('good')}<span>${esc(prettyId(id))}</span>` }))));
   } else {
