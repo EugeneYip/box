@@ -441,7 +441,7 @@ export class Terrain {
   // Round world: the visible ground's east-west extent (screen corners cast
   // onto sea level), and the far side's chunks (up to two columns of them)
   // drawn past whichever side edge it runs over, with the band they cover
-  // told to the water. Only near the seam: not from the overview distance.
+  // told to the water.
   _updateSeam() {
     const g = this.game;
     const W = this.w;
@@ -451,8 +451,11 @@ export class Terrain {
       br = 0;
     const wrap = geoWrapOn(g.world);
     const cam = g.cameraRig?.camera;
+    // (close views copy up to two columns of chunks; from farther out, whole
+    // coarse blocks up to 256 tiles, so the overview shows the land running
+    // on past both edges in a few calls instead of streaks or a cut edge)
     const near = (g.cameraRig?.cur?.dist ?? 1e9) < 0.35 * Math.max(W, this.h);
-    if (wrap && cam && near) {
+    if (wrap && cam) {
       const o = cam.position,
         v = this._v3;
       let x0 = Infinity,
@@ -465,14 +468,18 @@ export class Terrain {
         if (x > x1) x1 = x;
       }
       const CH = this.CHUNK,
-        cap = 2 * CH;
+        cap = near ? 2 * CH : Math.max(2 * CH, 256);
       const needR = x1 > W ? Math.min(cap, x1 - W + 2) : 0,
         needL = x0 < 0 ? Math.min(cap, 2 - x0) : 0;
+      const seen = new Set();
       for (const c of this.chunks) {
-        const ux0 = c.cx * CH,
-          ux1 = ux0 + c.tilesX;
-        if (needR > 0 && ux0 < needR) want.push(c, W), (br = Math.max(br, ux1));
-        if (needL > 0 && ux1 > W - needL) want.push(c, -W), (bl = Math.max(bl, W - ux0));
+        const u = !near && c.block && c.block.on ? c.block : c;
+        if (seen.has(u)) continue;
+        seen.add(u);
+        const ux0 = u.cx * CH,
+          ux1 = ux0 + u.tilesX;
+        if (needR > 0 && ux0 < needR) want.push(u, W), (br = Math.max(br, ux1));
+        if (needL > 0 && ux1 > W - needL) want.push(u, -W), (bl = Math.max(bl, W - ux0));
       }
     }
     // (the skirt's sides sink out of sight only while the copies cover them)
