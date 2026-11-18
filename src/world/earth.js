@@ -210,6 +210,12 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
   // or a regional map (docs/REGIONS.md) with square tiles at its middle latitude
   const REG = options.region && options.region !== 'world' && REGION_MASKS[options.region] ? earthRegion(options.region) : null;
   if (REG && (REG.w !== W || REG.h !== H)) throw new Error(`World Map region ${REG.id} needs a ${REG.w} x ${REG.h} world, got ${W} x ${H}`);
+  // Round world (docs/ROUND-WORLD.md): on the whole Earth with the setting on
+  // (options.wrap, default on) the left and right edges are one seam: land
+  // that crosses longitude -30 (Greenland, Antarctica) runs to both edges and
+  // the two sides meet, so people can walk across. Off, or on a regional map,
+  // the side edges stay closed behind a ring of open sea.
+  const SEAM = !REG && options.wrap !== false;
   const GEO = REG ? { region: REG.id, lonMin: REG.lonMin, lonMax: REG.lonMax, latMin: REG.latMin, latMax: REG.latMax, wrap: false } : { region: 'world', lonMin: LEFT, lonMax: LEFT + 360, latMin: -90, latMax: 90, wrap: true };
   // ---- geometry: tiles per degree, per-row latitude, per-column longitude
   const tpdX = W / (GEO.lonMax - GEO.lonMin),
@@ -398,7 +404,7 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
   // would otherwise be sliced straight by the border on both sides)
   const ringX0 = Math.max(2, Math.round(5 * scale768));
   const sideK = new Float32Array(W).fill(1); // 0 at the side borders .. 1 inland
-  if (!REG) for (let x = 0; x < W; x++) sideK[x] = smoothstep(ringX0 + 1, ringX0 + 34 * scale768, Math.min(x, W - 1 - x));
+  if (!REG && !SEAM) for (let x = 0; x < W; x++) sideK[x] = smoothstep(ringX0 + 1, ringX0 + 34 * scale768, Math.min(x, W - 1 - x));
   for (let x = 0; x < W && !REG; x++) {
     const u = x / tpd;
     const ek = sideK[x];
@@ -407,7 +413,7 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
       for (let y = H - 1; y >= 0 && latY[y] < -58; y--) if (latY[y] > capN) land[y * W + x] = 0;
     }
   }
-  for (let y = 0; y < H && !REG; y++) {
+  for (let y = 0; y < H && !REG && !SEAM; y++) {
     const lat = latY[y];
     if (lat < 66.9 || lat > 86) continue;
     const cutLon = -36 - 7 * smoothstep(70, 82, lat) + nWarp(lat / 1.7 + 9, 2.9) * 2.4;
@@ -425,16 +431,31 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
   // carries it on beyond the border): only real seas meet the edge as water.
   const ringX = REG ? 4 : Math.max(2, Math.round(5 * scale768)), // wide enough that the shore field clamped past the side edges reads as open sea
     ringY = REG ? 4 : Math.max(2, Math.round(3 * scale768));
-  const edgeDist = (x, y) => Math.min(x, W - 1 - x, y, H - 1 - y); // tiles to the border
-  const inRing = (x, y) => x < ringX || x >= W - ringX || y < ringY || y >= H - ringY;
+  // (with the round-world seam only the top and bottom are borders)
+  const edgeDist = SEAM ? (x, y) => Math.min(y, H - 1 - y) : (x, y) => Math.min(x, W - 1 - x, y, H - 1 - y); // tiles to the border
+  const inRing = SEAM ? (x, y) => y < ringY || y >= H - ringY : (x, y) => x < ringX || x >= W - ringX || y < ringY || y >= H - ringY;
+  // distance fields that see across the seam: computed on a copy padded with
+  // the far side's columns, then cropped
+  const PADX = SEAM ? Math.min(W >> 1, Math.round(48 * scale768)) : 0;
+  const distField = (mask, value) => {
+    if (!PADX) return H_.distanceField(mask, W, H, value);
+    const W2 = W + 2 * PADX,
+      m2 = new Uint8Array(W2 * H);
+    for (let y = 0; y < H; y++)
+      for (let x2 = 0; x2 < W2; x2++) m2[y * W2 + x2] = mask[y * W + ((x2 - PADX + W) % W)];
+    const d2 = H_.distanceField(m2, W2, H, value);
+    const d = new Float32Array(N);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) d[y * W + x] = d2[y * W2 + x + PADX];
+    return d;
+  };
   if (!REG)
     for (let y = 0; y < H; y++)
       for (let x = 0; x < W; x++) if (inRing(x, y)) land[y * W + x] = 0;
   _t('land');
 
   // ------------------------------------------------------------- 2. distances
-  const dLand = H_.distanceField(land, W, H, 1); // land tiles: tiles to the sea
-  const dSea = H_.distanceField(land, W, H, 0); // sea tiles: tiles to land
+  const dLand = distField(land, 1); // land tiles: tiles to the sea
+  const dSea = distField(land, 0); // sea tiles: tiles to land
   // open sea vs. enclosed water: connected water bodies larger than a small
   // sea (the Caspian and the Black Sea count as seas) or touching the edge
   const sea = new Uint8Array(N);
@@ -1190,11 +1211,29 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
       const k = Math.min(1, edgeDist(x, y) / ringY); // 0 at the border
       hgt[i] = Math.min(hgt[i], -(REG ? 8 - 3 * k : 8.6 - 4 * k) + fbm(nBank, x / NT / 3, y / NT / 3, 2) * 0.5);
     }
+  // the round-world seam: the two sides meet at the same height (noise,
+  // blurs and slope passes do not see across the edge), blended over a band
+  // on each side; land stays land and sea stays sea
+  if (SEAM) {
+    const B = Math.max(4, Math.round(10 * scale768));
+    for (let y = 0; y < H; y++) {
+      const o = y * W;
+      const d = (hgt[o + W - 1] - hgt[o]) / 2;
+      if (Math.abs(d) < 1e-4) continue;
+      for (let k = 0; k < B; k++) {
+        const wk = 1 - smoothstep(0, B, k);
+        for (const i of [o + k, o + W - 1 - k]) {
+          hgt[i] += i === o + k ? d * wk : -d * wk;
+          hgt[i] = land[i] ? Math.max(0.24, hgt[i]) : Math.min(-0.2, hgt[i]);
+        }
+      }
+    }
+  }
   // ----------------------------------------------------------------- 6. climate
   const wet = new Uint8Array(N);
   for (let i = 0; i < N; i++) wet[i] = hgt[i] < SEA_LEVEL ? 1 : 0;
-  const dWater = H_.distanceField(wet, W, H, 0); // land: tiles to any water
-  const dOcean = H_.distanceField(sea, W, H, 0); // land: tiles to the open sea
+  const dWater = distField(wet, 0); // land: tiles to any water
+  const dOcean = distField(sea, 0); // land: tiles to the open sea
   const warm = new Float32Array(N);
   for (const f of WARMTH) {
     const edge = f.edge ?? 3;
@@ -1242,7 +1281,7 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
     for (let x = 0; x < W; x++)
       if (latY[y] < southCut[x] - 0.4 && hgt[y * W + x] < SEA_LEVEL) temp[y * W + x] = Math.max(temp[y * W + x], 0.42);
       else if (!REG || hgt[y * W + x] < SEA_LEVEL) {
-        const ek = 1 - smoothstep(ringY, ringY + 10 * scale768, Math.min(edgeDist(x, y), Math.min(x, W - 1 - x)));
+        const ek = 1 - smoothstep(ringY, ringY + 10 * scale768, Math.min(edgeDist(x, y), SEAM ? 1e9 : Math.min(x, W - 1 - x)));
         if (ek > 0) temp[y * W + x] = Math.max(temp[y * W + x], 0.42 * ek + temp[y * W + x] * (1 - ek));
       }
   // The water's cold slate tint follows temperature: over open sea it fades
@@ -1314,7 +1353,7 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
           }
           // open sea south of Antarctica's far coast, and short of the border
           if (lat < southCut[x] - 0.2) ice = false;
-          if (Math.min(x, W - 1 - x) < ringX + 1 + bn || Math.min(y, H - 1 - y) < ringY + 2 + bn) ice = false;
+          if ((!SEAM && Math.min(x, W - 1 - x) < ringX + 1 + bn) || Math.min(y, H - 1 - y) < ringY + 2 + bn) ice = false;
           if (sideK[x] < 0.35 + bn * 0.25) ice = false;
         }
         if (ice) type[i] = TILE.ICE;
