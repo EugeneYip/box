@@ -359,7 +359,7 @@ export class UnitRenderer {
     if (!back && wpn?.legendary && !child && (sheathe || WORK_JOBS.has(job))) back = 5;
     rs.bladeOnBack = back === 5;
     const kc = this._kingdomColor(u.kingdom);
-    const pal = CULTURE_CLOTH[u.data?.culture] || NEUTRAL_CLOTH;
+    const pal = CULTURE_CLOTH[String(u.data?.culture).split('~')[0]] || NEUTRAL_CLOTH; // a people keeps its style's dress
     const civvies = jitter(lin(pal[Math.floor(r(9) * pal.length)]), r(12));
     // every grown member of a realm wears its colour (a little lighter or darker
     // per person); culture lives on in trousers, hats and trim
