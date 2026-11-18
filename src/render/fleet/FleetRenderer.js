@@ -788,6 +788,17 @@ export class FleetRenderer {
         cb = c.b;
         quad(v.x - sc, v.z - sc, v.x + sc, v.z - sc, v.x + sc, v.z + sc, v.x - sc, v.z + sc, 0, 0, 1, 0, 1, 1, 0, 1, 4, 1, 1, 0, 0, 0, y);
       }
+      // aircraft and rockets aloft: a smaller dot at their height
+      for (const f of this.game.fleet?.air || []) {
+        if (n >= max) break;
+        if (!f.alive || Math.abs(f.x - cx) > R || Math.abs(f.z - cz) > R) continue;
+        const sc = base * (f.cls === 'space' ? 0.9 : 0.6);
+        const c = f.cls === 'space' ? this._white || (this._white = new THREE.Color(1.2, 1.15, 1.05)) : this._kingdomColor(f.kingdom);
+        cr = c.r;
+        cg = c.g;
+        cb = c.b;
+        quad(f.x - sc, f.z - sc, f.x + sc, f.z - sc, f.x + sc, f.z + sc, f.x - sc, f.z + sc, 0, 0, 1, 0, 1, 1, 0, 1, 4, 1, 1, 0, 0, 0, Math.max(f.y, 1) + dist * 0.004);
+      }
       cr = cg = cb = 1;
     }
     g.setDrawRange(0, n);
