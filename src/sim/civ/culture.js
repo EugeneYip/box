@@ -14,7 +14,7 @@ import { geoDist } from '../../world/geo.js';
 export const CULTURE_TRAITS = ['Seafaring', 'Martial', 'Scholarly', 'Pastoral', 'Mystic', 'Mercantile', 'Masons', 'Wanderers'];
 
 export const TRAIT_INFO = {
-  Seafaring: 'Builds harbours early and loves the sea.',
+  Seafaring: 'Builds harbors early and loves the sea.',
   Martial: 'Keeps more soldiers and is quick to fight.',
   Scholarly: 'Researches faster and builds libraries.',
   Pastoral: 'Tends more fields; richer harvests.',

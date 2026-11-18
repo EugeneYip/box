@@ -55,7 +55,7 @@ export const MODERN_FIRST = {
   musket: 'arms its first musketeers',
   rifle: 'arms its soldiers with rifles and helmets',
   fatigues: 'dresses its soldiers in modern fatigues',
-  suit: 'clads its soldiers in armoured suits',
+  suit: 'clads its soldiers in armored suits',
   bastion: 'raises star-shaped bastions on its walls',
   satellite: 'puts its first satellite into orbit',
   orbitalStation: 'builds an orbital station in the sky',

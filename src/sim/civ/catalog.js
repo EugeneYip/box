@@ -38,7 +38,7 @@ export const BUILDING_TYPES = {
   workshop: { names: ['Workshop', 'Forge'], w: 2, h: 2, levels: 2, hp: [120, 180], buildTime: [20, 26], cost: [{ wood: 14, stone: 8 }, { wood: 10, stone: 24 }], storage: true },
   well: { names: ['Well'], w: 1, h: 1, levels: 1, hp: [60], buildTime: [8], cost: [{ stone: 6 }] },
   windmill: { names: ['Windmill'], w: 2, h: 2, levels: 1, hp: [140], buildTime: [26], cost: [{ wood: 22, stone: 10 }] },
-  docks: { names: ['Docks', 'Harbour'], w: 2, h: 2, levels: 2, hp: [110, 200], buildTime: [20, 30], cost: [{ wood: 18 }, { wood: 30, stone: 16 }], coastal: true, tech: [null, 'sailing'] },
+  docks: { names: ['Docks', 'Harbor'], w: 2, h: 2, levels: 2, hp: [110, 200], buildTime: [20, 30], cost: [{ wood: 18 }, { wood: 30, stone: 16 }], coastal: true, tech: [null, 'sailing'] },
   // monuments rise in three stages, each a construction of its own
   wonder: { names: ['Wonder Footings', 'Rising Wonder', 'Wonder'], w: 5, h: 5, levels: 3, hp: [700, 1100, 1600], buildTime: [70, 90, 110], cost: [{ wood: 50, stone: 80, gold: 10 }, { wood: 40, stone: 110, gold: 15 }, { wood: 30, stone: 130, gold: 25 }], banner: true, monument: true },
   colossus: { names: ['Colossus Pedestal', 'Rising Colossus', 'Colossus'], w: 3, h: 3, levels: 3, hp: [500, 800, 1200], buildTime: [60, 80, 100], cost: [{ wood: 30, stone: 70, gold: 10 }, { wood: 20, stone: 90, gold: 15 }, { wood: 10, stone: 100, gold: 25 }], banner: true, monument: true },

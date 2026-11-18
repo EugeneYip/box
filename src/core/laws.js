@@ -45,7 +45,7 @@ export const LAWS = [
   B('diploPeace', 'diplomacy', 'Peace treaties', 'War-weary kingdoms sue for peace.', true, 'civ'),
   B('diploCultureFriction', 'diplomacy', 'Cultural rivalry', 'Kingdoms of different cultures distrust one another.', true, 'civ'),
   N('diploWarlike', 'diplomacy', 'Warmongering', 'How eager rulers are to start wars.', 1, 0, 3, 0.25, 'civ'),
-  B('fleetNaval', 'diplomacy', 'Naval war', 'War galleys of realms at war fight at sea, blockade harbours and sink transports.', true, 'fleet'),
+  B('fleetNaval', 'diplomacy', 'Naval war', 'War galleys of realms at war fight at sea, blockade harbors and sink transports.', true, 'fleet'),
   // ---- Civilization -------------------------------------------------------------
   B('civExpansion', 'civilization', 'Settlers', 'Villages send settlers to found new villages.', true, 'civ'),
   B('civNewKingdoms', 'civilization', 'New kingdoms', 'Far-flung settlements may crown rulers of their own.', true, 'civ'),
@@ -53,7 +53,7 @@ export const LAWS = [
   B('civTechnology', 'civilization', 'Knowledge', 'Kingdoms research technologies and advance through eras.', true, 'civ'),
   N('civTechSpeed', 'civilization', 'Research speed', 'How quickly kingdoms gain knowledge.', 1, 0.25, 4, 0.25, 'civ'),
   S('civEraCap', 'civilization', 'Latest era', 'The latest era realms may reach, from Hearth to Future. Choose Enlightened for a world that never leaves the age of sail and steel.', 7, ['Hearth', 'Bronze', 'Iron', 'Enlightened', 'Industrial', 'Modern', 'Atomic', 'Future'], 'civ'),
-  B('civRoads', 'civilization', 'Roads', 'Villages pave paths between their buildings and neighbours.', true, 'civ'),
+  B('civRoads', 'civilization', 'Roads', 'Villages pave paths between their buildings and neighbors.', true, 'civ'),
   B('civWalls', 'civilization', 'Fortifications', 'Cities raise walls, gates and watchtowers.', true, 'civ'),
   B('fleetSailing', 'civilization', 'Ships', 'Realms launch fishing boats, trading cogs, transports and great ships.', true, 'fleet'),
   B('fleetColonize', 'civilization', 'Overseas colonies', 'Ships carry settlers to found villages on other islands and continents.', true, 'fleet'),
@@ -64,7 +64,7 @@ export const LAWS = [
   B('lifeTraits', 'creatures', 'Traits', 'Creatures are born with traits and earn new ones through life.', true, 'life'),
   B('lifeInheritance', 'creatures', 'Inheritance', 'Children inherit traits from their parents, with rare mutations.', true, 'life'),
   B('lifeExperience', 'creatures', 'Experience', 'Creatures level up from battles and hard work.', true, 'life'),
-  B('lifeEquipment', 'creatures', 'Equipment', 'Smiths forge tools, weapons and armour for their people.', true, 'life'),
+  B('lifeEquipment', 'creatures', 'Equipment', 'Smiths forge tools, weapons and armor for their people.', true, 'life'),
   // ---- Beasts -------------------------------------------------------------
   B('lifePredators', 'beasts', 'Predators', 'Wolves, bears and foxes hunt.', true, 'life'),
   B('beastsHuntPeople', 'beasts', 'Beasts attack people', 'Predators and monsters may attack villagers.', true, 'life'),
@@ -102,7 +102,7 @@ export const LAWS = [
   N('calamityFrequency', 'calamities', 'Disaster frequency', 'How often random disasters strike.', 1, 0.25, 4, 0.25, 'effects'),
   B('calamityPlague', 'calamities', 'Contagion', 'Plague spreads between people.', true, 'effects'),
   B('calamityLightning', 'calamities', 'Lightning fires', 'Lightning from storms and dry skies strikes the land and can set it alight.', true, 'effects'),
-  B('natureFireSpread', 'calamities', 'Spreading fire', 'Flames spread to neighbouring land.', true, 'effects'),
+  B('natureFireSpread', 'calamities', 'Spreading fire', 'Flames spread to neighboring land.', true, 'effects'),
   B('natureLavaFlow', 'calamities', 'Flowing lava', 'Lava runs downhill and cools to stone.', true, 'effects'),
   // ---- Ages -------------------------------------------------------------
   B('ageCycle', 'ages', 'Turning ages', 'Great ages change by themselves over the centuries.', true, 'core'),

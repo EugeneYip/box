@@ -93,7 +93,7 @@ export function stubDef(model) {
 }
 
 // Proud names for ships (the chronicle and the inspector use them).
-const ADJ = ['Swift', 'Grey', 'Golden', 'Bold', 'Silver', 'Red', 'Morning', 'Wandering', 'Faithful', 'Northern', 'Lucky', 'Proud', 'Quiet', 'Salt', 'Iron', 'Merry', 'Blue', 'Brave', 'Old', 'Evening'];
+const ADJ = ['Swift', 'Gray', 'Golden', 'Bold', 'Silver', 'Red', 'Morning', 'Wandering', 'Faithful', 'Northern', 'Lucky', 'Proud', 'Quiet', 'Salt', 'Iron', 'Merry', 'Blue', 'Brave', 'Old', 'Evening'];
 const NOUN = ['Heron', 'Gull', 'Star', 'Otter', 'Wind', 'Maiden', 'Dolphin', 'Lantern', 'Crown', 'Swan', 'Tide', 'Pike', 'Hawk', 'Rose', 'Promise', 'Seal', 'Petrel', 'Fortune', 'Wave', 'Anchor'];
 const SMALL = ['Little', 'Bonny', 'Wee', 'Busy', 'Patient', 'Quick', 'Brown', 'Lucky', 'Spry', 'Humble'];
 const FISH = ['Herring', 'Minnow', 'Sprat', 'Tern', 'Cockle', 'Mullet', 'Puffin', 'Shrimp', 'Eel', 'Kittiwake'];

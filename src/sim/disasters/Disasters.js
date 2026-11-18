@@ -275,7 +275,7 @@ export class Disasters {
       return { priority: 4, title: 'Molten Lava', subtitle: 'Flowing rock, slowly cooling', stats: [['Heat', Math.round(this.lava.heat[i] * 1200) + ' °C'], ['Depth', this.lava.vol[i].toFixed(2)]] };
     if (w.fire[i] > 0.02)
       return { priority: 4, title: 'Wildfire', subtitle: 'Spreading with the wind', stats: [['Intensity', Math.round(w.fire[i] * 100) + '%'], ['Fuel left', Math.round((this.fire.fuel[i] / Math.max(0.01, this.fire.fuel0[i])) * 100) + '%'], ['Burning tiles', this.fire.count]] };
-    if (w.type[i] === TILE.ASH && this.fire.smolder[i] > 0.05) return { priority: 1, title: 'Smouldering Ash', stats: [] };
+    if (w.type[i] === TILE.ASH && this.fire.smolder[i] > 0.05) return { priority: 1, title: 'Smoldering Ash', stats: [] };
     return null;
   }
 }

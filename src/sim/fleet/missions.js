@@ -31,8 +31,8 @@ export const missions = {
     let kind = KINDS[o.kind]?.cls === 'sea' ? o.kind : cargo.settlers || cargo.army ? 'transport' : 'cog';
     if (kind === 'galley' && !this.law('fleetNaval')) return refuse('naval war is forbidden');
     const h = this.resolveHarbour(o.from, kid);
-    if (!h) return refuse('no harbour');
-    if (this.blockaded(h)) return refuse('the harbour is blockaded');
+    if (!h) return refuse('no harbor');
+    if (this.blockaded(h)) return refuse('the harbor is blockaded');
     // settlers and armies always find a ship; trade leaves room for them
     if (this.seaCount() >= this.budget.sea * (cargo.settlers || cargo.army ? 1.1 : 0.85)) return refuse('the seas are crowded');
     const nav = this.nav;
@@ -44,9 +44,9 @@ export const missions = {
     const to = o.to;
     if (typeof to === 'number' || (to && typeof to === 'object' && to.x == null)) {
       toH = this.resolveHarbour(to);
-      if (!toH) return refuse('no such harbour');
+      if (!toH) return refuse('no such harbor');
       // no merchant sails into an enemy blockade
-      if (cargo.trade && this.blockaded(toH)) return refuse('the harbour is blockaded');
+      if (cargo.trade && this.blockaded(toH)) return refuse('the harbor is blockaded');
       // a free berth, else a place in the roads off it (never the pier head of a full jetty)
       dest = this._mooringSpot(toH, null, kind) || this._anchorage(toH, KINDS[kind] || KINDS.cog) || toH.berth;
       deliver = { x: toH.x, z: toH.z };

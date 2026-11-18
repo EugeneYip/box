@@ -35,7 +35,7 @@ const INV = {
   gold: ['gold', 'Gold'],
   tools: ['build', 'Tools'],
   weapons: ['sword', 'Weapons'],
-  armor: ['shield', 'Armour'],
+  armor: ['shield', 'Armor'],
 };
 
 const TILE_POWER = {
@@ -502,7 +502,7 @@ export class Inspector {
           <h3 class="ws-insp__title">${esc(this.titleOf(r) || 'Unknown')}${epithet ? ` <span class="ws-insp__epithet">${esc(epithet)}</span>` : ''}</h3>
           ${subShown ? `<div class="ws-insp__sub" data-sub>${craft && ownerK?.banner ? `<img class="ws-crest ws-crest--banner" alt="" src="${bannerURL(ownerK.banner, ownerK.color, 28)}">` : kTint ? `<i class="ws-crest" style="--k:${kTint}"></i>` : ''}<span>${esc(subShown)}</span></div>` : ''}
         </div>
-        ${editable ? `<button class="ws-iconbtn ws-iconbtn--sm ws-insp__edit${editing ? ' is-on' : ''}" type="button" aria-label="${editing ? 'Done editing' : 'Edit'}" data-tip="${editing ? 'Done editing' : 'Edit name, colours and more'}" data-act="${editing ? 'edit-done' : 'edit'}">${uiIcon(editing ? 'check' : 'edit')}</button>` : ''}
+        ${editable ? `<button class="ws-iconbtn ws-iconbtn--sm ws-insp__edit${editing ? ' is-on' : ''}" type="button" aria-label="${editing ? 'Done editing' : 'Edit'}" data-tip="${editing ? 'Done editing' : 'Edit name, colors and more'}" data-act="${editing ? 'edit-done' : 'edit'}">${uiIcon(editing ? 'check' : 'edit')}</button>` : ''}
         ${starBtn}
         <button class="ws-iconbtn ws-iconbtn--sm ws-insp__x" type="button" aria-label="Close (Esc)" data-act="close">${uiIcon('close')}</button>
       </header>

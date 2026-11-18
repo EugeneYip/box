@@ -185,7 +185,7 @@ export const war = {
         });
         if (!m.announced) {
           m.announced = true;
-          this.note(`⚓ Galleys of ${this.kname(v.kingdom)} blockade the harbour of ${bh.name}`, 'war', { x: bh.x, z: bh.z }, 'blockade' + v.kingdom + '-' + bh.kingdom, 1200);
+          this.note(`⚓ Galleys of ${this.kname(v.kingdom)} blockade the harbor of ${bh.name}`, 'war', { x: bh.x, z: bh.z }, 'blockade' + v.kingdom + '-' + bh.kingdom, 1200);
         }
       }
     }
