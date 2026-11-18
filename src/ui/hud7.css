@@ -1002,6 +1002,7 @@
 }
 .ws-tech__col.is-capped {
   opacity: 0.45;
+}
 /* ==========================================================================
    Round 14: a top bar of fixed width
    Each panel keeps one width per breakpoint whatever it shows: the clock's
