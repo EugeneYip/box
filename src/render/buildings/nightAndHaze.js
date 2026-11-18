@@ -70,7 +70,7 @@ varying float vA;
 void main() {
   float d = length(vUv - 0.5) * 2.0;
   float a = pow(max(0.0, 1.0 - d), 2.2);
-  gl_FragColor = vec4(vec3(1.0, 0.82, 0.55) * a * vA * uNight * 1.6, 1.0);
+  gl_FragColor = vec4(vec3(1.0, 0.82, 0.55) * a * vA * uNight * 1.1, 1.0);
 }`;
     this.mesh = this._make(64);
     this.mesh.renderOrder = 5;

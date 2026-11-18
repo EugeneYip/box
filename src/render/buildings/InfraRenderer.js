@@ -150,7 +150,7 @@ function infraMaterial(uniforms) {
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aGlow;\nvarying float vGlow;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvGlow = aGlow;');
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', '#include <common>\nuniform float uNight;\nvarying float vGlow;')
-      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vGlow * vec3(0.4, 0.95, 1.0) * (0.35 + uNight * 2.2);');
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vGlow * vec3(0.4, 0.95, 1.0) * (0.06 + uNight * 0.5);');
   };
   m.customProgramCacheKey = () => 'wsInfra';
   return m;

@@ -65,7 +65,7 @@ export function modernPalette(style, era) {
 // glass bands, one per floor, round a block (glow: window code)
 export function bands(g, P, cx, y0, cz, w, d, floors, fh, o = {}) {
   const k = o.k ?? 0.5;
-  for (let i = 0; i < floors; i++) g.box(cx, y0 + i * fh + fh * (1 - k) * 0.55, cz, w + 0.02, fh * k, d + 0.02, o.col ?? P.glass, { glow: o.glow ?? 1, noTop: true });
+  for (let i = 0; i < floors; i++) g.box(cx, y0 + i * fh + fh * (1 - k) * 0.55, cz, w + 0.02, fh * k, d + 0.02, o.col ?? P.glass, { glow: o.glow ?? 0.6, noTop: true });
 }
 // vertical mullions on the four faces of a block
 export function mullions(g, cx, y0, cz, w, d, h, step, col, t = 0.025) {

@@ -140,7 +140,7 @@ if (vRoof.x > 0.5) {
     float lit = step(mix(0.22, 0.14, powered), wr);
     float flick = mix(0.88 + 0.12 * sin(uTime * 2.7 + vState.z * 40.0 + wid), 1.0, powered);
     vec3 wc = mix(vec3(1.0, 0.6, 0.26), vec3(1.0, 0.84, 0.58), powered);
-    totalEmissiveRadiance += vGlow * wc * (night * mix(2.6, 3.0, powered) * lit * flick + 0.02);
+    totalEmissiveRadiance += vGlow * wc * (night * mix(2.6, 2.1, powered) * lit * flick + 0.02);
   } else if (vGlow < 2.5) {
     // a red beacon blinking on a mast or tower
     float blink = step(0.55, fract(uTime * 0.7 + vState.z * 3.0));
@@ -149,16 +149,16 @@ if (vRoof.x > 0.5) {
     // screens behind the glass: cool blue-white, each window its own
     float lit = step(0.18, wr);
     float sc = 0.8 + 0.2 * sin(uTime * 1.3 + wid * 2.1);
-    totalEmissiveRadiance += vec3(0.5, 0.78, 1.0) * (night * 2.8 * lit * sc + 0.12 * lit);
+    totalEmissiveRadiance += vec3(0.5, 0.78, 1.0) * (night * 1.7 * lit * sc + 0.08 * lit);
   } else if (vGlow < 4.5) {
     // the steady cyan light of the future (fusion rings, crowns)
-    totalEmissiveRadiance += vec3(0.4, 0.95, 1.0) * (0.7 + night * 1.8) * (0.88 + 0.12 * sin(uTime * 2.0 + vLocal.y * 4.0 + vLocal.x * 2.0));
+    totalEmissiveRadiance += vec3(0.4, 0.95, 1.0) * (0.5 + night * 1.0) * (0.88 + 0.12 * sin(uTime * 2.0 + vLocal.y * 4.0 + vLocal.x * 2.0));
   } else {
     // a lamp head: bright at night only
     totalEmissiveRadiance += vec3(1.0, 0.86, 0.6) * (night * 4.2 + 0.03);
   }
   // heritage: soft floodlight washing up the walls at night
-  if (flood > 0.5) totalEmissiveRadiance += diffuseColor.rgb * vec3(1.0, 0.84, 0.62) * night * 1.1 * (1.0 - smoothstep(0.1, 3.2, vLocal.y));
+  if (flood > 0.5) totalEmissiveRadiance += diffuseColor.rgb * vec3(1.0, 0.84, 0.62) * night * 0.5 * (1.0 - smoothstep(0.1, 3.2, vLocal.y));
   float burn = vState.y;
   if (burn > 0.001) {
     float t = uTime;
