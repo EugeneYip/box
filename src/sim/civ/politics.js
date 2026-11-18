@@ -258,7 +258,10 @@ export const politics = {
       this.crown(k, heir);
       this._note(abdicated ? `${deadName} abdicates; ${heir.name} rules ${this._kn(k)}` : `${deadName} dies; ${heir.name} rules ${this._kn(k)}`, 'info', { x: heir.x, z: heir.z }, 'succ' + k.id, 20);
       // a contested succession can split a large realm
-      if (k.villages.length >= 3 && this._kLaw(k.id, 'civRebellions') && !abdicated && this.rng.chance(Math.min(0.75, 0.3 + (k.villages.length - 3) * 0.06) * (k.seeded ? 0.7 : 1))) {
+      // (a real country's crown passes more surely: the seeded ones at
+      // seven tenths split their land into a crown per province)
+      const realK = k.realm >= 0 && this._realMapOn?.();
+      if (k.villages.length >= 3 && this._kLaw(k.id, 'civRebellions') && !abdicated && this.rng.chance(Math.min(0.75, 0.3 + (k.villages.length - 3) * 0.06) * (realK ? 0.4 : k.seeded ? 0.7 : 1))) {
         let claimant = null;
         for (const vid of k.villages) {
           const v = this.villages[vid];
@@ -313,12 +316,15 @@ export const politics = {
   _overextension() {
     if (!this.law('civRebellions')) return;
     const now = this.game.time.total;
+    const realMap = this._realMapOn?.();
     for (const k of this.kingdoms) {
-      if (!k.alive || k.villages.length < 8) continue;
+      // (a real country on a World Map world holds more towns before it cracks)
+      const big = realMap && k.realm >= 0 ? 12 : 8;
+      if (!k.alive || k.villages.length < big) continue;
       const share = k.villages.length / Math.max(1, this.villages.filter((v) => v.alive).length);
       if (!this._kLaw(k.id, 'civRebellions') && share < 0.35) continue;
       if (now - (k.crackT ?? k.founded) < YEAR * 25) continue;
-      if (!this.rng.chance(0.004 * (k.villages.length - 7) * (0.5 + (this._crowd?.() || 0)) * (1 + Math.max(0, now - k.founded) / (YEAR * 150)))) continue;
+      if (!this.rng.chance(0.004 * (k.villages.length - big + 1) * (0.5 + (this._crowd?.() || 0)) * (1 + Math.max(0, now - k.founded) / (YEAR * 150)))) continue;
       const cap = this.villages[k.capital];
       if (!cap) continue;
       let far = null,
@@ -346,6 +352,8 @@ export const politics = {
     if (now - (this._unionT || 0) < YEAR * 2) return;
     this._unionT = now;
     const realMap = this._realMapOn?.();
+    // (a World Map world gathers its one-town crowns back twice as fast)
+    let left = realMap ? 2 : 1;
     for (const r of this.relations.values()) {
       if (r.war || this._relLocked?.(r)) continue;
       const A = this.kingdoms[r.a],
@@ -373,7 +381,7 @@ export const politics = {
         if (v?.alive) this._transferVillage(v, big.id, 'union');
       }
       this._note(`🤝 ${name} ${home ? 'rejoins' : 'joins'} ${this._kn(big)} in union`, 'good', this._kingdomPos(big), 'union' + small.id, 1);
-      return;
+      if (--left <= 0) return;
     }
   },
 
@@ -1104,7 +1112,12 @@ export const politics = {
     if (v.buildings.some((b) => b.alive && b.type === 'temple' && !b.constructing)) L += 8;
     if (v.tier >= 1 && cap && v.pop > cap.pop * 0.8) L -= 14; // rival city
     if (v.tier >= 2) L -= 6; // proud cities chafe under distant rule
-    if (k.villages.length > 3) L -= (k.villages.length - 3) * 6; // overstretched realm
+    // overstretched realm (a real country on a World Map world holds a
+    // country's worth of towns before it strains: Europe and Japan's
+    // regions were splintering into one-town crowns)
+    const realK = k.realm >= 0 && this._realMapOn?.();
+    if (realK) L -= Math.max(0, k.villages.length - 7) * 4;
+    else if (k.villages.length > 3) L -= (k.villages.length - 3) * 6;
     // a crowded, capped world turns ambition inward: provinces want their own crown
     L -= (this._crowd?.() || 0) * 12;
     if (alive < 3) L -= 14; // a world of two empires is a powder keg
