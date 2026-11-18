@@ -396,9 +396,19 @@ export const tech = {
     // an age of learning: knowledge spreads between the courts (any map)
     const spread = Math.max(0, ageRate - 1);
     const lore = big > 0 || spread > 0 ? this._contactLore() : null;
-    // the world's leading era (the pacing hurries only its realms when late)
-    let topEra = 0;
-    for (const k of this.kingdoms) if (k.alive && k.villages.length && (k.era || 0) > topEra) topEra = k.era || 0;
+    // the world's single most advanced realm (the pacing hurries only it when
+    // late): the latest era, then the most main arts known, then the most
+    // knowledge in hand. Every realm tied for the top era used to count as a
+    // leader, so a whole crowd of era-3 realms was hurried at once.
+    let leader = null,
+      ls = -1;
+    for (const k of this.kingdoms) {
+      if (!k.alive || !k.villages.length || !k.techs) continue;
+      let main = 0;
+      for (const id of k.techs) if (!techById[id]?.side) main++;
+      const s = (k.era || 0) * 1e9 + main * 1e5 + Math.min(99999, k.knowledge || 0);
+      if (s > ls) (ls = s), (leader = k);
+    }
     const year = g.time.total / YEAR;
     for (const k of this.kingdoms) {
       if (!k.alive || !k.villages.length) continue;
@@ -487,7 +497,7 @@ export const tech = {
           const target = ERA_YEAR[next] / Math.max(0.25, this.law('civTechSpeed', 1));
           const eta = this._eraNeed(k) / ((gain / dt) * YEAR);
           const left = target - year;
-          const lead = (k.era || 0) >= topEra;
+          const lead = k === leader;
           let f = left > 1 ? eta / left : PACE_LEAD;
           f = Math.max(PACE_MIN, Math.min(lead ? PACE_LEAD : 1, f));
           k.pace = k.pace == null ? f : k.pace + (f - k.pace) * 0.25;
