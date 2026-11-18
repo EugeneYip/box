@@ -1,5 +1,5 @@
 import { GeoBuilder, shade, mix } from './geom.js';
-import { modernPlaceholder } from './modernArch.js';
+import { modernPlaceholder, MODERN_PLACEHOLDERS } from './modernArch.js';
 import { BUILDING_TYPES } from '../../sim/civ/catalog.js';
 
 // Procedural architecture for every building type x culture style x level.
@@ -2352,7 +2352,7 @@ export function buildArchetype(type, style, level, era = 1, variant = 0, gilded 
   const fn = BUILDERS[type];
   let info = {};
   if (fn) info = fn(g, K, style, level, variant) || {};
-  else if (BUILDING_TYPES[type]?.modern) info = modernPlaceholder(g, BUILDING_TYPES[type].kind || type, level) || {};
+  else if (BUILDING_TYPES[type]?.modern && MODERN_PLACEHOLDERS.includes(BUILDING_TYPES[type].kind || type)) info = modernPlaceholder(g, BUILDING_TYPES[type].kind || type, level) || {};
   else {
     // anything without a model of its own: a plain block of its footprint
     const d = BUILDING_TYPES[type];

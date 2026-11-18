@@ -89,6 +89,50 @@ export const TECHS = [
   { id: 'arcology', name: 'Arcology', era: 7, cost: 230000, requires: ['skyscrapers', 'fusion'], description: 'Whole cities in one green tower.', effects: { foodCap: 1.2 }, unlocks: ['Arcologies: vast green tower-cities', 'Very large cities'], builds: ['arcology'] },
   { id: 'orbital', name: 'Orbital Industry', era: 7, cost: 240000, requires: ['rocketry', 'fusion'], description: 'Factories and harbours in orbit.', effects: { research: 1.12, gold: 1.25 }, unlocks: ['A spaceport where reusable rockets land', 'An orbital station in the sky'], builds: ['spaceport'] },
   { id: 'starships', name: 'Starships', era: 7, cost: 270000, requires: ['orbital', 'arcology'], description: 'Colony ships for the stars.', effects: { research: 1.05 }, unlocks: ['Colony starships launched to the stars'] },
+  // ---- Breadth (docs/TECH-BREADTH.md): food, medicine, the land's biomes,
+  // city development, urban planning and defense against the sky. These are
+  // SIDE ARTS (`side: true`): a share of each realm's learning goes to them
+  // beside its main study (SIDE_SHARE), they never count toward an era (so
+  // eras 0-3 keep their round-13 pacing) and a side art of an era opens once
+  // the realm has entered that era. Each answers a danger of the world.
+  // Food (famine, hard winters, sieges)
+  { id: 'husbandry', side: true, branch: 'food', name: 'Animal Husbandry', era: 1, cost: 70, requires: ['agriculture'], description: 'Herds of sheep, goats and cattle beside the farms.', effects: { harvest: 1.04 }, unlocks: ['Pens and pastures with sheep, goats and cattle beside the farms', 'Food from the herds; less famine on poor soil'], builds: ['pasture'] },
+  { id: 'rotation', side: true, branch: 'food', name: 'Crop Rotation', era: 2, cost: 170, requires: ['husbandry', 'irrigation'], description: 'Fields in turn: crops one year, fallow the next.', effects: { harvest: 1.06 }, unlocks: ['Fields in alternating crops and fallow strips', 'Steadier harvests: famine strikes less often'] },
+  { id: 'preservation', side: true, branch: 'food', name: 'Preservation', era: 3, cost: 320, requires: ['rotation', 'pottery'], description: 'Smoke, salt and brine keep food through the winter.', effects: { foodCap: 1.15 }, unlocks: ['Smokehouses and salting sheds; barrels in the granaries', 'Food keeps longer: winters and sieges starve fewer'], builds: ['smokehouse'] },
+  { id: 'canning', side: true, branch: 'food', name: 'Canning & Fertilizer', era: 4, cost: 9000, requires: ['preservation', 'industry'], description: 'Tins that keep for years and fertilizer for the fields.', effects: { harvest: 1.1 }, unlocks: ['Canneries; fertilizer carts in the fields', 'Bigger harvests', 'Tinned food sent to the starving towns of the realm'], builds: ['cannery'] },
+  { id: 'tractors', side: true, branch: 'food', name: 'Mechanized Farming', era: 5, cost: 14000, requires: ['canning', 'combustion'], description: 'Tractors and silos: few farmers feed many.', effects: { harvest: 1.1 }, unlocks: ['Tractors in the fields', 'Grain silos', 'Fewer farmers feed more people'], builds: ['silo'] },
+  { id: 'hybridcrops', side: true, branch: 'food', name: 'Green Revolution', era: 6, cost: 30000, requires: ['tractors', 'genetics'], description: 'New strains, greenhouses and irrigated circles.', effects: { harvest: 1.08 }, unlocks: ['Greenhouses and irrigated circles', 'Farms thrive in dry land'], builds: ['greenhouse'] },
+  { id: 'vertfarms', side: true, branch: 'food', name: 'Vertical Farms', era: 7, cost: 55000, requires: ['hybridcrops', 'robotics'], description: 'Fields stacked in lit towers.', effects: { foodCap: 1.2 }, unlocks: ['Vertical farm towers', 'Food independent of season and biome'], builds: ['vertfarm'] },
+  // Medicine (plague, wounds, old age)
+  { id: 'quarantine', side: true, branch: 'medicine', name: 'Quarantine', era: 3, cost: 320, requires: ['medicine'], description: 'The sick are kept apart until the sickness passes.', effects: {}, unlocks: ['Plague flags on sick houses', 'A lazaretto outside town', 'Plague spreads far less between towns'], builds: ['lazaretto'] },
+  { id: 'vaccination', side: true, branch: 'medicine', name: 'Vaccination', era: 4, cost: 9000, requires: ['quarantine', 'sanitation'], description: 'A small sickness that guards against a great one.', effects: { birth: 1.05 }, unlocks: ['Clinics; doctors visit the houses', 'Fewer plague cases; more children survive'], builds: ['clinic'] },
+  { id: 'antibiotics', side: true, branch: 'medicine', name: 'Antibiotics & Hospitals', era: 5, cost: 14000, requires: ['vaccination', 'electricity'], description: 'Hospitals and the medicines that cure infection.', effects: { birth: 1.04 }, unlocks: ['Hospitals with ambulances', 'The wounded and sick recover', 'Plague deaths fall sharply'], builds: ['hospital'] },
+  { id: 'genetics', side: true, branch: 'medicine', name: 'Genetics', era: 6, cost: 30000, requires: ['antibiotics', 'computing'], description: 'The code of life, read and mended.', effects: { birth: 1.03 }, unlocks: ['A research hospital with a helix sign', 'Longer lives; fewer inherited ailments'], builds: ['genelab'] },
+  { id: 'nanomed', side: true, branch: 'medicine', name: 'Nanomedicine', era: 7, cost: 55000, requires: ['genetics', 'robotics'], description: 'Machines smaller than a cell hunt disease.', effects: {}, unlocks: ['Medical drones over the towns', 'Very long lives; plague nearly harmless'] },
+  // Biomes and environment (harsh land, deforestation, drought, floods, storms)
+  { id: 'terracing', side: true, branch: 'land', name: 'Terracing', era: 1, cost: 70, requires: ['agriculture', 'masonry'], description: 'Stepped fields climb the hills.', effects: {}, unlocks: ['Terraced hillside fields', 'Farms on slopes and in the mountains'] },
+  { id: 'qanats', side: true, branch: 'land', name: 'Wells & Qanats', era: 2, cost: 170, requires: ['irrigation', 'masonry'], description: 'Deep wells and channels under the sand.', effects: {}, unlocks: ['Wells and underground channels in dry land', 'Towns and farms in deserts and steppe'], builds: ['qanat'] },
+  { id: 'coldbuild', side: true, branch: 'land', name: 'Cold Building', era: 2, cost: 170, requires: ['masonry', 'pottery'], description: 'Thick walls, steep roofs and stoves against the frost.', effects: {}, unlocks: ['Thick-walled houses with steep roofs and stoves', 'Towns in tundra and snow; winters kill fewer'] },
+  { id: 'forestry', side: true, branch: 'land', name: 'Forestry', era: 3, cost: 320, requires: ['husbandry', 'mathematics'], description: 'Woods tended, felled and replanted in turn.', effects: {}, unlocks: ['Foresters replant; tree nurseries', 'Woods regrow near towns'], builds: ['nursery'] },
+  { id: 'levees', side: true, branch: 'land', name: 'Drainage & Levees', era: 4, cost: 9000, requires: ['engineering', 'industry'], description: 'Embankments, polders and pumping mills.', effects: {}, unlocks: ['Levees along rivers and shores, polders and pumping mills', 'Floods and tsunamis do far less harm', 'Marsh becomes farmland'], builds: ['levee'] },
+  { id: 'forecasting', side: true, branch: 'land', name: 'Weather Forecasting', era: 5, cost: 14000, requires: ['radio'], description: 'Barometers, balloons and radar read the sky.', effects: {}, unlocks: ['Weather stations and radar domes', 'Warning before storms, tornadoes and tsunamis: people take shelter, ships make port, aircraft stay down'], builds: ['weatherstation'] },
+  { id: 'desalination', side: true, branch: 'land', name: 'Desalination', era: 6, cost: 30000, requires: ['levees', 'nuclear'], description: 'Fresh water from the sea.', effects: {}, unlocks: ['Desalination plants on dry coasts', 'Coastal deserts bloom; drought cannot starve a town'], builds: ['desal'] },
+  { id: 'terraforming', side: true, branch: 'land', name: 'Terraforming', era: 7, cost: 55000, requires: ['desalination', 'fusion'], description: 'Climate towers green the barren land.', effects: {}, unlocks: ['Climate towers; the land greens around the cities', 'Desert and tundra near cities slowly turn to grassland'], builds: ['climatetower'] },
+  // City development (fire, earthquakes, overcrowding)
+  { id: 'firebrigade', side: true, branch: 'city', name: 'Fire Brigades', era: 3, cost: 320, requires: ['engineering'], description: 'Buckets, ladders and a bell in every town.', effects: {}, unlocks: ['Fire stations', 'Bucket brigades run to fires', 'Fires in towns are put out quickly'], builds: ['firestation'] },
+  { id: 'buildcodes', side: true, branch: 'city', name: 'Building Codes', era: 4, cost: 9000, requires: ['firebrigade', 'industry'], description: 'Fire walls between houses and hydrants on the streets.', effects: {}, unlocks: ['Fire walls between houses, hydrants', 'Fires spread less; buildings last longer'] },
+  { id: 'fireengines', side: true, branch: 'city', name: 'Fire Engines', era: 5, cost: 14000, requires: ['buildcodes', 'combustion'], description: 'Pumps on wheels, sirens in the streets.', effects: {}, unlocks: ['Fire engines race to fires with sirens', 'Fires stopped within moments'] },
+  { id: 'seismic', side: true, branch: 'city', name: 'Seismic Engineering', era: 6, cost: 30000, requires: ['concrete', 'computing'], description: 'Braced frames and base isolators.', effects: {}, unlocks: ['Braced towers and base isolators', 'Earthquakes topple few buildings'] },
+  { id: 'smartcity', side: true, branch: 'city', name: 'Smart Cities', era: 7, cost: 55000, requires: ['seismic', 'robotics'], description: 'The city watches over itself.', effects: {}, unlocks: ['Glowing control spires; traffic flows', 'Disasters answered at once; growth boost'], builds: ['controlspire'] },
+  // Urban planning (lack of land; drives urban renewal)
+  { id: 'townplan', side: true, branch: 'urban', name: 'Town Planning', era: 2, cost: 170, requires: ['mathematics'], description: 'Surveyed streets in straight lines.', effects: {}, unlocks: ['Grid streets in new quarters', 'Tidier, denser new quarters'] },
+  { id: 'zoning', side: true, branch: 'urban', name: 'Zoning', era: 4, cost: 9000, requires: ['townplan', 'industry'], description: 'Homes here, mills there, markets between.', effects: {}, unlocks: ['Distinct districts: homes, industry, markets', 'Factories and haze kept away from homes', 'Urban renewal begins: old low houses rebuilt denser'] },
+  { id: 'transit', side: true, branch: 'urban', name: 'Public Transit', era: 5, cost: 14000, requires: ['zoning', 'electricity'], description: 'Trams and buses on the town streets.', effects: {}, unlocks: ['Trams and buses on town streets', 'Bigger towns stay connected; growth boost'] },
+  { id: 'heritage', side: true, branch: 'urban', name: 'Heritage Conservation', era: 5, cost: 14000, requires: ['zoning', 'philosophy'], description: 'The old quarters are kept and restored.', effects: { loyalty: 4 }, unlocks: ['Heritage plaques; restored old buildings lit at night', 'More old buildings protected; loyalty and culture boost'] },
+  { id: 'renewal', side: true, branch: 'urban', name: 'Urban Renewal', era: 6, cost: 30000, requires: ['heritage', 'skyscrapers'], description: 'Old blocks give way to towers; ring roads where the walls stood.', effects: {}, unlocks: ['Old blocks replaced by apartment towers', 'Ring roads where walls stood', 'Renewal at full pace'] },
+  { id: 'gardencity', side: true, branch: 'urban', name: 'Garden Cities', era: 7, cost: 55000, requires: ['renewal', 'arcology'], description: 'Parks, green roofs and walkways in the air.', effects: {}, unlocks: ['Parks and green roofs; elevated walkways', 'Very large city caps without crowding'], builds: ['park'] },
+  // Defense against the sky (meteors)
+  { id: 'skyshield', side: true, branch: 'city', name: 'Planetary Defense', era: 7, cost: 55000, requires: ['orbital', 'computing'], description: 'Tracking stations whose beams break up falling stones.', effects: {}, unlocks: ['A tracking station whose beams break up incoming meteors', 'Meteors aimed at a protected town burst into harmless fragments in the sky'], builds: ['skyshield'] },
 ];
 
 export const techById = Object.fromEntries(TECHS.map((t) => [t.id, t]));
@@ -96,7 +140,7 @@ export const techById = Object.fromEntries(TECHS.map((t) => [t.id, t]));
 // against its own era's price)
 const ERA_COST = {};
 for (let e = 0; e <= LAST_ERA; e++) {
-  const L = TECHS.filter((t) => t.era === e);
+  const L = TECHS.filter((t) => t.era === e && !t.side);
   ERA_COST[e] = L.length ? L.reduce((a, t) => a + t.cost, 0) / L.length : 1000;
 }
 // Once a realm knows every art up to the Enlightened era, this share of its
@@ -110,6 +154,22 @@ const MASTERY_SHARE = 0.3;
 // census researches about twice as fast as the full game).
 const MOMENTUM = 2;
 const CARRY = 0.3;
+// Side arts (the breadth branches): this share of a realm's learning goes to
+// them beside its main study (not taken from it), all of it once the main
+// arts are known.
+const SIDE_SHARE = 0.25;
+const SIDE_ALONE = 0.6;
+export const SIDE_TECHS = TECHS.filter((t) => t.side);
+// Era pacing (docs/MODERN-ERAS.md): the year the world's first realm should
+// enter each modern era on a Medium map at the default research speed. A
+// realm whose study would carry it into the next era well before its year is
+// slowed toward it, and the world's leading realm, if late, is hurried a
+// little: the realms' research rates differed twenty-fold between worlds
+// (300 to 8,000 a year) and the modern momentum amplified it, so one world
+// reached the Future by Year 360 and another not by 600.
+export const ERA_YEAR = { 4: 225, 5: 325, 6: 425, 7: 515 };
+const PACE_MIN = 0.12;
+const PACE_LEAD = 2.2; // most the leading realm is hurried when late
 
 // Extra research on big maps (planner _bigMap: none on Medium): their realms
 // stay small and far apart, and on their own reached the Enlightened arts
@@ -199,10 +259,61 @@ export const tech = {
 
   _availableTechs(k) {
     const known = k.techs;
-    const inEra = (e) => TECHS.filter((t) => t.era === e && known.has(t.id)).length;
+    const inEra = (e) => TECHS.filter((t) => t.era === e && !t.side && known.has(t.id)).length;
     // (the World Law civEraCap holds every realm at the chosen era)
     const maxEra = Math.min(this.eraCap(), k.era + (inEra(k.era) >= 3 || (k.era > 0 && inEra(k.era) >= 2) ? 1 : 0));
-    return TECHS.filter((t) => !known.has(t.id) && t.era <= maxEra && t.requires.every((r) => known.has(r)));
+    return TECHS.filter((t) => !t.side && !known.has(t.id) && t.era <= maxEra && t.requires.every((r) => known.has(r)));
+  },
+  // Side arts open to a realm: of its own era or earlier (and within the
+  // era cap), their requirements known.
+  _availableSide(k) {
+    const known = k.techs;
+    const cap = Math.min(this.eraCap(), k.era || 0);
+    return SIDE_TECHS.filter((t) => !known.has(t.id) && t.era <= cap && t.requires.every((r) => known.has(r)));
+  },
+  // The side art a realm studies next: the cheapest, drawn to the danger it
+  // has suffered most lately (k.dangers: fire, quake, flood, storm, plague,
+  // famine, meteor) and to the land it lives on.
+  _chooseSide(k) {
+    const opts = this._availableSide(k);
+    if (!opts.length) return null;
+    const D = k.dangers || {};
+    const need = { food: (D.famine || 0) + (D.winter || 0), medicine: D.plague || 0, land: (D.flood || 0) + (D.storm || 0) + (k.harsh || 0), city: (D.fire || 0) + (D.quake || 0) + (D.meteor || 0), urban: k.crowded || 0 };
+    let best = null,
+      bs = -Infinity;
+    for (const t of opts) {
+      const s = -t.cost / (ERA_COST[t.era] || 1000) * 6 - (t.era < (k.era || 0) ? 0 : 1) + Math.min(3, need[t.branch] || 0) + this.rng.next() * 1.2;
+      if (s > bs) (bs = s), (best = t);
+    }
+    return best.id;
+  },
+  // Years until a realm could enter its next era at today's pace (main arts
+  // only), and the knowledge that takes.
+  _eraNeed(k) {
+    const next = (k.era || 0) + 1;
+    const key = ERA_KEY[next];
+    const known = k.techs;
+    let cost = 0;
+    const seen = new Set();
+    const add = (id) => {
+      if (!id || known.has(id) || seen.has(id)) return;
+      seen.add(id);
+      const t = techById[id];
+      if (!t) return;
+      for (const r of t.requires) add(r);
+      cost += t.cost;
+    };
+    add(key);
+    let n = 0;
+    for (const t of TECHS) if (t.era === next && !t.side && (known.has(t.id) || seen.has(t.id))) n++;
+    if (n < 2) {
+      // the cheapest other art of that era open after the key's chain
+      let c = Infinity;
+      for (const t of TECHS) if (t.era === next && !t.side && !known.has(t.id) && !seen.has(t.id) && t.requires.every((r) => known.has(r) || seen.has(r))) c = Math.min(c, t.cost);
+      if (c < Infinity) cost += c * (2 - n);
+    }
+    if (k.researching && seen.has(k.researching)) cost -= Math.min(k.knowledge || 0, techById[k.researching]?.cost || 0);
+    return Math.max(0, cost);
   },
 
   // How strongly a realm is drawn to the sea (0..1): its share of coastal
@@ -285,6 +396,10 @@ export const tech = {
     // an age of learning: knowledge spreads between the courts (any map)
     const spread = Math.max(0, ageRate - 1);
     const lore = big > 0 || spread > 0 ? this._contactLore() : null;
+    // the world's leading era (the pacing hurries only its realms when late)
+    let topEra = 0;
+    for (const k of this.kingdoms) if (k.alive && k.villages.length && (k.era || 0) > topEra) topEra = k.era || 0;
+    const year = g.time.total / YEAR;
     for (const k of this.kingdoms) {
       if (!k.alive || !k.villages.length) continue;
       if (!this._kLaw(k.id, 'civTechnology')) continue;
@@ -350,7 +465,7 @@ export const tech = {
         }
       }
       let gain = rate * speed * dt;
-      k.knowRate = rate * speed; // knowledge a second (the tech panel and the pacing census read it)
+      k.knowRate = rate * speed * (k.pace ?? 1); // knowledge a second (the tech panel and the pacing census read it)
       if (!k.researching || k.techs.has(k.researching)) k.researching = this._chooseResearch(k) || 'mastery';
       // the old arts all known and a modern one under study: Mastery goes on beside it
       const rt = k.researching !== 'mastery' ? techById[k.researching] : null;
@@ -360,11 +475,24 @@ export const tech = {
         let n = 0,
           all = 0;
         for (const t of TECHS) {
-          if (t.era < 4 || !k.techs.has(t.id)) continue;
+          if (t.era < 4 || t.side || !k.techs.has(t.id)) continue;
           all++;
           if (t.era === rt.era) n++;
         }
         gain *= 1 + MOMENTUM * n + CARRY * all;
+        // pacing: toward the year of the next era (ERA_YEAR, sooner at a
+        // higher research speed)
+        const next = (k.era || 0) + 1;
+        if (ERA_YEAR[next] != null && next <= this.eraCap() && gain > 0) {
+          const target = ERA_YEAR[next] / Math.max(0.25, this.law('civTechSpeed', 1));
+          const eta = this._eraNeed(k) / ((gain / dt) * YEAR);
+          const left = target - year;
+          const lead = (k.era || 0) >= topEra;
+          let f = left > 1 ? eta / left : PACE_LEAD;
+          f = Math.max(PACE_MIN, Math.min(lead ? PACE_LEAD : 1, f));
+          k.pace = k.pace == null ? f : k.pace + (f - k.pace) * 0.25;
+          gain *= k.pace;
+        } else k.pace = 1;
         k.masteryKnowledge = (k.masteryKnowledge || 0) + m;
         if (k.masteryKnowledge >= this.masteryCost(k)) {
           k.masteryKnowledge -= this.masteryCost(k);
@@ -372,6 +500,18 @@ export const tech = {
         }
       }
       k.knowledge += gain;
+      // the side arts (breadth branches) beside the main study
+      if (!k.researchSide || k.techs.has(k.researchSide)) k.researchSide = this._chooseSide(k);
+      if (k.researchSide) {
+        k.sideKnowledge = (k.sideKnowledge || 0) + gain * (k.researching === 'mastery' ? SIDE_ALONE : SIDE_SHARE);
+        const st = techById[k.researchSide];
+        if (st && k.sideKnowledge >= st.cost) {
+          k.sideKnowledge -= st.cost;
+          const id = k.researchSide;
+          k.researchSide = null;
+          this.learnTech(k, id);
+        }
+      }
       if (k.researching === 'mastery') {
         // every discovery made: refine the arts, one Mastery at a time
         const cost = this.masteryCost(k);
@@ -400,14 +540,16 @@ export const tech = {
   learnTech(k, id, silent = false) {
     if (k.techs.has(id)) return;
     k.techs.add(id);
-    k.researching = null;
     const t = techById[id];
+    if (t?.side) {
+      if (k.researchSide === id) k.researchSide = null;
+    } else if (k.researching === id || !t) k.researching = null;
     const first = !this._techFirst.has(id);
     this._techFirst.add(id);
     this._history(`📜 ${this._kn(k)} learns ${t.name}`, 'info', this._kingdomPos(k));
     if (first && !silent) this._note(`📜 ${this._kn(k)} is first to master ${t.name}`, 'good', this._kingdomPos(k), 'tech' + id, 1);
     // era advance: two technologies of the next era, one of them its defining art
-    const inEra = (e) => TECHS.filter((x) => x.era === e && k.techs.has(x.id)).length;
+    const inEra = (e) => TECHS.filter((x) => x.era === e && !x.side && k.techs.has(x.id)).length;
     const cap = Math.max(k.era, this.eraCap());
     while (k.era < cap && inEra(k.era + 1) >= 2 && (!ERA_KEY[k.era + 1] || k.techs.has(ERA_KEY[k.era + 1]))) {
       k.era++;

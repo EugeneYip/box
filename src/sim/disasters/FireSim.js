@@ -399,6 +399,8 @@ export class FireSim {
     const ageF = Math.pow(fireFactor(g), 0.25) * (n > capS ? Math.max(0.3, capS / n) : 1) * (this._recent > capB ? Math.max(0.12, Math.pow(capB / this._recent, 1.5)) : 1);
     const todo = Math.min(n, BUDGET);
     const dtEff = step * (n / Math.max(1, todo));
+    // fire brigades and fire engines guard the towns (Civ breadth.js: a coarse grid)
+    const FG = g.civ?.fireGuard;
     let changed = false;
     for (let k = 0; k < todo; k++) {
       if (this.count === 0) break;
@@ -419,6 +421,8 @@ export class FireSim {
       } else f -= dtEff * 0.6;
       if (rain > 0) f -= dtEff * 0.32 * rain;
       if (wet > 0.05) f -= dtEff * 0.4 * wet;
+      const guard = FG ? FG.data[((y / FG.cell) | 0) * FG.cw + ((x / FG.cell) | 0)] / 255 : 0;
+      if (guard > 0) f -= dtEff * 0.9 * guard;
       // charring: the ground behind the front turns to ash while the last
       // flames still flicker on it (a dark burnt interior, not an orange
       // carpet), and trees become dead trees halfway through
@@ -445,7 +449,7 @@ export class FireSim {
       const hi = w.height[i];
       const cause = this.cause[i];
       const lineF = (cause & FIRE_WILD ? (cause & FIRE_SPARK ? sparkF : wildF) : 1) * (cause & FIRE_SKY && !skyOk ? TUNE.skyOff : 1);
-      const sp = f * dtEff * 0.45 * (1 - Math.min(0.92, rain * 0.85)) * (1 - Math.min(0.9, wet)) * lineF;
+      const sp = f * dtEff * 0.45 * (1 - Math.min(0.92, rain * 0.85)) * (1 - Math.min(0.9, wet)) * lineF * (1 - 0.7 * guard);
       const spreadOpts = this._spreadOpts;
       spreadOpts.cause = cause;
       // World Law natureFireSpread: when off, fires burn in place only

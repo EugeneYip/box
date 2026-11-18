@@ -91,6 +91,29 @@ export const BUILDING_TYPES = {
   containerport: { names: ['Container Port'], kind: 'containerport', w: 3, h: 2, levels: 1, hp: [420], buildTime: [50], cost: [{ stone: 30, gold: 30 }], coastal: true, tech: ['containers'], modern: true },
   launchpad: { names: ['Launch Pad'], kind: 'launchpad', w: 3, h: 3, levels: 1, hp: [500], buildTime: [60], cost: [{ stone: 40, gold: 50 }], tech: ['rocketry'], modern: true },
   spaceport: { names: ['Spaceport'], kind: 'spaceport', w: 4, h: 4, levels: 1, hp: [900], buildTime: [90], cost: [{ stone: 60, gold: 80 }], tech: ['orbital'], modern: true },
+  // ---- breadth branches (docs/TECH-BREADTH.md) ----
+  // The early ones are drawn as plain blocks of their footprint and the modern
+  // ones as neutral placeholders until the Buildings module models them.
+  pasture: { names: ['Pasture Pens'], kind: 'pasture', w: 3, h: 2, levels: 1, hp: [90], buildTime: [14], cost: [{ wood: 12 }], tech: ['husbandry'], food: 0.05 },
+  smokehouse: { names: ['Smokehouse'], kind: 'smokehouse', w: 1, h: 1, levels: 1, hp: [110], buildTime: [12], cost: [{ wood: 10, stone: 4 }], tech: ['preservation'] },
+  lazaretto: { names: ['Lazaretto'], kind: 'lazaretto', w: 2, h: 1, levels: 1, hp: [160], buildTime: [20], cost: [{ wood: 14, stone: 12 }], tech: ['quarantine'] },
+  qanat: { names: ['Qanat Well'], kind: 'qanat', w: 1, h: 1, levels: 1, hp: [100], buildTime: [12], cost: [{ stone: 10 }], tech: ['qanats'] },
+  nursery: { names: ['Tree Nursery'], kind: 'nursery', w: 2, h: 1, levels: 1, hp: [90], buildTime: [14], cost: [{ wood: 10 }], tech: ['forestry'] },
+  firestation: { names: ['Fire Station'], kind: 'firestation', w: 2, h: 1, levels: 1, hp: [200], buildTime: [20], cost: [{ wood: 12, stone: 14 }], tech: ['firebrigade'] },
+  cannery: { names: ['Cannery'], kind: 'cannery', w: 2, h: 2, levels: 1, hp: [260], buildTime: [30], cost: [{ stone: 16, gold: 12 }], tech: ['canning'], modern: true, smoke: 0.3 },
+  silo: { names: ['Grain Silos'], kind: 'silo', w: 1, h: 1, levels: 1, hp: [200], buildTime: [16], cost: [{ stone: 8, gold: 6 }], tech: ['tractors'], modern: true },
+  greenhouse: { names: ['Greenhouses'], kind: 'greenhouse', w: 2, h: 2, levels: 1, hp: [180], buildTime: [24], cost: [{ stone: 10, gold: 14 }], tech: ['hybridcrops'], modern: true },
+  vertfarm: { names: ['Vertical Farm'], kind: 'vertfarm', w: 2, h: 2, levels: 1, hp: [520], buildTime: [50], cost: [{ stone: 30, gold: 40 }], tech: ['vertfarms'], modern: true },
+  clinic: { names: ['Clinic'], kind: 'clinic', w: 2, h: 1, levels: 1, hp: [220], buildTime: [24], cost: [{ stone: 14, gold: 10 }], tech: ['vaccination'], modern: true },
+  hospital: { names: ['Hospital'], kind: 'hospital', w: 3, h: 2, levels: 1, hp: [420], buildTime: [44], cost: [{ stone: 28, gold: 28 }], tech: ['antibiotics'], modern: true },
+  genelab: { names: ['Research Hospital'], kind: 'genelab', w: 3, h: 2, levels: 1, hp: [460], buildTime: [50], cost: [{ stone: 30, gold: 40 }], tech: ['genetics'], modern: true },
+  levee: { names: ['Levee and Pumping Mill'], kind: 'levee', w: 3, h: 1, levels: 1, hp: [500], buildTime: [20], cost: [{ stone: 16, gold: 6 }], tech: ['levees'], modern: true },
+  weatherstation: { names: ['Weather Station'], kind: 'weatherstation', w: 2, h: 2, levels: 1, hp: [200], buildTime: [26], cost: [{ stone: 12, gold: 16 }], tech: ['forecasting'], modern: true },
+  desal: { names: ['Desalination Plant'], kind: 'desal', w: 3, h: 2, levels: 1, hp: [460], buildTime: [50], cost: [{ stone: 34, gold: 40 }], coastal: true, tech: ['desalination'], modern: true },
+  climatetower: { names: ['Climate Tower'], kind: 'climatetower', w: 2, h: 2, levels: 1, hp: [600], buildTime: [60], cost: [{ stone: 40, gold: 50 }], tech: ['terraforming'], modern: true },
+  controlspire: { names: ['Control Spire'], kind: 'controlspire', w: 1, h: 1, levels: 1, hp: [400], buildTime: [40], cost: [{ stone: 20, gold: 40 }], tech: ['smartcity'], modern: true },
+  park: { names: ['City Park'], kind: 'park', w: 2, h: 2, levels: 1, hp: [120], buildTime: [20], cost: [{ wood: 6, gold: 10 }], tech: ['gardencity'], modern: true },
+  skyshield: { names: ['Planetary Defense Station'], kind: 'skyshield', w: 2, h: 2, levels: 1, hp: [700], buildTime: [70], cost: [{ stone: 40, gold: 70 }], tech: ['skyshield'], modern: true },
 };
 export const MODERN_TYPES = Object.keys(BUILDING_TYPES).filter((t) => BUILDING_TYPES[t].modern);
 

@@ -27,6 +27,10 @@ const PLOT_SIZES = [
 // growth, field plots, city walls and terrain levelling. Mixed into
 // Civilization.prototype (so `this` is the Civilization).
 
+// tile fertility by type (a realm's skills raise it for its settlers: breadth.js _fertTable)
+const BASE_FERT = TILE_INFO.map((t) => t?.fertile ?? 0);
+// Town Planning: cross streets every GRID tiles
+const GRID = Math.max(3, cells(5));
 const FIELD_TYPES = new Set([TILE.GRASS, TILE.FOREST, TILE.SOIL, TILE.SAVANNA, TILE.JUNGLE, TILE.SWAMP, TILE.TUNDRA, TILE.FARMLAND, TILE.ASH]);
 
 export const planner = {
@@ -173,6 +177,7 @@ export const planner = {
       foreign = 0;
     const n = spiralCount(SITE_R);
     const nearR = SITE_R * (9 / 11);
+    const FERT = this._fertTable(opts.kingdom, BASE_FERT); // a realm's skills open harsh land (breadth.js)
     for (let k = 0; k < n; k++) {
       const [dx, dy, d] = SPIRAL[k];
       const x = tx + dx,
@@ -187,7 +192,7 @@ export const planner = {
       const f = w.flora[i];
       if (TILE_INFO[t].buildable && TILE_INFO[t].walkable && this.use[i] === USE.FREE && w.slopeAt(x, y) < 1.0 && f !== FLORA.BOULDER) {
         space++;
-        fert += TILE_INFO[t].fertile;
+        fert += FERT[t];
       }
       if (FLORA_INFO[f]?.isTree) trees++;
       if (f === FLORA.BOULDER || f === FLORA.ROCK_SMALL || t === TILE.ROCK) rocks++;
@@ -522,6 +527,7 @@ export const planner = {
     const maxR = v.buildRadius;
     const cands = [];
     const roads = v.roadTiles;
+    const grid = this._gridPlan(v);
     const sample = roads.length > 160 ? 160 : roads.length;
     for (let k = 0; k < sample; k++) {
       const r = roads.length > 160 ? roads[(rng.next() * roads.length) | 0] : roads[k];
@@ -586,6 +592,8 @@ export const planner = {
         ey = c.y + dy * ok;
       const outward = Math.hypot(ex - v.cx, ey - v.cz) - Math.hypot(c.x - v.cx, c.y - v.cz);
       let s = room + ok * 0.5 + outward * 0.8 + (c.tip ? 4 : 0) - (c.turn ? 2 : 0) + rng.next() * 4;
+      // Town Planning: cross streets every few tiles off a straight run (grid blocks)
+      if (grid && !c.tip) s += ((dx ? c.y : c.x) % GRID === 0 ? 7 : -3);
       if (s > bs) {
         bs = s;
         best = { ...c, len: ok };
@@ -593,7 +601,8 @@ export const planner = {
     }
     if (!best) return false;
     const [dx, dy] = ROT_DIR[best.d];
-    this._street(v, best.x + dx, best.y + dy, dx, dy, best.len);
+    const laid = this._street(v, best.x + dx, best.y + dy, dx, dy, best.len);
+    if (grid && !best.tip && laid >= 3 && ((dx ? best.y : best.x) % GRID === 0)) this._firstUse(this.kingdoms[v.kingdom], 'gridstreets', { x: best.x, z: best.y });
     this.fieldVersion++;
     return true;
   },
@@ -683,7 +692,7 @@ export const planner = {
     if (FIELD_TYPES.has(t)) return true;
     if (v.culture === 'dune' && (t === TILE.SAND || t === TILE.DESERT)) return true;
     if (v.culture === 'frost' && t === TILE.SNOW) return true;
-    return false;
+    return this._fieldBiomeOK(v, t); // qanats, cold building (breadth.js)
   },
 
   _planPlot(v) {
@@ -693,6 +702,7 @@ export const planner = {
     const sizes = PLOT_SIZES;
     const minD = (4 + v.tier) * F + 1.5;
     const maxD = v.buildRadius + 11 * F;
+    const steep = this._terraceSlope(v); // Terracing (breadth.js)
     let best = null,
       bs = Infinity;
     for (let k = 0; k < 90; k++) {
@@ -751,7 +761,7 @@ export const planner = {
           hmin = Math.min(hmin, h);
           hmax = Math.max(hmax, h);
         }
-      if (!ok || hmax - hmin > 1.0) continue;
+      if (!ok || hmax - hmin > steep) continue;
       // keep a path-wide gap from buildings
       let adjPlot = 0,
         adjRoad = 0;
@@ -777,10 +787,12 @@ export const planner = {
       const s = d * 1.0 + trees * 1.3 + (1 - fert / n) * 8 - Math.min(adjPlot, 6) * 0.9 - Math.min(adjRoad, 4) * 0.6 + rng.next() * 2;
       if (s < bs) {
         bs = s;
-        best = { x0, y0, x1: x0 + sw - 1, y1: y0 + sh - 1 };
+        best = { x0, y0, x1: x0 + sw - 1, y1: y0 + sh - 1, slope: hmax - hmin };
       }
     }
     if (!best) return null;
+    const slope = best.slope;
+    delete best.slope;
     const plot = { id: this._nextPlot++, village: v.id, ...best, tiles: [] };
     for (let y = best.y0; y <= best.y1; y++)
       for (let x = best.x0; x <= best.x1; x++) {
@@ -791,6 +803,7 @@ export const planner = {
       }
     v.plots.push(plot);
     v.fieldCount += plot.tiles.length;
+    this._plotBiome(v, plot, slope);
     this.fieldVersion++;
     return plot;
   },

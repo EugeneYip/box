@@ -13,6 +13,13 @@ export function play(game, name, pos, volume = 1, pitch = 1) {
 }
 
 export function hurt(game, x, z, r, unitDmg, buildingDmg, cause) {
+  // a protected town's people take shelter (forecasting, seismic frames,
+  // levees: Civ breadth.js); its buildings are guarded in civ.damageArea
+  try {
+    if (unitDmg > 0) unitDmg *= game.civ?.shelterAt?.(x, z, cause) ?? 1;
+  } catch (err) {
+    console.error('[disasters] civ.shelterAt', err);
+  }
   try {
     if (unitDmg > 0) game.units?.damageArea?.(x, z, r, unitDmg, cause);
   } catch (err) {
