@@ -189,7 +189,7 @@ export class Editor {
   kingdom(box, k) {
     const g = this.game;
     const civ = g.civ || {};
-    if (!k) return box.append(this.missing('No kingdom here.'));
+    if (!k) return box.append(this.missing('No realm here.'));
     const id = k.id;
     const okName = fn(civ, 'renameKingdom');
     const nameIn = this.textField(
@@ -655,7 +655,7 @@ export class Editor {
       const okK = fn(U, 'setKingdom');
       const opts = () => {
         const o = (civ.kingdoms || []).filter((k) => k && k.alive !== false).map((k) => ({ value: k.id, label: k.name }));
-        if (u.kingdom == null || u.kingdom < 0) o.unshift({ value: -1, label: 'No kingdom' });
+        if (u.kingdom == null || u.kingdom < 0) o.unshift({ value: -1, label: 'No realm' });
         return o;
       };
       box.append(
@@ -672,7 +672,7 @@ export class Editor {
             }),
             okK ? null : this.missing(),
           ],
-          { summary: () => (u.kingdom >= 0 ? civ.kingdomName?.(u.kingdom) || '' : 'No kingdom') },
+          { summary: () => (u.kingdom >= 0 ? civ.kingdomName?.(u.kingdom) || '' : 'No realm') },
         ),
       );
     }

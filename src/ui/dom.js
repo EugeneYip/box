@@ -32,7 +32,8 @@ export function fmtNum(n) {
   n = +n;
   const a = Math.abs(n);
   if (a >= 1e6) return (n / 1e6).toFixed(a >= 1e7 ? 0 : 1).replace(/\.0$/, '') + 'M';
-  if (a >= 1e4) return (n / 1e3).toFixed(a >= 1e5 ? 0 : 1).replace(/\.0$/, '') + 'k';
+  // (999,999 rounds up to a million: "1M", never "1000k")
+  if (a >= 1e4) return Math.abs(+(n / 1e3).toFixed(a >= 1e5 ? 0 : 1)) >= 1000 ? (n < 0 ? '-' : '') + '1M' : (n / 1e3).toFixed(a >= 1e5 ? 0 : 1).replace(/\.0$/, '') + 'k';
   return Math.round(n).toLocaleString('en-US');
 }
 

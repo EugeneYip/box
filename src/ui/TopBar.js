@@ -61,7 +61,7 @@ const SPEEDS = [1, 2, 4, 8, 16];
 // so the bar never changes width as the numbers grow
 const STAT_DEFS = [
   { key: 'population', label: 'Population', icon: 'population', tint: '#f3d9a6', wide: true },
-  { key: 'kingdoms', label: 'Kingdoms', icon: 'crown', tint: '#ffd36a' },
+  { key: 'kingdoms', label: 'Realms', icon: 'crown', tint: '#ffd36a' },
   { key: 'villages', label: 'Villages', icon: 'village', tint: '#9fbcff' },
   { key: 'animals', label: 'Animals', icon: 'paw', tint: '#ffab94', wide: true },
   { key: 'trees', label: 'Trees', icon: 'tree', tint: '#6fdca4', wide: true },
@@ -94,7 +94,7 @@ export class TopBar {
         'nav',
         { class: 'ws-nav' },
         this.navBtn('new-world', 'New world', 'G', () => ui.modals.toggle('newworld')),
-        (this.kBtn = this.navBtn('kingdoms', 'Kingdoms', 'K', () => ui.kingdoms.toggle())),
+        (this.kBtn = this.navBtn('kingdoms', 'Realms', 'K', () => ui.kingdoms.toggle())),
         this.navBtn('chronicle', 'Chronicle', 'J', () => ui.chronicle.toggle()),
         this.navBtn('trade', 'World laws', 'L', () => ui.modals.toggle('laws')),
         (() => {
@@ -226,7 +226,7 @@ export class TopBar {
         'div',
         { class: 'ws-menu ws-glass', role: 'menu' },
         item('new-world', 'New world', () => ui.modals.open('newworld')),
-        item('kingdoms', 'Kingdoms', () => ui.kingdoms.toggle(true)),
+        item('kingdoms', 'Realms', () => ui.kingdoms.toggle(true)),
         item('chronicle', 'Chronicle', () => ui.chronicle.toggle(true)),
         item('trade', 'World laws', () => ui.modals.open('laws')),
         item('eclipse', 'World ages', () => ui.modals.open('ages')),
@@ -334,7 +334,7 @@ export class TopBar {
         const fixed = this.game.laws?.weatherSeasons === false;
         const epoch = !fixed && len >= 1.5;
         // short enough for the 1280 px bar; the tip names the next season
-        const until = left <= 1 ? '1 yr left' : `${left} yrs left`;
+        const until = left <= 1 ? `1 yr to ${next}` : `${left} yrs to ${next}`;
         this.dayEl.innerHTML = `<i class="ws-season" style="--season:${SEASON_TINT[season]}">${uiIcon(SEASON_GLYPH[season] || 'sun')}</i><span class="ws-season__name">${season}</span><span class="ws-clock__sep">·</span><span class="ws-clock__epoch">${epoch ? until : time}</span>`;
         this.dayEl.style.setProperty('--season', SEASON_TINT[season]);
         this.timeBox.dataset.tip = fixed

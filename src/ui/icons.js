@@ -190,11 +190,15 @@ export const CATEGORY_ICONS = {
     '<path class="f" d="M6 28V12.5h3.5v2.4h2.6v-2.4h3.8V28zM16 28V12.5h3.8v2.4h2.6v-2.4H26V28z"/><path d="M6 28V12.5h3.5v2.4h2.6v-2.4h7.6v2.4h2.6v-2.4H26V28zM4 28h24"/><path d="M13 28v-5a3 3 0 0 1 6 0v5M16 12.5V3.5"/><path class="ts" d="M16 3.5h7l-2 2.4 2 2.4h-7z"/><path d="M16 3.5h7l-2 2.4 2 2.4h-7"/>',
   disaster:
     '<path class="f" d="M18.5 3 7.5 18h7l-3 11 13-15.5h-7.2L22 3z"/><path d="M18.5 3 7.5 18h7l-3 11 13-15.5h-7.2L22 3z"/>',
+  tech:
+    `<path class="f" d="${gear(13, 18.5, 10, 7.6, 8)}"/><path d="${gear(13, 18.5, 10, 7.6, 8)}"/><circle cx="13" cy="18.5" r="3.2"/><path class="s" d="${sparkle(25, 7, 5.2)}"/><path d="M22.2 13.2l-2.4 2.4" class="th"/>`,
   world:
     '<circle class="f" cx="16" cy="16" r="10"/><circle cx="16" cy="16" r="10"/><path d="M6 16h20M16 6c-3.2 3-4.6 6.4-4.6 10s1.4 7 4.6 10c3.2-3 4.6-6.4 4.6-10S19.2 9 16 6z"/><path class="th" d="M4 21.5c-1.7 1.9-2.1 3.4-1.3 4.2 1.8 1.8 9.3-2.2 16.7-9.6S28.5 3.6 26.7 1.8c-.8-.8-2.3-.4-4.2 1.3"/>',
 };
 
 // ---------------------------------------------------------------- power icons
+const BOOK_OPEN = '<path class="f" d="M16 11.5c-3-2.2-7-2.8-12-2v15c5-.8 9-.2 12 2 3-2.2 7-2.8 12-2v-15c-5-.8-9-.2-12 2z"/><path d="M16 11.5c-3-2.2-7-2.8-12-2v15c5-.8 9-.2 12 2 3-2.2 7-2.8 12-2v-15c-5-.8-9-.2-12 2zM16 11.5v15"/><path class="th" d="M7.5 14c2.2-.2 4.2.2 5.6 1M7.5 18c2.2-.2 4.2.2 5.6 1M24.5 14c-2.2-.2-4.2.2-5.6 1M24.5 18c-2.2-.2-4.2.2-5.6 1"/>';
+const BULB = 'M16 3.5a8.5 8.5 0 0 0-5 15.4c.9.7 1.5 1.7 1.5 2.8V23h7v-1.3c0-1.1.6-2.1 1.5-2.8A8.5 8.5 0 0 0 16 3.5z';
 const P = {
   // --- terrain -------------------------------------------------------------
   raise:
@@ -486,6 +490,10 @@ const P = {
   'bountiful-harvest':
     g('rotate(-24 16 24)', WHEAT(16, 13.5, 0.7)) + g('rotate(24 16 24)', WHEAT(16, 13.5, 0.7)) + WHEAT(16, 12.5, 0.74) + '<path d="M12.6 22.4h6.8" style="stroke-width:3"/>',
   // job glyphs (inspector portraits)
+  'gift-knowledge': BOOK_OPEN + `<path class="s" d="${sparkle(16, 4.6, 3.6)}"/><path class="s" d="${sparkle(24.6, 6.4, 2)}"/>`,
+  blackout: `<path class="f" d="${BULB}"/><path d="${BULB}"/><path d="M12.5 26.5h7M14 29h4"/><path class="th" d="M13.6 12.6l2.4 3 2.4-3"/><path d="M4.5 4.5l23 23"/>`,
+  // the sun flares and an aurora ripples; kept clear of the tile's hotkey corner
+  'solar-storm': `<circle class="f" cx="13" cy="12" r="5.6"/><circle cx="13" cy="12" r="5.6"/><path d="M13 3v1.8M13 19.2V21M4 12h1.8M20.2 12H22M6.6 5.6l1.3 1.3M18.1 17.1l1.3 1.3M6.6 18.4l1.3-1.3M18.1 6.9l1.3-1.3"/><path class="t" d="M3.5 25c3.2-2.4 6.4-2.4 9.6 0s6.4 2.4 9.6 0"/><path class="th" d="M5 28.6c2.6-1.6 5.2-1.6 7.8 0"/><path class="s" d="${sparkle(25.5, 8.5, 3.2)}"/>`,
   'job-woodcutter': '<path d="M9 28 21 8.5"/><path class="f" d="M18.6 6.2c2.8-1.8 6.2-1.4 8 .8-1 3.2-3.6 5.4-6.8 5.8z"/><path d="M18.6 6.2c2.8-1.8 6.2-1.4 8 .8-1 3.2-3.6 5.4-6.8 5.8"/>',
   'job-miner': '<path d="M10 28 19 9"/><path class="f" d="M5.5 12.2C10.4 6.4 19.4 4.8 26.6 9c-6.6-2-13.8-1-21.1 3.2z"/><path d="M5.5 12.2C10.4 6.4 19.4 4.8 26.6 9"/><path class="s" d="M21 25.5l2.4-2.4 3 1.4-1 3.4-3.2.4z"/>',
   'job-farmer': '<path d="M10 28 21 6.5"/><path class="f" d="M21 6.5c4 .2 7 2.6 7.6 6.2-3.2-2-6.6-2.4-9.8-1.6z"/><path d="M21 6.5c4 .2 7 2.6 7.6 6.2-3.2-2-6.6-2.4-9.8-1.6"/>' + WHEAT(7.5, 16, 0.5),
@@ -503,6 +511,7 @@ const CAT_SWATCH = {
   life: swPair('M16 2.4c9.2 0 13.6 4.4 13.6 13.6S25.2 29.6 16 29.6 2.4 25.2 2.4 16 6.8 2.4 16 2.4z'),
   civ: swPair('M16 2.2 28.6 6.4v9.4c0 7.2-5.2 12-12.6 14.6C8.6 27.8 3.4 23 3.4 15.8V6.4z'),
   disaster: swPair('M10.6 2.6h10.8l7.9 7.9v10.8l-7.9 7.9H10.6l-7.9-7.9V10.6z'),
+  tech: swPair('M16 1.9 28.3 9v14L16 30.1 3.7 23V9z'),
   world: swPair('M16 2.4a13.6 13.6 0 1 1 0 27.2 13.6 13.6 0 0 1 0-27.2z') + '<circle class="swl" cx="16" cy="16" r="11.2" style="stroke-opacity:.35"/>',
 };
 
@@ -736,6 +745,7 @@ export const CATEGORY_TINT = {
   life: '#ff9f86',
   civ: '#93b4ff',
   disaster: '#ff7043',
+  tech: '#ffc96a',
   world: '#7fdcec',
 };
 const ID_TINT = {
@@ -1025,7 +1035,30 @@ const U = {
   'rot-right': '<path d="M23 9.5A10 10 0 1 0 25.8 19"/><path d="M27.5 4.5 23 9.5l5.4 1.5"/>',
   population: '<circle cx="12" cy="11" r="4.2"/><path d="M4 26v-.8c0-4.2 3.6-7 8-7s8 2.8 8 7v.8"/><path class="th" d="M20.5 7.4a4 4 0 0 1 0 7.4M23.5 18.6c2.6.9 4.5 3.2 4.5 6.4v1"/>',
   village: HOUSE(11.5, 17.5, 0.95) + HOUSE(22, 19.5, 0.7),
+  // a heritage facade: pediment, four columns and steps
+  heritage: '<path class="f" d="M4 12 16 5l12 7z"/><path d="M4 12 16 5l12 7zM5 14.5h22M8.5 16.5v7M13.5 16.5v7M18.5 16.5v7M23.5 16.5v7M5 26h22M3.5 28.8h25"/>',
+  // vehicles (inspector cards, Favorites rows and the Spawn Vehicle chooser)
+  plane: '<path class="f" d="M16 3c1.3 0 2.1 1.4 2.1 3.4v6.2l9.9 5.8v2.7l-9.9-2.9v5.9l3.3 2.5v2l-5.4-1.4-5.4 1.4v-2l3.3-2.5v-5.9L4 21.1v-2.7l9.9-5.8V6.4C13.9 4.4 14.7 3 16 3z"/><path d="M16 3c1.3 0 2.1 1.4 2.1 3.4v6.2l9.9 5.8v2.7l-9.9-2.9v5.9l3.3 2.5v2l-5.4-1.4-5.4 1.4v-2l3.3-2.5v-5.9L4 21.1v-2.7l9.9-5.8V6.4C13.9 4.4 14.7 3 16 3z"/>',
+  helicopter: '<path class="f" d="M5 18.4c0-3.5 2.9-6.4 6.6-6.4h5.6c2.1 0 3.8 1.6 3.8 3.6v3.4c0 2-1.7 3.5-3.8 3.5H9.2C6.8 22.5 5 20.7 5 18.4z"/><path d="M5 18.4c0-3.5 2.9-6.4 6.6-6.4h5.6c2.1 0 3.8 1.6 3.8 3.6v3.4c0 2-1.7 3.5-3.8 3.5H9.2C6.8 22.5 5 20.7 5 18.4zM21 16h7.5M28 12.8v6.4M14 12V8.4M3.5 8.4h21M8 26h13M10.5 22.5V26M17.5 22.5V26"/><path class="th" d="M6 16.5h6.5v-4"/>',
+  rocket: '<path class="f" d="M16 2.8c3.6 3.4 5 7.6 5 12.6v6.6H11v-6.6c0-5 1.4-9.2 5-12.6z"/><path d="M16 2.8c3.6 3.4 5 7.6 5 12.6v6.6H11v-6.6c0-5 1.4-9.2 5-12.6zM11 16.5l-4 4.5V25l4-1.6M21 16.5l4 4.5V25l-4-1.6"/><circle cx="16" cy="11.8" r="2.2"/><path class="ts" d="M13.4 24.5 16 29.8l2.6-5.3z"/>',
+  car: '<path class="f" d="M3.5 21.5v-3.6c0-1 .7-1.8 1.7-2l4.6-1 3.4-4c.7-.8 1.6-1.2 2.6-1.2h5c1.1 0 2.1.5 2.7 1.4l2.7 3.8 2.3.6c1 .3 1.7 1.2 1.7 2.2v3.8z"/><path d="M3.5 21.5v-3.6c0-1 .7-1.8 1.7-2l4.6-1 3.4-4c.7-.8 1.6-1.2 2.6-1.2h5c1.1 0 2.1.5 2.7 1.4l2.7 3.8 2.3.6c1 .3 1.7 1.2 1.7 2.2v3.8h-3M12.2 21.5h7.6M5.8 21.5H3.5M9.8 14.9h16.4M17.6 10v4.9"/><circle cx="9" cy="22" r="3.2"/><circle cx="23" cy="22" r="3.2"/>',
+  train: '<path class="f" d="M12 3.5h8a4.5 4.5 0 0 1 4.5 4.5v11.5a3.5 3.5 0 0 1-3.5 3.5H11a3.5 3.5 0 0 1-3.5-3.5V8A4.5 4.5 0 0 1 12 3.5z"/><path d="M12 3.5h8a4.5 4.5 0 0 1 4.5 4.5v11.5a3.5 3.5 0 0 1-3.5 3.5H11a3.5 3.5 0 0 1-3.5-3.5V8A4.5 4.5 0 0 1 12 3.5zM11 8h10v5.5H11zM11 23l-3.5 5.5M21 23l3.5 5.5M9 26.2h14"/><circle class="s" cx="12" cy="18.3" r="1.5"/><circle class="s" cx="20" cy="18.3" r="1.5"/>',
+  tank: '<path class="f" d="M6 19.5h20a3.6 3.6 0 0 1 0 7.2H6a3.6 3.6 0 0 1 0-7.2z"/><path d="M6 19.5h20a3.6 3.6 0 0 1 0 7.2H6a3.6 3.6 0 0 1 0-7.2zM9.5 19.5v-3.6c0-1.5 1.2-2.7 2.7-2.7h7c1.5 0 2.7 1.2 2.7 2.7v3.6M21.5 15.2h8M4.5 16.5h3"/><circle class="s" cx="7.6" cy="23.1" r="1.3"/><circle class="s" cx="12.5" cy="23.1" r="1.3"/><circle class="s" cx="17.5" cy="23.1" r="1.3"/><circle class="s" cx="22.4" cy="23.1" r="1.3"/>',
+  satellite: '<rect class="f" x="12.5" y="12.5" width="7" height="7" rx="1.4" transform="rotate(45 16 16)"/><rect x="12.5" y="12.5" width="7" height="7" rx="1.4" transform="rotate(45 16 16)"/><path class="f" d="M3.5 10.5 8 6l5 5-4.5 4.5zM23.5 17l4.5 4.5-4.5 4.5-5-5z"/><path d="M3.5 10.5 8 6l5 5-4.5 4.5zM23.5 17l4.5 4.5-4.5 4.5-5-5zM5.8 8.3l4.9 4.9M21.3 19.4l4.9 4.9M19.5 9.5l3-3"/><circle class="s" cx="23.4" cy="5.6" r="1.6"/>',
 };
+// The icon (uiIcon name) for a vessel or vehicle kind, from its def.
+export function vehicleIconName(def) {
+  const k = def?.kind || '';
+  const cls = def?.cls;
+  if (cls === 'sea') return 'ship';
+  if (cls === 'space') return k === 'satellite' || k === 'station' ? 'satellite' : 'rocket';
+  if (cls === 'air') return def?.vtol || k === 'helicopter' ? 'helicopter' : 'plane';
+  if (def?.rail || k === 'tram') return 'train';
+  if (k === 'tank' || k === 'artillery') return 'tank';
+  if (def?.siege) return 'catapult';
+  if (k === 'oxcart' || k === 'caravan') return 'cart';
+  return 'car';
+}
 export function uiIcon(name, cls = '') {
   return svg(U[name] || P[name] || (ALIAS[name] && P[ALIAS[name]]) || U.info, cls);
 }

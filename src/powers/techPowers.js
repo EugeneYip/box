@@ -7,6 +7,16 @@ import { techById } from '../sim/civ/tech.js';
 
 const YEAR = 30;
 const theK = (civ, id) => civ.theKingdomName?.(id) ?? 'the ' + civ.kingdomName(id);
+const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+// "the Free Shires of Ash are", "the Gravby Holds learn"; real countries like
+// the United States or the Netherlands take a singular verb, as in English
+export function pluralName(name) {
+  const n = String(name || '').replace(/^the\s+/i, '');
+  if (/^(united states|netherlands|philippines|bahamas|maldives|seychelles|comoros|marshall islands|solomon islands|united arab emirates)\b/i.test(n)) return false;
+  const head = n.split(/\s+of\s+/i)[0].trim().split(/\s+/).pop() || '';
+  return /[^s]s$/i.test(head) && !/(ss|us|is|os)$/i.test(head);
+}
+const verb = (name, one, many) => (pluralName(name) ? many : one);
 
 // the realm at a click: its territory, else the nearest town's realm
 function realmAt(g, c) {
@@ -37,13 +47,15 @@ registerPower({
     if (k.researching === 'mastery') {
       civ._gainMastery?.(k);
       k.researching = null;
-      g.notify(`📜 ${theK(civ, k.id)} is granted new mastery of its arts`, 'good', pos);
+      const who = theK(civ, k.id);
+      g.notify(`${cap(who)} ${verb(who, 'is', 'are')} granted new mastery of ${verb(who, 'its', 'their')} arts`, 'good', pos);
     } else {
       const id = k.researching;
       const name = techById[id]?.name || id;
       k.knowledge = 0;
       civ.learnTech(k, id);
-      g.notify(`📜 A gift of knowledge: ${theK(civ, k.id)} learns ${name}`, 'good', pos);
+      const who = theK(civ, k.id);
+      g.notify(`A gift of knowledge: ${who} ${verb(who, 'learns', 'learn')} ${name}`, 'good', pos);
     }
     g.fx?.burst?.('sparkle', pos, 18, { scale: 2 });
     g.audio?.play?.('bell', { pos });
@@ -75,7 +87,7 @@ registerPower({
     civ.infraVersion = (civ.infraVersion || 0) + 1;
     civ.version++;
     g.events?.emit?.('civ:blackout', { village: v.id, kingdom: v.kingdom, until: v.blackoutUntil });
-    g.notify(`🔌 Blackout in ${v.name}: the lights go out and the factories fall silent`, 'disaster', { x: v.cx, z: v.cz });
+    g.notify(`Blackout in ${v.name}: the lights go out and the factories fall silent`, 'disaster', { x: v.cx, z: v.cz });
     g.fx?.burst?.('smoke', { x: v.cx, z: v.cz }, 8, { scale: 1.2 });
   },
 });

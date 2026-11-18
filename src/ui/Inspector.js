@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { TILE_INFO, FLORA_INFO, SEA_LEVEL, SHALLOW_DEPTH, TILE } from '../world/constants.js';
-import { powerIcon, uiIcon, tileTint, hasIcon } from './icons.js';
+import { powerIcon, uiIcon, tileTint, hasIcon, vehicleIconName } from './icons.js';
 import { getPower } from '../powers/registry.js';
 import { el, esc, safe, hexCss, fmtNum, realmColourText } from './dom.js';
 import { traitDef, statusDef, modLines, prettyId, eraNames, techDef, techList, ERA_ICON } from './depth.js';
@@ -357,7 +357,9 @@ export class Inspector {
     if (isCraft(r)) {
       const v = r.vessel || r.building;
       const sea = v?.cls === 'sea' || r.kind === 'vessel';
-      return { svg: uiIcon(sea ? 'ship' : v?.def?.siege ? 'catapult' : 'cart'), tint: v?.def?.war || v?.def?.siege ? '#ff8a7a' : sea ? '#7fc8ff' : '#d9a466' };
+      const def = v?.def ? { ...v.def, kind: v.def.kind || v.kind, cls: v.def.cls || v.cls } : { kind: v?.kind, cls: v?.cls || (sea ? 'sea' : 'land') };
+      const air = def.cls === 'air' || def.cls === 'space';
+      return { svg: uiIcon(sea ? 'ship' : vehicleIconName(def)), tint: def.war || def.siege ? '#ff8a7a' : sea ? '#7fc8ff' : air ? '#b9d4ff' : '#d9a466' };
     }
     if (k === 'village') return { svg: uiIcon('found-village'), tint: this.kingdomTint(r) || '#9fbcff' };
     if (k === 'kingdom') return { svg: uiIcon('banner'), tint: this.kingdomTint(r) || '#ffd36a' };
@@ -399,7 +401,18 @@ export class Inspector {
       .filter((s) => !(craft && /^home( port)?$/i.test(String(s[0])) && routeNames.has(String(s[1]).toLowerCase())))
       .map((s, i) => [s, i])
       .sort((a, b) => rankOf(a[0][0]) - rankOf(b[0][0]) || a[1] - b[1])
-      .map(([s]) => s);
+      .map(([s]) => {
+        // a ruler's job is her realm's own title ("Queen", "High Chieftess"), not "King"
+        if (u && /^job$/i.test(String(s[0])) && /^king$/i.test(String(s[1]))) {
+          const kk = kingdomOf(this.game, u.kingdom);
+          const t = kk ? safe(() => this.game.civ?._rulerTitle?.(kk, u.sex), null) : null;
+          if (t) return [s[0], t, ...s.slice(2)];
+          if (u.sex === 'f') return [s[0], 'Queen', ...s.slice(2)];
+        }
+        // "Heritage: Built Year 0" is the year it was raised, not the heritage switch
+        if (/^heritage$/i.test(String(s[0])) && /^built\s+/i.test(String(s[1]))) return ['Raised in', String(s[1]).replace(/^built\s+/i, ''), ...s.slice(2)];
+        return s;
+      });
     // lay out cells two per row; a half cell left alone on its row spans both
     const wideOf = stats.map(([, v]) => this.meter(cap(v)) != null || String(cap(v)).length > 16);
     let col = 0;
@@ -493,7 +506,8 @@ export class Inspector {
     if (realmK) actions.unshift(`<button class="ws-btn ws-btn--sm" type="button" data-act="tech" data-k="${realmK.id}">${uiIcon('chronicle')}<span>Technology</span></button>`);
     // a building may be marked or unmarked as heritage (never replaced by renewal)
     const hb = k === 'building' && r.building?.alive && !craft && this.game.civ?.setHeritage ? r.building : null;
-    if (hb) actions.push(`<button class="ws-btn ws-btn--sm ws-btn--ghost${hb.heritage ? ' is-on' : ''}" type="button" data-act="heritage" data-tip="${hb.heritage ? 'Heritage: never rebuilt. Click to unmark' : 'Mark as heritage: never rebuilt by urban renewal'}">${uiIcon(hb.heritage ? 'star-on' : 'star')}<span>Heritage</span></button>`);
+    // (its own full-width row: a facade icon and an explicit On/Off switch, never the Favorites star)
+    if (hb) actions.push(`<button class="ws-btn ws-btn--sm ws-btn--ghost ws-insp__heritage${hb.heritage ? ' is-on' : ''}" type="button" role="switch" aria-checked="${hb.heritage ? 'true' : 'false'}" data-act="heritage" data-tip="${hb.heritage ? 'A heritage site: urban renewal never rebuilds it. Click to turn off' : 'Make it a heritage site: urban renewal will never rebuild it'}">${uiIcon('heritage')}<span>Heritage site</span><i class="ws-insp__sw" aria-hidden="true"><b></b></i><em>${hb.heritage ? 'On' : 'Off'}</em></button>`);
 
     this.el.style.setProperty('--tint', ic.tint);
     this.el.innerHTML = `
@@ -680,7 +694,7 @@ export class Inspector {
       }
       const fromName = homeward ? vo.toName || 'abroad' : vo.fromName || '—';
       const toName = homeward ? homeV?.name || vo.fromName || 'home' : vo.toName || 'open sea';
-      html += `<section class="ws-dsec"><h5>${homeward ? 'Homeward' : 'Voyage'}</h5><div class="ws-voyage"><span class="ws-voyage__end">${esc(fromName)}</span><i class="ws-voyage__track">${pct != null ? `<b style="left:${(pct * 100).toFixed(1)}%"></b>` : ''}</i><span class="ws-voyage__end is-to">${esc(toName)}</span></div></section>`;
+      html += `<section class="ws-dsec"><h5>${homeward ? 'Homeward' : v.cls === 'land' ? 'Route' : v.cls === 'air' || v.cls === 'space' ? 'Flight' : 'Voyage'}</h5><div class="ws-voyage"><span class="ws-voyage__end">${esc(fromName)}</span><i class="ws-voyage__track">${pct != null ? `<b style="left:${(pct * 100).toFixed(1)}%"></b>` : ''}</i><span class="ws-voyage__end is-to">${esc(toName)}</span></div></section>`;
     }
     const c = v.cargo;
     if (v.def?.capacity || c) {
@@ -805,7 +819,18 @@ export class Inspector {
     if (typeof U.forEachNear !== 'function') return safe(() => U.inspect({ x: u.x, z: u.z }), null, 'unit result');
     const own = Object.prototype.hasOwnProperty.call(U, 'forEachNear');
     const prev = U.forEachNear;
+    // a creature asleep indoors or aboard a ship is not pickable on the map,
+    // but its own card (from Favorites or a list) still opens: hide the flags
+    // for the length of this one call
+    const d = u.data;
+    const keep = d ? { inside: [Object.prototype.hasOwnProperty.call(d, 'inside'), d.inside], aboard: [Object.prototype.hasOwnProperty.call(d, 'aboard'), d.aboard] } : null;
+    const hid = u._hid;
     try {
+      if (d) {
+        d.inside = null;
+        d.aboard = null;
+      }
+      if (hid) u._hid = false;
       U.forEachNear = (x, z, r, fn) => fn(u, 0);
       const res = U.inspect({ x: u.x, z: u.z, tx: Math.floor(u.x), ty: Math.floor(u.z) });
       return res && res.unit === u ? res : null;
@@ -813,6 +838,12 @@ export class Inspector {
       console.warn('[ui] unit result', err);
       return null;
     } finally {
+      if (d)
+        for (const k of ['inside', 'aboard']) {
+          if (keep[k][0]) d[k] = keep[k][1];
+          else delete d[k];
+        }
+      if (hid) u._hid = hid;
       if (own) U.forEachNear = prev;
       else delete U.forEachNear;
     }
@@ -1062,7 +1093,10 @@ export class Inspector {
     if (!c?.name || !c.def?.name) return t;
     const kind = c.def.name;
     const esc2 = kind.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    return t.replace(new RegExp(`\\s*\\(${esc2}\\)\\s*$`, 'i'), '').replace(new RegExp(`^${esc2}\\s+`, 'i'), '') || t;
+    const t1 = t.replace(new RegExp(`\\s*\\(${esc2}\\)\\s*$`, 'i'), '');
+    // "Tank of Ruareva" keeps its noun: the kind leaves only a name that stands alone
+    const t2 = t1.replace(new RegExp(`^${esc2}\\s+`, 'i'), '');
+    return (/^(of|from|at|in|on|the)\b/i.test(t2) ? t1 : t2) || t;
   }
   // subtitle with a custom realm colour named plainly ("banner of deep teal")
   subText(r) {
