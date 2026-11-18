@@ -60,6 +60,27 @@ const landPolys = [];
     else if (g.type === 'MultiPolygon') for (const p of g.coordinates) add(p);
   }
 }
+// Islands the 1:10m countries lack, as rough outlines from their real
+// positions and sizes, added to the land of the country named: the Matsu
+// Islands (Nangan, Beigan, Juguang, Dongyin) and Lesser Kinmen (Lieyu), held
+// by the ROC.
+const blob = (lon, lat, rx, ry, k = [1, 0.85, 1.1, 0.9, 1.05, 0.8, 1, 0.95]) =>
+  [k.map((f, i) => {
+    const a = (i / k.length) * Math.PI * 2;
+    return [lon + Math.cos(a) * rx * f, lat + Math.sin(a) * ry * f];
+  })];
+for (const [a3, lon, lat, rx, ry, k] of [
+  ['TWN', 119.935, 26.155, 0.027, 0.014], // Nangan
+  ['TWN', 120.003, 26.222, 0.024, 0.014, [1.1, 0.8, 1, 1.05, 0.9, 0.85, 1.1, 0.9]], // Beigan
+  ['TWN', 120.49, 26.368, 0.012, 0.008], // Dongyin
+  ['TWN', 119.94, 25.968, 0.008, 0.007], // Xiju
+  ['TWN', 119.976, 25.957, 0.009, 0.008], // Dongju
+  ['TWN', 118.243, 24.428, 0.02, 0.016], // Lieyu (Lesser Kinmen)
+]) {
+  const p = blob(lon, lat, rx, ry, k);
+  p.a3 = a3;
+  landPolys.push(p);
+}
 // The continental mainland (for `lands: 'mainland'`): countries' polygons
 // that share a land border share boundary vertices, so polygons linked by
 // shared vertices form one landmass; the mainland is the landmass with the
