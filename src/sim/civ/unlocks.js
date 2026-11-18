@@ -64,8 +64,10 @@ export const unlocks = {
     if (b.type === 'market' && b.level >= 2) key = 'markethall';
     else if (b.type === 'docks' && b.level >= 2) key = 'harbour';
     else if (BUILDING_TYPES[b.type]?.wall) key = 'walls';
-    // Engineering: the larger works of the realm rise under cranes
-    if (BUILDING_TYPES[b.type]?.w * BUILDING_TYPES[b.type]?.h >= 4 && this.hasTech(k.id, 'engineering')) this._firstUse(k, 'crane', { x: b.x, z: b.z });
+    // Engineering: the larger works of the realm rise under cranes (judged on
+    // the design footprint, as the renderer does, not today's smaller tiles)
+    const def = BUILDING_TYPES[b.type];
+    if (def && (def.dw ?? def.w) * (def.dh ?? def.h) >= 4 && this.hasTech(k.id, 'engineering')) this._firstUse(k, 'crane', { x: b.x, z: b.z });
     if (b.type === 'workshop' && b.level < 2) return;
     if (FIRST[key] || MODERN_FIRST[key]) this._firstUse(k, key, { x: b.x, z: b.z });
   },
