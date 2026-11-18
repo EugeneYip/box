@@ -96,6 +96,24 @@ function humanMid(B) {
   tool(7, -1.05, [[0.014, 0.014, 0.3, 0.1, 0, 'gold'], [0.04, 0.04, 0.04, 0.28, 0, 'gem']]); // scepter
   tool(8, -0.55, [[0.014, 0.034, 0.34, 0.2, 0, 'metal'], [0.1, 0.018, 0.018, 0.03, 0, 'gold'], [0.016, 0.016, 0.08, -0.03, 0, 'leather']]); // sword
   tool(9, 0, [[0.012, 0.46, 0.02, 0.06, 0, 'wood']]); // bow
+  tool(10, -1.3, [[0.024, 0.036, 0.2, -0.05, 0, 'darkwood'], [0.016, 0.016, 0.42, 0.24, 0.01, 'gunmetal'], [0.01, 0.01, 0.1, 0.48, 0.01, 'metal']]); // musket
+  tool(11, -1.3, [[0.024, 0.036, 0.2, -0.04, 0, 'darkwood'], [0.016, 0.016, 0.3, 0.19, 0.01, 'gunmetal']]); // rifle
+  tool(12, -1.3, [[0.028, 0.044, 0.3, 0.06, 0, 'gunmetal'], [0.02, 0.06, 0.03, 0.08, -0.05, 'gunmetal']]); // modern rifle
+  tool(13, -1.3, [[0.032, 0.05, 0.32, 0.06, 0, 'white'], [0.024, 0.024, 0.05, 0.25, 0, 'visor']]); // energy rifle
+  tool(14, -0.9, [[0.03, 0.03, 0.1, 0.07, 0, 'gold'], [0.024, 0.2, 0.024, -0.02, -0.1, 'firered']]); // hose
+  tool(15, -0.5, [[0.018, 0.018, 0.2, 0.06, 0, 'gunmetal']]); // baton
+  // left-hand things (offhand 2..6): bucket, bag, clipboard, book, sapling
+  box(B, 0.06, 0.06, 0.06, [0.112, 0.15, 0.01], 'armL', 'darkwood', { slot: 'offhand', opt: 2 });
+  box(B, 0.08, 0.05, 0.04, [0.112, 0.16, 0.01], 'armL', 'white', { slot: 'offhand', opt: 3 });
+  box(B, 0.012, 0.08, 0.06, [0.118, 0.215, 0.035], 'armL', 'paper', { slot: 'offhand', opt: 4 });
+  box(B, 0.06, 0.07, 0.02, [0.085, 0.215, 0.06], 'armL', 'band', { slot: 'offhand', opt: 5 });
+  box(B, 0.05, 0.1, 0.05, [0.112, 0.29, 0.01], 'armL', 'greens', { slot: 'offhand', opt: 6 });
+  // long coats (outfit 4, 5) and the bulky suits (armor 2, 3)
+  for (const o of [4, 5]) B.add(P.lathe([[0.0, 0.09], [0.1, 0.09], [0.09, 0.16], [0.0, 0.16]], 7), { scl: [1, 1, 0.84], bone: 'torso', mat: 'cloth', slot: 'outfit', opt: o });
+  box(B, 0.2, 0.22, 0.17, [0, 0.29, 0], 'torso', 'sash', { slot: 'armor', opt: 2 });
+  box(B, 0.11, 0.09, 0.05, [0, 0.31, -0.1], 'torso', 'steel', { slot: 'armor', opt: 2 });
+  box(B, 0.2, 0.24, 0.17, [0, 0.28, 0], 'torso', 'white', { slot: 'armor', opt: 3 });
+  box(B, 0.13, 0.15, 0.06, [0, 0.3, -0.11], 'torso', 'white', { slot: 'armor', opt: 3 });
   // shield on the left arm (offhand slot)
   box(B, 0.016, 0.2, 0.2, [0.145, 0.27, 0.02], 'armL', 'cloth', { slot: 'offhand', opt: 1 });
   box(B, 0.02, 0.06, 0.06, [0.155, 0.27, 0.02], 'armL', 'metal', { slot: 'offhand', opt: 1 });

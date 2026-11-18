@@ -9,6 +9,7 @@ import { installEditing } from './edit.js';
 import { installRoles, ROLE_NAMES } from './roles.js';
 import { installNeeds } from './needs.js';
 import { installDaily, animalLabel } from './daily.js';
+import { installPeople } from './people.js';
 
 // Core creature simulation (owned by the Life module; the Civilization module
 // programs humanoid behaviour through registerBrain / unit.job).
@@ -98,6 +99,15 @@ const UNIT_CAP = 1000 * 1.6;
 const HEALTHY = 0.45; // a wild grazer below this share of its capacity gets migrant herds
 
 const KIND_ORDER = { humanoid: 0, animal: 1, monster: 2 };
+// soldiers' guns by era (u.data.gear): seconds between shots, chance to miss,
+// damage per hit (x attackDamage), projectile kind and speed. Kept near the
+// damage a sword arm deals per second, so battles keep their pace.
+const GUN = {
+  musket: { cd: 2.6, miss: 0.35, dmg: 3.2, kind: 'ball', speed: 30 },
+  rifle: { cd: 1.5, miss: 0.2, dmg: 1.6, kind: 'bullet', speed: 45 },
+  fatigues: { cd: 0.75, miss: 0.18, dmg: 0.75, kind: 'bullet', speed: 50 },
+  suit: { cd: 0.8, miss: 0.1, dmg: 0.95, kind: 'beam', speed: 60 },
+};
 
 export class Units {
   constructor(game) {
@@ -131,6 +141,7 @@ export class Units {
     this._ticksThisFrame = 0;
     this._initGrid();
     this._installDaily();
+    this._installPeople();
   }
 
   // Coarse per-tick grid of cells holding anything that could threaten a
@@ -567,6 +578,8 @@ export class Units {
       _hitAt: -99,
       _singUntil: 0,
       _celeSeen: null,
+      _brigade: 0,
+      _space: 0,
     };
     if (def.habitat === 'air') {
       u.alt = opts.alt ?? 6;
@@ -1298,6 +1311,18 @@ export class Units {
     const ranged = !!u.data.ranged;
     const tAir = t.def.habitat === 'air' && t.alt > 2.6;
     const reach = u.def.attackRange + t.def.radius * 0.8 + u.def.radius * 0.5;
+    // musketeers and the soldiers after them (u.data.gear / u.data.reach, set by
+    // Civ's modern.js) stand at their reach and fire: a ball or a bullet with a
+    // muzzle flash (and smoke for muskets) that the renderer draws
+    const gun = u.data.reach > 0 && u.def.kind === 'humanoid' ? GUN[u.data.gear] || GUN.rifle : null;
+    if (gun && d > reach * 0.9 && d <= u.data.reach + t.def.radius + 0.2 && !(tAir && t.alt > 6)) {
+      this._face(u, dx, dz, dt);
+      u.target = null;
+      u.path = null;
+      u.state = 'attack';
+      if (u.attackCd <= 0) this._fire(u, t, d, gun);
+      return;
+    }
     if (ranged && d > reach && d < 7 && !tAir) {
       this._face(u, dx, dz, dt);
       u.target = null;
@@ -1341,6 +1366,29 @@ export class Units {
       u.path = null;
       u.target = { x: gx, z: gz };
     }
+  }
+
+  // One shot from a soldier's gun: a miss lands in the dirt beside the target.
+  _fire(u, t, d, gun) {
+    const g = this.game;
+    const rng = g.rng;
+    const now = g.time.total;
+    u.attackCd = gun.cd * rng.float(0.85, 1.2);
+    u.lastAttack = now;
+    if (u.combat) u.combat.struck = true;
+    const miss = rng.chance(gun.miss + Math.min(0.2, d * 0.02));
+    let ox = 0,
+      oz = 0;
+    if (miss) {
+      const a = rng.float(0, Math.PI * 2),
+        r = rng.float(0.7, 1.3);
+      ox = Math.sin(a) * r;
+      oz = Math.cos(a) * r;
+    }
+    const dmg = this.attackDamage(u) * gun.dmg * rng.float(0.8, 1.2);
+    this.shoot(u, t, { kind: gun.kind, speed: gun.speed, arc: 0, damage: dmg, ox, oz, quiet: true });
+    this.sfx('hit', u.x, u.z, { volume: gun.kind === 'ball' ? 0.5 : 0.3, pitch: gun.kind === 'ball' ? 0.55 : gun.kind === 'beam' ? 1.9 : 1.35 });
+    g.events.emit('unit:attack', { unit: u, target: t, damage: miss ? 0 : dmg });
   }
 
   _face(u, dx, dz, dt) {
@@ -1399,8 +1447,8 @@ export class Units {
     const speed = opts.speed ?? 9;
     const dur = Math.max(0.25, d / speed);
     // lead the target a little
-    const lx = t.x + (t.x - t.px) * (dur / this.tickDt) * 0.5,
-      lz = t.z + (t.z - t.pz) * (dur / this.tickDt) * 0.5;
+    const lx = t.x + (t.x - t.px) * (dur / this.tickDt) * 0.5 + (opts.ox || 0),
+      lz = t.z + (t.z - t.pz) * (dur / this.tickDt) * 0.5 + (opts.oz || 0);
     const p = {
       kind: opts.kind || 'arrow',
       x0: a.x,
@@ -1411,14 +1459,14 @@ export class Units {
       z1: lz,
       t: 0,
       dur,
-      arc: Math.min(2.2, d * 0.18),
+      arc: opts.arc ?? Math.min(2.2, d * 0.18),
       from: a.id,
       target: t.id,
       dmg: opts.damage ?? this.attackDamage(a) * 0.8,
     };
     this.projectiles.push(p);
     a.lastAttack = g.time.total;
-    g.audio.play?.('ui-click', { pos: { x: a.x, z: a.z }, volume: 0.25, pitch: 1.8 });
+    if (!opts.quiet) g.audio.play?.('ui-click', { pos: { x: a.x, z: a.z }, volume: 0.25, pitch: 1.8 });
     return p;
   }
 
@@ -1883,6 +1931,8 @@ export class Units {
     if (this._tickN % 75 === 0) this.herds.tick(now);
     if (this._tickN % 150 === 7) this._rolesTick();
     if (this._tickN % 90 === 11) this._dailyTick();
+    if (this._tickN % 30 === 13) this._brigadeTick();
+    if (this._tickN % 300 === 17) this._robotsTick();
     // champions once a game minute (at any game speed)
     if (!(now - this._champT < 60) || now < this._champT) {
       this._champT = now;
@@ -2366,6 +2416,10 @@ export class Units {
     if (u.data.aboard != null) return 'At sea';
     if (u.state === 'flee') return 'Fleeing';
     if (u.swimming) return 'Swimming';
+    if (u.data.role || u._brigade > now) {
+      const pl = this._peopleLabel(u);
+      if (pl) return pl;
+    }
     if (u._dl) {
       const dl = this._dailyLabel(u);
       if (dl) return dl;
@@ -2495,5 +2549,6 @@ installEditing(Units);
 installRoles(Units);
 installNeeds(Units);
 installDaily(Units);
+installPeople(Units);
 
 export { FLORA, FLORA_INFO };

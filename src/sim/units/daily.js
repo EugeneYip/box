@@ -252,7 +252,7 @@ export function installDaily(Units) {
   // Called from Units._think for village people (after needs and roles).
   // Returns true while an episode holds the person.
   P._dailyThink = function (u, now, elapsed) {
-    if (u.combat || u.state === 'flee' || u.data.aboard != null || u.data.inside || u.swimming) {
+    if (u.combat || u.state === 'flee' || u.data.aboard != null || u.data.inside || u.swimming || u.data.robot || u._space > 0 || u._brigade > now) {
       if (u._dl) this._dlEnd(u);
       return false;
     }

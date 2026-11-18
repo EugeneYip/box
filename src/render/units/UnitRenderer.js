@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { SEA_LEVEL } from '../../world/constants.js';
 import { hashString } from '../../core/Random.js';
 import { RigModel } from './RigModel.js';
-import { humanModel, SKIN, HAIR, HAIR_OLD, NEUTRAL_CLOTH, TOOL_OPT, HAT_OPT, BACK_OPT } from './models/humanoid.js';
+import { humanModel, SKIN, HAIR, HAIR_OLD, NEUTRAL_CLOTH, TOOL_OPT, HAT_OPT, BACK_OPT, OFF_OPT, OUTFIT_OPT, ARMOR_OPT } from './models/humanoid.js';
 import { ANIMAL_MODELS } from './models/animals.js';
 import { MONSTER_MODELS, AMBIENT_MODELS } from './models/monsters.js';
 import { poseHumanoid, poseQuad, poseChicken, poseSerpent, poseWyrm } from './poses.js';
@@ -13,7 +13,21 @@ import { horseModel, SADDLE_Y, SADDLE_Z } from './models/horse.js';
 import { MATERIALS, WEAPON_TOOL } from '../../sim/units/items.js';
 import { STATUS_BY_ID } from '../../sim/units/statuses.js';
 import { UNIT } from '../../core/scale.js';
-const HAT_TINT = [null, 0xe6c870, 0xc4ccd6, 0xf2c14e, 0x5d5a3a, 0x5b3a26, null, 0xf0c030];
+const HAT_TINT = [null, 0xe6c870, 0xc4ccd6, 0xf2c14e, 0x5d5a3a, 0x5b3a26, null, 0xf0c030, 0x26232a, 0x5c6468, 0x59633e, 0x6a7a8a, 0xc0302a, 0x24324e, 0xf2f2ee, 0x4a3a2a];
+// civilian dress by era (4 Industrial, 5 Modern, 6 Atomic, 7 Future)
+const ERA_CLOTH = {
+  4: [0x3a3a44, 0x5a4a3a, 0x2e3a4a, 0x6a5a48, 0x7a2e2e, 0x4a4f3a, 0x8a7a60],
+  5: [0x3c4a6a, 0x8a8a8a, 0xb0a080, 0x6a3a3a, 0x2a2a2a, 0xd0c8b8, 0x4a6a5a],
+  6: [0xd05a3a, 0x3a8ab0, 0xe0c040, 0x5ab07a, 0xf0f0e8, 0x2a2a30, 0xe07aa0],
+  7: [0xe8eef2, 0xb8c8d8, 0x7fd0e0, 0x9a8ae0, 0x404850, 0xf0e0f0, 0x70e0b0],
+};
+const ROBOT_SKIN = (() => {
+  const c = new THREE.Color(0xc8ccd0).convertSRGBToLinear();
+  return [c.r, c.g, c.b];
+})();
+function mixc(a, b, t) {
+  return b ? [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t] : a;
+}
 const SHADOW_RANGE = 60; // creatures farther than this from the camera target cast no shadow-map shadow
 const LOD_HI = 64, LOD_LO = 30; // on-screen height (px) thresholds for hi / lo / tiny models
 const HI_CAP = 16; // at most this many full-detail rigs per frame (the rest use the mid model)
@@ -127,6 +141,7 @@ export class UnitRenderer {
     this.ambient = new AmbientFauna(game, this);
     this.corpses = [];
     this.ripples = [];
+    this.puffs = [];
     this._frustum = new THREE.Frustum();
     this._pm = new THREE.Matrix4();
     this._sph = new THREE.Sphere();
@@ -240,8 +255,12 @@ export class UnitRenderer {
       nt = u.traits ? u.traits.length : 0;
     const kv = this._kver * 16777216 + (u.kingdom >= 0 ? this.game.civ?.kingdomColor?.(u.kingdom) ?? 0 : 0);
     const cb = (u.job === 'king' && !!u.combat) * 1 + (u.data?.role === 'healer') * 2; // a ruler draws the sheathed blade to fight; healers dress for it
-    if (k && k.job === u.job && k.ct === ct && k.kd === u.kingdom && k.ageB === ageB && k.wa === wa && k.rg === rg && k.col === u.color && k.sex === u.sex && k.eq === eq && k.nt === nt && k.kv === kv && k.cb === cb) return;
-    rs.apK = { job: u.job, ct, kd: u.kingdom, ageB, wa, rg, col: u.color, sex: u.sex, eq, nt, kv, cb };
+    // modern eras: soldiers' gear, the new roles, civilian dress by era, robots, a book to read
+    const era = def.kind === 'humanoid' && u.kingdom >= 0 ? this.game.civ?.kingdoms?.[u.kingdom]?.era || 0 : 0;
+    const gx = (u.data?.gear || '') + '|' + (u.data?.role || '') + '|' + era + '|' + (u.data?.robot ? 1 : 0) + '|' + (u.activity === 'read' ? 1 : 0) + (u._brigade > this.game.time.total ? 'b' : '');
+    if (k && k.job === u.job && k.ct === ct && k.kd === u.kingdom && k.ageB === ageB && k.wa === wa && k.rg === rg && k.col === u.color && k.sex === u.sex && k.eq === eq && k.nt === nt && k.kv === kv && k.cb === cb && k.gx === gx) return;
+    rs.apK = { job: u.job, ct, kd: u.kingdom, ageB, wa, rg, col: u.color, sex: u.sex, eq, nt, kv, cb, gx };
+    rs.era = era;
     rs.starborn = !!u.traits?.includes('starborn');
     const id = u.id;
     const r = (k) => h1(id, k);
@@ -295,7 +314,7 @@ export class UnitRenderer {
     if (child) hair = female ? (r(3) < 0.5 ? 4 : 2) : r(3) < 0.6 ? 5 : 0;
     else if (female) hair = [1, 2, 4, 1, 0][Math.floor(r(3) * 5)];
     else hair = elder && r(3) < 0.55 ? 3 : r(3) < 0.12 ? 1 : 0;
-    const beard = !female && !child && u.age > 19 ? (r(4) < (elder ? 0.6 : 0.3) ? 1 : r(4) < 0.5 ? 2 : 0) : 0;
+    let beard = !female && !child && u.age > 19 ? (r(4) < (elder ? 0.6 : 0.3) ? 1 : r(4) < 0.5 ? 2 : 0) : 0;
     let outfit = 0;
     if (job === 'king') outfit = 2;
     else if (!child && female && r(5) < 0.55) outfit = 1;
@@ -379,19 +398,139 @@ export class UnitRenderer {
     // every grown member of a realm wears its colour (a little lighter or darker
     // per person); culture lives on in trousers, hats and trim
     const shade = 0.82 + r(13) * 0.32;
-    const cloth = u.color != null ? lin(u.color) : kc && (!child || UNIFORMED.has(job)) ? (UNIFORMED.has(job) ? kc : kc.map((c) => Math.min(1, c * shade))) : civvies;
+    let cloth = u.color != null ? lin(u.color) : kc && (!child || UNIFORMED.has(job)) ? (UNIFORMED.has(job) ? kc : kc.map((c) => Math.min(1, c * shade))) : civvies;
     const kslot = u.kingdom >= 0 ? 1 + (u.kingdom % 15) : 0;
     if (kslot && !child && cape === 0) cape = 2; // kingdom tabard: sides read at a glance
     let sec = Math.floor(r(10) * 8);
     if (job === 'soldier') sec = r(10) < 0.5 ? 1 : 7;
     if (job === 'king') sec = 5;
     if (healer) sec = 6;
+    // ---- modern eras (docs/MODERN-ERAS.md "Units and gear by era", TECH-BREADTH.md section 3)
+    let clothOver = null;
+    const gear = !child && job === 'soldier' ? u.data?.gear : null;
+    const role = !child ? u.data?.role : null;
+    const era = rs.era || 0;
+    if (gear) {
+      offhand = 0;
+      armor = 0;
+      if (gear === 'musket') {
+        hat = HAT_OPT.tricorne;
+        tool = TOOL_OPT.musket;
+        outfit = OUTFIT_OPT.coat;
+        armor = ARMOR_OPT.belts;
+        cape = 0;
+      } else if (gear === 'rifle') {
+        hat = HAT_OPT.steel;
+        tool = TOOL_OPT.rifle;
+        outfit = OUTFIT_OPT.fatigues;
+        clothOver = mixc(lin(0x8a7a50), kc, 0.35);
+      } else if (gear === 'fatigues') {
+        hat = HAT_OPT.combat;
+        tool = TOOL_OPT.carbine;
+        outfit = OUTFIT_OPT.fatigues;
+        clothOver = mixc(lin(0x59633e), kc, 0.3);
+      } else {
+        hat = HAT_OPT.suit;
+        tool = TOOL_OPT.blaster;
+        outfit = OUTFIT_OPT.fatigues;
+        armor = ARMOR_OPT.suit;
+        cape = 0;
+        clothOver = lin(0x3a3e44);
+      }
+      rs.gun = gear;
+    } else rs.gun = null;
+    if (role === 'firefighter') {
+      offhand = 0;
+      if (era >= 5) {
+        hat = HAT_OPT.fire;
+        outfit = OUTFIT_OPT.turnout;
+        tool = TOOL_OPT.hose;
+        clothOver = lin(0x34343a);
+        cape = 0;
+      } else {
+        offhand = OFF_OPT.bucket;
+        tool = TOOL_OPT.none;
+        hat = HAT_OPT.headband;
+      }
+    } else if (role === 'doctor') {
+      hat = HAT_OPT.none;
+      tool = TOOL_OPT.none;
+      offhand = OFF_OPT.bag;
+      if (era >= 4) {
+        outfit = OUTFIT_OPT.coat;
+        clothOver = lin(0xf2f2ee);
+        cape = 0;
+      } else {
+        hat = HAT_OPT.hood;
+        outfit = 2;
+      }
+      sec = 6;
+    } else if (role === 'forester') {
+      hat = r(6) < 0.6 ? HAT_OPT.straw : HAT_OPT.hood;
+      tool = TOOL_OPT.none;
+      offhand = OFF_OPT.sapling;
+      clothOver = mixc(lin(0x4e6a3a), kc, 0.25);
+      sec = 6;
+    } else if (role === 'police') {
+      hat = HAT_OPT.police;
+      tool = TOOL_OPT.baton;
+      offhand = 0;
+      outfit = OUTFIT_OPT.jacket;
+      clothOver = lin(0x24324e);
+      cape = 0;
+      sec = 7;
+    } else if (role === 'scientist') {
+      hat = HAT_OPT.none;
+      tool = TOOL_OPT.none;
+      offhand = OFF_OPT.clipboard;
+      outfit = OUTFIT_OPT.coat;
+      clothOver = lin(0xf4f4f0);
+      cape = 0;
+    } else if (role === 'astronaut') {
+      hat = HAT_OPT.space;
+      tool = TOOL_OPT.none;
+      offhand = 0;
+      outfit = OUTFIT_OPT.fatigues;
+      armor = ARMOR_OPT.space;
+      clothOver = lin(0xeeeeea);
+      cape = 0;
+    }
+    // civilian dress by era (eras 4-7): darker coats and town hats, then
+    // jackets, then bright colours, then light and sleek
+    const civilian = !gear && !role && !UNIFORMED.has(job) && job !== 'healer' && !healer;
+    if (civilian && era >= 4 && !child) {
+      const pal = ERA_CLOTH[Math.min(7, era)];
+      clothOver = mixc(lin(pal[Math.floor(r(14) * pal.length)]), kc, 0.22);
+      if (outfit === 0) outfit = female && r(15) < 0.6 ? 1 : era === 4 && r(15) < 0.5 ? OUTFIT_OPT.coat : OUTFIT_OPT.jacket;
+      if (era <= 5 && hat === HAT_OPT.none && !female && r(16) < (era === 4 ? 0.55 : 0.25)) hat = HAT_OPT.town;
+      if (hat === HAT_OPT.hood || hat === HAT_OPT.straw && !WORK_JOBS.has(job)) hat = HAT_OPT.none;
+      cape = 0;
+    } else if (civilian && era >= 4 && child) {
+      const pal = ERA_CLOTH[Math.min(7, era)];
+      clothOver = lin(pal[Math.floor(r(14) * pal.length)]);
+    }
+    // bucket brigades: neighbours called to a burning house
+    if (u._brigade > this.game.time.total && offhand === 0 && !child) offhand = OFF_OPT.bucket;
+    // reading: a book in the left hand
+    if (u.activity === 'read' && offhand === 0) offhand = OFF_OPT.book;
+    // robot workers (realms that know robotics): light metal, a glowing visor
+    const robot = !!u.data?.robot && !child;
+    if (robot) {
+      hat = HAT_OPT.suit;
+      armor = ARMOR_OPT.suit;
+      outfit = OUTFIT_OPT.fatigues;
+      beard = 0;
+      cape = 0;
+      clothOver = lin(0x9aa2aa);
+    }
+    if (clothOver) cloth = clothOver;
+    if (robot) hair = 0;
     rs.tool = tool;
     rs.shield = offhand === 1;
     rs.ap = {
-      a: jitter(lin(SKIN[skin]), r(11)),
+      a: robot ? ROBOT_SKIN : jitter(lin(SKIN[skin]), r(11)),
       b: cloth,
-      c: lin(hairC),
+      c: robot ? ROBOT_SKIN : lin(hairC),
       sec,
       var: [hair + hat * 16 + beard * 256, tool + offhand * 16 + back * 256, cape + outfit * 16 + armor * 256 + metalIdx * 4096, kslot + seed * 0.98],
     };
@@ -507,6 +646,19 @@ export class UnitRenderer {
       hrs.sRoll += (hrs.rootRoll - hrs.sRoll) * k;
     }
     return hrs;
+  }
+
+  // Where a soldier's gun muzzle is (aiming pose): ahead of the right shoulder.
+  _muzzle(ix, y, iz, heading, scale, grow) {
+    const sh = Math.sin(heading),
+      ch = Math.cos(heading);
+    const f = (0.2 + 0.26 * (1 + grow * 0.6)) * scale;
+    const side = -0.1 * scale; // the right hand (the character's left is +X)
+    const m = this._mz || (this._mz = [0, 0, 0]);
+    m[0] = ix + sh * f + ch * side;
+    m[1] = y + 0.37 * scale;
+    m[2] = iz + ch * f - sh * side;
+    return m;
   }
 
   _onDeath(u) {
@@ -678,6 +830,17 @@ export class UnitRenderer {
           rs.fwd = 0;
           POSE[md.rig](u, rs, ctx, P, md);
           if (riding) this._seatRider(u, rs, ctx, P);
+          // a hit makes people flinch back (bullets, arrows, blows)
+          if (md.rig === 'humanoid' && md.id === 'human' && !u.sleeping) {
+            const ht = simNow - u.lastHurt;
+            if (ht >= 0 && ht < 0.32) {
+              const f = 1 - ht / 0.32;
+              rs.rootPitch -= 0.32 * f;
+              P[3] -= 0.3 * f;
+              P[5] -= 0.4 * f;
+              P[7] -= 0.3 * f;
+            }
+          }
         } else P.set(rs.P);
         // per-channel smoothing (state changes blend instead of popping)
         const Ps = rs.P;
@@ -746,6 +909,22 @@ export class UnitRenderer {
           this._m2.compose(this._p, this._q2, this._s.set(s, s, s));
           const hm = this.pick(this._horseRM || (this._horseRM = this.model('horse')), pxH * 1.1, hrs);
           hm.write(this._m2, hrs.P, hrs.ap, Math.min(1, flash), lod, 0, near);
+        }
+        // gunfire: a muzzle flash at each shot, a puff of smoke from muskets
+        if (rs.gun && dCam < 150) {
+          if (u.lastAttack !== rs.shotT) {
+            rs.shotT = u.lastAttack;
+            if (simNow - u.lastAttack < 0.4 && rs.gun === 'musket' && this.puffs.length < 140) {
+              const mz = this._muzzle(ix, y + lift, iz, heading, scale, weaponGrow);
+              this.puffs.push({ x: mz[0], y: mz[1], z: mz[2], t0: realNow, s: scale });
+            }
+          }
+          const st = simNow - u.lastAttack;
+          if (st >= 0 && st < 0.12) {
+            const mz = this._muzzle(ix, y + lift, iz, heading, scale, weaponGrow);
+            const fs = Math.max(0.32 * scale, 10 / ppu) * (rs.gun === 'musket' ? 1.5 : 1) * (1 - st / 0.16);
+            ov.emotes.add(mz[0], mz[1], mz[2], fs, EMOTE.flash, 1, rs.seed * 6);
+          }
         }
         // a healer's touch: a soft green glint over the patient
         if (u._healAt != null && simNow - u._healAt < 1.2 && md.id === 'human' && dCam < 70) {
@@ -915,15 +1094,37 @@ export class UnitRenderer {
 
     // ---- corpses: topple, rest, then sink and fade
     if (!dotsOnly) this._corpses(now, simNow, dt);
-    // ---- projectiles
+    // ---- projectiles (arrows; bullets and beams as short tracers, musket balls unseen)
+    const vmi = cam.matrixWorldInverse.elements;
     for (const p of U.projectiles) {
       const t = Math.min(1, (p.t + alpha * U.tickDt) / p.dur);
       const x = p.x0 + (p.x1 - p.x0) * t,
         z = p.z0 + (p.z1 - p.z0) * t;
       const y = p.y0 + (p.y1 - p.y0) * t + p.arc * Math.sin(t * Math.PI);
-      const dy = (p.y1 - p.y0) + p.arc * Math.PI * Math.cos(t * Math.PI);
-      ov.addArrow(x, y, z, p.x1 - p.x0, dy, p.z1 - p.z0);
+      if (p.kind === 'arrow') {
+        const dy = p.y1 - p.y0 + p.arc * Math.PI * Math.cos(t * Math.PI);
+        ov.addArrow(x, y, z, p.x1 - p.x0, dy, p.z1 - p.z0);
+        continue;
+      }
+      if (p.kind === 'ball' || dotsOnly) continue;
+      // the streak's angle on screen: the shot's direction in view space
+      const dx = p.x1 - p.x0,
+        dy = p.y1 - p.y0,
+        dz = p.z1 - p.z0;
+      const vx = vmi[0] * dx + vmi[4] * dy + vmi[8] * dz,
+        vy = vmi[1] * dx + vmi[5] * dy + vmi[9] * dz;
+      const len = Math.max(0.45, 0.012 * camDist) * (p.kind === 'beam' ? 1.3 : 1);
+      ov.emotes.add(x, y, z, len, EMOTE.tracer, p.kind === 'beam' ? 1 : 0.9, Math.atan2(vy, vx));
     }
+    // ---- musket smoke: puffs that swell, drift up and fade
+    let pj = 0;
+    for (const f of this.puffs) {
+      const t = (realNow - f.t0) / 2.4;
+      if (t >= 1 || dotsOnly) continue;
+      this.puffs[pj++] = f;
+      ov.emotes.add(f.x, f.y + t * 0.35, f.z, (0.35 + t * 0.9) * f.s * 1.4, EMOTE.puff, 0.7 * (1 - t) * (1 - t), f.t0);
+    }
+    this.puffs.length = pj;
     // ---- ambient birds & fish
     if (!dotsOnly) this.ambient.update(dt, ctx);
     // ---- ripples

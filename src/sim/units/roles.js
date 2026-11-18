@@ -1,5 +1,6 @@
 import { civPath } from '../civ/pathing.js';
 import { SEA_LEVEL } from '../../world/constants.js';
+import { PEOPLE_ROLES } from './people.js';
 
 // Roles that technologies unlock (Life module, docs/TECH-UNLOCKS.md):
 // mounted riders (Horsemanship), healers (Medicine), and creatures riding
@@ -25,7 +26,7 @@ import { SEA_LEVEL } from '../../world/constants.js';
 //                                 near and they swim for it
 //   event 'fleet:arrived' {vessel} anyone still aboard steps ashore next tick
 
-export const ROLE_NAMES = { healer: 'Healer', messenger: 'Messenger', cavalry: 'Cavalry' };
+export const ROLE_NAMES = { healer: 'Healer', messenger: 'Messenger', cavalry: 'Cavalry', ...PEOPLE_ROLES };
 const RIDE_SPEED = { cavalry: 1.6, messenger: 1.75 };
 const HEAL_RANGE = 16;
 const TREAT_TIME = 3; // seconds at the bedside
@@ -48,6 +49,7 @@ export function installRoles(Units) {
     const r = u.data?.role;
     if (r === 'healer' || r === 'messenger') return r;
     if (j === 'soldier' && u.data?.mounted) return 'cavalry';
+    if (r && PEOPLE_ROLES[r]) return r;
     return null;
   };
   // Mounted right now (the renderer draws a horse under riders: u._riding).
@@ -76,7 +78,7 @@ export function installRoles(Units) {
     if (role === 'cavalry') {
       u.data.mounted = true;
       if (u.data.role === 'messenger' || u.data.role === 'healer') delete u.data.role;
-    } else if (role === 'healer' || role === 'messenger') {
+    } else if (role === 'healer' || role === 'messenger' || PEOPLE_ROLES[role]) {
       u.data.role = role;
       if (role === 'healer' && u.data.lifeRole) delete u.data.mounted;
     } else {
@@ -235,6 +237,9 @@ export function installRoles(Units) {
   // Returns true when the role took over this think.
   P._roleThink = function (u, now) {
     this._updateRiding(u);
+    // the new people of section 3 (people.js) and bucket brigades
+    const pr = u.data.role;
+    if (((pr && PEOPLE_ROLES[pr]) || u._brigade > now) && this._peopleThink(u, now, pr)) return true;
     if (u.combat || u.data.inside || u.age < u.def.maturity) return false;
     const role = this.roleOf(u);
     if (role === 'healer') return this._healerThink(u, now);

@@ -121,6 +121,23 @@ export function poseHumanoid(u, rs, c, P, model) {
     return;
   }
   const fighting = st === 'attack' || sinceAtk < 0.55;
+  if (fighting && rs.gun) {
+    // a soldier's gun at the shoulder, the off hand under the barrel; a kick at each shot
+    rs.k = 30;
+    const kick = sinceAtk < 0.22 ? 1 - sinceAtk / 0.22 : 0;
+    P[0] = 0.08 - kick * 0.1;
+    P[9] = -0.32;
+    P[10] = 0.26;
+    P[7] = -1.42 + kick * 0.28;
+    P[8] = 0.12;
+    P[5] = -1.3 + kick * 0.2;
+    P[6] = -0.5;
+    P[14] = 2.72 - kick * 0.2;
+    P[1] = 0.12;
+    P[3] = 0.04 - kick * 0.12;
+    rs.rootY = 0;
+    return;
+  }
   if (fighting) {
     rs.k = 34;
     // guard stance
@@ -212,6 +229,36 @@ export function poseHumanoid(u, rs, c, P, model) {
       P[7] = -1.0 + 0.14 * sin(p + 1.6);
       P[6] = -0.14;
       P[8] = 0.14;
+    } else if (anim === 'douse') {
+      if (tool === 14) {
+        // a hose held at the hip with both hands, playing over the flames
+        P[7] = -1.15 + 0.08 * sin(now * 2.1 + sd);
+        P[5] = -1.0;
+        P[6] = -0.45;
+        P[8] = 0.12;
+        P[14] = 2.0 + 0.1 * sin(now * 1.3 + sd);
+        P[0] = 0.12;
+        P[9] = -0.35;
+        P[10] = 0.3;
+      } else {
+        // a bucket swung and thrown
+        const p = frac(now / 1.5 + c.seed);
+        const sw = track(p, [[0, -0.2], [0.45, 0.35], [0.7, -1.9], [0.8, -1.7], [1, -0.2]]);
+        P[5] = sw;
+        P[7] = sw;
+        P[6] = -0.35;
+        P[8] = 0.35;
+        P[0] = track(p, [[0, 0.2], [0.45, 0.35], [0.7, -0.1], [1, 0.2]]);
+        P[3] = 0.1;
+      }
+    } else if (anim === 'study') {
+      // reading a clipboard, making notes
+      P[5] = -1.15;
+      P[6] = -0.35;
+      P[7] = -0.95 + 0.08 * sin(now * 5 + sd);
+      P[8] = 0.3;
+      P[3] = 0.35 + 0.05 * sin(now * 0.7 + sd);
+      P[4] = 0.1 * sin(now * 0.4 + sd);
     } else if (anim === 'fish') {
       const cast = frac(now / 9 + c.seed);
       P[7] = cast > 0.9 ? track((cast - 0.9) * 10, [[0, -0.95], [0.4, -2.3], [0.7, -0.7], [1, -0.95]]) : -0.95 + 0.04 * sin(now * 1.3);

@@ -94,6 +94,8 @@ export function installNeeds(Units) {
     const g = this.game;
     const civ = g.civ;
     if (!civ || u.combat || u.state === 'flee' || u.data.aboard != null || u.def.kind !== 'humanoid') return false;
+    // robots work through the night; astronauts in orbit are away
+    if (u.data.robot || u._space > 0) return false;
     const d = u.data;
     // a nap where they stand, until rested enough to go on
     if (u._nap) {
