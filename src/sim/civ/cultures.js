@@ -161,6 +161,35 @@ const REAL_STYLES = {
     a: ['Novo', 'Staro', 'Belo', 'Krasno', 'Verkhne', 'Nizhne', 'Sredne', 'Zlato', 'Sosno', 'Pervo', 'Yasno', 'Lesno', 'Zheleznogo', 'Kamensko', 'Ozyorno'],
     b: ['gorsk', 'sibirsk', 'yarsk', 'ozersk', 'polye', 'dar', 'grad', 'reche', 'vodsk', 'lesye', 'zavodsk', 'kamensk', 'uralsk', 'bereznik', 'dolsk'],
   },
+  // Europe and the Americas: English, French, German, Spanish, Italian and
+  // Portuguese forms (two words where the language puts them so)
+  en: {
+    a: ['Ash', 'Brook', 'Clay', 'Elm', 'Fair', 'Green', 'Hart', 'Lake', 'Maple', 'Mill', 'North', 'Oak', 'Pine', 'Red', 'Rock', 'Spring', 'Stone', 'West', 'White', 'Wood', 'Cedar', 'Silver'],
+    b: ['ford', 'field', 'ton', 'ville', 'wood', 'dale', 'brook', 'port', 'bury', 'land', 'view', 'ridge', 'haven', 'well', 'wick', 'mont'],
+  },
+  fr: {
+    sep: '-',
+    a: ['Saint-Martin', 'Saint-Denis', 'Sainte-Marie', 'Bourg', 'Mont', 'Val', 'Beau', 'Ville', 'Pont', 'Port', 'Roche', 'Clos', 'Champ', 'Fontaine', 'Bois', 'Belle'],
+    b: ['sur-Loire', 'les-Bains', 'la-Forêt', 'le-Vieux', 'du-Lac', 'des-Champs', 'en-Vallée', 'sur-Mer', 'la-Rivière', 'le-Château', 'des-Prés', 'les-Monts'],
+  },
+  de: {
+    a: ['Alt', 'Neu', 'Ober', 'Unter', 'Hoch', 'Grün', 'Rosen', 'Linden', 'Eichen', 'Buchen', 'Stein', 'Wald', 'Berg', 'Kirch', 'Marien', 'Schön', 'Wolfs', 'Sonnen'],
+    b: ['dorf', 'burg', 'berg', 'stadt', 'feld', 'bach', 'hausen', 'heim', 'au', 'tal', 'brück', 'hof', 'kirchen', 'stein', 'wald', 'furt'],
+  },
+  es: {
+    sep: ' ',
+    a: ['San Pedro', 'San Juan', 'Santa María', 'Santa Rosa', 'San Miguel', 'Villa', 'Puerto', 'Monte', 'Valle', 'Santa Cruz', 'San José', 'Los Robles', 'San Martín', 'Santa Ana'],
+    b: ['del Río', 'de la Sierra', 'del Valle', 'del Monte', 'de las Flores', 'del Mar', 'Grande', 'de los Llanos', 'del Norte', 'del Sur', 'Verde', 'de la Cruz'],
+  },
+  it: {
+    a: ['Monte', 'Castel', 'Borgo', 'Villa', 'Rocca', 'Valle', 'Porto', 'Torre', 'Pietra', 'Fonte', 'Colle', 'Ponte'],
+    b: ['franco', 'nuovo', 'vecchio', 'fiore', 'rosso', 'bello', 'mare', 'verde', 'alto', 'santo', 'lungo', 'chiaro', 'forte', 'luce'],
+  },
+  pt: {
+    sep: ' ',
+    a: ['São João', 'São Pedro', 'Santa Rita', 'Santo Antônio', 'Vila', 'Porto', 'Monte', 'Campo', 'Serra', 'Barra', 'Lagoa', 'Ribeirão'],
+    b: ['Alegre', 'Verde', 'do Sul', 'do Norte', 'da Serra', 'do Mar', 'das Flores', 'Grande', 'dos Campos', 'da Luz', 'do Rio', 'da Mata'],
+  },
   hi: {
     a: ['Ram', 'Shiv', 'Chandra', 'Hari', 'Krishna', 'Raj', 'Gopal', 'Sita', 'Durga', 'Lakshmi', 'Bhim', 'Dev', 'Indra', 'Sur', 'Moti', 'Anand', 'Kesh', 'Bhavani'],
     b: ['pur', 'nagar', 'abad', 'garh', 'ganj', 'kot', 'pura', 'gaon', 'wadi', 'patnam'],
@@ -173,6 +202,8 @@ export function realStyleName(lang, rng, used = null) {
   const make = () => {
     const a = pick(rng, s.a),
       b = pick(rng, s.b);
+    // (no "Monte del Monte" or "Kirchkirchen")
+    if (a.toLowerCase().includes(b.replace(/^(del?|da|do|das|dos|de la|de las|de los|sur|les|la|le|du|des|en)[- ]/i, '').slice(0, 4).toLowerCase())) return null;
     if (s.sep) return a === b ? null : a + s.sep + b;
     if (a.toLowerCase() === b) return null;
     if ((lang === 'zh' || lang === 'tw') && 'aeo'.includes(b[0])) return a + "'" + b;

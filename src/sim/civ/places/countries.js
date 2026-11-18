@@ -811,7 +811,8 @@ export const COUNTRIES = {
 
 // The naming style for a country's land when its real names run out (see
 // realStyleName in cultures.js): Japanese, Korean, Chinese pinyin,
-// Vietnamese, Thai, Malay, Russian and Hindustani forms. Countries not
+// Vietnamese, Thai, Malay, Russian and Hindustani forms, and English,
+// French, German, Spanish, Italian and Portuguese ones. Countries not
 // listed fall back to the culture of the land.
 const LANG = {
   japan: 'ja',
@@ -838,6 +839,40 @@ const LANG = {
   pakistan: 'hi',
   bangladesh: 'hi',
   nepal: 'hi',
+  'united-kingdom': 'en',
+  ireland: 'en',
+  'united-states': 'en',
+  canada: 'en',
+  australia: 'en',
+  'new-zealand': 'en',
+  france: 'fr',
+  belgium: 'fr',
+  haiti: 'fr',
+  germany: 'de',
+  austria: 'de',
+  switzerland: 'de',
+  spain: 'es',
+  mexico: 'es',
+  guatemala: 'es',
+  honduras: 'es',
+  'el-salvador': 'es',
+  nicaragua: 'es',
+  'costa-rica': 'es',
+  panama: 'es',
+  cuba: 'es',
+  'dominican-republic': 'es',
+  colombia: 'es',
+  venezuela: 'es',
+  peru: 'es',
+  chile: 'es',
+  argentina: 'es',
+  bolivia: 'es',
+  ecuador: 'es',
+  paraguay: 'es',
+  uruguay: 'es',
+  italy: 'it',
+  portugal: 'pt',
+  brazil: 'pt',
 };
 
 // Ruler titles where a region-appropriate one reads naturally; every other
