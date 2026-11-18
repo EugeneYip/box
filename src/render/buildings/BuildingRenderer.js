@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { craneGeometry } from './archetypes.js';
-import { buildArchetype, foundation, scaffold, ruin, wallPost, wallArm, lampPost, frameFor, materialPile, proxyGeometry, PAL, WALL_H } from './archetypes.js';
+import { buildArchetype, foundation, scaffold, ruin, wallPost, wallArm, lampPost, streetLamp, bastionGeometry, frameFor, materialPile, proxyGeometry, PAL, WALL_H } from './archetypes.js';
 import { Labels } from './labels.js';
 import { createBuildingMaterial, createPropMaterial } from './material.js';
 import { emblemAtlas, EMBLEM_IDS, FIELD_IDS } from './emblems.js';
@@ -46,12 +46,18 @@ const DIRS8 = [
   [1, -1],
 ];
 
-// The archetype of a building: type, style, level, era (+ 'g' when gilded)
-// and variant. The modern types (catalog `modern`) share one placeholder per
-// type and level, whatever the culture and era, until they have models.
+// The archetype of a building: type, style, level, era (+ 'g' when gilded),
+// variant, and 'h' for a heritage building (its plaque). A heritage building
+// keeps the look of the era it was built in, never the realm's later dress.
+// Modern types (catalog `modern`) have one model per kind, culture and era.
+export function lookEra(b) {
+  if (b.heritage) return b.heritage.era ?? b.builtEra ?? b.era ?? 1;
+  return b.era ?? 1;
+}
 function archKey(b, def, lvl) {
-  if (def.modern) return `${b.type}|m|${lvl}|0`;
-  return `${b.type}|${b.style}|${lvl}|${b.era ?? 1}${b.gilded ? 'g' : ''}${b.variant ? '|' + b.variant : ''}`;
+  const era = lookEra(b);
+  if (def.modern) return `${b.type}|${b.style}|${lvl}|${Math.max(4, era)}`;
+  return `${b.type}|${b.style}|${lvl}|${era}${b.gilded ? 'g' : ''}${b.variant || b.heritage ? '|' + (b.variant || 0) : ''}${b.heritage ? '|h' : ''}`;
 }
 
 class Batch {
@@ -348,7 +354,7 @@ export class BuildingRenderer {
   _arch(key) {
     let a = this.arche.get(key);
     if (a) return a;
-    const [kind, p1, p2, p3, p4] = key.split('|');
+    const [kind, p1, p2, p3, p4, p5] = key.split('|');
     if (kind === 'found') a = { geo: foundation(+p1, +p2), anchors: null, maxY: 0.3 };
     else if (kind === 'scaf') a = { geo: scaffold(+p1, +p2, +p3), anchors: null, maxY: +p3 };
     else if (kind === 'ruin') a = { geo: ruin(p1, +p2, +p3, +p4), anchors: null, maxY: 0.6 };
@@ -368,7 +374,8 @@ export class BuildingRenderer {
     else if (kind === 'lamppost') {
       const l = lampPost();
       a = { geo: l.geo, anchors: l.anchors, maxY: 0.8 };
-    } else a = buildArchetype(kind, p1, +p2, p3 == null ? 1 : parseInt(p3, 10), p4 == null ? 0 : +p4, p3 != null && p3.endsWith('g'));
+    } else if (kind === 'bastion') a = { geo: bastionGeometry(p1), anchors: null, maxY: 0.7 };
+    else a = buildArchetype(kind, p1, +p2, p3 == null ? 1 : parseInt(p3, 10), p4 == null ? 0 : +p4, p3 != null && p3.endsWith('g'), p5 === 'h');
     this.arche.set(key, a);
     return a;
   }

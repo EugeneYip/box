@@ -44,16 +44,18 @@ varying float vTint;
 varying float vGlow;
 varying vec3 vKCol;
 varying vec4 vState;
-varying vec3 vLocal;`,
+varying vec3 vLocal;
+varying float vFlags;`,
       )
       .replace(
         '#include <begin_vertex>',
         `#include <begin_vertex>
 #ifdef USE_BATCHING
 float wsBi = getIndirectIndex(gl_DrawID);
-vKCol = wsInst(wsBi, 0).rgb; vState = wsInst(wsBi, 1);
+vec4 wsC0 = wsInst(wsBi, 0);
+vKCol = wsC0.rgb; vFlags = wsC0.a; vState = wsInst(wsBi, 1);
 #else
-vKCol = iColor; vState = iState;
+vKCol = iColor; vState = iState; vFlags = 0.0;
 #endif
 vTint = aTint; vGlow = aGlow; vLocal = position; vRoof = aRoof;`,
       );
@@ -70,6 +72,7 @@ varying vec3 vKCol;
 varying vec4 vState;
 varying vec3 vLocal;
 varying vec2 vRoof;
+varying float vFlags;
 float wsHash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }`,
       )
       .replace(
@@ -126,11 +129,36 @@ if (vRoof.x > 0.5) {
         '#include <emissivemap_fragment>',
         `#include <emissivemap_fragment>
 {
+  // instance flags: 1 powered town (electric light), 2 floodlit heritage
+  float powered = mod(vFlags, 2.0);
+  float flood = mod(floor(vFlags * 0.5 + 0.01), 2.0);
   float wid = floor(vLocal.x * 4.0 + 0.5) * 1.7 + floor(vLocal.z * 4.0 + 0.5) * 2.3 + floor(vLocal.y * 3.0) * 3.1;
-  float lit = step(0.22, fract(vState.z * 7.31 + wid * 0.137));
-  float flick = 0.88 + 0.12 * sin(uTime * 2.7 + vState.z * 40.0 + wid);
+  float wr = fract(vState.z * 7.31 + wid * 0.137);
   float night = uNight * (1.0 - vState.x);
-  totalEmissiveRadiance += vGlow * vec3(1.0, 0.6, 0.26) * (night * 2.6 * lit * flick + 0.02);
+  if (vGlow < 1.5) {
+    // windows: warm lamplight, or steadier electric light in a powered town
+    float lit = step(mix(0.22, 0.14, powered), wr);
+    float flick = mix(0.88 + 0.12 * sin(uTime * 2.7 + vState.z * 40.0 + wid), 1.0, powered);
+    vec3 wc = mix(vec3(1.0, 0.6, 0.26), vec3(1.0, 0.84, 0.58), powered);
+    totalEmissiveRadiance += vGlow * wc * (night * mix(2.6, 3.0, powered) * lit * flick + 0.02);
+  } else if (vGlow < 2.5) {
+    // a red beacon blinking on a mast or tower
+    float blink = step(0.55, fract(uTime * 0.7 + vState.z * 3.0));
+    totalEmissiveRadiance += vec3(1.0, 0.12, 0.06) * (0.25 + (0.6 + night * 5.0) * blink);
+  } else if (vGlow < 3.5) {
+    // screens behind the glass: cool blue-white, each window its own
+    float lit = step(0.18, wr);
+    float sc = 0.8 + 0.2 * sin(uTime * 1.3 + wid * 2.1);
+    totalEmissiveRadiance += vec3(0.5, 0.78, 1.0) * (night * 2.8 * lit * sc + 0.12 * lit);
+  } else if (vGlow < 4.5) {
+    // the steady cyan light of the future (fusion rings, crowns)
+    totalEmissiveRadiance += vec3(0.4, 0.95, 1.0) * (0.7 + night * 1.8) * (0.88 + 0.12 * sin(uTime * 2.0 + vLocal.y * 4.0 + vLocal.x * 2.0));
+  } else {
+    // a lamp head: bright at night only
+    totalEmissiveRadiance += vec3(1.0, 0.86, 0.6) * (night * 4.2 + 0.03);
+  }
+  // heritage: soft floodlight washing up the walls at night
+  if (flood > 0.5) totalEmissiveRadiance += diffuseColor.rgb * vec3(1.0, 0.84, 0.62) * night * 1.1 * (1.0 - smoothstep(0.1, 3.2, vLocal.y));
   float burn = vState.y;
   if (burn > 0.001) {
     float t = uTime;
