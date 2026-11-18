@@ -1,4 +1,5 @@
 import { CULTURES, baseCulture } from './cultures.js';
+import { PEOPLES, peopleOf, peopleKey } from './peoples.js';
 import { YEAR, clamp } from './util.js';
 import { geoDist } from '../../world/geo.js';
 
@@ -51,7 +52,32 @@ export const culture = {
   },
 
   cultureDef(id) {
-    return this._cultureById?.get(id) || this._cultureById?.get(baseCulture(id)) || null;
+    return this._cultureById?.get(id) || this._realPeopleDef(id) || this._cultureById?.get(baseCulture(id)) || null;
+  },
+  // A real people on a World Map world ('vale~japanese': the Japanese) joins
+  // the living cultures the first time it is asked for, with its style's
+  // traits and its own name and tongue.
+  _realPeopleDef(id) {
+    const p = this._cultureById && peopleOf(id);
+    if (!p) return null;
+    const base = baseCulture(id);
+    const c = { id, name: p.name, base, people: peopleKey(id), traits: BASE_TRAITS[base].slice(), color: BASE_COLOR[base], language: p.name, founded: 0, parent: null };
+    this.cultures.push(c);
+    this._cultureById.set(id, c);
+    return c;
+  },
+  // The id and name of a people that grows out of `parent` at a town: a real
+  // people's offshoot keeps its people and is named for the town ("Sapporo
+  // Japanese"); elsewhere the language's own syllables name it.
+  _offshoot(parent, base, town, sufBase = base) {
+    const key = parent?.people;
+    if (key && PEOPLES[key]) {
+      const name = `${town} ${PEOPLES[key].name}`;
+      if (this.cultures.some((c) => c.name === name)) return null;
+      return { id: `${base}~${key}~${this._cultureSeq++}`, name, people: key };
+    }
+    const name = this._peopleName(base, town, sufBase);
+    return name ? { id: `${base}~${this._cultureSeq++}`, name } : null;
   },
   cultureName(id) {
     return this.cultureDef(id)?.name || CULTURES[baseCulture(id)]?.name || 'Unknown';
@@ -94,16 +120,16 @@ export const culture = {
     const parent = this.cultureDef(v.culture);
     const base = parent?.base || baseCulture(v.culture);
     const rng = this.rng;
-    const name = this._peopleName(base, v.name);
-    if (!name) return null;
+    const off = this._offshoot(parent, base, v.name);
+    if (!off) return null;
+    const { id, name } = off;
     const traits = (parent?.traits || BASE_TRAITS[base]).slice();
     const pool = CULTURE_TRAITS.filter((t) => !traits.includes(t));
     // drift: swap one trait (rarely the defining first one), sometimes gain a third
     if (traits.length && rng.chance(0.7)) traits[traits.length > 1 && rng.chance(0.8) ? 1 + ((rng.next() * (traits.length - 1)) | 0) : 0] = pool.splice((rng.next() * pool.length) | 0, 1)[0];
     if (traits.length < 3 && rng.chance(0.45)) traits.push(pool[(rng.next() * pool.length) | 0]);
-    const id = `${base}~${this._cultureSeq++}`;
     const hue = ((BASE_COLOR[base] >> 16) & 255) ^ ((rng.next() * 255) | 0);
-    const c = { id, name, base, traits: [...new Set(traits.filter(Boolean))], color: (hue << 16) | (BASE_COLOR[base] & 0xffff), language: base, founded: this.game.time.total, parent: parent?.id ?? base };
+    const c = { id, name, base, people: off.people, traits: [...new Set(traits.filter(Boolean))], color: (hue << 16) | (BASE_COLOR[base] & 0xffff), language: base, founded: this.game.time.total, parent: parent?.id ?? base };
     this.cultures.push(c);
     this._cultureById.set(id, c);
     return c;
@@ -128,7 +154,9 @@ export const culture = {
       if (dom !== v.culture && dv > 0.62) {
         const was = this.cultureName(v.culture);
         v.culture = dom;
-        this._history(`${v.name} now speaks the tongue of the ${this.cultureName(dom)} (once ${was})`, 'info', { x: v.cx, z: v.cz });
+        // (the Mainland Region's and the ROC's peoples are both Chinese)
+        if (was !== this.cultureName(dom))
+          this._history(`${v.name} now speaks the tongue of the ${this.cultureName(dom)} (once ${was})`, 'info', { x: v.cx, z: v.cz });
       }
       // a distant, long-settled colony grows into a people of its own
       const k = this.kingdoms[v.kingdom];
@@ -187,14 +215,14 @@ export const culture = {
       B = this.cultureDef(b);
     if (!A || !B || (this._nCult ?? 0) >= 16) return null;
     const base = A.base;
-    const name = this._peopleName(base, v.name, B.base);
-    if (!name) return null;
+    const off = this._offshoot(A, base, v.name, B.base);
+    if (!off) return null;
+    const { id, name } = off;
     const rng = this.rng;
     const ta = A.traits[(rng.next() * A.traits.length) | 0],
       tb = B.traits.filter((t) => t !== ta)[(rng.next() * B.traits.length) | 0] || B.traits[0];
     const traits = [...new Set([ta, tb].filter(Boolean))];
-    const id = `${base}~${this._cultureSeq++}`;
-    const c = { id, name, base, traits, color: ((A.color >> 1) & 0x7f7f7f) + ((B.color >> 1) & 0x7f7f7f), language: base, founded: this.game.time.total, parent: A.id, blend: [A.id, B.id], origin: { x: v.cx, z: v.cz } };
+    const c = { id, name, base, people: off.people, traits, color: ((A.color >> 1) & 0x7f7f7f) + ((B.color >> 1) & 0x7f7f7f), language: base, founded: this.game.time.total, parent: A.id, blend: [A.id, B.id], origin: { x: v.cx, z: v.cz } };
     this.cultures.push(c);
     this._cultureById.set(id, c);
     return c;
