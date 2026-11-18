@@ -3,12 +3,12 @@
 // spellings used in Taiwan). Miaoli is held by Hsinchu, Nantou by Taichung and
 // Yunlin by Chiayi. Most important first. Each realm lists its towns and then
 // its smaller townships and districts, so that villages founded later nearly
-// always take a real name. The last entry (`seed: false`) only names the
-// corner of the Fujian coast at the top left.
+// always take a real name. The map holds only the islands under ROC rule,
+// Kinmen and Matsu (Lienchiang) among them; the Fujian coast is open sea.
 import { place as P } from './countries.js';
 
 const MAGISTRATE = { m: 'Magistrate', f: 'Magistrate' };
-const R = (name, capital, cities, extra = {}) => ({ name, capital: P(...capital), cities: cities.map((c) => P(...c)), lang: 'tw', title: MAGISTRATE, ...extra });
+const R = (name, capital, cities, extra = {}) => ({ name, capital: P(...capital), cities: cities.map((c) => P(...c)), lang: 'tw', people: 'taiwanese', title: MAGISTRATE, ...extra });
 
 export default [
   R('Taipei', ['Taipei', 121.56, 25.04], [
@@ -128,8 +128,12 @@ export default [
     ['Huxi', 119.66, 23.58], ['Baisha', 119.6, 23.66], ['Xiyu', 119.51, 23.6], ["Wang'an", 119.5, 23.37], ['Qimei', 119.43, 23.21],
     ['Jibei', 119.62, 23.73], ['Hujing', 119.52, 23.48], ['Fengkui', 119.6, 23.52], ['Shili', 119.55, 23.53], ['Tongliang', 119.59, 23.65],
   ]),
-  R('ROC', ['Nanjing', 118.8, 32.06], [
-    ['Pingtan', 119.79, 25.5], ['Putian', 119.01, 25.43], ['Xiuyu', 119.1, 25.23], ['Hanjiang', 119.11, 25.46],
-    ['Fuqing', 119.38, 25.72], ['Jiangkou', 119.2, 25.49], ['Dongqiao', 119.28, 25.48], ['Nanri', 119.48, 25.22],
-  ], { seed: false, lang: 'zh', title: null }),
+  R('Kinmen', ['Jincheng', 118.32, 24.43], [
+    ['Jinhu', 118.42, 24.44], ['Jinsha', 118.41, 24.49], ['Jinning', 118.33, 24.46], ['Lieyu', 118.24, 24.43],
+    ['Shanwai', 118.43, 24.45], ['Guningtou', 118.3, 24.48], ['Shuitou', 118.29, 24.42], ['Xiaojinmen', 118.23, 24.44],
+  ]),
+  R('Lienchiang', ['Nangan', 119.93, 26.15], [
+    ['Beigan', 119.99, 26.22], ['Juguang', 119.94, 25.97], ['Dongyin', 120.49, 26.37], ["Fu'ao", 119.95, 26.16],
+    ['Qinbi', 119.98, 26.23], ['Xiju', 119.93, 25.95], ['Dongju', 119.98, 25.96], ['Xiyin', 120.47, 26.37],
+  ]),
 ];
