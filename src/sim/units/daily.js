@@ -448,8 +448,8 @@ export function installDaily(Units) {
     // drop everything for every birth, and "Celebrating" became a growing
     // town's most common label.)
     const ce = v._cele;
-    if (ce && now < ce.until && !guard && u._celeSeen !== ce && (ce.k === 'peace' ? rng() < 0.4 : !working && (ce.x - u.x) ** 2 + (ce.z - u.z) ** 2 < 36 && rng() < 0.3)) {
-      u._celeSeen = ce;
+    // (one chance per person per celebration, not a new roll every decision)
+    if (ce && now < ce.until && !guard && u._celeSeen !== ce && (ce.k === 'peace' || (!working && (ce.x - u.x) ** 2 + (ce.z - u.z) ** 2 < 36)) && ((u._celeSeen = ce), rng() < (ce.k === 'peace' ? 0.5 : 0.35))) {
       const lab = ce.k === 'birth' ? 'Celebrating a birth' : ce.k === 'wedding' ? 'Celebrating a wedding' : 'Celebrating the peace';
       this._dlStart(u, 'cheer', 6 + rng() * 6, { x: ce.x + (rng() - 0.5) * 2.4, z: ce.z + (rng() - 0.5) * 2.4, lab, go: 'Joining the celebration', fx: ce.x, fz: ce.z, act: 'cheer' });
       return true;
