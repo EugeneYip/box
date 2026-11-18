@@ -1,11 +1,12 @@
 import { SEA_LEVEL, TILE } from '../../world/constants.js';
 import { mulberry32 } from '../../core/Random.js';
 import { WaterNav, pathLength } from './nav.js';
-import { KINDS, SEA_KINDS, STUB_KINDS, stubDef, shipName, craftName, cargoText } from './kinds.js';
+import { KINDS, AIR_KINDS, SEA_KINDS, shipName, craftName, cargoText } from './kinds.js';
 import { missions } from './missions.js';
 import { land } from './land.js';
 import { war } from './war.js';
 import { air } from './air.js';
+import { modern } from './modern.js';
 import { hullR, hullHalf, segDist, HULL_GAP, PIER_END, PIER, BERTH } from './hull.js';
 import { geoDist, geoWrapOn } from '../../world/geo.js';
 
@@ -145,6 +146,13 @@ export class Fleet {
   hasTech(kid, id) {
     return !!this.game.civ?.hasTech?.(kid, id);
   }
+  // May a realm build this kind: its art learned and (for the modern kinds
+  // that carry one) its era reached.
+  canUse(kid, kind) {
+    const d = KINDS[kind] || AIR_KINDS[kind];
+    if (!d || !this.hasTech(kid, d.tech)) return false;
+    return !d.era || (this.kingdom(kid)?.era ?? 0) >= d.era;
+  }
   kingdom(kid) {
     return this.game.civ?.kingdoms?.[kid] || null;
   }
@@ -211,6 +219,22 @@ export class Fleet {
       drone: 'sends its first delivery drones over its towns',
       skytaxi: 'flies its first sky taxis between its towns',
       rocket: 'launches its first rocket',
+      tanker: 'launches its first tanker',
+      liner: 'launches its first cruise liner, lit from stem to stern',
+      icebreaker: 'sends an icebreaker into the frozen sea',
+      submarine: 'sends its first submarines on patrol',
+      patrol: 'launches its first destroyers',
+      hovercraft: 'runs its first hovercraft over the shallows',
+      hydrofoil: 'runs its first hydrofoil ferries',
+      research: 'sends out its first research vessel',
+      trimaran: 'launches its first solar trimarans',
+      autocargo: 'launches its first crewless cargo ships',
+      fireengine: 'sends its first fire engines racing to a fire',
+      ambulance: 'sends its first ambulances through the streets',
+      tractor: 'puts its first tractors in the fields',
+      tram: 'runs its first trams through its towns',
+      bus: 'runs its first buses through its towns',
+      helicopter: 'flies its first rescue helicopter to a disaster',
     }[kind];
     if (!what) return;
     const n = this.kname(kid);
@@ -351,7 +375,7 @@ export class Fleet {
   }
   count(kid = null, kind = null) {
     let n = 0;
-    for (const v of this.list) if (v.alive && (kid == null || v.kingdom === kid) && (kind == null || v.kind === kind)) n++;
+    for (const v of this.list) if (v.alive && (kid == null || v.kingdom === kid) && (kind == null || v.kind === kind || v.role === kind)) n++;
     return n;
   }
   get(id) {
@@ -360,12 +384,12 @@ export class Fleet {
   // ships against the sea budget (fishing boats have a budget of their own)
   seaCount() {
     let n = 0;
-    for (const v of this.list) if (v.alive && v.cls === 'sea' && v.kind !== 'fishing') n++;
+    for (const v of this.list) if (v.alive && v.cls === 'sea' && v.role !== 'fishing') n++;
     return n;
   }
   fishCount() {
     let n = 0;
-    for (const v of this.list) if (v.alive && v.kind === 'fishing') n++;
+    for (const v of this.list) if (v.alive && v.role === 'fishing') n++;
     return n;
   }
   landCount() {
@@ -402,19 +426,24 @@ export class Fleet {
   }
 
   spawn(kind, kid, x, z, opts = {}) {
-    // a modern stub runs as its base kind with its own stats (kinds.js STUB_KINDS)
-    const model = opts.model && STUB_KINDS[opts.model]?.base === kind ? opts.model : null;
-    const def = model ? stubDef(model) : KINDS[kind];
+    // a modern kind may be asked for in place of the old kind whose routine it
+    // runs (spawn('galley', ..., {model: 'ironclad'})): it is born as itself,
+    // with `role` naming the routine (kinds.js)
+    const model = opts.model && KINDS[opts.model] ? opts.model : null;
+    if (model) kind = model;
+    const def = KINDS[kind];
     if (!def) return null;
+    const modern = def.role !== kind;
     const v = {
       id: this._nextId++,
       kind,
-      model: model || kind,
+      role: def.role,
+      model: kind,
       def,
       cls: def.cls,
       _gw: null, // cached give-way (see _giveWayCached)
       kingdom: kid,
-      name: def.cls === 'sea' ? shipName(this.rng, kind) : model ? `${def.name}${opts.home != null && this.game.civ?.villages?.[opts.home] ? ' of ' + this.game.civ.villages[opts.home].name : ''}` : craftName(this.rng, kind, this.game.civ?.villages?.[opts.home]?.name),
+      name: def.cls === 'sea' ? shipName(this.rng, def.role) : modern ? `${def.name}${opts.home != null && this.game.civ?.villages?.[opts.home] ? ' of ' + this.game.civ.villages[opts.home].name : ''}` : craftName(this.rng, kind, this.game.civ?.villages?.[opts.home]?.name),
       home: opts.home ?? -1,
       harbour: opts.harbour ?? null,
       village: opts.home ?? -1,
@@ -452,7 +481,7 @@ export class Fleet {
     this.byId.set(v.id, v);
     this.totals.launched++;
     this.version++;
-    this.first(kid, model || kind, { x, z });
+    this.first(kid, kind, { x, z });
     this.game.events.emit('fleet:launched', { vessel: v, kind, model: v.model, kingdom: kid });
     return v;
   }
@@ -571,7 +600,7 @@ export class Fleet {
   }
   // Water route for a vessel from where it is to (gx, gz).
   seaPath(v, gx, gz, maxLen = Infinity) {
-    const big = !!(v.def.big || v.kind === 'galley' || v.kind === 'carrack');
+    const big = !!(v.def.big || v.role === 'galley' || v.role === 'carrack');
     const minClear = v.def.clear || 0;
     let p = this.nav.findPath(v.x, v.z, gx, gz, { big, maxLen, minClear });
     // cogs and transports may thread a channel to get home; great ships may not
@@ -607,7 +636,15 @@ export class Fleet {
     A.length = ks.length;
     for (let i = 0; i < ks.length; i++) A[i] = !!ks[i]?.techs?.has?.('astronomy');
     this._buildHash();
-    // movement and per-vehicle logic
+    // movement and per-vehicle logic. Update rate by distance from the camera
+    // (as Life does for people): a ship far off steers, gives way and runs
+    // her mission every second tick (every fourth when farther still, or
+    // lying in port), gliding on along her heading in between; her mission
+    // gets the time it missed. Fights, sinkings and hovercraft run every tick.
+    const cam = g.cameraRig?.cur;
+    const lodR = cam ? Math.max(60, cam.dist * 0.9) * (g.settings?.powerSaver ? 0.7 : 1) : 60;
+    const lodR2 = lodR * lodR;
+    const gwt = this._gwTick;
     for (let i = 0; i < this.list.length; i++) {
       const v = this.list[i];
       if (!v.alive) continue;
@@ -615,8 +652,30 @@ export class Fleet {
       v.pz = v.z;
       v.ph = v.heading;
       v.stateT += step;
-      if (v.cls === 'sea') this._seaTick(v, step);
-      else {
+      if (v.cls === 'sea') {
+        v._skip = false;
+        if (cam && v.state !== 'sinking' && v.state !== 'break' && !v.chase && v.target == null && v.role !== 'hover' && !(v.burning > 0)) {
+          const d2 = (v.x - cam.x) ** 2 + (v.z - cam.z) ** 2;
+          if (d2 > lodR2) {
+            const mask = d2 > lodR2 * 4 || v.state === 'moored' ? 3 : 1;
+            if (((gwt + v.id) & mask) !== 0) {
+              v._skip = true;
+              v._lodAcc = (v._lodAcc || 0) + step;
+              if (v.speed > 0.01 && v.state !== 'moored') {
+                const nx = v.x + Math.cos(v.heading) * v.speed * step,
+                  nz = v.z + Math.sin(v.heading) * v.speed * step;
+                if (this.nav.isWater(nx, nz)) {
+                  v.x = nx;
+                  v.z = nz;
+                  this._wrapVessel(v);
+                } else (v._skip = false), (v._lodAcc -= step);
+              }
+              if (v._skip) continue;
+            }
+          }
+        }
+        this._seaTick(v, step);
+      } else {
         this._landTick(v, step);
         v.y = this.world.heightAt(v.x, v.z);
       }
@@ -625,6 +684,7 @@ export class Fleet {
     this._separate(step);
     if ((T.war += step) >= 0.5) {
       this._warTick(T.war);
+      this._carrierOps(T.war);
       T.war = 0;
     }
     if ((T.hazard += step) >= 1) {
@@ -695,11 +755,12 @@ export class Fleet {
     const nav = this.nav;
     const w = this.world;
     for (const a of this.list) {
-      if (!a.alive || a.state === 'sinking') continue;
+      if (!a.alive || a.state === 'sinking' || a._skip) continue;
       if (a.cls === 'land') {
         // siege engines and carts do not stack up either
         if (!a.def.siege && a.speed > 0.2) continue;
-        this.near(a.x, a.z, 1.6, (b, d) => {
+        this.near(a.x, a.z, 1.6, (b, d, ox) => {
+          if (ox) return;
           if (b === a || b.cls !== 'land' || b.id < a.id) return;
           const min = (a.def.length + b.def.length) * 0.45;
           if (d >= min || d < 1e-3) return;
@@ -724,13 +785,13 @@ export class Fleet {
       const ax = Math.cos(a.heading),
         az = Math.sin(a.heading);
       const k = Math.min(1, step * 8);
-      this.near(a.x, a.z, a.def.length * 0.5 + 1.4, (b, cd) => {
+      this.near(a.x, a.z, a.def.length * 0.5 + 1.4, (b, cd, ox = 0) => {
         if (b === a || b.cls !== 'sea' || b.id < a.id || b.state === 'sinking') return;
         const rb = hullR(b),
           hb = hullHalf(b);
         const min = ra + rb + HULL_GAP;
         if (cd >= ha + hb + min) return;
-        const d = segDist(a.x, a.z, ax, az, ha, b.x, b.z, Math.cos(b.heading), Math.sin(b.heading), hb, _SD);
+        const d = segDist(a.x, a.z, ax, az, ha, b.x + ox, b.z, Math.cos(b.heading), Math.sin(b.heading), hb, _SD);
         if (d >= min) return;
         // (nx, nz): the unit push direction, from a towards b
         let nx, nz;
@@ -738,7 +799,7 @@ export class Fleet {
           nx = -_SD.x / d;
           nz = -_SD.z / d;
         } else {
-          let dx = b.x - a.x,
+          let dx = b.x + ox - a.x,
             dz = b.z - a.z,
             l = Math.hypot(dx, dz);
           if (l < 1e-3) {
@@ -809,42 +870,50 @@ export class Fleet {
     const home = !!v.dest && v.state === 'sail' && this.dist(v.dest.x, v.dest.z, v.x, v.z) < 2.5;
     const O = this._gwList || (this._gwList = []);
     O.length = 0;
-    this.near(v.x, v.z, v.def.length * 0.5 + look + 1.4 * BERTH, (o) => {
+    // (each hull's x offset: a ship across the Round world's seam lies a map width over)
+    const OX = this._gwOx || (this._gwOx = []);
+    OX.length = 0;
+    this.near(v.x, v.z, v.def.length * 0.5 + look + 1.4 * BERTH, (o, od, ox = 0) => {
       if (o === v || o.cls !== 'sea' || o.id === foe || o.state === 'sinking') return;
       if (home && (o.state === 'moored' || o.state === 'fish' || o.speed < 0.1)) return;
       O.push(o);
+      OX.push(ox);
     });
     if (!O.length) return G;
     const ra = hullR(v),
       ha = hullHalf(v);
     // room left on heading h: how far she may sail before she is closing
     // on a hull (Infinity when it is clear), and the hull in the way
-    let block = null;
+    let block = null,
+      blockX = 0;
     const room = (h) => {
       const ux = Math.cos(h),
         uz = Math.sin(h);
       let best = Infinity;
       block = null;
-      for (const o of O) {
+      for (let j = 0; j < O.length; j++) {
+        const o = O[j],
+          oxx = o.x + OX[j];
         const wx = Math.cos(o.heading),
           wz = Math.sin(o.heading),
           hb = hullHalf(o);
         const min = ra + hullR(o) + HULL_GAP + 0.06;
-        const d0 = segDist(v.x, v.z, ux, uz, ha, o.x, o.z, wx, wz, hb, _SD);
+        const d0 = segDist(v.x, v.z, ux, uz, ha, oxx, o.z, wx, wz, hb, _SD);
         if (d0 > min + look) continue;
-        const d1 = segDist(v.x + ux * look, v.z + uz * look, ux, uz, ha, o.x, o.z, wx, wz, hb, _SD);
+        const d1 = segDist(v.x + ux * look, v.z + uz * look, ux, uz, ha, oxx, o.z, wx, wz, hb, _SD);
         if (d1 >= min || d1 >= d0 - 1e-4) continue; // not closing on it
         const r = Math.max(0, d0 - min);
         if (r < best) {
           best = r;
           block = o;
+          blockX = oxx;
         }
       }
       return best;
     };
     // the course: straight on if it is clear, else bear away
     if (room(want) < Infinity && block) {
-      const across = (block.x - v.x) * -Math.sin(want) + (block.z - v.z) * Math.cos(want);
+      const across = (blockX - v.x) * -Math.sin(want) + (block.z - v.z) * Math.cos(want);
       const side = across > 0.12 ? -1 : across < -0.12 ? 1 : -1;
       let pick = null;
       for (const off of [0.55, 1.0, -0.55, 1.5, -1.0, 2.1]) {
@@ -863,16 +932,24 @@ export class Fleet {
     return G;
   }
 
-  // vehicles within r of a point (from the per-tick hash)
+  // vehicles within r of a point (from the per-tick hash): fn(v, d, ox), ox
+  // the x offset to add to v.x (a map width when v lies across the Round
+  // world's seam from the point, so ships there still give way and keep apart)
   near(x, z, r, fn) {
+    if (!this._hHead) return;
+    this._nearScan(x, z, r, fn, x, 0);
+    const W = this.nav.wrap ? this.world.w : 0;
+    if (W && x - r < 0) this._nearScan(x, z, r, fn, x + W, -W);
+    else if (W && x + r >= W) this._nearScan(x, z, r, fn, x - W, W);
+  }
+  _nearScan(x, z, r, fn, qx, ox) {
     const head = this._hHead,
       next = this._hNext,
       L = this._hList;
-    if (!head) return;
     const gw = this._gw,
       gh = this._gh;
-    const x0 = Math.max(0, Math.floor((x - r) / 8)),
-      x1 = Math.min(gw - 1, Math.floor((x + r) / 8)),
+    const x0 = Math.max(0, Math.floor((qx - r) / 8)),
+      x1 = Math.min(gw - 1, Math.floor((qx + r) / 8)),
       z0 = Math.max(0, Math.floor((z - r) / 8)),
       z1 = Math.min(gh - 1, Math.floor((z + r) / 8));
     for (let cz = z0; cz <= z1; cz++)
@@ -880,8 +957,8 @@ export class Fleet {
         for (let i = head[cz * gw + cx]; i >= 0; i = next[i]) {
           const v = L[i];
           if (!v || !v.alive) continue;
-          const d = Math.hypot(v.x - x, v.z - z);
-          if (d <= r + v.def.size) fn(v, d);
+          const d = Math.hypot(v.x + ox - x, v.z - z);
+          if (d <= r + v.def.size) fn(v, d, ox);
         }
       }
   }
@@ -892,6 +969,8 @@ export class Fleet {
     const def = v.def;
     const a = v.anim;
     const night = this._nightNow && !this._astro?.[v.kingdom];
+    if (v.role === 'hover' && v.state !== 'sinking') return this._hoverTick(v, step);
+    if (v.state === 'break') return this._iceTick(v, step);
     if (v.state === 'sinking') {
       const W = v.wreckTo;
       if (W) {
@@ -935,7 +1014,8 @@ export class Fleet {
         v.z = wpt.z;
       } else return this.lose(v, 'aground');
     }
-    this._missionTick(v, step, night);
+    this._missionTick(v, step + (v._lodAcc || 0), night); // (with the time a distant ship's last skipped ticks missed)
+    v._lodAcc = 0;
     if (!v.alive) return;
     if (v.state === 'moored') {
       // at rest: sails furled, oars shipped, nothing to steer, no wake
@@ -1033,9 +1113,9 @@ export class Fleet {
     const sailing = v.state === 'sail' || v.state === 'patrol';
     a.furl += ((sailing && !night ? 0 : 1) - a.furl) * Math.min(1, step * 1.2);
     a.fill = this._sailFill(v);
-    const rowing = def.oars && (v.state === 'sail' || v.state === 'patrol') && (v.kind === 'galley' || v.speed > 0.1);
+    const rowing = def.oars && (v.state === 'sail' || v.state === 'patrol') && (v.role === 'galley' || v.speed > 0.1);
     a.oar += ((rowing ? 1 : 0) - a.oar) * Math.min(1, step * 2);
-    a.row += step * (v.kind === 'galley' ? 3.2 : 2.4) * (0.4 + Math.min(1, v.speed / def.speed));
+    a.row += step * (v.role === 'galley' ? 3.2 : 2.4) * (0.4 + Math.min(1, v.speed / def.speed));
   }
 
   // Round world: a vessel that sails off one edge of the whole-Earth map comes
@@ -1059,7 +1139,7 @@ export class Fleet {
     if (C.log.length > 400) C.log.shift();
     this.game.events.emit('fleet:crossed', { vessel: v, id: v.id, kind: v.kind, kingdom: v.kingdom, x: v.x, z: v.z, dir });
     // a realm's first ship across the ocean seam is remembered
-    if (v.kind !== 'fishing' && !this.firsts.has(v.kingdom + '|cross')) {
+    if (v.role !== 'fishing' && !this.firsts.has(v.kingdom + '|cross')) {
       this.firsts.add(v.kingdom + '|cross');
       const n = this.kname(v.kingdom);
       const nm = v.name ? `the ${v.def.name.toLowerCase()} ${v.name}` : `a ${v.def.name.toLowerCase()}`;
@@ -1091,7 +1171,7 @@ export class Fleet {
     // engines: steam and motor ships care little for the wind
     if (def.sail === false) return 1.05;
     let f = 0.8 + (along * 0.5 + 0.5) * 0.35 * (0.6 + s);
-    if (def.oars) f = Math.max(f, v.kind === 'galley' ? 1 : 0.95);
+    if (def.oars) f = Math.max(f, v.role === 'galley' ? 1 : 0.95);
     return Math.max(0.6, Math.min(1.3, f));
   }
   _sailFill(v) {
@@ -1153,23 +1233,23 @@ export class Fleet {
       else if (v.def.siege) this.history(`${Who} loses ${nm} before the walls`, 'war', pos);
       return;
     }
-    if (cause === 'battle' && by && v.kind === 'fishing') {
-      this.history(`${Who}'s fishing boat is sunk by galleys of ${this.kname(by.kingdom)}`, 'war', pos);
-    } else if (cause === 'battle' && by && (v.kind === 'galley' || v.kind === 'cog')) {
+    if (cause === 'battle' && by && v.role === 'fishing') {
+      this.history(`${Who}'s fishing boat is sunk by ${by.kind === 'galley' ? 'galleys' : 'warships'} of ${this.kname(by.kingdom)}`, 'war', pos);
+    } else if (cause === 'battle' && by && (v.role === 'galley' || v.role === 'cog')) {
       const key = 'sunkh' + v.kingdom + '-' + by.kingdom;
       const now = this.game.time.total;
       this._histT = this._histT || new Map();
       if (now - (this._histT.get(key) ?? -1e9) > 300) {
         this._histT.set(key, now);
-        this.history(`${nm[0].toUpperCase() + nm.slice(1)} of ${who} is sunk by galleys of ${this.kname(by.kingdom)}`, 'war', pos);
+        this.history(`${nm[0].toUpperCase() + nm.slice(1)} of ${who} is sunk by ${by.kind === 'galley' ? 'galleys' : 'warships'} of ${this.kname(by.kingdom)}`, 'war', pos);
       }
     } else if (cause === 'battle' && by) {
-      this.note(`⚓ ${nm[0].toUpperCase() + nm.slice(1)} of ${who} is sunk by galleys of ${this.kname(by.kingdom)}`, 'war', pos, 'sunk' + v.kingdom + '-' + by.kingdom, 400);
+      this.note(`⚓ ${nm[0].toUpperCase() + nm.slice(1)} of ${who} is sunk by ${by.kind === 'galley' ? 'galleys' : 'warships'} of ${this.kname(by.kingdom)}`, 'war', pos, 'sunk' + v.kingdom + '-' + by.kingdom, 400);
     } else if (cause === 'storm' || cause === 'lightning') {
       this.note(`🌊 ${nm[0].toUpperCase() + nm.slice(1)} of ${who} founders in the storm`, 'disaster', pos, 'stormsink' + v.kingdom, 60);
     } else if (cause === 'serpent' || cause === 'monster') {
       this.note(`🌊 A sea monster drags ${nm} of ${who} beneath the waves`, 'disaster', pos, 'serpent' + v.kingdom, 60);
-    } else if (v.kind !== 'fishing' || cause === 'meteor' || cause === 'smite' || cause === 'tornado') {
+    } else if (v.role !== 'fishing' || cause === 'meteor' || cause === 'smite' || cause === 'tornado') {
       const why = { meteor: 'struck by a falling star', smite: 'smitten by the heavens', tornado: 'torn apart by a waterspout', tsunami: 'swamped by a great wave', aground: 'runs aground and breaks up', fire: 'burns to the waterline' }[cause] || 'is lost at sea';
       this.note(`🌊 ${nm[0].toUpperCase() + nm.slice(1)} of ${who} ${why.startsWith('runs') || why.startsWith('burns') || why.startsWith('is') ? why : 'is ' + why}`, 'disaster', pos, 'lost' + v.kingdom + cause, 60);
     }
@@ -1177,8 +1257,19 @@ export class Fleet {
 
   // Disasters damage units in an area; ships and carts there take it too.
   damageArea(x, z, r, amount, cause = 'disaster') {
-    if (!this.list.length || !(amount > 0)) return;
+    if (!(amount > 0)) return;
     const mul = { meteor: 1.4, smite: 3, tornado: 2.4, lightning: 1.2, tsunami: 2, volcano: 1, earthquake: 0.6, golem: 0.8, fire: 0.6 }[cause] ?? 1;
+    // aircraft in the sky over it: lightning, meteors and whirlwinds bring them down
+    if (this.air.length && (cause === 'meteor' || cause === 'lightning' || cause === 'smite' || cause === 'tornado' || cause === 'volcano' || cause === 'storm'))
+      for (const f of this.air) {
+        if (!f.alive || f.cls !== 'air' || f.phase === 'crash') continue;
+        const d = this.dist(f.x, f.z, x, z);
+        if (d > r + 1.5) continue;
+        f.hp -= amount * mul * 1.5 * Math.max(0.3, 1 - d / (r + 1.5));
+        f.burning = 1;
+        if (f.hp <= 0) this._crash(f, cause);
+      }
+    if (!this.list.length) return;
     for (const v of this.list) {
       if (!v.alive || v.state === 'sinking') continue;
       const d = this.dist(v.x, v.z, x, z);
@@ -1399,7 +1490,7 @@ export class Fleet {
     const k = this.kingdom(v.kingdom);
     const def = v.def;
     const home = civ?.villages?.[v.home];
-    const stats = [['Health', `${Math.max(0, Math.ceil(v.hp))} / ${v.maxHp}`], ['Doing', this.doingText(v)], ['Crew', v.kind === 'galley' ? `${v.crew} oarsmen and marines` : v.crew]];
+    const stats = [['Health', `${Math.max(0, Math.ceil(v.hp))} / ${v.maxHp}`], ['Doing', this.doingText(v)], ['Crew', v.kind === 'galley' ? `${v.crew} oarsmen and marines` : v.crew === 0 ? 'None (it steers itself)' : v.crew]];
     if (def.capacity || v.cargo) stats.push(['Cargo', cargoText(v.cargo)]);
     const aboard = v.cls === 'sea' ? this.aboard(v).length : 0;
     if (aboard) stats.push(['Aboard', `${aboard} ${v.cargo?.army ? 'soldiers' : 'passengers'}`]);
@@ -1431,6 +1522,9 @@ export class Fleet {
     if (v.state === 'moored') return v.cls === 'sea' ? 'Moored at the jetty' : 'Resting';
     if (v.state === 'anchored') return this.isNight() ? 'At anchor for the night' : 'At anchor';
     if (v.state === 'fish') return 'Hauling nets over the shoal';
+    if (v.state === 'break') return 'Cutting a channel through the ice';
+    if (v.state === 'beach') return 'Drawn up on the beach';
+    if (v.state === 'work') return m?.type === 'fire' ? 'Fighting the fire' : m?.type === 'medic' ? 'Tending the hurt' : m?.type === 'transit' ? 'At a stop' : 'At work';
     if (!m) return 'Under way';
     if (v.state === 'sail' && v.speed < 0.05) return this.isNight() && !this.hasTech(v.kingdom, 'astronomy') ? 'Waiting for daylight' : v.grappled > this.game.time.total ? 'Locked in a fight' : 'Coming about';
     switch (m.type) {
@@ -1455,12 +1549,26 @@ export class Fleet {
       case 'caravan':
         return m.phase === 'home' ? 'Returning with coin' : 'Bringing goods to a neighbour';
       case 'siege':
-        if (v.model !== v.kind && v.siegeTarget) return v.kind === 'catapult' ? 'Shelling the walls' : 'Firing on the gates';
-        return v.siegeTarget ? (v.kind === 'catapult' ? 'Hurling stones at the walls' : 'Battering the gates') : 'Rolling with the army';
+        if (v.def.gun && v.siegeTarget) return v.role === 'catapult' ? 'Shelling the walls' : 'Firing on the gates';
+        return v.siegeTarget ? (v.role === 'catapult' ? 'Hurling stones at the walls' : 'Battering the gates') : 'Rolling with the army';
       case 'train':
         return m.phase === 'home' ? 'Running back down the line' : `Carrying ${cargoText(v.cargo)} along the line`;
       case 'drive':
         return 'Driving through the streets';
+      case 'ice':
+        return m.phase === 'home' ? 'Returning from the ice' : 'Bound for the ice';
+      case 'ferry':
+        return m.phase === 'home' ? 'Skimming home over the shallows' : 'Ferrying passengers to the beach';
+      case 'cruise':
+        return m.phase === 'home' ? 'Returning to port' : 'Patrolling its home waters';
+      case 'fire':
+        return m.phase === 'home' ? 'Returning to the station' : 'Racing to a fire';
+      case 'medic':
+        return m.phase === 'home' ? 'Taking the patient to care' : 'Racing to the hurt';
+      case 'farm':
+        return 'Working the fields';
+      case 'transit':
+        return 'Running its route';
       default:
         return 'Under way';
     }
@@ -1482,7 +1590,7 @@ export class Fleet {
     const out = [];
     for (const v of this.list) {
       if (!v.alive || !v.path || v.state !== 'sail') continue;
-      if (v.kind !== 'cog' && v.kind !== 'carrack') continue;
+      if (v.role !== 'cog' && v.role !== 'carrack') continue;
       out.push({ id: v.id, kingdom: v.kingdom, path: v.path });
     }
     return out;
@@ -1497,5 +1605,5 @@ export function angDiff(a, b) {
 }
 
 
-Object.assign(Fleet.prototype, missions, land, war, air);
+Object.assign(Fleet.prototype, missions, land, war, air, modern);
 export { KINDS, SEA_KINDS, pathLength, SEA_LEVEL };

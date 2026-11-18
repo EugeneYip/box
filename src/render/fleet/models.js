@@ -647,15 +647,30 @@ function catapult() {
 }
 
 const BUILDERS = { fishing, cog, transport, galley, explorer, carrack, oxcart, caravan: packAnimal, ram, catapult };
+// Modern, civic, air and space models (modernModels.js, airModels.js) join
+// the table; each builder takes `lo` (the distant model: hull and blocks).
+export function addBuilders(table) {
+  Object.assign(BUILDERS, table);
+}
 const cache = new Map();
-export function vehicleModel(kind) {
-  let m = cache.get(kind);
+// {geo, flags, smoke: [{x, y, z}], length}; `lo` the distant model, where a
+// kind has one (the old wooden kinds draw their one model at every range)
+export function vehicleModel(kind, lo = false) {
+  const key = lo ? kind + ':lo' : kind;
+  let m = cache.get(key);
   if (!m) {
-    m = BUILDERS[kind]();
-    cache.set(kind, m);
+    const b = BUILDERS[kind];
+    if (!b) return null;
+    m = lo && b.length === 0 ? vehicleModel(kind) : b(lo);
+    if (!m.smoke) m.smoke = [];
+    cache.set(key, m);
   }
   return m;
 }
+export function hasLo(kind) {
+  return (BUILDERS[kind]?.length ?? 0) > 0;
+}
+export { VB, hull, stationAt, figure, lantern, wheel, mast, yard, line, pennant, crates, squareSail, WOOD, WOOD2, WOOD3, DECK, IRON, BRONZE };
 
 // ---------------------------------------------------------------- props
 export function debrisGeometry() {

@@ -15,7 +15,7 @@ export const war = {
     const naval = this.law('fleetNaval');
     for (const v of this.list) {
       if (!v.alive || v.state === 'sinking' || v.cls !== 'sea') continue;
-      if (v.kind !== 'galley') {
+      if (v.role !== 'galley') {
         // merchantmen run before enemy galleys
         v.chase = false;
         continue;
@@ -60,15 +60,15 @@ export const war = {
       m.raid = null;
       tgt = null;
     }
-    if (tgt && m.raid !== tgt.id && (!tgt.alive || tgt.state === 'sinking' || tgt.state === 'moored' || tgt.kind === 'fishing' || !enemies.includes(tgt.kingdom) || this.dist(tgt.x, tgt.z, v.x, v.z) > 40 * look)) tgt = null;
+    if (tgt && m.raid !== tgt.id && (!tgt.alive || tgt.state === 'sinking' || tgt.state === 'moored' || tgt.role === 'fishing' || !enemies.includes(tgt.kingdom) || this.dist(tgt.x, tgt.z, v.x, v.z) > 40 * look)) tgt = null;
     if (!tgt) {
       // nearest enemy ship: warships and transports first. Fishermen are
       // never hunted, at any map size: a blockade drives them home instead
       // (below), and a blockaded harbour sends none out.
       let bs = Infinity;
       this.near(v.x, v.z, 30 * look, (o, d) => {
-        if (o.cls !== 'sea' || o.state === 'sinking' || o.state === 'moored' || o.kind === 'fishing' || !enemies.includes(o.kingdom)) return;
-        const sc = d - (o.kind === 'galley' ? 8 : o.kind === 'transport' ? 7 : o.kind === 'carrack' || o.kind === 'cog' ? 3 : 0);
+        if (o.cls !== 'sea' || o.state === 'sinking' || o.state === 'moored' || o.role === 'fishing' || !enemies.includes(o.kingdom)) return;
+        const sc = d - (o.role === 'galley' ? 8 : o.role === 'transport' ? 7 : o.role === 'carrack' || o.role === 'cog' ? 3 : 0);
         if (sc < bs) {
           bs = sc;
           tgt = o;
@@ -167,7 +167,7 @@ export const war = {
           let prey = null,
             pd = 14;
           this.near(v.x, v.z, 14, (o, d) => {
-            if (o.cls !== 'sea' || o.kind === 'fishing' || o.state !== 'moored' || o.harbour !== bh.id || !enemies.includes(o.kingdom) || d >= pd) return;
+            if (o.cls !== 'sea' || o.role === 'fishing' || o.state !== 'moored' || o.harbour !== bh.id || !enemies.includes(o.kingdom) || d >= pd) return;
             pd = d;
             prey = o;
           });
@@ -179,7 +179,7 @@ export const war = {
         }
         // the harbour's fishing boats put about and run for home
         this.near(v.x, v.z, 10, (o) => {
-          if (o.kind !== 'fishing' || o.harbour !== bh.id || o.state === 'sinking' || o.state === 'moored' || o.mission?.phase === 'home') return;
+          if (o.role !== 'fishing' || o.harbour !== bh.id || o.state === 'sinking' || o.state === 'moored' || o.mission?.phase === 'home') return;
           o.cargo = { fish: Math.round(1 + this.rng() * 2) };
           this._goHome(o);
         });
@@ -199,7 +199,7 @@ export const war = {
     let i = 0,
       n = 0;
     for (const o of this.list) {
-      if (!o.alive || o.kind !== 'galley' || o.kingdom !== v.kingdom || o.state === 'sinking' || o.mission?.type !== 'patrol' || o.target != null) continue;
+      if (!o.alive || o.role !== 'galley' || o.kingdom !== v.kingdom || o.state === 'sinking' || o.mission?.type !== 'patrol' || o.target != null) continue;
       if (o !== v && o.mission.station !== key) continue;
       if (o.id < v.id) i++;
       n++;
@@ -223,7 +223,8 @@ export const war = {
   _volley(from, to, n, potP = 0.12) {
     const d = Math.hypot(to.x - from.x, to.z - from.z);
     for (let i = 0; i < n; i++) {
-      const pot = this.rng() < potP;
+      const shell = from.def.sail === false && from.def.dps > 5; // a gun: shells, not arrows
+      const pot = !shell && this.rng() < potP;
       const hit = this.rng() < (pot ? 0.6 : 0.62) - Math.max(0, d - 3) * 0.035;
       const ox = (this.rng() - 0.5) * from.def.length * 0.6,
         oz = (this.rng() - 0.5) * from.def.length * 0.6;
@@ -234,7 +235,7 @@ export const war = {
       const dur = 0.5 + d * 0.085 + this.rng() * 0.25;
       const lead = Math.min(1, to.speed || 0) * dur * 0.8;
       if (this.shots.length > 160) this.shots.shift();
-      this.shots.push({ x0: from.x + ox, z0: from.z + oz, x1: to.x + Math.cos(to.heading) * lead + mx, z1: to.z + Math.sin(to.heading) * lead + mz, t: -this.rng() * 0.45, dur, pot, hit, target: to.id });
+      this.shots.push({ x0: from.x + ox, z0: from.z + oz, x1: to.x + Math.cos(to.heading) * lead + mx, z1: to.z + Math.sin(to.heading) * lead + mz, t: -this.rng() * 0.45, dur: shell ? dur * 0.6 : dur, pot, shell, hit, target: to.id });
     }
   },
 
@@ -267,7 +268,7 @@ export const war = {
     this._volley(a, b, 2 + Math.floor(this.rng() * 3), 0.12);
     if (b.def.dps > 0) this._volley(b, a, 1 + Math.floor(this.rng() * 2), 0.12);
     // grappled: both ships lose way and fight it out where they are
-    a.grappled = b.grappled = this.game.time.total + 1.5;
+    if (a.def.sail !== false && b.def.sail !== false) a.grappled = b.grappled = this.game.time.total + 1.5;
     const da = a.def.dps * this._matMod(a.kingdom) * crew(a) * dt;
     this.hurt(b, da, 'battle', a);
     if (b.alive && b.state !== 'sinking' && b.def.dps > 0) this.hurt(a, b.def.dps * this._matMod(b.kingdom) * crew(b) * dt * 0.85, 'battle', b);
@@ -276,15 +277,15 @@ export const war = {
     b.fightWith = a.id;
     const ka = Math.min(a.kingdom, b.kingdom),
       kb = Math.max(a.kingdom, b.kingdom);
-    if (b.kind === 'galley') {
+    if (b.role === 'galley') {
       // a battle worth the chronicle: three or more warships in the fight
       let n = 0;
       this.near((a.x + b.x) / 2, (a.z + b.z) / 2, 10, (o) => {
-        if (o.kind === 'galley' && o.state !== 'sinking' && (o.kingdom === a.kingdom || o.kingdom === b.kingdom)) n++;
+        if (o.role === 'galley' && o.state !== 'sinking' && (o.kingdom === a.kingdom || o.kingdom === b.kingdom)) n++;
       });
       if (n >= 3) {
         const where = this._placeName((a.x + b.x) / 2, (a.z + b.z) / 2);
-        this.note(`⚔ A sea battle off ${where}: ${n} galleys of ${this.kname(a.kingdom)} and ${this.kname(b.kingdom)} clash`, 'war', { x: a.x, z: a.z }, 'seabattle' + ka + '-' + kb, 900);
+        this.note(`⚔ A sea battle off ${where}: ${n} ${a.kind === 'galley' && b.kind === 'galley' ? 'galleys' : 'warships'} of ${this.kname(a.kingdom)} and ${this.kname(b.kingdom)} clash`, 'war', { x: a.x, z: a.z }, 'seabattle' + ka + '-' + kb, 900);
       }
     }
   },

@@ -7,3 +7,4 @@ import './civPowers.js';
 import './disasterPowers.js';
 import './worldPowers.js';
 import './weatherPowers.js';
+import './vehiclePowers.js';

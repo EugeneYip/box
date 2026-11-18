@@ -26,6 +26,7 @@ export const CATEGORIES = [
   { id: 'civ', name: 'Peoples' },
   { id: 'disaster', name: 'Wrath' },
   { id: 'world', name: 'World' },
+  { id: 'tech', name: 'Technology' },
 ];
 
 const powers = new Map();

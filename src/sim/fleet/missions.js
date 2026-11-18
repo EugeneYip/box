@@ -1,5 +1,5 @@
 import { SEA_LEVEL, TILE } from '../../world/constants.js';
-import { KINDS, STUB_KINDS } from './kinds.js';
+import { KINDS } from './kinds.js';
 import { pathLength } from './nav.js';
 import { hullR, hullHalf, segDist, PIER_END, PIER, BERTH } from './hull.js';
 import { regionName } from '../disasters/util.js';
@@ -22,11 +22,12 @@ export const missions = {
     if (!this.law('fleetSailing')) return refuse('sailing is forbidden by the laws of the world');
     const cargo = o.cargo ? { ...o.cargo } : {};
     if (cargo.settlers && !this.law('fleetColonize')) return refuse('overseas settlement is forbidden');
-    // a modern ship (a stub of kinds.js) sails as its base kind with its own stats
+    // a modern ship runs the routine of its role (kinds.js): a steamer trades
+    // as a cog, an ironclad fights as a galley; it sails as itself
     let model = null;
-    if (STUB_KINDS[o.kind]?.base && KINDS[STUB_KINDS[o.kind].base].cls === 'sea') {
+    if (KINDS[o.kind]?.cls === 'sea' && KINDS[o.kind].role !== o.kind && KINDS[KINDS[o.kind].role]) {
       model = o.kind;
-      o = { ...o, kind: STUB_KINDS[o.kind].base };
+      o = { ...o, kind: KINDS[o.kind].role };
     }
     let kind = KINDS[o.kind]?.cls === 'sea' ? o.kind : cargo.settlers || cargo.army ? 'transport' : 'cog';
     if (kind === 'galley' && !this.law('fleetNaval')) return refuse('naval war is forbidden');
@@ -48,7 +49,7 @@ export const missions = {
       // no merchant sails into an enemy blockade
       if (cargo.trade && this.blockaded(toH)) return refuse('the harbour is blockaded');
       // a free berth, else a place in the roads off it (never the pier head of a full jetty)
-      dest = this._mooringSpot(toH, null, kind) || this._anchorage(toH, KINDS[kind] || KINDS.cog) || toH.berth;
+      dest = this._mooringSpot(toH, null, model || kind) || this._anchorage(toH, KINDS[model || kind] || KINDS.cog) || toH.berth;
       deliver = { x: toH.x, z: toH.z };
       toName = toH.name;
     } else if (to && to.x != null) {
@@ -66,6 +67,12 @@ export const missions = {
     } else return refuse('no destination');
     if (nav.comp(dest.x, dest.z) !== h.water) return refuse('no water route');
     const straight = this.dist(dest.x, dest.z, h.berth.x, h.berth.z);
+    // a modern trader may go as a cruise liner (to a port of another realm at
+    // peace) or, on a short crossing, as a hydrofoil ferry
+    if (model && cargo.trade && (kind === 'cog' || kind === 'carrack') && toH) {
+      if (toH.kingdom !== kid && this.canUse(kid, 'liner') && this.rng() < 0.22 && this.count(kid, 'liner') < 2) (model = 'liner'), (kind = 'cog');
+      else if (straight < 50 && this.canUse(kid, 'hydrofoil') && this.rng() < 0.35 && this.count(kid, 'hydrofoil') < 3) (model = 'hydrofoil'), (kind = 'cog');
+    }
     // the right ship for the route: short hauls go in cogs and transports (even
     // for a realm with carracks), long ones in ocean-going ships; great ships
     // never sail up narrow rivers
@@ -80,7 +87,7 @@ export const missions = {
     let reason = 'no water route';
     for (const k of options) {
       if (k !== kind && !this.hasTech(kid, KINDS[k].tech)) continue;
-      const c = KINDS[k].clear || 0;
+      const c = KINDS[model || k].clear || 0;
       let p = byClear.get(c);
       if (p === undefined) {
         // routes between the same two places are remembered a while (a failed
@@ -108,9 +115,9 @@ export const missions = {
     if (!pick) return refuse(reason);
     if (pick === 'explorer' && cargo.settlers) cargo.settlers = Array.isArray(cargo.settlers) ? cargo.settlers.slice(0, 6) : Math.min(6, cargo.settlers);
     // (an older ship in port sails first: the new kinds replace the old gradually)
-    let v = this.list.find((s) => s.alive && s.kind === pick && s.harbour === h.id && s.state === 'moored' && !s.mission && !s.layup && (!model || s.model === model || this.rng() < 0.5));
+    let v = this.list.find((s) => s.alive && s.role === pick && s.harbour === h.id && s.state === 'moored' && !s.mission && !s.layup && (model ? s.kind === model || (s.def.era || 0) < (KINDS[model].era || 0) && this.rng() < 0.5 : s.kind === pick));
     if (!v) {
-      const at = this._launchAt(h, pick);
+      const at = this._launchAt(h, model || pick);
       v = this.spawn(pick, kid, at.x, at.z, { home: h.village, harbour: h.id, heading: Math.atan2(h.dirZ, h.dirX), model });
     }
     if (!v) return refuse('no ship');
@@ -179,7 +186,7 @@ export const missions = {
       ez = h.z + h.dirZ * PIER_END;
     let n = 0;
     for (const o of this.list) {
-      if (!o.alive || o === self || o.cls !== 'sea' || o.state === 'sinking' || o.kind === 'fishing' || o.roads) continue;
+      if (!o.alive || o === self || o.cls !== 'sea' || o.state === 'sinking' || o.role === 'fishing' || o.roads) continue;
       let ox, oz;
       if (o.state === 'moored') (ox = o.x), (oz = o.z);
       else if (o.state === 'sail' && o.dest?.berth && (o.mission?.phase === 'home' || o.mission?.phase === 'out')) (ox = o.dest.x), (oz = o.dest.z);
@@ -272,7 +279,7 @@ export const missions = {
         if (!o.alive || o === self || o.cls !== 'sea' || o.state === 'sinking') continue;
         const ox = o.state === 'moored' ? o.x : o.dest?.x,
           oz = o.state === 'moored' ? o.z : o.dest?.z;
-        if (ox != null && Math.hypot(ox - x, oz - z) < r + (o.kind === 'fishing' ? 0 : o.def.length * 0.5)) return true;
+        if (ox != null && Math.hypot(ox - x, oz - z) < r + (o.role === 'fishing' ? 0 : o.def.length * 0.5)) return true;
       }
       return false;
     };
@@ -441,7 +448,7 @@ export const missions = {
       return false;
     }
     let spot = this._mooringSpot(h, v);
-    if (!spot && v.kind !== 'fishing') {
+    if (!spot && v.role !== 'fishing') {
       // this jetty is full: another of the realm's jetties close by on these waters
       for (const o of this.harbours(v.kingdom)) {
         if (o.id === h.id || o.water !== h.water || Math.hypot(o.berth.x - h.berth.x, o.berth.z - h.berth.z) > 18) continue;
@@ -470,7 +477,7 @@ export const missions = {
         v.roads = true;
       } else {
         spot = h.berth;
-        if (v.kind !== 'fishing') v.layup = true;
+        if (v.role !== 'fishing') v.layup = true;
       }
     }
     if (!this._sail(v, spot)) {
@@ -490,7 +497,7 @@ export const missions = {
 
   _lawCheck(v) {
     if (!v.alive || v.state === 'sinking') return;
-    const lay = !this.law('fleetSailing') || (v.kind === 'galley' && !this.law('fleetNaval'));
+    const lay = !this.law('fleetSailing') || (v.role === 'galley' && !this.law('fleetNaval'));
     if (lay) {
       v.layup = true;
       if (v.state !== 'moored' && v.mission?.phase !== 'home') this._goHome(v);
@@ -525,8 +532,8 @@ export const missions = {
       if (v.hp < v.maxHp && !(this.blockades.get(v.harbour) > this.game.time.total)) v.hp = Math.min(v.maxHp, v.hp + v.maxHp * 0.025);
       v.burning = 0;
       if (v.layup && v.idleT > 4) this.remove(v);
-      else if (v.roads && v.kind !== 'fishing' && v.idleT > 45) this.remove(v); // laid up after a spell in the roads
-      else if (v.kind !== 'fishing' && (v.idleT > 420 || (v.idleT > 120 && this.count(v.kingdom, v.kind) > 1))) this.remove(v); // idle ships are laid up
+      else if (v.roads && v.role !== 'fishing' && v.idleT > 45) this.remove(v); // laid up after a spell in the roads
+      else if (v.role !== 'fishing' && (v.idleT > 420 || (v.idleT > 120 && this.count(v.kingdom, v.kind) > 1))) this.remove(v); // idle ships are laid up
       else if (v.harbour != null && !this.harbourInfo(v.harbour)) this.remove(v);
       return;
     }
@@ -548,19 +555,19 @@ export const missions = {
     if (v.state === 'patrol') return; // war.js drives patrols
     if (v.state === 'sail') {
       // dusk or a storm: small boats run for home
-      if (v.kind === 'fishing' && m?.phase === 'out' && (this.storm() > 0.4 || night)) {
+      if (v.role === 'fishing' && m?.phase === 'out' && (this.storm() > 0.4 || night)) {
         v.cargo = { fish: Math.round(2 + this.rng() * 2) };
         this._goHome(v);
         return;
       }
       // without star charts, ships at sea ride at anchor through the night
-      if (night && v.kind !== 'fishing' && this.nav.clearAt(v.x, v.z) >= 2.5 && !v.target) {
+      if (night && v.role !== 'fishing' && this.nav.clearAt(v.x, v.z) >= 2.5 && !v.target) {
         v.state = 'anchored';
         return;
       }
       if (m && m.type === 'patrol') return;
       // coming in to a berth: make sure no other hull has it now (once a second)
-      if (v.dest?.berth && v.kind !== 'fishing' && (v._bt = (v._bt || 0) + step) >= 1) {
+      if (v.dest?.berth && v.role !== 'fishing' && (v._bt = (v._bt || 0) + step) >= 1) {
         v._bt = 0;
         if (this.dist(v.dest.x, v.dest.z, v.x, v.z) < 9) {
           this._berthCheck(v);
@@ -623,6 +630,8 @@ export const missions = {
       return;
     }
     if (m.type === 'chart') return this._charted(v);
+    if (m.type === 'ice') return this._iceArrive(v);
+    if (m.type === 'cruise') return (m.phase = 'home'), this._goHome(v);
     if (m.type === 'patrol') {
       v.state = 'patrol';
       return;
@@ -649,7 +658,7 @@ export const missions = {
     if (m.type === 'trade') {
       this.totals.trades++;
       // the return cargo: silver for home
-      v.cargo = { gold: Math.round(4 + (this.hasTech(v.kingdom, 'banking') ? 4 : 0) + (v.kind === 'carrack' ? 6 : 0)) };
+      v.cargo = { gold: Math.round(4 + (this.hasTech(v.kingdom, 'banking') ? 4 : 0) + (v.role === 'carrack' ? 6 : 0)) };
       v.tradeHome = true;
     } else {
       if (m.type === 'colony') this.totals.colonies++;
@@ -671,7 +680,7 @@ export const missions = {
     v.idleT = 0;
     v.path = null;
     // a ship to be laid up never lies on top of another at the pier head
-    if (v.layup && v.kind !== 'fishing' && this._hullAt(v.x, v.z, v.def, v.heading, v)) v.idleT = 99;
+    if (v.layup && v.role !== 'fishing' && this._hullAt(v.x, v.z, v.def, v.heading, v)) v.idleT = 99;
     const m = v.mission;
     const civ = this.game.civ;
     const home = civ?.villages?.[v.home];
@@ -794,6 +803,7 @@ export const missions = {
         if (this.auto.naval && this.law('fleetNaval') && this.hasTech(kid, 'shipbuilding')) this._scheduleNavy(k);
       }
       this._scheduleLand(k);
+      this._scheduleModern(k);
     }
   },
 
@@ -805,7 +815,7 @@ export const missions = {
     for (const h of this.harbours(kid)) {
       const want = 2 + (h.level >= 2 ? 1 : 0) + (seafaring ? 1 : 0);
       let have = 0;
-      for (const v of this.list) if (v.alive && v.kind === 'fishing' && v.harbour === h.id) have++;
+      for (const v of this.list) if (v.alive && v.role === 'fishing' && v.harbour === h.id) have++;
       const now = this.game.time.total;
       if (have < want && !this.blockaded(h) && now - (this._boatT?.get(h.id) ?? -999) > 20 && this.fishCount() < this.budget.fishing && this.count(kid, 'fishing') < this.cap(kid, 'fishing')) {
         (this._boatT || (this._boatT = new Map())).set(h.id, now);
@@ -815,7 +825,7 @@ export const missions = {
       if (this.blockaded(h) || this.storm() > 0.4) continue;
       if (this.isNight() && !this.hasTech(kid, 'astronomy') && this.game.settings?.dayNight !== false) continue;
       for (const v of this.list) {
-        if (!v.alive || v.kind !== 'fishing' || v.harbour !== h.id || v.state !== 'moored' || v.layup) continue;
+        if (!v.alive || v.role !== 'fishing' || v.harbour !== h.id || v.state !== 'moored' || v.layup) continue;
         if (v.idleT < 4 + v.seed * 6) continue;
         const spot = this._fishingSpot(h);
         if (!spot) continue;
@@ -860,7 +870,7 @@ export const missions = {
     t.trade = now;
     const civ = this.game.civ;
     let busy = 0;
-    for (const v of this.list) if (v.alive && v.kingdom === kid && (v.kind === 'cog' || v.kind === 'carrack') && v.mission) busy++;
+    for (const v of this.list) if (v.alive && v.kingdom === kid && (v.role === 'cog' || v.role === 'carrack') && v.mission) busy++;
     if (busy >= this.cap(kid, 'cog')) return;
     const mine = this.harbours(kid).filter((h) => !this.blockaded(h));
     if (!mine.length) return;
@@ -897,7 +907,7 @@ export const missions = {
         fv[r] -= amt;
       }
     }
-    const kind = this.hasTech(kid, 'navigation') && this.dist(best.x, best.z, from.x, from.z) > 90 ? 'carrack' : 'cog';
+    const kind = this.tradeModel(kid) || (this.hasTech(kid, 'navigation') && this.dist(best.x, best.z, from.x, from.z) > 90 ? 'carrack' : 'cog');
     this.requestVoyage({ kind, kingdom: kid, from: from.id, to: best.id, cargo, _self: true });
   },
 
@@ -1005,11 +1015,11 @@ export const missions = {
       }
     }
     if (best == null) return;
-    let v = this.list.find((s) => s.alive && s.kind === 'explorer' && s.kingdom === kid && s.state === 'moored' && !s.mission);
+    let v = this.list.find((s) => s.alive && s.role === 'explorer' && s.kingdom === kid && s.state === 'moored' && !s.mission);
     if (!v) {
       if (this.count(kid, 'explorer') >= this.cap(kid, 'explorer')) return;
       const at = this._launchAt(from, 'explorer');
-      v = this.spawn('explorer', kid, at.x, at.z, { home: from.village, harbour: from.id, heading: Math.atan2(from.dirZ, from.dirX) });
+      v = this.spawn('explorer', kid, at.x, at.z, { home: from.village, harbour: from.id, heading: Math.atan2(from.dirZ, from.dirX), model: this.canUse(kid, 'research') ? 'research' : null });
     }
     v.mission = { type: 'chart', phase: 'out', cell: best };
     v.voyage = { from: from.village, fromHarbour: from.id, to: { x: nav.nx[best], z: nav.nz[best] }, fromName: from.name, toName: 'uncharted waters', t0: now };
@@ -1026,6 +1036,7 @@ export const missions = {
   },
 
   _charted(v) {
+    if (v.kind === 'research') this._surveyed?.(v);
     const kid = v.kingdom;
     const nav = this.nav;
     let set = this.charts.get(kid);

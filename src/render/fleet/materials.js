@@ -8,14 +8,33 @@ import * as THREE from 'three';
 //   iColor (realm colour, linear), iAnim (x row/walk phase, y wheel angle or
 //   tack, z catapult arm / ram swing, w sail fill), iState (x damage, y burn,
 //   z furl, w variant (land) or oar stroke (sea)).
+// Every vehicle, aircraft and rocket draws through ONE THREE.BatchedMesh
+// (FleetRenderer VehicleBatch): there the per-instance values come from a
+// float texture (`uVInst`, three RGBA texels per instance: colour, anim,
+// state) indexed by the batch's instance id. Extra anim kinds (modernModels.js):
+// 11 turret yaw (z: aim), 12 propeller about X, 13 rotor about Y (w: spin
+// rate), 15 rocket plume (state z: thrust). Glow 2 navigation lights, 3 an
+// emergency light bar (state z: on a call), 4 flame.
 
 const ANIM_GLSL = /* glsl */ `
 attribute float aTint;
 attribute float aGlow;
 attribute vec4 aAnim;
+#ifdef USE_BATCHING
+uniform highp sampler2D uVInst;
+vec4 wsInstF(const in float i, const in int k) {
+  int size = textureSize(uVInst, 0).x;
+  int j = int(i) * 3 + k;
+  return texelFetch(uVInst, ivec2(j % size, j / size), 0);
+}
+#else
 attribute vec3 iColor;
 attribute vec4 iAnim;
 attribute vec4 iState;
+#endif
+vec3 wsC;
+vec4 wsA;
+vec4 wsS;
 uniform float uTime;
 float wsHide = 0.0;
 vec3 wsRotZ(vec3 p, float a) { float c = cos(a), s = sin(a); return vec3(c * p.x - s * p.y, s * p.x + c * p.y, p.z); }
@@ -25,16 +44,16 @@ void wsAnim(inout vec3 p, inout vec3 n) {
   float code = aAnim.x;
   float slot = floor(code / 16.0 + 0.001);
   float k = code - slot * 16.0;
-  if (slot > 0.5 && abs(slot - 1.0 - iState.w) > 0.5) { wsHide = 1.0; return; }
+  if (slot > 0.5 && abs(slot - 1.0 - wsS.w) > 0.5) { wsHide = 1.0; return; }
   if (k < 0.5) return;
   if (k < 1.5) {
     // square sail: billows forward with the wind, furls up to its yard
-    float fill = iAnim.w;
-    float furl = iState.z;
+    float fill = wsA.w;
+    float furl = wsS.z;
     float b = sin(3.14159 * aAnim.y) * sin(3.14159 * clamp(aAnim.z * 0.85 + 0.15, 0.0, 1.0));
     float h = max(0.2, aAnim.w);
     p.x += b * fill * 0.14 * h * (1.0 - furl);
-    p.x += sin(uTime * 5.0 + aAnim.y * 6.0 + iAnim.x) * 0.012 * (1.0 - fill) * (1.0 - furl);
+    p.x += sin(uTime * 5.0 + aAnim.y * 6.0 + wsA.x) * 0.012 * (1.0 - fill) * (1.0 - furl);
     p.y = mix(p.y, aAnim.w - 0.03, furl * 0.94);
     float sg = n.x >= 0.0 ? 1.0 : -1.0;
     n = normalize(n + vec3(0.0, -cos(3.14159 * aAnim.z) * 0.35 * fill, -cos(3.14159 * aAnim.y) * 0.6 * fill) * sg);
@@ -45,46 +64,71 @@ void wsAnim(inout vec3 p, inout vec3 n) {
     vec3 pv = aAnim.yzw;
     vec3 o = p - pv;
     float side = pv.z >= 0.0 ? 1.0 : -1.0;
-    float amp = iState.w;
-    float sweep = sin(iAnim.x) * 0.42 * amp;
-    float lift = (cos(iAnim.x) * 0.2 + 0.05) * amp + (1.0 - amp) * 0.55;
+    float amp = wsS.w;
+    float sweep = sin(wsA.x) * 0.42 * amp;
+    float lift = (cos(wsA.x) * 0.2 + 0.05) * amp + (1.0 - amp) * 0.55;
     o = wsRotX(o, -lift * side);
     o = wsRotY(o, -sweep * side);
     n = wsRotY(wsRotX(n, -lift * side), -sweep * side);
     p = pv + o;
     return;
   }
-  if (k < 3.5) { vec3 pv = aAnim.yzw; p = pv + wsRotZ(p - pv, iAnim.y); n = wsRotZ(n, iAnim.y); return; }
-  if (k < 4.5) { float u = aAnim.y; p.z += sin(u * 7.0 - uTime * 9.0 + iAnim.x) * 0.04 * u; return; }
-  if (k < 5.5) { vec3 pv = aAnim.yzw; p = pv + wsRotZ(p - pv, -iAnim.z); n = wsRotZ(n, -iAnim.z); return; }
-  if (k < 6.5) { p.x += iAnim.z; return; }
+  if (k < 3.5) { vec3 pv = aAnim.yzw; p = pv + wsRotZ(p - pv, wsA.y); n = wsRotZ(n, wsA.y); return; }
+  if (k < 4.5) { float u = aAnim.y; p.z += sin(u * 7.0 - uTime * 9.0 + wsA.x) * 0.04 * u; return; }
+  if (k < 5.5) { vec3 pv = aAnim.yzw; p = pv + wsRotZ(p - pv, -wsA.z); n = wsRotZ(n, -wsA.z); return; }
+  if (k < 6.5) { p.x += wsA.z; return; }
   if (k < 8.5) {
     vec3 pv = aAnim.yzw;
-    float a = sin(iAnim.x) * 0.5 * (k < 7.5 ? 1.0 : -1.0);
+    float a = sin(wsA.x) * 0.5 * (k < 7.5 ? 1.0 : -1.0);
     p = pv + wsRotZ(p - pv, a);
     return;
   }
   if (k < 10.5) {
     // fore-and-aft sail: bellies to leeward, furls along its yard
-    float fill = iAnim.w;
-    float furl = iState.z;
+    float fill = wsA.w;
+    float furl = wsS.z;
     float b = sin(3.14159 * aAnim.y) * sin(3.14159 * clamp(aAnim.z, 0.0, 1.0));
-    p.z += b * fill * 0.24 * iAnim.y * (1.0 - furl);
+    p.z += b * fill * 0.24 * wsA.y * (1.0 - furl);
     p.y = mix(p.y, aAnim.w - 0.02, furl * 0.92);
     return;
   }
+  vec3 pv = aAnim.yzw;
+  if (k < 11.5) { p = pv + wsRotY(p - pv, wsA.z); n = wsRotY(n, wsA.z); return; }
+  if (k < 12.5) { float a = uTime * 38.0 * wsA.w + wsA.x; p = pv + wsRotX(p - pv, a); n = wsRotX(n, a); return; }
+  if (k < 13.5) { float a = uTime * 30.0 * wsA.w + wsA.x; p = pv + wsRotY(p - pv, a); n = wsRotY(n, a); return; }
+  if (k < 14.5) { float a = wsA.z + (abs(wsA.z) > 0.001 ? 3.14159 : 0.0); p = pv + wsRotY(p - pv, a); n = wsRotY(n, a); return; }
+  if (k > 14.5) {
+    // a rocket's plume: as long as its thrust, flickering
+    float th = wsS.z;
+    if (th < 0.02) { wsHide = 1.0; return; }
+    vec3 o = p - pv;
+    float fl = 0.88 + 0.12 * sin(uTime * 47.0 + o.y * 9.0);
+    o.y *= th * fl * (1.0 + th * 0.6);
+    o.xz *= 0.65 + 0.35 * th;
+    p = pv + o;
+  }
 }
 `;
+// The instance values: from the batch's texture, or per-instance attributes.
+const LOAD_GLSL = /* glsl */ `
+#ifdef USE_BATCHING
+float wsBi = getIndirectIndex(gl_DrawID);
+wsC = wsInstF(wsBi, 0).rgb; wsA = wsInstF(wsBi, 1); wsS = wsInstF(wsBi, 2);
+#else
+wsC = iColor; wsA = iAnim; wsS = iState;
+#endif
+`;
 
-export function createVehicleMaterial(uniforms) {
+export function createVehicleMaterial(uniforms, inst = null) {
   const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, metalness: 0 });
   mat.onBeforeCompile = (sh) => {
     sh.uniforms.uTime = uniforms.uTime;
     sh.uniforms.uNight = uniforms.uNight;
+    if (inst) sh.uniforms.uVInst = inst;
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', `#include <common>\n${ANIM_GLSL}\nvarying float vTint;\nvarying float vGlow;\nvarying vec3 vKCol;\nvarying vec4 vState;\nvarying vec3 vLocal;`)
-      .replace('#include <beginnormal_vertex>', `vec3 wsP = position;\nvec3 wsN = normal;\nwsAnim(wsP, wsN);\nvec3 objectNormal = wsN;`)
-      .replace('#include <begin_vertex>', `vec3 transformed = wsP;\nvTint = aTint; vGlow = aGlow; vKCol = iColor; vState = iState; vLocal = position;`)
+      .replace('#include <beginnormal_vertex>', `${LOAD_GLSL}\nvec3 wsP = position;\nvec3 wsN = normal;\nwsAnim(wsP, wsN);\nvec3 objectNormal = wsN;`)
+      .replace('#include <begin_vertex>', `vec3 transformed = wsP;\nvTint = aTint; vGlow = aGlow; vKCol = wsC; vState = wsS; vLocal = position;`)
       .replace('#include <project_vertex>', `#include <project_vertex>\nif (wsHide > 0.5) gl_Position = vec4(4.0, 4.0, 4.0, 1.0); // hidden variant: clipped away`);
     sh.fragmentShader = sh.fragmentShader
       .replace(
@@ -116,8 +160,21 @@ float wsHash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p
         '#include <emissivemap_fragment>',
         `#include <emissivemap_fragment>
 {
-  float flick = 0.85 + 0.15 * sin(uTime * 3.1 + vLocal.x * 13.0);
-  totalEmissiveRadiance += vGlow * vec3(1.0, 0.62, 0.28) * (uNight * 2.4 * flick + 0.05);
+  if (vGlow > 3.5) {
+    // a flame: white-hot, always lit
+    totalEmissiveRadiance += diffuseColor.rgb * 3.2 + vec3(0.6, 0.35, 0.1);
+  } else if (vGlow > 2.5) {
+    // an emergency light bar: red and blue in turn while on a call
+    float on = step(0.0, sin(uTime * 12.0 + (vLocal.z > 0.0 ? 3.14159 : 0.0)));
+    totalEmissiveRadiance += diffuseColor.rgb * on * vState.z * 3.5;
+  } else if (vGlow > 1.5) {
+    // navigation lights: steady at night, with a quick beacon flash
+    float blink = 0.6 + 0.4 * step(0.82, fract(uTime * 0.85 + vLocal.x * 0.37));
+    totalEmissiveRadiance += diffuseColor.rgb * (uNight * 3.0 + 0.12) * blink;
+  } else {
+    float flick = 0.85 + 0.15 * sin(uTime * 3.1 + vLocal.x * 13.0);
+    totalEmissiveRadiance += vGlow * vec3(1.0, 0.62, 0.28) * (uNight * 2.4 * flick + 0.05);
+  }
   float burn = vState.y;
   if (burn > 0.001) {
     float t = uTime;
@@ -135,11 +192,12 @@ float wsHash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p
 }
 
 // Shadow depth with the same animation (furled sails, hidden variants).
-export function createVehicleDepthMaterial(uniforms) {
+export function createVehicleDepthMaterial(uniforms, inst = null) {
   const mat = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, side: THREE.DoubleSide });
   mat.onBeforeCompile = (sh) => {
     sh.uniforms.uTime = uniforms.uTime;
-    sh.vertexShader = sh.vertexShader.replace('#include <common>', `#include <common>\n${ANIM_GLSL}`).replace('#include <begin_vertex>', `vec3 wsP = position;\nvec3 wsN = vec3(0.0, 1.0, 0.0);\nwsAnim(wsP, wsN);\nvec3 transformed = wsP;`).replace('#include <project_vertex>', `#include <project_vertex>\nif (wsHide > 0.5) gl_Position = vec4(4.0, 4.0, 4.0, 1.0);`);
+    if (inst) sh.uniforms.uVInst = inst;
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', `#include <common>\n${ANIM_GLSL}`).replace('#include <begin_vertex>', `${LOAD_GLSL}\nvec3 wsP = position;\nvec3 wsN = vec3(0.0, 1.0, 0.0);\nwsAnim(wsP, wsN);\nvec3 transformed = wsP;`).replace('#include <project_vertex>', `#include <project_vertex>\nif (wsHide > 0.5) gl_Position = vec4(4.0, 4.0, 4.0, 1.0);`);
   };
   mat.customProgramCacheKey = () => 'wsVehicleDepth';
   return mat;
@@ -154,6 +212,7 @@ export function createVehicleDepthMaterial(uniforms) {
 //   kind 3  contact shadow under a land vehicle
 //   kind 4  far-zoom dot in the realm's colour (aC), dark rim
 //   kind 5  dashed trade lane (LineSegments; aUV.x = distance along)
+//   kind 6  a jet's contrail at height (aK.y = strength, fading aft)
 // Attributes: aUV (x: along / local x, y: across 0..1 / local z),
 // aK (x: kind, y: strength 0..1, z: beam in ship lengths, w: distance along).
 export function createWaterFxMaterial(uniforms) {
@@ -252,10 +311,16 @@ void main() {
     float r = length(vUV * 2.0 - 1.0);
     if (r > 1.0) discard;
     gl_FragColor = vec4(r > 0.78 ? vC * 0.2 : vC * 1.25, 0.95);
-  } else {
+  } else if (kind < 5.5) {
     float d = fract(vUV.x * 0.7 - uTime * 0.25);
     if (d > 0.55) discard;
     gl_FragColor = vec4(vC * 1.3 + 0.2, uLaneAlpha);
+  } else {
+    // kind 6: a jet's contrail, soft and spreading as it fades (a = strength)
+    float v = abs(vUV.y * 2.0 - 1.0);
+    float al = (1.0 - v * v) * a * (0.75 + 0.25 * vnoise(vec2(vUV.x * 3.0, vUV.y * 4.0)));
+    if (al < 0.01) discard;
+    gl_FragColor = vec4(vec3(0.96, 0.97, 1.0) * mix(0.35, 1.0, uLight), al * 0.6);
   }
   #include <colorspace_fragment>
 }`,
