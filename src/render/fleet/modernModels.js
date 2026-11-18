@@ -108,7 +108,7 @@ function radarMast(g, x, y, h) {
 }
 // A gun turret that trains on the enemy (anim 11, pivot at its centre).
 function turret(g, x, y, r, dir = 1, guns = 2, len = 0.42) {
-  g.setAnim(11, x, y, 0);
+  g.setAnim(dir < 0 ? 14 : 11, x, y, 0); // (14: an aft turret, trained half a turn further)
   g.cyl(x, y, 0, r, 0.06, 8, STEEL2);
   g.box(x - dir * r * 0.15, y + 0.04, 0, r * 1.7, 0.12, r * 1.5, STEEL, { top: shade(STEEL, 1.1) });
   for (let i = 0; i < guns; i++) {

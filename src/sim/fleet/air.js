@@ -164,7 +164,8 @@ export const air = {
     if (x != null) {
       const civ = this.game.civ;
       const v = civ?.villageAt?.(x, z, 12);
-      if (v && (v.blackout ?? 0) > this.game.time.total) return true;
+      // (Blackout, Civ development: a town dark until game time blackoutUntil, or blackout)
+      if (v && (v.blackoutUntil ?? v.blackout ?? 0) > this.game.time.total) return true;
     }
     return false;
   },

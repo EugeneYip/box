@@ -96,6 +96,7 @@ void wsAnim(inout vec3 p, inout vec3 n) {
   if (k < 11.5) { p = pv + wsRotY(p - pv, wsA.z); n = wsRotY(n, wsA.z); return; }
   if (k < 12.5) { float a = uTime * 38.0 * wsA.w + wsA.x; p = pv + wsRotX(p - pv, a); n = wsRotX(n, a); return; }
   if (k < 13.5) { float a = uTime * 30.0 * wsA.w + wsA.x; p = pv + wsRotY(p - pv, a); n = wsRotY(n, a); return; }
+  if (k < 14.5) { float a = wsA.z + (abs(wsA.z) > 0.001 ? 3.14159 : 0.0); p = pv + wsRotY(p - pv, a); n = wsRotY(n, a); return; }
   if (k > 14.5) {
     // a rocket's plume: as long as its thrust, flickering
     float th = wsS.z;
@@ -211,6 +212,7 @@ export function createVehicleDepthMaterial(uniforms, inst = null) {
 //   kind 3  contact shadow under a land vehicle
 //   kind 4  far-zoom dot in the realm's colour (aC), dark rim
 //   kind 5  dashed trade lane (LineSegments; aUV.x = distance along)
+//   kind 6  a jet's contrail at height (aK.y = strength, fading aft)
 // Attributes: aUV (x: along / local x, y: across 0..1 / local z),
 // aK (x: kind, y: strength 0..1, z: beam in ship lengths, w: distance along).
 export function createWaterFxMaterial(uniforms) {
