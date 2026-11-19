@@ -100,7 +100,7 @@ function render() {
   const list = GROUPS.find(([id]) => id === tab)[2];
   panel.innerHTML = `
     <div class="ws-vehpick__head">
-      <div class="ws-vehpick__tabs" role="tablist" aria-label="Kind of vehicle">${GROUPS.map(([id, label]) => `<button class="ws-vehpick__tab${id === tab ? ' is-on' : ''}" type="button" role="tab" aria-selected="${id === tab}" tabindex="${id === tab ? 0 : -1}" data-tab="${id}">${label}</button>`).join('')}</div>
+      <div class="ws-vehpick__tabs" role="tablist" aria-label="Kind of vehicle">${GROUPS.map(([id, label]) => `<button class="ws-vehpick__tab${id === tab ? ' is-on' : ''}${id === groupOf(chosen) ? ' has-pick' : ''}" type="button" role="tab" aria-selected="${id === tab}" tabindex="${id === tab ? 0 : -1}" data-tab="${id}"${id === groupOf(chosen) ? ` aria-label="${label}, holds your pick: ${defOf(chosen).name}" data-tip="Your pick: ${defOf(chosen).name}"` : ''}>${label}${id === groupOf(chosen) ? '<i class="ws-vehpick__dot" aria-hidden="true"></i>' : ''}</button>`).join('')}</div>
       <span class="ws-vehpick__hint">Pick one, then click the map. It joins the nearest realm.</span>
     </div>
     <div class="ws-vehpick__row" role="listbox" aria-label="Vehicle to spawn" aria-orientation="horizontal">${list
@@ -127,18 +127,40 @@ function render() {
     };
   }
   panel.onkeydown = onKey;
+  const row = panel.querySelector('.ws-vehpick__row');
+  // a short list (Space: four kinds) keeps one row
+  row.classList.toggle('is-short', list.length <= 4);
+  // the mouse wheel scrolls the kinds sideways; the edge fades show there is more
+  const edges = () => {
+    row.classList.toggle('at-start', row.scrollLeft <= 2);
+    row.classList.toggle('at-end', row.scrollLeft + row.clientWidth >= row.scrollWidth - 2);
+  };
+  row.addEventListener('scroll', edges, { passive: true });
+  row.addEventListener(
+    'wheel',
+    (e) => {
+      if (row.scrollWidth <= row.clientWidth + 1) return;
+      const d = Math.abs(e.deltaY) > Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+      if (!d) return;
+      e.preventDefault();
+      e.stopPropagation();
+      row.scrollLeft += d * (e.deltaMode === 1 ? 32 : 1);
+    },
+    { passive: false },
+  );
   // the chosen kind scrolls into view
   const on = panel.querySelector('.ws-vehpick__opt.is-on');
-  if (on) {
-    const row = on.parentElement;
-    row.scrollLeft = Math.max(0, on.offsetLeft - row.clientWidth / 2 + on.offsetWidth / 2);
-  }
+  if (on) row.scrollLeft = Math.max(0, on.offsetLeft - row.clientWidth / 2 + on.offsetWidth / 2);
+  edges();
 }
+// the power's name strip names the chosen kind ("Spawn Vehicle: Container ship")
+const syncStrip = () => gRef?.ui?.toolbar?.syncActive?.();
 function choose(k, fold) {
   chosen = k;
   if (fold) picked = true;
   render();
   place();
+  syncStrip();
   gRef?.audio?.play?.('ui-click', { volume: 0.4 });
   if (fold) panel?.querySelector('.ws-vehpick__pill')?.focus({ preventScroll: true });
 }
@@ -166,6 +188,7 @@ function onKey(e) {
     } else {
       chosen = sib[j].dataset.kind;
       render();
+      syncStrip();
       panel.querySelector('.ws-vehpick__opt.is-on')?.focus();
     }
     return;
@@ -200,14 +223,21 @@ registerPower({
   mode: 'click',
   brush: null,
   icon: icon('<path class="f" d="M4 21h24l-3 5H8z"/><path d="M4 21h24l-3 5H8zM9 21v-6h9l3 6M12 15v-4h4"/><path class="s" d="M22 8l3-3M24 11h4M20 6V2"/>'),
+  label: () => `Spawn Vehicle: ${defOf(chosen)?.name || 'Vehicle'}`,
   onSelect: (g) => openChooser(g),
   onDeselect: () => closeChooser(),
   apply: (g, c) => {
     const F = g.fleet;
     const k = realmAt(g, c);
     if (!F || !k) return g.notify?.('There is no realm to give it to.', 'bad', { x: c.x, z: c.z });
+    // one feed line per spawn: the realm's "first of its kind" news is not
+    // repeated for a vehicle the god hands it (the line below says it)
+    const fk = k.id + '|' + chosen;
+    const hadFirst = !!F.firsts?.has(fk);
+    F.firsts?.add(fk);
     const v = F.spawnVehicle(chosen, c.x, c.z, k.id);
     const def = KINDS[chosen] || AIR_KINDS[chosen];
+    if (!v && !hadFirst) F.firsts?.delete(fk);
     if (!v) return g.notify?.(cap(F.lastRefusal || 'it cannot go there') + '.', 'bad', { x: c.x, z: c.z });
     g.fx?.emit?.('spawn', { x: c.x, z: c.z }, { scale: 0.8 });
     g.audio?.play?.('spawn', { pos: { x: c.x, z: c.z }, volume: 0.5 });

@@ -10,6 +10,7 @@ import { WORLD_SIZES, EARTH_DEFAULT_SIZE, isWidePreset, worldDims, sizeForPreset
 import { earthRegion } from '../world/data/regions.js';
 import { realmsFor } from '../sim/civ/places/index.js';
 import { WORLD_PRESET_IDS } from '../world/worldgen.js';
+import { regionThumb } from './regionThumbs.js';
 
 const SIZE_NOTES = {
   128: 'Quick and intimate. Lightest on phones.',
@@ -606,7 +607,7 @@ export class Modals {
     });
     const sizeNote = el('span', { class: 'ws-row__desc ws-size__note' });
     // Round world (docs/ROUND-WORLD.md): the whole-Earth sizes only
-    const wrapRow = toggleRow('Round world: sail across the map’s edge', 'Ships cross the Atlantic through the left and right edges, as on the real Earth', state.wrap, (v) => (state.wrap = v));
+    const wrapRow = toggleRow('Round world', 'Sail across the map’s left and right edges, as ships cross the Atlantic on the real Earth', state.wrap, (v) => (state.wrap = v));
     wrapRow.style.marginTop = '8px';
     const sizeCards = el('div', { class: 'ws-sizes', role: 'radiogroup', 'aria-label': 'World size' });
     // the World Map's regional maps get their own row of cards under the whole-Earth sizes
@@ -637,7 +638,8 @@ export class Modals {
         'button',
         { class: 'ws-size', type: 'button', role: 'radio', 'data-size': z.size, 'data-id': z.id, onclick: () => pickSize(wide ? z.id : z.size) },
         z.region
-          ? el('span', { class: 'ws-size__box' }, el('i', { style: `width:${(26 * Math.min(1, ar)).toFixed(1)}px;height:${(26 * Math.min(1, 1 / ar)).toFixed(1)}px` }))
+          ? // its own coastline, drawn from the region's land mask
+            ((t) => (t ? el('span', { class: 'ws-size__box ws-size__box--map' }, el('img', { class: 'ws-size__map', src: t.url, alt: '', width: t.w, height: t.h, draggable: 'false' })) : el('span', { class: 'ws-size__box' }, el('i', { style: `width:${(26 * Math.min(1, ar)).toFixed(1)}px;height:${(26 * Math.min(1, 1 / ar)).toFixed(1)}px` }))))(regionThumb(z.region, 58, 36))
           : el('span', { class: 'ws-size__box', style: `--s:${s.toFixed(3)}${wide ? ';aspect-ratio:2' : ''}` }, el('i')),
         el('b', { text: z.name }),
         el('small', { text: wide ? `${z.w}×${z.h}` : `${z.size}²` }),
@@ -792,23 +794,33 @@ export class Modals {
             out.textContent = fmtLaw(def, +r.value);
             g.setLaw?.(def.key, +r.value);
           });
-          // Latest era: a mark for each era under the slider
+          // a slider with named steps reads its step's name to screen readers ("Atomic")
+          if (Array.isArray(def.labels)) r.setAttribute('aria-valuetext', fmtLaw(def, v));
+          // Latest era: a mark for each era under the slider, the chosen era named
+          // under its mark (and the far ends, when they do not crowd it)
           const marks =
             def.key === 'civEraCap' && Array.isArray(def.labels)
-              ? el('span', { class: 'ws-eramarks', 'aria-hidden': 'true' }, ...def.labels.map((n, i) => el('i', { class: i === Math.round(v) ? 'is-on' : '', title: n }, el('span', { text: i === 0 || i === def.labels.length - 1 ? n : '' }))))
+              ? el('span', { class: 'ws-eramarks', 'aria-hidden': 'true' }, ...def.labels.map((n, i) => el('i', { class: i === Math.round(v) ? 'is-on' : '', title: n }, el('span'))))
               : null;
-          control = el('span', { class: 'ws-row__ctl' }, marks ? el('span', { class: 'ws-eraslider' }, r, marks) : r, out);
-          if (marks)
-            r.addEventListener('input', () => {
-              const cur = Math.round(+r.value);
-              [...marks.children].forEach((m, i) => {
-                m.classList.toggle('is-on', i === cur);
-              });
+          const markNames = (cur) => {
+            const last = def.labels.length - 1;
+            [...marks.children].forEach((m, i) => {
+              m.classList.toggle('is-on', i === cur);
+              m.firstChild.textContent = i === cur || ((i === 0 || i === last) && Math.abs(i - cur) >= 3) ? def.labels[i] : '';
             });
+          };
+          if (marks) markNames(Math.round(v));
+          control = el('span', { class: 'ws-row__ctl' }, marks ? el('span', { class: 'ws-eraslider' }, r, marks) : r, out);
+          r.addEventListener('input', () => {
+            if (Array.isArray(def.labels)) r.setAttribute('aria-valuetext', fmtLaw(def, +r.value));
+            if (marks) markNames(Math.round(+r.value));
+          });
           ctl.set(def.key, (nv) => {
             r.value = nv;
             paint();
             out.textContent = fmtLaw(def, nv);
+            if (Array.isArray(def.labels)) r.setAttribute('aria-valuetext', fmtLaw(def, nv));
+            if (marks) markNames(Math.round(+nv));
           });
         }
         const onState = def.type === 'bool' ? !!v : +v > 0;

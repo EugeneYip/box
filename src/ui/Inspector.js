@@ -56,7 +56,7 @@ const TILE_POWER = {
   [TILE.ROAD]: 'paint-road',
   [TILE.ICE]: 'paint-ice',
 };
-const KIND_LABEL = { unit: 'Creature', building: 'Building', village: 'Settlement', kingdom: 'Kingdom', flora: 'Flora', tile: 'Land', info: 'Detail', vessel: 'Vessel', vehicle: 'Vehicle' };
+const KIND_LABEL = { unit: 'Creature', building: 'Building', village: 'Village', kingdom: 'Realm', flora: 'Flora', tile: 'Land', info: 'Detail', vessel: 'Vessel', vehicle: 'Vehicle' };
 // Fleets (game.fleet.inspect): cargo lines with an icon each
 const CARGO_ICON = { settlers: 'found-village', army: 'job-soldier', fish: 'spawn-fish', food: 'plant-wheat', wood: 'plant-tree', stone: 'mountain', ore: 'job-miner', gold: 'gold', goods: 'trade' };
 const isCraft = (r) => !!r?.vessel || r?.kind === 'vessel' || r?.kind === 'vehicle';
@@ -182,7 +182,7 @@ export class Inspector {
       const v = list.map((r) => r.village || (r.building ? g.civ?.villages?.[r.building.village] : null)).find(Boolean);
       const k = v ? kingdomOf(g, v.kingdom) : null;
       if (k && k.alive !== false) {
-        const r = safe(() => g.civ._inspectKingdom?.(k, 1), null) || { priority: 1, kind: 'kingdom', kingdom: k, title: k.name, subtitle: 'Kingdom', stats: [] };
+        const r = safe(() => g.civ._inspectKingdom?.(k, 1), null) || { priority: 1, kind: 'kingdom', kingdom: k, title: k.name, subtitle: 'Realm', stats: [] };
         list.splice(Math.max(1, list.findIndex((x) => kindOf(x) === 'tile')), 0, r);
       }
     }
@@ -359,7 +359,7 @@ export class Inspector {
       const sea = v?.cls === 'sea' || r.kind === 'vessel';
       const def = v?.def ? { ...v.def, kind: v.def.kind || v.kind, cls: v.def.cls || v.cls } : { kind: v?.kind, cls: v?.cls || (sea ? 'sea' : 'land') };
       const air = def.cls === 'air' || def.cls === 'space';
-      return { svg: uiIcon(sea ? 'ship' : vehicleIconName(def)), tint: def.war || def.siege ? '#ff8a7a' : sea ? '#7fc8ff' : air ? '#b9d4ff' : '#d9a466' };
+      return { svg: uiIcon(vehicleIconName(sea ? { ...def, cls: 'sea' } : def)), tint: def.war || def.siege ? '#ff8a7a' : sea ? '#7fc8ff' : air ? '#b9d4ff' : '#d9a466' };
     }
     if (k === 'village') return { svg: uiIcon('found-village'), tint: this.kingdomTint(r) || '#9fbcff' };
     if (k === 'kingdom') return { svg: uiIcon('banner'), tint: this.kingdomTint(r) || '#ffd36a' };
@@ -442,6 +442,10 @@ export class Inspector {
     // after its capital, "Taipei" the realm and "Taipei" the city), and each stays reachable
     const nameKey = (o) => String(o.title || '').trim().toLowerCase();
     const seen = new Set([`${kindOf(r)}:${nameKey(r)}`]);
+    // the ground under a building, village, realm, creature or craft is not a chip
+    // there: its two cards ("Forest Floor" land and detail) belong to tile cards
+    const onGround = kindOf(r) === 'tile' || kindOf(r) === 'info';
+    const terrainNames = new Set(this.results.filter((o) => kindOf(o) === 'tile').map(nameKey));
     const chipList = this.results
       .map((o, i) => ({ o, i }))
       .filter(({ o, i }) => {
@@ -450,6 +454,7 @@ export class Inspector {
         if (occIds && o.unit && occIds.has(o.unit.id)) return false;
         // a cart's realm and home town are not things standing here
         if (craft && (kindOf(o) === 'kingdom' || kindOf(o) === 'village')) return false;
+        if (!onGround && (kindOf(o) === 'tile' || (kindOf(o) === 'info' && terrainNames.has(nameKey(o))))) return false;
         seen.add(key);
         return true;
       });
@@ -485,7 +490,12 @@ export class Inspector {
     const actions = [];
     if ((u || craft) && !dead) actions.push(`<button class="ws-btn ws-btn--sm ${following ? 'is-on' : ''}" type="button" data-act="follow">${uiIcon('follow')}<span>${following ? 'Following' : 'Follow'}</span><kbd class="ws-key">F</kbd></button>`);
     actions.push(`<button class="ws-btn ws-btn--sm ws-btn--ghost" type="button" data-act="focus">${uiIcon('focus')}<span>Focus</span></button>`);
-    const kindLabel = k === 'tile' && r.tile?.water ? 'Waters' : u && ic.label ? ic.label : craft ? (craft.name && craft.def?.name ? craft.def.name : craft.def?.war ? 'Warship' : craft.def?.siege ? 'Siege engine' : KIND_LABEL[k]) : KIND_LABEL[k] || 'Detail';
+    let kindLabel = k === 'tile' && r.tile?.water ? 'Waters' : u && ic.label ? ic.label : craft ? (craft.name && craft.def?.name ? craft.def.name : craft.def?.war ? 'Warship' : craft.def?.siege ? 'Siege engine' : KIND_LABEL[k]) : KIND_LABEL[k] || 'Detail';
+    // the kind line never repeats the title ("Rescue helicopter" over "Rescue helicopter of …")
+    if (craft && kindLabel && String(this.titleOf(r) || '').toLowerCase().startsWith(String(kindLabel).toLowerCase())) {
+      const cls = craft.def?.cls || craft.cls;
+      kindLabel = cls === 'air' ? 'Aircraft' : cls === 'space' ? 'Spacecraft' : cls === 'sea' || r.kind === 'vessel' ? 'Vessel' : 'Vehicle';
+    }
     const pref = u || r.building;
     // a realm shows its banner (the same drawing as its flags) in place of a portrait
     const kObj = !pref && kindOf(r) === 'kingdom' && typeof r.kingdom === 'object' ? r.kingdom : null;
@@ -876,11 +886,19 @@ export class Inspector {
       const era = eraOf(g, k);
       const res = researchOf(g, k);
       const nT = k.techs instanceof Set ? k.techs.size : Array.isArray(k.techs) ? k.techs.length : 0;
-      const tot = techList(g).length;
+      const all = techList(g);
+      const tot = all.length;
+      const knows = (id) => (k.techs instanceof Set ? k.techs.has(id) : Array.isArray(k.techs) ? k.techs.includes(id) : !!k.techs?.[id]);
+      // the tech panel's wording: main arts carry the realm between eras, side arts are studied beside them
+      const mainAll = all.filter((t) => !t.side);
+      const sideAll = all.filter((t) => t.side);
+      const artsHtml = sideAll.length
+        ? `<span data-tip="Main arts carry the realm from era to era">${uiIcon('chronicle')}${mainAll.filter((t) => knows(t.id)).length} of ${mainAll.length} main arts</span><span data-tip="Side arts (food, medicine, land, city and urban planning) are studied beside the main art">${sideAll.filter((t) => knows(t.id)).length} of ${sideAll.length} side arts</span>`
+        : `<span data-tip="Technologies this realm has learned">${uiIcon('chronicle')}${nT}${tot ? ` of ${tot}` : ''} learned</span>`;
       const mastery = k.mastery || 0;
       html += `<section class="ws-dsec"><h5>Learning</h5><div class="ws-realm__era"><span class="ws-era is-era${era}">${uiIcon(ERA_ICON[era] || 'chronicle')}<span>${esc(eraNames()[era] || '')} era</span></span>${
         res ? `<span class="ws-realm__res"><small>Studying ${esc(res.name)}${res.pct != null ? ` · ${Math.round(res.pct * 100)}%` : ''}</small>${res.pct != null ? `<span class="ws-meter"><i style="width:${(res.pct * 100).toFixed(1)}%"></i></span>` : ''}</span>` : `<span class="ws-realm__res"><small>${nT && tot && nT >= tot ? 'Every technology is known' : 'No research under way'}</small></span>`
-      }</div><div class="ws-realm__facts"><span data-tip="Technologies this realm has learned">${uiIcon('chronicle')}${nT}${tot ? ` / ${tot}` : ''} techs</span>${mastery > 0 ? `<span data-tip="Mastery: refinements earned after every technology is known. Each level adds 3% to work, harvests and building.">${uiIcon('crown')}Mastery ${mastery}</span>` : ''}</div></section>`;
+      }</div><div class="ws-realm__facts">${artsHtml}${mastery > 0 ? `<span data-tip="Mastery: refinements earned after every technology is known. Each level adds 3% to work, harvests and building.">${uiIcon('crown')}Mastery ${mastery}</span>` : ''}</div></section>`;
     }
     const cult = this.cultureOf(v?.culture ?? k?.culture);
     if (cult) {
@@ -953,7 +971,14 @@ export class Inspector {
   // No structural re-render while a finger/pointer is down in the panel or a popover is open on it.
   frozen() {
     const pop = this.ui.popover;
-    return !!this._ptr || !!(pop?.target && pop.el.classList.contains('is-shown') && this.el.contains(pop.target));
+    if (this._ptr || !!(pop?.target && pop.el.classList.contains('is-shown') && this.el.contains(pop.target))) return true;
+    // nor while the mouse rests on one of its buttons (the Heritage switch, Follow…),
+    // so a click always lands on the button the player aimed at, nor while a
+    // keyboard user has focus on one
+    const hov = this.el.matches(':hover') && this.el.querySelector('button:hover, [role="switch"]:hover, input:hover');
+    const ae = document.activeElement;
+    const kbd = ae && ae !== this.el && this.el.contains(ae) && safe(() => ae.matches(':focus-visible'), false);
+    return !!(hov || kbd);
   }
 
   toggleFollow() {
@@ -1119,6 +1144,8 @@ export class Inspector {
   }
   // long names step down a size instead of breaking mid-word
   sizeTitle(h, title) {
+    // (two lines at most; the full name is in the tooltip)
+    if (title && h.title !== String(title)) h.title = String(title);
     const n = String(title || '').length;
     h.classList.toggle('is-long', n > 16 && n <= 24);
     h.classList.toggle('is-vlong', n > 24);

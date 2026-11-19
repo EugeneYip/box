@@ -302,9 +302,17 @@
   background: rgba(255, 247, 230, 0.05);
   box-shadow: inset 0 0 0 1px var(--ws-line);
 }
+/* on: a filled pill with a check, so it reads as the active choice */
 .ws-civauto.is-on {
-  color: var(--ws-gold-hi);
-  box-shadow: inset 0 0 0 1px rgba(235, 201, 119, 0.45);
+  color: #1d1608;
+  background: linear-gradient(180deg, var(--ws-gold-hi), var(--ws-gold));
+  box-shadow: none;
+  opacity: 1;
+}
+.ws-civauto.is-on::before {
+  content: '\2713';
+  margin-right: 5px;
+  font-weight: 800;
 }
 .ws-civauto:not([disabled]):hover {
   color: var(--ws-ink);
@@ -377,6 +385,32 @@
   }
   .ws-title__begin {
     margin-top: 2px;
+  }
+}
+/* 720p: the World Map's card (sizes, Round world and the regional maps) fits
+   inside the window with a margin */
+@media (max-height: 760px) and (min-height: 501px) {
+  .ws-title__center {
+    padding: 10px 24px;
+  }
+  .ws-title__emblem {
+    width: 50px;
+    height: 50px;
+  }
+  .ws-logo {
+    margin-top: 8px;
+    font-size: clamp(40px, min(7.4vw, 9.4vh), 88px);
+  }
+  .ws-title__rule {
+    margin-top: 8px;
+  }
+  .ws-title__tag {
+    margin-top: 8px;
+  }
+  .ws-title__card {
+    margin-top: 12px;
+    padding: 14px 22px 10px;
+    gap: 8px;
   }
 }
 /* phone landscape and other short screens: a compact logo, no crest, and the seed,
@@ -1014,7 +1048,8 @@
    ========================================================================== */
 :root {
   --ws-brandtxt: 138px;
-  --ws-clocktxt: 140px;
+  /* room for the full season line, "Winter · 12 yrs to Summer" */
+  --ws-clocktxt: 190px;
   --ws-wordmark: 120px;
 }
 /* brand: the wordmark and world line share one fixed column */
@@ -1047,6 +1082,8 @@
   min-width: 0;
 }
 .ws-clock__yr {
+  /* fills the line up to the time, so its box keeps one width as the years pass */
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1064,7 +1101,8 @@
   flex: none;
 }
 .ws-clock__day .ws-clock__epoch {
-  flex: 0 1 auto;
+  /* fills the rest of the line, so its box keeps one width as the years count down */
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1083,16 +1121,27 @@
   z-index: 2;
   pointer-events: none;
 }
+/* the actual speed, when the machine falls well behind: a plain line of text
+   hanging under the speed buttons, outside the bar, so it never reads as a
+   notification badge and never changes the bar's width */
 .ws-clock .ws-speed__eff {
-  height: 18px;
-  padding: 0 6px;
-  border-radius: 9px;
-  font-size: 10px;
-  line-height: 1;
-  background: #3b2a12;
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 180, 90, 0.55),
-    0 2px 6px rgba(0, 0, 0, 0.45);
+  position: absolute;
+  top: calc(100% + 13px);
+  right: 2px;
+  height: auto;
+  padding: 0;
+  border-radius: 0;
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  color: #f3c98a;
+  background: none;
+  box-shadow: none;
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.9),
+    0 0 6px rgba(0, 0, 0, 0.7);
 }
 .ws-clock .ws-leaf {
   width: 18px;
@@ -1167,6 +1216,31 @@
   }
   .ws-stat__v {
     font-size: 14px;
+  }
+}
+/* 1280-1320: the full season line still fits ("Spring · 8 yrs to Summer");
+   the speed buttons and the stats give up a few pixels for it */
+@media (max-width: 1320px) and (min-width: 1280px) {
+  :root {
+    --ws-clocktxt: 180px;
+  }
+  .ws-clock__dial {
+    width: 34px;
+    height: 34px;
+  }
+  .ws-clock__time {
+    gap: 8px;
+  }
+  .ws-seg {
+    grid-template-columns: repeat(5, 31px);
+  }
+  .ws-seg__thumb {
+    width: 26px;
+    transform: translateX(calc(var(--idx) * 31px));
+  }
+  .ws-stat {
+    padding: 0 5px 0 4px;
+    gap: 5px;
   }
 }
 @media (max-width: 1240px) and (min-width: 721px), (max-height: 500px) and (min-width: 721px) {

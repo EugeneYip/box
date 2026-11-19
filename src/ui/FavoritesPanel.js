@@ -29,6 +29,9 @@ export class FavoritesPanel {
     this.el = el('aside', { class: 'ws-side ws-glass ws-orn ws-favs', 'aria-label': 'Favorites' });
     this.countEl = el('span', { class: 'ws-side__count', text: '0' });
     this.list = el('div', { class: 'ws-side__list ws-favs__list', role: 'list' });
+    // the list's bottom edge fades while more rows lie below it
+    this._more = () => this.list.classList.toggle('has-more', this.list.scrollTop + this.list.clientHeight < this.list.scrollHeight - 4);
+    this.list.addEventListener('scroll', this._more, { passive: true });
     this.empty = el(
       'div',
       { class: 'ws-empty ws-favs__empty' },
@@ -247,7 +250,8 @@ export class FavoritesPanel {
     R.doing = el('span', { class: 'ws-favs__doing' });
     R.meterBar = el('i');
     R.meterTxt = el('small');
-    R.meter = el('span', { class: 'ws-favs__meter' }, el('span', { class: 'ws-meter' }, R.meterBar), R.meterTxt);
+    R.meterLbl = el('b', { class: 'ws-favs__mlbl' });
+    R.meter = el('span', { class: 'ws-favs__meter' }, R.meterLbl, el('span', { class: 'ws-meter' }, R.meterBar), R.meterTxt);
     R.main = el(
       'button',
       { class: 'ws-favs__main', type: 'button', 'data-act': 'show' },
@@ -338,7 +342,7 @@ export class FavoritesPanel {
     if (R.sig.lvl !== info.level) {
       R.sig.lvl = info.level;
       R.lvl.hidden = !info.level;
-      R.lvl.textContent = info.level ? String(info.level) : '';
+      R.lvl.textContent = info.level ? `Lv ${info.level}` : '';
       R.lvl.title = info.level ? `Level ${info.level}` : '';
     }
     const color = info.color || '';
@@ -363,7 +367,9 @@ export class FavoritesPanel {
       R.meter.hidden = !m;
       if (m) {
         R.meterBar.style.width = (m.v * 100).toFixed(1) + '%';
-        R.meter.firstChild.className = `ws-meter ${m.cls || ''}`;
+        R.meterBar.parentElement.className = `ws-meter ${m.cls || ''}`;
+        // each meter says what it measures ("HP", "Food")
+        R.meterLbl.textContent = m.label === 'Health' ? 'HP' : m.label;
         R.meterTxt.textContent = m.text;
         R.meter.dataset.tip = `${m.label} ${m.text}`;
         R.meter.setAttribute('aria-label', `${m.label} ${m.text}`);
@@ -567,6 +573,7 @@ export class FavoritesPanel {
     if (this._t <= 0 || this._ver !== this.store.version) {
       this._t = 1;
       safe(() => this.render(), null, 'favorites render');
+      this._more();
     }
     this._pT -= dt;
     if (this._pT <= 0) {

@@ -1,6 +1,6 @@
 import { CATEGORIES, listPowers, getPower } from '../powers/registry.js';
 import { powerIcon, categoryIcon, uiIcon, CATEGORY_TINT } from './icons.js';
-import { el, esc } from './dom.js';
+import { el, esc, safe } from './dom.js';
 
 // Power slots in the active category are bound to the bottom letter row.
 export const SLOT_CODES = ['KeyZ', 'KeyX', 'KeyC', 'KeyV', 'KeyB', 'KeyN', 'Comma', 'Period', 'Slash'];
@@ -269,7 +269,8 @@ export class Toolbar {
     const next = g.activePower === p ? null : p;
     g.selectPower(next);
     g.audio?.play?.(next ? 'ui-click' : 'ui-click', { volume: 0.6 });
-    if (next && this.isDrawer()) setTimeout(() => this.toggleDrawer(false), 140);
+    // phones (portrait and landscape): the drawer closes as soon as a power is picked
+    if (next && this.isDrawer()) this.toggleDrawer(false);
     if (next && this.ui.root.classList.contains('is-touch')) {
       clearTimeout(this._touchTip);
       setTimeout(() => {
@@ -302,7 +303,7 @@ export class Toolbar {
       const { svg, tint } = powerIcon(ap);
       ico.innerHTML = svg;
       ico.style.setProperty('--tint', tint);
-      txt.innerHTML = `<b>${esc(ap.name)}</b><small>${esc(CATEGORIES.find((c) => c.id === ap.category)?.name || '')} · tap to change</small>`;
+      txt.innerHTML = `<b>${esc((typeof ap.label === 'function' && safe(() => ap.label(this.game), null, 'power label')) || ap.name)}</b><small>${esc(CATEGORIES.find((c) => c.id === ap.category)?.name || '')} · tap to change</small>`;
     } else {
       ico.innerHTML = categoryIcon(this.cat);
       ico.style.setProperty('--tint', CATEGORY_TINT[this.cat]);
@@ -353,7 +354,12 @@ export class Toolbar {
       B._id = p.id;
       B.ico.innerHTML = svg;
       B.el.style.setProperty('--tint', tint);
-      B.name.textContent = p.name;
+    }
+    // a power with a choice of its own names it ("Spawn Vehicle: Container ship")
+    const nm = (typeof p.label === 'function' && safe(() => p.label(g), null, 'power label')) || p.name;
+    if (B.name.textContent !== nm) {
+      B.name.textContent = nm;
+      B.name.title = nm;
     }
     const hasBrush = !!p.brush;
     B.el.classList.toggle('has-brush', hasBrush);

@@ -107,13 +107,18 @@ export function techPanel(ui, kingdomId) {
   );
   if (all.length) {
     const grid = el('div', { class: 'ws-tech__grid' });
+    // eras the realm has wholly learned fold into one strip above the grid, so
+    // the panel opens with the realm's own era in view
+    const done = [];
     for (let e = 0; e < Math.max(4, eras.length); e++) {
       // main arts first, then the side arts under their own label
       const inEra = all.filter((t) => (Number.isFinite(t.era) ? t.era : eras.indexOf(t.era)) === e);
       const techs = [...inEra.filter((t) => !t.side), ...inEra.filter((t) => t.side)];
       if (!techs.length) continue;
       const beyond = e > cap;
-      const col = el('div', { class: 'ws-tech__col' + (e <= era ? ' is-reached' : '') + (e === era ? ' is-cur' : '') + (beyond ? ' is-capped' : ''), 'data-tip': beyond ? `Beyond the latest era the World Laws allow (${eras[cap] || ''})` : null }, el('div', { class: `ws-tech__era is-era${e}`, html: `${uiIcon(ERA_ICON[e] || 'chronicle')}<span>${esc(eras[e] || `Era ${e + 1}`)}</span>` }));
+      const whole = e < era && techs.every((t) => has(k, t.id));
+      if (whole) done.push([e, techs.length]);
+      const col = el('div', { class: 'ws-tech__col' + (e <= era ? ' is-reached' : '') + (e === era ? ' is-cur' : '') + (beyond ? ' is-capped' : '') + (whole ? ' is-done' : ''), 'data-tip': beyond ? `Beyond the latest era the World Laws allow (${eras[cap] || ''})` : null }, el('div', { class: `ws-tech__era is-era${e}`, html: `${uiIcon(ERA_ICON[e] || 'chronicle')}<span>${esc(eras[e] || `Era ${e + 1}`)}</span>${e === era ? '<em class="ws-tech__curtag">Current era</em>' : ''}` }));
       let sideHead = false;
       for (const t of techs) {
         if (t.side && !sideHead) {
@@ -147,13 +152,37 @@ export function techPanel(ui, kingdomId) {
       }
       grid.append(col);
     }
+    if (done.length) {
+      const btn = el('button', {
+        class: 'ws-btn ws-btn--sm ws-tech__donebtn',
+        type: 'button',
+        'aria-expanded': 'false',
+        text: 'Show them',
+        onclick: () => {
+          const open = grid.classList.toggle('show-done');
+          btn.textContent = open ? 'Fold them' : 'Show them';
+          btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        },
+      });
+      body.append(
+        el(
+          'div',
+          { class: 'ws-tech__done' },
+          el('span', { class: 'ws-tech__donelbl', text: done.length > 1 ? 'Eras fully learned' : 'Era fully learned' }),
+          el('span', { class: 'ws-tech__doneeras' }, ...done.map(([e, n]) => el('span', { class: `ws-era is-era${e}`, 'data-tip': `${eras[e] || ''} era: all ${n} arts learned`, html: `${uiIcon('good')}<span>${esc(eras[e] || '')} · ${n}</span>` }))),
+          btn,
+        ),
+      );
+    }
     body.append(grid);
-    // phones (one column): open at the realm's own era, not at the Hearth era
+    // open at the realm's own era, not at the Hearth era
     setTimeout(() => {
-      if (!body.isConnected || !matchMedia('(max-width: 720px)').matches) return;
+      if (!body.isConnected) return;
       const cur = grid.querySelector('.ws-tech__col.is-cur');
       const sc = body.closest('.ws-modal__body');
-      if (cur && sc && era > 0) sc.scrollTop = cur.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop - 8;
+      if (!cur || !sc || era <= 0) return;
+      const top = cur.getBoundingClientRect().top - sc.getBoundingClientRect().top;
+      if (top > sc.clientHeight * 0.45 || top < 0) sc.scrollTop = top + sc.scrollTop - 8;
     }, 80);
   } else if (learned.length) {
     body.append(el('div', { class: 'ws-tech__plain' }, ...learned.map((id) => el('span', { class: 'ws-techchip', html: `${uiIcon('good')}<span>${esc(prettyId(id))}</span>` }))));

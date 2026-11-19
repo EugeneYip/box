@@ -170,7 +170,8 @@ export class TopBar {
         this.pauseBtn,
         this.seg,
         this.cycleBtn,
-        el('span', { class: 'ws-speed__flags' }, this.effEl, (this.leafEl = el('span', { class: 'ws-leaf', 'data-tip': 'Power saver on · 30 fps', html: uiIcon('leaf') }))),
+        this.effEl,
+        el('span', { class: 'ws-speed__flags' }, (this.leafEl = el('span', { class: 'ws-leaf', 'data-tip': 'Power saver on · 30 fps', html: uiIcon('leaf') }))),
       ),
     );
     this.pausedEl = el('div', { class: 'ws-paused' }, el('span', { class: 'ws-paused__dot' }), 'Time is paused', el('kbd', { class: 'ws-key', text: 'Space' }));
@@ -328,7 +329,7 @@ export class TopBar {
       // "7 / 12 yrs" in year 1 read as if years had passed; this reads true at any time)
       const left = Math.max(1, Math.ceil((1 - frac) * len - 1e-6));
       const next = ['Spring', 'Summer', 'Autumn', 'Winter'][(Math.floor(t.season ?? 0) + 1) % 4];
-      const key = `${season}|${time}|${left}`;
+      const key = `${season}|${time}|${left}|${innerWidth}x${innerHeight}`;
       if (this._dayKey !== key) {
         this._dayKey = key;
         const fixed = this.game.laws?.weatherSeasons === false;
@@ -336,24 +337,27 @@ export class TopBar {
         // the longest wording that fits the bar: "Spring · 6 yrs to Summer",
         // then "Spring · Summer in 6y", then the season's glyph (its name kept
         // for screen readers) with "6 yrs to Summer"; the tip says it in full
-        const until = left <= 1 ? `1 yr to ${next}` : `${left} yrs to ${next}`;
-        const short = `${next} in ${left}y`;
-        const paint = (txt, iconOnly) => {
-          this.dayEl.innerHTML = `<i class="ws-season" style="--season:${SEASON_TINT[season]}">${uiIcon(SEASON_GLYPH[season] || 'sun')}</i><span class="ws-season__name${iconOnly ? ' ws-sr' : ''}">${season}</span><span class="ws-clock__sep"${iconOnly ? ' hidden' : ''}>·</span><span class="ws-clock__epoch">${txt}</span>`;
+        const paint = (txt, iconOnly, s = season) => {
+          this.dayEl.innerHTML = `<i class="ws-season" style="--season:${SEASON_TINT[s]}">${uiIcon(SEASON_GLYPH[s] || 'sun')}</i><span class="ws-season__name${iconOnly ? ' ws-sr' : ''}">${s}</span><span class="ws-clock__sep"${iconOnly ? ' hidden' : ''}>·</span><span class="ws-clock__epoch">${txt}</span>`;
           const ep = this.dayEl.lastElementChild;
           return ep.scrollWidth <= ep.clientWidth + 1;
         };
+        const word = (tier, n, nx) => (tier % 2 === 0 ? (n === '1' ? `1 yr to ${nx}` : `${n} yrs to ${nx}`) : `${nx} in ${n}y`);
         if (!epoch) paint(time, false);
         else {
-          const fitKey = `${season}|${left}|${innerWidth}`;
-          const tries = [[until, false], [short, false], [until, true], [short, true]];
-          let pick = this._fitKey === fitKey ? this._fitPick : -1;
-          if (pick < 0 || !paint(...tries[pick])) {
-            pick = tries.findIndex((t) => paint(...t));
-            if (pick < 0) paint(...tries[(pick = tries.length - 1)]);
+          // one wording per window width: the tier is chosen once, against the
+          // longest line any season can show under the Season length law
+          // ("Winter · 12 yrs to Summer"), so it never flips as the years count down
+          const digits = '0'.repeat(String(Math.max(1, Math.ceil(len))).length);
+          const fitKey = `${innerWidth}x${innerHeight}|${digits}|${document.fonts?.status || ''}`;
+          if (this._fitKey !== fitKey) {
+            const SEASONS = ['Spring', 'Summer', 'Autumn', 'Winter'];
+            let pick = [0, 1, 2, 3].findIndex((tier) => SEASONS.every((s) => SEASONS.every((nx) => paint(word(tier, digits, nx), tier >= 2, s))));
+            this._fitPick = pick < 0 ? 3 : pick;
+            // (measured only once the bar is laid out: a hidden bar fits anything)
+            this._fitKey = this.dayEl.clientWidth > 0 ? fitKey : null;
           }
-          this._fitKey = fitKey;
-          this._fitPick = pick;
+          paint(word(this._fitPick, String(left), next), this._fitPick >= 2);
         }
         this.dayEl.style.setProperty('--season', SEASON_TINT[season]);
         this.timeBox.dataset.tip = fixed
@@ -374,12 +378,14 @@ export class TopBar {
       E.ema = E.ema == null ? eff : E.ema * 0.5 + eff * 0.5;
       E.t = now;
       E.sim = t.total;
-      const slow = E.ema < g.speed * 0.8;
+      // only a real shortfall shows (under 70% of the chosen speed), as plain text;
+      // a crawl reads "under 0.1×", never "0×"
+      const slow = E.ema < g.speed * 0.7;
       this.effEl.classList.toggle('is-shown', slow);
       if (slow) {
-        const v = E.ema < 9.95 ? E.ema.toFixed(1).replace(/\.0$/, '') : Math.round(E.ema);
-        this.effEl.textContent = `≈${v}×`;
-        this.effEl.dataset.tip = `Running at about ${v}× — the machine can't keep up with ${g.speed}×`;
+        const v = E.ema < 0.1 ? null : E.ema < 9.95 ? E.ema.toFixed(1).replace(/\.0$/, '') : Math.round(E.ema);
+        this.effEl.textContent = v == null ? 'Actual speed under 0.1×' : `Actual speed ${v}×`;
+        this.effEl.dataset.tip = `Running at about ${v ?? 'under 0.1'}× — the machine can't keep up with ${g.speed}×`;
       }
     }
     this._statT -= dt;
