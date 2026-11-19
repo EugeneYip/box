@@ -6,6 +6,7 @@ import { createSharedUniforms, createMaterials, createDecalMaterials } from './f
 import { GroundCover } from './GroundCover.js';
 import { InstanceBatcher } from './InstanceBatcher.js';
 import { stageName, isTreeId, isMineral } from '../../sim/flora/species.js';
+import { PROP } from '../../core/scale.js';
 
 // Vegetation renderer (Nature).
 //
@@ -53,6 +54,37 @@ const _col = new THREE.Color();
 const _box = new THREE.Box3();
 
 const PINE_PICK = [0, 1, 0, 1, 3, 0, 1, 2]; // 1 in 8 pines is the snapped old pine
+
+// Plants to the world's scale (PROP in src/core/scale.js). Models are drawn
+// at their round-13 design size; SIZE_K tunes each species on top of
+// PROP.tree / PROP.shrub, and CANOPY_MAX caps the tallest of a species (design
+// units, so it follows PROP.tree too): old stands and big variants stop at
+// about two houses tall instead of towering over 0.6x towns.
+const SIZE_K = new Float32Array(32).fill(1);
+const CANOPY_MAX = new Float32Array(32).fill(99);
+{
+  const T = PROP.tree,
+    S = PROP.shrub;
+  const tree = (f, k, cap) => ((SIZE_K[f] = T * k), (CANOPY_MAX[f] = cap * T));
+  // (a 0.6x house stands about 0.9 tall: an oak tops out near two of them,
+  // conifers and jungle giants a little higher, savanna and swamp trees lower)
+  tree(FLORA.OAK, 1, 2.7);
+  tree(FLORA.PINE, 0.97, 3.1);
+  tree(FLORA.SNOW_PINE, 0.97, 3.1);
+  tree(FLORA.BIRCH, 1, 2.8);
+  tree(FLORA.PALM, 1.02, 2.9);
+  tree(FLORA.JUNGLE_TREE, 0.96, 3.1);
+  tree(FLORA.ACACIA, 1.02, 2.3);
+  tree(FLORA.SWAMP_TREE, 0.98, 2.6);
+  tree(FLORA.DEAD_TREE, 1, 2.6);
+  for (const f of [FLORA.BUSH, FLORA.BERRY_BUSH, FLORA.STUMP]) SIZE_K[f] = S;
+  SIZE_K[FLORA.CACTUS] = S * 0.95;
+  for (const f of [FLORA.FLOWERS, FLORA.REEDS, FLORA.MUSHROOM]) SIZE_K[f] = S * 1.06;
+  SIZE_K[FLORA.ROCK_SMALL] = 0.85;
+}
+// past this camera distance trees inside a town's build radius are not drawn,
+// so towns read as towns at far zoom (FloraSim.town marks the tiles)
+const TOWN_HIDE_DIST = 78;
 
 export class Vegetation {
   constructor(game) {
@@ -160,6 +192,7 @@ export class Vegetation {
     ev.on('world:height', (r) => this.markChunks(r, true));
     ev.on('world:fire', (r) => this.touchRect(r));
     ev.on('world:type', (r) => this.touchRect(r));
+    ev.on('flora:town', (r) => this.markChunks(r, true));
 
     this.ground = new GroundCover(this);
     this.syncAll(true);
@@ -338,6 +371,7 @@ export class Vegetation {
       total = 0;
     const aoTmp = [],
       glowTmp = [];
+    const townMask = this.game.flora?.town;
     for (let ty = c.y0; ty <= c.y1; ty++) {
       for (let tx = c.x0; tx <= c.x1; tx++) {
         const i = ty * world.w + tx;
@@ -362,9 +396,10 @@ export class Vegetation {
         if (h0 < SEA_LEVEL - (f === FLORA.REEDS ? 0.7 : f === FLORA.BOULDER || f === FLORA.ROCK_SMALL ? 1.2 : 0.15)) continue;
         const cfg = model.cfg;
         const v = this.variantOf(tx, ty, f);
-        const key = f * 8 + v;
+        const town = townMask && townMask[i] && isTreeId(f) ? 1 : 0;
+        const key = (f * 8 + v) * 2 + town;
         let s = scratch.get(key);
-        if (!s) scratch.set(key, (s = { f, v, n: 0, mats: new Float32Array(64 * 16), cols: new Float32Array(64 * 3) }));
+        if (!s) scratch.set(key, (s = { f, v, town, n: 0, mats: new Float32Array(64 * 16), cols: new Float32Array(64 * 3) }));
         if ((s.n + 1) * 16 > s.mats.length) {
           const m2 = new Float32Array(s.mats.length * 2);
           m2.set(s.mats);
@@ -373,13 +408,13 @@ export class Vegetation {
           c2.set(s.cols);
           s.cols = c2;
         }
-        const y = this.placeInstance(tx, ty, f, cfg, s.mats, s.n * 16);
+        const y = this.placeInstance(tx, ty, f, cfg, s.mats, s.n * 16, model.heights[v]);
         const ox = s.mats[s.n * 16 + 12],
           oz = s.mats[s.n * 16 + 14];
         const aoR = AO_SIZE[f];
         if (aoR || (f === FLORA.MUSHROOM && v === 4)) {
           const ground = world.heightAt(ox, oz);
-          if (aoR) aoTmp.push(ox, ground + 0.035, oz, aoR * (0.9 + hash2(tx, ty, 5) * 0.25));
+          if (aoR) aoTmp.push(ox, ground + 0.035, oz, aoR * SIZE_K[f] * (0.9 + hash2(tx, ty, 5) * 0.25));
           if (f === FLORA.MUSHROOM && v === 4) glowTmp.push(ox, ground + 0.05, oz, 3.4);
         }
         this.tintInstance(tx, ty, f, s.cols, s.n * 3);
@@ -393,7 +428,7 @@ export class Vegetation {
     c.lists.clear();
     for (const [key, sc] of scratch) {
       if (!sc.n) continue;
-      c.lists.set(key, { f: sc.f, v: sc.v, n: sc.n, mats: sc.mats.slice(0, sc.n * 16), cols: sc.cols.slice(0, sc.n * 3) });
+      c.lists.set(key, { f: sc.f, v: sc.v, town: sc.town, n: sc.n, mats: sc.mats.slice(0, sc.n * 16), cols: sc.cols.slice(0, sc.n * 3) });
     }
     c.ao = decalList(aoTmp);
     c.glow = decalList(glowTmp);
@@ -413,7 +448,7 @@ export class Vegetation {
   }
 
   // Writes the instance matrix; returns the ground Y.
-  placeInstance(tx, ty, f, cfg, arr, off) {
+  placeInstance(tx, ty, f, cfg, arr, off, mh = 1) {
     const world = this.world;
     const h1 = hash2(tx, ty, 11),
       h2 = hash2(tx, ty, 23),
@@ -440,6 +475,8 @@ export class Vegetation {
       const stand = Math.sin(tx * 0.13 + ty * 0.071) * Math.cos(tx * 0.057 - ty * 0.12);
       sc *= 0.9 + 0.12 * stand + 0.026 * nb;
     }
+    // world scale, then the species' canopy cap
+    sc = Math.min(sc * SIZE_K[f], CANOPY_MAX[f] / Math.max(0.05, mh));
     _q.setFromAxisAngle(_up, yaw);
     if (cfg.tilt > 0) {
       world.normalAt(x, z, _n);
@@ -520,6 +557,7 @@ export class Vegetation {
     this._projScreen.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
     this._frustum.setFromProjectionMatrix(this._projScreen);
     const sph = this._sph || (this._sph = new THREE.Sphere());
+    const townHide = (this.game.cameraRig.cur?.dist ?? 0) > TOWN_HIDE_DIST;
     let changed = false;
     for (const c of this.chunks) {
       let state = 0;
@@ -527,7 +565,7 @@ export class Vegetation {
         this.applyLod(c);
         sph.center.copy(c.sphere.center);
         sph.radius = c.sphere.radius + 7; // off-screen trees still cast shadows in
-        if (this._frustum.intersectsSphere(sph)) state = 1 + c.lod + (c.skip ? 4 : 0) + (c.flowerSkip ? 8 : 0) + (c.shadow ? 16 : 0) + (c.near ? 32 : 0);
+        if (this._frustum.intersectsSphere(sph)) state = 1 + c.lod + (c.skip ? 4 : 0) + (c.flowerSkip ? 8 : 0) + (c.shadow ? 16 : 0) + (c.near ? 32 : 0) + (townHide ? 64 : 0);
       }
       if (state !== c.state) {
         c.state = state;
@@ -550,6 +588,7 @@ export class Vegetation {
         const cfg = model.cfg;
         if (c.skip && cfg.far === 'skip') continue;
         if (c.flowerSkip && list.f === FLORA.FLOWERS) continue;
+        if (list.town && townHide) continue;
         if (c.lod === 3) {
           // whole-map view: one 4-triangle dot batch per species, no shrubs
           if (cfg.smallLod || !model.dot) continue;

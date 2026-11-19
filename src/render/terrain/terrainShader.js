@@ -1,4 +1,8 @@
 import { WATER_PARS_GLSL } from '../water/waterCommon.js';
+import { BUILDING } from '../../core/scale.js';
+
+// paving stones follow the buildings' scale (docs/WORLD-SCALE.md)
+const PAVE = BUILDING.scale;
 
 // Terrain surface shading, injected into MeshStandardMaterial via
 // onBeforeCompile so three.js lighting, shadows and fog keep working.
@@ -570,10 +574,12 @@ Mat matRoad(NS s) {
   // worn ruts & scattered cobbles: joints never thinner than ~2 px (they
   // stair-stepped into a grey pixel mosaic up close), softer joint contrast,
   // and no cobbles on sloping ground (they stretch there) - just worn earth
-  float cw = max(0.10, s.fw * 3.5);
-  float cob = smoothstep(cw * 0.25, cw, s.cellS.g);
+  // (the stones are cut at the buildings' scale: a house is about one tile)
+  vec4 pc = cz(s.p.xz * ${(1 / (9 * PAVE)).toFixed(5)});
+  float cw = max(0.10, s.fw * ${(3.5 / PAVE).toFixed(3)});
+  float cob = smoothstep(cw * 0.25, cw, pc.g);
   float hasCob = smoothstep(0.55, 0.70, s.meso.g) * smoothstep(0.86, 0.95, s.n.y) * (1.0 - smoothstep(0.3, 0.6, cw));
-  vec3 stone = vec3(0.36, 0.33, 0.29) * (0.85 + 0.3 * s.cellS.b);
+  vec3 stone = vec3(0.36, 0.33, 0.29) * (0.85 + 0.3 * pc.b);
   c = mix(c, mix(c * 0.78, stone, cob), hasCob * 0.7);
   return mk(c, 0.95, 0.25 + 0.1 * cob * hasCob, 0.03 + 0.02 * cob * hasCob);
 }

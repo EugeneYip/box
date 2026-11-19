@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { FLORA } from '../../world/constants.js';
+import { PROP } from '../../core/scale.js';
 import { MeshBuilder, MAT, C, mix3, mul3, clamp01, smooth, blobGeo, tubeGeo, bezier, M, V } from './MeshBuilder.js';
 
 // Hand-tuned procedural models for every FLORA id. Each species has 3-4
@@ -1375,73 +1376,69 @@ function buildStump(b, v, lod) {
 }
 
 function buildWheat(b, v, lod) {
-  const grid = lod ? 3 : 5;
+  // Crop rows at the world's scale (PROP.crop): low ridges of stalks lying
+  // flush with the furrowed soil, ears poking up a little above them, so a
+  // ripe field reads as striped gold at hip height of a person instead of a
+  // raised block. The shader keeps the rows plot-wide and only raises them as
+  // the crop grows (see FLORA_BEGIN, material WHEAT).
+  const K = PROP.crop;
   const ripe = C(0xeab43e),
     ripeD = C(0xb07c24),
-    head = C(0xf8d86a);
-  // a softly domed, mottled sheet of ears at canopy height makes the field read
-  // as a dense crop from above; brighter heads poke through it
-  const G = lod ? 2 : 4;
-  const E = 0.47;
-  const hgt = [],
-    shade = [];
-  for (let j = 0; j <= G; j++)
-    for (let i = 0; i <= G; i++) {
-      const edge = i === 0 || j === 0 || i === G || j === G;
-      const corner = (i === 0 || i === G) && (j === 0 || j === G);
-      hgt.push(corner ? 0.1 : edge ? 0.19 + b.r(0, 0.04) : 0.28 + b.r(-0.03, 0.04));
-      shade.push(b.r(0.72, 1.0));
+    head = C(0xf8d86a),
+    base = mul3(ripeD, 0.5),
+    mat = mix3(ripeD, ripe, 0.45);
+  const rows = lod ? 3 : 5;
+  const segs = lod ? 2 : 4;
+  const tufts = lod ? 4 : 11;
+  const E = 0.46;
+  const wr = (0.44 / rows) * 0.8; // ridge half-width at the soil (thin furrows between)
+  // bend comes from the height curve (nothing explicit), so the ridge foot
+  // stays on the soil and only the crest and the ears sway in the wind
+  const ridge = { leaf: 0, flutter: 0.1, mat: MAT.WHEAT };
+  for (let r = 0; r < rows; r++) {
+    const z0 = -0.44 + ((r + 0.5) / rows) * 0.88 + b.r(-0.012, 0.012);
+    // ridge crest: slightly uneven along the row
+    const crest = [];
+    // (a low leafy mat, shaded: the bright ears above it carry the color)
+    for (let k = 0; k <= segs; k++) crest.push((0.08 + b.r(-0.015, 0.015)) * K * (k === 0 || k === segs ? 0.75 : 1));
+    for (let k = 0; k < segs; k++) {
+      const xa = -E + (2 * E * k) / segs,
+        xb = -E + (2 * E * (k + 1)) / segs;
+      const ta = V(xa, crest[k], z0),
+        tb = V(xb, crest[k + 1], z0);
+      for (const side of [-1, 1]) {
+        const ba = V(xa, -0.005, z0 + side * wr),
+          bb = V(xb, -0.005, z0 + side * wr);
+        const o = { ...ridge, pivot: V((xa + xb) / 2, 0, z0) };
+        b.tri(ba, bb, tb, [base, base, mat], o);
+        b.tri(ba, tb, ta, [base, mat, mat], o);
+      }
     }
-  const P0 = (i, j) => {
-    const corner = (i === 0 || i === G) && (j === 0 || j === G);
-    const k = corner ? 0.82 : 1;
-    return V((-E + (2 * E * i) / G) * k, hgt[j * (G + 1) + i], (-E + (2 * E * j) / G) * k);
-  };
-  const cs = (i, j) => mul3(mix3(ripeD, ripe, 0.4 + (hgt[j * (G + 1) + i] - 0.17) * 2.4), shade[j * (G + 1) + i]);
-  const so = { leaf: 0.2, flutter: 0.3, mat: MAT.WHEAT, pivot: V(0, 0, 0), up: true, single: true, bend: 0.55 };
-  for (let j = 0; j < G; j++)
-    for (let i = 0; i < G; i++) {
-      b.tri(P0(i, j), P0(i, j + 1), P0(i + 1, j + 1), [cs(i, j), cs(i, j + 1), cs(i + 1, j + 1)], so);
-      b.tri(P0(i, j), P0(i + 1, j + 1), P0(i + 1, j), [cs(i, j), cs(i + 1, j + 1), cs(i + 1, j)], so);
-    }
-  for (let gy = 0; gy < grid; gy++) {
-    for (let gx = 0; gx < grid; gx++) {
-      const x = -0.44 + ((gx + 0.5) / grid) * 0.88 + b.r(-0.06, 0.06) + (gy % 2 ? 0.04 : -0.04);
-      const z = -0.44 + ((gy + 0.5) / grid) * 0.88 + b.r(-0.06, 0.06);
-      const per = lod ? 1 : 2;
-      for (let s = 0; s < per; s++) {
-        const bx = x + b.r(-0.05, 0.05),
-          bz = z + b.r(-0.05, 0.05);
-        const h = b.r(0.36, 0.5);
-        const lean = V(b.r(-0.05, 0.05), 0, b.r(-0.05, 0.05));
-        const base = V(bx, -0.01, bz);
-        const top = V(bx + lean.x, h, bz + lean.z);
-        const sd = V(0.011, 0, 0.011).applyAxisAngle(V(0, 1, 0), b.r(0, TAU));
-        const o = { leaf: 0.35, flutter: 0.5, mat: MAT.WHEAT, pivot: base };
-        b.tri(base.clone().sub(sd), top, base.clone().add(sd), [mul3(ripeD, 0.7), ripe, mul3(ripeD, 0.7)], o);
-        // a leaf
-        if (!lod && s === 0 && (gx + gy) % 2 === 0) {
-          const ld = V(b.r(-1, 1), 0, b.r(-1, 1)).normalize();
-          const lb = base.clone().add(V(0, h * 0.3, 0));
-          b.tri(lb.clone().sub(sd), lb.clone().addScaledVector(ld, 0.13).add(V(0, 0.09, 0)), lb.clone().add(sd), [ripeD, ripe, ripeD], { ...o, up: true });
-        }
-        // grain head: two crossed kites
-        const hb = top.clone().add(V(-lean.x * 0.2, -0.12, -lean.z * 0.2));
-        const ht = top.clone().add(V(lean.x * 0.15, 0.03, lean.z * 0.15));
-        const hm = hb.clone().lerp(ht, 0.45);
-        const ho = { leaf: 1, flutter: 0.6, mat: MAT.WHEAT, pivot: hb };
-        const kites = lod ? 1 : 2;
-        for (let q = 0; q < kites; q++) {
-          const w = sd.clone().multiplyScalar(2.1).applyAxisAngle(V(0, 1, 0), q * Math.PI * 0.5);
-          const l = hm.clone().add(w),
-            r = hm.clone().sub(w);
-          b.tri(hb, l, ht, [ripeD, head, head], ho);
-          b.tri(hb, ht, r, [ripeD, head, head], ho);
-        }
+    // stalks and ears along the crest
+    for (let t = 0; t < tufts; t++) {
+      const x = -E + ((t + 0.5) / tufts) * 2 * E + b.r(-0.03, 0.03);
+      const z = z0 + b.r(-wr * 0.5, wr * 0.5);
+      const h = b.r(0.24, 0.32) * K;
+      const lean = V(b.r(-0.03, 0.03), 0, b.r(-0.03, 0.03));
+      const sb = V(x, 0.05 * K, z);
+      const top = V(x + lean.x, h, z + lean.z);
+      const sd = V(0.008, 0, 0.008).applyAxisAngle(V(0, 1, 0), b.r(0, TAU));
+      const o = { leaf: 0.35, flutter: 0.5, mat: MAT.WHEAT, pivot: sb };
+      b.tri(sb.clone().sub(sd), top, sb.clone().add(sd), [ripeD, ripe, ripeD], o);
+      // grain head: crossed kites (one when far)
+      const hb = top.clone().add(V(0, -0.075 * K, 0));
+      const ht = top.clone().add(V(lean.x * 0.2, 0.02 * K, lean.z * 0.2));
+      const hm = hb.clone().lerp(ht, 0.45);
+      const ho = { leaf: 1, flutter: 0.6, mat: MAT.WHEAT, pivot: hb };
+      for (let q = 0; q < (lod ? 1 : 2); q++) {
+        const w = sd.clone().multiplyScalar(2.2).applyAxisAngle(V(0, 1, 0), q * Math.PI * 0.5);
+        b.tri(hb, hm.clone().add(w), ht, [ripeD, head, head], ho);
+        b.tri(hb, ht, hm.clone().sub(w), [ripeD, head, head], ho);
       }
     }
   }
-  return { bendScale: 1.3, height: 0.55 };
+  // a gentle sway: the crop is short, a tree-sized gust would lay it flat
+  return { bendScale: 0.5, height: 0.34 * K };
 }
 
 // ---------------------------------------------------------------------------
@@ -1509,7 +1506,9 @@ function buildFar(src, cfg, seed) {
   const fmat = nd > nl * 0.5 ? MAT.DLEAF : MAT.LEAF;
   const b = new MeshBuilder(seed);
   const ctr = lo.clone().add(hi).multiplyScalar(0.5);
-  const ext = hi.clone().sub(lo).multiplyScalar(0.5 * 0.92);
+  // a touch wider than the crown: at world scale (PROP.tree) far woods still
+  // close into one canopy instead of a scatter of dots
+  const ext = hi.clone().sub(lo).multiplyScalar(0.5).multiply(V(1.04, 0.92, 1.04));
   const snowy = ns > 0;
   const shade = (p, n) => {
     const t = clamp01((p.y - lo.y) / (hi.y - lo.y + 1e-6));
@@ -1564,8 +1563,9 @@ function buildDot(src, cfg, seed) {
   const c = mul3(acc, 1 / n);
   const b = new MeshBuilder(seed);
   const ctr = lo.clone().add(hi).multiplyScalar(0.5);
-  const rx = (hi.x - lo.x) * 0.5,
-    rz = (hi.z - lo.z) * 0.5;
+  const wide = cfg.far2 ? 0.62 : 0.5; // tree dots a touch wider (see buildFar)
+  const rx = (hi.x - lo.x) * wide,
+    rz = (hi.z - lo.z) * wide;
   const apex = V(ctr.x, hi.y, ctr.z);
   const y0 = Math.max(0.02, lo.y + (hi.y - lo.y) * 0.25);
   const ring = [V(ctr.x + rx, y0, ctr.z), V(ctr.x, y0, ctr.z + rz), V(ctr.x - rx, y0, ctr.z), V(ctr.x, y0, ctr.z - rz)];
@@ -1610,7 +1610,12 @@ export function buildAllModels() {
       dot = buildDot(variants[0][1] || variants[0][0], k, k.id * 53 + 11);
       if (dot) dot.userData.kind = k.id;
     }
-    out[k.id] = { cfg: k, variants, dot };
+    // full-grown height of each variant (the renderer caps canopies with it)
+    const heights = variants.map((lods) => {
+      lods[0].computeBoundingBox();
+      return lods[0].boundingBox.max.y;
+    });
+    out[k.id] = { cfg: k, variants, dot, heights };
   }
   out.totalVerts = verts;
   return out;

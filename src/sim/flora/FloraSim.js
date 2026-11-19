@@ -42,6 +42,10 @@ const SWEEP = 4; // seconds per full sweep of a 256x256 map
 // Larger maps keep the same tiles-per-tick budget (same ms per tick) and
 // simply sweep more slowly; rates are per game second so behaviour matches.
 const TICK_BUDGET_MS = 0.8; // never spend more than this per simulation tick
+// towns clear their own ground (refreshTowns)
+const TOWN_EVERY = 5; // game seconds between town outline refreshes
+const TOWN_CORE = 0.72; // of the build radius: no trees inside
+const TOWN_RING_KEEP = 0.34; // share of trees the outer ring keeps
 // biome chain for climate shifts (-1 = end of chain)
 const COLDER = new Int8Array(16).fill(-1);
 const WARMER = new Int8Array(16).fill(-1);
@@ -94,6 +98,12 @@ export class FloraSim {
     this._acc = 0;
     this.counts = { trees: 0, plants: 0 };
     this._countAcc = { trees: 0, plants: 0 };
+    // towns: 2 = inside the core of a village's build radius, 1 = its outer ring
+    this.town = new Uint8Array(n);
+    this._town2 = new Uint8Array(n);
+    this._townList = [];
+    this._townBoxes = [];
+    this._townT = -1;
     this.settle();
     this.recount();
   }
@@ -192,6 +202,11 @@ export class FloraSim {
     this.boost.fill(0);
     this.lastVisit.fill(0);
     this._gameT = 0;
+    this.town.fill(0);
+    this._town2.fill(0);
+    this._townList = [];
+    this._townBoxes = [];
+    this._townT = -1;
     this.captureNative();
     this.rng = mulberry32((this.game.params?.seed ?? 1) * 31 + 7);
     this._countAcc = { trees: 0, plants: 0 };
@@ -226,6 +241,10 @@ export class FloraSim {
     const season = this.game.time?.season ?? 1.5;
     this._season = Math.floor(season) % 4;
     if (laws.biomeShift !== false) this.shiftBiomes(dt, step);
+    if (this._gameT - this._townT >= TOWN_EVERY || this._townT < 0) {
+      this._townT = this._gameT;
+      this.refreshTowns();
+    }
     // hard time budget per tick: leftover visits carry over (bounded)
     const t0 = performance.now();
     let k = 0;
@@ -347,7 +366,7 @@ export class FloraSim {
         else {
           // stumps rot away; sometimes a sapling takes their place
           const tree = pickTree(t, world.temperature[i] + this._tOff, this.rng());
-          if (tree && this._grow !== false && this._treesSpread && this.rng() < 0.35 && suitAt(world, tree, tx, ty, i, this._tOff) >= 0.5) world.setFlora(tx, ty, tree, 0.03);
+          if (tree && !this.town[i] && this._grow !== false && this._treesSpread && this.rng() < 0.35 && suitAt(world, tree, tx, ty, i, this._tOff) >= 0.5) world.setFlora(tx, ty, tree, 0.03);
           else world.setFlora(tx, ty, FLORA.NONE);
         }
       }
@@ -409,6 +428,70 @@ export class FloraSim {
     if (sp.spread > 0 && suit >= 0.35 && this.lawAllows(f)) {
       const m = (f === FLORA.MUSHROOM ? this._fungi : 1) * this._fert * (this._season === 3 ? 0.25 : 1);
       if (this.rng() < sp.spread * (dt / SWEEP) * m * (1 + this.boost[i] * 3)) this.spread(i, tx, ty, f, sp);
+    }
+  }
+
+  // ---- towns grow out from under the canopy ---------------------------------
+  // Every few seconds the tiles inside each village's build radius are marked:
+  // the inner part (TOWN_CORE of the radius) is cleared of trees, the outer
+  // ring keeps about a third of them, and no wild tree seeds itself into
+  // either, so a growing town opens its own clearing. The renderer hides the
+  // ring's survivors at far zoom ('flora:town' tells it which chunks to redo).
+  refreshTowns() {
+    const world = this.game.world;
+    const W = world.w,
+      H = world.h;
+    const cur = this.town,
+      nxt = this._town2;
+    const list = [],
+      boxes = [];
+    for (const v of this.game.civ?.villages || []) {
+      if (!v || v.alive === false || !(v.buildRadius > 0) || !Number.isFinite(v.cx)) continue;
+      const r = v.buildRadius,
+        core = r * TOWN_CORE;
+      const x0 = Math.max(0, Math.floor(v.cx - r)),
+        x1 = Math.min(W - 1, Math.floor(v.cx + r)),
+        y0 = Math.max(0, Math.floor(v.cz - r)),
+        y1 = Math.min(H - 1, Math.floor(v.cz + r));
+      if (x1 < x0 || y1 < y0) continue;
+      boxes.push(x0, y0, x1, y1);
+      for (let y = y0; y <= y1; y++) {
+        const dz = y + 0.5 - v.cz;
+        for (let x = x0; x <= x1; x++) {
+          const dx = x + 0.5 - v.cx;
+          const d2 = dx * dx + dz * dz;
+          if (d2 > r * r) continue;
+          const i = y * W + x;
+          const lvl = d2 < core * core ? 2 : 1;
+          if (!nxt[i]) list.push(i);
+          if (lvl > nxt[i]) nxt[i] = lvl;
+        }
+      }
+    }
+    // tell the renderer which towns changed shape (old and new outlines)
+    const ev = this.game.events;
+    const old = this._townBoxes;
+    for (const bx of [old, boxes])
+      for (let k = 0; k < bx.length; k += 4) {
+        let hit = false;
+        for (let y = bx[k + 1]; y <= bx[k + 3] && !hit; y++) for (let x = bx[k], i = y * W + x; x <= bx[k + 2]; x++, i++) if (nxt[i] !== cur[i]) { hit = true; break; }
+        if (hit) ev?.emit?.('flora:town', { x0: bx[k], y0: bx[k + 1], x1: bx[k + 2], y1: bx[k + 3] });
+      }
+    for (const i of this._townList) cur[i] = 0;
+    this.town = nxt;
+    this._town2 = cur;
+    this._townList = list;
+    this._townBoxes = boxes;
+    // fell the trees in the way: all of them in the core, two in three in the ring
+    const flora = world.flora;
+    for (const i of list) {
+      const f = flora[i];
+      if (!f || !(isTreeId(f) || f === FLORA.DEAD_TREE)) continue;
+      if (nxt[i] === 2 || this.hash(i * 7 + 3) > TOWN_RING_KEEP) {
+        world.setFlora(i % W, (i / W) | 0, FLORA.NONE);
+        this.stress[i] = 0;
+        this.age[i] = 0;
+      }
     }
   }
 
@@ -571,6 +654,7 @@ export class FloraSim {
     const t = world.type[i];
     if (BARREN[t]) return false;
     if (t === TILE.FARMLAND && f !== FLORA.WHEAT) return false;
+    if (this.town[i] && isTreeId(f)) return false; // no wild trees seed into a town
     if (world.height[i] < SEA_LEVEL && !(f === FLORA.REEDS && world.height[i] > SEA_LEVEL - 0.5)) return false;
     if (world.slopeAt(tx, ty) > 2.6 && !isTreeId(f)) return false;
     if (suitAt(world, f, tx, ty, i, this._tOff || 0) < 0.5) return false;

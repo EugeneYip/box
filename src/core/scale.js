@@ -12,7 +12,8 @@
 //             label heights), wall height
 //   VEHICLE   land, sea and air craft: hulls, models, wakes
 //   PROP      village props (fences, lampposts, scarecrows, boats at a jetty);
-//             trees stay as Nature sets them (`tree`)
+//             trees (`tree`, Nature tunes each species on top of it and caps
+//             the canopy), shrubs and small plants (`shrub`), crops (`crop`)
 //   FOOTPRINT tiles a building or a village occupies: building plots, build
 //             radius, territory, streets, field plots, walls, harbours, berths
 //
@@ -43,7 +44,13 @@ export const VEHICLE = {
 
 export const PROP = {
   scale: S,
-  tree: 1,
+  // trees a little larger than the buildings (a grown oak about two houses
+  // tall), so woods still read as woods at mid and far zoom
+  tree: 0.68,
+  // bushes, flowers, reeds, cacti, stumps
+  shrub: 0.8,
+  // crop rows on farm plots (stalk height; the plot itself is a tile)
+  crop: S,
 };
 
 export const FOOTPRINT = {
