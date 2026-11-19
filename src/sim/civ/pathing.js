@@ -7,6 +7,8 @@ let g = null,
   from = null,
   seen = null,
   done = null,
+  cstamp = null,
+  cval = null,
   stampId = 0;
 let heapI = new Int32Array(1024),
   heapF = new Float32Array(1024),
@@ -19,6 +21,10 @@ function ensure(n) {
   from = new Int32Array(n);
   seen = new Uint32Array(n);
   done = new Uint32Array(n);
+  // each tile's step cost, asked once per search (a tile is a neighbour of up
+  // to eight expanded tiles and a corner of four diagonal steps)
+  cstamp = new Uint32Array(n);
+  cval = new Float64Array(n);
   stampId = 0;
 }
 function hpush(i, f) {
@@ -65,10 +71,18 @@ const SQ2 = Math.SQRT2;
 
 // cost(i) -> step cost multiplier (>= minCost) or Infinity for impassable.
 // goalTest(i) optional: accept any tile satisfying it as the goal.
-export function civPath(world, sx, sy, gx, gy, cost, maxNodes = 4000, minCost = 0.5, goalTest = null) {
+export function civPath(world, sx, sy, gx, gy, rawCost, maxNodes = 4000, minCost = 0.5, goalTest = null) {
   const W = world.w;
   ensure(world.size);
   stampId++;
+  const cs = cstamp,
+    cv = cval,
+    stamp = stampId;
+  const cost = (i) => {
+    if (cs[i] === stamp) return cv[i];
+    cs[i] = stamp;
+    return (cv[i] = rawCost(i));
+  };
   heapN = 0;
   const start = sy * W + sx;
   const goal = gy * W + gx;

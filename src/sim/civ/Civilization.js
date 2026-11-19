@@ -143,6 +143,7 @@ export class Civilization {
     this._landSizes = new Map();
     this._terrBest = new Float32Array(w.size);
     this._terrOwner = new Int16Array(w.size);
+    this._tPrevN = -1; // the next territory fill sweeps the whole map
     this._borders = new Map();
     this._bById = new Map();
     this.rockHits = new Map();
@@ -2361,8 +2362,30 @@ export class Civilization {
     const W = w.w;
     const best = this._terrBest; // normalised cost (cost / strength)
     const own = this._terrOwner;
-    best.fill(1e9);
-    own.fill(-1);
+    // Only the tiles the last fill reached can hold a cost or an owner: reset
+    // those (and later publish only those and the newly reached ones) instead
+    // of sweeping the whole map, the same result for a fraction of the work on
+    // a big map whose realms cover a small share of it. The first fill after
+    // a (re)start sweeps everything.
+    if (!this._tTouch || this._tTouch.length !== w.size) {
+      this._tTouch = new Int32Array(w.size);
+      this._tPrev = new Int32Array(w.size);
+      this._tPrevN = -1;
+    }
+    const prev = this._tPrev,
+      prevN = this._tPrevN;
+    const full = prevN < 0 || this._tWorld !== w.owner;
+    if (full) {
+      best.fill(1e9);
+      own.fill(-1);
+    } else
+      for (let k = 0; k < prevN; k++) {
+        const i = prev[k];
+        best[i] = 1e9;
+        own[i] = -1;
+      }
+    const touch = this._tTouch;
+    let nt = 0;
     if (!this._tq || this._tq.length < w.size * 2) {
       this._tq = new Int32Array(w.size * 2);
       this._tqf = new Float32Array(w.size * 2);
@@ -2414,6 +2437,7 @@ export class Civilization {
       if (!w.inBounds(tx, ty)) return;
       const i = ty * W + tx;
       if (best[i] <= 0) return;
+      if (best[i] === 1e9) touch[nt++] = i;
       best[i] = 0;
       own[i] = kid;
       str[i] = strength;
@@ -2466,7 +2490,9 @@ export class Civilization {
         }
         if (owner0[j] === kid) c *= 0.9; // incumbency
         const nc = ci + c / sr;
-        if (nc > R || nc >= best[j]) continue;
+        const bj = best[j];
+        if (nc > R || nc >= bj) continue;
+        if (bj === 1e9) touch[nt++] = j;
         best[j] = nc;
         own[j] = kid;
         str[j] = sr;
@@ -2475,8 +2501,8 @@ export class Civilization {
       }
     }
     // land only; publish the changes; sum each realm's land for its label
-    // (one pass over the map, then one more for the label spots and borders:
-    // a big map's wider territories cost no more to refresh than before)
+    // (over the tiles reached now and the ones reached last time: every tile
+    // that can hold an owner, or lose one)
     const K = this.kingdoms.length;
     const sx = new Float64Array(K),
       sz = new Float64Array(K),
@@ -2486,29 +2512,40 @@ export class Civilization {
     const capLand = this.kingdoms.map((k) => (k.alive && this.villages[k.capital] ? this.villages[k.capital].landId : -2));
     const landId = this.landId;
     const owner = w.owner;
+    const Hh2 = w.h;
     let x0 = W,
-      y0 = w.h,
+      y0 = Hh2,
       x1 = -1,
       y1 = -1;
-    for (let y = 0, i = 0; y < w.h; y++)
-      for (let x = 0; x < W; x++, i++) {
-        let o = own[i];
-        if (o >= 0 && H[i] < SEA_LEVEL) own[i] = o = -1;
-        if (owner[i] !== o) {
-          owner[i] = o;
-          if (x < x0) x0 = x;
-          if (x > x1) x1 = x;
-          if (y < y0) y0 = y;
-          if (y > y1) y1 = y;
-        }
-        if (o < 0 || (capLand[o] >= 0 && landId[i] !== capLand[o])) continue;
-        sx[o] += x;
-        sz[o] += y;
-        cnt[o]++;
+    const mark = (i) => {
+      const x = i % W,
+        y = (i / W) | 0;
+      if (x < x0) x0 = x;
+      if (x > x1) x1 = x;
+      if (y < y0) y0 = y;
+      if (y > y1) y1 = y;
+    };
+    // tiles that lost their owner (reached last time or, on a full sweep, anywhere)
+    if (full) {
+      for (let i = 0, n2 = w.size; i < n2; i++) if (owner[i] >= 0 && best[i] === 1e9) (owner[i] = -1), mark(i);
+    } else
+      for (let k = 0; k < prevN; k++) {
+        const i = prev[k];
+        if (best[i] === 1e9 && owner[i] !== -1) (owner[i] = -1), mark(i);
       }
+    for (let k = 0; k < nt; k++) {
+      const i = touch[k];
+      let o = own[i];
+      if (o >= 0 && H[i] < SEA_LEVEL) own[i] = o = -1;
+      if (owner[i] !== o) (owner[i] = o), mark(i);
+      if (o < 0 || (capLand[o] >= 0 && landId[i] !== capLand[o])) continue;
+      sx[o] += i % W;
+      sz[o] += (i / W) | 0;
+      cnt[o]++;
+    }
     if (x1 >= 0) w.markDirty('owner', x0, y0, x1, y1);
-    // label anchors: the realm's own land nearest the centre of its territory;
-    // border lengths between kingdoms
+    // label anchors: the realm's own land nearest the centre of its territory
+    // (ties go to the first tile in map order); border lengths between kingdoms
     const near = new Float64Array(K).fill(Infinity);
     const at = new Int32Array(K).fill(-1);
     for (let k = 0; k < K; k++)
@@ -2518,21 +2555,28 @@ export class Civilization {
       }
     const borders = this._borders;
     borders.clear();
-    const last = w.h - 1;
-    for (let y = 0, i = 0; y < w.h; y++)
-      for (let x = 0; x < W; x++, i++) {
-        const o = own[i];
-        if (o < 0) continue;
-        if (cnt[o] && H[i] >= SEA_LEVEL + 0.1 && !(capLand[o] >= 0 && landId[i] !== capLand[o])) {
-          const d = (x - sx[o]) ** 2 + (y - sz[o]) ** 2;
-          if (d < near[o]) (near[o] = d), (at[o] = i);
-        }
-        if (y === last || x === W - 1) continue;
-        const r = own[i + 1],
-          dn = own[i + W];
-        if (r >= 0 && r !== o) borders.set(relKey(o, r), (borders.get(relKey(o, r)) || 0) + 1);
-        if (dn >= 0 && dn !== o) borders.set(relKey(o, dn), (borders.get(relKey(o, dn)) || 0) + 1);
+    const last = Hh2 - 1;
+    for (let k = 0; k < nt; k++) {
+      const i = touch[k];
+      const o = own[i];
+      if (o < 0) continue;
+      const x = i % W,
+        y = (i / W) | 0;
+      if (cnt[o] && H[i] >= SEA_LEVEL + 0.1 && !(capLand[o] >= 0 && landId[i] !== capLand[o])) {
+        const d = (x - sx[o]) ** 2 + (y - sz[o]) ** 2;
+        if (d < near[o] || (d === near[o] && i < at[o])) (near[o] = d), (at[o] = i);
       }
+      if (y === last || x === W - 1) continue;
+      const r = own[i + 1],
+        dn = own[i + W];
+      if (r >= 0 && r !== o) borders.set(relKey(o, r), (borders.get(relKey(o, r)) || 0) + 1);
+      if (dn >= 0 && dn !== o) borders.set(relKey(o, dn), (borders.get(relKey(o, dn)) || 0) + 1);
+    }
+    // this fill's tiles are the next one's to reset
+    this._tPrev = touch;
+    this._tTouch = prev;
+    this._tPrevN = nt;
+    this._tWorld = owner;
     for (const k of this.kingdoms) {
       if (at[k.id] >= 0) {
         k.labelX = (at[k.id] % W) + 0.5;
