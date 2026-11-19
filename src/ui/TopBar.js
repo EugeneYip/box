@@ -329,7 +329,7 @@ export class TopBar {
       // "7 / 12 yrs" in year 1 read as if years had passed; this reads true at any time)
       const left = Math.max(1, Math.ceil((1 - frac) * len - 1e-6));
       const next = ['Spring', 'Summer', 'Autumn', 'Winter'][(Math.floor(t.season ?? 0) + 1) % 4];
-      const key = `${season}|${time}|${left}|${innerWidth}`;
+      const key = `${season}|${time}|${left}|${innerWidth}x${innerHeight}`;
       if (this._dayKey !== key) {
         this._dayKey = key;
         const fixed = this.game.laws?.weatherSeasons === false;
@@ -349,12 +349,13 @@ export class TopBar {
           // longest line any season can show under the Season length law
           // ("Winter · 12 yrs to Summer"), so it never flips as the years count down
           const digits = '0'.repeat(String(Math.max(1, Math.ceil(len))).length);
-          const fitKey = `${innerWidth}|${digits}|${document.fonts?.status || ''}`;
+          const fitKey = `${innerWidth}x${innerHeight}|${digits}|${document.fonts?.status || ''}`;
           if (this._fitKey !== fitKey) {
             const SEASONS = ['Spring', 'Summer', 'Autumn', 'Winter'];
             let pick = [0, 1, 2, 3].findIndex((tier) => SEASONS.every((s) => SEASONS.every((nx) => paint(word(tier, digits, nx), tier >= 2, s))));
-            this._fitKey = fitKey;
             this._fitPick = pick < 0 ? 3 : pick;
+            // (measured only once the bar is laid out: a hidden bar fits anything)
+            this._fitKey = this.dayEl.clientWidth > 0 ? fitKey : null;
           }
           paint(word(this._fitPick, String(left), next), this._fitPick >= 2);
         }
