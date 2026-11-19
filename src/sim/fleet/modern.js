@@ -501,10 +501,20 @@ export const modern = {
     const t = this._service(kind, k, v, null, leg, { type: 'transit', phase: 'out', vid: v.id, legs: 3 + Math.floor(this.rng() * 3) });
     if (t) this.first(k.id, kind, { x: leg[0], z: leg[1] });
   },
-  // A run between two stops on the town's streets.
+  // A run between two stops on the town's streets: stops inside the town and
+  // off the railway, along streets that keep clear of the main line
+  // (crossing it where they must) and of the highways out of town.
   _transitLeg(v, from) {
-    const R = v.roadTiles;
     const w = this.world;
+    const civ = this.game.civ;
+    const rail = civ.railMask;
+    const rr = (v.radius || 6) * 1.05;
+    const inTown = (i) => {
+      const dx = (i % w.w) + 0.5 - v.cx,
+        dz = ((i / w.w) | 0) + 0.5 - v.cz;
+      return dx * dx + dz * dz < rr * rr;
+    };
+    const R = v.roadTiles?.filter((i) => !rail?.[i] && inTown(i));
     if (!R?.length) return null;
     for (let tries = 0; tries < 4; tries++) {
       const i1 = R[(this.rng() * R.length) | 0];
@@ -518,8 +528,8 @@ export const modern = {
         z0 = ((i0 / w.w) | 0) + 0.5;
       }
       if (Math.hypot(x1 - x0, z1 - z0) < 6) continue;
-      const use = this.game.civ.use;
-      const p = civPath(w, Math.floor(x0), Math.floor(z0), Math.floor(x1), Math.floor(z1), (i) => (use[i] === USE.ROAD ? 1 : Infinity), 1500, 1);
+      const use = civ.use;
+      const p = civPath(w, Math.floor(x0), Math.floor(z0), Math.floor(x1), Math.floor(z1), (i) => (use[i] !== USE.ROAD ? Infinity : rail?.[i] ? 9 : inTown(i) ? 1 : 4), 1500, 1);
       if (!p || p.length < 4) continue;
       const path = [x0, z0];
       for (const i of p) path.push((i % w.w) + 0.5, ((i / w.w) | 0) + 0.5);

@@ -4,6 +4,7 @@ import { USE, YEAR, clamp } from './util.js';
 import { civPath } from './pathing.js';
 import { TECHS } from './tech.js';
 import { BREADTH_FIRST } from './breadth.js';
+import { BUILDING } from '../../core/scale.js';
 
 // Modern and future eras (docs/MODERN-ERAS.md, the parts owned by Civ):
 // the buildings of eras 4-7 and where the planner puts them, taller towns,
@@ -15,8 +16,11 @@ import { BREADTH_FIRST } from './breadth.js';
 //
 // PUBLIC CONTRACT (additions to game.civ)
 //   railLines(kid?) -> [{id, kind 'rail'|'maglev', kingdom, a, b (village ids),
-//                        pts [x, z, x, z, ...] (tile centres along the roads),
-//                        highway (bool: the road beside it widened), built}]
+//                        pts [x, z, x, z, ...] (the route through the realm's
+//                        network, RAIL_SIDE right of the track), highway, built}]
+//   railSegs() -> the drawn network (one entry per stretch of track, see below;
+//                 xing [[x, z, angle, angle2]]: where a rail crosses another)
+//   railMask  Uint8Array per tile: 1 under a rail track, 2 under a guideway
 //   railLine(id), railBetween(villageA, villageB) -> bool
 //   powerLines(kid?) -> [{id, kingdom, from (power building id), to (village id),
 //                         pts [x0, z0, x1, z1], pylons [x, z, ...]}]
@@ -68,6 +72,163 @@ export const MODERN_FIRST = {
 
 const MODERN_TECHS = TECHS.filter((t) => t.era >= 4).map((t) => t.id);
 const REACH = { musket: 2.6, rifle: 3.4, fatigues: 3.8, suit: 4.4 };
+
+// ------------------------------------------------------------ rail geometry
+// Fleets lays a train RAIL_SIDE to the left of its line's pts (air.js), so a
+// line's pts run that far to the right of the track.
+const RAIL_SIDE = 0.45;
+// per kind: minimum curve radius, how straight the country run is kept
+// (tolerance in tiles), and the lead a branch runs along its trunk or out of
+// a platform before it curves away
+const NET = {
+  rail: { R: 2.6, eps: 0.7, lead: 1.6 },
+  maglev: { R: 5, eps: 1.3, lead: 2.6 },
+};
+const SPACING = 0.4;
+// the station model's track: along the back of its platform (design units)
+const ST_Z = -0.66,
+  ST_HALF = 1.35;
+// a flyover lifts one guideway this far (design units) over another
+const MAG_LIFT = 0.6;
+// the highway's centre, right of the track (tiles)
+export const HW_OFF = 1.15;
+
+function revPts(p) {
+  const out = new Array(p.length);
+  for (let i = 0; i < p.length; i += 2) {
+    out[p.length - 2 - i] = p[i];
+    out[p.length - 1 - i] = p[i + 1];
+  }
+  return out;
+}
+function tanAt(P, i) {
+  const n = P.length / 2;
+  const a = Math.max(0, i - 1),
+    b = Math.min(n - 1, i + 1);
+  const dx = P[b * 2] - P[a * 2],
+    dz = P[b * 2 + 1] - P[a * 2 + 1];
+  const L = Math.hypot(dx, dz) || 1;
+  return [dx / L, dz / L];
+}
+function besideTrack(P) {
+  const out = new Array(P.length);
+  for (let i = 0; i < P.length / 2; i++) {
+    const [tx, tz] = tanAt(P, i);
+    out[i * 2] = P[i * 2] + tz * RAIL_SIDE;
+    out[i * 2 + 1] = P[i * 2 + 1] - tx * RAIL_SIDE;
+  }
+  return out;
+}
+// the highway's centre beside point i of a track
+export function hwPoint(P, i) {
+  const [tx, tz] = tanAt(P, i);
+  return [P[i * 2] + tz * HW_OFF, P[i * 2 + 1] - tx * HW_OFF];
+}
+function segHit(ax, az, bx, bz, cx, cz, dx, dz) {
+  const d1 = (bx - ax) * (cz - az) - (bz - az) * (cx - ax),
+    d2 = (bx - ax) * (dz - az) - (bz - az) * (dx - ax),
+    d3 = (dx - cx) * (az - cz) - (dz - cz) * (ax - cx),
+    d4 = (dx - cx) * (bz - cz) - (dz - cz) * (bx - cx);
+  return d1 * d2 < 0 && d3 * d4 < 0;
+}
+// Ramer-Douglas-Peucker: the grid path's stair steps become straight runs
+function rdp(P, eps) {
+  if (P.length < 3) return P.slice();
+  const keep = new Uint8Array(P.length);
+  keep[0] = keep[P.length - 1] = 1;
+  const stack = [[0, P.length - 1]];
+  while (stack.length) {
+    const [a, b] = stack.pop();
+    const [ax, az] = P[a],
+      [bx, bz] = P[b];
+    const dx = bx - ax,
+      dz = bz - az,
+      L = Math.hypot(dx, dz) || 1;
+    let md = 0,
+      mi = -1;
+    for (let i = a + 1; i < b; i++) {
+      const d = Math.abs((P[i][0] - ax) * dz - (P[i][1] - az) * dx) / L;
+      if (d > md) (md = d), (mi = i);
+    }
+    if (md > eps) {
+      keep[mi] = 1;
+      stack.push([a, mi], [mi, b]);
+    }
+  }
+  return P.filter((_, i) => keep[i]);
+}
+// corners rounded with a radius up to R, sampled every SPACING
+function fillet(P0, R) {
+  const Q = [P0[0]];
+  for (let i = 1; i < P0.length; i++) {
+    const l = Q[Q.length - 1];
+    if (Math.hypot(P0[i][0] - l[0], P0[i][1] - l[1]) > 0.08) Q.push(P0[i]);
+  }
+  const n = Q.length;
+  if (n < 2) return null;
+  // the tangent length each corner wants, then shared out where two corners
+  // compete for one straight run
+  const T = new Float64Array(n);
+  const len = [];
+  for (let i = 0; i + 1 < n; i++) len.push(Math.hypot(Q[i + 1][0] - Q[i][0], Q[i + 1][1] - Q[i][1]));
+  for (let i = 1; i < n - 1; i++) {
+    const ux = (Q[i][0] - Q[i - 1][0]) / len[i - 1],
+      uz = (Q[i][1] - Q[i - 1][1]) / len[i - 1],
+      vx = (Q[i + 1][0] - Q[i][0]) / len[i],
+      vz = (Q[i + 1][1] - Q[i][1]) / len[i];
+    const th = Math.acos(Math.max(-1, Math.min(1, ux * vx + uz * vz)));
+    T[i] = R * Math.tan(Math.min(th, 2.6) / 2);
+  }
+  for (let pass = 0; pass < 3; pass++)
+    for (let i = 0; i + 1 < n; i++) {
+      const sum = T[i] + T[i + 1];
+      if (sum > len[i] * 0.98) {
+        const f = (len[i] * 0.98) / sum;
+        T[i] *= f;
+        T[i + 1] *= f;
+      }
+    }
+  const out = [Q[0][0], Q[0][1]];
+  const line = (ax, az, bx, bz) => {
+    const L = Math.hypot(bx - ax, bz - az);
+    if (L < 1e-3) return;
+    const k = Math.max(1, Math.ceil(L / SPACING));
+    for (let s = 1; s <= k; s++) out.push(ax + ((bx - ax) * s) / k, az + ((bz - az) * s) / k);
+  };
+  let cx = Q[0][0],
+    cz = Q[0][1];
+  for (let i = 1; i < n - 1; i++) {
+    const [qx, qz] = Q[i];
+    const ux = (qx - Q[i - 1][0]) / len[i - 1],
+      uz = (qz - Q[i - 1][1]) / len[i - 1],
+      vx = (Q[i + 1][0] - qx) / len[i],
+      vz = (Q[i + 1][1] - qz) / len[i];
+    const t = T[i];
+    if (t < 0.02) {
+      line(cx, cz, qx, qz);
+      cx = qx;
+      cz = qz;
+      continue;
+    }
+    const ax = qx - ux * t,
+      az = qz - uz * t,
+      bx = qx + vx * t,
+      bz = qz + vz * t;
+    line(cx, cz, ax, az);
+    const k = Math.max(2, Math.ceil((2 * t) / SPACING));
+    for (let s = 1; s <= k; s++) {
+      const u = s / k,
+        a = (1 - u) * (1 - u),
+        b = 2 * u * (1 - u),
+        c = u * u;
+      out.push(a * ax + b * qx + c * bx, a * az + b * qz + c * bz);
+    }
+    cx = bx;
+    cz = bz;
+  }
+  line(cx, cz, Q[n - 1][0], Q[n - 1][1]);
+  return out;
+}
 
 export const modern = {
   _initModern() {
@@ -397,13 +558,19 @@ export const modern = {
   },
 
   // ------------------------------------------------------------ railways
-  // Railways: a line along the roads from the capital to each town it is
-  // linked with (surveyed roads first, then any town of the realm within
-  // reach), one line per survey. Maglev: lines between towns become
-  // elevated maglev lines. Atomic era: the roads beside them are widened.
+  // Each realm's lines form one network per kind (rail on the ground, maglev
+  // on a raised guideway): a tree grown from the station of the town most
+  // lines start from. A town is joined to the nearest point of its realm's
+  // network by a branch that leaves the trunk at a switch and runs on gentle
+  // curves (a minimum radius) to the platform of its station, so lines that
+  // share a corridor share one track and end at a buffer stop by a platform.
+  // Maglev: lines between cities move onto a guideway of their own (straight
+  // country, wide curves, a flyover where two guideways cross). Atomic era:
+  // a highway beside the lines, a tile off the rail bed.
   _surveyRail(k) {
     const cap = this.villages[k.capital];
     if (!cap?.alive) return;
+    this._railNetCheck(k);
     const reach = 90 * Math.sqrt(Math.max(1, this.budget.area));
     // 1. a new line
     let best = null,
@@ -418,36 +585,41 @@ export const modern = {
     if (best) {
       const fails = k.railFail || (k.railFail = {});
       if (!(this.game.time.total - (fails[best.id] ?? -1e9) < YEAR * 8)) {
-        const pts = this._railPath(cap, best);
-        if (pts) {
-          this.rails.push({ id: this._nextLine++, kind: 'rail', kingdom: k.id, a: cap.id, b: best.id, pts, highway: false, built: this.game.time.total });
+        const l = { id: this._nextLine++, kind: 'rail', kingdom: k.id, a: cap.id, b: best.id, pts: null, highway: false, built: this.game.time.total };
+        this.rails.push(l);
+        this._railNetBuild(k);
+        if (l.pts) {
           this._railEnds();
           this.infraVersion++;
           this._firstUse(k, 'rail', { x: (cap.cx + best.cx) / 2, z: (cap.cz + best.cz) / 2 });
           return;
         }
+        this.rails.pop();
+        this._railNetBuild(k);
         fails[best.id] = this.game.time.total;
       }
     }
-    // 2. Maglev: a line between towns rises onto its pylons
+    // 2. Maglev: a line between cities moves onto a guideway
     if (k.techs.has('maglev')) {
       const l = this.rails.find((x) => x.kingdom === k.id && x.kind === 'rail' && this.villages[x.a]?.tier >= 1 && this.villages[x.b]?.tier >= 1);
       if (l) {
         l.kind = 'maglev';
         l.maglevAt = this.game.time.total;
+        this._railNetBuild(k);
         this.infraVersion++;
-        this._firstUse(k, 'maglev', { x: l.pts[0], z: l.pts[1] });
+        this._firstUse(k, 'maglev', { x: l.pts?.[0] ?? cap.cx, z: l.pts?.[1] ?? cap.cz });
         return;
       }
     }
     // 3. Atomic era: highways beside the lines
     if ((k.era || 0) >= 6 && this.law('civRoads')) {
-      const l = this.rails.find((x) => x.kingdom === k.id && !x.highway);
+      const l = this.rails.find((x) => x.kingdom === k.id && !x.highway && x.kind === 'rail');
       if (l) {
         l.highway = true;
-        const n = this._widenAlong(l);
+        this._railNetBuild(k);
+        const n = this._widenAlong(k);
         this.infraVersion++;
-        if (n > 6) this._firstUse(k, 'highway', { x: l.pts[0], z: l.pts[1] });
+        if (n > 6) this._firstUse(k, 'highway', { x: l.pts?.[0] ?? cap.cx, z: l.pts?.[1] ?? cap.cz });
       }
     }
   },
@@ -460,70 +632,339 @@ export const modern = {
       if (a) a.railEnds++;
       if (b) b.railEnds++;
     }
+    this._netDirty = true;
   },
-  // Tile centres from hall to hall along the laid roads where there are
-  // any, across easy country where there are none; every second point kept.
-  _railPath(a, b) {
+  // The drawn network: [{kind, kingdom, pts [x, z, ...] (track centre, a
+  // point every 0.4 tiles), junction (leaves its parent at a switch),
+  // start / end {x, z, station} (a terminus: buffer stop, and a platform
+  // unless the town's station has one), lift [..] (maglev: height added at
+  // each point for a flyover) or null, hw (0/1 per point: a highway beside
+  // it, HW_OFF to the right) or null}]
+  railSegs() {
+    if (this._netDirty) {
+      this._netDirty = false;
+      const ks = new Set(this.rails.map((l) => l.kingdom));
+      this.railNet = (this.railNet || []).filter((s) => ks.has(s.kingdom));
+      for (const kid of ks) if (this.kingdoms[kid]) this._railNetBuild(this.kingdoms[kid]);
+    }
+    return this.railNet || [];
+  },
+  // rebuild a realm's network when its lines or their stations change
+  _railNetCheck(k) {
+    if ((this._netSig || {})[k.id] !== this._railSig(k)) {
+      this._railNetBuild(k);
+      this.infraVersion++;
+    }
+  },
+  _railSig(k) {
+    let s = '';
+    for (const l of this.rails) {
+      if (l.kingdom !== k.id) continue;
+      s += l.id + l.kind[0] + (l.highway ? 'h' : '');
+      for (const vid of [l.a, l.b]) s += ':' + (this._stationOf(this.villages[vid])?.id ?? '-');
+      s += ',';
+    }
+    return s;
+  },
+  _stationOf(v) {
+    if (!v?.buildings) return null;
+    for (const b of v.buildings) if (b.alive && b.type === 'station') return b;
+    return null;
+  },
+  // where a line ends in a town: along the back of its station's platform,
+  // or (no station yet) at the hall door
+  _railTerm(kind, v) {
+    const s = this._stationOf(v);
+    if (s) {
+      const r = s.rotation || 0,
+        S = BUILDING.scale;
+      return { x: s.x + Math.sin(r) * ST_Z * S, z: s.z + Math.cos(r) * ST_Z * S, dx: Math.cos(r), dz: -Math.sin(r), half: ST_HALF * S, station: true };
+    }
+    const x = v.hall?.alive ? v.hall.doorX : v.cx,
+      z = v.hall?.alive ? v.hall.doorZ : v.cz;
+    return { x, z, dx: 0, dz: 0, half: 0, station: false };
+  },
+  // a terminus turned toward (qx, qz): [buffer, platform entry], the unit
+  // vector out of it and the lead point the line curves in from
+  _railOrient(T, qx, qz, lead) {
+    if (T.station) {
+      const sg = (qx - T.x) * T.dx + (qz - T.z) * T.dz >= 0 ? 1 : -1;
+      const ex = T.dx * sg,
+        ez = T.dz * sg;
+      const E = [T.x + ex * T.half, T.z + ez * T.half];
+      return { pts: [[T.x - ex * T.half, T.z - ez * T.half], E], lead: [E[0] + ex * lead, E[1] + ez * lead] };
+    }
+    const L = Math.hypot(qx - T.x, qz - T.z) || 1;
+    const ex = (qx - T.x) / L,
+      ez = (qz - T.z) / L;
+    return { pts: [[T.x, T.z]], lead: [T.x + ex * lead * 0.6, T.z + ez * lead * 0.6] };
+  },
+  _railNetBuild(k) {
+    const w = this.world;
+    const N = w.w * w.h;
+    if (!this._railTmp || this._railTmp.length !== N) this._railTmp = new Uint8Array(N);
+    const mask = this._railTmp;
+    mask.fill(0);
+    (this._netSig || (this._netSig = {}))[k.id] = this._railSig(k);
+    const out = (this.railNet || []).filter((s) => s.kingdom !== k.id);
+    for (const kind of ['rail', 'maglev']) {
+      const lines = this.rails.filter((l) => l.kingdom === k.id && l.kind === kind);
+      if (!lines.length) continue;
+      const cnt = new Map();
+      for (const l of lines) cnt.set(l.a, (cnt.get(l.a) || 0) + 1);
+      let root = lines[0].a;
+      for (const [vid, c] of cnt) if (c > cnt.get(root)) root = vid;
+      const R = this.villages[root];
+      if (!R) continue;
+      const towns = [];
+      for (const l of lines) for (const t of [l.a, l.b]) if (t !== root && !towns.includes(t) && this.villages[t]) towns.push(t);
+      const d2 = (t) => Math.hypot(this.villages[t].cx - R.cx, this.villages[t].cz - R.cz);
+      towns.sort((a, b) => d2(a) - d2(b));
+      const tree = [];
+      const at = new Map();
+      for (const t of towns) {
+        const seg = this._railBranch(kind, k, R, this.villages[t], tree, mask);
+        if (!seg) continue;
+        at.set(t, tree.length);
+        tree.push(seg);
+      }
+      // the route from the root to the end of each segment
+      const pre = (si) => {
+        const s = tree[si];
+        if (s.parent < 0) return [];
+        return pre(s.parent).concat(tree[s.parent].pts.slice(0, s.at * 2));
+      };
+      const route = (t) => (at.has(t) ? pre(at.get(t)).concat(tree[at.get(t)].pts) : null);
+      for (const l of lines) {
+        let P = null;
+        if (l.a === root) P = route(l.b);
+        else if (l.b === root) P = route(l.a) && revPts(route(l.a));
+        else if (route(l.a) && route(l.b)) P = revPts(route(l.a)).concat(route(l.b));
+        l.pts = P && P.length >= 4 ? besideTrack(P) : null;
+        // a highway along the whole way to the line's town
+        const far = l.b === root ? l.a : l.b;
+        if (l.highway && at.has(far)) for (let si = at.get(far); si >= 0; si = tree[si].parent) tree[si].hwOn = true;
+      }
+      for (const s of tree) {
+        if (s.hwOn) s.hw = this._hwMask(s.pts);
+        out.push(s);
+      }
+    }
+    this.railNet = out;
+    // the tiles under the tracks (trams and buses keep to other streets)
+    if (!this.railMask || this.railMask.length !== N) this.railMask = new Uint8Array(N);
+    this.railMask.fill(0);
+    for (const s of out)
+      for (let i = 0; i + 1 < s.pts.length; i += 2) {
+        const tx = Math.floor(s.pts[i]),
+          tz = Math.floor(s.pts[i + 1]);
+        if (w.inBounds(tx, tz)) this.railMask[tz * w.w + tx] |= s.kind === 'rail' ? 1 : 2;
+      }
+  },
+  // one branch of a network: from the nearest point of the tree (or the
+  // root's station) to the town's station
+  _railBranch(kind, k, root, v, tree, mask) {
     const w = this.world;
     const W = w.w;
-    const door = (v) => (v.hall?.alive ? [Math.floor(v.hall.doorX), Math.floor(v.hall.doorZ)] : [Math.floor(v.cx), Math.floor(v.cz)]);
-    const [sx, sy] = door(a),
-      [gx, gy] = door(b);
+    const C = NET[kind];
+    const T = this._railTerm(kind, v);
+    let head,
+      parent = -1,
+      at = 0,
+      lead;
+    if (!tree.length) {
+      const o = this._railOrient(this._railTerm(kind, root), T.x, T.z, C.lead);
+      head = o.pts;
+      lead = o.lead;
+    } else {
+      // the nearest point of the network
+      let bs = -1,
+        bj = 0,
+        bd = Infinity;
+      for (let si = 0; si < tree.length; si++) {
+        const p = tree[si].pts;
+        for (let j = tree[si].lock0; j <= tree[si].lock1; j++) {
+          const d = (p[j * 2] - T.x) ** 2 + (p[j * 2 + 1] - T.z) ** 2;
+          if (d < bd) (bd = d), (bs = si), (bj = j);
+        }
+      }
+      if (bs < 0) return null;
+      const s = tree[bs],
+        p = s.pts;
+      const n = p.length / 2;
+      const tan = (j) => {
+        const a = Math.max(0, j - 1),
+          b = Math.min(n - 1, j + 1);
+        const dx = p[b * 2] - p[a * 2],
+          dz = p[b * 2 + 1] - p[a * 2 + 1];
+        const L = Math.hypot(dx, dz) || 1;
+        return [dx / L, dz / L];
+      };
+      const [tx0, tz0] = tan(bj);
+      const sg = (T.x - p[bj * 2]) * tx0 + (T.z - p[bj * 2 + 1]) * tz0 >= 0 ? 1 : -1;
+      // the switch a little before the foot, the branch leaving along the trunk
+      const jj = clamp(bj - sg * Math.round(C.lead / SPACING), s.lock0, s.lock1);
+      const [tx, tz] = tan(jj);
+      const J = [p[jj * 2], p[jj * 2 + 1]];
+      parent = bs;
+      at = jj;
+      head = [J];
+      lead = [J[0] + tx * sg * C.lead, J[1] + tz * sg * C.lead];
+    }
+    const o2 = this._railOrient(T, lead[0], lead[1], C.lead);
+    const tail = [o2.lead, ...o2.pts.slice().reverse()];
+    // the way between the two lead points
+    const sx = Math.floor(lead[0]),
+      sy = Math.floor(lead[1]),
+      gx = Math.floor(o2.lead[0]),
+      gy = Math.floor(o2.lead[1]);
+    let mid = [];
     if (!w.inBounds(sx, sy) || !w.inBounds(gx, gy)) return null;
-    const base = this._roadCost();
-    const use = this.use;
-    const roads = (i) => {
-      if (use[i] === USE.ROAD) return 0.4;
-      const x = i % W,
-        y = (i / W) | 0;
-      return Math.abs(x - sx) + Math.abs(y - sy) <= 3 || Math.abs(x - gx) + Math.abs(y - gy) <= 3 ? base(i) : Infinity;
+    if (sx !== gx || sy !== gy) {
+      const near = (q) => q?.length && Math.hypot((q[q.length - 1] % W) - gx, ((q[q.length - 1] / W) | 0) - gy) <= 2;
+      const mc = kind === 'rail' ? 0.75 : 1;
+      let q = civPath(w, sx, sy, gx, gy, this._railCost(kind, mask, false), 14000, mc);
+      if (!near(q)) q = civPath(w, sx, sy, gx, gy, this._railCost(kind, mask, true), 16000, mc);
+      if (!near(q)) return null;
+      mid = q.slice(0, -1).map((i) => [(i % W) + 0.5, ((i / W) | 0) + 0.5]);
+    }
+    const way = rdp([lead, ...mid, o2.lead], C.eps);
+    const pts = fillet([...head, ...way.slice(0, -1), ...tail], C.R);
+    if (!pts || pts.length < 4) return null;
+    const n = pts.length / 2;
+    // no switch on a platform or right at a station's throat
+    const arc = [0];
+    for (let i = 1; i < n; i++) arc.push(arc[i - 1] + Math.hypot(pts[i * 2] - pts[i * 2 - 2], pts[i * 2 + 1] - pts[i * 2 - 1]));
+    const keepS = parent < 0 ? (head.length > 1 ? Math.hypot(head[0][0] - head[1][0], head[0][1] - head[1][1]) : 0) + C.lead : C.lead * 1.5;
+    const keepE = (T.station ? T.half * 2 : 0) + C.lead;
+    let lock0 = 0,
+      lock1 = n - 1;
+    while (lock0 < n - 1 && arc[lock0] < keepS) lock0++;
+    while (lock1 > lock0 && arc[n - 1] - arc[lock1] < keepE) lock1--;
+    const seg = {
+      kind,
+      kingdom: k.id,
+      town: v.id,
+      pts,
+      parent,
+      at,
+      lock0,
+      lock1,
+      junction: parent >= 0,
+      start: parent < 0 ? { x: pts[0], z: pts[1], station: !!this._railTerm(kind, root).station } : null,
+      end: { x: pts[n * 2 - 2], z: pts[n * 2 - 1], station: T.station },
+      lift: null,
+      hw: null,
     };
-    const near = (p) => {
-      if (!p?.length) return false;
-      const last = p[p.length - 1];
-      return Math.hypot((last % W) - gx, ((last / W) | 0) - gy) <= 3;
-    };
-    let p = civPath(w, sx, sy, gx, gy, roads, 9000, 0.4);
-    if (!near(p)) p = civPath(w, sx, sy, gx, gy, (i) => (use[i] === USE.ROAD ? 0.4 : base(i) * 1.3), 12000, 0.4);
-    if (!near(p) || p.length < 4) return null;
-    const pts = [sx + 0.5, sy + 0.5];
-    for (let k = 1; k < p.length - 1; k += 2) pts.push((p[k] % W) + 0.5, ((p[k] / W) | 0) + 0.5);
-    const last = p[p.length - 1];
-    pts.push((last % W) + 0.5, ((last / W) | 0) + 0.5);
-    return pts;
+    // a guideway crossing another rises over it; rails cross on a diamond
+    {
+      const lift = new Float32Array(n);
+      let any = false;
+      for (const o of tree) {
+        const q = o.pts;
+        for (let i = 0; i + 1 < n; i++) {
+          if (arc[i] < C.lead * 2) continue;
+          const ax = pts[i * 2],
+            az = pts[i * 2 + 1],
+            bx = pts[i * 2 + 2],
+            bz = pts[i * 2 + 3];
+          for (let j = 0; j + 3 < q.length; j += 2) {
+            if (Math.abs(q[j] - ax) > 1 || Math.abs(q[j + 1] - az) > 1) continue;
+            if (!segHit(ax, az, bx, bz, q[j], q[j + 1], q[j + 2], q[j + 3])) continue;
+            any = true;
+            if (kind === 'rail') {
+              (seg.xing || (seg.xing = [])).push([ax, az, Math.atan2(bz - az, bx - ax), Math.atan2(q[j + 3] - q[j + 1], q[j + 2] - q[j])]);
+              continue;
+            }
+            for (let m = 0; m < n; m++) {
+              const d = Math.abs(arc[m] - arc[i]);
+              if (d < 4) lift[m] = Math.max(lift[m], MAG_LIFT * BUILDING.scale * (d < 1.2 ? 1 : 0.5 + 0.5 * Math.cos(((d - 1.2) / 2.8) * Math.PI)));
+            }
+          }
+        }
+      }
+      if (any && kind === 'maglev') seg.lift = lift;
+    }
+    for (let i = 0; i < n; i++) {
+      const tx = Math.floor(pts[i * 2]),
+        tz = Math.floor(pts[i * 2 + 1]);
+      if (w.inBounds(tx, tz)) mask[tz * W + tx] |= kind === 'rail' ? 1 : 2;
+    }
+    return seg;
   },
-  // Highways: a second lane of road laid beside a line's road outside the towns.
-  _widenAlong(l) {
+  _railCost(kind, mask, relaxed) {
+    const w = this.world;
+    const use = this.use;
+    if (kind === 'rail') {
+      const base = this._roadCost();
+      return (i) => {
+        if (mask[i] & 1) return 2.4; // beside its own track: join it at a switch instead
+        if (use[i] === USE.ROAD) return 0.75;
+        const c = base(i);
+        if (c === Infinity) return relaxed && use[i] === USE.BUILDING && w.height[i] >= SEA_LEVEL + 0.03 ? 14 : c;
+        return c;
+      };
+    }
+    return (i) => {
+      if (mask[i] & 2) return 3;
+      if (w.height[i] < SEA_LEVEL) return 1.5;
+      if (use[i] === USE.BUILDING) return relaxed ? 2 : 5;
+      return 1 + w.slopeAt(i % w.w, (i / w.w) | 0) * 0.6;
+    };
+  },
+  // a highway beside a track wherever it runs outside the towns and on land
+  _hwMask(P) {
+    const w = this.world;
+    const n = P.length / 2;
+    const hw = new Uint8Array(n);
+    const towns = this.villages.filter((v) => v?.alive);
+    for (let i = 0; i < n; i++) {
+      const [x, z] = hwPoint(P, i);
+      let ok = w.heightAt(x, z) >= SEA_LEVEL + 0.05;
+      for (const v of towns) if (ok && Math.abs(v.cx - x) < v.radius && Math.hypot(v.cx - x, v.cz - z) < v.radius * 0.85) ok = false;
+      hw[i] = ok ? 1 : 0;
+    }
+    // no stubs: short runs are dropped
+    for (let i = 0; i < n; ) {
+      if (!hw[i]) {
+        i++;
+        continue;
+      }
+      let j = i;
+      while (j < n && hw[j]) j++;
+      if (j - i < 8) for (let m = i; m < j; m++) hw[m] = 0;
+      i = j;
+    }
+    return hw;
+  },
+  // Highways: road tiles laid under the highway beside each track.
+  _widenAlong(k) {
     const w = this.world;
     const W = w.w;
-    const a = this.villages[l.a],
-      b = this.villages[l.b];
-    if (!a || !b) return 0;
     let n = 0;
-    const P = l.pts;
-    for (let k = 2; k < P.length - 2; k += 2) {
-      const x = P[k],
-        z = P[k + 1];
-      if (Math.hypot(x - a.cx, z - a.cz) < a.radius * 0.8 || Math.hypot(x - b.cx, z - b.cz) < b.radius * 0.8) continue;
-      // the side of the way: perpendicular to its direction here
-      const dx = P[k + 2] - P[k - 2],
-        dz = P[k + 3] - P[k - 1];
-      const L = Math.hypot(dx, dz) || 1;
-      for (const s of [1, -1]) {
-        const tx = Math.floor(x + (-dz / L) * s),
-          tz = Math.floor(z + (dx / L) * s);
+    for (const s of this.railNet || []) {
+      if (s.kingdom !== k.id || !s.hw) continue;
+      for (let i = 0; i < s.hw.length; i++) {
+        if (!s.hw[i]) continue;
+        const [x, z] = hwPoint(s.pts, i);
+        const tx = Math.floor(x),
+          tz = Math.floor(z);
         if (!w.inBounds(tx, tz)) continue;
-        const i = tz * W + tx;
-        if (this.use[i] !== USE.FREE || w.height[i] < SEA_LEVEL + 0.05 || w.type[i] === TILE.ROCK || w.type[i] === TILE.SNOW) continue;
-        const v = Math.hypot(x - a.cx, z - a.cz) < Math.hypot(x - b.cx, z - b.cz) ? a : b;
-        if (this.layRoad(v, i)) n++;
-        break;
+        const t = tz * W + tx;
+        if (this.use[t] !== USE.FREE || this.railMask?.[t] || w.height[t] < SEA_LEVEL + 0.05 || w.type[t] === TILE.ROCK || w.type[t] === TILE.SNOW) continue;
+        let v = null,
+          bd = Infinity;
+        for (const vid of k.villages) {
+          const u = this.villages[vid];
+          const d = u?.alive ? Math.hypot(u.cx - x, u.cz - z) : Infinity;
+          if (d < bd) (bd = d), (v = u);
+        }
+        if (v && this.layRoad(v, t)) n++;
       }
     }
     if (n) this.fieldVersion++;
     return n;
   },
-
   // ------------------------------------------------------------ power lines
   // Each town of the realm draws power from its nearest plant on the same
   // land: a straight line of pylons every five tiles.

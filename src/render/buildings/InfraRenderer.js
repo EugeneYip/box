@@ -1,15 +1,19 @@
 import * as THREE from 'three';
 import { SEA_LEVEL } from '../../world/constants.js';
-import { BUILDING, VEHICLE } from '../../core/scale.js';
+import { BUILDING } from '../../core/scale.js';
+import { hwPoint } from '../../sim/civ/modern.js';
 import { GeoBuilder } from './geom.js';
 import { pylonModel, PYLON_ARMS } from './modernModels.js';
 
 // The modern infrastructure (docs/MODERN-ERAS.md), drawn from civ data:
-//   railLines()  rails on sleepers and ballast following the terrain, steel
+//   railSegs()   each stretch of a realm's network once: steel rails on
+//                sleepers and grey ballast following the terrain, steel
 //                bridges with piers over rivers and the sea, maglev lines on a
-//                white guideway raised on pillars, a platform and buffer stop
-//                where each line ends in a town
-//   highways()   a wide asphalt road with lane markings beside the line
+//                white guideway raised on pillars (a flyover where two
+//                cross), a switch where a branch leaves its trunk, a buffer
+//                stop where a line ends at a station's platform
+//                highways: an asphalt road with gravel shoulders a tile to
+//                the right of the track, where the sim laid its road
 //   powerLines() lattice pylons with sagging wires
 // One merged mesh for everything solid, one set of lines for the wires, and
 // at far zoom one set of thin lines instead of both. Rebuilt only when
@@ -17,20 +21,33 @@ import { pylonModel, PYLON_ARMS } from './modernModels.js';
 // edges join, no segment is drawn across the seam.
 
 const BS = BUILDING.scale;
-const VS = VEHICLE.land;
-const GAUGE = 0.3 * VS; // rail to rail
-const STEP = 0.3; // resampling along a line (world units)
-const SIDE = 0.45; // rails run this far to one side of the road
-const HSIDE = -0.42; // the highway on the other side
-const MAG_Y = 0.85;
+// sizes at the design scale (one tile = one unit, a person 0.6 tall), times BS
+const GAUGE = 0.26 * BS; // rail to rail
+const RAIL_W = 0.034 * BS,
+  RAIL_H = 0.03 * BS;
+const SLEEPER_L = 0.24 * BS, // half length
+  SLEEPER_W = 0.07 * BS,
+  SLEEPER_H = 0.025 * BS;
+const BAL_T = 0.27 * BS, // ballast bed: half width at the top, at the toe, height
+  BAL_B = 0.4 * BS,
+  BAL_H = 0.07 * BS;
+const DECK_W = 0.5 * BS,
+  GIRDER_H = 0.22 * BS,
+  PIER_W = 0.22 * BS;
+const MAG_Y = 0.95 * BS; // the guideway's deck above the ground
+const GUIDE_W = 0.36 * BS,
+  GUIDE_H = 0.15 * BS,
+  PILLAR_W = 0.15 * BS,
+  PILLAR_GAP = 2.2; // tiles between pillars
+const HW_W = 0.62; // the highway's carriageway (a road, sized by the tiles)
 const FAR = 150; // beyond this camera distance: thin lines only
 const WIRE_D = 115; // wires drawn up to here
 
 const COL = {
-  ballast: 0x6e665c,
-  ballast2: 0x5a544c,
-  sleeper: 0x4a3a2c,
-  rail: 0x8c9096,
+  ballast: 0x8c8882,
+  ballast2: 0x76726c,
+  sleeper: 0x4e4844,
+  rail: 0xc4cad2,
   deck: 0x5a5e64,
   girder: 0x7a3a2c,
   pier: 0x9a948a,
@@ -156,23 +173,14 @@ function infraMaterial(uniforms) {
   return m;
 }
 
-// Chaikin corner cutting: the grid path becomes a gentle curve
-function smooth(P, it = 2) {
-  let A = P;
-  for (let k = 0; k < it; k++) {
-    if (A.length < 6) return A;
-    const B = [A[0], A[1]];
-    for (let i = 0; i + 3 < A.length; i += 2) {
-      const ax = A[i],
-        az = A[i + 1],
-        bx = A[i + 2],
-        bz = A[i + 3];
-      B.push(ax * 0.75 + bx * 0.25, az * 0.75 + bz * 0.25, ax * 0.25 + bx * 0.75, az * 0.25 + bz * 0.75);
-    }
-    B.push(A[A.length - 2], A[A.length - 1]);
-    A = B;
-  }
-  return A;
+function tanAt(P, i) {
+  const n = P.length / 2;
+  const a = Math.max(0, i - 1),
+    b = Math.min(n - 1, i + 1);
+  const dx = P[b * 2] - P[a * 2],
+    dz = P[b * 2 + 1] - P[a * 2 + 1];
+  const L = Math.hypot(dx, dz) || 1;
+  return [dx / L, dz / L];
 }
 
 export class InfraRenderer {
@@ -204,168 +212,212 @@ export class InfraRenderer {
     return this._h(x, z) < SEA_LEVEL;
   }
 
-  // Split a polyline where it crosses the seam of a round world (or jumps).
-  _runs(pts) {
-    const W = this.game.world.w;
-    const out = [];
-    let cur = [pts[0], pts[1]];
-    for (let i = 2; i + 1 < pts.length; i += 2) {
-      if (Math.abs(pts[i] - pts[i - 2]) > W / 2 || Math.abs(pts[i + 1] - pts[i - 1]) > 40) {
-        if (cur.length >= 4) out.push(cur);
-        cur = [];
-      }
-      cur.push(pts[i], pts[i + 1]);
-    }
-    if (cur.length >= 4) out.push(cur);
-    return out;
-  }
-  // resample a polyline every STEP, offset sideways by `off`
-  _samples(P, off) {
+  // One stretch of the network (civ.railSegs()): rails on sleepers and grey
+  // ballast following the terrain (a steel bridge over water), or a maglev
+  // guideway on pillars. A branch's first metre lies over its trunk: that
+  // is the switch, drawn as rails only, with a lever box beside it.
+  _track(E, seg, far) {
+    const P = seg.pts;
+    const n = P.length / 2;
+    const elevated = seg.kind === 'maglev';
     const S = [];
-    let carry = 0;
-    for (let i = 0; i + 3 < P.length; i += 2) {
-      const ax = P[i],
-        az = P[i + 1],
-        bx = P[i + 2],
-        bz = P[i + 3];
-      const L = Math.hypot(bx - ax, bz - az);
-      if (L < 1e-4) continue;
-      const tx = (bx - ax) / L,
-        tz = (bz - az) / L;
-      for (let d = carry; d < L; d += STEP) S.push([ax + tx * d - tz * off, az + tz * d + tx * off, tx, tz]);
-      carry = STEP - ((L - carry) % STEP);
-      if (carry >= STEP) carry = 0;
+    for (let i = 0; i < n; i++) {
+      const [tx, tz] = tanAt(P, i);
+      S.push([P[i * 2], P[i * 2 + 1], tx, tz]);
     }
-    const n = P.length;
-    const tx = P[n - 2] - P[n - 4],
-      tz = P[n - 1] - P[n - 3];
-    const L = Math.hypot(tx, tz) || 1;
-    S.push([P[n - 2] - (tz / L) * off, P[n - 1] + (tx / L) * off, tx / L, tz / L]);
-    return S;
-  }
-
-  _track(E, S, far, elevated) {
-    // deck heights: ground, or a bridge over water
     const Y = S.map(([x, z]) => {
       const h = this._h(x, z);
-      return { g: h, wet: h < SEA_LEVEL, y: h < SEA_LEVEL ? SEA_LEVEL + 0.32 : h + 0.035 };
+      return { g: h, wet: h < SEA_LEVEL, y: h < SEA_LEVEL ? SEA_LEVEL + 0.3 * BS : h + 0.02 };
     });
     // a bridge's approaches ramp down to the banks
     for (let i = 0; i < Y.length; i++)
       if (!Y[i].wet)
         for (let k = 1; k <= 3; k++) {
           const j = Y[i - k]?.wet ? i - k : Y[i + k]?.wet ? i + k : -1;
-          if (j >= 0) Y[i].y = Math.max(Y[i].y, Y[i].g + 0.035 + (SEA_LEVEL + 0.32 - Y[i].g - 0.035) * (1 - k / 4));
+          if (j >= 0) Y[i].y = Math.max(Y[i].y, Y[i].g + 0.02 + (SEA_LEVEL + 0.3 * BS - Y[i].g - 0.02) * (1 - k / 4));
         }
-    let lastPier = -9,
-      lastPillar = -9;
+    // a guideway's deck runs level over bumps in the ground: its height is
+    // averaged over a few tiles (never lower than most of its clearance)
+    if (elevated) {
+      const raw = Y.map((q) => Math.max(q.y + 0.2 * BS, q.g + MAG_Y));
+      for (let i = 0; i < Y.length; i++) {
+        let s = 0,
+          c = 0;
+        for (let j = Math.max(0, i - 6); j <= Math.min(Y.length - 1, i + 6); j++) (s += raw[j]), c++;
+        Y[i].deck = Math.max(s / c, Y[i].g + MAG_Y * 0.8, Y[i].wet ? SEA_LEVEL + MAG_Y * 0.8 : -1e9);
+      }
+      seg._deck = [Y[0].deck, Y[Y.length - 1].deck];
+    }
+    let arc = 0,
+      lastPier = -9,
+      lastPillar = -1e9;
+    const swLen = seg.junction ? 1.1 : 0;
     for (let i = 0; i + 1 < S.length; i++) {
-      const [ax, az] = S[i],
+      const [ax, az, tx, tz] = S[i],
         [bx, bz] = S[i + 1];
+      const L = Math.hypot(bx - ax, bz - az);
+      const a0 = arc;
+      arc += L;
+      if (Math.abs(bx - ax) > 40 || L < 1e-4) continue; // the seam of a round world
       const ya = Y[i].y,
         yb = Y[i + 1].y;
-      far.push(ax, ya + 0.02, az, bx, yb + 0.02, bz);
+      const px = -(bz - az) / L,
+        pz = (bx - ax) / L;
       if (elevated) {
         // maglev: a white guideway on pillars with a glowing strip
-        const ga = Math.max(ya, Y[i].g + MAG_Y),
-          gb = Math.max(yb, Y[i + 1].g + MAG_Y);
-        E.bar(ax, az, bx, bz, ga, gb, 0.2, 0.09, COL.guide);
-        E.bar(ax, az, bx, bz, ga + 0.004, gb + 0.004, 0.04, 0, COL.glow, 1, false);
-        if (i - lastPillar >= 5) {
-          lastPillar = i;
+        const la = seg.lift ? seg.lift[i] : 0,
+          lb = seg.lift ? seg.lift[i + 1] : 0;
+        const ga = Y[i].deck + la,
+          gb = Y[i + 1].deck + lb;
+        far.push(ax, ga, az, bx, gb, bz);
+        E.bar(ax, az, bx, bz, ga, gb, GUIDE_W, GUIDE_H, COL.guide);
+        E.bar(ax, az, bx, bz, ga + 0.003, gb + 0.003, GUIDE_W * 0.22, 0, COL.glow, 1, false);
+        for (const s of [1, -1]) E.bar(ax + px * GUIDE_W * 0.42 * s, az + pz * GUIDE_W * 0.42 * s, bx + px * GUIDE_W * 0.42 * s, bz + pz * GUIDE_W * 0.42 * s, ga + 0.012, gb + 0.012, GUIDE_W * 0.12, 0.012, COL.guide2);
+        if (a0 - lastPillar >= PILLAR_GAP && a0 > 0.3 && arc < seg.len - 0.3) {
+          lastPillar = a0;
           const bed = Math.min(Y[i].g, SEA_LEVEL - 0.3);
-          E.post(ax, az, bed, ga - 0.09, 0.1, COL.guide2);
-          const [, , tx, tz] = S[i];
-          E.bar(ax + tz * 0.14, az - tx * 0.14, ax - tz * 0.14, az + tx * 0.14, ga - 0.09, ga - 0.09, 0.07, 0.05, COL.guide2);
+          E.post(ax, az, bed, ga - GUIDE_H, PILLAR_W, COL.guide2);
+          E.bar(ax + tz * GUIDE_W * 0.6, az - tx * GUIDE_W * 0.6, ax - tz * GUIDE_W * 0.6, az + tx * GUIDE_W * 0.6, ga - GUIDE_H, ga - GUIDE_H, PILLAR_W * 0.8, PILLAR_W * 0.5, COL.guide2);
         }
         continue;
       }
-      const bridge = Y[i].wet || Y[i + 1].wet || ya > Y[i].g + 0.1;
+      far.push(ax, ya + 0.02, az, bx, yb + 0.02, bz);
+      const bridge = Y[i].wet || Y[i + 1].wet || ya > Y[i].g + 0.08;
+      const sw = a0 < swLen;
       if (bridge) {
         // steel deck with red girders and stone piers
-        E.bar(ax, az, bx, bz, ya, yb, 0.36, 0.14, COL.girder);
-        E.bar(ax, az, bx, bz, ya + 0.002, yb + 0.002, 0.3, 0, COL.deck, 0, false);
-        if (Y[i].wet && i - lastPier >= 4) {
+        E.bar(ax, az, bx, bz, ya, yb, DECK_W * 1.2, GIRDER_H, COL.girder);
+        E.bar(ax, az, bx, bz, ya + 0.002, yb + 0.002, DECK_W, 0, COL.deck, 0, false);
+        if (Y[i].wet && i - lastPier >= 5) {
           lastPier = i;
-          E.post(ax, az, Y[i].g - 0.2, ya - 0.14, 0.14, COL.pier);
+          E.post(ax, az, Y[i].g - 0.2, ya - GIRDER_H, PIER_W, COL.pier);
         }
-      } else {
+      } else if (!sw) {
         // ballast: a low trapezoid bed
-        const dx = bx - ax,
-          dz = bz - az;
-        const L = Math.hypot(dx, dz) || 1;
-        const px = -dz / L,
-          pz = dx / L;
-        const wt = 0.17,
-          wb = 0.24;
-        const T1a = [ax + px * wt, ya, az + pz * wt],
-          T2a = [ax - px * wt, ya, az - pz * wt],
-          T1b = [bx + px * wt, yb, bz + pz * wt],
-          T2b = [bx - px * wt, yb, bz - pz * wt];
+        const T1a = [ax + px * BAL_T, ya, az + pz * BAL_T],
+          T2a = [ax - px * BAL_T, ya, az - pz * BAL_T],
+          T1b = [bx + px * BAL_T, yb, bz + pz * BAL_T],
+          T2b = [bx - px * BAL_T, yb, bz - pz * BAL_T];
         E.quad(T1a, T1b, T2b, T2a, COL.ballast);
-        E.quad([ax + px * wb, ya - 0.05, az + pz * wb], [bx + px * wb, yb - 0.05, bz + pz * wb], T1b, T1a, COL.ballast2);
-        E.quad([ax - px * wb, ya - 0.05, az - pz * wb], [bx - px * wb, yb - 0.05, bz - pz * wb], T2b, T2a, COL.ballast2);
+        E.quad([ax + px * BAL_B, ya - BAL_H, az + pz * BAL_B], [bx + px * BAL_B, yb - BAL_H, bz + pz * BAL_B], T1b, T1a, COL.ballast2);
+        E.quad([ax - px * BAL_B, ya - BAL_H, az - pz * BAL_B], [bx - px * BAL_B, yb - BAL_H, bz - pz * BAL_B], T2b, T2a, COL.ballast2);
       }
-      // sleepers, three per step
-      const dx = bx - ax,
-        dz = bz - az;
-      for (let k = 0; k < 3; k++) {
-        const t = (k + 0.5) / 3;
-        const x = ax + dx * t,
-          z = az + dz * t,
-          y = ya + (yb - ya) * t;
-        const L = Math.hypot(dx, dz) || 1;
-        const px = -dz / L,
-          pz = dx / L;
-        E.bar(x - px * 0.15, z - pz * 0.15, x + px * 0.15, z + pz * 0.15, y + 0.018, y + 0.018, 0.045, 0.018, COL.sleeper);
-      }
+      // sleepers, three per step (none over the switch: the trunk's serve)
+      if (!sw)
+        for (let k = 0; k < 3; k++) {
+          const t = (k + 0.5) / 3;
+          const x = ax + (bx - ax) * t,
+            z = az + (bz - az) * t,
+            y = ya + (yb - ya) * t;
+          E.bar(x - px * SLEEPER_L, z - pz * SLEEPER_L, x + px * SLEEPER_L, z + pz * SLEEPER_L, y + SLEEPER_H, y + SLEEPER_H, SLEEPER_W, SLEEPER_H, COL.sleeper);
+        }
       // the two rails
-      const L = Math.hypot(dx, dz) || 1;
-      const px = (-dz / L) * (GAUGE / 2),
-        pz = (dx / L) * (GAUGE / 2);
-      for (const s of [1, -1]) E.bar(ax + px * s, az + pz * s, bx + px * s, bz + pz * s, ya + 0.04, yb + 0.04, 0.018, 0.022, COL.rail);
+      const rx = px * (GAUGE / 2),
+        rz = pz * (GAUGE / 2);
+      for (const s of [1, -1]) E.bar(ax + rx * s, az + rz * s, bx + rx * s, bz + rz * s, ya + SLEEPER_H + RAIL_H, yb + SLEEPER_H + RAIL_H, RAIL_W, RAIL_H, COL.rail);
+    }
+    // a diamond where two tracks cross: a steel crossing plate
+    for (const [x, z, a1, a2] of seg.xing || []) {
+      const y = Math.max(this._h(x, z), SEA_LEVEL) + 0.02 + SLEEPER_H + 0.002;
+      for (const a of [a1, a2]) {
+        const cx = Math.cos(a) * 0.32,
+          cz = Math.sin(a) * 0.32;
+        E.bar(x - cx, z - cz, x + cx, z + cz, y, y, BAL_T * 2.2, SLEEPER_H, COL.deck);
+      }
+    }
+    if (seg.junction && !elevated && n > 2) {
+      // the switch lever box beside the points
+      const [x, z, tx, tz] = S[0];
+      const side = this._turnSide(P);
+      const bx = x + tz * side * 0.32,
+        bz = z - tx * side * 0.32;
+      const y = Math.max(this._h(bx, bz), SEA_LEVEL);
+      E.post(bx, bz, y, y + 0.05 * BS * 2, 0.07 * BS * 2, COL.buffer);
     }
   }
+  // which side a branch turns to (+1 right, -1 left of its first direction)
+  _turnSide(P) {
+    const n = P.length / 2;
+    const [tx, tz] = tanAt(P, 0);
+    const j = Math.min(n - 1, 8);
+    const dx = P[j * 2] - P[0],
+      dz = P[j * 2 + 1] - P[1];
+    return dx * tz - dz * tx >= 0 ? 1 : -1;
+  }
 
-  _platform(E, x, z, tx, tz, off) {
-    // a short platform beside the end of the line, and a buffer stop
+  // the end of a line: a buffer stop, and a short platform where the town
+  // has no station yet (the station's own platform serves otherwise); a
+  // guideway ends on a raised platform
+  _terminus(E, seg, atStart) {
+    const P = seg.pts;
+    const n = P.length / 2;
+    const i = atStart ? 0 : n - 1;
+    let [tx, tz] = tanAt(P, i);
+    if (atStart) (tx = -tx), (tz = -tz); // pointing out of the line's end
+    const x = P[i * 2],
+      z = P[i * 2 + 1];
     const px = -tz,
       pz = tx;
-    const y = Math.max(this._h(x, z), SEA_LEVEL + 0.1);
-    const po = off + Math.sign(off) * 0.28;
-    const cx = x - tx * 0.5 + px * po,
-      cz = z - tz * 0.5 + pz * po;
-    E.bar(cx - tx * 0.55, cz - tz * 0.55, cx + tx * 0.55, cz + tz * 0.55, y + 0.1, y + 0.1, 0.26, 0.14, COL.platform);
-    E.bar(cx - tx * 0.55 - px * 0.11, cz - tz * 0.55 - pz * 0.11, cx + tx * 0.55 - px * 0.11, cz + tz * 0.55 - pz * 0.11, y + 0.102, y + 0.102, 0.02, 0, COL.edge, 0, false);
-    const bx = x + px * off,
-      bz = z + pz * off;
-    E.bar(bx - px * 0.12, bz - pz * 0.12, bx + px * 0.12, bz + pz * 0.12, y + 0.12, y + 0.12, 0.06, 0.1, COL.buffer);
+    const g = Math.max(this._h(x, z), SEA_LEVEL);
+    const info = atStart ? seg.start : seg.end;
+    if (seg.kind === 'maglev') {
+      const y = (seg._deck ? seg._deck[atStart ? 0 : 1] : g + MAG_Y) + (seg.lift ? seg.lift[i] : 0);
+      const cx = x - tx * 0.8,
+        cz = z - tz * 0.8;
+      for (const s of [1, -1]) {
+        const ox = px * s * (GUIDE_W * 0.5 + 0.16),
+          oz = pz * s * (GUIDE_W * 0.5 + 0.16);
+        E.bar(cx - tx * 0.8 + ox, cz - tz * 0.8 + oz, cx + tx * 0.8 + ox, cz + tz * 0.8 + oz, y + 0.02, y + 0.02, 0.26, 0.05, COL.guide);
+        E.bar(cx - tx * 0.8 + ox * 1.5, cz - tz * 0.8 + oz * 1.5, cx + tx * 0.8 + ox * 1.5, cz + tz * 0.8 + oz * 1.5, y + 0.3, y + 0.3, 0.2, 0.02, COL.guide2);
+        for (const e of [-0.7, 0.7]) E.post(cx + tx * e + ox * 1.6, cz + tz * e + oz * 1.6, y + 0.02, y + 0.3, 0.025, COL.guide2);
+      }
+      for (const e of [-0.6, 0.6]) E.post(cx + tx * e, cz + tz * e, Math.min(g, SEA_LEVEL - 0.3), y - GUIDE_H, PILLAR_W * 1.3, COL.guide2);
+      return;
+    }
+    const y = g + 0.02;
+    if (!info?.station) {
+      const po = 0.26;
+      const cx = x - tx * 0.6 + px * po,
+        cz = z - tz * 0.6 + pz * po;
+      E.bar(cx - tx * 0.5, cz - tz * 0.5, cx + tx * 0.5, cz + tz * 0.5, y + 0.07, y + 0.07, 0.2, 0.09, COL.platform);
+      E.bar(cx - tx * 0.5 - px * 0.09, cz - tz * 0.5 - pz * 0.09, cx + tx * 0.5 - px * 0.09, cz + tz * 0.5 - pz * 0.09, y + 0.072, y + 0.072, 0.015, 0, COL.edge, 0, false);
+    }
+    // the buffer stop: a red beam on two posts across the end of the rails
+    E.bar(x - px * GAUGE * 0.75, z - pz * GAUGE * 0.75, x + px * GAUGE * 0.75, z + pz * GAUGE * 0.75, y + 0.1 * BS, y + 0.1 * BS, 0.05 * BS, 0.07 * BS, COL.buffer);
+    for (const s of [1, -1]) E.post(x + px * GAUGE * 0.5 * s + tx * 0.04, z + pz * GAUGE * 0.5 * s + tz * 0.04, y, y + 0.06 * BS, 0.05 * BS, COL.sleeper);
   }
 
-  _highway(E, S, far, a, b) {
-    const inTown = (x, z) => (a && Math.hypot(x - a.cx, z - a.cz) < a.radius * 0.8) || (b && Math.hypot(x - b.cx, z - b.cz) < b.radius * 0.8);
-    for (let i = 0; i + 1 < S.length; i++) {
-      const [ax, az] = S[i],
-        [bx, bz] = S[i + 1];
-      if (inTown(ax, az) || inTown(bx, bz)) continue;
+  // a highway beside a track, a tile off its bed (where the sim laid its
+  // road: hw marks the points, hwPoint the centre), with a gravel shoulder
+  _highway(E, seg, far) {
+    const P = seg.pts,
+      hw = seg.hw;
+    const n = P.length / 2;
+    const C = [];
+    for (let i = 0; i < n; i++) C.push(hwPoint(P, i));
+    for (let i = 0; i + 1 < n; i++) {
+      if (!hw[i] || !hw[i + 1]) continue;
+      const [ax, az] = C[i],
+        [bx, bz] = C[i + 1];
+      const L = Math.hypot(bx - ax, bz - az);
+      if (L < 1e-4 || L > 3) continue;
       const ga = this._h(ax, az),
         gb = this._h(bx, bz);
-      const wet = ga < SEA_LEVEL || gb < SEA_LEVEL;
-      const ya = wet ? SEA_LEVEL + 0.28 : ga + 0.04,
-        yb = wet ? SEA_LEVEL + 0.28 : gb + 0.04;
+      const ya = ga + 0.03,
+        yb = gb + 0.03;
       far.push(ax, ya + 0.02, az, bx, yb + 0.02, bz);
-      E.bar(ax, az, bx, bz, ya, yb, 0.62, wet ? 0.12 : 0.05, wet ? COL.deck : COL.asphalt);
-      const dx = bx - ax,
-        dz = bz - az;
-      const L = Math.hypot(dx, dz) || 1;
-      const px = -dz / L,
-        pz = dx / L;
-      for (const s of [1, -1]) E.bar(ax + px * 0.27 * s, az + pz * 0.27 * s, bx + px * 0.27 * s, bz + pz * 0.27 * s, ya + 0.003, yb + 0.003, 0.018, 0, COL.edge, 0, false);
-      if (i % 2 === 0) E.bar(ax, az, ax + dx * 0.55, az + dz * 0.55, ya + 0.003, ya + (yb - ya) * 0.55 + 0.003, 0.018, 0, COL.mark, 0, false);
-      if (wet && i % 5 === 0) E.post(ax, az, ga - 0.2, ya - 0.12, 0.14, COL.pier);
+      const px = -(bz - az) / L,
+        pz = (bx - ax) / L;
+      // gravel shoulders, then the carriageway
+      for (const s of [1, -1]) {
+        const o = (HW_W / 2 + 0.07) * s;
+        E.bar(ax + px * o, az + pz * o, bx + px * o, bz + pz * o, ya - 0.006, yb - 0.006, 0.14, 0.03, COL.ballast);
+      }
+      E.bar(ax, az, bx, bz, ya, yb, HW_W, 0.04, COL.asphalt);
+      for (const s of [1, -1]) E.bar(ax + px * HW_W * 0.44 * s, az + pz * HW_W * 0.44 * s, bx + px * HW_W * 0.44 * s, bz + pz * HW_W * 0.44 * s, ya + 0.003, yb + 0.003, 0.016, 0, COL.edge, 0, false);
+      if (i % 2 === 0) E.bar(ax, az, ax + (bx - ax) * 0.55, az + (bz - az) * 0.55, ya + 0.003, ya + (yb - ya) * 0.55 + 0.003, 0.016, 0, COL.mark, 0, false);
     }
   }
-
   _pylonGeo() {
     if (this._pylon) return this._pylon;
     const g = new GeoBuilder(91, { jitter: 0.04 });
@@ -385,34 +437,20 @@ export class InfraRenderer {
       const c = new THREE.Color(hex);
       for (let i = from; i < far.length / 3; i++) farC.push(c.r, c.g, c.b);
     };
-    for (const l of civ.railLines?.() || []) {
-      if (!l.pts || l.pts.length < 4) continue;
-      const elevated = l.kind === 'maglev';
-      const runs = this._runs(l.pts);
-      for (const run of runs) {
-        const P = smooth(run);
-        const n0 = far.length / 3;
-        this._track(E, this._samples(P, SIDE), far, elevated);
-        farCol(n0, elevated ? 0xe8f4f8 : 0x4a3a30);
-        if (l.highway) {
-          const n1 = far.length / 3;
-          this._highway(E, this._samples(P, HSIDE), far, civ.villages[l.a], civ.villages[l.b]);
-          farCol(n1, 0x70747a);
-        }
-      }
-      // platforms where the line ends in its towns
-      if (!elevated && runs.length) {
-        const P = l.pts,
-          n = P.length;
-        for (const [x, z, x2, z2] of [
-          [P[0], P[1], P[2], P[3]],
-          [P[n - 2], P[n - 1], P[n - 4], P[n - 3]],
-        ]) {
-          if (Math.abs(x2 - x) > W / 2) continue;
-          const L = Math.hypot(x - x2, z - z2) || 1;
-          // the start is walked backwards, so its side flips
-          this._platform(E, x, z, (x - x2) / L, (z - z2) / L, x === P[0] && z === P[1] ? -SIDE : SIDE);
-        }
+    for (const seg of civ.railSegs?.() || []) {
+      if (!seg.pts || seg.pts.length < 4) continue;
+      let len = 0;
+      for (let i = 2; i < seg.pts.length; i += 2) len += Math.min(3, Math.hypot(seg.pts[i] - seg.pts[i - 2], seg.pts[i + 1] - seg.pts[i - 1]));
+      seg.len = len;
+      const n0 = far.length / 3;
+      this._track(E, seg, far);
+      farCol(n0, seg.kind === 'maglev' ? 0xe8f4f8 : 0x5a5650);
+      if (seg.start) this._terminus(E, seg, true);
+      if (seg.end) this._terminus(E, seg, false);
+      if (seg.hw) {
+        const n1 = far.length / 3;
+        this._highway(E, seg, far);
+        farCol(n1, 0x70747a);
       }
     }
     // power lines: pylons and sagging wires
