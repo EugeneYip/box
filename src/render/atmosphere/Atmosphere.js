@@ -675,7 +675,8 @@ export class Atmosphere {
       const geo = game.world.meta?.geo;
       const reg = geo && geo.region && geo.region !== 'world' && !geo.wrap;
       const span = Math.max(game.world.w, game.world.h);
-      P.edgeFog.set(reg ? 1 : 0, Math.max(14, Math.min(26, span * 0.028)), 0.5 + 0.4 * smoothstep(60, Math.max(160, span * 0.7), dist), 0.55);
+      // (the band widens with the view: ~16 tiles up close, ~70 at the overview)
+      P.edgeFog.set(reg ? 1 : 0, Math.max(16, Math.min(span * 0.08, dist * 0.075)), 0.55 + 0.4 * smoothstep(60, Math.max(160, span * 0.7), dist), 0.6);
     }
     P.fogColor.copy(M.horizon).lerp(M.groundHaze, 0.4);
 
