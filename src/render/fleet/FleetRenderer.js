@@ -613,6 +613,10 @@ export class FleetRenderer {
   // bridge's deck over water); a maglev's guideway runs level over bumps
   // (InfraRenderer averages its height over a few tiles: so does this).
   _railY(kind, P, k, x, z) {
+    // on the drawn network: the level the sim gave the track (bridges and
+    // viaducts keep a gentle grade over valleys)
+    const d = this.game.civ?.railDeckAt?.(kind, P, k, x, z);
+    if (d != null) return d;
     const W = this.game.world;
     const g = W.heightAt(x, z);
     if (kind !== 'maglev') return g < SEA_LEVEL ? BRIDGE_Y : g;

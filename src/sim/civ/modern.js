@@ -89,6 +89,56 @@ const ST_Z = -0.66,
 const MAG_LIFT = 0.6;
 // the highway's centre, right of the track (tiles)
 export const HW_OFF = 1.15;
+// Track levels: the rail bed and the guideway deck keep a gentle grade (rise
+// per tile) over dips in the ground and ride on piers where they leave it,
+// instead of following the ground down into a valley and up again.
+const GRADE = { rail: 0.2, maglev: 0.14 };
+export const MAG_CLEAR = 0.95 * BUILDING.scale; // a guideway's deck over the ground
+export const RAIL_BRIDGE_Y = SEA_LEVEL + 0.3 * BUILDING.scale; // a rail bridge's deck over water
+const yKey = (x, z) => Math.round(x * 50) * 131072 + Math.round(z * 50);
+// seg.ys: the level of each point (rail: the top of the bed; maglev: the
+// deck), the upper envelope of the ground under a maximum grade, eased by a
+// short moving average; a branch leaves its trunk at the trunk's level
+function trackLevels(w, seg, up) {
+  const P = seg.pts;
+  const n = P.length / 2;
+  const mag = seg.kind === 'maglev';
+  const G = GRADE[seg.kind];
+  const y = new Float32Array(n),
+    ds = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const h = w.heightAt(P[i * 2], P[i * 2 + 1]);
+    y[i] = mag ? (h < SEA_LEVEL ? SEA_LEVEL + MAG_CLEAR * 0.8 : h + MAG_CLEAR) : h < SEA_LEVEL + 0.02 ? RAIL_BRIDGE_Y : h + 0.02;
+    if (i) {
+      const d = Math.hypot(P[i * 2] - P[i * 2 - 2], P[i * 2 + 1] - P[i * 2 - 1]);
+      ds[i] = d > 40 ? 1e3 : d; // (the seam of a round world)
+    }
+  }
+  const clear = y.slice();
+  // (a branch starts at its trunk's level and keeps the grade away from it)
+  const y0 = up?.ys && seg.at < up.ys.length ? up.ys[seg.at] : null;
+  if (y0 != null) y[0] = Math.max(y[0], y0);
+  for (let i = 1; i < n; i++) y[i] = Math.max(y[i], y[i - 1] - G * ds[i]);
+  for (let i = n - 2; i >= 0; i--) y[i] = Math.max(y[i], y[i + 1] - G * ds[i + 1]);
+  const r = mag ? 4 : 2;
+  const s = y.slice();
+  for (let i = 0; i < n; i++) {
+    let a = 0,
+      c = 0;
+    for (let j = Math.max(0, i - r); j <= Math.min(n - 1, i + r); j++) (a += s[j]), c++;
+    y[i] = Math.max(a / c, clear[i]);
+  }
+  if (y0 != null) {
+    let arc = 0;
+    for (let i = 0; i < n && arc < 3; i++) {
+      if (i) arc += ds[i];
+      const t = Math.min(1, arc / 3),
+        u = t * t * (3 - 2 * t);
+      y[i] = y0 + (y[i] - y0) * u;
+    }
+  }
+  seg.ys = y;
+}
 
 function revPts(p) {
   const out = new Array(p.length);
@@ -237,6 +287,37 @@ export const modern = {
   railBetween(a, b) {
     for (const l of this.rails) if ((l.a === a && l.b === b) || (l.a === b && l.b === a)) return true;
     return false;
+  },
+  // the level a train runs at on point k of its route P (a line's pts) at
+  // (x, z): the rail bed (ground level: trains add their wheels) or the
+  // guideway's deck (with a flyover's lift); null off the drawn network
+  railDeckAt(kind, P, k, x, z) {
+    const M = this._railYMap?.[kind];
+    if (!M || !P || P.length < 4) return null;
+    const n = P.length / 2;
+    const i = Math.max(0, Math.min(n - 2, k >> 1)),
+      j = i + 1;
+    const ya = M.get(yKey(P[i * 2], P[i * 2 + 1])),
+      yb = M.get(yKey(P[j * 2], P[j * 2 + 1]));
+    if (ya == null || yb == null) return ya ?? yb ?? null;
+    const dx = P[j * 2] - P[i * 2],
+      dz = P[j * 2 + 1] - P[i * 2 + 1];
+    const L2 = dx * dx + dz * dz;
+    const t = L2 > 1e-9 ? clamp(((x - P[i * 2]) * dx + (z - P[i * 2 + 1]) * dz) / L2, 0, 1) : 0;
+    return ya + (yb - ya) * t;
+  },
+  // the ground under the tracks changed (terraforming, a crater): new levels
+  railRelevel() {
+    for (const s of this.railNet || []) trackLevels(this.world, s, s.up);
+    this._railYIndex();
+  },
+  _railYIndex() {
+    const M = (this._railYMap = { rail: new Map(), maglev: new Map() });
+    for (const s of this.railNet || []) {
+      if (!s.ys) continue;
+      const m = M[s.kind];
+      for (let i = 0; i < s.ys.length; i++) m.set(yKey(s.pts[i * 2], s.pts[i * 2 + 1]), s.kind === 'rail' ? s.ys[i] - 0.02 : s.ys[i] + (s.lift ? s.lift[i] : 0));
+    }
   },
   powerLines(kid = null) {
     return kid == null ? this.power : this.power.filter((l) => l.kingdom === kid);
@@ -639,8 +720,18 @@ export const modern = {
       }
     }
     // 2. Maglev: a line between cities moves onto a guideway
-    if (k.techs.has('maglev')) {
-      const l = this.rails.find((x) => x.kingdom === k.id && x.kind === 'rail' && this.villages[x.a]?.tier >= 1 && this.villages[x.b]?.tier >= 1);
+    // (one trunk to the farthest city, then at most one branch: never a web)
+    if (k.techs.has('maglev') && this.rails.filter((x) => x.kingdom === k.id && x.kind === 'maglev').length < 2) {
+      let l = null,
+        ld = 14;
+      for (const x of this.rails) {
+        if (x.kingdom !== k.id || x.kind !== 'rail') continue;
+        const A = this.villages[x.a],
+          B = this.villages[x.b];
+        if (!(A?.tier >= 1 && B?.tier >= 1)) continue;
+        const d = Math.hypot(A.cx - B.cx, A.cz - B.cz);
+        if (d > ld) (ld = d), (l = x);
+      }
       if (l) {
         l.kind = 'maglev';
         l.maglevAt = this.game.time.total;
@@ -721,7 +812,9 @@ export const modern = {
     }
     const x = v.hall?.alive ? v.hall.doorX : v.cx,
       z = v.hall?.alive ? v.hall.doorZ : v.cz;
-    return { x, z, dx: 0, dz: 0, half: 0, station: false };
+    // (no station yet: the line stops short of the square, where the
+    // station will stand, instead of running into it)
+    return { x, z, dx: 0, dz: 0, half: 0, station: false, stop: clamp((v.radius || 6) * 0.35, 2.5, 5) };
   },
   // a terminus turned toward (qx, qz): [buffer, platform entry], the unit
   // vector out of it and the lead point the line curves in from
@@ -736,7 +829,10 @@ export const modern = {
     const L = Math.hypot(qx - T.x, qz - T.z) || 1;
     const ex = (qx - T.x) / L,
       ez = (qz - T.z) / L;
-    return { pts: [[T.x, T.z]], lead: [T.x + ex * lead * 0.6, T.z + ez * lead * 0.6] };
+    const st = Math.min(T.stop || 0, L * 0.3);
+    const x = T.x + ex * st,
+      z = T.z + ez * st;
+    return { pts: [[x, z]], lead: [x + ex * lead * 0.6, z + ez * lead * 0.6] };
   },
   _railNetBuild(k) {
     const w = this.world;
@@ -785,11 +881,14 @@ export const modern = {
         if (l.highway && at.has(far)) for (let si = at.get(far); si >= 0; si = tree[si].parent) tree[si].hwOn = true;
       }
       for (const s of tree) {
-        if (s.hwOn) s.hw = this._hwMask(s.pts);
+        s.up = s.parent >= 0 ? tree[s.parent] : null;
+        trackLevels(w, s, s.up);
+        if (s.hwOn) s.hw = this._hwMask(s);
         out.push(s);
       }
     }
     this.railNet = out;
+    this._railYIndex();
     // the tiles under the tracks (trams and buses keep to other streets)
     if (!this.railMask || this.railMask.length !== N) this.railMask = new Uint8Array(N);
     this.railMask.fill(0);
@@ -949,47 +1048,112 @@ export const modern = {
   _railCost(kind, mask, relaxed) {
     const w = this.world;
     const use = this.use;
+    // steep ground costs dear: a line keeps to a gentle grade and goes round
+    // a cliff or a mesa rather than up its face
+    const steep = (i, from, k) => {
+      const sl = w.slopeAt(i % w.w, (i / w.w) | 0);
+      return sl > from ? (sl - from) * k : 0;
+    };
     if (kind === 'rail') {
       const base = this._roadCost();
       return (i) => {
         if (mask[i] & 1) return 2.4; // beside its own track: join it at a switch instead
-        if (use[i] === USE.ROAD) return 0.75;
+        // along a street only where it must (it crosses streets freely)
+        if (use[i] === USE.ROAD) return w.height[i] < SEA_LEVEL + 0.03 ? 2 : 1 + steep(i, 0.3, 9);
         const c = base(i);
         if (c === Infinity) return relaxed && use[i] === USE.BUILDING && w.height[i] >= SEA_LEVEL + 0.03 ? 14 : c;
-        return c;
+        return c + steep(i, 0.3, 9);
       };
     }
     return (i) => {
       if (mask[i] & 2) return 3;
       if (w.height[i] < SEA_LEVEL) return 1.5;
       if (use[i] === USE.BUILDING) return relaxed ? 2 : 5;
-      return 1 + w.slopeAt(i % w.w, (i / w.w) | 0) * 0.6;
+      return 1 + w.slopeAt(i % w.w, (i / w.w) | 0) * 0.8 + steep(i, 0.45, 7);
     };
   },
-  // a highway beside a track wherever it runs outside the towns and on land
-  _hwMask(P) {
+  // A highway beside a track wherever it runs outside the towns and on land
+  // (1; 2 on a bridge over a short stretch of water). It never ends in a
+  // field: each end runs on into its town until it meets a street, or meets
+  // its trunk's highway at a junction (or a road crossing it); an end that
+  // finds neither is cut back to the last road it crossed, or dropped.
+  _hwMask(s) {
     const w = this.world;
+    const W = w.w;
+    const P = s.pts;
     const n = P.length / 2;
     const hw = new Uint8Array(n);
     const towns = this.villages.filter((v) => v?.alive);
+    const C = [];
+    // 0 blocked (a building), 1 open country, 2 in a town, 3 water
+    const st = new Uint8Array(n);
     for (let i = 0; i < n; i++) {
-      const [x, z] = hwPoint(P, i);
-      let ok = w.heightAt(x, z) >= SEA_LEVEL + 0.05;
-      // never across a building that stands there already
-      if (ok && w.inBounds(Math.floor(x), Math.floor(z)) && this.use[Math.floor(z) * w.w + Math.floor(x)] === USE.BUILDING) ok = false;
-      for (const v of towns) if (ok && Math.abs(v.cx - x) < v.radius && Math.hypot(v.cx - x, v.cz - z) < v.radius * 0.85) ok = false;
-      hw[i] = ok ? 1 : 0;
+      const [x, z] = (C[i] = hwPoint(P, i));
+      const tx = Math.floor(x),
+        tz = Math.floor(z);
+      if (!w.inBounds(tx, tz)) continue;
+      if (w.heightAt(x, z) < SEA_LEVEL + 0.05) st[i] = 3;
+      else if (this.use[tz * W + tx] === USE.BUILDING) st[i] = 0;
+      else {
+        st[i] = 1;
+        for (const v of towns) if (Math.abs(v.cx - x) < v.radius && Math.hypot(v.cx - x, v.cz - z) < v.radius * 0.85) st[i] = 2;
+      }
     }
-    // no stubs: short runs are dropped
+    // a street (not this highway's own road, mask 4) beside point i
+    const street = (i) => {
+      const tx = Math.floor(C[i][0]),
+        tz = Math.floor(C[i][1]);
+      for (let dz = -1; dz <= 1; dz++)
+        for (let dx = -1; dx <= 1; dx++) {
+          if (!w.inBounds(tx + dx, tz + dz)) continue;
+          const t = (tz + dz) * W + tx + dx;
+          if (this.use[t] === USE.ROAD && !(this.railMask?.[t] & 4) && w.height[t] >= SEA_LEVEL) return true;
+        }
+      return false;
+    };
+    // a branch starts on its trunk: its highway joins the trunk's there
+    let jA = false;
+    if (s.up?.hw)
+      for (let d = -6; d <= 6; d++)
+        if (s.up.hw[s.at + d]) jA = true;
     for (let i = 0; i < n; ) {
-      if (!hw[i]) {
+      if (st[i] !== 1) {
         i++;
         continue;
       }
       let j = i;
-      while (j < n && hw[j]) j++;
-      if (j - i < 8) for (let m = i; m < j; m++) hw[m] = 0;
-      i = j;
+      while (j < n) {
+        if (st[j] === 1) {
+          j++;
+          continue;
+        }
+        if (st[j] === 3) {
+          let m = j;
+          while (m < n && st[m] === 3) m++;
+          if (m < n && st[m] === 1 && m - j <= 10) {
+            j = m;
+            continue;
+          }
+        }
+        break;
+      }
+      let a = i,
+        b = j;
+      let okA = street(a) || (a === 0 && jA);
+      while (!okA && a > 0 && st[a - 1] === 2 && i - a < 40) okA = street(--a);
+      let okB = street(b - 1);
+      while (!okB && b < n && st[b] === 2 && b - j < 40) okB = street(b++);
+      // an end that found no street: back to the last road the run crossed
+      if (!okA) {
+        while (a < b - 1 && !street(a)) a++;
+        okA = street(a);
+      }
+      if (!okB) {
+        while (b - 1 > a && !street(b - 1)) b--;
+        okB = street(b - 1);
+      }
+      if (okA && okB && b - a >= 8) for (let m = a; m < b; m++) hw[m] = st[m] === 3 ? 2 : 1;
+      i = Math.max(j, b);
     }
     return hw;
   },
