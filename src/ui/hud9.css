@@ -623,3 +623,8 @@
 .ws-clock__sep[hidden] {
   display: none !important;
 }
+
+/* no keyboard letters on the card's buttons for a touch screen (tablets too) */
+.is-touch .ws-insp__actions .ws-key {
+  display: none;
+}
