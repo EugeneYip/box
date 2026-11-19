@@ -756,7 +756,7 @@ Mat matCliff(NS s, float volc, out vec3 facetN) {
 vec3 seabedColor(NS s, float depth, out float hgt) {
   vec2 q = s.p.xz + (s.meso.rg - 0.5) * 4.0;
   float rip = sin(dot(q, vec2(1.6, 0.9)) * 2.2 + s.det.r * 4.0) * 0.5 + 0.5;
-  vec3 sand = mix(vec3(0.60, 0.50, 0.32), vec3(0.25, 0.245, 0.235), 1.0 - smoothstep(0.22, 0.50, s.temp)) * (0.88 + 0.16 * s.det.g);
+  vec3 sand = mix(vec3(0.56, 0.50, 0.36), vec3(0.25, 0.245, 0.235), 1.0 - smoothstep(0.22, 0.50, s.temp)) * (0.92 + 0.08 * s.det.g);
   sand *= 1.0 - 0.10 * rip * (1.0 - smoothstep(0.1, 0.4, s.fw));
   vec3 silt = vec3(0.24, 0.24, 0.20) * (0.8 + 0.3 * s.meso.r);
   vec3 rock = vec3(0.12, 0.13, 0.13) * (0.7 + 0.5 * s.cellL.b) * (0.6 + 0.4 * smoothstep(0.0, 0.1, s.cellL.g));
@@ -1286,7 +1286,9 @@ void terrainSurface() {
   tEmissive = emit;
   // baked horizon AO, plus cliff creases
   tAO = mix(mix(0.35, 1.0, s.ao), 1.0, tRivBank * 0.8);
-  tCloud = cloudShadowAt(p);
+  // cloud shadows on the seabed are softened: sunlit gaps between them
+  // showed as orange-brown sand smudges through the shallow water
+  tCloud = mix(cloudShadowAt(p), 1.0, smoothstep(-0.05, 0.35, -s.p.y) * 0.75);
   tSpecK = 1.0;
   tCold = 1.0 - smoothstep(0.22, 0.50, s.temp);
 }

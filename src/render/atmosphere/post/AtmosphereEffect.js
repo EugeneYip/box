@@ -32,6 +32,7 @@ uniform vec2 uCloudOffset;
 uniform float uCover;
 uniform vec3 uCloudLit;
 uniform vec3 uCloudShade;
+uniform vec4 uEdgeFog;   // regional maps: on, width (tiles), strength, tint
 float hHash(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * .1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
 float hNoise(vec2 p) {
   vec2 i = floor(p), f = fract(p);
@@ -45,6 +46,7 @@ float hFbm(vec2 p) {
 }
 ${SKY_UNIFORMS_GLSL}
 ${SKY_FUNCS_GLSL}
+float lum3(vec3 c) { return clamp(dot(c, vec3(0.2126, 0.7152, 0.0722)), 0.0, 1.0); }
 
 // Far-distance colour of a ray: the haze colour, which near the horizon turns
 // into a painted sky band (a real gradient, the sun's glow, distant cloud
@@ -61,7 +63,10 @@ vec3 farColor(vec3 dir, float water) {
     vec2 cp = sd.xz / (ly + 0.06) * 0.9 + uCloudOffset;
     float n = hFbm(cp);
     float cov = clamp(0.32 + uCover * 0.8, 0.0, 1.0);
-    float cb = smoothstep(1.0 - cov, 1.12 - cov * 0.55, n) * (1.0 - smoothstep(0.06, 0.32, ly)); // crisper banks
+    // soft banks, and at night only a faint dark veil (a pale streak along the
+    // horizon under a night sky read as a seam)
+    float nightF = 1.0 - smoothstep(0.01, 0.08, lum3(uZenith));
+    float cb = smoothstep(0.95 - cov, 1.2 - cov * 0.55, n) * (1.0 - smoothstep(0.06, 0.32, ly)) * 0.7 * (1.0 - 0.85 * nightF);
     float shade = smoothstep(0.3, 0.9, hFbm(cp * 1.7 + vec2(0.4, 0.2)));
     float sunSide = pow(max(dot(normalize(sd.xz + 1e-4), normalize(uSunDir.xz + 1e-4)) * 0.5 + 0.5, 0.0), 3.0);
     vec3 litC = uCloudLit * 1.15 + uCloudShade * 0.55;
@@ -91,7 +96,10 @@ vec3 moonSheen(vec3 dir, float water) {
   if (uMoonSea.r + uMoonSea.g + uMoonSea.b < 1e-5 || water < 0.01) return vec3(0.0);
   float azm = max(dot(normalize(vec3(dir.x, 0.0, dir.z)), normalize(vec3(uMoonDir.x, 0.0, uMoonDir.z))), 0.0);
   float grazing = 1.0 - smoothstep(0.0, 0.9, -dir.y);
-  return uMoonSea * water * (0.55 + 0.45 * grazing + pow(azm, 60.0) * 1.4 * grazing);
+  // the sheen thins out toward the horizon, where the far sea melts into the
+  // night sky (no pale strip ruled under a dark sky)
+  float hzF = smoothstep(0.004, 0.09, -dir.y);
+  return uMoonSea * water * hzF * (0.55 + 0.45 * grazing + pow(azm, 60.0) * 1.4 * grazing);
 }
 
 void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor) {
@@ -182,6 +190,17 @@ void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor)
   hz = max(hz, smoothstep(0.62, 0.95, lin / uFar) * (1.0 - smoothstep(0.08, 0.3, -dir.y)));
   if (hz > 0.002) col = mix(col, farColor(dir, water), hz);
   col += moonSheen(dir, water);
+  // regional maps: the land that runs off the window fades into a sea mist
+  // over its last tiles (ragged, two noise scales), and the sea beyond the
+  // border lies under the same veil, so the map never reads as a cut box
+  if (uEdgeFog.x > 0.5) {
+    vec2 ex = min(wp.xz, uWorld.xy - wp.xz);
+    float ed = min(ex.x, ex.y);
+    float en = (hFbm(wp.xz * 0.03 + 3.1) - 0.5) * 1.1 + (hNoise(wp.xz * 0.15) - 0.5) * 0.25;
+    float ef = 1.0 - smoothstep(-2.0, uEdgeFog.y, ed + en * uEdgeFog.y);
+    vec3 fogC = mix(farColor(dir, 1.0), vec3(0.03, 0.10, 0.20) * (0.35 + 0.65 * lum3(uZenith + uHorizon)), uEdgeFog.w);
+    col = mix(col, fogC, ef * uEdgeFog.z);
+  }
 
   outputColor = vec4(col, inputColor.a);
 }
@@ -220,6 +239,7 @@ export class AtmosphereEffect extends Effect {
         ['uHalo', u(new THREE.Color())],
         ['uGroundHaze', u(new THREE.Color())],
         ['uGlowWidth', u(2.5)],
+        ['uEdgeFog', u(new THREE.Vector4(0, 22, 0.6, 0.5))],
       ]),
     });
   }
@@ -243,6 +263,7 @@ export class AtmosphereEffect extends Effect {
       U.get('uLightDir').value.copy(params.lightDir);
       U.get('uLightCol').value.copy(params.lightColor);
       if (params.moonSea) U.get('uMoonSea').value.copy(params.moonSea);
+      if (params.edgeFog) U.get('uEdgeFog').value.copy(params.edgeFog);
     }
   }
 }

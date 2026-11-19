@@ -122,6 +122,7 @@ export class Atmosphere {
       highTint: new THREE.Vector3(),
       midTint: new THREE.Vector3(),
       moonSea: new THREE.Color(),
+      edgeFog: new THREE.Vector4(0, 22, 0, 0.5),
       wet: 0,
       lightDir: new THREE.Vector3(0, 1, 0),
       lightColor: new THREE.Color(),
@@ -668,6 +669,14 @@ export class Atmosphere {
     P.heightTex = game.terrain?.heightTexture || null;
     P.worldW = game.world.w;
     P.worldH = game.world.h;
+    // regional World Map windows: a sea mist over the border so land running
+    // off the window fades out (strongest at the overview, where the box shows)
+    {
+      const geo = game.world.meta?.geo;
+      const reg = geo && geo.region && geo.region !== 'world' && !geo.wrap;
+      const span = Math.max(game.world.w, game.world.h);
+      P.edgeFog.set(reg ? 1 : 0, Math.max(14, Math.min(26, span * 0.028)), 0.5 + 0.4 * smoothstep(60, Math.max(160, span * 0.7), dist), 0.55);
+    }
     P.fogColor.copy(M.horizon).lerp(M.groundHaze, 0.4);
 
     // high threshold by day (only true highlights glow), lower at night for lamps
