@@ -24,11 +24,12 @@ import { law, fireFactor, regionName, yearLabel, withAge, wildfireDamp, simWeath
 // buildings: a building set alight by one throws no new fires while the law
 // is off.
 
-const BUDGET = 2600;
+const BUDGET = 1300;
 // a coarse tick (8x and above) covers several game ticks at once: it works
 // through fewer tiles, each with the longer time step, so a big fire costs
-// about the same per game second instead of the same per tick
-const BUDGET_COARSE = 1100;
+// about the same per game second instead of the same per tick (a great fire
+// on a Vast map holds well over a thousand burning tiles)
+const BUDGET_COARSE = 700;
 const _windF = new Float32Array(8);
 // natExp: natural ignition falls off as factor^natExp below the Embers
 // factor; skyOff: spread of lightning fires still burning while the
@@ -495,11 +496,13 @@ export class FireSim {
         this._markBuilding(w.building[i], cause, g.time.total);
         this.bTimer[i] -= dtEff;
         if (this.bTimer[i] <= 0) {
+          // (a long effective step covers more than one half-second of heat)
+          const nb = 1 + Math.floor(-this.bTimer[i] / 0.5);
           this.bTimer[i] = 0.5;
           // the heat reaches the buildings next door too
           this.markBuildings(x + 0.5, y + 0.5, 1.4, cause);
           try {
-            g.civ?.damageArea?.(x + 0.5, y + 0.5, 0.9, 7 * f, 'fire');
+            g.civ?.damageArea?.(x + 0.5, y + 0.5, 0.9, 7 * f * nb, 'fire');
           } catch (err) {
             console.error('[fire] civ.damageArea', err);
           }
@@ -564,10 +567,14 @@ export class FireSim {
     const now = g.time.total;
     const burned = (this._burned ||= new Map());
     if (this.count && g.units?.list) {
+      const W = w.w,
+        H = w.h,
+        F = w.fire;
       for (const u of g.units.list) {
         if (!u.alive) continue;
-        const [tx, ty] = w.tileOf(u.x, u.z);
-        if (w.fire[w.idx(tx, ty)] <= 0.2) continue;
+        const tx = Math.floor(u.x),
+          ty = Math.floor(u.z);
+        if (tx < 0 || ty < 0 || tx >= W || ty >= H || F[ty * W + tx] <= 0.2) continue;
         try {
           g.units.addStatus?.(u, 'burning', 4);
         } catch (e) {
