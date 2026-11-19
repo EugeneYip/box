@@ -1082,6 +1082,8 @@
   min-width: 0;
 }
 .ws-clock__yr {
+  /* fills the line up to the time, so its box keeps one width as the years pass */
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
