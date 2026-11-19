@@ -304,6 +304,15 @@ export class InfraRenderer {
         rz = pz * (GAUGE / 2);
       for (const s of [1, -1]) E.bar(ax + rx * s, az + rz * s, bx + rx * s, bz + rz * s, ya + SLEEPER_H + RAIL_H, yb + SLEEPER_H + RAIL_H, RAIL_W, RAIL_H, COL.rail);
     }
+    // a diamond where two tracks cross: a steel crossing plate
+    for (const [x, z, a1, a2] of seg.xing || []) {
+      const y = Math.max(this._h(x, z), SEA_LEVEL) + 0.02 + SLEEPER_H + 0.002;
+      for (const a of [a1, a2]) {
+        const cx = Math.cos(a) * 0.32,
+          cz = Math.sin(a) * 0.32;
+        E.bar(x - cx, z - cz, x + cx, z + cz, y, y, BAL_T * 2.2, SLEEPER_H, COL.deck);
+      }
+    }
     if (seg.junction && !elevated && n > 2) {
       // the switch lever box beside the points
       const [x, z, tx, tz] = S[0];

@@ -18,7 +18,8 @@ import { BUILDING } from '../../core/scale.js';
 //   railLines(kid?) -> [{id, kind 'rail'|'maglev', kingdom, a, b (village ids),
 //                        pts [x, z, x, z, ...] (the route through the realm's
 //                        network, RAIL_SIDE right of the track), highway, built}]
-//   railSegs() -> the drawn network (one entry per stretch of track, see below)
+//   railSegs() -> the drawn network (one entry per stretch of track, see below;
+//                 xing [[x, z, angle, angle2]]: where a rail crosses another)
 //   railMask  Uint8Array per tile: 1 under a rail track, 2 under a guideway
 //   railLine(id), railBetween(villageA, villageB) -> bool
 //   powerLines(kid?) -> [{id, kingdom, from (power building id), to (village id),
@@ -165,6 +166,28 @@ function fillet(P0, R) {
   }
   const n = Q.length;
   if (n < 2) return null;
+  // the tangent length each corner wants, then shared out where two corners
+  // compete for one straight run
+  const T = new Float64Array(n);
+  const len = [];
+  for (let i = 0; i + 1 < n; i++) len.push(Math.hypot(Q[i + 1][0] - Q[i][0], Q[i + 1][1] - Q[i][1]));
+  for (let i = 1; i < n - 1; i++) {
+    const ux = (Q[i][0] - Q[i - 1][0]) / len[i - 1],
+      uz = (Q[i][1] - Q[i - 1][1]) / len[i - 1],
+      vx = (Q[i + 1][0] - Q[i][0]) / len[i],
+      vz = (Q[i + 1][1] - Q[i][1]) / len[i];
+    const th = Math.acos(Math.max(-1, Math.min(1, ux * vx + uz * vz)));
+    T[i] = R * Math.tan(Math.min(th, 2.6) / 2);
+  }
+  for (let pass = 0; pass < 3; pass++)
+    for (let i = 0; i + 1 < n; i++) {
+      const sum = T[i] + T[i + 1];
+      if (sum > len[i] * 0.98) {
+        const f = (len[i] * 0.98) / sum;
+        T[i] *= f;
+        T[i + 1] *= f;
+      }
+    }
   const out = [Q[0][0], Q[0][1]];
   const line = (ax, az, bx, bz) => {
     const L = Math.hypot(bx - ax, bz - az);
@@ -175,20 +198,12 @@ function fillet(P0, R) {
   let cx = Q[0][0],
     cz = Q[0][1];
   for (let i = 1; i < n - 1; i++) {
-    const [px, pz] = Q[i - 1],
-      [qx, qz] = Q[i],
-      [nx, nz] = Q[i + 1];
-    const l1 = Math.hypot(qx - px, qz - pz),
-      l2 = Math.hypot(nx - qx, nz - qz);
-    const ux = (qx - px) / l1,
-      uz = (qz - pz) / l1,
-      vx = (nx - qx) / l2,
-      vz = (nz - qz) / l2;
-    const th = Math.acos(Math.max(-1, Math.min(1, ux * vx + uz * vz)));
-    let t = R * Math.tan(Math.min(th, 2.6) / 2);
-    // the free ends (a lead out of a switch or a platform) give the whole run
-    const room1 = l1 - Math.hypot(cx - px, cz - pz);
-    t = Math.min(t, i === 1 ? room1 * 0.95 : Math.min(room1, l1 * 0.5), i === n - 2 ? l2 * 0.95 : l2 * 0.5);
+    const [qx, qz] = Q[i];
+    const ux = (qx - Q[i - 1][0]) / len[i - 1],
+      uz = (qz - Q[i - 1][1]) / len[i - 1],
+      vx = (Q[i + 1][0] - qx) / len[i],
+      vz = (Q[i + 1][1] - qz) / len[i];
+    const t = T[i];
     if (t < 0.02) {
       line(cx, cz, qx, qz);
       cx = qx;
@@ -824,8 +839,8 @@ export const modern = {
       lift: null,
       hw: null,
     };
-    // a guideway crossing another rises over it
-    if (kind === 'maglev') {
+    // a guideway crossing another rises over it; rails cross on a diamond
+    {
       const lift = new Float32Array(n);
       let any = false;
       for (const o of tree) {
@@ -840,6 +855,10 @@ export const modern = {
             if (Math.abs(q[j] - ax) > 1 || Math.abs(q[j + 1] - az) > 1) continue;
             if (!segHit(ax, az, bx, bz, q[j], q[j + 1], q[j + 2], q[j + 3])) continue;
             any = true;
+            if (kind === 'rail') {
+              (seg.xing || (seg.xing = [])).push([ax, az, Math.atan2(bz - az, bx - ax), Math.atan2(q[j + 3] - q[j + 1], q[j + 2] - q[j])]);
+              continue;
+            }
             for (let m = 0; m < n; m++) {
               const d = Math.abs(arc[m] - arc[i]);
               if (d < 4) lift[m] = Math.max(lift[m], MAG_LIFT * BUILDING.scale * (d < 1.2 ? 1 : 0.5 + 0.5 * Math.cos(((d - 1.2) / 2.8) * Math.PI)));
@@ -847,7 +866,7 @@ export const modern = {
           }
         }
       }
-      if (any) seg.lift = lift;
+      if (any && kind === 'maglev') seg.lift = lift;
     }
     for (let i = 0; i < n; i++) {
       const tx = Math.floor(pts[i * 2]),
