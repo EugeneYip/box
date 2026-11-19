@@ -43,6 +43,8 @@ export const planner = {
     const ti = TILE_INFO[t];
     if (!ti || !ti.walkable || !ti.buildable) return false;
     if (t === TILE.ROAD) return false;
+    // never on a railway, a guideway's footing or a highway's strip (modern.js railMask)
+    if (this.railMask?.[i]) return false;
     const f = w.flora[i];
     if (f === FLORA.BOULDER) return false;
     if (!allowTrees && FLORA_INFO[f]?.isTree) return false;
@@ -64,6 +66,25 @@ export const planner = {
         if (h > hmax) hmax = h;
       }
     if (hmax - hmin > maxSlope) return false;
+    // the ground just round the plot counts too: a one-tile plot on a steep
+    // slope always measured flat, and its house ended up on a rock pillar or
+    // an office block overhung the slope on a single pole. The rise across
+    // the plot and its ring may be at most about half a tile per tile.
+    if (maxSlope < 5) {
+      const lim = Math.min(maxSlope, 0.32 + 0.22 * Math.max(fw, fh)) + 0.25 + Math.max(0, maxSlope - 1.3) * 0.5;
+      let rmin = hmin,
+        rmax = hmax;
+      for (let y = ty - 1; y <= ty + fh; y++)
+        for (let x = tx - 1; x <= tx + fw; x++) {
+          if (x >= tx && x < tx + fw && y >= ty && y < ty + fh) continue;
+          if (!w.inBounds(x, y)) continue;
+          const h = w.height[y * w.w + x];
+          if (h < SEA_LEVEL) continue; // a shore or a jetty's water side
+          if (h < rmin) rmin = h;
+          if (h > rmax) rmax = h;
+        }
+      if (rmax - rmin > lim) return false;
+    }
     if (gap) {
       for (let y = ty - 1; y <= ty + fh; y++)
         for (let x = tx - 1; x <= tx + fw; x++) {
@@ -397,6 +418,9 @@ export const planner = {
     const hx = v.cx,
       hz = v.cz;
     const maxR = v.buildRadius + FOOTPRINT.dist(2);
+    // a modern city's homes stand shoulder to shoulder along its streets
+    // (they were a thin sprinkle with a gap all round each one)
+    const dense = v.tier >= 2 && (this.kingdoms[v.kingdom]?.era || 0) >= 5 && (type === 'house' || type === 'apartment' || type === 'rowhouse');
     for (let k = 0; k < Math.min(roads.length, limit); k++) {
       const r = roads.length <= limit ? roads[k] : roads[(rng.next() * roads.length) | 0];
       if (this.use[r] !== USE.ROAD) continue;
@@ -422,7 +446,7 @@ export const planner = {
           tx0 = rx - fw;
           ty0 = ry - ((fh - 1) >> 1);
         }
-        if (!this._footprintOK(tx0, ty0, fw, fh)) continue;
+        if (!this._footprintOK(tx0, ty0, fw, fh, 1.15, !dense)) continue;
         const st = this._footprintStats(tx0, ty0, fw, fh);
         const cx = tx0 + fw / 2,
           cz = ty0 + fh / 2;
@@ -1065,6 +1089,11 @@ export const planner = {
   _placeOutskirts(v, type, minR, maxR, towardX = null, towardZ = null) {
     const def = BUILDING_TYPES[type];
     const rng = this.rng;
+    // a city (tier 2+) keeps its pens and herds beyond its core, out with the fields
+    if (type === 'pasture' && v.tier >= 2) {
+      minR = Math.max(minR, v.radius * 0.95);
+      maxR = Math.max(maxR, minR + 4);
+    }
     let best = null,
       bs = Infinity;
     for (let k = 0; k < 60; k++) {

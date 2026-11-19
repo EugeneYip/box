@@ -66,7 +66,9 @@ const towerVariant = (b) => ((b.id * 2654435761) >>> 0) % 4;
 function archKey(b, def, lvl, realmEra = 0) {
   const era = lookEra(b, realmEra);
   if (def.modern) return `${b.type}|${b.style}|${lvl}|${Math.max(4, era)}${b.type === 'skyscraper' ? '|' + towerVariant(b) : ''}`;
-  return `${b.type}|${b.style}|${lvl}|${era}${b.gilded ? 'g' : ''}${b.variant || b.heritage ? '|' + (b.variant || 0) : ''}${b.heritage ? '|h' : ''}`;
+  // modern homes come in a few designs per culture (Future: four), picked by the plot's seed
+  const vv = b.variant || (b.type === 'house' && era >= 5 ? Math.floor((b.seed || 0) * 997) % (era >= 7 ? 4 : 3) : 0);
+  return `${b.type}|${b.style}|${lvl}|${era}${b.gilded ? 'g' : ''}${vv || b.heritage ? '|' + vv : ''}${b.heritage ? '|h' : ''}`;
 }
 
 class Batch {

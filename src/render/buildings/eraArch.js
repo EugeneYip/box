@@ -29,9 +29,12 @@ function solar(g, x, y, z, w, d, n = 2) {
 function plinth(g, K, cx, cz, w, d) {
   g.box(cx, -0.08, cz, w + 0.08, 0.12, d + 0.08, K.stone2);
 }
-function glassFront(g, K, cx, y0, cz, w, d, h, frame) {
-  // full-height glazing on the front face, framed in steel
-  g.box(cx, y0 + 0.03, cz + d / 2 + 0.012, w - 0.08, h - 0.06, 0.02, K.glass, { glow: 1 });
+// (eraHouse / eraHall set the era's glass glow before they build)
+let _glassGlow = 1;
+function glassFront(g, K, cx, y0, cz, w, d, h, frame, glow = _glassGlow) {
+  // full-height glazing on the front face, framed in steel (Future glass
+  // softer at night: tiers of lit glass read as glowing cakes)
+  g.box(cx, y0 + 0.03, cz + d / 2 + 0.012, w - 0.08, h - 0.06, 0.02, K.glass, { glow });
   const n = Math.max(2, Math.round(w / 0.22));
   for (let i = 1; i < n; i++) g.box(cx - w / 2 + (w * i) / n, y0, cz + d / 2 + 0.024, 0.022, h, 0.015, frame, { noTop: true });
   g.box(cx, y0 + h - 0.03, cz + d / 2 + 0.024, w, 0.03, 0.015, frame, { noTop: true });
@@ -41,13 +44,131 @@ function hedge(g, x, z, w, d) {
 }
 
 // ---------------------------------------------------------------- houses
-export function eraHouse(g, K, style, lv, era) {
+// Three more designs per culture beside each culture's own (eraHouse):
+//   1 a slim town house, a floor taller, with a balcony stack
+//   2 a semi-detached pair: one wing a floor lower under a roof terrace
+//   3 a round pavilion house (Future) / a courtyard bungalow (Modern, Atomic)
+// Each keeps its culture's mark: the dune's dome, the frost's steep roof,
+// the mire's pilotis, the vale's timber cladding; the era sets the materials.
+function cultureCap(g, K, style, era, x, y, z, w, d, roofTop) {
+  if (style === 'frost') g.gable(x, y, z, w + 0.1, d + 0.08, Math.min(0.55, d * 0.6), era >= 7 ? 0x4f6a52 : K.tile, { over: 0.06, th: 0.05, gable: K.wall2, rows: 2 });
+  else if (style === 'dune') g.dome(x - w * 0.2, y, z, Math.min(w, d) * 0.22, 10, 3, K.tile, { tint: 0.2 });
+  else g.box(x, y, z, w + 0.06, 0.06, d + 0.06, shade(K.wall2, 0.75), { top: roofTop });
+}
+function eraHouseAlt(g, K, style, lv, era, v, { acc, frame, roofTop, floors }) {
+  const lift = style === 'mire' ? 0.24 : 0;
+  const glassy = era >= 6;
+  const fut = era >= 7;
+  const pil = (w, d, bz) => {
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) g.box((sx * (w - 0.1)) / 2, -0.3, bz + (sz * (d - 0.1)) / 2, 0.07, lift + 0.3, 0.07, K.stone);
+  };
+  if (v === 1) {
+    const w = 0.92 + lv * 0.05,
+      d = 0.9,
+      bz = -0.1;
+    const n = floors + 1;
+    const h = FH * n;
+    if (lift) pil(w, d, bz);
+    else plinth(g, K, 0, bz, w, d);
+    g.box(0, lift, bz, w, h, d, style === 'vale' ? K.timber2 ?? K.wall : K.wall);
+    if (glassy) glassFront(g, K, -0.08, lift, bz, w * 0.6, d, h, frame);
+    bands(g, K, 0, lift, bz, w, d, n, FH, { k: 0.4 });
+    // a stack of balconies on the side
+    for (let f = 1; f < n; f++) {
+      g.box(w / 2 + 0.1, lift + f * FH - 0.03, bz + 0.1, 0.2, 0.04, 0.5, frame);
+      g.box(w / 2 + 0.19, lift + f * FH, bz + 0.1, 0.02, 0.14, 0.5, fut ? 0x9fd8c8 : frame, { noTop: true });
+      if (fut) planters(g, w / 2 + 0.1, lift + f * FH + 0.01, bz + 0.1, 0.16, 0.44);
+    }
+    cultureCap(g, K, style, era, 0, lift + h, bz, w, d, roofTop);
+    if (fut && style !== 'frost') {
+      planters(g, 0, lift + h + 0.05, bz, w * 0.9, d * 0.85);
+      solar(g, 0.15, lift + h + 0.05, bz - 0.1, 0.35, 0.3, 1);
+    }
+    door(g, K, -0.22, bz + d / 2, 0.2, 0.32, acc, { canopy: acc, tint: 0.4 });
+    return lift ? { stilts: true, base: null } : { base: { x: 0, z: bz, w: w + 0.08, d: d + 0.08 } };
+  }
+  if (v === 2) {
+    const w1 = 0.8,
+      w2 = 0.72,
+      d = 0.95,
+      bz = -0.1;
+    const x1 = -0.38,
+      x2 = 0.4;
+    const h1 = FH * floors,
+      h2 = FH * Math.max(1, floors - 1);
+    const W = w1 + w2;
+    if (lift) pil(W, d, bz);
+    else plinth(g, K, 0, bz, W, d);
+    g.box(x1, lift, bz, w1, h1, d, K.wall);
+    g.box(x2, lift, bz + 0.05, w2, h2, d - 0.1, fut ? 0xdfe8e2 : K.wall2);
+    // a colour panel down the taller wing and ribbon windows on the lower
+    g.box(x1 + w1 / 2 - 0.1, lift + 0.02, bz + d / 2 + 0.012, 0.16, h1 - 0.04, 0.02, acc, { tint: 0.35 });
+    if (glassy) glassFront(g, K, x2, lift, bz + 0.05, w2 * 0.8, d - 0.1, h2, frame);
+    else for (const u of [-0.2, 0.2]) g.box(x2 + u, lift + 0.14, bz + 0.05 + (d - 0.1) / 2 + 0.012, 0.18, 0.16, 0.02, K.glass, { glow: 1 });
+    bands(g, K, x1, lift, bz, w1, d, floors, FH, { k: 0.3 });
+    cultureCap(g, K, style, era, x1, lift + h1, bz, w1, d, roofTop);
+    // the roof terrace over the lower wing: rail and a parasol or a planter
+    flatRoof(g, x2, lift + h2, bz + 0.05, w2, d - 0.1, K.wall2, roofTop, 0.06);
+    g.box(x2, lift + h2 + 0.06, bz + 0.05 + (d - 0.1) / 2 - 0.02, w2, 0.1, 0.02, frame, { noTop: true });
+    if (fut) planters(g, x2, lift + h2 + 0.05, bz + 0.05, w2 * 0.85, (d - 0.1) * 0.8);
+    else {
+      g.box(x2 + 0.1, lift + h2 + 0.05, bz, 0.02, 0.26, 0.02, frame);
+      g.cyl(x2 + 0.1, lift + h2 + 0.29, bz, 0.2, 0.04, 8, acc, { tint: 0.3 });
+    }
+    door(g, K, x1 - 0.12, bz + d / 2, 0.2, 0.32, acc, { canopy: acc, tint: 0.4 });
+    door(g, K, x2 + 0.12, bz + 0.05 + (d - 0.1) / 2, 0.2, 0.32, shade(acc, 0.7), { tint: 0.4 });
+    return lift ? { stilts: true, base: null } : { base: { x: 0, z: bz, w: W + 0.08, d: d + 0.08 } };
+  }
+  // 3: a round pavilion (Future) or a low courtyard bungalow
+  const bz = -0.08;
+  if (fut) {
+    const r = 0.6 + lv * 0.03;
+    if (lift) pil(r * 1.6, r * 1.6, bz);
+    else g.cyl(0, -0.08, bz, r + 0.06, 0.12, 14, K.stone2, {});
+    let y = lift;
+    for (let f = 0; f < floors; f++) {
+      const rr = r * (f ? 0.82 : 1);
+      g.cyl(0, y, bz, rr, FH, 14, f % 2 ? 0xe4ece6 : K.wall, {});
+      // a ribbon of glass round each floor
+      g.cyl(0, y + FH * 0.3, bz, rr + 0.012, FH * 0.38, 14, K.glass, { glow: 1 });
+      g.cyl(0, y + FH, bz, rr + 0.06, 0.05, 14, 0xf2f4f0, { top: roofTop });
+      y += FH + 0.05;
+    }
+    planters(g, 0, y, bz, r * 0.9, r * 0.9);
+    solar(g, 0.12, y, bz - 0.12, 0.3, 0.26, 1);
+    if (style === 'dune') g.dome(-0.15, y, bz + 0.1, 0.14, 10, 3, K.tile, { tint: 0.2 });
+    door(g, K, 0, bz + r, 0.2, 0.32, acc, { canopy: acc, tint: 0.4 });
+    for (const x of [-0.55, 0.6]) g.bead(x, 0.0, bz + r + 0.2, 0.09, 0x4f8a44);
+    return lift ? { stilts: true, base: null } : { base: { x: 0, z: bz, w: r * 2 + 0.1, d: r * 2 + 0.1 } };
+  }
+  // a single-storey L round a courtyard with a low wall
+  const w = 1.4,
+    d = 1.0;
+  if (lift) pil(w, d, bz);
+  else plinth(g, K, 0, bz, w, d);
+  const h = FH * 1.15;
+  g.box(-0.3, lift, bz, 0.8, h, d, K.wall);
+  g.box(0.4, lift, bz - 0.25, 0.6, h, 0.5, K.wall2);
+  if (glassy) glassFront(g, K, -0.3, lift, bz, 0.6, d, h, frame);
+  else for (const u of [-0.5, -0.1]) g.box(u, lift + 0.15, bz + d / 2 + 0.012, 0.2, 0.18, 0.02, K.glass, { glow: 1 });
+  cultureCap(g, K, style, era, -0.3, lift + h, bz, 0.8, d, roofTop);
+  flatRoof(g, 0.4, lift + h, bz - 0.25, 0.6, 0.5, K.wall2, roofTop, 0.06);
+  g.box(0.4, lift, bz + 0.38, 0.6, 0.16, 0.04, K.wall2);
+  hedge(g, 0.4, bz + 0.12, 0.5, 0.06);
+  tree(g, 0.45, bz + 0.15, 0, 0.9);
+  door(g, K, -0.45, bz + d / 2, 0.2, 0.32, acc, { canopy: acc, tint: 0.4 });
+  return lift ? { stilts: true, base: null } : { base: { x: 0, z: bz, w: w + 0.08, d: d + 0.08 } };
+}
+export function eraHouse(g, K, style, lv, era, variant = 0) {
+  _glassGlow = era >= 7 ? 0.45 : 1;
   const acc = K.accent ?? K.trim;
   const frame = era >= 7 ? 0xf2f4f0 : era >= 6 ? 0x6e767e : shade(K.wall, 0.78);
   // Modern roofs are flat and grey (the mire's red tin goes), Future roofs planted
   const roofTop = era >= 7 ? 0x5f9a5a : style === 'mire' ? (era >= 6 ? 0x6a7078 : 0x5c6066) : K.tile;
   // two floors from the first level: a modern street of houses reads as town, not huts
   const floors = Math.max(2, Math.min(3, lv + 1));
+  // the other designs of a modern street (BuildingRenderer archKey picks one per plot)
+  if (variant % 4) return eraHouseAlt(g, K, style, lv, era, variant % 4, { acc, frame, roofTop, floors });
   if (style === 'dune') {
     // stacked cubes, each floor smaller, with a terrace and a dome on top
     const w = 1.3 + lv * 0.06,
@@ -83,7 +204,7 @@ export function eraHouse(g, K, style, lv, era) {
     for (let i = 0; i < 4; i++) g.box(tx, y + 0.2, bz - 0.15 + i * 0.1, 0.36, 0.02, 0.025, era >= 7 ? 0x5f9a5a : K.timber);
     g.dome(cx * 0.6, y - 0.02, bz - 0.15, 0.15 + lv * 0.02, 10, 3, K.tile, { tint: 0.2 });
     if (era >= 7) {
-      g.box(cx * 0.6, y - 0.02, bz - 0.15, 0.36, 0.015, 0.36, 0x7fe8f0, { glow: 4 });
+      g.box(cx * 0.6, y - 0.02, bz - 0.15, 0.36, 0.015, 0.36, 0x8fc8c8, { glow: 0.4 });
       for (const x of [-0.5, 0.55]) g.bead(x, 0.0, bz + d / 2 + 0.25, 0.1, 0x4f8a44);
     }
     door(g, K, -0.2, bz + d / 2, 0.2, 0.32, acc, { canopy: acc, tint: 0.4 });
@@ -194,6 +315,7 @@ export function eraHouse(g, K, style, lv, era) {
 // a dome (dune), a steep roof and spire (frost) or a great canopy (mire);
 // a tower behind it at the third level.
 export function eraHall(g, K, style, lv, era) {
+  _glassGlow = 1;
   const acc = K.accent ?? K.trim;
   const frame = era >= 7 ? 0xf2f4f0 : era >= 6 ? 0x6e767e : shade(K.wall, 0.78);
   const roofTop = era >= 7 ? 0x5f9a5a : K.tile;
