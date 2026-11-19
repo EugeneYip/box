@@ -1276,7 +1276,7 @@ export const brain = {
     if (!U._dlStart) return this._idle(u);
     const era = this.kingdoms[v.kingdom]?.era || 0;
     // drill by day at the barracks or on the square before the hall
-    if (!night && !war && (t.post === 'barracks' || t.post === 'hall') && this.rng.chance(0.4)) {
+    if (!night && !war && (t.post === 'barracks' || t.post === 'hall') && this.rng.chance(0.55)) {
       const dl = U._dlStart(u, 'drill', 18 + this.rng.next() * 16, { lab: t.post === 'barracks' ? 'Drilling in the barracks yard' : era >= 4 ? 'Drilling on the parade ground' : 'Drilling on the square', act: null, fx: t.fx, fz: t.fz });
       dl.anim = 'chop';
       dl.nt = false;
