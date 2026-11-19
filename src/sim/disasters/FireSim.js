@@ -25,6 +25,11 @@ import { law, fireFactor, regionName, yearLabel, withAge, wildfireDamp, simWeath
 // is off.
 
 const BUDGET = 2600;
+// a coarse tick (8x and above) covers several game ticks at once: it works
+// through fewer tiles, each with the longer time step, so a big fire costs
+// about the same per game second instead of the same per tick
+const BUDGET_COARSE = 1100;
+const _windF = new Float32Array(8);
 // natExp: natural ignition falls off as factor^natExp below the Embers
 // factor; skyOff: spread of lightning fires still burning while the
 // calamityLightning law is off; spark: most a fire from sparks (burning
@@ -397,7 +402,12 @@ export class FireSim {
     const capS = 450 * area;
     const capB = 1000 * area;
     const ageF = Math.pow(fireFactor(g), 0.25) * (n > capS ? Math.max(0.3, capS / n) : 1) * (this._recent > capB ? Math.max(0.12, Math.pow(capB / this._recent, 1.5)) : 1);
-    const todo = Math.min(n, BUDGET);
+    const todo = Math.min(n, step > 0.1 ? BUDGET_COARSE : BUDGET);
+    // the wind's pull in each of the eight directions (the same for every tile this tick)
+    for (let d = 0; d < 8; d++) {
+      const diag = d >= 4 ? 0.7071 : 1;
+      _windF[d] = Math.exp((DIRS8[d][0] * wdx + DIRS8[d][1] * wdz) * diag * ws * 2.6) * diag * ageF;
+    }
     const dtEff = step * (n / Math.max(1, todo));
     // fire brigades and fire engines guard the towns (Civ breadth.js: a coarse grid)
     const FG = g.civ?.fireGuard;
@@ -463,12 +473,9 @@ export class FireSim {
         if (this.inList[j]) continue;
         const flam = this.flammability(j);
         if (flam <= 0.02) continue;
-        const diag = d >= 4 ? 0.7071 : 1;
-        const align = (dx * wdx + dy * wdz) * diag;
-        const windF = Math.exp(align * ws * 2.6);
         const slope = Math.max(-1.2, Math.min(1.2, w.height[j] - hi));
         const slopeF = Math.exp(slope * 0.55);
-        const p = sp * Math.pow(flam, 1.6) * windF * slopeF * diag * ageF;
+        const p = sp * Math.pow(flam, 1.6) * _windF[d] * slopeF;
         if (rng.next() < p) {
           if (this.ignite(nx, ny, f * 0.7, spreadOpts)) changed = true;
         }

@@ -217,10 +217,14 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   spec = min(spec, vec3(mix(0.8, 0.38, smoothstep(0.02, 0.12, fw))));
 
   // ---- water body veil (the seabed below is already tinted by the terrain)
-  vec3 scat = mix(waterShallowColorV(lightVis), waterDeepColorV(lightVis), waterDeepMix(depth));
-  // broad colour variation so open water is never a flat slab
+  // cloud shadows dim the body of the water only gently: full-strength cloud
+  // blotches read as dirt on the open sea up close
+  float scatVis = sunSh * mix(1.0, cloud, 0.55);
+  vec3 scat = mix(waterShallowColorV(scatVis), waterDeepColorV(scatVis), waterDeepMix(depth));
+  // broad colour variation so open water is never a flat slab (kept low in
+  // contrast: stronger reads as stains)
   float mac = texture2D(uNoise, p * (1.0 / 190.0) + vec2(t * 0.0015, 0.0)).r;
-  scat *= 0.82 + 0.36 * mac;
+  scat *= 0.90 + 0.20 * mac;
   float vy = max(abs(V.y), 0.12);
   float veil = 1.0 - exp(-depth / vy * mix(0.16, 0.22, uMapZoom));
   veil = clamp(veil * 0.85, 0.0, 0.92);

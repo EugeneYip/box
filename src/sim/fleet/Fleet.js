@@ -642,7 +642,9 @@ export class Fleet {
     // lying in port), gliding on along her heading in between; her mission
     // gets the time it missed. Fights, sinkings and hovercraft run every tick.
     const cam = g.cameraRig?.cur;
-    const lodR = cam ? Math.max(60, cam.dist * 0.9) * (g.settings?.powerSaver ? 0.7 : 1) : 60;
+    // (capped: zoomed out over a big map every hull is a few pixels long, so
+    // ships beyond a fixed radius take the cheap path even in the overview)
+    const lodR = cam ? Math.min(140, Math.max(60, cam.dist * 0.9)) * (g.settings?.powerSaver ? 0.7 : 1) : 60;
     const lodR2 = lodR * lodR;
     const gwt = this._gwTick;
     for (let i = 0; i < this.list.length; i++) {
