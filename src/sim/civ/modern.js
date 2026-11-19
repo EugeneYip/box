@@ -92,7 +92,7 @@ export const HW_OFF = 1.15;
 // Track levels: the rail bed and the guideway deck keep a gentle grade (rise
 // per tile) over dips in the ground and ride on piers where they leave it,
 // instead of following the ground down into a valley and up again.
-const GRADE = { rail: 0.16, maglev: 0.12 };
+const GRADE = { rail: 0.2, maglev: 0.14 };
 export const MAG_CLEAR = 0.95 * BUILDING.scale; // a guideway's deck over the ground
 export const RAIL_BRIDGE_Y = SEA_LEVEL + 0.3 * BUILDING.scale; // a rail bridge's deck over water
 const yKey = (x, z) => Math.round(x * 50) * 131072 + Math.round(z * 50);
