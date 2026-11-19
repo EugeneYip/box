@@ -75,7 +75,11 @@ function monumentTitle(type, style, variant) {
 const BUDGET = { humans: 1.6, buildings: 1.7, villages: 1.8, start: 1.34 };
 function budgets(w, h, area = w * h) {
   const a = area / (256 * 256);
-  const humans = Math.round(Math.min(900, 850 * Math.pow(a, 0.04)) * BUDGET.humans);
+  // (round 15) a big map holds more people with its land, gently: the World
+  // Map (Vast) reached its cap by Year 100 with barely more people than a
+  // Medium map on an eighth of the land; +30% at most, for the Vast tick
+  const big = a > 1 ? Math.min(1.3, Math.pow(a, 0.13)) : 1;
+  const humans = Math.round(Math.min(900, 850 * Math.pow(a, 0.04)) * big * BUDGET.humans);
   return {
     area: a,
     humans,
@@ -361,7 +365,7 @@ export class Civilization {
     if (opts.name) this.usedNames.add(opts.name);
     if (newKingdom) {
       // a real realm (World Map) keeps its plain name: "Japan", not "Kingdom of Japan"
-      k = this.createKingdom(culture, { baseName: opts.realmName || vname, name: opts.realmName, color: opts.color, x: hx + 1.5, z: hy + 1.5 });
+      k = this.createKingdom(culture, { baseName: opts.realmName || vname, name: opts.realmName, color: opts.color, x: hx + 1.5, z: hy + 1.5, parent: opts.parent, wanderers: opts.wanderers });
       if (opts.realmName) {
         k.plain = true;
         k.realm = opts.realmIdx ?? -1;
@@ -471,6 +475,10 @@ export class Civilization {
   }
 
   seedInitial(n = 3) {
+    // a World Law that holds research back, kept from the world before in
+    // this session, is said aloud rather than silently carried over
+    const cap = Math.round(this.law('civEraCap', LAST_ERA));
+    if (cap < LAST_ERA) this.game.notify?.(`World Law "Latest era" holds this world at the ${ERAS[cap]?.name || 'Hearth'} era`, 'info');
     // the default of three starting villages grows with the map
     const explicit = this.game.params?.raw?.has?.('civs');
     if (!explicit && (n == null || n === 3)) n = this.budget.startVillages;
@@ -599,6 +607,7 @@ export class Civilization {
     }
     const nv = this.foundVillage(Math.floor(u.x), Math.floor(u.z), {
       kingdom: independent ? null : k.id,
+      parent: independent && k ? k.id : undefined,
       nameFrom: exp.kingdom,
       culture: from?.culture,
       units: members,
@@ -722,6 +731,7 @@ export class Civilization {
     if ((T.cart = (T.cart || 0) + step) >= 8) {
       T.cart = 0;
       this._cartFood();
+      this._retireOldKinds();
     }
     if ((T.regrow += step) >= 5) {
       T.regrow = 0;
@@ -1577,13 +1587,15 @@ export class Civilization {
     // (on the World Map's big farming towns the woodcutters and builders took
     // the hands first, and Martial towns kept no more soldiers than others)
     const lean = ctr('Martial') ? 2.1 : ctr('Pastoral') || ctr('Scholarly') ? 0.6 : 1;
-    const peaceGuard = () => Math.max(1, n * 0.11 * lean) + (v.hasBarracks ? 2 : 0) + (ctr('Martial') && v.tier >= 1 ? 2 : 0);
+    // (a lighter watch since round 15: soldiers were 26-30% of all people
+    // from Year 100 to 300)
+    const peaceGuard = () => Math.max(1, n * 0.08 * lean) + (v.hasBarracks ? 1 : 0) + (ctr('Martial') && v.tier >= 1 ? 2 : 0);
     const martialFirst = ctr('Martial') && !atWar && n >= 5;
     if (martialFirst) give('soldier', peaceGuard());
     give('fisher', v.docks ? Math.min(v.docks * (ctr('Seafaring') ? 3 : 2), 1 + n * (ctr('Seafaring') ? 0.25 : 0.15)) : foodLow && n >= 5 && v.coastal ? 1 : 0);
     const drafting = this.game.time.total - (v.draft ?? -99) < 45;
     // a people's ways show in its trades: martial folk keep many under arms
-    if (atWar) give('soldier', Math.max(3, n * Math.min(0.55, (drafting ? 0.32 : 0.2) * lean)) + (v.hasBarracks ? 3 : 0));
+    if (atWar) give('soldier', Math.max(3, n * Math.min(0.45, (drafting ? 0.26 : 0.16) * lean)) + (v.hasBarracks ? 2 : 0));
     give('builder', sites ? Math.min(Math.max(1, Math.ceil(sites * 1.1 * shift)), 1 + Math.floor((n * shift) / 6)) : repairs ? 1 : 0);
     // an empty woodshed stops all building: send more hands to the woods
     const woodsCap = (v.trees ?? 99) < 20 ? 1 : (v.trees ?? 99) < 45 ? 2 : (v.trees ?? 99) < 75 ? 3 : 9;
