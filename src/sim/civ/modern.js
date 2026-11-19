@@ -283,6 +283,11 @@ export const modern = {
   // Called from _planUnlocks with the planner's helpers. The rarer works go
   // to the capital and the cities, once per realm; the common ones to towns.
   _planModern(v, K, room, build, upgrade, count) {
+    // an Industrial town shows its industry first (a 35-building Industrial
+    // town had no factory and no station: the newer branches took every
+    // builder): the factory with its stack, workers' rows, the station
+    // (a village saving up for its factory or station spends on nothing newer)
+    if (this._anyModern(K) && this._planIndustry(v, K, room, build, count)) return;
     // the food, medicine, land, city and planning branches (breadth.js)
     this._planBreadth(v, K, room, build, upgrade, count);
     if (!this._anyModern(K)) return;
@@ -351,6 +356,16 @@ export const modern = {
         }
       }
     }
+    // ...and its pens: a pasture inside the core is given up (its herd went
+    // grazing among the towers); a new one goes out beyond the core
+    if (city && (K.era || 0) >= 5 && this.rng.chance(0.3)) {
+      const core = v.radius * 0.8;
+      const p = v.buildings.find((b) => b.alive && b.type === 'pasture' && !b.constructing && Math.hypot(b.x - v.cx, b.z - v.cz) < core);
+      if (p) {
+        this.destroyBuilding(p, 'cancelled');
+        p.ruinT -= YEAR * 10; // pens leave no ruin: cleared on the next sweep
+      }
+    }
     // Railways: a station in each town a line reaches
     if (room() && has('railways') && v.railEnds > 0 && count('station') === 0) tryBuild('station');
     // Computing: a research campus in the capital and the cities
@@ -367,6 +382,42 @@ export const modern = {
     // Rocketry: a launch pad; Orbital Industry: a spaceport (far out of town)
     if (room() && has('rocketry') && (isCap || city) && rc('launchpad') === 0) tryBuild('launchpad', out('launchpad', 6, 12));
     if (room() && has('orbital') && (isCap || city) && rc('spaceport') === 0) tryBuild('spaceport', out('spaceport', 6, 12));
+  },
+  // The Industrial core of a busy village (about 20 people) of an era-4+
+  // realm: a brick factory on the edge of town, a terrace of row houses for
+  // its workers, and a station where a rail line ends in town. These come
+  // before the newer branches (they used to be starved by them), and a
+  // footprint that will not fit is tried again by the wider search.
+  _planIndustry(v, K, room, build, count) {
+    if ((K.era || 0) < 4) return false;
+    const has = (t) => K.techs.has(t);
+    const town = v.tier >= 1;
+    const city = v.tier >= 2;
+    if (!(town || v.pop >= 18)) return false;
+    const now = this.game.time.total;
+    const fail = v.modernFail || (v.modernFail = {});
+    const ok = (type) => !(now - (fail[type] ?? -1e9) < 25);
+    const tryBuild = (type, placer) => {
+      if (!ok(type)) return false;
+      const before = v.buildings.length;
+      const r = build(type, placer);
+      if (!r && v.need !== type && v.buildings.length === before) fail[type] = now;
+      return r;
+    };
+    const zoned = has('zoning');
+    const industry = has('industry') || (K.era || 0) >= 5;
+    if (room() && industry && count('factory') < (city ? 2 : 1)) {
+      const minR = Math.max(zoned ? 7 : 3, v.radius * 0.5),
+        maxR = v.buildRadius + (zoned ? 9 : 5);
+      tryBuild('factory', () => this._placeOutskirts(v, 'factory', minR, maxR, null, null) || this.placeAlongRoad(v, 'factory', this._bias(v, 'workshop')) || this._placeWide(v, 'factory', v.buildRadius * 0.6, v.buildRadius + 10));
+    }
+    if (room() && industry && count('factory') > 0 && count('rowhouse') < 1 + v.tier && (v.housing - v.pop < 6 || count('rowhouse') === 0)) tryBuild('rowhouse');
+    if (room() && has('railways') && v.railEnds > 0 && count('station') === 0) {
+      // beside the street where the line comes in (the hall door end)
+      tryBuild('station', () => this.placeAlongRoad(v, 'station', this._bias(v, 'market')) || this._placeOutskirts(v, 'station', 1, v.buildRadius + 2, null, null));
+    }
+    // short of the gold or stone for them: save up (true skips the newer works)
+    return v.need === 'factory' || v.need === 'station';
   },
   // A big footprint (airport, arcology, spaceport) beyond the fields: more
   // tries than _placeOutskirts, on ground that may be levelled more.
@@ -748,6 +799,21 @@ export const modern = {
           tz = Math.floor(s.pts[i + 1]);
         if (w.inBounds(tx, tz)) this.railMask[tz * w.w + tx] |= s.kind === 'rail' ? 1 : 2;
       }
+    // and the highway's whole width beside them (4): no building stands on
+    // its strip (planner._tileFree reads the mask)
+    for (const s of out) {
+      if (!s.hw) continue;
+      for (let i = 0; i < s.hw.length; i++) {
+        if (!s.hw[i]) continue;
+        const [hx, hz] = hwPoint(s.pts, i);
+        const [ux, uz] = tanAt(s.pts, i);
+        for (const o of [-0.45, 0, 0.45]) {
+          const tx = Math.floor(hx + uz * o),
+            tz = Math.floor(hz - ux * o);
+          if (w.inBounds(tx, tz)) this.railMask[tz * w.w + tx] |= 4;
+        }
+      }
+    }
   },
   // one branch of a network: from the nearest point of the tree (or the
   // root's station) to the town's station
@@ -909,6 +975,8 @@ export const modern = {
     for (let i = 0; i < n; i++) {
       const [x, z] = hwPoint(P, i);
       let ok = w.heightAt(x, z) >= SEA_LEVEL + 0.05;
+      // never across a building that stands there already
+      if (ok && w.inBounds(Math.floor(x), Math.floor(z)) && this.use[Math.floor(z) * w.w + Math.floor(x)] === USE.BUILDING) ok = false;
       for (const v of towns) if (ok && Math.abs(v.cx - x) < v.radius && Math.hypot(v.cx - x, v.cz - z) < v.radius * 0.85) ok = false;
       hw[i] = ok ? 1 : 0;
     }

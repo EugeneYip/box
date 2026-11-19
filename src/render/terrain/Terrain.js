@@ -209,6 +209,15 @@ export class Terrain {
     // towns and their fields: rebuilt when a town changes shape (at most
     // every 1.5 s; FloraSim refreshes the outlines every few game seconds)
     this._settleT -= dt;
+    this._sigT = (this._sigT || 0) - dt;
+    if (this._sigT <= 0) {
+      this._sigT = 2;
+      const sg = this._settleSig();
+      if (sg !== this._sigV) {
+        this._sigV = sg;
+        this._settleDirty = true;
+      }
+    }
     if (this._settleDirty && this._settleT <= 0) {
       this._settleDirty = false;
       this._settleT = 1.5;
@@ -375,7 +384,57 @@ export class Terrain {
           }
       }
     }
+    // paved towns (Industrial and later): B = the town's paving (85 cobbles
+    // and macadam, 170 asphalt with curbs and sidewalks, 255 the Future's
+    // pale paving) over its build area, A = its paved square; the terrain
+    // shader draws the streets along the road tiles inside (terrainShader.js)
+    const civ = g.civ;
+    if (civ?.villages && this.game.law?.('civRoads') !== false) {
+      const use = civ.use;
+      for (const v of civ.villages) {
+        if (!v || v.alive === false || !Number.isFinite(v.cx) || !v.roadTiles?.length) continue;
+        const era = civ.kingdoms?.[v.kingdom]?.era || 0;
+        if (era < 4) continue;
+        const lvl = era >= 7 ? 255 : era >= 5 ? 170 : 85;
+        const R = Math.max(5, (v.buildRadius || v.radius || 6) * 1.15 + 2);
+        const x0 = Math.max(0, Math.floor(v.cx - R)),
+          x1 = Math.min(W - 1, Math.ceil(v.cx + R)),
+          y0 = Math.max(0, Math.floor(v.cz - R)),
+          y1 = Math.min(H - 1, Math.ceil(v.cz + R));
+        for (let y = y0; y <= y1; y++)
+          for (let x = x0; x <= x1; x++) {
+            const dx = x + 0.5 - v.cx,
+              dz = y + 0.5 - v.cz;
+            if (dx * dx + dz * dz > R * R) continue;
+            const i = (y * W + x) * 4 + 2;
+            if (d[i] < lvl) d[i] = lvl;
+          }
+        // the square before the hall (Masonry), and in a modern town the
+        // street tiles round the hall door, as a plaza
+        const h = v.hall;
+        if (h && h.alive !== false && use && (v.squarePaved || era >= 5)) {
+          const cx = Math.floor(h.doorX),
+            cz = Math.floor(h.doorZ);
+          for (let dz = -2; dz <= 2; dz++)
+            for (let dx = -2; dx <= 2; dx++) {
+              const x = cx + dx,
+                y = cz + dz;
+              if (x < 0 || y < 0 || x >= W || y >= H) continue;
+              const i = y * W + x;
+              if (use[i] === 2) d[i * 4 + 3] = 255;
+            }
+        }
+      }
+    }
     this.settleTexture.needsUpdate = true;
+  }
+  // a town's streets or era changed: repaint its paving (checked every 2 s)
+  _settleSig() {
+    const civ = this.game.civ;
+    if (!civ?.villages) return 0;
+    let s = 0;
+    for (const v of civ.villages) if (v && v.alive !== false) s = (s * 31 + (v.roadTiles?.length || 0) * 8 + (civ.kingdoms?.[v.kingdom]?.era || 0) + (v.squarePaved ? 3 : 0)) | 0;
+    return s;
   }
   _writeAO(r) {
     const d = this.climData;

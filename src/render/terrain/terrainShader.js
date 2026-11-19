@@ -577,8 +577,8 @@ Mat matRoad(NS s) {
   // stair-stepped into a grey pixel mosaic up close), softer joint contrast,
   // and no cobbles on sloping ground (they stretch there) - just worn earth
   // (the stones are cut at the buildings' scale: a house is about one tile)
-  vec4 pc = cz(s.p.xz * ${(1 / (9 * PAVE)).toFixed(5)});
-  float cw = max(0.10, s.fw * ${(3.5 / PAVE).toFixed(3)});
+  vec4 pc = cz(s.p.xz * ${(1 / (1.1 * PAVE)).toFixed(5)});
+  float cw = max(0.10, s.fw * ${(2.6 / (1.1 * PAVE)).toFixed(3)});
   float cob = smoothstep(cw * 0.25, cw, pc.g);
   float hasCob = smoothstep(0.55, 0.70, s.meso.g) * smoothstep(0.86, 0.95, s.n.y) * (1.0 - smoothstep(0.3, 0.6, cw));
   vec3 stone = vec3(0.36, 0.33, 0.29) * (0.85 + 0.3 * pc.b);
@@ -1106,6 +1106,89 @@ void terrainSurface() {
       // keep the scene's light level: plots at the ground's own brightness
       fc *= clamp(lum(albedo) / max(lum(fc), 0.02), 0.85, 1.6);
       albedo = mix(albedo, fc, inF * 0.85);
+    }
+    // paved towns (Terrain._writeSettle: B = paving of the town, A = its
+    // square): from the Industrial era the road tiles become straight streets
+    // cut on the tile grid: cobbled setts with flagstone pavements (4), then
+    // asphalt with a curb and a concrete sidewalk on each side and a dashed
+    // centre line (5-6), pale and clean in the Future (7); the square before
+    // the hall is laid with stone slabs. Earth smeared off the old dirt roads
+    // and bare building plots in between turn to mown lawn from the Modern era.
+    ivec2 pci = ivec2(floor(p));
+    vec4 pvs = texelFetch(uSettleTex, clamp(pci, ivec2(0), ivec2(uWorldSize) - 1), 0);
+    float plvl = floor(pvs.b * 3.0 + 0.5);
+    if (plvl > 0.5) {
+      float flat0 = (1.0 - cliff) * (1.0 - snowB * 0.7);
+      vec2 pcf = p - floor(p);
+      float aa = max(s.fw, 0.003) * 1.4;
+      bool rdC = tileTypeAt(pci) == 13.0;
+      vec4 isRd = vec4(equal(vec4(t0, t1, t2, t3), vec4(13.0))) * live;
+      float rdBlend = dot(isRd, b);
+      if (rdC) {
+        bool rL = tileTypeAt(pci + ivec2(-1, 0)) == 13.0;
+        bool rR = tileTypeAt(pci + ivec2(1, 0)) == 13.0;
+        bool rD = tileTypeAt(pci + ivec2(0, -1)) == 13.0;
+        bool rU = tileTypeAt(pci + ivec2(0, 1)) == 13.0;
+        float dE = min(min(rL ? 9.0 : pcf.x, rR ? 9.0 : 1.0 - pcf.x), min(rD ? 9.0 : pcf.y, rU ? 9.0 : 1.0 - pcf.y));
+        // inside corners where two streets meet
+        if (rL && rD && tileTypeAt(pci + ivec2(-1, -1)) != 13.0) dE = min(dE, length(pcf));
+        if (rR && rD && tileTypeAt(pci + ivec2(1, -1)) != 13.0) dE = min(dE, length(pcf - vec2(1.0, 0.0)));
+        if (rL && rU && tileTypeAt(pci + ivec2(-1, 1)) != 13.0) dE = min(dE, length(pcf - vec2(0.0, 1.0)));
+        if (rR && rU && tileTypeAt(pci + ivec2(1, 1)) != 13.0) dE = min(dE, length(pcf - vec2(1.0, 1.0)));
+        float plaza = step(0.5, pvs.a);
+        float modern = step(1.5, plvl);
+        float fut = step(2.5, plvl);
+        float swW = mix(0.11, 0.15, modern);
+        float side = 1.0 - smoothstep(swW - aa, swW + aa, dE);
+        float curb = (1.0 - smoothstep(swW + 0.035 - aa, swW + 0.035 + aa, dE)) * (1.0 - side);
+        float lum0 = clamp(lum(albedo) / 0.09, 0.8, 1.15);
+        // carriageway: setts (4) or asphalt (5+)
+        vec2 sq = p * vec2(7.0, 11.0);
+        sq.x += step(1.0, mod(floor(sq.y), 2.0)) * 0.5;
+        vec2 sf2 = abs(fract(sq) - 0.5);
+        float jt = 1.0 - smoothstep(0.40, 0.47, max(sf2.x, sf2.y));
+        float jtK = 1.0 - smoothstep(0.012, 0.03, s.fw);
+        vec3 setts = vec3(0.235, 0.215, 0.195) * (0.86 + 0.28 * hash12(floor(sq)));
+        setts = mix(vec3(0.12, 0.11, 0.10), setts, mix(1.0, jt, jtK * 0.8));
+        vec3 asph = mix(vec3(0.088, 0.088, 0.094), vec3(0.15, 0.15, 0.155), fut) * (0.92 + 0.12 * s.det.r + 0.05 * (s.micro.g - 0.5));
+        // tyre-darkened lanes and a dashed centre line on straight streets
+        float alongX = (rL && rR && !(rU && rD)) ? 1.0 : 0.0;
+        float alongZ = (rU && rD && !(rL && rR)) ? 1.0 : 0.0;
+        float lc = alongX > 0.5 ? pcf.y : pcf.x;
+        float la = alongX > 0.5 ? p.x : p.y;
+        float dash = (alongX + alongZ) * (1.0 - smoothstep(0.014, 0.014 + aa, abs(lc - 0.5))) * step(0.45, fract(la * 1.6)) * (1.0 - smoothstep(0.025, 0.06, s.fw));
+        asph = mix(asph, asph * 0.82, (alongX + alongZ) * (1.0 - smoothstep(0.04, 0.10, abs(abs(lc - 0.5) - 0.2))) * 0.6);
+        asph = mix(asph, mix(vec3(0.62, 0.55, 0.30), vec3(0.75, 0.78, 0.80), fut), dash * (1.0 - plaza));
+        vec3 way = mix(setts, asph, modern);
+        // sidewalk: flagstones (4) or concrete slabs (5+), slab joints every third of a tile
+        vec2 sj = abs(fract(p * 3.0) - 0.5);
+        float slab = 1.0 - (1.0 - smoothstep(0.43, 0.48, max(sj.x, sj.y))) * jtK * 0.5;
+        vec3 walk = mix(vec3(0.33, 0.31, 0.28), mix(vec3(0.40, 0.39, 0.37), vec3(0.48, 0.49, 0.48), fut), modern) * (0.94 + 0.1 * s.det.g);
+        walk *= mix(0.86, 1.0, slab);
+        vec3 kerb = mix(vec3(0.46, 0.44, 0.40), vec3(0.62, 0.62, 0.60), modern);
+        // the square: big stone slabs in two tones (no curbs inside it)
+        vec2 pq = p * 2.0;
+        vec2 pf = abs(fract(pq) - 0.5);
+        float pj = (1.0 - smoothstep(0.44, 0.48, max(pf.x, pf.y))) * jtK;
+        vec3 sqC = mix(vec3(0.46, 0.41, 0.34), mix(vec3(0.48, 0.46, 0.42), vec3(0.52, 0.53, 0.50), fut), modern);
+        sqC *= 0.9 + 0.16 * hash12(floor(pq) + 4.1);
+        sqC = mix(sqC * 0.74, sqC, max(pj, 1.0 - jtK));
+        vec3 pave = mix(mix(way, walk, side), kerb, curb);
+        pave = mix(pave, sqC, plaza);
+        pave *= lum0;
+        float pk = flat0 * smoothstep(0.62, 0.82, s.n.y);
+        albedo = mix(albedo, pave, pk);
+        rough = mix(rough, mix(0.9, 0.78, modern * (1.0 - side)), pk);
+        H *= 1.0 - pk * 0.85;
+      } else if (plvl > 1.5) {
+        // a modern town's plots: no dirt-road smears, mown lawn
+        float soilB = dot(vec4(equal(vec4(t0, t1, t2, t3), vec4(11.0))) * live, b);
+        vec3 lawn = vec3(0.17, 0.30, 0.085) * (0.88 + 0.2 * s.det.r + 0.1 * (s.meso.g - 0.5));
+        lawn = mix(lawn, vec3(lum(lawn)) * vec3(0.95, 0.95, 1.0), snowB);
+        float lk = clamp(rdBlend + soilB * 0.85, 0.0, 1.0) * flat0 * smoothstep(0.08, 0.3, st.r + pvs.b);
+        albedo = mix(albedo, lawn * clamp(lum(albedo) / 0.12, 0.8, 1.4), lk);
+        H *= 1.0 - lk * 0.5;
+      }
     }
     // towns at far zoom (past ~80 units): the build area is a pale urban
     // patch of roofs and streets, so a town reads as a town once its houses

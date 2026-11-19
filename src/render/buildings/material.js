@@ -166,7 +166,7 @@ if (vRoof.x > 0.5) {
     totalEmissiveRadiance += vec3(0.4, 0.95, 1.0) * (0.5 + night * 1.0) * (0.88 + 0.12 * sin(uTime * 2.0 + vLocal.y * 4.0 + vLocal.x * 2.0));
   } else {
     // a lamp head: bright at night only
-    totalEmissiveRadiance += vec3(1.0, 0.86, 0.6) * (night * 4.2 + 0.03);
+    totalEmissiveRadiance += vec3(1.0, 0.86, 0.6) * (night * 2.3 + 0.03);
   }
   // heritage: soft floodlight washing up the walls at night
   if (flood > 0.5) totalEmissiveRadiance += diffuseColor.rgb * vec3(1.0, 0.84, 0.62) * night * 0.5 * (1.0 - smoothstep(0.1, 3.2, vLocal.y));
