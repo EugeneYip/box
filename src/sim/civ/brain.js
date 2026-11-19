@@ -244,6 +244,7 @@ export const brain = {
     if (now - (this._pathCacheT ?? -1e9) > 12 || PC.size > 6000 || this._pathCacheV !== this.version) {
       if (now - (this._pathCacheT ?? -1e9) > 12 || PC.size > 6000 || now - (this._pathCacheVT ?? -1e9) > 3) {
         PC.clear();
+        this._trunks?.clear();
         this._pathCacheT = now;
         this._pathCacheV = this.version;
         this._pathCacheVT = now;
@@ -262,11 +263,27 @@ export const brain = {
       u.target = { x, z };
       return true;
     }
+    // a long walk toward a place others are already headed (an army's rally
+    // or its column, settlers to their site, newcomers to the hall): join a
+    // route found for one of them in the last few seconds instead of a fresh
+    // search across the country (short searches onto and off that route)
+    if (long && this._pathBudget > 0) {
+      const sp = this._joinTrunk(w.clampTx(sx), w.clampTy(sy), gx, gy);
+      if (sp) {
+        this._pathBudget--;
+        PC.set(key, sp);
+        u.path = sp;
+        u.pathIdx = 0;
+        u.target = { x, z };
+        return true;
+      }
+    }
     if (long ? this._longBudget <= 0 : this._pathBudget <= 0) return WAIT;
     if (long) this._longBudget--;
     else this._pathBudget--;
     const p = civPath(w, w.clampTx(sx), w.clampTy(sy), gx, gy, this._walkCost(), long ? 32000 : 3200, 0.5);
     PC.set(key, p || null);
+    if (long && p && p.length > 24 && p[p.length - 1] === gy * w.w + gx) this._addTrunk(w.clampTx(sx), w.clampTy(sy), gx, gy, p);
     if (!p) {
       u.target = null;
       u.path = null;
@@ -276,6 +293,69 @@ export const brain = {
     u.pathIdx = 0;
     u.target = { x, z };
     return true;
+  },
+
+  // Long routes found in the last few seconds, by the 8-tile block of their
+  // goal (cleared with the path cache).
+  _addTrunk(sx, sy, gx, gy, p) {
+    const T = this._trunks || (this._trunks = new Map());
+    const k = (gy >> 3) * 4096 + (gx >> 3);
+    let a = T.get(k);
+    if (!a) T.set(k, (a = []));
+    if (a.length >= 6) a.shift();
+    a.push(p);
+  },
+
+  // A route for a long walk from (sx,sy) to (gx,gy) along one found for
+  // someone else: the walker steps onto it at its tile nearest them (within
+  // six tiles), follows it, and steps off to their own goal (within six tiles
+  // of its end). Null when no such route is at hand.
+  _joinTrunk(sx, sy, gx, gy) {
+    const T = this._trunks;
+    if (!T || !T.size) return null;
+    const w = this.world;
+    const W = w.w;
+    const bx = gx >> 3,
+      by = gy >> 3;
+    let best = null,
+      bk = -1,
+      bd = 7;
+    for (let oy = -1; oy <= 1; oy++)
+      for (let ox = -1; ox <= 1; ox++) {
+        const a = T.get((by + oy) * 4096 + bx + ox);
+        if (!a) continue;
+        for (const p of a) {
+          const G = p[p.length - 1];
+          if (Math.max(Math.abs((G % W) - gx), Math.abs(((G / W) | 0) - gy)) > 6) continue;
+          // (the later tile on a tie: never back along the route)
+          for (let i = 0; i < p.length; i++) {
+            const d = Math.max(Math.abs((p[i] % W) - sx), Math.abs(((p[i] / W) | 0) - sy));
+            if (d < bd || (d === bd && p === best)) {
+              bd = d;
+              bk = i;
+              best = p;
+            }
+          }
+        }
+      }
+    if (!best) return null;
+    const cost = this._walkCost();
+    const J = best[bk];
+    const out = [];
+    if (sy * W + sx !== J) {
+      const h = civPath(w, sx, sy, J % W, (J / W) | 0, cost, 400, 0.5);
+      if (!h || h[h.length - 1] !== J) return null;
+      for (let i = 0; i < h.length; i++) out.push(h[i]);
+    }
+    for (let i = bk + 1; i < best.length; i++) out.push(best[i]);
+    const G = best[best.length - 1],
+      goal = gy * W + gx;
+    if (G !== goal) {
+      const t = civPath(w, G % W, (G / W) | 0, gx, gy, cost, 400, 0.5);
+      if (!t || t[t.length - 1] !== goal) return null;
+      for (let i = 0; i < t.length; i++) out.push(t[i]);
+    }
+    return out.length ? out : null;
   },
 
   // Walk toward (x,z). Returns ARRIVED / WALKING / FAIL / WAIT.

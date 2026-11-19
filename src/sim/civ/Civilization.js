@@ -725,8 +725,9 @@ export class Civilization {
       this._buildingsTick(T.b);
       T.b = 0;
     }
-    // (bigger maps refresh territory less often: the fill grows with the map)
-    if ((T.terr += step) >= 2 * Math.max(1, Math.sqrt(this.world.size / 65536))) {
+    // (bigger maps refresh territory less often: the fill grows with the map,
+    // about as fast as its area; at most every 12 s, under half a year)
+    if ((T.terr += step) >= 2 * Math.min(6, Math.max(1, this.world.size / 65536))) {
       T.terr = 0;
       // the full flood fill is costly on big maps: only when the realms changed
       this._territoryIfChanged();

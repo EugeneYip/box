@@ -546,7 +546,21 @@ export class WaterNav {
     const b = this._attach(gx, gz);
     if (!a || !b) return null;
     if (this.compOf[a.cell] !== this.compOf[b.cell]) return null;
-    const cells = this._astar(a.cell, b.cell, !!opts.big, opts.minClear || 0);
+    // (ships ply the same few routes between the same harbours: a route
+    // between two cells is kept until the water graph changes; read only)
+    const big = !!opts.big,
+      mc = opts.minClear || 0;
+    let AC = this._acache;
+    if (!AC || this._acacheV !== this.version || AC.size > 3000) {
+      AC = this._acache = new Map();
+      this._acacheV = this.version;
+    }
+    const ak = a.cell + ',' + b.cell + (big ? ',b,' : ',s,') + mc;
+    let cells = AC.get(ak);
+    if (cells === undefined) {
+      cells = this._astar(a.cell, b.cell, big, mc);
+      AC.set(ak, cells);
+    }
     if (!cells) return null;
     const raw = [sx, sz, ...a.pts];
     for (const c of cells) raw.push(this.nx[c], this.nz[c]);
