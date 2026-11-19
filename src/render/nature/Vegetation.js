@@ -66,15 +66,17 @@ const CANOPY_MAX = new Float32Array(32).fill(99);
   const T = PROP.tree,
     S = PROP.shrub;
   const tree = (f, k, cap) => ((SIZE_K[f] = T * k), (CANOPY_MAX[f] = cap * T));
-  tree(FLORA.OAK, 1, 2.85);
-  tree(FLORA.PINE, 1, 3.3);
-  tree(FLORA.SNOW_PINE, 1, 3.3);
-  tree(FLORA.BIRCH, 1, 3.0);
-  tree(FLORA.PALM, 1.04, 3.1);
-  tree(FLORA.JUNGLE_TREE, 0.98, 3.3);
+  // (a 0.6x house stands about 0.9 tall: an oak tops out near two of them,
+  // conifers and jungle giants a little higher, savanna and swamp trees lower)
+  tree(FLORA.OAK, 1, 2.7);
+  tree(FLORA.PINE, 0.97, 3.1);
+  tree(FLORA.SNOW_PINE, 0.97, 3.1);
+  tree(FLORA.BIRCH, 1, 2.8);
+  tree(FLORA.PALM, 1.02, 2.9);
+  tree(FLORA.JUNGLE_TREE, 0.96, 3.1);
   tree(FLORA.ACACIA, 1.02, 2.3);
-  tree(FLORA.SWAMP_TREE, 0.98, 2.7);
-  tree(FLORA.DEAD_TREE, 1, 2.8);
+  tree(FLORA.SWAMP_TREE, 0.98, 2.6);
+  tree(FLORA.DEAD_TREE, 1, 2.6);
   for (const f of [FLORA.BUSH, FLORA.BERRY_BUSH, FLORA.STUMP]) SIZE_K[f] = S;
   SIZE_K[FLORA.CACTUS] = S * 0.95;
   for (const f of [FLORA.FLOWERS, FLORA.REEDS, FLORA.MUSHROOM]) SIZE_K[f] = S * 1.06;
