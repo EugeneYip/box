@@ -376,6 +376,10 @@ export class FleetRenderer {
     C.wind = g.env?.wind || { x: 1, z: 0, strength: 0.3 };
     C.flagsOn = flagsOn;
     C.wakesOn = wakesOn;
+    // road vehicles grow a little as the camera pulls back, a third as much as
+    // the people do (UnitRenderer's readability boost), so a car stays about
+    // two people long at play zoom as well as up close
+    C.roadBoost = 1 + (Math.min(2.6, Math.max(1, 0.55 + dist / 28)) - 1) * 0.35;
     const wind = C.wind;
     if (!far) {
       for (const v of list) {
@@ -417,7 +421,7 @@ export class FleetRenderer {
     const kc = this._kingdomColor(v.kingdom);
     const dmg = Math.min(1, Math.max(0, 1 - v.hp / v.maxHp - 0.12) / 0.88);
     const a = v.anim;
-    const sc = def.scale || 1;
+    const sc = (def.scale || 1) * (def.road ? C.roadBoost || 1 : 1);
     if (v.cls === 'sea') {
       const ph = this.t + v.seed * 20;
       const rough = (1 + C.st * 2.5) * (def.length > 2 * VEHICLE.sea ? 0.6 : 1);
@@ -510,7 +514,7 @@ export class FleetRenderer {
       this._q.setFromEuler(this._e);
       this._m.compose(this._p.set(px, py ?? y, pz), this._q, this._s.setScalar(sc));
       vb.push(this._key(kind, px, pz), this._m, kc, a.walk + variant * 1.3, a.wheel, a3, 0, dmg, v.burning || 0, siren, kind === 'oxcart' ? a.cargoType : variant);
-      C.blobList.push(px, pz, def.length * (kind === 'caravan' ? 0.9 : 1.1), ph);
+      C.blobList.push(px, pz, def.length * (kind === 'caravan' ? 0.9 : 1.1) * (def.road ? C.roadBoost || 1 : 1), ph);
     };
     if (kind === 'caravan') {
       const camel = a.cargoType === 2 ? 2 : 0;
@@ -579,9 +583,10 @@ export class FleetRenderer {
     const vb = this.vb;
     const alpha = C.alpha;
     const def = KINDS.car;
-    const sc = def.scale || 1;
+    const sc = (def.scale || 1) * (C.roadBoost || 1);
     const hl = def.length * 0.4;
-    const lane = 0.17;
+    // (the right-hand lane: half a car's width and a little off the crown)
+    const lane = 0.27 * Math.min(1.2, C.roadBoost || 1);
     let n = 0;
     for (let i = 0; i < T.length; i++) {
       const c = T[i];
@@ -598,7 +603,7 @@ export class FleetRenderer {
       this._m.compose(this._p.set(x, Math.max(y, 0), z), this._q, this._s.setScalar(sc));
       const wheel = -((this.t * c.s) / (0.08 * sc)) - i;
       vb.push(this._key('car', x, z), this._m, this._kingdomColor(c.kingdom), 0, wheel, 0, 0, 0, 0, 0, c.v);
-      C.blobList.push(x, z, def.length, h);
+      C.blobList.push(x, z, def.length * (C.roadBoost || 1), h);
       n++;
     }
     return n;
