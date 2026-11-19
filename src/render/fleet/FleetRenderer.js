@@ -1119,6 +1119,9 @@ export class FleetRenderer {
     for (const v of F.list) {
       if (!v.alive || budget <= 0) continue;
       if (Math.abs(v.x - cx) > R || Math.abs(v.z - cz) > R) continue;
+      // a submarine running submerged shows no fire: flames, smoke and
+      // embers over an empty wake read as orange sparks trailing nothing
+      if (v.def.sub && v.state !== 'moored' && !(v.sink > 0)) continue;
       if (v.burning > 0.15 || (v.sink > 0 && v.sink < 0.5)) {
         // a burning ship trails a grey-white plume that leans downwind and
         // thins out (one thin puff at the deck, the plume above it, so the
@@ -1128,7 +1131,7 @@ export class FleetRenderer {
         if (v.burning > 0.4) for (let i = 0; i < 2; i++) this._plume(fx, v.x, (v.y || 0) + 1.8 + i * 0.6, v.z, 0.7 + L * 0.18, 0.5);
         if (v.burning > 0.2) {
           fx.emit('fire', { x: v.x + (Math.random() - 0.5) * 0.5, y: (v.y || 0) + 0.4, z: v.z }, { scale: 0.5 });
-          if (Math.random() < 0.4) fx.emit('embers', { x: v.x, y: (v.y || 0) + 0.8, z: v.z }, { count: 2 });
+          if (v.burning > 0.45 && Math.random() < 0.3) fx.emit('embers', { x: v.x, y: (v.y || 0) + 0.8, z: v.z }, { count: 1 });
         }
         budget--;
       }
