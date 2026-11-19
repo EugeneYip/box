@@ -237,6 +237,9 @@ export function installRoles(Units) {
   // Returns true when the role took over this think.
   P._roleThink = function (u, now) {
     this._updateRiding(u);
+    // off-duty soldiers (the half not on watch) spend the working day in the
+    // barracks, indoors or drilling in its yard, instead of crowding the streets
+    if (u.job === 'soldier' ? (u.id & 1) === 1 && this._offDuty(u, now) : u._offd && (this._offDutyEnd(u), false)) return true;
     // the new people of section 3 (people.js) and bucket brigades
     const pr = u.data.role;
     if (((pr && PEOPLE_ROLES[pr]) || u._brigade > now) && this._peopleThink(u, now, pr)) return true;
@@ -249,6 +252,86 @@ export function installRoles(Units) {
       return took;
     }
     return false;
+  };
+
+  // ---- off duty ------------------------------------------------------------
+  // u._offd = {ph: 'go' | 'in' | 'yard', until, x, z, lab}. Only by day in
+  // peace, with a barracks in town; war, a threat, a fight or the evening ends it.
+  P._offDuty = function (u, now) {
+    const civ = this.game.civ;
+    const d = u.data;
+    const v = civ?.villages?.[u.village];
+    const h = this.game.time.hour ?? 12;
+    const quit = () => {
+      if (u._offd) this._offDutyEnd(u);
+      return false;
+    };
+    if (!v || !v.alive || u.combat || u.state === 'flee' || d.inside || d.aboard != null || d.civ?.army != null || u.age < u.def.maturity) return quit();
+    if (h < 7.5 || h >= 16.8 || !this.game.settings?.dayNight) return quit();
+    if (u.kingdom >= 0 && (civ.warCount?.(u.kingdom) || 0) > 0) return quit();
+    if (d.foe != null || d.civ?.foe != null) return quit();
+    const pl = this._dlPlaces(v);
+    const b = pl.barracks;
+    if (!b || !b.alive) return quit();
+    let o = u._offd;
+    if (o && now < o.until && o.b === b.id) {
+      if (o.ph === 'go') {
+        const dd = (o.x - u.x) ** 2 + (o.z - u.z) ** 2;
+        if (dd < 0.5 || (!u.target && !u.path)) this._offDutyArrive(u, o, b);
+        else if (u.state !== 'walk' && u.state !== 'run') u.state = 'walk';
+      } else if (o.ph === 'yard') {
+        u.state = 'work';
+        u.data.workAnim = 'chop'; // (drill: the same swing as the brain's)
+        u.heading = o.face;
+      }
+      return true;
+    }
+    // a new spell: two in three indoors, the rest at drill in the yard
+    if (o) this._offDutyEnd(u);
+    if (u._dl) this._dlEnd(u);
+    const yard = Math.random() < 0.34;
+    const dx = b.doorX - (b.x ?? b.doorX),
+      dz = b.doorZ - (b.z ?? b.doorZ);
+    const L = Math.hypot(dx, dz) || 1;
+    const ux = dx / L,
+      uz = dz / L;
+    // the yard: a few rows before the door, each soldier on a fixed spot
+    const slot = (u.id >> 1) % 12;
+    const col = (slot % 4) - 1.5,
+      row = 1 + Math.floor(slot / 4);
+    const x = yard ? b.doorX + ux * (0.5 + row * 0.55) - uz * col * 0.55 : b.doorX,
+      z = yard ? b.doorZ + uz * (0.5 + row * 0.55) + ux * col * 0.55 : b.doorZ;
+    o = u._offd = { ph: 'go', until: now + (yard ? 18 : 30) + Math.random() * 20, x, z, b: b.id, yard, face: Math.atan2(-ux, -uz), lab: '' };
+    this.stop(u);
+    if ((x - u.x) ** 2 + (z - u.z) ** 2 < 0.5 || !this.moveTo(u, x, z)) this._offDutyArrive(u, o, b);
+    else u.state = 'walk';
+    return true;
+  };
+  P._offDutyArrive = function (u, o, b) {
+    this.stop(u);
+    if (o.yard) {
+      o.ph = 'yard';
+      o.lab = 'Drilling in the barracks yard';
+      u.state = 'work';
+      u.data.workAnim = 'chop';
+      u.heading = o.face;
+    } else {
+      o.ph = 'in';
+      o.lab = 'Off duty in the barracks';
+      u._hid = true;
+      u.state = 'idle';
+      u.data.workAnim = null;
+    }
+  };
+  P._offDutyEnd = function (u) {
+    const o = u._offd;
+    u._offd = null;
+    if (!o) return;
+    if (o.ph === 'in') u._hid = false;
+    if (o.ph === 'yard') {
+      u.data.workAnim = null;
+      if (u.state === 'work') u.state = 'idle';
+    }
   };
 
   // ---- healers --------------------------------------------------------------

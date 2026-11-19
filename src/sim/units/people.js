@@ -34,6 +34,9 @@ export function installPeople(Units) {
       case 'forester':
         return this._foresterThink(u, now, v);
       case 'police':
+        // a farmer or a woodcutter who also serves as a constable keeps to the
+        // trade and only answers trouble; full-time officers walk the beat
+        if (WORKERS.has(u.job) || u.job === 'fisher') return this._policeThink(u, now, v, true);
         return this._policeThink(u, now, v);
       case 'scientist':
         return this._scienceThink(u, now, v);
@@ -182,8 +185,20 @@ export function installPeople(Units) {
   };
 
   // ---- police -----------------------------------------------------------------
-  P._policeThink = function (u, now, v) {
+  P._policeThink = function (u, now, v, onCall = false) {
     const pd = u.data.pd || (u.data.pd = { t: 0, watch: 0 });
+    if (onCall) {
+      if (now >= pd.t) {
+        pd.t = now + 3 + Math.random() * 2;
+        const trouble = this.nearest(u.x, u.z, 7, (o) => o !== u && (o.mad > now || (o.combat && o.species === 'human' && o.job !== 'soldier')));
+        pd.trouble = trouble ? trouble.id : 0;
+        if (trouble) {
+          this.moveTo(u, trouble.x + 0.8, trouble.z + 0.8);
+          u.state = 'run';
+        }
+      }
+      return !!pd.trouble && !!u.target;
+    }
     // trouble nearby: a raging creature or a brawl in the street
     if (now >= pd.t) {
       pd.t = now + 2 + Math.random() * 2;
@@ -332,6 +347,7 @@ export function installPeople(Units) {
     if (r === 'forester' && u.state === 'work') return 'Planting trees';
     if (r === 'police') {
       if (u.data.pd?.trouble && u.moving) return 'Hurrying to trouble';
+      if (WORKERS.has(u.job) || u.job === 'fisher') return null; // on call: the trade's own label
       if (u.activity === 'wait') return 'Keeping watch';
       if (u.moving) return 'Patrolling the streets';
     }

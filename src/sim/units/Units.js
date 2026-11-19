@@ -1258,6 +1258,7 @@ export class Units {
   // ---- combat ---------------------------------------------------------------
   engage(a, t, opts = {}) {
     if (!a || !t || !a.alive || !t.alive || a === t) return false;
+    if (a._offd) this._offDutyEnd(a); // called out of the barracks
     if (a.flags?.pacifist) return false;
     const now = this.game.time.total;
     if (this.attackDamage(a) <= 0) return false;
@@ -2480,6 +2481,7 @@ export class Units {
       const pl = this._peopleLabel(u);
       if (pl) return pl;
     }
+    if (u._offd) return u._offd.ph === 'go' && u.moving ? 'Walking to the barracks' : u._offd.lab;
     if (u._dl) {
       const dl = this._dailyLabel(u);
       if (dl) return dl;
