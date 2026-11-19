@@ -115,6 +115,9 @@ function trackLevels(w, seg, up) {
     }
   }
   const clear = y.slice();
+  // (a branch starts at its trunk's level and keeps the grade away from it)
+  const y0 = up?.ys && seg.at < up.ys.length ? up.ys[seg.at] : null;
+  if (y0 != null) y[0] = Math.max(y[0], y0);
   for (let i = 1; i < n; i++) y[i] = Math.max(y[i], y[i - 1] - G * ds[i]);
   for (let i = n - 2; i >= 0; i--) y[i] = Math.max(y[i], y[i + 1] - G * ds[i + 1]);
   const r = mag ? 4 : 2;
@@ -125,8 +128,7 @@ function trackLevels(w, seg, up) {
     for (let j = Math.max(0, i - r); j <= Math.min(n - 1, i + r); j++) (a += s[j]), c++;
     y[i] = Math.max(a / c, clear[i]);
   }
-  if (up?.ys && seg.at < up.ys.length) {
-    const y0 = up.ys[seg.at];
+  if (y0 != null) {
     let arc = 0;
     for (let i = 0; i < n && arc < 3; i++) {
       if (i) arc += ds[i];
