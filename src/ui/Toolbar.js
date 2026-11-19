@@ -302,7 +302,7 @@ export class Toolbar {
       const { svg, tint } = powerIcon(ap);
       ico.innerHTML = svg;
       ico.style.setProperty('--tint', tint);
-      txt.innerHTML = `<b>${esc(ap.name)}</b><small>${esc(CATEGORIES.find((c) => c.id === ap.category)?.name || '')} · tap to change</small>`;
+      txt.innerHTML = `<b>${esc((typeof ap.label === 'function' && safe(() => ap.label(this.game), null, 'power label')) || ap.name)}</b><small>${esc(CATEGORIES.find((c) => c.id === ap.category)?.name || '')} · tap to change</small>`;
     } else {
       ico.innerHTML = categoryIcon(this.cat);
       ico.style.setProperty('--tint', CATEGORY_TINT[this.cat]);

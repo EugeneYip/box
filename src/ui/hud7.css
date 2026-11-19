@@ -302,9 +302,17 @@
   background: rgba(255, 247, 230, 0.05);
   box-shadow: inset 0 0 0 1px var(--ws-line);
 }
+/* on: a filled pill with a check, so it reads as the active choice */
 .ws-civauto.is-on {
-  color: var(--ws-gold-hi);
-  box-shadow: inset 0 0 0 1px rgba(235, 201, 119, 0.45);
+  color: #1d1608;
+  background: linear-gradient(180deg, var(--ws-gold-hi), var(--ws-gold));
+  box-shadow: none;
+  opacity: 1;
+}
+.ws-civauto.is-on::before {
+  content: '\2713';
+  margin-right: 5px;
+  font-weight: 800;
 }
 .ws-civauto:not([disabled]):hover {
   color: var(--ws-ink);

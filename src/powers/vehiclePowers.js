@@ -154,7 +154,7 @@ function render() {
   edges();
 }
 // the power's name strip names the chosen kind ("Spawn Vehicle: Container ship")
-const syncStrip = () => gRef?.ui?.toolbar?.syncBrush?.();
+const syncStrip = () => gRef?.ui?.toolbar?.syncActive?.();
 function choose(k, fold) {
   chosen = k;
   if (fold) picked = true;
