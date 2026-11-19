@@ -1026,6 +1026,15 @@ const U = {
   'naval-war': '<path class="f" d="M4 21h24l-3.5 6h-17z"/><path d="M4 21h24l-3.5 6h-17zM16 21V9"/><path class="f" d="M16 9.5 23 18h-7z"/><path d="M16 9.5 23 18h-7"/><path class="s" d="M6 4l7 7M13 4 6 11"/>',
   cart: '<path class="f" d="M4 10h18l-2 10H6z"/><path d="M4 10h18l-2 10H6zM22 13.5l5.5-3"/><circle cx="9" cy="23.5" r="3"/><circle cx="18" cy="23.5" r="3"/>',
   catapult: '<path d="M5 27h22M8.5 27l4.5-10.5M23.5 27 19 16.5M11 21h10M14.5 19.5 24.5 7"/><circle class="f" cx="25.6" cy="5.8" r="2.6"/><circle cx="25.6" cy="5.8" r="2.6"/>',
+  motorship: '<path class="f" d="M3 19h26l-3.5 6.5h-19z"/><path d="M3 19h26l-3.5 6.5h-19zM9 19v-5h9v5M18 16h5v3M11 14v-4h4.5v4"/><path class="s" d="M11.5 10.5h3.5v-2h-3.5z"/>',
+  cargoship: '<path class="f" d="M3 19h26l-3 6.5H6z"/><path d="M3 19h26l-3 6.5H6zM9 19v-4h5v4M14 19v-4h5v4M11.5 15v-4h5v4M22 19v-8h4v8M23 11V8"/>',
+  liner: '<path class="f" d="M3 18.5h26L26 25H6z"/><path d="M3 18.5h26L26 25H6zM6.5 18.5v-3.5h18v3.5M9 15v-3.5h12V15M15 11.5V7.5h3.5v4"/><path class="s" d="M8.5 20.5h2v1.8h-2zM13 20.5h2v1.8h-2zM17.5 20.5h2v1.8h-2zM22 20.5h2v1.8h-2z"/>',
+  warship: '<path class="f" d="M2.5 19.5h27L25 25H7z"/><path d="M2.5 19.5h27L25 25H7zM11 19.5v-4h8v4M19 16.5l6.5-2M13 15.5V8M10 10.5h6M7 19.5v-2h3"/>',
+  carrier: '<path class="f" d="M2 17h28l-3.5 8h-21z"/><path d="M2 17h28l-3.5 8h-21zM21 17v-6h4v6M23 11V7.5M6 14.5l6-1.5M6 21h20"/>',
+  submarine: '<path class="f" d="M4 20c0-2.5 2.5-4 6-4h13c3.3 0 5.5 1.8 5.5 4s-2.2 4-5.5 4H10c-3.5 0-6-1.5-6-4z"/><path d="M4 20c0-2.5 2.5-4 6-4h13c3.3 0 5.5 1.8 5.5 4s-2.2 4-5.5 4H10c-3.5 0-6-1.5-6-4zM13 16v-4h5v4M16 12V7.5h2.5M2 27.5c2.5 0 2.5-1.2 5-1.2s2.5 1.2 5 1.2 2.5-1.2 5-1.2 2.5 1.2 5 1.2 2.5-1.2 5-1.2"/>',
+  jet: '<path class="f" d="M16 2.5c1.2 1.4 1.8 3.4 1.8 6v5.5l10.2 9.5v2.5l-10.2-4v4l3.2 2.8v1.7L16 29l-5 1.5v-1.7l3.2-2.8v-4L4 26v-2.5l10.2-9.5V8.5c0-2.6.6-4.6 1.8-6z"/><path d="M16 2.5c1.2 1.4 1.8 3.4 1.8 6v5.5l10.2 9.5v2.5l-10.2-4v4l3.2 2.8v1.7L16 29l-5 1.5v-1.7l3.2-2.8v-4L4 26v-2.5l10.2-9.5V8.5c0-2.6.6-4.6 1.8-6z"/>',
+  biplane: '<path class="f" d="M7 16h15c2.5 0 4 1.4 4 3s-1.5 3-4 3H9z"/><path d="M7 16h15c2.5 0 4 1.4 4 3s-1.5 3-4 3H9L7 16zM3 11h20M5 25h18M10 11v14M19 11v14M7 16 3.5 12M26.5 15.5v7"/>',
+  drone: '<rect class="f" x="12" y="12" width="8" height="8" rx="2"/><rect x="12" y="12" width="8" height="8" rx="2"/><path d="M12.5 12.5 8.5 8.5M19.5 12.5l4-4M12.5 19.5l-4 4M19.5 19.5l4 4"/><circle cx="7.5" cy="7.5" r="3.8"/><circle cx="24.5" cy="7.5" r="3.8"/><circle cx="7.5" cy="24.5" r="3.8"/><circle cx="24.5" cy="24.5" r="3.8"/>',
   ship: '<path class="f" d="M15 5v14H7zM17.5 8l7.5 11h-7.5z"/><path d="M15 5v14H7zM17.5 8l7.5 11h-7.5zM16 4v19M4 23h24l-3.5 5h-17z"/>',
   edit: '<path class="f" d="M7 21.5 21.5 7l3.5 3.5L10.5 25H7z"/><path d="M7 21.5 21.5 7l3.5 3.5L10.5 25H7zM18.5 10l3.5 3.5M5 28h22"/>',
   star: `<path d="${star(16, 16.6, 12.4, 5.4)}"/>`,
@@ -1050,9 +1059,22 @@ const U = {
 export function vehicleIconName(def) {
   const k = def?.kind || '';
   const cls = def?.cls;
-  if (cls === 'sea') return 'ship';
+  if (cls === 'sea') {
+    if (k === 'submarine') return 'submarine';
+    if (k === 'carrier') return 'carrier';
+    if (k === 'liner') return 'liner';
+    if ((def?.war && !def?.sail) || k === 'patrol' || k === 'ironclad' || k === 'battleship') return 'warship';
+    if (k === 'freighter' || k === 'container' || k === 'tanker' || k === 'autocargo') return 'cargoship';
+    if (k === 'steamer' || k === 'icebreaker' || k === 'research' || k === 'hydrofoil' || k === 'hovercraft') return 'motorship';
+    return 'ship';
+  }
   if (cls === 'space') return k === 'satellite' || k === 'station' ? 'satellite' : 'rocket';
-  if (cls === 'air') return def?.vtol || k === 'helicopter' ? 'helicopter' : 'plane';
+  if (cls === 'air') {
+    if (k === 'drone') return 'drone';
+    if (k === 'jet') return 'jet';
+    if (k === 'biplane') return 'biplane';
+    return def?.vtol || k === 'helicopter' ? 'helicopter' : 'plane';
+  }
   if (def?.rail || k === 'tram') return 'train';
   if (k === 'tank' || k === 'artillery') return 'tank';
   if (def?.siege) return 'catapult';

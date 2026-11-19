@@ -1,6 +1,6 @@
 import { CATEGORIES, listPowers, getPower } from '../powers/registry.js';
 import { powerIcon, categoryIcon, uiIcon, CATEGORY_TINT } from './icons.js';
-import { el, esc } from './dom.js';
+import { el, esc, safe } from './dom.js';
 
 // Power slots in the active category are bound to the bottom letter row.
 export const SLOT_CODES = ['KeyZ', 'KeyX', 'KeyC', 'KeyV', 'KeyB', 'KeyN', 'Comma', 'Period', 'Slash'];
@@ -353,7 +353,12 @@ export class Toolbar {
       B._id = p.id;
       B.ico.innerHTML = svg;
       B.el.style.setProperty('--tint', tint);
-      B.name.textContent = p.name;
+    }
+    // a power with a choice of its own names it ("Spawn Vehicle: Container ship")
+    const nm = (typeof p.label === 'function' && safe(() => p.label(g), null, 'power label')) || p.name;
+    if (B.name.textContent !== nm) {
+      B.name.textContent = nm;
+      B.name.title = nm;
     }
     const hasBrush = !!p.brush;
     B.el.classList.toggle('has-brush', hasBrush);

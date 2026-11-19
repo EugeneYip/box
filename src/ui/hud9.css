@@ -133,14 +133,59 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* two rows of kinds that scroll sideways (the mouse wheel scrolls them too);
+   an edge fades while there is more past it */
 .ws-vehpick__row {
-  display: flex;
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(2, 44px);
+  grid-auto-columns: max-content;
   gap: 6px;
   padding: 2px 2px 4px;
   overflow-x: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
   scrollbar-color: rgba(235, 201, 119, 0.4) transparent;
+  --fl: 28px;
+  --fr: 28px;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 var(--fl), #000 calc(100% - var(--fr)), transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0, #000 var(--fl), #000 calc(100% - var(--fr)), transparent 100%);
+}
+.ws-vehpick__row.at-start {
+  --fl: 0px;
+}
+.ws-vehpick__row.at-end {
+  --fr: 0px;
+}
+.ws-vehpick__row.is-short {
+  grid-template-rows: 44px;
+}
+/* the tab that holds the chosen kind carries a dot */
+.ws-vehpick__tab {
+  position: relative;
+}
+.ws-vehpick__dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 6px;
+  border-radius: 50%;
+  vertical-align: 1px;
+  background: var(--ws-gold-hi);
+  box-shadow: 0 0 6px rgba(251, 229, 173, 0.7);
+}
+.ws-vehpick__tab.is-on .ws-vehpick__dot {
+  background: #1d1608;
+  box-shadow: none;
+}
+/* the power's name strip: a long name ("Spawn Vehicle: Autonomous cargo ship") ends in an ellipsis */
+.ws-brush__txt {
+  min-width: 0;
+}
+.ws-brush__name {
+  max-width: min(340px, 52vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .ws-vehpick__opt {
   display: flex;
@@ -628,4 +673,76 @@
 /* no keyboard letters on the card's buttons for a touch screen (tablets too) */
 .is-touch .ws-insp__actions .ws-key {
   display: none;
+}
+
+/* ---- Tech panel: wholly learned eras fold into one strip; the current era is marked */
+.ws-tech__grid:not(.show-done) .ws-tech__col.is-done {
+  display: none;
+}
+.ws-tech__done {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(255, 247, 230, 0.04);
+  box-shadow: inset 0 0 0 1px var(--ws-line);
+}
+.ws-tech__donelbl {
+  color: var(--ws-ink-3);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.ws-tech__doneeras {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+.ws-tech__donebtn {
+  flex: none;
+  margin-left: auto;
+}
+.ws-tech__curtag {
+  margin-left: auto;
+  padding: 2px 7px;
+  border-radius: 999px;
+  color: #1d1608;
+  font: 700 9.5px/1.3 var(--ws-font);
+  font-style: normal;
+  letter-spacing: 0.06em;
+  background: color-mix(in srgb, var(--e) 80%, #fff 20%);
+}
+.ws-tech__col.is-cur {
+  padding: 6px;
+  margin: -6px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--k, #e9c77b) 6%, transparent);
+  box-shadow: inset 0 0 0 1px rgba(251, 229, 173, 0.22);
+}
+
+/* ---- regional maps: their own coastlines on the New World cards and title chips */
+.ws-size__box.ws-size__box--map {
+  width: 58px;
+  height: 36px;
+}
+.ws-size__map {
+  display: block;
+  max-width: 58px;
+  max-height: 36px;
+  border-radius: 4px;
+  box-shadow: 0 0 0 1px rgba(255, 240, 200, 0.28);
+}
+.ws-chip__map {
+  display: block;
+  flex: none;
+  max-height: 20px;
+  margin-right: 6px;
+  border-radius: 3px;
+  box-shadow: 0 0 0 1px rgba(255, 240, 200, 0.28);
 }

@@ -1,4 +1,5 @@
 import { el, esc } from './dom.js';
+import { regionThumb } from './regionThumbs.js';
 import { uiIcon } from './icons.js';
 import { emblemSvg } from './TopBar.js';
 import { PRESETS, PRESET_NAMES, bootNote } from './Panels.js';
@@ -104,6 +105,8 @@ export class TitleScreen {
           'aria-label': z.region ? `${z.name} regional map, ${z.w} by ${z.h} tiles` : z.h ? `${z.name} world, ${z.w} by ${z.h} tiles` : `${z.name} world, ${z.size} tiles`,
           onclick: () => this.chooseSize(z),
         },
+        // a regional map shows its own coastline beside its name
+        z.region ? ((t) => (t ? el('img', { class: 'ws-chip__map', src: t.url, alt: '', width: t.w, height: t.h, draggable: 'false' }) : null))(regionThumb(z.region, 30, 20)) : null,
         z.name,
       ),
     );
@@ -120,7 +123,7 @@ export class TitleScreen {
           type: 'button',
           role: 'switch',
           'aria-checked': this.wrapOn ? 'true' : 'false',
-          title: 'Ships cross the Atlantic through the left and right edges, as on the real Earth',
+          title: 'Sail across the map’s left and right edges, as ships cross the Atlantic on the real Earth',
           onclick: () => this.toggleWrap(),
         },
         // the same switch row as New World's, not a chip that reads like a size
