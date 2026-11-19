@@ -122,7 +122,7 @@ export class Fleet {
       land: Math.round(Math.min(120, 36 * Math.pow(area, 0.55)) * MORE),
       debris: 240,
       air: Math.round(Math.min(60, 18 * Math.pow(area, 0.5))), // aircraft and rockets (air.js)
-      traffic: Math.round(Math.min(220, 70 * Math.pow(area, 0.5))), // cars in town streets (traffic.js)
+      traffic: Math.round(Math.min(300, 110 * Math.pow(area, 0.5))), // cars in town streets (traffic.js)
     };
     this.air = []; // aircraft and rockets in flight (air.js)
     this.orbit = []; // satellites and stations circling the world

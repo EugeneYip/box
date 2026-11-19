@@ -35,7 +35,7 @@ export const traffic = {
     if (roads < 6 || (v.pop || 0) < 8) return 0;
     const tier = v.tier || 0;
     const era = (k.era || 0) >= 6 ? 1.35 : 1;
-    return Math.min(16, Math.floor((2 + tier * 3 + roads / 16) * era), Math.floor((v.pop || 0) / 4), Math.floor(roads / 3));
+    return Math.min(20, Math.floor((3 + tier * 4 + roads / 12) * era), Math.floor((v.pop || 0) / 3), Math.floor(roads / 3));
   },
   // Every couple of seconds: cars join the streets of towns short of their
   // share and leave towns over it (or gone, or fallen out of the era).
