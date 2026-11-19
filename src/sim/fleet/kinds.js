@@ -49,7 +49,7 @@ export const KINDS = {
   train: { cls: 'land', role: 'train', name: 'Steam train', tech: 'railways', speed: 3.4, turn: 6, hp: 120, crew: 2, capacity: 80, scale: 1, length: 1.82, size: 0.8, dps: 0, rail: true, smoke: true, cars: 4 },
   maglev: { cls: 'land', role: 'train', name: 'Maglev train', tech: 'maglev', speed: 6.5, turn: 8, hp: 160, crew: 1, capacity: 120, scale: 1, length: 1.9, size: 0.9, dps: 0, rail: true, cars: 3 },
   truck: { cls: 'land', role: 'oxcart', name: 'Truck', tech: 'combustion', speed: 2.4, turn: 3, hp: 70, crew: 1, capacity: 48, scale: 1, length: 1.0, size: 0.6, dps: 0 },
-  car: { cls: 'land', role: 'car', name: 'Car', tech: 'combustion', speed: 2.6, turn: 4, hp: 40, crew: 1, capacity: 4, scale: 1, length: 0.6, size: 0.45, dps: 0 },
+  car: { cls: 'land', role: 'car', name: 'Car', tech: 'combustion', speed: 2.6, turn: 4, hp: 40, crew: 1, capacity: 4, scale: 1, length: 0.92, size: 0.45, dps: 0 },
   cannon: { cls: 'land', role: 'catapult', name: 'Cannon', tech: 'gunpowder', speed: 1.1, turn: 2, hp: 140, crew: 3, capacity: 0, scale: 1.3, length: 1.4, size: 1.0, dps: 0, siege: true, gun: true },
   artillery: { cls: 'land', role: 'catapult', name: 'Artillery', tech: 'battleships', speed: 1.35, turn: 2, hp: 190, crew: 4, capacity: 0, scale: 1.3, length: 1.5, size: 1.0, dps: 0, siege: true, gun: true },
   tank: { cls: 'land', role: 'ram', name: 'Tank', tech: 'battleships', speed: 1.7, turn: 2, hp: 420, crew: 4, capacity: 0, scale: 1.3, length: 1.4, size: 1.0, dps: 0, siege: true, gun: true },

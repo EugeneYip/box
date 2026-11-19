@@ -232,7 +232,8 @@ export const land = {
   // ------------------------------------------------------------------ motion
   _landTick(v, step) {
     const a = v.anim;
-    if (v.def.siege && v.mission?.type !== 'drive') this._siegeMove(v, step);
+    const mt = v.mission?.type;
+    if (v.def.siege && mt !== 'drive' && mt !== 'park' && mt !== 'rounds' && v.state !== 'parked') this._siegeMove(v, step);
     else if (v.state === 'move' && v.path) {
       this._follow(v, step, v.def.speed);
       if (v.path == null) this._landArrive(v);
@@ -241,7 +242,15 @@ export const land = {
     } else if (v.state === 'rest') {
       if (v.stateT > 3) {
         if (v.mission?.phase === 'home' && v.path) v.state = 'move';
+        else if (v.keep) this._findWork(v);
         else this.remove(v);
+      }
+    } else if (v.state === 'parked') {
+      v.speed = 0;
+      // a train with no railway looks again for one now and then
+      if (v.def.rail && v.stateT > 6) {
+        v.stateT = 0;
+        if (this._railJoin(v)) v.state = 'move';
       }
     }
     if (!v.alive) return;
@@ -308,6 +317,20 @@ export const land = {
     const civ = this.game.civ;
     const m = v.mission;
     if (!m) return this.remove(v);
+    // a gift of the gods' train runs its line back and forth
+    if (m.type === 'train' && v.keep) return this._trainShuttle(v, m);
+    if (m.type === 'park') {
+      v.state = 'parked';
+      v.speed = 0;
+      if (v.parkHeading != null) v.heading = v.ph = v.parkHeading;
+      return;
+    }
+    if (m.type === 'rounds') {
+      v.state = 'work';
+      v.stateT = 0;
+      v.speed = 0;
+      return;
+    }
     if (m.phase === 'home') {
       if (v.role === 'caravan') {
         const home = civ.villages[m.from];
@@ -320,7 +343,7 @@ export const land = {
     }
     const to = civ.villages[m.to];
     if (m.type === 'train') return this._trainArrive(v, m, to);
-    if (m.type === 'drive') return this.remove(v);
+    if (m.type === 'drive') return v.keep ? this._findWork(v) : this.remove(v);
     if (v.role === 'service' && this._serviceArrive(v)) return;
     if (v.role === 'oxcart') {
       if (to?.alive && v.cargo) for (const [r, n] of Object.entries(v.cargo)) to[r] = (to[r] || 0) + n;
@@ -358,6 +381,50 @@ export const land = {
     }
   },
 
+  // Armour in peace: to the yard of its realm's nearest barracks (the town
+  // hall's square when there is none), parked side by side in front of it
+  // until an army calls it out. Four to a yard; more are laid up.
+  _parkEngine(v) {
+    const civ = this.game.civ;
+    const k = this.kingdom(v.kingdom);
+    if (!k || !civ) return this.remove(v);
+    let best = null,
+      bd = Infinity;
+    for (const vid of k.villages || []) {
+      const t = civ.villages[vid];
+      if (!t?.alive) continue;
+      const bk = (t.buildings || []).find((b) => b.alive && !b.constructing && b.type === 'barracks');
+      const base = bk || (t.hall?.alive ? t.hall : null);
+      if (!base) continue;
+      const d = this.dist(base.x, base.z, v.x, v.z) + (bk ? 0 : 50);
+      if (d < bd) (bd = d), (best = { t, b: base });
+    }
+    if (!best) return this.remove(v);
+    const b = best.b;
+    let slot = 0;
+    for (const o of this.list) if (o.alive && o !== v && o.parkAt === b.id) slot++;
+    if (slot >= 4) return this.remove(v);
+    const door = { x: b.doorX ?? b.x, z: b.doorZ ?? b.z };
+    let ux = door.x - b.x,
+      uz = door.z - b.z;
+    const L = Math.hypot(ux, uz) || 1;
+    ux /= L;
+    uz /= L;
+    const off = (slot - 1.5) * 0.85;
+    const px = door.x + ux * 0.9 - uz * off,
+      pz = door.z + uz * 0.9 + ux * off;
+    const path = this._streetPath?.(v.x, v.z, px, pz, 4000) || [v.x, v.z, px, pz];
+    v.parkAt = b.id;
+    v.army = null;
+    v.siegeTarget = null;
+    v.abandon = 0;
+    v.parkHeading = Math.atan2(uz, ux);
+    v.mission = { type: 'park', phase: 'out', from: best.t.id, to: best.t.id };
+    v.voyage = { from: best.t.id, to: best.t.id, fromName: best.t.name, toName: best.t.name };
+    v.state = 'move';
+    this.setPath(v, path);
+  },
+
   // ------------------------------------------------------------------ siege
   _siegeTick(dt) {
     const civ = this.game.civ;
@@ -376,7 +443,15 @@ export const land = {
       const list = [];
       for (const kind of ['ram', 'catapult']) {
         // Gunpowder: cannon replace catapults; Battleships: tanks and artillery
-        const v = this.spawn(kind, army.kingdom, c.x - 1 - list.length, c.z - 1, { state: 'siege', home: army.home, model: this.siegeModel(army.kingdom, kind) });
+        // armour parked in a barracks yard nearby rolls out first
+        const model = this.siegeModel(army.kingdom, kind);
+        let v = model ? this.list.find((o) => o.alive && o.kingdom === army.kingdom && o.kind === model && o.mission?.type === 'park' && this.dist(o.x, o.z, c.x, c.z) < 60) : null;
+        if (v) {
+          v.state = 'siege';
+          v.path = null;
+          v.parkAt = null;
+        } else v = this.spawn(kind, army.kingdom, c.x - 1 - list.length, c.z - 1, { state: 'siege', home: army.home, model });
+        if (!v) continue;
         v.army = army.id;
         v.ti = 0;
         v.mission = { type: 'siege', phase: 'out' };
@@ -389,13 +464,19 @@ export const land = {
     }
     for (const [id, list] of this._siege) {
       if (alive.has(id)) continue;
-      // the army is gone: the engines are left behind and broken up
+      // the army is gone: modern armour and guns drive to the barracks yard;
+      // older engines are left behind and broken up
       for (const v of list) {
+        if (!v.alive || v.mission?.type === 'park') continue;
+        if (v.def.gun && v.kind !== 'cannon' && v.alive) {
+          this._parkEngine(v);
+          continue;
+        }
         v.abandon = (v.abandon || 0) + dt;
         v.siegeTarget = null;
         if (v.abandon > 12) this.remove(v);
       }
-      if (list.every((v) => !v.alive)) {
+      if (list.every((v) => !v.alive || v.mission?.type === 'park')) {
         this._siege.delete(id);
         this._trail.delete(id);
       }

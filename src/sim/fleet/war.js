@@ -1,3 +1,4 @@
+import { geoDelta } from '../../world/geo.js';
 // War at sea and the perils of the deep (mixed into Fleet): galleys of realms
 // at war hunt enemy ships and blockade their harbours; storms, sea monsters,
 // fire and the powers of the gods sink ships.
@@ -80,7 +81,9 @@ export const war = {
       v.target = tgt.id;
       v.chase = true;
       m.blockade = null;
-      const d = Math.hypot(tgt.x - v.x, tgt.z - v.z);
+      // (Round world: the short way round, across the seam when it is shorter)
+      const D = geoDelta(this.world, v.x, v.z, tgt.x, tgt.z);
+      const d = Math.hypot(D.dx, D.dz);
       // (hulls keep a hand's breadth apart: bow to stern still counts as alongside)
       const reach = Math.max(1.6 + (v.def.size + tgt.def.size) * 0.5, (v.def.length + tgt.def.length) * 0.5 + 0.45);
       if (d <= reach) {
@@ -89,7 +92,7 @@ export const war = {
         v.state = 'patrol';
         v.path = null;
         // turn alongside
-        const want = Math.atan2(tgt.z - v.z, tgt.x - v.x) + Math.PI / 2;
+        const want = Math.atan2(D.dz, D.dx) + Math.PI / 2;
         v.heading += Math.max(-0.5, Math.min(0.5, ((want - v.heading + Math.PI * 3) % (Math.PI * 2)) - Math.PI)) * dt;
       } else {
         // within bowshot: volleys of arrows and fire pots while closing
@@ -99,8 +102,8 @@ export const war = {
       if (d > reach && (m.repath = (m.repath || 0) - dt) <= 0) {
         m.repath = d < 14 ? 1.5 : 4;
         // close in, straight when the water allows
-        const ax = tgt.x - Math.cos(tgt.heading) * 0.5,
-          az = tgt.z - Math.sin(tgt.heading) * 0.5;
+        const ax = v.x + D.dx - Math.cos(tgt.heading) * 0.5,
+          az = v.z + D.dz - Math.sin(tgt.heading) * 0.5;
         if (nav.los(v.x, v.z, ax, az, 1.2)) {
           v.dest = { x: ax, z: az };
           this.setPath(v, [v.x, v.z, ax, az]);
@@ -221,7 +224,9 @@ export const war = {
   // Arrows and fire pots from one ship at another, seen in flight: longer
   // shots fly longer and miss more often (into the sea, with a splash).
   _volley(from, to, n, potP = 0.12) {
-    const d = Math.hypot(to.x - from.x, to.z - from.z);
+    const D = geoDelta(this.world, from.x, from.z, to.x, to.z);
+    const d = Math.hypot(D.dx, D.dz);
+    const tx = from.x + D.dx; // (the target where the shot lands: the short way round)
     for (let i = 0; i < n; i++) {
       const shell = from.def.sail === false && from.def.dps > 5; // a gun: shells, not arrows
       const pot = !shell && this.rng() < potP;
@@ -235,7 +240,7 @@ export const war = {
       const dur = 0.5 + d * 0.085 + this.rng() * 0.25;
       const lead = Math.min(1, to.speed || 0) * dur * 0.8;
       if (this.shots.length > 160) this.shots.shift();
-      this.shots.push({ x0: from.x + ox, z0: from.z + oz, x1: to.x + Math.cos(to.heading) * lead + mx, z1: to.z + Math.sin(to.heading) * lead + mz, t: -this.rng() * 0.45, dur: shell ? dur * 0.6 : dur, pot, shell, hit, target: to.id });
+      this.shots.push({ x0: from.x + ox, z0: from.z + oz, x1: tx + Math.cos(to.heading) * lead + mx, z1: to.z + Math.sin(to.heading) * lead + mz, t: -this.rng() * 0.45, dur: shell ? dur * 0.6 : dur, pot, shell, hit, target: to.id });
     }
   },
 

@@ -652,20 +652,24 @@ function truck(lo) {
   if (!lo) tyres(g, [0.3, -0.25, -0.38], 0.07, 0.15);
   return done(g, 1.0);
 }
-// Car: four body colours (variant 0..3), headlights, tail lights.
+// Car: four body colours (variant 0..3), headlights, tail lights; about half
+// a house long, a little lower than a person.
 function car(lo) {
   const g = new VB(247);
   const cols = [0xb03028, 0x2a5aa0, 0xe0e0dc, 0xd8b030];
   for (let v = 0; v < 4; v++) {
     g.setAnim(0, 0, 0, 0, v);
-    g.box(0, 0.05, 0, 0.56, 0.1, 0.26, cols[v], { top: shade(cols[v], 1.05) });
-    g.box(-0.03, 0.15, 0, 0.3, 0.09, 0.24, GLASS, { top: cols[v], glow: 0.3 });
-    lights(g, 0.285, 0.1, 0.12);
-    for (const s of [-1, 1]) g.box(-0.285, 0.1, s * 0.09, 0.012, 0.025, 0.04, 0xff3020, { glow: 2 });
-    if (!lo) for (const x of [0.17, -0.17]) for (const s of [-1, 1]) wheelR(g, x, 0.05, s * 0.13, v, 0.05);
+    const C = cols[v];
+    g.box(0, 0.06, 0, 0.9, 0.17, 0.42, C, { top: shade(C, 1.06) });
+    g.box(-0.05, 0.23, 0, 0.5, 0.15, 0.38, GLASS, { top: C, glow: 0.3 });
+    g.box(-0.05, 0.375, 0, 0.44, 0.02, 0.36, shade(C, 0.95));
+    g.box(0.02, 0.06, 0, 0.92, 0.04, 0.43, 0x2a2a2a); // bumpers and sills
+    lights(g, 0.455, 0.15, 0.19);
+    for (const s of [-1, 1]) g.box(-0.455, 0.16, s * 0.15, 0.012, 0.04, 0.07, 0xff3020, { glow: 2 });
+    if (!lo) for (const x of [0.27, -0.27]) for (const s of [-1, 1]) wheelR(g, x, 0.08, s * 0.19, v, 0.08);
   }
   g.setAnim(0);
-  return done(g, 0.6);
+  return done(g, 0.92);
 }
 function cannon(lo) {
   const g = new VB(249);

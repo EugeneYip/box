@@ -3,6 +3,15 @@ import { KINDS, AIR_KINDS } from './kinds.js';
 import { civPath } from '../civ/pathing.js';
 import { USE } from '../civ/util.js';
 
+function revPts(p) {
+  const out = new Array(p.length);
+  for (let i = 0; i < p.length; i += 2) {
+    out[p.length - 2 - i] = p[i];
+    out[p.length - 1 - i] = p[i + 1];
+  }
+  return out;
+}
+
 // The advanced boats and the civic vehicles (docs/TECH-BREADTH.md sections
 // 3 and 4), mixed into Fleet, and the god powers' way in (spawnVehicle).
 //
@@ -37,9 +46,10 @@ export const modern = {
         t.ice = now;
         if (this.count(kid, 'icebreaker') < 1 && this.seaCount() < this.budget.sea) this._sendIcebreaker(k);
       }
-      if (now - (t.hover ?? -999) > 24 && this.canUse(kid, 'hovercraft')) {
+      if (now - (t.hover ?? -999) > 45 && this.canUse(kid, 'hovercraft')) {
         t.hover = now;
-        if (this.count(kid, 'hovercraft') < 2 && this.seaCount() < this.budget.sea) this._sendHover(k);
+        // one per realm, a handful in the world
+        if (this.count(kid, 'hovercraft') < 1 && this.count(null, 'hovercraft') < 2 + Math.floor(this.budget.sea / 60) && this.seaCount() < this.budget.sea * 0.9) this._sendHover(k);
       }
       if (now - (t.patrolT ?? -999) > 50 && this.canUse(kid, 'patrol') && this.law('fleetNaval')) {
         t.patrolT = now;
@@ -649,6 +659,18 @@ export const modern = {
       }
       return;
     }
+    if (m.type === 'rounds') {
+      // a vehicle given by the gods does the rounds of its town's streets
+      if (v.stateT > 3 + (v.seed || 0) * 4) {
+        const t = this.game.civ?.villages?.[m.vid];
+        const leg = t?.alive ? this._transitLeg(t, { x: v.x, z: v.z }) : null;
+        if (leg) {
+          this.setPath(v, leg);
+          v.state = 'move';
+        } else this._parkHere(v);
+      }
+      return;
+    }
     if (m.type === 'transit') {
       if (v.stateT > 2.5) {
         m.legs--;
@@ -668,6 +690,88 @@ export const modern = {
     if (!p) return this.remove(v);
     this.setPath(v, p);
     v.state = 'move';
+  },
+
+  // ------------------------------------------------------------------ work for a spawned vehicle
+  // A land vehicle dropped by a god power has reached its town: armour and
+  // guns park in the barracks yard, a train takes to the nearest railway,
+  // anything else does the rounds of the town's streets. It is never simply
+  // dropped (the power's vehicles used to vanish at the end of their drive).
+  _findWork(v) {
+    v.speed = 0;
+    v.path = null;
+    if (v.def.siege) return this._parkEngine(v);
+    if (v.def.rail) {
+      if (!this._railJoin(v)) this._parkHere(v);
+      return;
+    }
+    const civ = this.game.civ;
+    const m = v.mission || {};
+    const t = civ?.villages?.[m.to]?.alive ? civ.villages[m.to] : civ?.villageAt?.(v.x, v.z, 80);
+    v.mission = { type: 'rounds', phase: 'out', vid: t?.id ?? -1, from: t?.id ?? -1, to: t?.id ?? -1, power: true };
+    if (t) v.voyage = { from: t.id, to: t.id, fromName: t.name, toName: t.name };
+    v.state = 'work';
+    v.stateT = 0;
+  },
+  // Parked where it stands, waiting (a train with no railway in reach looks
+  // again now and then).
+  _parkHere(v) {
+    v.state = 'parked';
+    v.speed = 0;
+    v.path = null;
+    v.mission = { type: 'wait', phase: 'out', power: true, t: this.game.time.total };
+  },
+  // Onto the nearest railway of its realm (or, with none, any realm's): it
+  // runs that line back and forth.
+  _railJoin(v) {
+    const civ = this.game.civ;
+    const lines = civ?.railLines?.() || [];
+    const kind = v.kind === 'maglev' ? 'maglev' : 'rail';
+    let best = null,
+      bd = Infinity;
+    for (const l of lines) {
+      if (!l.pts || l.pts.length < 8 || l.kind !== kind) continue;
+      const P = l.pts;
+      for (let i = 0; i < P.length; i += 8) {
+        const d = this.dist(P[i], P[i + 1], v.x, v.z) + (l.kingdom === v.kingdom ? 0 : 60);
+        if (d < bd) (bd = d), (best = { l, i });
+      }
+    }
+    if (!best || bd > 260) return false;
+    const l = best.l;
+    if (this.list.some((o) => o !== v && o.alive && o.mission?.rail === l.id)) {
+      // (one train at a time on a line: wait for this one to clear it)
+      if (bd > 200) return false;
+    }
+    const a = civ.villages[l.a],
+      b = civ.villages[l.b];
+    if (!a?.alive || !b?.alive) return false;
+    // toward the far end from where it joins
+    const rev = best.i > l.pts.length / 2;
+    const from = rev ? b : a,
+      to = rev ? a : b;
+    v.mission = { type: 'train', phase: 'out', from: from.id, to: to.id, rail: l.id, power: true };
+    v.voyage = { from: from.id, to: to.id, fromName: from.name, toName: to.name };
+    v.state = 'move';
+    v.trail = null;
+    this._trainOnto(v, rev ? revPts(l.pts) : l.pts);
+    return true;
+  },
+  // At the end of its line: the engine runs round and it sets off back.
+  _trainShuttle(v, m) {
+    const civ = this.game.civ;
+    const line = civ?.railLine?.(m.rail);
+    if (!line?.pts) return this._findWork(v);
+    const P = line.pts;
+    const n = P.length;
+    const atStart = this.dist(v.x, v.z, P[0], P[1]) < this.dist(v.x, v.z, P[n - 2], P[n - 1]);
+    [m.from, m.to] = [m.to, m.from];
+    m.phase = 'out';
+    v.cargo = null;
+    this._trainOnto(v, atStart ? P : revPts(P));
+    v.state = 'rest';
+    v.stateT = 0;
+    m.phase = 'home'; // (rest, then on: _landTick moves a resting train with a path home)
   },
 
   // ------------------------------------------------------------------ god powers
@@ -723,10 +827,12 @@ export const modern = {
       if (!path || path.length < 4) path = [at.x, at.z, at.x + 0.6, at.z];
       const v = this.spawn(kind, kid, at.x, at.z, { home: town?.id ?? -1, state: 'move', heading: Math.atan2(path[3] - path[1], path[2] - path[0]) });
       if (!v) return refuse('no vehicle');
-      if (def.cars) v.trail = [];
+      v.keep = true; // (a gift of the gods stays and finds work: _findWork)
       v.mission = { type: 'drive', phase: 'out', from: town?.id ?? -1, to: town?.id ?? -1, power: true };
       v.voyage = town ? { from: town.id, to: town.id, fromName: town.name, toName: town.name } : null;
       this.setPath(v, path);
+      // a train goes straight onto the nearest railway
+      if (def.rail && !this._railJoin(v)) this._parkHere(v);
       return v;
     }
     if (def.cls === 'air') {

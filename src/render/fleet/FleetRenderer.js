@@ -390,6 +390,7 @@ export class FleetRenderer {
         visible++;
       }
     }
+    if (!far && F.traffic?.length) visible += this._drawTraffic(F.traffic, C, cx, cz, Math.min(viewR, ps ? 50 : 80));
     this.air.collect(vb, C, far, dist, cx, cz, viewR);
     vb.end(!ps);
     this._flags(flagList, flagsOn, wind);
@@ -476,8 +477,20 @@ export class FleetRenderer {
     const c = Math.cos(h),
       s = Math.sin(h);
     const hl = def.length * 0.35;
-    const pitch = def.rail ? 0 : Math.max(-0.35, Math.min(0.35, Math.atan2(W.heightAt(x + c * hl, z + s * hl) - W.heightAt(x - c * hl, z - s * hl), hl * 2)));
-    const roll = def.rail ? 0 : Math.max(-0.25, Math.min(0.25, -Math.atan2(W.heightAt(x - s * 0.3, z + c * 0.3) - W.heightAt(x + s * 0.3, z - c * 0.3), 0.6) * 0.6));
+    // (eased from frame to frame and kept small across the vehicle: a wheeled
+    // vehicle leans a little on a side slope, never tips over; the slope
+    // is read across its own width, not a tile around it)
+    let pitch = 0,
+      roll = 0;
+    if (!def.rail) {
+      const bw = Math.max(0.1, (def.size || 0.5) * 0.35);
+      const wantP = Math.max(-0.3, Math.min(0.3, Math.atan2(W.heightAt(x + c * hl, z + s * hl) - W.heightAt(x - c * hl, z - s * hl), hl * 2)));
+      const wantR = Math.max(-0.1, Math.min(0.1, -Math.atan2(W.heightAt(x - s * bw, z + c * bw) - W.heightAt(x + s * bw, z - c * bw), bw * 2) * 0.5));
+      v._pitch = v._pitch == null ? wantP : v._pitch + (wantP - v._pitch) * 0.2;
+      v._roll = v._roll == null ? wantR : v._roll + (wantR - v._roll) * 0.2;
+      pitch = v._pitch;
+      roll = v._roll;
+    }
     const role = v.role;
     // the third anim value: a catapult's arm, a ram's swing, a gun's recoil, a turret's aim
     let a3 = 0;
@@ -557,6 +570,38 @@ export class FleetRenderer {
         put(px, pz, ph, variant, this._railY(kind, P, k, px, pz) + lift);
       }
     } else put(x, z, h, kind === 'car' ? Math.floor(v.seed * 4) : 0);
+  }
+
+  // Cars in the streets (fleet.traffic): on the right-hand side of the
+  // street, nosing up and down the slopes, wheels turning.
+  _drawTraffic(T, C, cx, cz, R) {
+    const W = this.game.world;
+    const vb = this.vb;
+    const alpha = C.alpha;
+    const def = KINDS.car;
+    const sc = def.scale || 1;
+    const hl = def.length * 0.4;
+    const lane = 0.17;
+    let n = 0;
+    for (let i = 0; i < T.length; i++) {
+      const c = T[i];
+      if (Math.abs(c.x - cx) > R || Math.abs(c.z - cz) > R) continue;
+      const h = lerpAngle(c.ph, c.h, alpha);
+      const co = Math.cos(h),
+        si = Math.sin(h);
+      const x = c.px + (c.x - c.px) * alpha - si * lane,
+        z = c.pz + (c.z - c.pz) * alpha + co * lane;
+      const y = W.heightAt(x, z);
+      const pitch = Math.max(-0.3, Math.min(0.3, Math.atan2(W.heightAt(x + co * hl, z + si * hl) - W.heightAt(x - co * hl, z - si * hl), hl * 2)));
+      this._e.set(0, -h, pitch, 'YZX');
+      this._q.setFromEuler(this._e);
+      this._m.compose(this._p.set(x, Math.max(y, 0), z), this._q, this._s.setScalar(sc));
+      const wheel = -((this.t * c.s) / (0.08 * sc)) - i;
+      vb.push(this._key('car', x, z), this._m, this._kingdomColor(c.kingdom), 0, wheel, 0, 0, 0, 0, 0, c.v);
+      C.blobList.push(x, z, def.length, h);
+      n++;
+    }
+    return n;
   }
 
   // The level a train runs at near point k of its route: the ground (a
