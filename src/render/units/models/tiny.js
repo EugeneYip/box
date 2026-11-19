@@ -14,6 +14,10 @@ function human(B) {
   B.add(P.ico(0.098, 0), { pos: [0, 0.5, 0], bone: 'head', mat: 'skin' });
   // head-top: hair, or the hat colour (set per instance by the renderer)
   box(B, 0.19, 0.06, 0.19, [0, 0.575, -0.012], 'head', 'hair');
+  // soldiers' outline: the suit's bulk and visor, the fatigues' pack
+  box(B, 0.2, 0.22, 0.17, [0, 0.29, 0], 'torso', 'cloth', { slot: 'armor', opt: 2 });
+  box(B, 0.16, 0.035, 0.03, [0, 0.51, 0.1], 'head', 'visor', { slot: 'hat', opt: 11 });
+  box(B, 0.13, 0.13, 0.07, [0, 0.31, -0.105], 'torso', 'olive', { slot: 'armor', opt: 5 });
   // carried loads
   box(B, 0.2, 0.08, 0.06, [0, 0.33, -0.1], 'torso', 'darkwood', { slot: 'back', opt: 1 });
   box(B, 0.11, 0.12, 0.09, [0, 0.33, -0.11], 'torso', 'stone', { slot: 'back', opt: 2 });
@@ -110,8 +114,15 @@ function humanMid(B) {
   box(B, 0.05, 0.1, 0.05, [0.112, 0.29, 0.01], 'armL', 'greens', { slot: 'offhand', opt: 6 });
   // long coats (outfit 4, 5) and the bulky suits (armor 2, 3)
   for (const o of [4, 5]) B.add(P.lathe([[0.0, 0.09], [0.1, 0.09], [0.09, 0.16], [0.0, 0.16]], 7), { scl: [1, 1, 0.84], bone: 'torso', mat: 'cloth', slot: 'outfit', opt: o });
-  box(B, 0.2, 0.22, 0.17, [0, 0.29, 0], 'torso', 'sash', { slot: 'armor', opt: 2 });
+  box(B, 0.2, 0.22, 0.17, [0, 0.29, 0], 'torso', 'cloth', { slot: 'armor', opt: 2 });
+  for (const s of [1, -1]) box(B, 0.07, 0.05, 0.1, [0.1 * s, 0.375, 0], 'torso', 'sash', { slot: 'armor', opt: 2 });
   box(B, 0.11, 0.09, 0.05, [0, 0.31, -0.1], 'torso', 'steel', { slot: 'armor', opt: 2 });
+  // field kit (fatigues): a pack on the back
+  box(B, 0.13, 0.13, 0.07, [0, 0.31, -0.105], 'torso', 'olive', { slot: 'armor', opt: 5 });
+  // helmets that change the head's outline: the combat helmet (10) and the suit helmet with its visor (11)
+  B.add(P.dome(0.12, 8, 3, 0.62), { pos: [0, 0.5, -0.004], rot: [-0.18, 0, 0], bone: 'head', mat: 'olive', slot: 'hat', opt: 10 });
+  B.add(P.sphere(0.127, 8, 6), { pos: [0, 0.505, -0.006], bone: 'head', mat: 'cloth', slot: 'hat', opt: 11 });
+  box(B, 0.17, 0.04, 0.03, [0, 0.51, 0.112], 'head', 'visor', { slot: 'hat', opt: 11 });
   box(B, 0.2, 0.24, 0.17, [0, 0.28, 0], 'torso', 'white', { slot: 'armor', opt: 3 });
   box(B, 0.13, 0.15, 0.06, [0, 0.3, -0.11], 'torso', 'white', { slot: 'armor', opt: 3 });
   // shield on the left arm (offhand slot)
