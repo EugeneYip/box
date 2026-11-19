@@ -306,16 +306,15 @@ export const brain = {
   // Pieces of the map a walker could ever cross between, at their most
   // generous: land and road over water, 4-connected (a walk never cuts a
   // blocked corner), with buildings, rock, steep ground and thickets left
-  // open. Built again after a terrain edit or a new bridge (_wcDirty) and
-  // every 30 s.
+  // open. Built again after new land or a new bridge appears (_wcDirty, set
+  // by Civilization._onHeight and the bridge builder) and every 120 s.
   _walkComp() {
     const w = this.world;
     const now = this.game.time.total;
     let L = this._wcl;
-    if (L && L.length === w.size && !this._wcDirty && now >= this._wcT && now - this._wcT < (this._wcSoft ? 10 : 30)) return L;
+    if (L && L.length === w.size && !this._wcDirty && now >= this._wcT && now - this._wcT < 120) return L;
     if (!L || L.length !== w.size) L = this._wcl = new Int32Array(w.size);
     this._wcDirty = false;
-    this._wcSoft = false;
     this._wcT = now;
     const W = w.w,
       H = w.h,

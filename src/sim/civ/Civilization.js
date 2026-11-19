@@ -2308,21 +2308,18 @@ export class Civilization {
 
   _onHeight(r) {
     // new land where the walkers' map of pieces had water (brain.js
-    // _walkComp): rebuilt before it is next asked; a wide change is looked
-    // over at the next 10 s instead of tile by tile
+    // _walkComp): rebuilt before it is next asked (a look over the changed
+    // rectangle costs far less than rebuilding the map at every edit)
     const L = this._wcl;
     if (L && !this._wcDirty) {
-      if ((r.x1 - r.x0 + 1) * (r.y1 - r.y0 + 1) > 40000) this._wcSoft = true;
-      else {
-        const w = this.world,
-          H = w.height;
-        for (let y = r.y0; y <= r.y1 && !this._wcDirty; y++)
-          for (let x = r.x0, i = y * w.w + r.x0; x <= r.x1; x++, i++)
-            if (L[i] === -1 && H[i] >= SEA_LEVEL) {
-              this._wcDirty = true;
-              break;
-            }
-      }
+      const w = this.world,
+        H = w.height;
+      for (let y = r.y0; y <= r.y1 && !this._wcDirty; y++)
+        for (let x = r.x0, i = y * w.w + r.x0; x <= r.x1; x++, i++)
+          if (L[i] === -1 && H[i] >= SEA_LEVEL) {
+            this._wcDirty = true;
+            break;
+          }
     }
     if (this._flattening) return;
     this._terrDirty = true;
