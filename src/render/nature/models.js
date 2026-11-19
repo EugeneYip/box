@@ -1386,17 +1386,19 @@ function buildWheat(b, v, lod) {
     ripeD = C(0xb07c24),
     head = C(0xf8d86a),
     base = mul3(ripeD, 0.72);
-  const rows = lod ? 3 : 4;
+  const rows = lod ? 3 : 5;
   const segs = lod ? 2 : 4;
-  const tufts = lod ? 4 : 8;
+  const tufts = lod ? 4 : 9;
   const E = 0.46;
-  const wr = (lod ? 0.1 : 0.075) * (4 / rows) * 0.92; // ridge half-width at the soil
-  const ridge = { leaf: 0.15, flutter: 0.2, mat: MAT.WHEAT, bend: 0.25 };
+  const wr = (0.44 / rows) * 0.8; // ridge half-width at the soil (thin furrows between)
+  // bend comes from the height curve (nothing explicit), so the ridge foot
+  // stays on the soil and only the crest and the ears sway in the wind
+  const ridge = { leaf: 0, flutter: 0.1, mat: MAT.WHEAT };
   for (let r = 0; r < rows; r++) {
     const z0 = -0.44 + ((r + 0.5) / rows) * 0.88 + b.r(-0.012, 0.012);
     // ridge crest: slightly uneven along the row
     const crest = [];
-    for (let k = 0; k <= segs; k++) crest.push((0.15 + b.r(-0.025, 0.02)) * K * (k === 0 || k === segs ? 0.8 : 1));
+    for (let k = 0; k <= segs; k++) crest.push((0.13 + b.r(-0.02, 0.02)) * K * (k === 0 || k === segs ? 0.8 : 1));
     for (let k = 0; k < segs; k++) {
       const xa = -E + (2 * E * k) / segs,
         xb = -E + (2 * E * (k + 1)) / segs;
@@ -1419,13 +1421,13 @@ function buildWheat(b, v, lod) {
       const sb = V(x, 0.08 * K, z);
       const top = V(x + lean.x, h, z + lean.z);
       const sd = V(0.008, 0, 0.008).applyAxisAngle(V(0, 1, 0), b.r(0, TAU));
-      const o = { leaf: 0.35, flutter: 0.5, mat: MAT.WHEAT, pivot: sb, bend: 0.6 };
+      const o = { leaf: 0.35, flutter: 0.5, mat: MAT.WHEAT, pivot: sb };
       b.tri(sb.clone().sub(sd), top, sb.clone().add(sd), [ripeD, ripe, ripeD], o);
       // grain head: crossed kites (one when far)
       const hb = top.clone().add(V(0, -0.075 * K, 0));
       const ht = top.clone().add(V(lean.x * 0.2, 0.02 * K, lean.z * 0.2));
       const hm = hb.clone().lerp(ht, 0.45);
-      const ho = { leaf: 1, flutter: 0.6, mat: MAT.WHEAT, pivot: hb, bend: 0.7 };
+      const ho = { leaf: 1, flutter: 0.6, mat: MAT.WHEAT, pivot: hb };
       for (let q = 0; q < (lod ? 1 : 2); q++) {
         const w = sd.clone().multiplyScalar(2.2).applyAxisAngle(V(0, 1, 0), q * Math.PI * 0.5);
         b.tri(hb, hm.clone().add(w), ht, [ripeD, head, head], ho);
