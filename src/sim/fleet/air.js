@@ -5,6 +5,7 @@ import { civPath } from '../civ/pathing.js';
 import { USE } from '../civ/util.js';
 
 const YEAR = 30;
+const COUNT = 6; // a rocket's countdown on the pad (seconds) before it lifts off
 
 // Modern and future vehicles (docs/MODERN-ERAS.md), mixed into Fleet. STUBS:
 // trains, trucks, cars and the modern warships and guns run as the nearest
@@ -242,7 +243,7 @@ export const air = {
       s = Math.sin(r);
     const S = BUILDING.scale;
     const P = (lx, lz) => ({ x: b.x + (lx * c + lz * s) * S, z: b.z + (-lx * s + lz * c) * S });
-    return { a: P(R.x0, R.z), b: P(R.x1, R.z), len: (R.x1 - R.x0) * S };
+    return { a: P(R.x0, R.z), b: P(R.x1, R.z), len: (R.x1 - R.x0) * S, y: (R.y || 0) * S };
   },
   // Airfields of a realm, for the storm diversions and carriers' jets.
   _fields(kid) {
@@ -261,7 +262,10 @@ export const air = {
     if (!def || def.cls !== 'air') return refuse('no such aircraft');
     const K = this.kingdom(o.kingdom);
     if (!K || K.alive === false) return refuse('no such realm');
-    if (this.air.length >= this.budget.air) return refuse('the skies are crowded');
+    // drones, sky taxis and helicopters share half the air budget, so the
+    // planes that use the runways always find room in the sky (round 16: the
+    // drones of a Future realm filled it and no airport saw a take-off)
+    if (this._airFull(def)) return refuse('the skies are crowded');
     const from = this._airPoint(o.from),
       to = this._airPoint(o.to);
     if (!from || !to) return refuse('no airfield');
@@ -274,6 +278,62 @@ export const air = {
     this.first(o.kingdom, o.kind, { x: from.x, z: from.z });
     this.game.events.emit('fleet:launched', { vessel: f, kind: o.kind, model: o.kind, kingdom: o.kingdom });
     return f;
+  },
+  _airFull(def) {
+    let vt = 0,
+      wing = 0;
+    for (const f of this.air) if (f.alive && f.cls === 'air') f.def?.vtol ? vt++ : wing++;
+    const cap = this.budget.air;
+    return def.vtol ? vt >= Math.ceil(cap * 0.5) || vt + wing >= cap : wing >= cap;
+  },
+  // Airports and airfields keep busy: every so often each sends a plane up
+  // (to another field of its realm or a friendly airport, or round a circuit
+  // over the country and back onto its own runway), so a look at a field
+  // soon finds a take-off or a landing.
+  _airportOps(dt) {
+    const civ = this.game.civ;
+    if (!civ) return;
+    const now = this.game.time.total;
+    if (!this._fieldList || now - (this._fieldT ?? -99) > 10) {
+      this._fieldT = now;
+      this._fieldList = civ.buildings.filter((b) => b && b.alive && !b.gone && !b.constructing && RUNWAYS[b.type]);
+    }
+    if (!this._fieldList.length || this.grounded()) return;
+    void dt;
+    for (const b of this._fieldList) {
+      if (!b.alive || b.constructing) continue;
+      if (b._airNext == null) b._airNext = now + 4 + this.rng() * 10;
+      if (now < b._airNext) continue;
+      const port = b.type === 'airport';
+      b._airNext = now + (port ? 16 : 28) + this.rng() * (port ? 12 : 16);
+      const K = this.kingdom(b.kingdom);
+      if (!K || K.alive === false || !this.hasTech(b.kingdom, 'flight')) continue;
+      const kind = port && this.hasTech(b.kingdom, 'jets') ? 'airliner' : 'plane';
+      if (this._airFull(AIR_KINDS[kind]) || this.grounded(b.x, b.z)) continue;
+      // somewhere to fly: a field of its own realm or a friendly airport,
+      // not too near and not across half the world; else a circuit
+      let to = null;
+      if (this.rng() < 0.5) {
+        const L = this._fieldList.filter((o) => o !== b && o.alive && (o.kingdom === b.kingdom || (o.type === 'airport' && !civ.atWar?.(o.kingdom, b.kingdom))) && this.dist(o.x, o.z, b.x, b.z) > 24 && this.dist(o.x, o.z, b.x, b.z) < 180);
+        if (L.length) to = L[(this.rng() * L.length) | 0];
+      }
+      const rw = this._runway(b);
+      let f;
+      if (to) f = this.requestFlight({ kind, kingdom: b.kingdom, from: b.id, to: to.id });
+      else if (rw) {
+        // out along the runway, a wide turn and back in to land
+        const ux = (rw.b.x - rw.a.x) / (rw.len || 1),
+          uz = (rw.b.z - rw.a.z) / (rw.len || 1);
+        const sd = this.rng() < 0.5 ? -1 : 1;
+        const out = 26 + this.rng() * 14;
+        const W = this.world;
+        const px = Math.max(2, Math.min(W.w - 2, b.x + ux * out * sd - uz * out * 0.6)),
+          pz = Math.max(2, Math.min(W.h - 2, b.z + uz * out * sd + ux * out * 0.6));
+        f = this.requestFlight({ kind, kingdom: b.kingdom, from: b.id, to: { x: px, z: pz } });
+        if (f) f.circuit = { x: b.x, z: b.z, building: b.id, rw };
+      }
+      if (f) f.local = true;
+    }
   },
   _airRecord(kind, def, kid, from, to, cargo) {
     const g = this.game;
@@ -349,7 +409,8 @@ export const air = {
       f.heading = f.ph = Math.atan2(e.z - s.z, e.x - s.x);
       f.rollLen = rw.len;
     } else f.rollLen = 2;
-    f.y = f.py = Math.max(0, this.world.heightAt(f.x, f.z)) + 0.05;
+    f.wheels = wheelsY(rw);
+    f.y = f.py = Math.max(0, this.world.heightAt(f.x, f.z)) + f.wheels;
     f.phase = 'roll';
     f.rolled = 0;
   },
@@ -419,8 +480,10 @@ export const air = {
       switch (f.phase) {
         case 'roll': {
           // the take-off run: faster and faster down the runway, then lift
+          // (on a runway it gathers speed along the whole strip, so the run
+          // reads; off a carrier's deck the catapult flings it)
           const vr = def.speed * 0.45;
-          f.speedNow = Math.min(vr, f.speedNow + vr * step * (f.deck ? 2.2 : 0.9));
+          f.speedNow = Math.min(vr, f.speedNow + vr * step * (f.deck ? 2.2 : 0.5));
           speed = f.speedNow;
           if (f.deck) {
             const v = this.byId.get(f.deck.vessel);
@@ -430,8 +493,8 @@ export const air = {
             if (f.deck.run > (v?.def.length ?? 1.5) * 0.45) (f.phase = 'climb'), (f.deck = null);
           } else {
             f.rolled = (f.rolled || 0) + speed * step;
-            y = ground(f.x, f.z) + 0.05;
-            if (f.rolled > (f.rollLen || 2) * 0.75) f.phase = 'climb';
+            y = ground(f.x, f.z) + (f.wheels ?? 0.05);
+            if (f.rolled > (f.rollLen || 2) * 0.8) f.phase = 'climb';
           }
           want = f.heading;
           break;
@@ -453,12 +516,20 @@ export const air = {
           // the gentle curve: a heading drift that fades as the goal nears
           want = Math.atan2(d.dz, d.dx) + f.arc * Math.min(1, dist / 60) * Math.min(1, f.t / 6);
           const top = ground(f.x, f.z) + alt;
-          const climb = alt * 0.35;
+          // (a shallow climb out at first, steeper as it gathers speed)
+          const climb = Math.min(alt * 0.35, f.speedNow * 0.22);
           y = f.phase === 'climb' ? Math.min(top, f.y + step * climb) : f.y + (top - f.y) * Math.min(1, step * 1.5);
           if (f.phase === 'climb' && y >= top - 0.1) f.phase = 'cruise';
+          // a circuit: round its turning point and home to its own runway
+          if (f.circuit && dist < Math.max(3, speed * 0.6)) {
+            f.to = f.circuit;
+            f.circuit = null;
+            f._ap = null;
+            break;
+          }
           // no runway where it is bound (a town hall's green): it comes in on a
           // strip of its own, laid along its way in
-          if (!def.vtol && !goal.rw && goal.vessel == null && !f.cargo?.strike && dist < 40) {
+          if (!f.circuit && !def.vtol && !goal.rw && goal.vessel == null && !f.cargo?.strike && dist < 40) {
             const ux = d.dx / (dist || 1),
               uz = d.dz / (dist || 1);
             goal.rw = { a: { x: goal.x - ux * 0.9, z: goal.z - uz * 0.9 }, b: { x: goal.x + ux * 0.9, z: goal.z + uz * 0.9 }, len: 1.8 };
@@ -512,7 +583,8 @@ export const air = {
           if (dtd > 0.3) want = Math.atan2(dt.dz, dt.dx);
           speed = Math.max(def.speed * 0.4, f.speedNow * (1 - step * 0.3));
           f.speedNow = speed;
-          const gy = ground(f.x, f.z) + 0.05;
+          f.wheels = wheelsY(rw);
+          const gy = ground(f.x, f.z) + f.wheels;
           y = gy + Math.min(f.y - gy, Math.max(0, dtd) * (alt / Math.max(4, f.final.len)));
           if (dtd < 0.4 || y <= gy + 0.02) {
             f.phase = 'rollout';
@@ -526,7 +598,7 @@ export const air = {
           f.speedNow = Math.max(0, f.speedNow - def.speed * step * 0.5);
           speed = f.speedNow;
           want = f.heading;
-          y = ground(f.x, f.z) + 0.05;
+          y = ground(f.x, f.z) + (f.wheels ?? 0.05);
           f.rolled += speed * step;
           if (speed < 0.05 || f.rolled > f.rollLen * 0.85) {
             f.phase = 'parked';
@@ -555,7 +627,7 @@ export const air = {
         }
         case 'parked': {
           speed = 0;
-          y = ground(f.x, f.z) + 0.05;
+          y = ground(f.x, f.z) + (f.wheels ?? 0.05);
           if (f.t > 2.5) {
             this._land(f);
             continue;
@@ -597,7 +669,7 @@ export const air = {
     const L = rw.len || 2;
     const ux = (e.x - t.x) / L,
       uz = (e.z - t.z) / L;
-    const out = Math.max(6, (f.def.alt || 5) * 1.6);
+    const out = Math.max(8, (f.def.alt || 5) * 2.4); // (a glide of about 1 in 2.4)
     f._ap = { rw, t, e, len: out, x: t.x - ux * out, z: t.z - uz * out };
     return f._ap;
   },
@@ -684,10 +756,19 @@ export const air = {
     if (!K || K.alive === false) return refuse('no such realm');
     if (this.storm() > 0.7) return refuse('the launch waits for the storm to pass');
     if (this.solarStormLevel() > 0.2) return refuse('the launch waits for the solar storm to pass');
-    const from = this._airPoint(o.from);
+    let from = this._airPoint(o.from);
     if (!from) return refuse('no launch pad');
     const kind = payload === 'starship' ? 'starship' : 'rocket';
-    if (this.air.some((f) => f.alive && f.cls === 'space' && f.stageV !== 2 && f.from?.building === from.building && f.t < 6)) return refuse('the pad is busy');
+    if (this.air.some((f) => f.alive && f.cls === 'space' && f.stageV !== 2 && f.from?.building === from.building && f.t < COUNT + 4)) return refuse('the pad is busy');
+    // on a launch pad the rocket stands on the launch mount (the model's
+    // mount sits 0.15 design units along its local x, its plate 0.46 up)
+    const pb = this.game.civ?._bById?.get(from.building);
+    let base = 0.14;
+    if (pb && pb.type === 'launchpad') {
+      const r = pb.rotation || 0;
+      from = { ...from, x: pb.x + Math.cos(r) * 0.15 * BUILDING.scale, z: pb.z - Math.sin(r) * 0.15 * BUILDING.scale };
+      base = 0.48;
+    }
     const def = AIR_KINDS[kind];
     const f = this._airRecord(kind, def, o.kingdom, from, { x: from.x, z: from.z, building: from.building }, { payload });
     f.dur = kind === 'starship' ? 26 : 20; // the climb to orbit
@@ -696,7 +777,7 @@ export const air = {
     f.phase = 'count';
     f.heading = this.rng() * Math.PI * 2; // downrange
     f.reuse = this.hasTech(o.kingdom, 'orbital');
-    f.y = f.py = Math.max(0, this.world.heightAt(from.x, from.z)) + 0.14 * BUILDING.scale;
+    f.y = f.py = Math.max(0, this.world.heightAt(from.x, from.z)) + base * BUILDING.scale;
     f.gy = f.y;
     this.first(o.kingdom, 'rocket', { x: from.x, z: from.z });
     if (kind === 'starship') this.note(`🚀 ${this.kname(o.kingdom)[0].toUpperCase() + this.kname(o.kingdom).slice(1)} counts down to a starship launch`, 'good', { x: from.x, z: from.z }, 'starcount' + o.kingdom, 60);
@@ -707,16 +788,16 @@ export const air = {
     const T = f.t;
     if (f.stageV === 2) return this._boosterTick(f, step);
     if (f.phase === 'count') {
-      // the count: vapour at the pad, then ignition
-      f.thrust = T > 2 ? Math.min(1, (T - 2) * 2) : 0;
-      if (T > 2.6) {
+      // the count: the rocket stands at the pad a while, vapour, then ignition
+      f.thrust = T > COUNT - 0.6 ? Math.min(1, (T - COUNT + 0.6) * 2) : 0;
+      if (T > COUNT) {
         f.phase = 'launch';
         f.t0 = T;
         this._sfx('explosion', f.x, f.z, 0.5);
       }
       return;
     }
-    const u = T - (f.t0 || 2.6);
+    const u = T - (f.t0 || COUNT);
     const big = f.kind === 'starship' ? 1.25 : 1;
     f.thrust = 1;
     f.phase = u < 3 ? 'launch' : 'climb';
@@ -861,10 +942,21 @@ export const air = {
 
 // Runway strips of the airfield and airport models (src/render/buildings/
 // modernArch.js), in the models' design units along their local x.
+// The runways of the models (src/render/buildings/modernModels.js), in
+// design units along their local x: the two ends, the centre line's z and the
+// height of the surface above the plot (the airport's runway stands on its
+// raised apron; the airfield's strip lies under the levelled site's platform).
 const RUNWAYS = {
-  airfield: { x0: -1.35, x1: 1.95, z: 0 },
-  airport: { x0: -1.8, x1: 2.6, z: -0.6 },
+  airfield: { x0: -1.35, x1: 1.65, z: 0.42, y: 0.07 },
+  airport: { x0: -2.1, x1: 2.1, z: -0.98, y: 0.11 },
 };
+// An aircraft on its wheels: the belly above the surface it rolls on.
+const BELLY = 0.13 * VEHICLE.air;
+// how far up an aircraft rides on the ground: on a runway's surface, or
+// a little above the land on a strip of its own
+function wheelsY(rw) {
+  return rw && rw.y != null ? rw.y + BELLY : 0.05;
+}
 
 function reversePts(p) {
   const out = new Array(p.length);

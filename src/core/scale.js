@@ -36,9 +36,15 @@ export const BUILDING = {
 export const VEHICLE = {
   sea: S,
   land: S,
+  // road vehicles (cars, vans, trucks, buses, trams, ambulances, fire
+  // engines, tractors): their designs were drawn small beside a person (a car
+  // about as long as a person is tall), so they take 1.6x the land factor and
+  // a car is about two and a half people long. Trains (a house per car),
+  // carts and engines of war keep `land`.
+  road: S * 1.6,
   air: S,
-  of(cls) {
-    return cls === 'land' ? this.land : cls === 'air' ? this.air : this.sea;
+  of(cls, road = false) {
+    return cls === 'land' ? (road ? this.road : this.land) : cls === 'air' ? this.air : this.sea;
   },
 };
 
@@ -51,6 +57,9 @@ export const PROP = {
   shrub: 0.8,
   // crop rows on farm plots (stalk height; the plot itself is a tile)
   crop: S,
+  // grass, sedge and meadow tufts (height; they spread by its square root):
+  // a tuft about ankle to knee high beside a person, not as tall as one
+  grass: 0.5,
 };
 
 export const FOOTPRINT = {

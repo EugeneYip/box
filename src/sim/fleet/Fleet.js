@@ -698,6 +698,10 @@ export class Fleet {
       this._trafficPlan();
     }
     this._separate(step);
+    if ((T.airport = (T.airport || 0) + step) >= 2) {
+      this._airportOps?.(T.airport);
+      T.airport = 0;
+    }
     if ((T.war += step) >= 0.5) {
       this._warTick(T.war);
       this._carrierOps(T.war);

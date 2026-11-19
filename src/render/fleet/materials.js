@@ -175,14 +175,17 @@ float wsHash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p
     float flick = 0.85 + 0.15 * sin(uTime * 3.1 + vLocal.x * 13.0);
     totalEmissiveRadiance += vGlow * vec3(1.0, 0.62, 0.28) * (uNight * 2.4 * flick + 0.05);
   }
-  float burn = vState.y;
+  // (only while the fire shows: a fire burning out left the whole hull of a
+  // big ship glowing copper with no flame in sight, round 16; and only in
+  // tongues, never a glow over the whole hull)
+  float burn = smoothstep(0.12, 0.45, vState.y);
   if (burn > 0.001) {
     float t = uTime;
     // flames lick up from the hull: low, warm, flickering (no blocky noise)
     float low = 1.0 - smoothstep(0.1, 1.2, vLocal.y);
     float n1 = 0.5 + 0.5 * sin(vLocal.x * 11.0 + t * 5.0) * sin(vLocal.z * 13.0 - t * 4.0 + vLocal.y * 6.0);
-    float tongue = smoothstep(0.5, 0.95, n1);
-    totalEmissiveRadiance += burn * low * vec3(1.0, 0.4, 0.1) * (0.15 + 1.1 * tongue) * (0.75 + 0.25 * sin(t * 12.0 + vLocal.z * 9.0));
+    float tongue = smoothstep(0.55, 0.95, n1);
+    totalEmissiveRadiance += burn * low * vec3(1.0, 0.4, 0.1) * (1.2 * tongue) * (0.75 + 0.25 * sin(t * 12.0 + vLocal.z * 9.0));
   }
 }`,
       );

@@ -15,7 +15,9 @@ import { geoWrapOn } from '../../world/geo.js';
 // night sky (one draw call), and a solar storm hangs auroras over the world
 // (one more, only while it lasts).
 
-const ROCKET_SCALE = 1.4; // rockets read as a spectacle beside the launch pad
+// rockets read as a spectacle and a landmark at the launch pad: a rocket
+// stands about as tall as the pad's service tower (three houses), not a house
+const ROCKET_SCALE = 2.6;
 const SEAM = 30;
 const TRAIL_MAX = 34;
 

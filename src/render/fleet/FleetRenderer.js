@@ -376,6 +376,10 @@ export class FleetRenderer {
     C.wind = g.env?.wind || { x: 1, z: 0, strength: 0.3 };
     C.flagsOn = flagsOn;
     C.wakesOn = wakesOn;
+    // road vehicles grow a little as the camera pulls back, a third as much as
+    // the people do (UnitRenderer's readability boost), so a car stays about
+    // two people long at play zoom as well as up close
+    C.roadBoost = 1 + (Math.min(2.6, Math.max(1, 0.55 + dist / 28)) - 1) * 0.35;
     const wind = C.wind;
     if (!far) {
       for (const v of list) {
@@ -417,7 +421,7 @@ export class FleetRenderer {
     const kc = this._kingdomColor(v.kingdom);
     const dmg = Math.min(1, Math.max(0, 1 - v.hp / v.maxHp - 0.12) / 0.88);
     const a = v.anim;
-    const sc = def.scale || 1;
+    const sc = (def.scale || 1) * (def.road ? C.roadBoost || 1 : 1);
     if (v.cls === 'sea') {
       const ph = this.t + v.seed * 20;
       const rough = (1 + C.st * 2.5) * (def.length > 2 * VEHICLE.sea ? 0.6 : 1);
@@ -510,7 +514,7 @@ export class FleetRenderer {
       this._q.setFromEuler(this._e);
       this._m.compose(this._p.set(px, py ?? y, pz), this._q, this._s.setScalar(sc));
       vb.push(this._key(kind, px, pz), this._m, kc, a.walk + variant * 1.3, a.wheel, a3, 0, dmg, v.burning || 0, siren, kind === 'oxcart' ? a.cargoType : variant);
-      C.blobList.push(px, pz, def.length * (kind === 'caravan' ? 0.9 : 1.1), ph);
+      C.blobList.push(px, pz, def.length * (kind === 'caravan' ? 0.9 : 1.1) * (def.road ? C.roadBoost || 1 : 1), ph);
     };
     if (kind === 'caravan') {
       const camel = a.cargoType === 2 ? 2 : 0;
@@ -579,9 +583,10 @@ export class FleetRenderer {
     const vb = this.vb;
     const alpha = C.alpha;
     const def = KINDS.car;
-    const sc = def.scale || 1;
+    const sc = (def.scale || 1) * (C.roadBoost || 1);
     const hl = def.length * 0.4;
-    const lane = 0.17;
+    // (the right-hand lane: half a car's width and a little off the crown)
+    const lane = 0.27 * Math.min(1.2, C.roadBoost || 1);
     let n = 0;
     for (let i = 0; i < T.length; i++) {
       const c = T[i];
@@ -598,7 +603,7 @@ export class FleetRenderer {
       this._m.compose(this._p.set(x, Math.max(y, 0), z), this._q, this._s.setScalar(sc));
       const wheel = -((this.t * c.s) / (0.08 * sc)) - i;
       vb.push(this._key('car', x, z), this._m, this._kingdomColor(c.kingdom), 0, wheel, 0, 0, 0, 0, 0, c.v);
-      C.blobList.push(x, z, def.length, h);
+      C.blobList.push(x, z, def.length * (C.roadBoost || 1), h);
       n++;
     }
     return n;
@@ -1114,6 +1119,9 @@ export class FleetRenderer {
     for (const v of F.list) {
       if (!v.alive || budget <= 0) continue;
       if (Math.abs(v.x - cx) > R || Math.abs(v.z - cz) > R) continue;
+      // a submarine running submerged shows no fire: flames, smoke and
+      // embers over an empty wake read as orange sparks trailing nothing
+      if (v.def.sub && v.state !== 'moored' && !(v.sink > 0)) continue;
       if (v.burning > 0.15 || (v.sink > 0 && v.sink < 0.5)) {
         // a burning ship trails a grey-white plume that leans downwind and
         // thins out (one thin puff at the deck, the plume above it, so the
@@ -1123,7 +1131,7 @@ export class FleetRenderer {
         if (v.burning > 0.4) for (let i = 0; i < 2; i++) this._plume(fx, v.x, (v.y || 0) + 1.8 + i * 0.6, v.z, 0.7 + L * 0.18, 0.5);
         if (v.burning > 0.2) {
           fx.emit('fire', { x: v.x + (Math.random() - 0.5) * 0.5, y: (v.y || 0) + 0.4, z: v.z }, { scale: 0.5 });
-          if (Math.random() < 0.4) fx.emit('embers', { x: v.x, y: (v.y || 0) + 0.8, z: v.z }, { count: 2 });
+          if (v.burning > 0.45 && Math.random() < 0.3) fx.emit('embers', { x: v.x, y: (v.y || 0) + 0.8, z: v.z }, { count: 1 });
         }
         budget--;
       }
@@ -1156,7 +1164,12 @@ export class FleetRenderer {
           z = v.z + (s * p.x + c * p.z) * sc;
         const y = (v.y || 0) + p.y * sc;
         const big = v.cls === 'sea' ? 0.22 + def.length * 0.06 : v.kind === 'train' ? 0.26 : 0.16;
-        for (let i = fx.k(1); i > 0; i--) smokePuff(fx, x, y, z, { size: big, ramp: v.kind === 'steamer' || v.kind === 'ironclad' || v.kind === 'train' ? RAMP.SMOKE_DARK : RAMP.SMOKE_LIGHT, rise: 0.6, drift: 1.6 + Math.hypot(wind.x, wind.z), drag: 0.8, grow: 2.6, life: 2.4 + Math.random() * 1.4, lit: 0.85, alpha: moored ? 0.35 : 0.7 });
+        if (v.cls === 'sea') {
+          // over the water: a cool grey that rises and thins out quickly (the
+          // warm dark land smoke lay on the sea as brown stains, round 16)
+          const coal = v.kind === 'steamer' || v.kind === 'ironclad';
+          for (let i = fx.k(1); i > 0; i--) smokePuff(fx, x, y, z, { size: big * 0.85, ramp: RAMP.SMOKE_LIGHT, color: coal ? 0xa6abb2 : PLUME_TINT, alpha: moored ? 0.28 : 0.5, rise: 1.25, drift: 1.1 + Math.hypot(wind.x, wind.z) * 0.6, drag: 0.7, grow: 2.3, life: 1.6 + Math.random() * 0.9, lit: 0.75 });
+        } else for (let i = fx.k(1); i > 0; i--) smokePuff(fx, x, y, z, { size: big, ramp: v.kind === 'train' ? RAMP.SMOKE_DARK : RAMP.SMOKE_LIGHT, rise: 0.6, drift: 1.6 + Math.hypot(wind.x, wind.z), drag: 0.8, grow: 2.6, life: 2.4 + Math.random() * 1.4, lit: 0.85, alpha: moored ? 0.35 : 0.7 });
         smoke--;
       }
     }
