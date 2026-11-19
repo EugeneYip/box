@@ -143,9 +143,9 @@ void main() {
     vec2 p = dir.xz / (h + 0.09) * 1.1 + uCloudOffset;
     float n = fbm(p * 0.9);
     float cov = clamp(uCover * 0.8 + uOvercast * 0.35 + 0.12, 0.0, 1.0);
-    float c = smoothstep(1.0 - cov * 0.95 - 0.05, 1.12 - cov * 0.55, n);
-    c *= smoothstep(0.0, 0.16, y) * (1.0 - smoothstep(0.3, 0.65, y)); // higher layer above the cumulus row (soft base)
-    c *= 1.0 - 0.55 * uStarVis; // at night the deck is a faint veil, not a painted band
+    float c = smoothstep(1.0 - cov * 0.95 - 0.12, 1.2 - cov * 0.55, n);
+    c *= smoothstep(0.02, 0.22, y) * (1.0 - smoothstep(0.3, 0.65, y)); // higher layer above the cumulus row (soft base)
+    c *= 1.0 - 0.85 * uStarVis; // at night the deck is a faint veil, not a painted band
     float shade = smoothstep(0.35, 0.95, fbm(p * 0.9 + vec2(0.35, 0.2)));
     float sunSide = pow(max(dot(normalize(dir.xz + 1e-4), normalize(uSunDir.xz + 1e-4)) * 0.5 + 0.5, 0.0), 3.0);
     // toward the sun the bank reads as a dark silhouette with a golden rim,
@@ -155,9 +155,9 @@ void main() {
     vec3 cc = mix(litC, darkC, sunSide * 0.8);
     cc = mix(cc, uCloudShade * 0.55, shade * 0.45);
     cc += uGlow * sunSide * (1.0 - smoothstep(0.0, 0.5, c)) * 1.4;
-    cc = mix(cc, uHorizon, smoothstep(0.14, 0.0, y) * 0.75); // aerial fade into the horizon
+    cc = mix(cc, col, smoothstep(0.2, 0.0, y) * 0.8); // aerial fade into the sky behind
     cc *= mix(1.0, 0.55, uStorm);
-    col = mix(col, cc, c * 0.85);
+    col = mix(col, cc, c * 0.7);
   }
 
   // ---- horizon cumulus: readable cloud forms standing on the horizon ----
@@ -184,7 +184,10 @@ void main() {
       float e = y / Ht;
       vec2 bp = ring * (R + e * K) + dr + vec2(3.7 * fl, 1.3);
       float dens = fbm(bp) * pres + 0.38 - e * 0.95;
-      float c = smoothstep(0.42, 0.5, dens) * smoothstep(-0.004, 0.012, y);
+      // soft silhouettes (a hard threshold reads as cardboard cut-outs), and
+      // the base dissolves into the horizon haze instead of standing on a ruled line
+      float c = smoothstep(0.36, 0.58, dens) * smoothstep(0.0, 0.05, y);
+      c *= 1.0 - 0.8 * uStarVis; // at night only a faint, dark veil of cloud remains
       if (c < 0.003) continue;
       // crowns: brighter where the density falls off just above (a top)
       float e2 = e + 0.12;
@@ -198,9 +201,9 @@ void main() {
       vec3 cc = mix(litCol, sil, sunSideC * 0.82);
       cc += (uGlow * 1.3 + uHalo * 0.25) * rim * sunSideC;
       // aerial depth (more at night, when the row would otherwise read as a cut-out)
-      cc = mix(cc, skyHere, min(1.0, mix(0.42, 0.18, fl) + 0.35 * uStarVis + 0.4 * smoothstep(0.03, 0.0, y)));
+      cc = mix(cc, skyHere, min(1.0, mix(0.5, 0.26, fl) + 0.4 * uStarVis + 0.6 * smoothstep(0.07, 0.0, y)));
       cc *= mix(1.0, 0.55, uStorm);
-      col = mix(col, cc, c * 0.92);
+      col = mix(col, cc, c * 0.8);
       occl = max(occl, c);
     }
   }

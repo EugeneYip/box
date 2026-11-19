@@ -305,15 +305,18 @@ export class SkyModel {
     this.ageVig = 0;
     if (L) {
       const dayK = 0.18 + 0.82 * this.daylight;
+      // after dusk the age tint gives way to the night palette: a warm or
+      // sickly age must not paint the night sky maroon or olive
+      const skyK = 0.12 + 0.88 * this.daylight;
       const t = this._tmp;
-      if (L.zen.k > 0.001) this.zenith.lerp(t.copy(L.zen.c).multiplyScalar(dayK), L.zen.k);
+      if (L.zen.k > 0.001) this.zenith.lerp(t.copy(L.zen.c).multiplyScalar(dayK), L.zen.k * skyK);
       if (L.hor.k > 0.001) {
-        this.horizon.lerp(t.copy(L.hor.c).multiplyScalar(dayK), L.hor.k);
+        this.horizon.lerp(t.copy(L.hor.c).multiplyScalar(dayK), L.hor.k * skyK);
         this.glow.multiplyScalar(1 - 0.35 * L.hor.k);
       }
       if (L.haze.k > 0.001) {
-        this.groundHaze.lerp(t.copy(L.haze.c).multiplyScalar(dayK), L.haze.k);
-        this.mistColor.lerp(t.copy(L.haze.c).multiplyScalar(dayK), L.haze.k);
+        this.groundHaze.lerp(t.copy(L.haze.c).multiplyScalar(dayK), L.haze.k * skyK);
+        this.mistColor.lerp(t.copy(L.haze.c).multiplyScalar(dayK), L.haze.k * skyK);
       }
       if (L.hemi.k > 0.001) this.hemiSky.lerp(L.hemi.c, L.hemi.k);
       this.sunLightColor.multiply(L.key);

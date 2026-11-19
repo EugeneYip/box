@@ -1220,8 +1220,9 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
           const f = low + (Math.max(hgt[i], low) - low) * k;
           if (f < hgt[i]) hgt[i] = f;
         } else {
-          // a shallow shelf beyond it, deepening steadily toward the border
-          const f = -0.25 + dc * (0.35 + 0.035 * -dc) + fbm(nBank, x / 9, y / 9, 2) * 0.15;
+          // a wide shallow shelf beyond it (turquoise over 10 to 20 tiles at
+          // overview), deepening steadily toward the border
+          const f = -0.25 + dc * (0.1 + 0.004 * -dc) + fbm(nBank, x / 9, y / 9, 2) * 0.15;
           hgt[i] = Math.min(hgt[i], Math.max(f, -6.5));
         }
       }

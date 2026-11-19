@@ -159,10 +159,15 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   vec2 vdirE = wp.xz - cameraPosition.xz;
   float pathE = smoothstep(0.88, 0.99, dot(vdirE / max(length(vdirE), 1e-3), Lk.xz / max(length(Lk.xz), 1e-3)));
   vec3 horizonE = mix(uSkyCol, mix(uZenCol * 1.15, uSkyCol, pathE), lowSunE);
-  vec3 R = reflect(-V, N);
+  // reflections and the broad sun sheen use a calmer normal past close zoom:
+  // the full chop mirrored the pale horizon and the sun into cloud-like
+  // blotches over the deep sea
+  float calmN = 1.0 - 0.7 * smoothstep(0.01, 0.07, fw);
+  vec3 Nr = normalize(vec3(-sl.x * calmN, 1.0, -sl.y * calmN));
+  vec3 R = reflect(-V, Nr);
   vec3 sky = mix(horizonE, uZenCol, pow(clamp(R.y, 0.0, 1.0), 0.55));
   // ~3.5% straight down, rising towards grazing angles (Schlick)
-  float F = clamp(0.035 + 0.965 * pow(1.0 - NdV, 5.0), 0.0, 1.0);
+  float F = clamp(0.035 + 0.965 * pow(1.0 - max(dot(Nr, V), 0.0), 5.0), 0.0, 1.0);
 
   // ---- key-light shadow on the surface (+ clouds)
   float sunSh = 1.0;
@@ -176,7 +181,7 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   // ---- glints from the current key light (sun by day, moon by night; storms dim it)
   vec3 L = normalize(uKeyDir);
   vec3 Hs = normalize(L + V);
-  float nh = max(dot(N, Hs), 0.0);
+  float nh = max(dot(Nr, Hs), 0.0);
   float keyUp = smoothstep(-0.02, 0.12, L.y);
   // crisp sparkles only up close and with some wind; beyond that the sun's
   // reflection is a broad soft sheen (sharp lobes on the chop clumped into a
@@ -185,7 +190,7 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   // roughness widens with the pixel footprint: a soft sheen far away, crisp glints up close
   float rgh = mix(0.10, 0.45, smoothstep(0.012, 0.09, fw));
   float Fs = 0.02 + 0.98 * pow(1.0 - max(dot(V, Hs), 0.0), 5.0);
-  float glint = ggxD(nh, rgh) * Fs * mix(1.0, 0.45, smoothstep(0.04, 0.4, fw)) + pow(nh, 1400.0) * 2.6 * sharpK;
+  float glint = ggxD(nh, rgh) * Fs * mix(1.0, 0.3, smoothstep(0.03, 0.3, fw)) + pow(max(dot(N, Hs), 0.0), 1400.0) * 2.6 * sharpK;
   // rivers, channels and calm shallow flats are not mirrors: never flare to white
   float narrowW = (1.0 - smoothstep(1.2, 3.6, wide)) * (1.0 - outK);
   float shallowK = 1.0 - smoothstep(0.05, 0.6, depth);

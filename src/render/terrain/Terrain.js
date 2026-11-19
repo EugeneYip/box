@@ -358,8 +358,10 @@ export class Terrain {
       for (const v of g.civ?.villages || []) {
         if (!v || v.alive === false || !Number.isFinite(v.cx)) continue;
         const r0 = Math.max(4, v.buildRadius || 4);
-        const r1 = r0 * 1.6 + 5,
-          r2 = r0 * 3.2 + 12;
+        // (wide enough that a farmed plain fills out between villages and
+        // hamlets instead of leaving an empty lawn beside the town)
+        const r1 = r0 * 2.2 + 8,
+          r2 = r0 * 4.6 + 20;
         const x0 = Math.max(1, Math.floor(v.cx - r2)),
           x1 = Math.min(W - 2, Math.ceil(v.cx + r2)),
           y0 = Math.max(1, Math.floor(v.cz - r2)),
