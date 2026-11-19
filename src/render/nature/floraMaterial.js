@@ -148,6 +148,10 @@ float fThin = mix(0.42, 1.0, smoothstep(0.0, 0.85, fG));
 transformed.xz *= mix(fThin, 1.0, fLeaf);
 float fScale = 0.14 + 0.86 * fG;
 transformed *= fScale;
+// crops (material WHEAT) stay rows as wide as their plot and only rise as
+// they grow, so a young field is low green stripes, never a shrunken block
+float fCrop = 1.0 - step(0.5, abs(aInfo.w - 6.0));
+transformed = mix(transformed, vec3(position.x, position.y * fScale, position.z), fCrop);
 float fBurn = clamp(max(fState.g * 1.3, fState.b), 0.0, 1.0);
 transformed = mix(transformed, aPivot * fScale, fLeaf * fBurn * 0.45);
 vec3 fW = fWind(fOrigin, position, aInfo.x, aInfo.y * (1.0 - fBurn), fScale);
