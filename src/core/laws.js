@@ -54,7 +54,7 @@ export const LAWS = [
   N('civTechSpeed', 'civilization', 'Research speed', 'How quickly kingdoms gain knowledge.', 1, 0.25, 4, 0.25, 'civ'),
   // (kept with this world only: a cap of Hearth chosen for one world froze
   // research on the next one, silently, through the saved laws)
-  { ...S('civEraCap', 'civilization', 'Latest era', 'The latest era realms may reach, from Hearth to Future. Choose Enlightened for a world that never leaves the age of sail and steel. Kept for this world only: a new page starts at Future.', 7, ['Hearth', 'Bronze', 'Iron', 'Enlightened', 'Industrial', 'Modern', 'Atomic', 'Future'], 'civ'), perWorld: true },
+  { ...S('civEraCap', 'civilization', 'Latest era', 'The latest era realms may reach, from Hearth to Future. Choose Enlightened for a world that never leaves the age of sail and steel. Kept for this world only: every new world starts at Future.', 7, ['Hearth', 'Bronze', 'Iron', 'Enlightened', 'Industrial', 'Modern', 'Atomic', 'Future'], 'civ'), perWorld: true },
   S('civRenewal', 'civilization', 'Urban renewal', 'From Zoning on, old low houses are rebuilt denser on the same ground and outgrown walls give way to ring roads; heritage buildings always stay.', 2, ['Off', 'Slow', 'Normal'], 'civ'),
   B('civSkyShield', 'civilization', 'Planetary defense', 'Realms with Planetary Defense break up meteors falling on their towns. Off lets every meteor land.', true, 'civ'),
   B('civRoads', 'civilization', 'Roads', 'Villages pave paths between their buildings and neighbors.', true, 'civ'),
