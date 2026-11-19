@@ -287,8 +287,11 @@ export function installDaily(Units) {
     if (child && u._dl && !u.flags?.frozenAge && !d.frozenAge) u.age += ((elapsed || 0) / 30) * 1.7;
     if (u._dl) {
       if (now < u._dl.until && this._dlStep(u, now, v)) return true;
+      const was = u._dl.k;
       this._dlEnd(u);
-      u._dlNext = now + (child ? 1.5 : 4) + hash(u.id, (now * 7) | 0) * 4;
+      // after a chore the brain looks for real work this think; if it has
+      // none, the next think finds another chore (no idle gap between them)
+      u._dlNext = was === 'chore' || was === 'school' ? now + 0.5 : now + (child ? 1.5 : 4) + hash(u.id, (now * 7) | 0) * 4;
       return false;
     }
     if (now < u._dlNext) return false;
@@ -586,7 +589,7 @@ export function installDaily(Units) {
   P._dlChore = function (u, v, pl, rng) {
     const w = this.game.world;
     const job = u.job;
-    const dur = 10 + rng() * 10;
+    const dur = 18 + rng() * 14;
     const home = this._homeOf(u, v);
     const near = (b, r = 1.2) => (b ? { x: b.doorX + (rng() - 0.5) * r * 2, z: b.doorZ + (rng() - 0.5) * r * 2, fx: b.x ?? b.doorX, fz: b.z ?? b.doorZ } : { x: u.x, z: u.z });
     let at, anim, lab;
