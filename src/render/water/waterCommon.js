@@ -214,14 +214,18 @@ vec3 waterIrradianceV(float vis) {
   float lowK = 1.0 - smoothstep(0.15, 0.5, uKeyDir.y);
   // the column scatters mostly skylight: a low orange key lends brightness, not
   // its hue (otherwise the golden-hour sea turns brown)
-  vec3 kc = mix(uKeyCol, vec3(dot(uKeyCol, vec3(0.2126, 0.7152, 0.0722))), 0.65 * lowK);
+  // (a warm key always lends less hue than brightness: the open sea stays blue,
+  // not a dark violet, in the afternoon light)
+  vec3 kc = mix(uKeyCol, vec3(dot(uKeyCol, vec3(0.2126, 0.7152, 0.0722))), 0.35 + 0.45 * lowK);
   return kc * KEYN * (0.30 + 0.70 * up) * vis + uAmbCol * 0.55 + uZenCol * 0.85 * lowK;
 }
 vec3 waterIrradiance() { return waterIrradianceV(1.0); }
 
 // In-scattered colour of an infinitely deep column (deep sapphire / polar slate), lit.
 vec3 waterDeepColorV(float vis) {
-  return mix(vec3(0.0055, 0.034, 0.105), vec3(0.010, 0.032, 0.066), gCold) * waterIrradianceV(vis);
+  // (a clear ocean blue: darker albedos read as near-black ink up close, and
+  // the polar slate as a dark band round the poles at map zoom)
+  return mix(vec3(0.0075, 0.047, 0.128), vec3(0.014, 0.043, 0.080), gCold) * waterIrradianceV(vis);
 }
 vec3 waterDeepColor() { return waterDeepColorV(1.0); }
 // Lighter scatter colour of the shallow shelf haze (turquoise / cold teal-grey).

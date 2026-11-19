@@ -209,6 +209,7 @@ export function installNeeds(Units) {
     if (u._dl) this._dlEnd(u);
     u.activity = null;
     u.data.inside = true;
+    u._inAcc = 0;
     u._away = true;
     u._homeB = b.id;
     u.sleeping = true;
@@ -236,12 +237,22 @@ export function installNeeds(Units) {
     if (u._cell < 0 || u._cell == null) this._gridAdd(u);
   };
   // Per tick while asleep at home: rest, and wake at dawn, when rested, or to danger.
+  // (a sleeper rests in steps of four ticks: the night's rest is the same, at a
+  // quarter of the cost for the thousand or so asleep at once in a big world)
   P._insideTick = function (u, dt, now, tickN) {
+    const acc = (u._inAcc || 0) + dt;
+    const slot = tickN + u.id;
+    if ((slot & 3) !== 0 && acc < 0.6) {
+      u._inAcc = acc;
+      return;
+    }
+    u._inAcc = 0;
+    dt = acc;
     u.energy = Math.min(1, u.energy + dt * SLEEP_GAIN);
     u.hunger = Math.min(1, u.hunger + dt * u.def.hungerRate * 0.4);
     // children grow up through the night too (the village brain ages them by day)
     if (u.age < 16 && !u.flags?.frozenAge && !u.data.frozenAge) u.age += (dt / 30) * 1.7;
-    if ((tickN + u.id) % 15 !== 0) return;
+    if ((slot & 15) !== 0) return;
     const g = this.game;
     const b = g.civ?._bById?.get(u._homeB);
     // wake at the person's hour (a pinned clock: at daylight, or when rested)

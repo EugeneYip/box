@@ -111,16 +111,21 @@ export class Weather {
       const world = g.world;
       const wet = world.wetness;
       if (wet) {
-        const rate = m.rain * 0.06 * dtw;
-        const dry = 0.008 * dtw;
+        // a quarter of the map per half second, each tile with two seconds'
+        // worth (the whole of a Vast map at once cost a millisecond a tick)
+        const k = (this._wetSlice = ((this._wetSlice || 0) + 1) & 3);
+        const i0 = (wet.length * k) >> 2,
+          i1 = (wet.length * (k + 1)) >> 2;
+        const rate = m.rain * 0.06 * dtw * 4;
+        const dry = 0.008 * dtw * 4;
         const temp = world.temperature;
         if (rate > 0.0005) {
-          for (let i = 0; i < wet.length; i++) {
+          for (let i = i0; i < i1; i++) {
             const v = wet[i] + rate - dry * temp[i];
             wet[i] = v > 1 ? 1 : v;
           }
         } else if (this.wetness < 0.999) {
-          for (let i = 0; i < wet.length; i++) {
+          for (let i = i0; i < i1; i++) {
             if (wet[i] > 0) {
               const v = wet[i] - dry * (0.5 + temp[i]);
               wet[i] = v < 0 ? 0 : v;

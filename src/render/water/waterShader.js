@@ -185,7 +185,7 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   // roughness widens with the pixel footprint: a soft sheen far away, crisp glints up close
   float rgh = mix(0.10, 0.45, smoothstep(0.012, 0.09, fw));
   float Fs = 0.02 + 0.98 * pow(1.0 - max(dot(V, Hs), 0.0), 5.0);
-  float glint = ggxD(nh, rgh) * Fs * mix(1.0, 0.45, smoothstep(0.04, 0.4, fw)) + pow(nh, 1400.0) * 4.0 * sharpK;
+  float glint = ggxD(nh, rgh) * Fs * mix(1.0, 0.45, smoothstep(0.04, 0.4, fw)) + pow(nh, 1400.0) * 2.6 * sharpK;
   // rivers, channels and calm shallow flats are not mirrors: never flare to white
   float narrowW = (1.0 - smoothstep(1.2, 3.6, wide)) * (1.0 - outK);
   float shallowK = 1.0 - smoothstep(0.05, 0.6, depth);
@@ -214,13 +214,18 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   spec *= mix(1.0, 1.0 - smoothstep(0.22, 0.45, tiltNeed), lowSun);
   spec += keyL * pathK * 0.8 * lowSun * lightVis * (1.0 - narrow * 0.7) * pathMask * mirrorK;
   // the far sheen never burns to white: capped lower with distance
-  spec = min(spec, vec3(mix(0.8, 0.38, smoothstep(0.02, 0.12, fw))));
+  // (and up close it stays a glitter, not white blotches on the open sea)
+  spec = min(spec, vec3(mix(0.55, 0.38, smoothstep(0.02, 0.12, fw))));
 
   // ---- water body veil (the seabed below is already tinted by the terrain)
-  vec3 scat = mix(waterShallowColorV(lightVis), waterDeepColorV(lightVis), waterDeepMix(depth));
-  // broad colour variation so open water is never a flat slab
+  // cloud shadows dim the body of the water only gently: full-strength cloud
+  // blotches read as dirt on the open sea up close
+  float scatVis = sunSh * mix(1.0, cloud, 0.55);
+  vec3 scat = mix(waterShallowColorV(scatVis), waterDeepColorV(scatVis), waterDeepMix(depth));
+  // broad colour variation so open water is never a flat slab (kept low in
+  // contrast: stronger reads as stains)
   float mac = texture2D(uNoise, p * (1.0 / 190.0) + vec2(t * 0.0015, 0.0)).r;
-  scat *= 0.82 + 0.36 * mac;
+  scat *= 0.90 + 0.20 * mac;
   float vy = max(abs(V.y), 0.12);
   float veil = 1.0 - exp(-depth / vy * mix(0.16, 0.22, uMapZoom));
   veil = clamp(veil * 0.85, 0.0, 0.92);

@@ -177,6 +177,9 @@ void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor)
   // toward the far plane the sea fades fully into the band, which the dome
   // continues below the horizon, so the clip line never shows
   hz = max(hz, water * smoothstep(0.7, 0.96, lin / uFar));
+  // land too: low over the map, the far edge of the drawn world melts into
+  // the horizon haze instead of ending in a hard line against the sky
+  hz = max(hz, smoothstep(0.62, 0.95, lin / uFar) * (1.0 - smoothstep(0.08, 0.3, -dir.y)));
   if (hz > 0.002) col = mix(col, farColor(dir, water), hz);
   col += moonSheen(dir, water);
 

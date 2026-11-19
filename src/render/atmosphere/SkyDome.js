@@ -144,7 +144,8 @@ void main() {
     float n = fbm(p * 0.9);
     float cov = clamp(uCover * 0.8 + uOvercast * 0.35 + 0.12, 0.0, 1.0);
     float c = smoothstep(1.0 - cov * 0.95 - 0.05, 1.12 - cov * 0.55, n);
-    c *= smoothstep(0.02, 0.1, y) * (1.0 - smoothstep(0.3, 0.65, y)); // higher layer above the cumulus row
+    c *= smoothstep(0.0, 0.16, y) * (1.0 - smoothstep(0.3, 0.65, y)); // higher layer above the cumulus row (soft base)
+    c *= 1.0 - 0.55 * uStarVis; // at night the deck is a faint veil, not a painted band
     float shade = smoothstep(0.35, 0.95, fbm(p * 0.9 + vec2(0.35, 0.2)));
     float sunSide = pow(max(dot(normalize(dir.xz + 1e-4), normalize(uSunDir.xz + 1e-4)) * 0.5 + 0.5, 0.0), 3.0);
     // toward the sun the bank reads as a dark silhouette with a golden rim,
@@ -154,7 +155,7 @@ void main() {
     vec3 cc = mix(litC, darkC, sunSide * 0.8);
     cc = mix(cc, uCloudShade * 0.55, shade * 0.45);
     cc += uGlow * sunSide * (1.0 - smoothstep(0.0, 0.5, c)) * 1.4;
-    cc = mix(cc, uHorizon, smoothstep(0.08, 0.0, y) * 0.6); // aerial fade
+    cc = mix(cc, uHorizon, smoothstep(0.14, 0.0, y) * 0.75); // aerial fade into the horizon
     cc *= mix(1.0, 0.55, uStorm);
     col = mix(col, cc, c * 0.85);
   }
@@ -196,7 +197,8 @@ void main() {
       float rim = 1.0 - smoothstep(0.42, 0.56, dens);
       vec3 cc = mix(litCol, sil, sunSideC * 0.82);
       cc += (uGlow * 1.3 + uHalo * 0.25) * rim * sunSideC;
-      cc = mix(cc, skyHere, mix(0.42, 0.18, fl) + 0.4 * smoothstep(0.03, 0.0, y)); // aerial depth
+      // aerial depth (more at night, when the row would otherwise read as a cut-out)
+      cc = mix(cc, skyHere, min(1.0, mix(0.42, 0.18, fl) + 0.35 * uStarVis + 0.4 * smoothstep(0.03, 0.0, y)));
       cc *= mix(1.0, 0.55, uStorm);
       col = mix(col, cc, c * 0.92);
       occl = max(occl, c);

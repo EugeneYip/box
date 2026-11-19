@@ -1,4 +1,5 @@
 import { TILE, TILE_INFO, FLORA, FLORA_INFO, SEA_LEVEL, DIRS8 } from '../../world/constants.js';
+import { BUILDING_TYPES } from '../civ/catalog.js';
 import { law, fireFactor, regionName, yearLabel, withAge, wildfireDamp, simWeather, HOT_FIRE, FIRE_WILD, FIRE_SKY, FIRE_SPARK } from './util.js';
 
 // Wildfire simulation on world.fire (0 = not burning, (0..1] intensity).
@@ -24,7 +25,13 @@ import { law, fireFactor, regionName, yearLabel, withAge, wildfireDamp, simWeath
 // buildings: a building set alight by one throws no new fires while the law
 // is off.
 
-const BUDGET = 2600;
+const BUDGET = 1300;
+// a coarse tick (8x and above) covers several game ticks at once: it works
+// through fewer tiles, each with the longer time step, so a big fire costs
+// about the same per game second instead of the same per tick (a great fire
+// on a Vast map holds well over a thousand burning tiles)
+const BUDGET_COARSE = 700;
+const _windF = new Float32Array(8);
 // natExp: natural ignition falls off as factor^natExp below the Embers
 // factor; skyOff: spread of lightning fires still burning while the
 // calamityLightning law is off; spark: most a fire from sparks (burning
@@ -397,7 +404,12 @@ export class FireSim {
     const capS = 450 * area;
     const capB = 1000 * area;
     const ageF = Math.pow(fireFactor(g), 0.25) * (n > capS ? Math.max(0.3, capS / n) : 1) * (this._recent > capB ? Math.max(0.12, Math.pow(capB / this._recent, 1.5)) : 1);
-    const todo = Math.min(n, BUDGET);
+    const todo = Math.min(n, step > 0.1 ? BUDGET_COARSE : BUDGET);
+    // the wind's pull in each of the eight directions (the same for every tile this tick)
+    for (let d = 0; d < 8; d++) {
+      const diag = d >= 4 ? 0.7071 : 1;
+      _windF[d] = Math.exp((DIRS8[d][0] * wdx + DIRS8[d][1] * wdz) * diag * ws * 2.6) * diag * ageF;
+    }
     const dtEff = step * (n / Math.max(1, todo));
     // fire brigades and fire engines guard the towns (Civ breadth.js: a coarse grid)
     const FG = g.civ?.fireGuard;
@@ -463,12 +475,9 @@ export class FireSim {
         if (this.inList[j]) continue;
         const flam = this.flammability(j);
         if (flam <= 0.02) continue;
-        const diag = d >= 4 ? 0.7071 : 1;
-        const align = (dx * wdx + dy * wdz) * diag;
-        const windF = Math.exp(align * ws * 2.6);
         const slope = Math.max(-1.2, Math.min(1.2, w.height[j] - hi));
         const slopeF = Math.exp(slope * 0.55);
-        const p = sp * Math.pow(flam, 1.6) * windF * slopeF * diag * ageF;
+        const p = sp * Math.pow(flam, 1.6) * _windF[d] * slopeF;
         if (rng.next() < p) {
           if (this.ignite(nx, ny, f * 0.7, spreadOpts)) changed = true;
         }
@@ -488,11 +497,13 @@ export class FireSim {
         this._markBuilding(w.building[i], cause, g.time.total);
         this.bTimer[i] -= dtEff;
         if (this.bTimer[i] <= 0) {
+          // (a long effective step covers more than one half-second of heat)
+          const nb = 1 + Math.floor(-this.bTimer[i] / 0.5);
           this.bTimer[i] = 0.5;
           // the heat reaches the buildings next door too
           this.markBuildings(x + 0.5, y + 0.5, 1.4, cause);
           try {
-            g.civ?.damageArea?.(x + 0.5, y + 0.5, 0.9, 7 * f, 'fire');
+            this._heat(x, y, 7 * f * nb);
           } catch (err) {
             console.error('[fire] civ.damageArea', err);
           }
@@ -526,6 +537,41 @@ export class FireSim {
     }
   }
 
+  // The flames' heat on the buildings within 0.9 of a burning tile's centre:
+  // the same damage as civ.damageArea(x+0.5, y+0.5, 0.9, amount, 'fire'), but
+  // found through the building grid on the 3x3 tiles round it instead of a
+  // pass over every building on the map (thousands on a Vast map, once per
+  // burning building tile every half second).
+  _heat(x, y, amount) {
+    const C = this.game.civ;
+    if (!C) return;
+    if (!C._bById || !C.damageBuilding) return C.damageArea?.(x + 0.5, y + 0.5, 0.9, amount, 'fire');
+    const w = this.game.world;
+    const cx = x + 0.5,
+      cz = y + 0.5;
+    const seen = this._heatSeen || (this._heatSeen = []);
+    seen.length = 0;
+    for (let dy = -1; dy <= 1; dy++)
+      for (let dx = -1; dx <= 1; dx++) {
+        const tx = x + dx,
+          ty = y + dy;
+        if (tx < 0 || ty < 0 || tx >= w.w || ty >= w.h) continue;
+        const id = w.building[ty * w.w + tx];
+        if (id < 0 || seen.includes(id)) continue;
+        seen.push(id);
+        const b = C._bById.get(id);
+        if (!b || !b.alive) continue;
+        const nx = Math.min(b.tx + b.w, Math.max(b.tx, cx)),
+          nz = Math.min(b.ty + b.h, Math.max(b.ty, cz));
+        const d = Math.hypot(nx - cx, nz - cz);
+        if (d > 0.9) continue;
+        const k = 1 - (d / 0.9) * 0.6;
+        const mult = BUILDING_TYPES[b.type]?.wall ? 0.5 : 1;
+        b.burning = Math.max(b.burning || 0, 0.5);
+        C.damageBuilding(b, amount * k * mult * (C._bGuard ? C._bGuard(b, 'fire') : 1), 'fire');
+      }
+  }
+
   _burnOut(i, x, y, fuelFrac) {
     const g = this.game;
     this._recent = (this._recent || 0) + 1;
@@ -557,10 +603,14 @@ export class FireSim {
     const now = g.time.total;
     const burned = (this._burned ||= new Map());
     if (this.count && g.units?.list) {
+      const W = w.w,
+        H = w.h,
+        F = w.fire;
       for (const u of g.units.list) {
         if (!u.alive) continue;
-        const [tx, ty] = w.tileOf(u.x, u.z);
-        if (w.fire[w.idx(tx, ty)] <= 0.2) continue;
+        const tx = Math.floor(u.x),
+          ty = Math.floor(u.z);
+        if (tx < 0 || ty < 0 || tx >= W || ty >= H || F[ty * W + tx] <= 0.2) continue;
         try {
           g.units.addStatus?.(u, 'burning', 4);
         } catch (e) {

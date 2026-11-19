@@ -623,7 +623,10 @@ export class Fleet {
       }
     }
     const T = this._timers;
-    if ((T.ice += step) >= 1) {
+    // (sea ice comes and goes with the seasons: a look every few seconds is
+    // plenty, and each look that finds a change re-plans the water graph over
+    // the whole span of the changes, poles apart on a big map)
+    if ((T.ice += step) >= 4) {
       T.ice = 0;
       this._iceCheck();
     }
@@ -642,7 +645,9 @@ export class Fleet {
     // lying in port), gliding on along her heading in between; her mission
     // gets the time it missed. Fights, sinkings and hovercraft run every tick.
     const cam = g.cameraRig?.cur;
-    const lodR = cam ? Math.max(60, cam.dist * 0.9) * (g.settings?.powerSaver ? 0.7 : 1) : 60;
+    // (capped: zoomed out over a big map every hull is a few pixels long, so
+    // ships beyond a fixed radius take the cheap path even in the overview)
+    const lodR = cam ? Math.min(140, Math.max(60, cam.dist * 0.9)) * (g.settings?.powerSaver ? 0.7 : 1) : 60;
     const lodR2 = lodR * lodR;
     const gwt = this._gwTick;
     for (let i = 0; i < this.list.length; i++) {
@@ -715,22 +720,34 @@ export class Fleet {
     const w = this.world,
       M = this._ice;
     if (!M || M.length !== w.w * w.h) return;
-    let x0 = Infinity,
-      y0 = Infinity,
-      x1 = -1,
-      y1 = -1;
-    for (let y = Math.max(0, r.y0); y <= Math.min(w.h - 1, r.y1); y++)
+    // the northern and southern halves are patched separately: ice forming
+    // round both poles at once must not re-plan the whole ocean in between
+    const B = [
+      [Infinity, Infinity, -1, -1],
+      [Infinity, Infinity, -1, -1],
+    ];
+    const mid = w.h >> 1;
+    for (let y = Math.max(0, r.y0); y <= Math.min(w.h - 1, r.y1); y++) {
+      const b = B[y < mid ? 0 : 1];
       for (let x = Math.max(0, r.x0); x <= Math.min(w.w - 1, r.x1); x++) {
         const i = y * w.w + x;
         const ice = w.height[i] < SEA_LEVEL && w.type[i] === TILE.ICE ? 1 : 0;
         if (ice === M[i]) continue;
         M[i] = ice;
-        if (x < x0) x0 = x;
-        if (y < y0) y0 = y;
-        if (x > x1) x1 = x;
-        if (y > y1) y1 = y;
+        if (x < b[0]) b[0] = x;
+        if (y < b[1]) b[1] = y;
+        if (x > b[2]) b[2] = x;
+        if (y > b[3]) b[3] = y;
       }
-    if (x1 >= 0) this.nav.markDirty({ x0, y0, x1, y1 });
+    }
+    if (B[0][2] >= 0 && B[1][2] >= 0 && !this.nav.dirty) {
+      // patch the north now; the south waits for the usual debounced update
+      this.nav.markDirty({ x0: B[0][0], y0: B[0][1], x1: B[0][2], y1: B[0][3] });
+      const rr = this.nav.update();
+      if (rr) this._afterTerrain(rr);
+      B[0][2] = -1;
+    }
+    for (const b of B) if (b[2] >= 0) this.nav.markDirty({ x0: b[0], y0: b[1], x1: b[2], y1: b[3] });
   }
 
   _buildHash() {
