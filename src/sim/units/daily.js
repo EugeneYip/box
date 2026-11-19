@@ -52,6 +52,28 @@ const ACT_LABEL = {
   eat: 'Eating',
 };
 
+// Places of work in modern towns, where the jobless spend a working day out of sight.
+const WORK_LAB = {
+  factory: 'At work in the factory',
+  cannery: 'At work in the cannery',
+  powerstation: 'At work at the power station',
+  nuclear: 'At work at the power plant',
+  fusion: 'At work at the power plant',
+  skyscraper: 'At the office',
+  arcology: 'At the office',
+  controlspire: 'At the office',
+  campus: 'At work in the laboratory',
+  genelab: 'At work in the laboratory',
+  hospital: 'At work in the hospital',
+  clinic: 'At work in the clinic',
+  station: 'At work at the station',
+  airport: 'At work at the airport',
+  containerport: 'At work at the port',
+  greenhouse: 'At work in the greenhouse',
+  vertfarm: 'At work in the vertical farm',
+  waterworks: 'At work at the waterworks',
+};
+
 function frac(x) {
   return x - Math.floor(x);
 }
@@ -129,7 +151,12 @@ export function installDaily(Units) {
       library = null,
       hall = null,
       plaza = null,
+      park = null,
       houses = 0;
+    c.pasture = null;
+    c.well = null;
+    c.work = [];
+    c.homes = [];
     for (const b of v.buildings) {
       if (!b.alive || b.constructing || b.doorX == null) continue;
       const t = b.type;
@@ -141,7 +168,13 @@ export function installDaily(Units) {
       else if (t === 'hall') hall = c.hallB = b;
       else if (t === 'plaza') plaza = plaza || b;
       else if (t === 'barracks') c.barracks = c.barracks?.alive && c.barracks !== b ? c.barracks : b;
-      else if (t === 'house' || t === 'rowhouse' || t === 'apartment') houses++;
+      else if (t === 'house' || t === 'rowhouse' || t === 'apartment') {
+        houses++;
+        if (c.homes.length < 24) c.homes.push(b);
+      } else if (t === 'pasture') c.pasture = c.pasture || b;
+      else if (t === 'well' || t === 'qanat') c.well = c.well || b;
+      else if (t === 'park') park = park || b;
+      if (WORK_LAB[t] && c.work.length < 16) c.work.push(b);
     }
     const sq = plaza || market || hall;
     // the square: in front of the market (or the hall), a step out from the door
@@ -155,6 +188,17 @@ export function installDaily(Units) {
       sz = sq.doorZ + (dz / l) * 1.6;
     }
     c.sq = { x: sx, z: sz };
+    // the evening's squares: the main one, then the hall, a park and the temple
+    // when they stand apart (a big town's crowd spreads over them in groups)
+    c.sqs = [c.sq];
+    for (const b of [hall, park, temple]) {
+      if (!b || b === sq || c.sqs.length >= 1 + Math.floor((v.pop || 6) / 40)) continue;
+      const dx = b.doorX - (b.x ?? b.doorX),
+        dz = b.doorZ - (b.z ?? b.doorZ);
+      const l = Math.hypot(dx, dz) || 1;
+      const p = { x: b.doorX + (dx / l) * 1.6, z: b.doorZ + (dz / l) * 1.6 };
+      if (c.sqs.every((q) => (q.x - p.x) ** 2 + (q.z - p.z) ** 2 > 16)) c.sqs.push(p);
+    }
     c.market = market;
     c.temple = temple;
     c.docks = docks;
@@ -171,7 +215,7 @@ export function installDaily(Units) {
     // the harvest festival in early autumn
     const s = g.time.season ?? 1.5;
     c.harvest = c.fest && s >= 2 && s < 2.6;
-    c.groups = Math.max(1, Math.min(8, Math.round((v.pop || 6) / 5)));
+    c.groups = Math.max(1, Math.min(8 * c.sqs.length, Math.round((v.pop || 6) / 5)));
     return c;
   };
 
@@ -282,6 +326,15 @@ export function installDaily(Units) {
       if (u._dl) this._dlEnd(u);
       return false;
     }
+    // bedtime, yet not on the way home (a nap outdoors just ended): none of the
+    // day's work or play this think (it used to start a chore, a game or school
+    // in the small hours); the walk home follows from needs.js
+    if (u.job !== 'soldier' && !d.robot && this.game.settings?.dayNight && this._bedtime(u)) {
+      if (u._dl) this._dlEnd(u);
+      this.stop(u);
+      u.state = 'idle';
+      return true;
+    }
     // children grow up while they play (the village brain ages them, see civ/brain.js)
     const child = u.age < ADULT;
     if (child && u._dl && !u.flags?.frozenAge && !d.frozenAge) u.age += ((elapsed || 0) / 30) * 1.7;
@@ -291,7 +344,7 @@ export function installDaily(Units) {
       this._dlEnd(u);
       // after a chore the brain looks for real work this think; if it has
       // none, the next think finds another chore (no idle gap between them)
-      u._dlNext = was === 'chore' || was === 'school' ? now + 0.5 : now + (child ? 1.5 : 4) + hash(u.id, (now * 7) | 0) * 4;
+      u._dlNext = was === 'chore' || was === 'school' || (child && was !== 'goto') ? now + 0.5 : now + (child ? 1.5 : 4) + hash(u.id, (now * 7) | 0) * 4;
       return false;
     }
     if (now < u._dlNext) return false;
@@ -414,8 +467,15 @@ export function installDaily(Units) {
       case 'eat':
         if (u.state !== 'eat') u.state = 'eat';
         return true;
+      case 'guard':
+        // a guard's spell ends at bedtime (the night watch takes over) or at dawn
+        if (dl.nt != null && this._bedtime(u) !== dl.nt) return false;
+        if (dl.fx != null) u.heading = Math.atan2(dl.fx - u.x, dl.fz - u.z);
+        if (u.state !== 'idle' && !u.target) u.state = 'idle';
+        return true;
       case 'chore':
       case 'drill':
+        if (dl.k === 'drill' && dl.nt != null && this._bedtime(u) !== dl.nt) return false;
         if (u.state !== 'work') u.state = 'work';
         u.data.workAnim = dl.anim;
         if (dl.fx != null) u.heading = Math.atan2(dl.fx - u.x, dl.fz - u.z);
@@ -511,7 +571,9 @@ export function installDaily(Units) {
         this._dlStart(u, 'school', 20 + rng() * 25, { x: school.doorX, z: school.doorZ, lab: 'At school', go: 'Walking to school', free: true });
         return true;
       }
-      if (u.age >= 4 && rng() < 0.8) return this._dlPlay(u, v, pl, 12 + rng() * 14, u.x, u.z);
+      // the older ones help lightly (water, the hens, the animals), never in the fields
+      if (u.age >= 8 && h < 15.5 && rng() < 0.3 && this._dlHelp(u, v, pl, home, rng)) return true;
+      if (u.age >= 4) return this._dlPlay(u, v, pl, 12 + rng() * 14, u.x, u.z);
       return false;
     }
     // by day: rulers think, the idle shop and wait, workers take a short break
@@ -545,9 +607,20 @@ export function installDaily(Units) {
       if (h >= wake + 1.4 && h < 16.6 && u.state === 'idle' && !u.moving && !d.civ?.task) return this._dlChore(u, v, pl, rng);
       return false;
     }
+    if (soldier) {
+      // off duty with no barracks in town: wood while it is short, a post to
+      // guard or a drill on the square (the brain), a rest at home, an errand
+      if (v.wood < Math.max(15, (v.woodCap || 90) * 0.2)) return false;
+      const r0 = rng();
+      if (r0 < 0.3 && home) {
+        this._dlStart(u, 'inside', 18 + rng() * 18, { x: hx, z: hz, free: true, lab: 'Off duty at home', go: 'Walking home', act: null });
+        return true;
+      }
+      if (r0 < 0.6) return false;
+    }
     // the jobless and the off-duty: errands about town
     const r = rng();
-    if (pl.market && r < 0.28) {
+    if (pl.market && r < 0.28 && this._dlRoom(pl.market, 22)) {
       const m = pl.market;
       const a = rng() * Math.PI * 2;
       const modern = pl.era >= 5;
@@ -578,7 +651,75 @@ export function installDaily(Units) {
         return true;
       }
     }
+    // the rest of a jobless day away from the square (a big town's idle used
+    // to mill about the hall in a crowd of hundreds): busy at home, a visit,
+    // and in modern towns a working day at the office, the factory or the lab
+    if (!soldier) return this._dlAway(u, v, pl, home, rng);
     return false;
+  };
+
+  // Not too many standing at one place already (a market crowd of a few dozen at most).
+  P._dlRoom = function (b, max) {
+    let n = 0;
+    this.forEachNear(b.doorX, b.doorZ, 3.2, (o) => {
+      if (o._dl && !o.moving) n++;
+    });
+    return n < max;
+  };
+
+  P._dlAway = function (u, v, pl, home, rng) {
+    let b = null,
+      lab,
+      go;
+    const r = rng();
+    if (pl.era >= 4 && pl.work.length && r < 0.65) {
+      b = pl.work[(u.id + (this.game.time.day | 0)) % pl.work.length];
+      lab = WORK_LAB[b.type] || 'At work';
+      go = 'Walking to work';
+    } else if (r < 0.8 && pl.homes.length > 1) {
+      b = pl.homes[(rng() * pl.homes.length) | 0];
+      if (b === home) b = null;
+      lab = 'Visiting a neighbor';
+      go = 'Walking to a neighbor';
+    }
+    if (!b) {
+      b = home;
+      lab = rng() < 0.5 ? 'Doing the housework' : 'Busy at home';
+      go = 'Walking home';
+    }
+    if (!b) return false;
+    this._dlStart(u, 'inside', 22 + rng() * 26, { x: b.doorX, z: b.doorZ, free: true, lab, go, act: null });
+    return true;
+  };
+
+  // Light help for the older children: water from the well, the hens fed, the
+  // town's sheep and goats minded on the pasture (never work in the fields).
+  P._dlHelp = function (u, v, pl, home, rng) {
+    const r = rng();
+    const near = (b, s = 1.2) => ({ x: b.doorX + (rng() - 0.5) * s * 2, z: b.doorZ + (rng() - 0.5) * s * 2, fx: b.x ?? b.doorX, fz: b.z ?? b.doorZ });
+    let at, lab, go, anim = null, act = null;
+    if (r < 0.4 && pl.pasture && pl.era < 6) {
+      at = near(pl.pasture, 1.6);
+      lab = 'Minding the animals';
+      go = 'Walking to the pasture';
+      act = 'mind';
+    } else if (r < 0.7 && pl.well && pl.era < 5) {
+      at = near(pl.well, 0.7);
+      lab = 'Drawing water at the well';
+      go = 'Fetching water';
+      anim = 'harvest';
+    } else if (home) {
+      at = near(home);
+      lab = pl.era >= 5 ? 'Watering the garden' : 'Feeding the hens';
+      go = 'Walking home';
+      anim = 'harvest';
+    } else return false;
+    const dl = this._dlStart(u, anim ? 'chore' : 'help', 12 + rng() * 12, { x: at.x, z: at.z, fx: at.fx, fz: at.fz, lab, go, act });
+    if (anim) {
+      dl.anim = anim;
+      if (dl.ph === 'do') this._dlArrive(u, dl);
+    }
+    return true;
   };
 
   // A chore of the person's own trade while the village brain has no task for
@@ -753,9 +894,11 @@ export function installDaily(Units) {
     const ng = pl.groups;
     const gi = Math.floor(hash(u.id, day) * ng);
     const ga = (gi / ng) * Math.PI * 2 + hash(v.id, day) * 3;
-    const gr = ng === 1 ? 0 : 1.1 + (gi % 3) * 0.75;
-    const gx = pl.sq.x + Math.sin(ga) * gr,
-      gz = pl.sq.z + Math.cos(ga) * gr;
+    const sq = pl.sqs[gi % pl.sqs.length];
+    const gq = Math.floor(gi / pl.sqs.length);
+    const gr = ng <= pl.sqs.length ? 0 : 1.1 + (gq % 3) * 0.75;
+    const gx = sq.x + Math.sin(ga) * gr,
+      gz = sq.z + Math.cos(ga) * gr;
     const a = hash(u.id, day + 17) * Math.PI * 2;
     const rr = 0.3 + hash(u.id, 23) * 0.12;
     const dl = this._dlStart(u, 'social', Math.min(40, Math.max(8, dur)), { x: gx + Math.sin(a) * rr, z: gz + Math.cos(a) * rr, fx: gx, fz: gz, g: v.id * 16 + gi + 1, go: pl.market ? 'Walking to the market' : 'Walking to the square', act: 'talk' });
@@ -815,10 +958,15 @@ export function installDaily(Units) {
   // Purposeful walking under the village brain (distinct from wandering).
   P._walkLabel = function (u) {
     if (u.species !== 'human' || !u.moving) return null;
-    if (u.carry) return `Carrying ${u.carry.type} to the store`;
+    const now = this.game.time.total;
+    if (u.job === 'soldier' && u._bedT > now - 6) return u._bedB ? 'Walking to the barracks' : 'Walking home';
+    // (at bedtime the walk home comes first: a load still in hand is not
+    // "carried to the store" through the night)
     const d = u.data;
     if (d.civ?.army != null) return 'Marching';
-    if (u._homeT > this.game.time.total - 30 && this._bedtimeCheap(u)) return 'Walking home';
+    const tk = d.civ?.task?.kind;
+    if (u.job !== 'soldier' && tk !== 'migrate' && tk !== 'arrive' && !d.robot && (u._homeT > now - 30 || this.game.settings?.dayNight) && this._bedtimeCheap(u)) return 'Walking home';
+    if (u.carry) return `Carrying ${u.carry.type} to the store`;
     switch (u.job) {
       case 'farmer':
         return 'Walking to the fields';
@@ -831,7 +979,7 @@ export function installDaily(Units) {
       case 'fisher':
         return 'Walking to the shore';
       case 'soldier':
-        return 'On patrol';
+        return d.civ?.task?.kind === 'chop' ? 'Walking to the woods' : 'On patrol';
       case 'child':
         return u.state === 'run' ? 'Running about' : 'Walking';
       case 'king':
