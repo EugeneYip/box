@@ -203,7 +203,7 @@ export class Editor {
         this.applied(`Renamed to ${v}`, () => civ.renameKingdom(id, prev));
         return true;
       },
-      { 'aria-label': 'Kingdom name', class: 'ws-input ws-ename' },
+      { 'aria-label': 'Realm name', class: 'ws-input ws-ename' },
     );
     box.append(this.section('Name', [nameIn, okName ? null : this.missing()]));
 
@@ -439,7 +439,7 @@ export class Editor {
       btn.textContent = isCap ? 'The capital' : 'Make capital';
       btn.disabled = !ok || isCap || v.kingdom == null;
     });
-    return el('div', { class: 'ws-erow' + (ok ? '' : ' is-disabled') }, el('span', { class: 'ws-erow__txt' }, el('b', { text: 'Capital' }), el('small', { text: 'Seat of its kingdom' })), btn);
+    return el('div', { class: 'ws-erow' + (ok ? '' : ' is-disabled') }, el('span', { class: 'ws-erow__txt' }, el('b', { text: 'Capital' }), el('small', { text: 'Seat of its realm' })), btn);
   }
 
   // ---------------------------------------------------------------- creature

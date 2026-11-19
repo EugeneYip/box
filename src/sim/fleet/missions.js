@@ -30,6 +30,7 @@ export const missions = {
       o = { ...o, kind: KINDS[o.kind].role };
     }
     let kind = KINDS[o.kind]?.cls === 'sea' ? o.kind : cargo.settlers || cargo.army ? 'transport' : 'cog';
+    if (!model && (kind === 'cog' || kind === 'galley')) model = this.voyageModel(kid, kind);
     if (kind === 'galley' && !this.law('fleetNaval')) return refuse('naval war is forbidden');
     const h = this.resolveHarbour(o.from, kid);
     if (!h) return refuse('no harbor');
