@@ -194,6 +194,7 @@ export class Game {
   }
   resetLaws() {
     Object.assign(this.laws, defaultLaws());
+    if (this.params.region) this.laws.worldWrap = false; // a regional map never wraps
     this.settings.dayNight = this.laws.skyDayNight;
     this.settings.autoWeather = this.laws.skyWeather;
     this._setWrap(this.laws.worldWrap);

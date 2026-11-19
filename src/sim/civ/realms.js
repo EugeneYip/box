@@ -185,6 +185,15 @@ export const realms = {
     }
 
     this._gapIgnoreMust = false;
+    // the seats of the countries seeded here and the cities that must exist
+    // are held firmly through the first century (politics.js _keyHeld): by
+    // Year 100 on Vast North Korea sat on Borneo, Russia at Voronezh while
+    // another realm held Moscow, and Seoul and Pyongyang were gone
+    for (const e of seated) {
+      const c = this.villages[e.k.capital];
+      if (c?.alive) c.keyCity = e.k.id;
+    }
+    for (const v of this.villages) if (v.alive && (v._must || v._oldSeat)) v.keyCity = v.kingdom;
     for (const v of this.villages) delete v._must, delete v._oldSeat;
     this._kingdomTotals?.(); // realm cards show their people from the first frame
     return true;
@@ -628,6 +637,11 @@ export const realms = {
     const H = this.kingdoms[opts.home];
     if (H && H.realm >= 0 && data[H.realm] && !living.has(data[H.realm].name)) return real(H.realm);
     if (d >= 0 && data[d] && !living.has(data[d].name)) return real(d);
+    // a real country whose towns lie near on the same land, and that no
+    // living realm carries, before a realm named after one city (a rebel
+    // "Anchorage" read oddly on the World Map)
+    const near = this._freeCountryNear(opts.x, opts.z, living);
+    if (near >= 0) return real(near);
     if (base && !living.has(base)) return { name: base, realm: -1, placesFrom: d };
     let best = null,
       bd = Infinity;
@@ -650,6 +664,61 @@ export const realms = {
     if (!this._realMapOn() || v.home == null) return null;
     const H = this.kingdoms[v.home];
     return H && H.alive && H.villages.length && H.realm >= 0 ? H : null;
+  },
+
+  // A seat of a country seeded at the start, or a city that must exist
+  // (docs/REGIONS.md section 4), still held by that country in the map's
+  // first century: it is not razed, merged away or roused to rebellion, and a
+  // siege of it ends in a peace bought by the besieged (politics.js _capture).
+  _keyHeld(v) {
+    if (v?.keyCity == null || v.kingdom !== v.keyCity || !v.alive) return false;
+    if (this.game.time.total >= YEAR * 100) return false;
+    const k = this.kingdoms[v.keyCity];
+    return !!(k?.alive && k.realm >= 0);
+  },
+
+  // Does a town stand in its real country's own land? (the place data's
+  // realm nearest the town is the country's own). A real country moves its
+  // seat, and its court flees, only within its own land while it holds any
+  // of it: North Korea's capital moved to a colony on Borneo.
+  _inOwnLand(k, v) {
+    if (!(k?.realm >= 0) || !v || !this._realMapOn()) return true;
+    return this._placeRealmAt(v.cx, v.cz, v.name) === k.realm;
+  },
+
+  // The place-data realm (index) nearest a tile on the same land, within a
+  // country's reach, whose name no living realm carries; -1 when none.
+  _freeCountryNear(x, z, living) {
+    const data = this._realmData() || [];
+    const w = this.world;
+    if (x == null || !this._places) return -1;
+    const at = (px, pz) => {
+      const ix = Math.floor(px),
+        iz = Math.floor(pz);
+      return w.inBounds(ix, iz) ? this.landId[iz * w.w + ix] : -1;
+    };
+    const land = at(x, z);
+    const R = this._placeReach.own;
+    let best = -1,
+      bd = Infinity;
+    for (const p of this._places) {
+      const name = data[p.realm]?.name;
+      if (!name || living.has(name) || data[p.realm].seed === false) continue;
+      const d = Math.hypot(p.x - x, p.z - z);
+      if (d >= R || d >= bd || at(p.x, p.z) !== land) continue;
+      bd = d;
+      best = p.realm;
+    }
+    return best;
+  },
+
+  // The living real country whose land a town stands in (World Map), or null.
+  _landRealm(v) {
+    if (!this._realMapOn() || !v) return null;
+    const idx = this._placeRealmAt(v.cx, v.cz, v.name);
+    if (idx < 0) return null;
+    for (const k of this.kingdoms) if (k.alive && k.villages.length && k.realm === idx) return k;
+    return null;
   },
 
   // A real realm whose last town falls is not wiped from the map at once: the

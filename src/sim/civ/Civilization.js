@@ -73,17 +73,21 @@ function monumentTitle(type, style, variant) {
 // people, building and village budgets grow by BUDGET (people 1.6x, villages
 // 1.8x, buildings 1.7x per map area).
 const BUDGET = { humans: 1.6, buildings: 1.7, villages: 1.8, start: 1.34 };
+const BIG_EXP = 0.25,
+  BIG_MAX = 1.4;
 function budgets(w, h, area = w * h) {
   const a = area / (256 * 256);
-  // (round 15) a big map holds more people with its land, gently: the World
-  // Map (Vast) reached its cap by Year 100 with barely more people than a
-  // Medium map on an eighth of the land; +30% at most, for the Vast tick
-  const big = a > 1 ? Math.min(1.3, Math.pow(a, 0.13)) : 1;
+  // (round 15) a big map holds more people, villages and buildings with its
+  // land, moderately (the fourth root of the area beyond a Medium map, at
+  // most +40%, for the Vast tick): the World Map (Vast, about 5x a Medium
+  // map's habitable land) reached its cap of 1440 by Year 100, barely more
+  // people than a Medium map
+  const big = a > 1 ? Math.min(BIG_MAX, Math.pow(a, BIG_EXP)) : 1;
   const humans = Math.round(Math.min(900, 850 * Math.pow(a, 0.04)) * big * BUDGET.humans);
   return {
     area: a,
     humans,
-    buildings: Math.round(Math.min(920, 300 * Math.pow(a, 0.8)) * BUDGET.buildings),
+    buildings: Math.round(Math.min(920 * big, 300 * Math.pow(a, 0.8)) * BUDGET.buildings),
     // the people budget hardly grows with the map, so neither may the number
     // of villages sharing it: about 23 people a village on a Medium map
     // (the World Map had 55 villages of 15 and no cities)
@@ -475,10 +479,15 @@ export class Civilization {
   }
 
   seedInitial(n = 3) {
-    // a World Law that holds research back, kept from the world before in
-    // this session, is said aloud rather than silently carried over
+    // "Latest era" is kept with one world only (laws.js perWorld): a new
+    // world made in the same page starts at Future again, and says so (a cap
+    // of Hearth carried over silently froze research on a fresh seed)
     const cap = Math.round(this.law('civEraCap', LAST_ERA));
-    if (cap < LAST_ERA) this.game.notify?.(`World Law "Latest era" holds this world at the ${ERAS[cap]?.name || 'Hearth'} era`, 'info');
+    if (cap < LAST_ERA) {
+      if (this.game.setLaw) this.game.setLaw('civEraCap', LAST_ERA);
+      else if (this.game.laws) this.game.laws.civEraCap = LAST_ERA;
+      this.game.notify?.(`World Law "Latest era" was ${ERAS[cap]?.name || 'Hearth'} on the last world; this new world may reach ${ERAS[LAST_ERA]?.name || 'Future'}`, 'info');
+    }
     // the default of three starting villages grows with the map
     const explicit = this.game.params?.raw?.has?.('civs');
     if (!explicit && (n == null || n === 3)) n = this.budget.startVillages;
@@ -997,7 +1006,7 @@ export class Civilization {
     // world is full, and a dozen such remnants held the World Map's village
     // places while its towns stayed small); a village the player has named or
     // given policies is left alone
-    if (fullWorld && pop <= 6 && now - v.founded > YEAR * 15 && this._aliveVillageCount() >= this.budget.villages * 0.8 && this.kingdoms[v.kingdom]?.capital !== v.id && !(v.colony && now - v.founded < YEAR * 30) && !v.player && !(v.policy && Object.keys(v.policy).length) && this.rng.chance(0.012 * dt)) {
+    if (fullWorld && pop <= 6 && now - v.founded > YEAR * 15 && !this._keyHeld?.(v) && this._aliveVillageCount() >= this.budget.villages * 0.8 && this.kingdoms[v.kingdom]?.capital !== v.id && !(v.colony && now - v.founded < YEAR * 30) && !v.player && !(v.policy && Object.keys(v.policy).length) && this.rng.chance(0.012 * dt)) {
       let to = null,
         td = 70 * Math.sqrt(this.budget.area);
       for (const vid of this.kingdoms[v.kingdom]?.villages || []) {
