@@ -269,7 +269,8 @@ export class Toolbar {
     const next = g.activePower === p ? null : p;
     g.selectPower(next);
     g.audio?.play?.(next ? 'ui-click' : 'ui-click', { volume: 0.6 });
-    if (next && this.isDrawer()) setTimeout(() => this.toggleDrawer(false), 140);
+    // phones (portrait and landscape): the drawer closes as soon as a power is picked
+    if (next && this.isDrawer()) this.toggleDrawer(false);
     if (next && this.ui.root.classList.contains('is-touch')) {
       clearTimeout(this._touchTip);
       setTimeout(() => {
