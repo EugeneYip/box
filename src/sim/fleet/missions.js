@@ -813,10 +813,21 @@ export const missions = {
     const kid = k.id;
     const civ = this.game.civ;
     const seafaring = civ.hasCultureTrait?.(k.culture, 'Seafaring');
+    // (the fishing boats by home jetty, in one pass over the vessels instead
+    // of two per jetty; a boat launched below starts idle, so it is never
+    // sent out in the same beat and need not be added)
+    const byH = new Map();
+    for (const v of this.list) {
+      if (!v.alive || v.role !== 'fishing') continue;
+      const a = byH.get(v.harbour);
+      if (a) a.push(v);
+      else byH.set(v.harbour, [v]);
+    }
     for (const h of this.harbours(kid)) {
       const want = 2 + (h.level >= 2 ? 1 : 0) + (seafaring ? 1 : 0);
+      const boats = byH.get(h.id) || [];
       let have = 0;
-      for (const v of this.list) if (v.alive && v.role === 'fishing' && v.harbour === h.id) have++;
+      for (const v of boats) if (v.alive) have++;
       const now = this.game.time.total;
       if (have < want && !this.blockaded(h) && now - (this._boatT?.get(h.id) ?? -999) > 20 && this.fishCount() < this.budget.fishing && this.count(kid, 'fishing') < this.cap(kid, 'fishing')) {
         (this._boatT || (this._boatT = new Map())).set(h.id, now);
@@ -825,7 +836,7 @@ export const missions = {
       }
       if (this.blockaded(h) || this.storm() > 0.4) continue;
       if (this.isNight() && !this.hasTech(kid, 'astronomy') && this.game.settings?.dayNight !== false) continue;
-      for (const v of this.list) {
+      for (const v of boats) {
         if (!v.alive || v.role !== 'fishing' || v.harbour !== h.id || v.state !== 'moored' || v.layup) continue;
         if (v.idleT < 4 + v.seed * 6) continue;
         const spot = this._fishingSpot(h);

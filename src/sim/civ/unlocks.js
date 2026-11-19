@@ -83,7 +83,17 @@ export const unlocks = {
     const pop = v.pop;
     const town = v.tier >= 1;
     const isCap = K.capital === v.id;
-    const realmHas = (type) => this.buildings.some((b) => b.alive && b.kingdom === kid && b.type === type);
+    // (one pass over the map's buildings for this plan instead of one per
+    // question; each type is asked about once, so what this plan builds in
+    // between never changes an answer)
+    let realmTypes = null;
+    const realmHas = (type) => {
+      if (!realmTypes) {
+        realmTypes = new Set();
+        for (const b of this.buildings) if (b.alive && b.kingdom === kid) realmTypes.add(b.type);
+      }
+      return realmTypes.has(type);
+    };
     const tight = crowded > 0.97 && !town;
     if (tight) return;
     if (room() && has('agriculture') && v.fieldCount >= 14 && count('barn') === 0 && v.wood > 24) build('barn', () => this.placeAlongRoad(v, 'barn', this._bias(v, 'granary')));
@@ -262,6 +272,7 @@ export const unlocks = {
         b.groundMin = Math.min(w.height[p.i], SEA_LEVEL - 0.5);
         if (w.building[p.i] === b.id) w.building[p.i] = -1; // the deck is walkable
         this.use[p.i] = USE.ROAD;
+        this._wcDirty = true; // (a new crossing for the walkers' map: brain.js _walkComp)
         this._completeInstantly?.(b);
         spans++;
         continue;

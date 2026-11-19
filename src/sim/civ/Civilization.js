@@ -180,6 +180,7 @@ export class Civilization {
     this.relations.clear();
     this.__walkCost = null;
     this.__roadCost = null;
+    this._wcDirty = true; // (the walkers' map of pieces: brain.js _walkComp)
     this._init();
     this.version++;
     this.stateVersion++;
@@ -725,8 +726,9 @@ export class Civilization {
       this._buildingsTick(T.b);
       T.b = 0;
     }
-    // (bigger maps refresh territory less often: the fill grows with the map)
-    if ((T.terr += step) >= 2 * Math.max(1, Math.sqrt(this.world.size / 65536))) {
+    // (bigger maps refresh territory less often: the fill grows with the map,
+    // about as fast as its area; at most every 12 s, under half a year)
+    if ((T.terr += step) >= 2 * Math.min(6, Math.max(1, this.world.size / 65536))) {
       T.terr = 0;
       // the full flood fill is costly on big maps: only when the realms changed
       this._territoryIfChanged();
@@ -1731,10 +1733,19 @@ export class Civilization {
     let sites = 0;
     for (const b of v.buildings) if (b.alive && (b.constructing || b.upgrading) && !BUILDING_TYPES[b.type].wall) sites++;
     const maxSites = 1 + Math.floor(v.adults / 7);
+    // (the town's buildings by type, counted once and again only after a
+    // building is added, lost or changed: the plan asks dozens of times)
+    let cnt = null,
+      cntN = -1,
+      cntV = -1;
     const count = (type) => {
-      let c = 0;
-      for (const b of v.buildings) if (b.alive && b.type === type) c++;
-      return c;
+      if (!cnt || cntN !== v.buildings.length || cntV !== this.version) {
+        cnt = new Map();
+        cntN = v.buildings.length;
+        cntV = this.version;
+        for (const b of v.buildings) if (b.alive) cnt.set(b.type, (cnt.get(b.type) || 0) + 1);
+      }
+      return cnt.get(type) || 0;
     };
     let actions = 0;
     const room = () => sites < maxSites && actions < 2 * (this._planMul || 1);
@@ -2296,6 +2307,20 @@ export class Civilization {
   }
 
   _onHeight(r) {
+    // new land where the walkers' map of pieces had water (brain.js
+    // _walkComp): rebuilt before it is next asked (a look over the changed
+    // rectangle costs far less than rebuilding the map at every edit)
+    const L = this._wcl;
+    if (L && !this._wcDirty) {
+      const w = this.world,
+        H = w.height;
+      for (let y = r.y0; y <= r.y1 && !this._wcDirty; y++)
+        for (let x = r.x0, i = y * w.w + r.x0; x <= r.x1; x++, i++)
+          if (L[i] === -1 && H[i] >= SEA_LEVEL) {
+            this._wcDirty = true;
+            break;
+          }
+    }
     if (this._flattening) return;
     this._terrDirty = true;
     const w = this.world;

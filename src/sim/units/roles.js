@@ -556,7 +556,9 @@ export function installRoles(Units) {
         gy = Math.min(w.h - 1, Math.max(0, Math.floor(z)));
       let p = null;
       try {
-        p = civPath(w, sx, sy, gx, gy, cost, 3000, 0.5);
+        // (a leg ending across the water from all the rider could reach can
+        // only come back empty: Civ's _cutOff says so without the search)
+        if (!g.civ._cutOff?.(sx, sy, gx, gy)) p = civPath(w, sx, sy, gx, gy, cost, 3000, 0.5);
       } catch (err) {
         p = null;
       }
@@ -643,6 +645,7 @@ export function installRoles(Units) {
     if (u.combat) this.disengage(u);
     this.stop(u);
     u.data.aboard = id;
+    this._aboardV = (this._aboardV | 0) + 1;
     u._away = true;
     u._aboardSince = this.game.time.total;
     u.sleeping = false;
@@ -681,9 +684,27 @@ export function installRoles(Units) {
     this.game.events.emit('unit:disembark', { unit: u, vessel: id });
     return true;
   };
+  // (the fleet asks about many vessels a tick: who is aboard what is gathered
+  // in one pass over the unit list per tick, or again after anyone boards,
+  // instead of one pass per question; the same people in the same order)
   P.aboard = function (vesselId) {
+    let ix = this._aboardIx;
+    if (!ix || this._aboardIxT !== this._tickN || this._aboardIxV !== (this._aboardV | 0) || this._aboardIxL !== this.list) {
+      ix = this._aboardIx = new Map();
+      this._aboardIxT = this._tickN;
+      this._aboardIxV = this._aboardV | 0;
+      this._aboardIxL = this.list;
+      for (const u of this.list) {
+        const id = u.data.aboard;
+        if (id == null || !u.alive) continue;
+        const a = ix.get(id);
+        if (a) a.push(u);
+        else ix.set(id, [u]);
+      }
+    }
+    const a = ix.get(vesselId);
     const out = [];
-    for (const u of this.list) if (u.alive && u.data.aboard === vesselId) out.push(u);
+    if (a) for (const u of a) if (u.alive && u.data.aboard === vesselId) out.push(u);
     return out;
   };
   // Per tick for someone aboard: ride along with the vessel; step ashore if it is gone.

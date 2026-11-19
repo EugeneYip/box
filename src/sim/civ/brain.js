@@ -244,6 +244,7 @@ export const brain = {
     if (now - (this._pathCacheT ?? -1e9) > 12 || PC.size > 6000 || this._pathCacheV !== this.version) {
       if (now - (this._pathCacheT ?? -1e9) > 12 || PC.size > 6000 || now - (this._pathCacheVT ?? -1e9) > 3) {
         PC.clear();
+        this._trunks?.clear();
         this._pathCacheT = now;
         this._pathCacheV = this.version;
         this._pathCacheVT = now;
@@ -262,11 +263,35 @@ export const brain = {
       u.target = { x, z };
       return true;
     }
+    // a long walk toward a place others are already headed (an army's rally
+    // or its column, settlers to their site, newcomers to the hall): join a
+    // route found for one of them in the last few seconds instead of a fresh
+    // search across the country (short searches onto and off that route)
+    if (long && this._pathBudget > 0) {
+      const sp = this._joinTrunk(w.clampTx(sx), w.clampTy(sy), gx, gy);
+      if (sp) {
+        this._pathBudget--;
+        PC.set(key, sp);
+        u.path = sp;
+        u.pathIdx = 0;
+        u.target = { x, z };
+        return true;
+      }
+    }
+    // a goal across the water from every tile the walker could reach: the
+    // search would only come back empty (after up to 32,000 tiles)
+    if (this._cutOff(w.clampTx(sx), w.clampTy(sy), gx, gy)) {
+      PC.set(key, null);
+      u.target = null;
+      u.path = null;
+      return false;
+    }
     if (long ? this._longBudget <= 0 : this._pathBudget <= 0) return WAIT;
     if (long) this._longBudget--;
     else this._pathBudget--;
     const p = civPath(w, w.clampTx(sx), w.clampTy(sy), gx, gy, this._walkCost(), long ? 32000 : 3200, 0.5);
     PC.set(key, p || null);
+    if (long && p && p.length > 24 && p[p.length - 1] === gy * w.w + gx) this._addTrunk(w.clampTx(sx), w.clampTy(sy), gx, gy, p);
     if (!p) {
       u.target = null;
       u.path = null;
@@ -276,6 +301,154 @@ export const brain = {
     u.pathIdx = 0;
     u.target = { x, z };
     return true;
+  },
+
+  // Pieces of the map a walker could ever cross between, at their most
+  // generous: land and road over water, 4-connected (a walk never cuts a
+  // blocked corner), with buildings, rock, steep ground and thickets left
+  // open. Built again after new land or a new bridge appears (_wcDirty, set
+  // by Civilization._onHeight and the bridge builder) and every 120 s.
+  _walkComp() {
+    const w = this.world;
+    const now = this.game.time.total;
+    let L = this._wcl;
+    if (L && L.length === w.size && !this._wcDirty && now >= this._wcT && now - this._wcT < 120) return L;
+    if (!L || L.length !== w.size) L = this._wcl = new Int32Array(w.size);
+    this._wcDirty = false;
+    this._wcT = now;
+    const W = w.w,
+      H = w.h,
+      size = w.size;
+    const hh = w.height,
+      use = this.use,
+      ROAD = USE.ROAD;
+    L.fill(-1);
+    const st = this._wcStack && this._wcStack.length === size ? this._wcStack : (this._wcStack = new Int32Array(size));
+    let next = 0;
+    for (let s = 0; s < size; s++) {
+      if (L[s] !== -1 || (hh[s] < SEA_LEVEL && use[s] !== ROAD)) continue;
+      let sp = 0;
+      st[sp++] = s;
+      L[s] = next;
+      while (sp) {
+        const i = st[--sp];
+        const x = i % W;
+        if (x > 0 && L[i - 1] === -1 && (hh[i - 1] >= SEA_LEVEL || use[i - 1] === ROAD)) (L[i - 1] = next), (st[sp++] = i - 1);
+        if (x < W - 1 && L[i + 1] === -1 && (hh[i + 1] >= SEA_LEVEL || use[i + 1] === ROAD)) (L[i + 1] = next), (st[sp++] = i + 1);
+        if (i >= W && L[i - W] === -1 && (hh[i - W] >= SEA_LEVEL || use[i - W] === ROAD)) (L[i - W] = next), (st[sp++] = i - W);
+        if (i < size - W && L[i + W] === -1 && (hh[i + W] >= SEA_LEVEL || use[i + W] === ROAD)) (L[i + W] = next), (st[sp++] = i + W);
+      }
+      next++;
+    }
+    void H;
+    return L;
+  },
+
+  // True when a civPath search from (sx,sy) to (gx,gy) can only fail: no tile
+  // the walker could reach lies within six tiles of the goal (the most a
+  // search may stop short and still give a path). Never true for a walk that
+  // could succeed.
+  _cutOff(sx, sy, gx, gy) {
+    const dx = Math.abs(sx - gx),
+      dy = Math.abs(sy - gy);
+    if (Math.max(dx, dy) + (Math.SQRT2 - 1) * Math.min(dx, dy) <= 6.5) return false;
+    const w = this.world;
+    const W = w.w,
+      H = w.h;
+    const L = this._walkComp();
+    // the walker's own pieces: its tile and the eight round it (a walker on
+    // a jetty or in the shallows steps off onto any of them)
+    let a = -1,
+      b = -1,
+      c = -1,
+      n = 0;
+    for (let oy = -1; oy <= 1; oy++)
+      for (let ox = -1; ox <= 1; ox++) {
+        const x = sx + ox,
+          y = sy + oy;
+        if (x < 0 || y < 0 || x >= W || y >= H) continue;
+        const l = L[y * W + x];
+        if (l < 0 || l === a || l === b || l === c) continue;
+        if (n === 0) a = l;
+        else if (n === 1) b = l;
+        else if (n === 2) c = l;
+        else return false; // (more pieces than kept: no verdict)
+        n++;
+      }
+    if (!n) return false;
+    const x0 = Math.max(0, gx - 6),
+      x1 = Math.min(W - 1, gx + 6),
+      y0 = Math.max(0, gy - 6),
+      y1 = Math.min(H - 1, gy + 6);
+    for (let y = y0; y <= y1; y++)
+      for (let x = x0, i = y * W + x0; x <= x1; x++, i++) {
+        const l = L[i];
+        if (l >= 0 && (l === a || l === b || l === c)) return false;
+      }
+    return true;
+  },
+
+  // Long routes found in the last few seconds, by the 8-tile block of their
+  // goal (cleared with the path cache).
+  _addTrunk(sx, sy, gx, gy, p) {
+    const T = this._trunks || (this._trunks = new Map());
+    const k = (gy >> 3) * 4096 + (gx >> 3);
+    let a = T.get(k);
+    if (!a) T.set(k, (a = []));
+    if (a.length >= 6) a.shift();
+    a.push(p);
+  },
+
+  // A route for a long walk from (sx,sy) to (gx,gy) along one found for
+  // someone else: the walker steps onto it at its tile nearest them (within
+  // six tiles), follows it, and steps off to their own goal (within six tiles
+  // of its end). Null when no such route is at hand.
+  _joinTrunk(sx, sy, gx, gy) {
+    const T = this._trunks;
+    if (!T || !T.size) return null;
+    const w = this.world;
+    const W = w.w;
+    const bx = gx >> 3,
+      by = gy >> 3;
+    let best = null,
+      bk = -1,
+      bd = 7;
+    for (let oy = -1; oy <= 1; oy++)
+      for (let ox = -1; ox <= 1; ox++) {
+        const a = T.get((by + oy) * 4096 + bx + ox);
+        if (!a) continue;
+        for (const p of a) {
+          const G = p[p.length - 1];
+          if (Math.max(Math.abs((G % W) - gx), Math.abs(((G / W) | 0) - gy)) > 6) continue;
+          // (the later tile on a tie: never back along the route)
+          for (let i = 0; i < p.length; i++) {
+            const d = Math.max(Math.abs((p[i] % W) - sx), Math.abs(((p[i] / W) | 0) - sy));
+            if (d < bd || (d === bd && p === best)) {
+              bd = d;
+              bk = i;
+              best = p;
+            }
+          }
+        }
+      }
+    if (!best) return null;
+    const cost = this._walkCost();
+    const J = best[bk];
+    const out = [];
+    if (sy * W + sx !== J) {
+      const h = civPath(w, sx, sy, J % W, (J / W) | 0, cost, 400, 0.5);
+      if (!h || h[h.length - 1] !== J) return null;
+      for (let i = 0; i < h.length; i++) out.push(h[i]);
+    }
+    for (let i = bk + 1; i < best.length; i++) out.push(best[i]);
+    const G = best[best.length - 1],
+      goal = gy * W + gx;
+    if (G !== goal) {
+      const t = civPath(w, G % W, (G / W) | 0, gx, gy, cost, 400, 0.5);
+      if (!t || t[t.length - 1] !== goal) return null;
+      for (let i = 0; i < t.length; i++) out.push(t[i]);
+    }
+    return out.length ? out : null;
   },
 
   // Walk toward (x,z). Returns ARRIVED / WALKING / FAIL / WAIT.

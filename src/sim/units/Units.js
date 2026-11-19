@@ -759,14 +759,31 @@ export class Units {
     return out;
   }
   nearest(x, z, r, filter = null) {
+    // (forEachNear written out: asked thousands of times a second in a big world)
     let best = null,
       bd = Infinity;
-    this.forEachNear(x, z, r, (u, d2) => {
-      if (d2 < bd && (!filter || filter(u))) {
-        bd = d2;
-        best = u;
+    const gw = this._gw,
+      cells = this._cells;
+    const x0 = Math.max(0, Math.floor((x - r) / CELL)),
+      x1 = Math.min(gw - 1, Math.floor((x + r) / CELL));
+    const z0 = Math.max(0, Math.floor((z - r) / CELL)),
+      z1 = Math.min(this._gh - 1, Math.floor((z + r) / CELL));
+    const r2 = r * r;
+    for (let cz = z0; cz <= z1; cz++)
+      for (let cx = x0; cx <= x1; cx++) {
+        const cell = cells[cz * gw + cx];
+        for (let i = 0; i < cell.length; i++) {
+          const u = cell[i];
+          if (!u.alive) continue;
+          const dx = u.x - x,
+            dz = u.z - z;
+          const d2 = dx * dx + dz * dz;
+          if (d2 <= r2 && d2 < bd && (!filter || filter(u))) {
+            bd = d2;
+            best = u;
+          }
+        }
       }
-    });
     return best;
   }
 
