@@ -43,7 +43,8 @@ function stack(g, x, y0, z, h, brick, pot, rate) {
 // (dune), a steep slate roof with dormers (frost), a red tin hip roof over an
 // iron veranda on a raised plinth (mire).
 export function industrialHouse(g, K, style, lv) {
-  const brick = K.wall,
+  // a brick a shade brighter than the old timber, so the terraces read at mid zoom
+  const brick = shade(K.wall, 1.12),
     trim = K.trim ?? 0xe8e0cc,
     slate = K.tile;
   const floors = lv >= 3 ? 3 : 2;
@@ -57,7 +58,10 @@ export function industrialHouse(g, K, style, lv) {
   g.box(0, lift, bz, w, h, d, brick);
   // a darker brick base course and a white string course at each floor
   g.box(0, lift, bz, w + 0.02, 0.08, d + 0.02, shade(brick, 0.78), { noTop: true });
-  for (let f = 1; f < floors; f++) g.box(0, lift + f * fh - 0.02, bz, w + 0.03, 0.03, d + 0.03, trim, { noTop: true });
+  for (let f = 1; f < floors; f++) g.box(0, lift + f * fh - 0.025, bz, w + 0.03, 0.05, d + 0.03, trim, { noTop: true });
+  // a white eaves cornice and corner quoins
+  g.box(0, lift + floors * fh - 0.06, bz, w + 0.05, 0.06, d + 0.05, trim, { noTop: true });
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) g.box(sx * (w / 2 - 0.02), lift, bz + sz * (d / 2 - 0.02), 0.07, floors * fh, 0.07, trim, { noTop: true });
   // the terrace party walls: shallow pilasters splitting it in two homes
   for (const x of [-w / 2 + 0.02, 0, w / 2 - 0.02]) g.box(x, lift, bz + d / 2 + 0.01, 0.06, h, 0.03, shade(brick, 0.86), { noTop: true });
   const nWin = 4;

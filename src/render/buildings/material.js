@@ -133,7 +133,9 @@ if (vRoof.x > 0.5) {
   float powered = mod(vFlags, 2.0);
   float flood = mod(floor(vFlags * 0.5 + 0.01), 2.0);
   float wid = floor(vLocal.x * 4.0 + 0.5) * 1.7 + floor(vLocal.z * 4.0 + 0.5) * 2.3 + floor(vLocal.y * 3.0) * 3.1;
-  float wr = fract(vState.z * 7.31 + wid * 0.137);
+  // each window cell's own random number (a hash, so lit and dark windows
+  // scatter instead of running in diagonal stripes)
+  float wr = wsHash(vec3(floor(vLocal.x * 4.0 + 0.5) + floor(vLocal.z * 4.0 + 0.5) * 7.0 + 0.37, floor(vLocal.y * 3.0) + 0.61, fract(vState.z * 3.17) * 19.0 + 2.3));
   float night = uNight * (1.0 - vState.x);
   if (vGlow < 1.5) {
     // windows: warm lamplight, or steadier electric light in a powered town.
@@ -145,11 +147,11 @@ if (vRoof.x > 0.5) {
     float lit = step(1.0 - mix(0.8, share, powered), wr);
     float fy = fract(vLocal.y * 3.0);
     float fa = fract((vLocal.x + vLocal.z) * 4.0 + 0.5);
-    float pane = smoothstep(0.0, 0.07, fy) * smoothstep(1.0, 0.9, fy) * mix(1.0, smoothstep(0.0, 0.08, fa) * smoothstep(1.0, 0.92, fa), powered);
+    float pane = smoothstep(0.06, 0.16, fy) * smoothstep(0.94, 0.82, fy) * mix(1.0, smoothstep(0.08, 0.18, fa) * smoothstep(0.92, 0.82, fa), powered);
     float flick = mix(0.88 + 0.12 * sin(uTime * 2.7 + vState.z * 40.0 + wid), 1.0, powered);
     float cool = step(0.62, fract(wr * 17.3)) * powered;
     vec3 wc = mix(vec3(1.0, 0.6, 0.26), mix(vec3(1.0, 0.8, 0.52), vec3(0.72, 0.86, 1.0), cool), powered);
-    totalEmissiveRadiance += vGlow * wc * (night * mix(1.5, 1.3, powered) * lit * pane * flick + 0.02);
+    totalEmissiveRadiance += vGlow * wc * (night * mix(1.4, 1.2, powered) * lit * pane * flick + 0.02);
   } else if (vGlow < 2.5) {
     // a red beacon blinking on a mast or tower
     float blink = step(0.55, fract(uTime * 0.7 + vState.z * 3.0));
