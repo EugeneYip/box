@@ -42,6 +42,9 @@ work labels) stay.
 - Activities are visible only near the camera (poses and small icons, batched); far away they are labels and cheap state changes, so the tick budget of `docs/WORLD-SCALE.md` holds.
 - Animals get their own small set where it fits (grazing, sleeping, playing young, courting in spring).
 - Courting and families use the existing relationships and births; nothing explicit is shown.
+- Soldiers (round 17): half are on duty. By day they walk between the posts (towers, gates, walls, barracks, the hall), stand guard there ("Guarding the gate", "Keeping watch from the tower") and drill ("Drilling in the barracks yard"); at night they sleep in the barracks and one guard in four keeps the night watch. The off-duty half rest in the barracks or drill in its yard (with no barracks: at home, on the square or at the hall). Soldiers take the woodcutter's work only while the town is short of wood. Nobody does daytime work at night except the night watch.
+- Children play, go to school and help lightly (drawing water, feeding the hens, minding the animals); no field work. The jobless spend the working day at home, visiting neighbors, or (modern towns) at the office, factory or lab, so a square holds a few dozen at most; evening groups spread over the main square, the hall, a park and the temple in big towns.
+- A tsunami runs a few tiles inland over low shore and hits unguarded lowland towns in proportion to their share of low ground; levees break it.
 
 ## Acceptance
 
