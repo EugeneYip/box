@@ -746,3 +746,12 @@
   border-radius: 3px;
   box-shadow: 0 0 0 1px rgba(255, 240, 200, 0.28);
 }
+
+/* ---- inspector: a card title wraps to two lines at most (the full name is its tooltip) */
+.ws-insp__title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}

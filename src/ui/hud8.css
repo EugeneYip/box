@@ -127,18 +127,14 @@
   font-size: 13px;
   letter-spacing: 0.03em;
 }
+/* the level is a word ("Lv 2"), not a disc that reads like the group's count badge */
 .ws-favs__lvl {
   flex: none;
-  display: grid;
-  place-items: center;
-  min-width: 17px;
-  height: 17px;
-  padding: 0 4px;
-  border-radius: 9px;
-  font: 800 9.5px/1 var(--ws-font);
+  font: 700 10.5px/1 var(--ws-font);
   font-style: normal;
-  color: #1d1608;
-  background: linear-gradient(180deg, var(--ws-gold-hi), var(--ws-gold));
+  letter-spacing: 0.02em;
+  color: var(--ws-gold);
+  white-space: nowrap;
 }
 .ws-favs__lvl[hidden] {
   display: none;
@@ -170,7 +166,14 @@
   display: flex;
   align-items: center;
   gap: 5px;
-  width: 92px;
+  width: 118px;
+}
+.ws-favs__mlbl {
+  flex: none;
+  font: 700 9px/1 var(--ws-font);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ws-ink-3);
 }
 .ws-favs__meter[hidden] {
   display: none;
@@ -362,7 +365,7 @@
     transform: none;
   }
   .ws-favs__meter {
-    width: 78px;
+    width: 100px;
   }
 }
 @media (max-width: 380px) {
@@ -370,6 +373,12 @@
     display: none;
   }
   .ws-favs__meter {
-    width: 44px;
+    width: 68px;
   }
+}
+
+/* more rows below: the list's bottom edge fades */
+.ws-favs__list.has-more {
+  -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 36px), transparent);
+  mask-image: linear-gradient(180deg, #000 calc(100% - 36px), transparent);
 }

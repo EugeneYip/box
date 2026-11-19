@@ -442,6 +442,10 @@ export class Inspector {
     // after its capital, "Taipei" the realm and "Taipei" the city), and each stays reachable
     const nameKey = (o) => String(o.title || '').trim().toLowerCase();
     const seen = new Set([`${kindOf(r)}:${nameKey(r)}`]);
+    // the ground under a building, village, realm, creature or craft is not a chip
+    // there: its two cards ("Forest Floor" land and detail) belong to tile cards
+    const onGround = kindOf(r) === 'tile' || kindOf(r) === 'info';
+    const terrainNames = new Set(this.results.filter((o) => kindOf(o) === 'tile').map(nameKey));
     const chipList = this.results
       .map((o, i) => ({ o, i }))
       .filter(({ o, i }) => {
@@ -450,6 +454,7 @@ export class Inspector {
         if (occIds && o.unit && occIds.has(o.unit.id)) return false;
         // a cart's realm and home town are not things standing here
         if (craft && (kindOf(o) === 'kingdom' || kindOf(o) === 'village')) return false;
+        if (!onGround && (kindOf(o) === 'tile' || (kindOf(o) === 'info' && terrainNames.has(nameKey(o))))) return false;
         seen.add(key);
         return true;
       });
@@ -485,7 +490,12 @@ export class Inspector {
     const actions = [];
     if ((u || craft) && !dead) actions.push(`<button class="ws-btn ws-btn--sm ${following ? 'is-on' : ''}" type="button" data-act="follow">${uiIcon('follow')}<span>${following ? 'Following' : 'Follow'}</span><kbd class="ws-key">F</kbd></button>`);
     actions.push(`<button class="ws-btn ws-btn--sm ws-btn--ghost" type="button" data-act="focus">${uiIcon('focus')}<span>Focus</span></button>`);
-    const kindLabel = k === 'tile' && r.tile?.water ? 'Waters' : u && ic.label ? ic.label : craft ? (craft.name && craft.def?.name ? craft.def.name : craft.def?.war ? 'Warship' : craft.def?.siege ? 'Siege engine' : KIND_LABEL[k]) : KIND_LABEL[k] || 'Detail';
+    let kindLabel = k === 'tile' && r.tile?.water ? 'Waters' : u && ic.label ? ic.label : craft ? (craft.name && craft.def?.name ? craft.def.name : craft.def?.war ? 'Warship' : craft.def?.siege ? 'Siege engine' : KIND_LABEL[k]) : KIND_LABEL[k] || 'Detail';
+    // the kind line never repeats the title ("Rescue helicopter" over "Rescue helicopter of …")
+    if (craft && kindLabel && String(this.titleOf(r) || '').toLowerCase().startsWith(String(kindLabel).toLowerCase())) {
+      const cls = craft.def?.cls || craft.cls;
+      kindLabel = cls === 'air' ? 'Aircraft' : cls === 'space' ? 'Spacecraft' : cls === 'sea' || r.kind === 'vessel' ? 'Vessel' : 'Vehicle';
+    }
     const pref = u || r.building;
     // a realm shows its banner (the same drawing as its flags) in place of a portrait
     const kObj = !pref && kindOf(r) === 'kingdom' && typeof r.kingdom === 'object' ? r.kingdom : null;
@@ -1127,6 +1137,8 @@ export class Inspector {
   }
   // long names step down a size instead of breaking mid-word
   sizeTitle(h, title) {
+    // (two lines at most; the full name is in the tooltip)
+    if (title && h.title !== String(title)) h.title = String(title);
     const n = String(title || '').length;
     h.classList.toggle('is-long', n > 16 && n <= 24);
     h.classList.toggle('is-vlong', n > 24);

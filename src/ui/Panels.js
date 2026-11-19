@@ -794,23 +794,33 @@ export class Modals {
             out.textContent = fmtLaw(def, +r.value);
             g.setLaw?.(def.key, +r.value);
           });
-          // Latest era: a mark for each era under the slider
+          // a slider with named steps reads its step's name to screen readers ("Atomic")
+          if (Array.isArray(def.labels)) r.setAttribute('aria-valuetext', fmtLaw(def, v));
+          // Latest era: a mark for each era under the slider, the chosen era named
+          // under its mark (and the far ends, when they do not crowd it)
           const marks =
             def.key === 'civEraCap' && Array.isArray(def.labels)
-              ? el('span', { class: 'ws-eramarks', 'aria-hidden': 'true' }, ...def.labels.map((n, i) => el('i', { class: i === Math.round(v) ? 'is-on' : '', title: n }, el('span', { text: i === 0 || i === def.labels.length - 1 ? n : '' }))))
+              ? el('span', { class: 'ws-eramarks', 'aria-hidden': 'true' }, ...def.labels.map((n, i) => el('i', { class: i === Math.round(v) ? 'is-on' : '', title: n }, el('span'))))
               : null;
-          control = el('span', { class: 'ws-row__ctl' }, marks ? el('span', { class: 'ws-eraslider' }, r, marks) : r, out);
-          if (marks)
-            r.addEventListener('input', () => {
-              const cur = Math.round(+r.value);
-              [...marks.children].forEach((m, i) => {
-                m.classList.toggle('is-on', i === cur);
-              });
+          const markNames = (cur) => {
+            const last = def.labels.length - 1;
+            [...marks.children].forEach((m, i) => {
+              m.classList.toggle('is-on', i === cur);
+              m.firstChild.textContent = i === cur || ((i === 0 || i === last) && Math.abs(i - cur) >= 3) ? def.labels[i] : '';
             });
+          };
+          if (marks) markNames(Math.round(v));
+          control = el('span', { class: 'ws-row__ctl' }, marks ? el('span', { class: 'ws-eraslider' }, r, marks) : r, out);
+          r.addEventListener('input', () => {
+            if (Array.isArray(def.labels)) r.setAttribute('aria-valuetext', fmtLaw(def, +r.value));
+            if (marks) markNames(Math.round(+r.value));
+          });
           ctl.set(def.key, (nv) => {
             r.value = nv;
             paint();
             out.textContent = fmtLaw(def, nv);
+            if (Array.isArray(def.labels)) r.setAttribute('aria-valuetext', fmtLaw(def, nv));
+            if (marks) markNames(Math.round(+nv));
           });
         }
         const onState = def.type === 'bool' ? !!v : +v > 0;
