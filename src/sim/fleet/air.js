@@ -5,6 +5,7 @@ import { civPath } from '../civ/pathing.js';
 import { USE } from '../civ/util.js';
 
 const YEAR = 30;
+const COUNT = 6; // a rocket's countdown on the pad (seconds) before it lifts off
 
 // Modern and future vehicles (docs/MODERN-ERAS.md), mixed into Fleet. STUBS:
 // trains, trucks, cars and the modern warships and guns run as the nearest
@@ -755,10 +756,19 @@ export const air = {
     if (!K || K.alive === false) return refuse('no such realm');
     if (this.storm() > 0.7) return refuse('the launch waits for the storm to pass');
     if (this.solarStormLevel() > 0.2) return refuse('the launch waits for the solar storm to pass');
-    const from = this._airPoint(o.from);
+    let from = this._airPoint(o.from);
     if (!from) return refuse('no launch pad');
     const kind = payload === 'starship' ? 'starship' : 'rocket';
-    if (this.air.some((f) => f.alive && f.cls === 'space' && f.stageV !== 2 && f.from?.building === from.building && f.t < 6)) return refuse('the pad is busy');
+    if (this.air.some((f) => f.alive && f.cls === 'space' && f.stageV !== 2 && f.from?.building === from.building && f.t < COUNT + 4)) return refuse('the pad is busy');
+    // on a launch pad the rocket stands on the launch mount (the model's
+    // mount sits 0.15 design units along its local x, its plate 0.46 up)
+    const pb = this.game.civ?._bById?.get(from.building);
+    let base = 0.14;
+    if (pb && pb.type === 'launchpad') {
+      const r = pb.rotation || 0;
+      from = { ...from, x: pb.x + Math.cos(r) * 0.15 * BUILDING.scale, z: pb.z - Math.sin(r) * 0.15 * BUILDING.scale };
+      base = 0.48;
+    }
     const def = AIR_KINDS[kind];
     const f = this._airRecord(kind, def, o.kingdom, from, { x: from.x, z: from.z, building: from.building }, { payload });
     f.dur = kind === 'starship' ? 26 : 20; // the climb to orbit
@@ -767,7 +777,7 @@ export const air = {
     f.phase = 'count';
     f.heading = this.rng() * Math.PI * 2; // downrange
     f.reuse = this.hasTech(o.kingdom, 'orbital');
-    f.y = f.py = Math.max(0, this.world.heightAt(from.x, from.z)) + 0.14 * BUILDING.scale;
+    f.y = f.py = Math.max(0, this.world.heightAt(from.x, from.z)) + base * BUILDING.scale;
     f.gy = f.y;
     this.first(o.kingdom, 'rocket', { x: from.x, z: from.z });
     if (kind === 'starship') this.note(`🚀 ${this.kname(o.kingdom)[0].toUpperCase() + this.kname(o.kingdom).slice(1)} counts down to a starship launch`, 'good', { x: from.x, z: from.z }, 'starcount' + o.kingdom, 60);
@@ -778,16 +788,16 @@ export const air = {
     const T = f.t;
     if (f.stageV === 2) return this._boosterTick(f, step);
     if (f.phase === 'count') {
-      // the count: vapour at the pad, then ignition
-      f.thrust = T > 2 ? Math.min(1, (T - 2) * 2) : 0;
-      if (T > 2.6) {
+      // the count: the rocket stands at the pad a while, vapour, then ignition
+      f.thrust = T > COUNT - 0.6 ? Math.min(1, (T - COUNT + 0.6) * 2) : 0;
+      if (T > COUNT) {
         f.phase = 'launch';
         f.t0 = T;
         this._sfx('explosion', f.x, f.z, 0.5);
       }
       return;
     }
-    const u = T - (f.t0 || 2.6);
+    const u = T - (f.t0 || COUNT);
     const big = f.kind === 'starship' ? 1.25 : 1;
     f.thrust = 1;
     f.phase = u < 3 ? 'launch' : 'climb';

@@ -57,6 +57,9 @@ export const PROP = {
   shrub: 0.8,
   // crop rows on farm plots (stalk height; the plot itself is a tile)
   crop: S,
+  // grass, sedge and meadow tufts (height; they spread by its square root):
+  // a tuft about ankle to knee high beside a person, not as tall as one
+  grass: 0.5,
 };
 
 export const FOOTPRINT = {

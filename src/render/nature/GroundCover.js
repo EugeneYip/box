@@ -4,6 +4,12 @@ import { hash2, mulberry32 } from '../../core/Random.js';
 import { flowerDrift } from '../../sim/flora/species.js';
 import { MeshBuilder, MAT, C, blobGeo, M } from './MeshBuilder.js';
 import { InstanceBatcher } from './InstanceBatcher.js';
+import { PROP } from '../../core/scale.js';
+
+// grass-like tufts take PROP.grass (height; their spread its square root)
+const GRASSY = new Set(['grass', 'grassTall', 'grassShort', 'meadow', 'sedge']);
+const GRASS_H = PROP.grass ?? 1,
+  GRASS_W = Math.sqrt(GRASS_H);
 
 // Ground cover: instanced grass tufts, ferns, broad-leaf jungle plants,
 // meadow flowers and pebbles. Built per chunk only near the camera, faded out
@@ -395,7 +401,7 @@ export class GroundCover {
     let minY = Infinity,
       maxY = -Infinity,
       total = 0;
-    const push = (kindIdx, v, x, z, scale, tint, tiltK, yOff = 0) => {
+    const push = (kindIdx, v, x, z, scale, tint, tiltK, yOff = 0, grassy = false) => {
       const key = kindIdx * 8 + v;
       let s = scratch.get(key);
       if (!s) scratch.set(key, (s = { k: kindIdx, v, n: 0, mats: new Float32Array(256 * 16), cols: new Float32Array(256 * 3) }));
@@ -413,7 +419,8 @@ export class GroundCover {
       q2.setFromUnitVectors(up, nv.set(nrm.x * tiltK, 1, nrm.z * tiltK).normalize());
       q.premultiply(q2);
       p.set(x, y, z);
-      sc.set(scale, scale, scale);
+      if (grassy) sc.set(scale * GRASS_W, scale * GRASS_H, scale * GRASS_W);
+      else sc.set(scale, scale, scale);
       m.compose(p, q, sc);
       m.toArray(s.mats, s.n * 16);
       s.cols[s.n * 3] = tint[0];
@@ -572,7 +579,7 @@ export class GroundCover {
           }
           const ki = K[kind];
           const v = Math.floor(r2 * this.kinds[ki].geos.length * 0.999);
-          push(ki, v, x, z, scale, tt, tilt, kind === 'pebble' ? -0.01 : -0.005);
+          push(ki, v, x, z, scale, tt, tilt, kind === 'pebble' ? -0.01 : -0.005, GRASSY.has(kind));
         }
       }
     }

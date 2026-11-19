@@ -1161,7 +1161,12 @@ export class FleetRenderer {
           z = v.z + (s * p.x + c * p.z) * sc;
         const y = (v.y || 0) + p.y * sc;
         const big = v.cls === 'sea' ? 0.22 + def.length * 0.06 : v.kind === 'train' ? 0.26 : 0.16;
-        for (let i = fx.k(1); i > 0; i--) smokePuff(fx, x, y, z, { size: big, ramp: v.kind === 'steamer' || v.kind === 'ironclad' || v.kind === 'train' ? RAMP.SMOKE_DARK : RAMP.SMOKE_LIGHT, rise: 0.6, drift: 1.6 + Math.hypot(wind.x, wind.z), drag: 0.8, grow: 2.6, life: 2.4 + Math.random() * 1.4, lit: 0.85, alpha: moored ? 0.35 : 0.7 });
+        if (v.cls === 'sea') {
+          // over the water: a cool grey that rises and thins out quickly (the
+          // warm dark land smoke lay on the sea as brown stains, round 16)
+          const coal = v.kind === 'steamer' || v.kind === 'ironclad';
+          for (let i = fx.k(1); i > 0; i--) smokePuff(fx, x, y, z, { size: big * 0.85, ramp: RAMP.SMOKE_LIGHT, color: coal ? 0xa6abb2 : PLUME_TINT, alpha: moored ? 0.28 : 0.5, rise: 1.25, drift: 1.1 + Math.hypot(wind.x, wind.z) * 0.6, drag: 0.7, grow: 2.3, life: 1.6 + Math.random() * 0.9, lit: 0.75 });
+        } else for (let i = fx.k(1); i > 0; i--) smokePuff(fx, x, y, z, { size: big, ramp: v.kind === 'train' ? RAMP.SMOKE_DARK : RAMP.SMOKE_LIGHT, rise: 0.6, drift: 1.6 + Math.hypot(wind.x, wind.z), drag: 0.8, grow: 2.6, life: 2.4 + Math.random() * 1.4, lit: 0.85, alpha: moored ? 0.35 : 0.7 });
         smoke--;
       }
     }
