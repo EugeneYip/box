@@ -84,6 +84,7 @@ export function civPath(world, sx, sy, gx, gy, rawCost, maxNodes = 4000, minCost
     return (cv[i] = rawCost(i));
   };
   heapN = 0;
+  const Hh = world.h;
   const start = sy * W + sx;
   const goal = gy * W + gx;
   if (start === goal) return [goal];
@@ -105,8 +106,8 @@ export function civPath(world, sx, sy, gx, gy, rawCost, maxNodes = 4000, minCost
     bestH = h(start);
   while (heapN) {
     const cur = hpop();
-    if (done[cur] === stampId) continue;
-    done[cur] = stampId;
+    if (done[cur] === stamp) continue;
+    done[cur] = stamp;
     if (cur === goal || (goalTest && goalTest(cur))) {
       found = cur;
       break;
@@ -117,24 +118,33 @@ export function civPath(world, sx, sy, gx, gy, rawCost, maxNodes = 4000, minCost
     const gc = g[cur];
     for (let dy = -1; dy <= 1; dy++) {
       const ny = cy + dy;
-      if (ny < 0 || ny >= world.h) continue;
+      if (ny < 0 || ny >= Hh) continue;
+      const ady = Math.abs(ny - gy);
       for (let dx = -1; dx <= 1; dx++) {
         if (!dx && !dy) continue;
         const nx = cx + dx;
         if (nx < 0 || nx >= W) continue;
         const ni = ny * W + nx;
-        if (done[ni] === stampId) continue;
-        const c = ni === goal ? Math.min(cost(ni), 2) : cost(ni);
+        if (done[ni] === stamp) continue;
+        let c;
+        if (cs[ni] === stamp) c = cv[ni];
+        else {
+          cs[ni] = stamp;
+          c = cv[ni] = rawCost(ni);
+        }
+        if (ni === goal) c = Math.min(c, 2);
         if (c === Infinity) continue;
         if (dx && dy) {
+          // (a diagonal step never cuts a blocked corner)
           if (cost(cy * W + nx) === Infinity || cost(ny * W + cx) === Infinity) continue;
         }
         const ng = gc + c * (dx && dy ? SQ2 : 1);
-        if (seen[ni] !== stampId || ng < g[ni]) {
-          seen[ni] = stampId;
+        if (seen[ni] !== stamp || ng < g[ni]) {
+          seen[ni] = stamp;
           g[ni] = ng;
           from[ni] = cur;
-          const hh = h(ni);
+          const adx = Math.abs(nx - gx);
+          const hh = (adx + ady + (SQ2 - 2) * Math.min(adx, ady)) * hk;
           if (hh < bestH) {
             bestH = hh;
             best = ni;

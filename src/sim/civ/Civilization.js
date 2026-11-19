@@ -2116,9 +2116,59 @@ export class Civilization {
   }
 
   // ------------------------------------------------------------------ damage
+  // Buildings near a point, from a coarse grid of the building list (rebuilt
+  // when the list changes; buildings never move): indices into
+  // this.buildings in list order, a superset of those within r of (x, z).
+  _buildingsNear(x, z, r) {
+    const list = this.buildings;
+    const C = 16;
+    let G = this._bGrid;
+    if (!G || G.list !== list || G.n !== list.length) {
+      const W = this.world;
+      const gw = Math.ceil(W.w / C) + 1,
+        gh = Math.ceil(W.h / C) + 1;
+      const cells = new Array(gw * gh);
+      for (let k = 0; k < list.length; k++) {
+        const b = list[k];
+        const cx0 = Math.max(0, Math.floor(b.tx / C)),
+          cx1 = Math.min(gw - 1, Math.floor((b.tx + b.w) / C)),
+          cy0 = Math.max(0, Math.floor(b.ty / C)),
+          cy1 = Math.min(gh - 1, Math.floor((b.ty + b.h) / C));
+        for (let cy = cy0; cy <= cy1; cy++)
+          for (let cx = cx0; cx <= cx1; cx++) (cells[cy * gw + cx] || (cells[cy * gw + cx] = [])).push(k);
+      }
+      G = this._bGrid = { list, n: list.length, gw, gh, cells, out: [] };
+    }
+    const out = G.out;
+    out.length = 0;
+    const cx0 = Math.max(0, Math.floor((x - r) / C)),
+      cx1 = Math.min(G.gw - 1, Math.floor((x + r) / C)),
+      cy0 = Math.max(0, Math.floor((z - r) / C)),
+      cy1 = Math.min(G.gh - 1, Math.floor((z + r) / C));
+    for (let cy = cy0; cy <= cy1; cy++)
+      for (let cx = cx0; cx <= cx1; cx++) {
+        const c = G.cells[cy * G.gw + cx];
+        if (c) for (const k of c) out.push(k);
+      }
+    if (cx1 > cx0 || cy1 > cy0) {
+      out.sort((a, b) => a - b);
+      let n = 0;
+      for (let k = 0; k < out.length; k++) if (!n || out[k] !== out[n - 1]) out[n++] = out[k];
+      out.length = n;
+    }
+    return out.slice();
+  }
+
   damageArea(x, z, radius, amount, cause = 'disaster') {
-    for (const b of this.buildings) {
-      if (!b.alive) continue;
+    // (only the buildings the grid puts near the point, in list order: the
+    // same buildings as a pass over the whole list; NaN or huge radii fall back)
+    const all = !(radius < 256) || !Number.isFinite(x) || !Number.isFinite(z);
+    const list = this.buildings;
+    const near = all ? null : this._buildingsNear(x, z, radius);
+    const n = all ? list.length : near.length;
+    for (let q = 0; q < n; q++) {
+      const b = all ? list[q] : list[near[q]];
+      if (!b || !b.alive) continue;
       const nx = clamp(x, b.tx, b.tx + b.w),
         nz = clamp(z, b.ty, b.ty + b.h);
       const d = Math.hypot(nx - x, nz - z);

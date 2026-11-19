@@ -287,9 +287,9 @@ export class BuildingRenderer {
     this.bladeMeshes = new Map();
     this.boatMeshes = new Map();
     for (const st of ['vale', 'dune', 'frost', 'mire']) {
-      this.bannerMeshes.set(st, this._inst(bannerGeometry(st), this.bannerMat, 32, false));
-      this.bladeMeshes.set(st, this._inst(bladesGeometry(st), this.propMat, 8, false));
-      this.boatMeshes.set(st, this._inst(boatGeometry(st), this.propMat, 16, false));
+      this.bannerMeshes.set(st, this._inst(bannerGeometry(st), this.bannerMat, 32, false, 'banners:' + st));
+      this.bladeMeshes.set(st, this._inst(bladesGeometry(st), this.propMat, 8, false, 'blades:' + st));
+      this.boatMeshes.set(st, this._inst(boatGeometry(st), this.propMat, 16, false, 'boats:' + st));
     }
     // ground glow under lanterns & doors at night
     const dgeo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
@@ -317,10 +317,10 @@ export class BuildingRenderer {
     }
     // tall staffs for capital standards and army standard-bearers
     this.staffGeo = new THREE.CylinderGeometry(0.03, 0.04, 1, 6).translate(0, 0.5, 0);
-    this.staffMesh = this._inst(this.staffGeo, new THREE.MeshStandardMaterial({ color: 0x5a3c24, roughness: 0.8 }), 16, true);
+    this.staffMesh = this._inst(this.staffGeo, new THREE.MeshStandardMaterial({ color: 0x5a3c24, roughness: 0.8 }), 16, true, 'staffs');
     this.staffMap = new Map([['s', this.staffMesh]]);
     this.scarecrows = new Map();
-    for (const st of ['vale', 'frost', 'mire']) this.scarecrows.set(st, this._inst(scarecrowGeometry(st), this.propMat, 16, false));
+    for (const st of ['vale', 'frost', 'mire']) this.scarecrows.set(st, this._inst(scarecrowGeometry(st), this.propMat, 16, false, 'scarecrows:' + st));
     // selection ring
     const ring = new THREE.RingGeometry(0.92, 1.0, 64).rotateX(-Math.PI / 2);
     this.ring = new THREE.Mesh(ring, new THREE.MeshBasicMaterial({ color: 0xffe2a0, transparent: true, opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending }));
@@ -333,8 +333,9 @@ export class BuildingRenderer {
     scene.add(this.pickRing);
   }
 
-  _inst(geo, mat, cap, shadow) {
+  _inst(geo, mat, cap, shadow, name = '') {
     const m = new THREE.InstancedMesh(geo, mat, cap);
+    m.name = name;
     m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     m.castShadow = shadow;
     m.receiveShadow = true;
@@ -355,6 +356,7 @@ export class BuildingRenderer {
     nm.receiveShadow = true;
     nm.frustumCulled = false;
     nm.userData = m.userData;
+    nm.name = m.name;
     if (m.instanceColor) nm.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(Math.ceil(n * 1.5) * 3), 3);
     this.group.remove(m);
     m.dispose();
