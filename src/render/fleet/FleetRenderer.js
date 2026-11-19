@@ -8,7 +8,8 @@ import { smokePuff, RAMP } from '../fx/Effects.js';
 import { AirLayer } from './AirLayer.js';
 import './modernModels.js';
 import './airModels.js';
-import { VEHICLE } from '../../core/scale.js';
+import { VEHICLE, BUILDING } from '../../core/scale.js';
+import { SEA_LEVEL } from '../../world/constants.js';
 import { geoWrapOn } from '../../world/geo.js';
 
 // Draws game.fleet: every vessel, land vehicle, aircraft and rocket through
@@ -30,7 +31,9 @@ const PLUME_TINT = 0xeceff3; // a cool near-white: smoke over the sea reads grey
 const STONE_SCALE = 0.62 * VEHICLE.land; // catapult stone: a third of the arm (~0.38 tiles across at design size)
 // rails and the maglev guideway (InfraRenderer draws them at these heights)
 const RAIL_Y = 0.07;
-const MAGLEV_Y = 0.85;
+const MAGLEV_Y = 0.95 * BUILDING.scale; // the guideway's clearance (InfraRenderer MAG_Y)
+const MAGLEV_HOVER = 0.03;
+const BRIDGE_Y = SEA_LEVEL + 0.3 * BUILDING.scale; // a rail bridge's deck over water
 // Round world (docs/ROUND-WORLD.md): within this many tiles of the seam a ship
 // is drawn twice, once one map width over, so she sails on past one edge
 // while her twin comes in at the other (the sea runs on beyond the map)
@@ -467,8 +470,8 @@ export class FleetRenderer {
     }
     // land: sit on the ground (trains on their rails, a maglev on its
     // guideway), tilt with the slope
-    const lift = def.rail ? (kind === 'maglev' ? MAGLEV_Y + 0.06 : RAIL_Y) : 0;
-    const y = W.heightAt(x, z) + lift;
+    const lift = def.rail ? (kind === 'maglev' ? MAGLEV_HOVER : RAIL_Y) : 0;
+    const y = (def.rail ? this._railY(kind, v.path, (v.pi ?? 2) - 2, x, z) : W.heightAt(x, z)) + lift;
     v.y = y;
     const c = Math.cos(h),
       s = Math.sin(h);
@@ -503,16 +506,77 @@ export class FleetRenderer {
         put(p.x, p.z, p.h, camel + (i === 0 ? 1 : 0), W.heightAt(p.x, p.z));
       }
     } else if (def.cars) {
-      // an engine and the cars behind it, each along the rails it has run
+      // an engine and the cars behind it, each on the rails of its route
+      // (v.path: the line's track) a car's length apart
       const n = def.cars;
-      const gap = def.length * sc * 0.98;
+      const gap = def.length;
       const diesel = kind === 'train' && (this.game.civ?.kingdoms?.[v.kingdom]?.era ?? 0) >= 6;
+      const P = v.path;
+      let k = P ? Math.min(v.pi, P.length - 2) - 2 : -2,
+        hx = x,
+        hz = z,
+        rem = 0;
       for (let i = 0; i < n; i++) {
-        const p = trailPoint(v.trail, x, z, h, i * gap);
+        let px = hx,
+          pz = hz,
+          ph = h;
+        if (i > 0) {
+          rem += gap;
+          // walk back along the route from the head
+          while (k >= 0) {
+            const qx = P[k],
+              qz = P[k + 1];
+            const L = Math.hypot(hx - qx, hz - qz);
+            if (L >= rem && L > 1e-4) {
+              const t = rem / L;
+              px = hx + (qx - hx) * t;
+              pz = hz + (qz - hz) * t;
+              ph = Math.atan2(hz - qz, hx - qx);
+              hx = px;
+              hz = pz;
+              rem = 0;
+              break;
+            }
+            rem -= L;
+            hx = qx;
+            hz = qz;
+            k -= 2;
+          }
+          if (k < 0) {
+            // before the start of the route: straight on back
+            const bh = P && P.length >= 4 ? Math.atan2(P[3] - P[1], P[2] - P[0]) : h;
+            px = hx - Math.cos(bh) * rem;
+            pz = hz - Math.sin(bh) * rem;
+            ph = bh;
+            hx = px;
+            hz = pz;
+            rem = 0;
+          }
+        }
         const variant = kind === 'maglev' ? (i ? 1 : 0) : i === 0 ? (diesel ? 3 : 0) : (i + (v.seed > 0.5 ? 1 : 0)) % 2 ? 1 : 2;
-        put(p.x, p.z, p.h, variant, W.heightAt(p.x, p.z) + lift);
+        put(px, pz, ph, variant, this._railY(kind, P, k, px, pz) + lift);
       }
     } else put(x, z, h, kind === 'car' ? Math.floor(v.seed * 4) : 0);
+  }
+
+  // The level a train runs at near point k of its route: the ground (a
+  // bridge's deck over water); a maglev's guideway runs level over bumps
+  // (InfraRenderer averages its height over a few tiles: so does this).
+  _railY(kind, P, k, x, z) {
+    const W = this.game.world;
+    const g = W.heightAt(x, z);
+    if (kind !== 'maglev') return g < SEA_LEVEL ? BRIDGE_Y : g;
+    if (!P || P.length < 4) return Math.max(g, SEA_LEVEL) + MAGLEV_Y;
+    const n = P.length / 2;
+    const i0 = Math.max(0, Math.min(n - 1, k >> 1));
+    let s = 0,
+      c = 0;
+    for (let j = Math.max(0, i0 - 6); j <= Math.min(n - 1, i0 + 6); j++) {
+      const h = W.heightAt(P[j * 2], P[j * 2 + 1]);
+      s += Math.max(h + 0.2 * BUILDING.scale, h + MAGLEV_Y);
+      c++;
+    }
+    return Math.max(s / c, g + MAGLEV_Y * 0.8, g < SEA_LEVEL ? SEA_LEVEL + MAGLEV_Y * 0.8 : -1e9);
   }
 
   // A ship's twin one map width over (Round world): reads through to the ship
@@ -1045,8 +1109,8 @@ export class FleetRenderer {
       for (const p of md.smoke) {
         const x = v.x + (c * p.x - s * p.z) * sc,
           z = v.z + (s * p.x + c * p.z) * sc;
-        const y = (v.y || 0) + p.y * sc + (def.rail && v.kind === 'train' ? RAIL_Y : 0);
-        const big = v.cls === 'sea' ? 0.22 + def.length * 0.06 : 0.16;
+        const y = (v.y || 0) + p.y * sc;
+        const big = v.cls === 'sea' ? 0.22 + def.length * 0.06 : v.kind === 'train' ? 0.26 : 0.16;
         for (let i = fx.k(1); i > 0; i--) smokePuff(fx, x, y, z, { size: big, ramp: v.kind === 'steamer' || v.kind === 'ironclad' || v.kind === 'train' ? RAMP.SMOKE_DARK : RAMP.SMOKE_LIGHT, rise: 0.6, drift: 1.6 + Math.hypot(wind.x, wind.z), drag: 0.8, grow: 2.6, life: 2.4 + Math.random() * 1.4, lit: 0.85, alpha: moored ? 0.35 : 0.7 });
         smoke--;
       }

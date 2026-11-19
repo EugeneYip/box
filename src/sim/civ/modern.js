@@ -17,7 +17,7 @@ import { BUILDING } from '../../core/scale.js';
 // PUBLIC CONTRACT (additions to game.civ)
 //   railLines(kid?) -> [{id, kind 'rail'|'maglev', kingdom, a, b (village ids),
 //                        pts [x, z, x, z, ...] (the route through the realm's
-//                        network, RAIL_SIDE right of the track), highway, built}]
+//                        network, on the centre of the drawn track), highway, built}]
 //   railSegs() -> the drawn network (one entry per stretch of track, see below;
 //                 xing [[x, z, angle, angle2]]: where a rail crosses another)
 //   railMask  Uint8Array per tile: 1 under a rail track, 2 under a guideway
@@ -74,9 +74,6 @@ const MODERN_TECHS = TECHS.filter((t) => t.era >= 4).map((t) => t.id);
 const REACH = { musket: 2.6, rifle: 3.4, fatigues: 3.8, suit: 4.4 };
 
 // ------------------------------------------------------------ rail geometry
-// Fleets lays a train RAIL_SIDE to the left of its line's pts (air.js), so a
-// line's pts run that far to the right of the track.
-const RAIL_SIDE = 0.45;
 // per kind: minimum curve radius, how straight the country run is kept
 // (tolerance in tiles), and the lead a branch runs along its trunk or out of
 // a platform before it curves away
@@ -109,15 +106,6 @@ function tanAt(P, i) {
     dz = P[b * 2 + 1] - P[a * 2 + 1];
   const L = Math.hypot(dx, dz) || 1;
   return [dx / L, dz / L];
-}
-function besideTrack(P) {
-  const out = new Array(P.length);
-  for (let i = 0; i < P.length / 2; i++) {
-    const [tx, tz] = tanAt(P, i);
-    out[i * 2] = P[i * 2] + tz * RAIL_SIDE;
-    out[i * 2 + 1] = P[i * 2 + 1] - tx * RAIL_SIDE;
-  }
-  return out;
 }
 // the highway's centre beside point i of a track
 export function hwPoint(P, i) {
@@ -740,7 +728,7 @@ export const modern = {
         if (l.a === root) P = route(l.b);
         else if (l.b === root) P = route(l.a) && revPts(route(l.a));
         else if (route(l.a) && route(l.b)) P = revPts(route(l.a)).concat(route(l.b));
-        l.pts = P && P.length >= 4 ? besideTrack(P) : null;
+        l.pts = P && P.length >= 4 ? P : null; // (trains run on these points: the track's centre)
         // a highway along the whole way to the line's town
         const far = l.b === root ? l.a : l.b;
         if (l.highway && at.has(far)) for (let si = at.get(far); si >= 0; si = tree[si].parent) tree[si].hwOn = true;

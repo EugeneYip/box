@@ -44,10 +44,10 @@ export const KINDS = {
   battleship: { cls: 'sea', role: 'galley', name: 'Battleship', tech: 'battleships', era: 5, speed: 2.55, turn: 0.9, hp: 520, crew: 120, capacity: 0, scale: 0.75, length: 3.3, beam: 0.62, draft: 0.7, clear: 2.6, size: 1.35, dps: 34, sail: false, war: true, big: true, smoke: true },
   carrier: { cls: 'sea', role: 'galley', name: 'Aircraft carrier', tech: 'carriers', era: 6, speed: 2.45, turn: 0.75, hp: 620, crew: 200, capacity: 0, scale: 0.75, length: 3.6, beam: 0.8, draft: 0.75, clear: 3, size: 1.5, dps: 30, sail: false, war: true, big: true, carrier: true },
   // ---------------------------------------------------------------- modern land
-  // trains run along civ.railLines(); a train is drawn as its engine and the
-  // cars that follow it along the rails (`cars`)
-  train: { cls: 'land', role: 'train', name: 'Steam train', tech: 'railways', speed: 3.4, turn: 6, hp: 120, crew: 2, capacity: 80, scale: 1, length: 1.0, size: 0.8, dps: 0, rail: true, smoke: true, cars: 4 },
-  maglev: { cls: 'land', role: 'train', name: 'Maglev train', tech: 'maglev', speed: 6.5, turn: 8, hp: 160, crew: 1, capacity: 120, scale: 1, length: 1.25, size: 0.9, dps: 0, rail: true, cars: 3 },
+  // trains run along civ.railLines() (on the drawn track); a train is drawn as
+  // its engine and the `cars` behind it on the rails, `length` (a house) apart
+  train: { cls: 'land', role: 'train', name: 'Steam train', tech: 'railways', speed: 3.4, turn: 6, hp: 120, crew: 2, capacity: 80, scale: 1, length: 1.82, size: 0.8, dps: 0, rail: true, smoke: true, cars: 4 },
+  maglev: { cls: 'land', role: 'train', name: 'Maglev train', tech: 'maglev', speed: 6.5, turn: 8, hp: 160, crew: 1, capacity: 120, scale: 1, length: 1.9, size: 0.9, dps: 0, rail: true, cars: 3 },
   truck: { cls: 'land', role: 'oxcart', name: 'Truck', tech: 'combustion', speed: 2.4, turn: 3, hp: 70, crew: 1, capacity: 48, scale: 1, length: 1.0, size: 0.6, dps: 0 },
   car: { cls: 'land', role: 'car', name: 'Car', tech: 'combustion', speed: 2.6, turn: 4, hp: 40, crew: 1, capacity: 4, scale: 1, length: 0.6, size: 0.45, dps: 0 },
   cannon: { cls: 'land', role: 'catapult', name: 'Cannon', tech: 'gunpowder', speed: 1.1, turn: 2, hp: 140, crew: 3, capacity: 0, scale: 1.3, length: 1.4, size: 1.0, dps: 0, siege: true, gun: true },

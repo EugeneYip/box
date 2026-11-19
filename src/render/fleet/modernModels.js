@@ -100,10 +100,10 @@ function navLights(g, x, y, hw, top = null) {
   g.box(x, y, hw + 0.012, 0.03, 0.03, 0.02, NAVG, { glow: 2 });
   if (top) g.box(top[0], top[1], 0, 0.035, 0.035, 0.035, NAVW, { glow: 2 });
 }
-function radarMast(g, x, y, h) {
-  g.cyl(x, y, 0, 0.022, h, 5, STEEL2);
-  g.beam(x, y + h * 0.75, -0.14, x, y + h * 0.75, 0.14, 0.02, STEEL2);
-  g.box(x, y + h * 0.85, 0, 0.04, 0.03, 0.2, WHITE);
+function radarMast(g, x, y, h, z = 0) {
+  g.cyl(x, y, z, 0.022, h, 5, STEEL2);
+  g.beam(x, y + h * 0.75, z - 0.14, x, y + h * 0.75, z + 0.14, 0.02, STEEL2);
+  g.box(x, y + h * 0.85, z, 0.04, 0.03, 0.2, WHITE);
   return [x, y + h + 0.02];
 }
 // A gun turret that trains on the enemy (anim 11, pivot at its centre).
@@ -157,9 +157,9 @@ function steamer(lo) {
 }
 function ironclad(lo) {
   const g = new VB(203);
-  const st = steelHull(g, { L: 3.0, W: 0.7, H: 0.16, D: 0.26, col: 0x2e3034, deck: 0x55524a, band: 0.03, rake: -0.18, transom: 0.7 });
+  const st = steelHull(g, { L: 3.0, W: 0.7, H: 0.16, D: 0.26, col: 0x2e3034, deck: 0x55585c, band: 0.03, rake: -0.18, transom: 0.7 });
   // the armoured casemate with its gun ports
-  g.box(-0.05, st[5].gy, 0, 1.2, 0.26, 0.56, 0x3a3c40, { top: 0x4a4a44 });
+  g.box(-0.05, st[5].gy, 0, 1.2, 0.26, 0.56, 0x3a3c40, { top: 0x4a4c50 });
   if (!lo) for (const s of [-1, 1]) for (let i = 0; i < 4; i++) g.box(-0.5 + i * 0.3, st[5].gy + 0.1, s * 0.285, 0.07, 0.06, 0.02, BLACK);
   turret(g, 0.95, st[7].gy, 0.17, 1, 1, 0.36);
   const sm = funnel(g, -0.1, st[5].gy + 0.26, 0.1, 0.5, { col: 0x2a2a2a });
@@ -191,7 +191,7 @@ function freighter(lo) {
 }
 function battleship(lo) {
   const g = new VB(207);
-  const st = steelHull(g, { L: 4.4, W: 0.82, H: 0.26, D: 0.3, col: STEEL, low: 0x6a2c26, deck: 0x8a826e, band: 0.03, bowRise: 0.08, rake: 0.2, n: 12 });
+  const st = steelHull(g, { L: 4.4, W: 0.82, H: 0.26, D: 0.3, col: STEEL, low: 0x6a2c26, deck: 0x7a7f84, band: 0.025, bowRise: 0.08, rake: 0.2, n: 12 });
   // superstructure: a stepped tower, two funnels, a tripod mast
   g.box(0.1, st[6].gy, 0, 1.3, 0.22, 0.52, STEEL, { top: shade(STEEL, 1.08) });
   house(g, 0.45, st[6].gy + 0.22, 0.45, 0.26, 0.4, STEEL, { glow: 0.5 });
@@ -214,7 +214,7 @@ function battleship(lo) {
 }
 function patrol(lo) {
   const g = new VB(209);
-  const st = steelHull(g, { L: 2.8, W: 0.5, H: 0.24, D: 0.2, col: 0x7c848c, low: 0x6a2c26, deck: 0x8a8678, band: 0.03, bowRise: 0.07, rake: 0.16, fullB: 0.5 });
+  const st = steelHull(g, { L: 2.8, W: 0.5, H: 0.24, D: 0.2, col: 0x7c848c, low: 0x6a2c26, deck: 0x80858a, band: 0.025, bowRise: 0.07, rake: 0.16, fullB: 0.5 });
   turret(g, 0.75, hwAt(st, 0.75).gy, 0.11, 1, 1, 0.3);
   house(g, 0.25, st[5].gy, 0.5, 0.24, 0.36, 0x7c848c, { glow: 0.6 });
   house(g, 0.32, st[5].gy + 0.24, 0.26, 0.12, 0.3, 0x6a7078, { glow: 0.6 });
@@ -370,31 +370,91 @@ function research(lo) {
   }
   return done(g, 2.6, [{ x: -1.25, y: st[0].gy + 0.4, z: 0, s: 0.9 }], [sm]);
 }
+// A parked jet on a carrier's deck (design units, nose to +X before `ry`).
+function deckJet(g, x, y, z, ry, s = 1) {
+  g.push();
+  g.translate(x, y, z);
+  g.rotateY(ry);
+  g.scale(s, s, s);
+  const C = 0xb4bac0,
+    C2 = 0x8e959c;
+  g.box(0, 0.004, 0, 0.3, 0.045, 0.05, C, { top: shade(C, 1.08) });
+  g.push();
+  g.translate(0.15, 0.026, 0);
+  g.rotateZ(-Math.PI / 2);
+  g.cone(0, 0, 0, 0.025, 0.09, 6, C2);
+  g.pop();
+  g.box(0.08, 0.035, 0, 0.07, 0.025, 0.035, 0x2c4050); // canopy
+  // swept wings and tailplanes (flat, lit from above)
+  for (const sd of [-1, 1]) {
+    g.tri([0.07, 0.03, 0], [-0.08, 0.03, sd * 0.15], [-0.11, 0.03, sd * 0.15], C, 0, 0, [0, -1, 0]);
+    g.tri([0.07, 0.03, 0], [-0.11, 0.03, sd * 0.15], [-0.08, 0.03, 0], C, 0, 0, [0, -1, 0]);
+    g.tri([-0.1, 0.03, 0], [-0.15, 0.03, sd * 0.07], [-0.16, 0.03, 0], C2, 0, 0, [0, -1, 0]);
+    g.box(-0.12, 0.045, sd * 0.02, 0.06, 0.06, 0.008, C2, { ry: sd * 0.25 }); // twin fins
+  }
+  g.pop();
+}
 function carrier(lo) {
   const g = new VB(227);
-  const st = steelHull(g, { L: 4.6, W: 0.8, H: 0.36, D: 0.3, col: STEEL, low: 0x6a2c26, deck: 0x55585a, band: 0.03, bowRise: 0.05, rake: 0.2, n: 12, fullB: 0.7 });
-  // the flight deck overhangs the hull, an angled strip, the island to starboard
+  const HULL = 0x868c92,
+    FDECK = 0x60656b,
+    ISL = 0x9097a0;
+  const st = steelHull(g, { L: 4.6, W: 0.8, H: 0.36, D: 0.3, col: HULL, low: 0x6a2c26, deck: FDECK, band: 0.025, bowRise: 0.05, rake: 0.2, n: 12, fullB: 0.7 });
+  // the flight deck overhangs the hull to port; the island stands to starboard
   const dy = st[6].gy + 0.06;
-  g.box(-0.05, dy - 0.06, -0.08, 4.5, 0.08, 1.1, 0x4a4d50, { top: 0x45484a });
+  g.box(-0.05, dy - 0.07, -0.06, 4.5, 0.09, 1.08, HULL, { top: FDECK });
+  // the overhang's sponson under the angled deck
+  g.box(-0.6, dy - 0.2, -0.38, 2.2, 0.13, 0.36, shade(HULL, 0.9), { top: FDECK });
+  const my = dy + 0.022;
+  // white deck markings: the bow runway's centre line, the angled landing
+  // strip's edges and dashed centre line, the deck edge lines, the elevators
+  g.box(0.9, my, 0.12, 2.4, 0.004, 0.022, WHITE);
+  for (const zz of [-0.16, 0.16]) g.box(-0.55, my, -0.24 + zz, 3.3, 0.004, 0.02, WHITE, { ry: 0.12 });
   if (!lo) {
-    g.box(-0.05, dy + 0.021, -0.08, 4.2, 0.004, 0.025, 0xe8e8e2);
-    g.box(-0.4, dy + 0.021, -0.2, 2.6, 0.004, 0.02, 0xd8c040, { ry: 0.14 });
-    for (let i = 0; i < 6; i++) g.box(1.4 - i * 0.55, dy + 0.021, 0.3, 0.2, 0.004, 0.03, 0xe8e8e2);
-    for (let i = 0; i < 10; i++) g.box(-2.1 + i * 0.45, dy - 0.005, 0.47, 0.02, 0.02, 0.02, i % 2 ? NAVW : 0x30ff60, { glow: 2 }); // deck-edge lights
-    // jets parked aft
-    for (let i = 0; i < 3; i++) {
-      const x = -1.6 + i * 0.32,
-        z = -0.42;
-      g.box(x, dy + 0.02, z, 0.22, 0.04, 0.05, 0x7a8088);
-      g.box(x - 0.02, dy + 0.03, z, 0.08, 0.01, 0.22, 0x7a8088);
+    for (let i = 0; i < 8; i++) {
+      const x = -1.9 + i * 0.4;
+      g.box(x, my + 0.001, -0.24 - (x + 0.55) * Math.tan(0.12), 0.18, 0.004, 0.018, WHITE, { ry: 0.12 });
     }
+    for (const zz of [-0.585, 0.465]) g.box(-0.05, my, zz, 4.3, 0.004, 0.012, 0xd8dadc);
+    g.box(-2.05, my, -0.06, 0.06, 0.004, 0.9, WHITE); // the round-down at the stern
+    // elevator outlines beside the island and a deck number at the bow
+    for (const ex of [0.85, -0.55]) {
+      g.box(ex, my, 0.38, 0.36, 0.004, 0.012, 0xd0d2d4);
+      g.box(ex, my, 0.22, 0.36, 0.004, 0.012, 0xd0d2d4);
+    }
+    g.box(1.85, my, 0.12, 0.2, 0.004, 0.16, 0xe8e8e2);
+    g.box(1.85, my + 0.001, 0.12, 0.12, 0.004, 0.02, FDECK);
+    // catapult tracks on the bow
+    for (const zz of [0.0, 0.26]) g.box(1.25, my, zz, 1.3, 0.004, 0.01, 0x3a3e42);
+    for (let i = 0; i < 12; i++) g.box(-2.2 + i * 0.4, dy - 0.03, 0.48, 0.02, 0.02, 0.02, i % 2 ? NAVW : 0x30ff60, { glow: 2 }); // deck-edge lights
   }
-  house(g, 0.4, dy + 0.02, 0.6, 0.34, 0.2, STEEL, { win: true, glow: 0.6 });
-  house(g, 0.45, dy + 0.36, 0.38, 0.14, 0.18, STEEL2, { glow: 0.6 });
-  g.box(0.4, dy + 0.02, 0.38, 0.6, 0.02, 0.01, 0x000000);
-  const sm = funnel(g, 0.25, dy + 0.36, 0.06, 0.16, { col: STEEL2 });
-  if (!lo) navLights(g, 0.6, dy + 0.42, 0.1, radarMast(g, 0.5, dy + 0.5, 0.36));
-  return done(g, 4.6, [{ x: 0.5, y: dy + 0.9, z: 0, s: 1.1 }], [sm]);
+  // parked jets: a row along the starboard edge aft of the island, two on the bow
+  const J = lo
+    ? [[-0.6, 0.3, 2.2], [-1.0, 0.3, 2.2], [1.5, 0.3, 2.6]]
+    : [[-0.55, 0.32, 2.3], [-0.9, 0.32, 2.3], [-1.25, 0.32, 2.3], [1.45, 0.32, 2.5], [1.75, 0.3, 2.5]];
+  for (const [jx, jz, r] of J) deckJet(g, jx, dy + 0.02, jz, r, 1.15);
+  // the island: a tall grey block with its bridge, a mast and radars, a funnel
+  const ix = 0.3,
+    iz = 0.36;
+  g.box(ix, dy + 0.02, iz, 0.62, 0.36, 0.17, ISL, { top: shade(ISL, 0.92) });
+  g.box(ix + 0.06, dy + 0.38, iz, 0.42, 0.14, 0.16, ISL, { top: shade(ISL, 0.9) });
+  for (const sd of [-1, 1]) g.box(ix + 0.06, dy + 0.43, iz + sd * 0.083, 0.38, 0.05, 0.006, WIN, { glow: 1 });
+  g.box(ix + 0.272, dy + 0.43, iz, 0.006, 0.05, 0.14, GLASS, { glow: 0.6 });
+  if (!lo) for (const sd of [-1, 1]) g.box(ix - 0.05, dy + 0.2, iz + sd * 0.088, 0.44, 0.03, 0.006, WIN, { glow: 1 });
+  g.box(ix - 0.18, dy + 0.38, iz, 0.16, 0.16, 0.14, shade(ISL, 0.85), { top: 0x2a2c30 }); // the funnel housing
+  const sm = { x: ix - 0.18, y: dy + 0.56, z: iz };
+  g.box(ix + 0.06, dy + 0.02, iz + 0.09, 0.5, 0.012, 0.006, 0xffffff, { tint: 1 }); // the realm's stripe
+  const [mx, my2] = radarMast(g, ix + 0.08, dy + 0.52, 0.34, iz);
+  if (!lo) {
+    g.box(ix + 0.2, dy + 0.52, iz, 0.1, 0.1, 0.012, 0xd8dadc); // flat radar panels
+    g.dome(ix - 0.02, dy + 0.52, iz, 0.04, 6, 3, WHITE);
+    g.push();
+    g.translate(0, 0, iz);
+    navLights(g, ix + 0.2, dy + 0.46, 0.09);
+    g.pop();
+  }
+  void mx;
+  return done(g, 4.6, [{ x: ix + 0.08, y: my2 + 0.02, z: iz, s: 0.9 }], [sm]);
 }
 // ---------------------------------------------------------------- sea, Future
 function trimaran(lo) {
@@ -454,46 +514,96 @@ function lights(g, x, y, hw) {
     g.box(x, y, s * hw * 0.7, 0.012, 0.025, 0.04, 0xfff0c8, { glow: 1 });
   }
 }
-// Train: variant 0 the engine, 1 a coach, 2 a goods wagon, 3 the diesel engine
-// of the Atomic era (one shows per instance; a train is several instances).
+// Train: variant 0 the steam engine with its tender, 1 a coach, 2 a goods
+// wagon, 3 the diesel engine of the Atomic era (one shows per instance; a
+// train is several instances along its rails). Each car is about a house
+// long (CAR design units); the wheels sit on the rails (gauge 0.26).
+export const TRAIN_CAR = 1.72;
+const GZ = 0.13; // half the gauge: where the wheels run
+function bogie(g, x, v, lo) {
+  g.box(x, 0.06, 0, 0.42, 0.07, 0.3, 0x2a2a2a);
+  if (!lo) for (const dx of [-0.12, 0.12]) for (const s of [-1, 1]) wheelR(g, x + dx, 0, s * GZ, v, 0.075);
+}
 function train(lo) {
   const g = new VB(241);
   const rail = (v) => g.setAnim(0, 0, 0, 0, v);
-  // 0: steam engine
+  const H = TRAIN_CAR / 2;
+  // 0: steam engine and tender
   rail(0);
-  g.box(0, 0.08, 0, 0.9, 0.06, 0.26, 0x2a2a2a);
+  const ENG = 0x1e2a22;
+  g.box(0.12, 0.12, 0, 1.36, 0.06, 0.46, 0x2a2a2a, { top: 0x3a3a3a }); // running board
+  g.box(0.12, 0.17, 0, 1.3, 0.02, 0.465, 0xffffff, { tint: 1 }); // the realm's stripe
   g.push();
-  g.translate(0.08, 0.26, 0);
+  g.translate(0.0, 0.38, 0);
   g.rotateZ(-Math.PI / 2);
-  g.cyl(0, -0.3, 0, 0.11, 0.62, 8, 0x1e2a22);
+  g.cyl(0, -0.2, 0, 0.18, 0.92, 10, ENG, { r2: 0.18 });
   g.pop();
-  g.box(0.08, 0.26 - 0.11, 0, 0.6, 0.02, 0.25, 0xffffff, { tint: 1 });
-  g.cyl(0.32, 0.34, 0, 0.04, 0.16, 6, 0x1a1a1a, { r2: 0.05 });
-  g.box(-0.3, 0.12, 0, 0.3, 0.3, 0.28, 0x1e2a22, { top: 0x2a2a2a });
-  g.box(-0.3, 0.3, 0, 0.32, 0.03, 0.3, 0x2a2a2a);
-  g.box(-0.3, 0.25, 0, 0.2, 0.06, 0.29, WIN, { glow: 1 });
-  g.box(0.47, 0.16, 0, 0.02, 0.04, 0.05, 0xfff0c8, { glow: 1 });
-  if (!lo) for (const x of [-0.25, 0.05, 0.3]) for (const s of [-1, 1]) wheelR(g, x, 0.08, s * 0.14, 0, 0.08);
+  g.push();
+  g.translate(0.72, 0.38, 0);
+  g.rotateZ(-Math.PI / 2);
+  g.cyl(0, 0, 0, 0.17, 0.05, 10, 0x2a2a2a); // smokebox door
+  g.pop();
+  for (const x of [-0.05, 0.3]) {
+    g.push();
+    g.translate(x, 0.38, 0);
+    g.rotateZ(-Math.PI / 2);
+    g.cyl(0, 0, 0, 0.184, 0.025, 10, 0xb08a3a, { cap: false }); // brass bands
+    g.pop();
+  }
+  g.cyl(0.58, 0.52, 0, 0.055, 0.2, 8, 0x1a1a1a, { r2: 0.07 }); // smokestack
+  g.dome(0.28, 0.54, 0, 0.07, 6, 2, ENG);
+  g.box(0.79, 0.44, 0, 0.04, 0.06, 0.07, 0xfff0c8, { glow: 1 }); // headlamp
+  // the cowcatcher
+  g.box(0.84, 0.04, 0, 0.1, 0.1, 0.4, 0x5a2a22);
+  // the cab: tall, with windows and an overhanging roof
+  g.box(-0.36, 0.16, 0, 0.34, 0.46, 0.46, ENG, { top: 0x2a2a2a });
+  g.box(-0.36, 0.62, 0, 0.42, 0.04, 0.52, 0x2a2a2a);
+  for (const sd of [-1, 1]) g.box(-0.33, 0.44, sd * 0.232, 0.18, 0.12, 0.006, WIN, { glow: 1 });
+  // the tender with its coal
+  g.box(-0.72, 0.14, 0, 0.3, 0.36, 0.44, ENG, { top: 0x161616 });
+  g.box(-0.72, 0.5, 0, 0.26, 0.04, 0.38, 0x141414);
+  if (!lo) {
+    for (const x of [-0.1, 0.18, 0.46]) for (const sd of [-1, 1]) wheelR(g, x, 0, sd * GZ, 0, 0.12);
+    for (const x of [-0.8, -0.62]) for (const sd of [-1, 1]) wheelR(g, x, 0, sd * GZ, 0, 0.07);
+    for (const sd of [-1, 1]) g.beam(-0.1, 0.12, sd * 0.2, 0.46, 0.12, sd * 0.2, 0.025, 0x8a8a8a); // coupling rods
+  }
   // 1: coach
   rail(1);
-  g.box(0, 0.1, 0, 0.9, 0.28, 0.27, 0x6a2a22, { top: 0x3a3a3a });
-  g.box(0, 0.24, 0, 0.84, 0.06, 0.275, WIN, { glow: 1 });
-  g.box(0, 0.12, 0, 0.88, 0.025, 0.275, 0xffffff, { tint: 1 });
-  if (!lo) for (const x of [-0.3, 0.3]) for (const s of [-1, 1]) wheelR(g, x, 0.07, s * 0.14, 1, 0.065);
-  // 2: goods wagon
+  const COACH = 0x6a2a22;
+  g.box(0, 0.14, 0, TRAIN_CAR - 0.08, 0.44, 0.46, COACH, { top: 0x4a4a4a });
+  g.box(0, 0.58, 0, TRAIN_CAR - 0.14, 0.05, 0.4, 0x4a4a4a); // the roof
+  g.box(0, 0.2, 0, TRAIN_CAR - 0.07, 0.03, 0.465, 0xffffff, { tint: 1 });
+  for (const sd of [-1, 1]) for (let i = 0; i < 6; i++) g.box(-H + 0.22 + i * 0.255, 0.36, sd * 0.232, 0.17, 0.11, 0.006, WIN, { glow: 1 });
+  for (const sd of [-1, 1]) g.box(0, 0.36, sd * 0.2325, TRAIN_CAR - 0.12, 0.012, 0.004, 0xd8c890); // cream lining
+  for (const x of [-H + 0.34, H - 0.34]) bogie(g, x, 1, lo);
+  // 2: goods wagon (a boxcar with a sliding door)
   rail(2);
-  g.box(0, 0.1, 0, 0.9, 0.24, 0.27, 0x7a5a3a, { top: 0x6a6a64 });
-  g.box(0, 0.12, 0, 0.88, 0.025, 0.275, 0xffffff, { tint: 1 });
-  if (!lo) for (const x of [-0.3, 0.3]) for (const s of [-1, 1]) wheelR(g, x, 0.07, s * 0.14, 2, 0.065);
-  // 3: diesel engine
+  const WAG = 0x7a4a32;
+  g.box(0, 0.14, 0, TRAIN_CAR - 0.08, 0.42, 0.46, WAG, { top: 0x6a6a64 });
+  g.box(0, 0.56, 0, TRAIN_CAR - 0.12, 0.03, 0.42, 0x5a5a56);
+  g.box(0, 0.18, 0, TRAIN_CAR - 0.07, 0.025, 0.465, 0xffffff, { tint: 1 });
+  if (!lo) for (const sd of [-1, 1]) {
+    g.box(0, 0.24, sd * 0.232, 0.4, 0.28, 0.006, shade(WAG, 0.82));
+    for (let i = 0; i < 5; i++) g.box(-0.7 + i * 0.35, 0.22, sd * 0.2325, 0.012, 0.32, 0.004, shade(WAG, 0.7));
+  }
+  for (const x of [-H + 0.34, H - 0.34]) bogie(g, x, 2, lo);
+  // 3: diesel engine (a long hood, cabs at both ends, the realm's stripe)
   rail(3);
-  g.box(0, 0.1, 0, 0.9, 0.26, 0.27, 0xffffff, { tint: 1 });
-  g.box(0.35, 0.22, 0, 0.18, 0.1, 0.275, GLASS, { glow: 0.6 });
-  g.box(0, 0.36, 0, 0.6, 0.03, 0.2, 0x3a3a3a);
-  g.box(0.46, 0.15, 0, 0.02, 0.04, 0.1, 0xfff0c8, { glow: 1 });
-  if (!lo) for (const x of [-0.3, 0.3]) for (const s of [-1, 1]) wheelR(g, x, 0.07, s * 0.14, 3, 0.065);
+  const DSL = 0x3a4452;
+  g.box(0, 0.14, 0, TRAIN_CAR - 0.06, 0.06, 0.46, 0x2a2a2a);
+  g.box(0, 0.2, 0, TRAIN_CAR - 0.2, 0.34, 0.4, DSL, { top: 0x4a525c });
+  for (const x of [H - 0.26, -H + 0.26]) {
+    g.box(x, 0.2, 0, 0.34, 0.42, 0.46, DSL, { top: 0x3a3a3a });
+    g.box(x + Math.sign(x) * 0.172, 0.46, 0, 0.006, 0.1, 0.36, GLASS, { glow: 0.6 });
+    for (const sd of [-1, 1]) g.box(x, 0.46, sd * 0.232, 0.2, 0.1, 0.006, GLASS, { glow: 0.6 });
+  }
+  g.box(0, 0.27, 0, TRAIN_CAR - 0.08, 0.06, 0.47, 0xffffff, { tint: 1 });
+  g.box(0, 0.22, 0, TRAIN_CAR - 0.08, 0.02, 0.47, 0xd8b030);
+  g.box(H - 0.05, 0.3, 0, 0.02, 0.05, 0.12, 0xfff0c8, { glow: 1 });
+  if (!lo) for (let i = 0; i < 4; i++) g.box(-0.3 + i * 0.2, 0.54, 0, 0.12, 0.03, 0.2, 0x2a2e33); // fan grilles
+  for (const x of [-H + 0.34, H - 0.34]) bogie(g, x, 3, lo);
   g.setAnim(0);
-  return done(g, 0.95, [], [{ x: 0.32, y: 0.52, z: 0 }]);
+  return done(g, TRAIN_CAR, [], [{ x: 0.58, y: 0.74, z: 0 }]);
 }
 function wheelR(g, x, r, z, variant, rr) {
   g.setAnim(3, x, rr, z, variant);
@@ -506,27 +616,31 @@ function wheelR(g, x, r, z, variant, rr) {
   void r;
 }
 // Maglev: variant 0 the nose car, 1 a middle car; it floats over its guideway.
+export const MAGLEV_CAR = 1.8;
 function maglev(lo) {
   const g = new VB(243);
+  const H = MAGLEV_CAR / 2;
   for (const v of [0, 1]) {
     g.setAnim(0, 0, 0, 0, v);
-    g.box(0, 0.06, 0, v ? 1.1 : 0.8, 0.22, 0.28, 0xeef0f2, { top: 0xd8dce0 });
-    g.box(0, 0.08, 0, v ? 1.08 : 0.78, 0.03, 0.285, 0xffffff, { tint: 1 });
-    g.box(0, 0.18, 0, v ? 1.0 : 0.7, 0.06, 0.285, WIN, { glow: 1 });
+    const L = v ? MAGLEV_CAR - 0.06 : MAGLEV_CAR - 0.66;
+    const x0 = v ? 0 : -0.33;
+    g.box(x0, 0.06, 0, L, 0.4, 0.44, 0xeef0f2, { top: 0xd8dce0 });
+    g.box(x0, 0.1, 0, L + 0.01, 0.04, 0.445, 0xffffff, { tint: 1 });
+    for (const sd of [-1, 1]) g.box(x0, 0.28, sd * 0.222, L - 0.1, 0.1, 0.006, WIN, { glow: 1 });
     if (!v) {
       // the long tapering nose
       g.push();
-      g.translate(0.4, 0.17, 0);
+      g.translate(H - 0.66, 0.26, 0);
       g.rotateZ(-Math.PI / 2);
-      g.cone(0, 0, 0, 0.14, 0.55, 8, 0xeef0f2);
+      g.cone(0, 0, 0, 0.22, 0.66, 10, 0xeef0f2);
       g.pop();
-      g.box(0.55, 0.2, 0, 0.2, 0.05, 0.2, GLASS, { glow: 0.6 });
-      lights(g, 0.85, 0.12, 0.1);
+      g.box(H - 0.5, 0.32, 0, 0.3, 0.07, 0.26, GLASS, { glow: 0.6 });
+      lights(g, H - 0.08, 0.24, 0.12);
     }
-    if (!lo) g.box(0, 0.02, 0, v ? 1.0 : 0.8, 0.04, 0.18, 0x40c0ff, { glow: 2 });
+    if (!lo) g.box(x0, 0.03, 0, L - 0.1, 0.04, 0.3, 0x40c0ff, { glow: 2 });
   }
   g.setAnim(0);
-  return done(g, 1.25);
+  return done(g, MAGLEV_CAR);
 }
 function truck(lo) {
   const g = new VB(245);
