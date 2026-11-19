@@ -7,6 +7,8 @@ let g = null,
   from = null,
   seen = null,
   done = null,
+  cstamp = null,
+  cval = null,
   stampId = 0;
 let heapI = new Int32Array(1024),
   heapF = new Float32Array(1024),
@@ -19,6 +21,10 @@ function ensure(n) {
   from = new Int32Array(n);
   seen = new Uint32Array(n);
   done = new Uint32Array(n);
+  // each tile's step cost, asked once per search (a tile is a neighbour of up
+  // to eight expanded tiles and a corner of four diagonal steps)
+  cstamp = new Uint32Array(n);
+  cval = new Float64Array(n);
   stampId = 0;
 }
 function hpush(i, f) {
@@ -65,11 +71,20 @@ const SQ2 = Math.SQRT2;
 
 // cost(i) -> step cost multiplier (>= minCost) or Infinity for impassable.
 // goalTest(i) optional: accept any tile satisfying it as the goal.
-export function civPath(world, sx, sy, gx, gy, cost, maxNodes = 4000, minCost = 0.5, goalTest = null) {
+export function civPath(world, sx, sy, gx, gy, rawCost, maxNodes = 4000, minCost = 0.5, goalTest = null) {
   const W = world.w;
   ensure(world.size);
   stampId++;
+  const cs = cstamp,
+    cv = cval,
+    stamp = stampId;
+  const cost = (i) => {
+    if (cs[i] === stamp) return cv[i];
+    cs[i] = stamp;
+    return (cv[i] = rawCost(i));
+  };
   heapN = 0;
+  const Hh = world.h;
   const start = sy * W + sx;
   const goal = gy * W + gx;
   if (start === goal) return [goal];
@@ -91,8 +106,8 @@ export function civPath(world, sx, sy, gx, gy, cost, maxNodes = 4000, minCost = 
     bestH = h(start);
   while (heapN) {
     const cur = hpop();
-    if (done[cur] === stampId) continue;
-    done[cur] = stampId;
+    if (done[cur] === stamp) continue;
+    done[cur] = stamp;
     if (cur === goal || (goalTest && goalTest(cur))) {
       found = cur;
       break;
@@ -103,24 +118,33 @@ export function civPath(world, sx, sy, gx, gy, cost, maxNodes = 4000, minCost = 
     const gc = g[cur];
     for (let dy = -1; dy <= 1; dy++) {
       const ny = cy + dy;
-      if (ny < 0 || ny >= world.h) continue;
+      if (ny < 0 || ny >= Hh) continue;
+      const ady = Math.abs(ny - gy);
       for (let dx = -1; dx <= 1; dx++) {
         if (!dx && !dy) continue;
         const nx = cx + dx;
         if (nx < 0 || nx >= W) continue;
         const ni = ny * W + nx;
-        if (done[ni] === stampId) continue;
-        const c = ni === goal ? Math.min(cost(ni), 2) : cost(ni);
+        if (done[ni] === stamp) continue;
+        let c;
+        if (cs[ni] === stamp) c = cv[ni];
+        else {
+          cs[ni] = stamp;
+          c = cv[ni] = rawCost(ni);
+        }
+        if (ni === goal) c = Math.min(c, 2);
         if (c === Infinity) continue;
         if (dx && dy) {
+          // (a diagonal step never cuts a blocked corner)
           if (cost(cy * W + nx) === Infinity || cost(ny * W + cx) === Infinity) continue;
         }
         const ng = gc + c * (dx && dy ? SQ2 : 1);
-        if (seen[ni] !== stampId || ng < g[ni]) {
-          seen[ni] = stampId;
+        if (seen[ni] !== stamp || ng < g[ni]) {
+          seen[ni] = stamp;
           g[ni] = ng;
           from[ni] = cur;
-          const hh = h(ni);
+          const adx = Math.abs(nx - gx);
+          const hh = (adx + ady + (SQ2 - 2) * Math.min(adx, ady)) * hk;
           if (hh < bestH) {
             bestH = hh;
             best = ni;

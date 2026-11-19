@@ -228,13 +228,30 @@ export class RenderPipeline {
     this._variantsWarm = true;
     const ao = this.passes?.ao;
     if (!ao) return;
+    // only the post chain needs compiling: the scene pass draws nothing (no
+    // camera layer enabled), so this frame costs the post passes alone
+    // instead of a second full scene (it used to double one frame's draws)
+    // (the shadow map is left alone: it would be drawn empty for the masked
+    // camera; and this runs before the frame's real render, which then
+    // overwrites the screen)
+    const cam = this.game.cameraRig.camera;
+    const mask = cam.layers.mask;
+    const sm = this.renderer.shadowMap;
+    const au = sm.autoUpdate,
+      nu = sm.needsUpdate;
     try {
+      cam.layers.disableAll();
+      sm.autoUpdate = false;
+      sm.needsUpdate = false;
       ao.enabled = !ao.enabled;
       this.composer.render(0);
     } catch (err) {
       console.warn('[pipeline] variant warm-up skipped', err);
     } finally {
       ao.enabled = !ao.enabled;
+      cam.layers.mask = mask;
+      sm.autoUpdate = au;
+      sm.needsUpdate = nu;
     }
   }
 
@@ -462,8 +479,8 @@ export class RenderPipeline {
     if (this.composer) {
       try {
         this.syncPost(dt);
-        this.composer.render(dt);
         this.warmVariants();
+        this.composer.render(dt);
         return;
       } catch (err) {
         console.error('[pipeline] post-processing failed; falling back', err);
