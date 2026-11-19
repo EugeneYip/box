@@ -293,6 +293,7 @@ export const land = {
       d = Math.hypot(tx - v.x, tz - v.z);
     }
     if (v.pi >= P.length - 2 && d < 0.3) {
+      if (v.def.rail) v.donePath = P; // (its cars stay on the rails while it stands)
       v.path = null;
       v.speed = 0;
       return true;

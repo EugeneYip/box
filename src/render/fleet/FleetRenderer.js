@@ -524,8 +524,8 @@ export class FleetRenderer {
       const n = def.cars;
       const gap = def.length;
       const diesel = kind === 'train' && (this.game.civ?.kingdoms?.[v.kingdom]?.era ?? 0) >= 6;
-      const P = v.path;
-      let k = P ? Math.min(v.pi, P.length - 2) - 2 : -2,
+      const P = v.path || v.donePath || null;
+      let k = v.path ? Math.min(v.pi, P.length - 2) - 2 : P ? P.length - 2 : -2,
         hx = x,
         hz = z,
         rem = 0;
