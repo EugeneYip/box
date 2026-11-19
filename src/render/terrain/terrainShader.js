@@ -1093,8 +1093,8 @@ void terrainSurface() {
       vec2 blk = floor(fq);
       float r1 = hash12(blk + 3.7);
       float r2 = hash12(blk + 11.3);
-      float inF = smoothstep(r1 * 0.75 + 0.05, r1 * 0.75 + 0.25, st.g) * openB * (1.0 - snowB) * (1.0 - cliff);
-      vec3 young = vec3(0.30, 0.50, 0.12);
+      float inF = smoothstep(r1 * 0.55 + 0.02, r1 * 0.55 + 0.18, st.g) * openB * (1.0 - snowB) * (1.0 - cliff);
+      vec3 young = vec3(0.46, 0.60, 0.16);
       vec3 ripe = vec3(0.62, 0.55, 0.24);
       vec3 fallow = vec3(0.42, 0.32, 0.18);
       vec3 fc = r2 < 0.45 ? young : (r2 < 0.78 ? ripe : fallow);
@@ -1104,7 +1104,7 @@ void terrainSurface() {
       float bank = 1.0 - smoothstep(0.03, 0.09 + s.fw * 0.4, min(min(fb.x, 1.0 - fb.x), min(fb.y, 1.0 - fb.y)));
       fc = mix(fc, vec3(0.12, 0.20, 0.07), bank * 0.6 * (1.0 - smoothstep(0.25, 0.6, s.fw)));
       // keep the scene's light level: plots at the ground's own brightness
-      fc *= clamp(lum(albedo) / max(lum(fc), 0.02), 0.75, 1.35);
+      fc *= clamp(lum(albedo) / max(lum(fc), 0.02), 0.85, 1.6);
       albedo = mix(albedo, fc, inF * 0.85);
     }
     // towns at far zoom (past ~80 units): the build area is a pale urban
