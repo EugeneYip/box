@@ -1193,38 +1193,112 @@ export const brain = {
       }
       return;
     }
-    // patrol
+    // ---- peacetime duty (docs/DAILY-LIFE.md) ------------------------------
+    // Half the soldiers are on duty (even ids, as in units/needs.js and
+    // units/roles.js): by day they walk between the posts, stand guard and
+    // drill; at night most sleep in the barracks and only a few keep the night
+    // watch. The off-duty half rest in the barracks or drill in its yard
+    // (units/roles.js); without a barracks they rest at home, drill on the
+    // square or guard the hall (units/daily.js). Any of them takes up the
+    // woodcutter's work only while the town is short of wood.
+    // (Drilling used to be the woodcutter's swing with no label of its own,
+    // so the inspector read "Chopping wood" for a third of a soldier's day,
+    // and the guards drilled through the night.)
+    const U = g.units;
+    const war = this.warCount(v.kingdom) > 0;
+    const onDuty = (u.id & 1) === 0;
+    const live = !!g.settings?.dayNight;
+    const pl = U._dlPlaces ? U._dlPlaces(v) : null;
+    // the night watch: one guard in four, a different quarter each night (a
+    // night counts from noon to noon, so the watch holds past midnight)
+    const nightNo = (g.time.day | 0) - ((g.time.hour ?? 12) < 12 ? 1 : 0);
+    if (onDuty && !war && live && U._bedtime && U._bedtime(u) && ((u.id >> 1) + nightNo) % 4 !== 0) {
+      // to bed: the barracks, else home (the night watch, one guard in four, stays up)
+      if (u.carry) return this._deposit(u, v, d);
+      d.task = null;
+      const b = (pl?.barracks?.alive && pl.barracks) || U._homeOf?.(u, v);
+      if (!b || !U._goInside) return this._idle(u);
+      u._bedT = now;
+      u._bedB = b.type === 'barracks';
+      const r = this._go(u, b.doorX, b.doorZ, 0.7);
+      if (r === ARRIVED || (r === FAIL && Math.hypot(b.doorX - u.x, b.doorZ - u.z) < 3)) U._goInside(u, b);
+      else if (r === FAIL) U._nap0?.(u);
+      return;
+    }
+    const night = live && U._bedtime && U._bedtime(u);
+    // wood is short: lend a hand with the axe (by day, in peace)
+    if (!war && !night && (d.task?.kind === 'chop' || (!onDuty && v.wood < Math.max(15, (v.woodCap || 90) * 0.2)))) {
+      if (d.task?.kind === 'chop' || !u.carry) return this._jobWood(u, v, d, dt);
+    }
+    if (u.carry) return this._deposit(u, v, d);
+    // patrol: walk to a post, then guard it or drill there (a daily episode,
+    // so the inspector names it and the far camera costs a label)
     let t = d.task;
     if (!t || t.kind !== 'patrol') {
-      const towers = v.buildings.filter((b) => b.alive && !b.constructing && (b.type === 'watchtower' || b.type === 'tower' || b.type === 'gate' || b.type === 'barracks'));
-      let x, z;
-      if (towers.length && this.rng.chance(0.5)) {
-        const b = towers[(this.rng.next() * towers.length) | 0];
-        x = b.doorX + this.rng.float(-0.6, 0.6);
-        z = b.doorZ + this.rng.float(-0.6, 0.6);
-      } else if (this.rng.chance(0.75) && v.hall) {
-        x = v.hall.doorX + this.rng.float(-2.5, 2.5);
-        z = v.hall.doorZ + this.rng.float(-2.5, 2.5);
+      const posts = v.buildings.filter((b) => b.alive && !b.constructing && b.doorX != null && (b.type === 'watchtower' || b.type === 'tower' || b.type === 'gate' || b.type === 'wall' || b.type === 'barracks'));
+      let x,
+        z,
+        post = 'round',
+        fx = null,
+        fz = null;
+      const r0 = this.rng.next();
+      if (posts.length && r0 < (night ? 0.6 : 0.5)) {
+        const b = posts[(this.rng.next() * posts.length) | 0];
+        x = b.doorX + this.rng.float(-0.4, 0.4);
+        z = b.doorZ + this.rng.float(-0.4, 0.4);
+        post = b.type;
+        // face out from the town
+        fx = x + (x - v.cx);
+        fz = z + (z - v.cz);
+      } else if (r0 < 0.85 && v.hall) {
+        const a = this.rng.float(0, Math.PI * 2);
+        x = v.hall.doorX + Math.sin(a) * this.rng.float(0.8, 2.2);
+        z = v.hall.doorZ + Math.cos(a) * this.rng.float(0.8, 2.2);
+        post = 'hall';
+        fx = x + Math.sin(a);
+        fz = z + Math.cos(a);
       } else {
         const a = this.rng.float(0, Math.PI * 2),
           r = v.radius * this.rng.float(0.35, 0.75);
         x = v.cx + Math.cos(a) * r;
         z = v.cz + Math.sin(a) * r;
+        fx = x + Math.cos(a);
+        fz = z + Math.sin(a);
       }
-      t = d.task = { kind: 'patrol', x, z, phase: 'go', t: 0 };
+      t = d.task = { kind: 'patrol', x, z, phase: 'go', t: 0, post, fx, fz };
     }
     if (t.phase === 'go') {
       const r = this._go(u, t.x, t.z, 0.6);
       if (r === FAIL) d.task = null;
       if (r !== ARRIVED) return;
-      t.phase = 'wait';
-      t.t = 20 + this.rng.next() * 25;
-      t.drill = this.rng.chance(0.85);
     }
-    if (t.drill) this._work(u, 'chop', u.x + Math.sin(u.id), u.z + Math.cos(u.id));
-    else this._idle(u);
-    t.t -= dt;
-    if (t.t <= 0) d.task = null;
+    d.task = null;
+    if (!U._dlStart) return this._idle(u);
+    const era = this.kingdoms[v.kingdom]?.era || 0;
+    // drill by day at the barracks or on the square before the hall
+    if (!night && !war && (t.post === 'barracks' || t.post === 'hall') && this.rng.chance(0.4)) {
+      const dl = U._dlStart(u, 'drill', 18 + this.rng.next() * 16, { lab: t.post === 'barracks' ? 'Drilling in the barracks yard' : era >= 4 ? 'Drilling on the parade ground' : 'Drilling on the square', act: null, fx: t.fx, fz: t.fz });
+      dl.anim = 'chop';
+      dl.nt = false;
+      U._dlArrive(u, dl);
+      return;
+    }
+    const lab = night
+      ? 'Keeping the night watch'
+      : t.post === 'watchtower' || t.post === 'tower'
+        ? 'Keeping watch from the tower'
+        : t.post === 'gate'
+          ? 'Guarding the gate'
+          : t.post === 'wall'
+            ? 'Guarding the walls'
+            : t.post === 'barracks'
+              ? 'Guarding the barracks'
+              : t.post === 'hall'
+                ? 'Guarding the hall'
+                : 'Keeping watch';
+    // at war a guard looks round more often (the brain answers threats between spells)
+    const dur = war ? 8 + this.rng.next() * 6 : t.post === 'round' ? 8 + this.rng.next() * 8 : 22 + this.rng.next() * 22;
+    U._dlStart(u, 'guard', dur, { lab, act: 'wait', fx: t.fx, fz: t.fz }).nt = !!night;
   },
 
   _threatTo(v) {
