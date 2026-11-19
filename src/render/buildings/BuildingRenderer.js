@@ -211,6 +211,103 @@ class DetailBatch {
   }
 }
 
+// Small repeated props of one material (windmill sails, boats, scarecrows;
+// field fences) in ONE draw call, and one shadow draw for casters: a
+// THREE.BatchedMesh holds each prop geometry once (reduced to position,
+// normal and, for vertex-coloured materials, colour) and its instances are
+// rewritten in order between begin() and end(). Before, every style of every
+// prop was its own instanced draw.
+class PropBatch {
+  constructor(parent, material, { shadow = false, name = 'props', vertexColors = false } = {}) {
+    this.parent = parent;
+    this.material = material;
+    this.shadow = shadow;
+    this.name = name;
+    this.vertexColors = vertexColors;
+    this.geoIds = new Map();
+    this.vUsed = 0;
+    this.cap = 0;
+    this.vcap = 0;
+    this.nInst = 0;
+    this.k = 0;
+    this.shown = 0;
+    this.mesh = null;
+  }
+  _prep(geo) {
+    const src = geo.index ? geo.toNonIndexed() : geo;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', src.attributes.position);
+    if (src.attributes.normal) g.setAttribute('normal', src.attributes.normal);
+    else g.computeVertexNormals();
+    if (this.vertexColors) {
+      const c = src.attributes.color;
+      if (c && c.itemSize === 3) g.setAttribute('color', c);
+      else g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(src.attributes.position.count * 3).fill(1), 3));
+    }
+    return g;
+  }
+  _ensure(nInst, vNeed) {
+    if (!this.mesh) {
+      this.cap = Math.max(64, Math.ceil(nInst * 1.5));
+      this.vcap = Math.max(8192, Math.ceil(vNeed * 1.5));
+      const m = new THREE.BatchedMesh(this.cap, this.vcap, 0, this.material);
+      m.name = 'buildings:' + this.name;
+      m.castShadow = this.shadow;
+      m.receiveShadow = true;
+      m.frustumCulled = false; // three culls each instance itself
+      m.perObjectFrustumCulled = true;
+      m.sortObjects = false;
+      m.visible = false;
+      this.mesh = m;
+      this.parent.add(m);
+      return;
+    }
+    if (nInst > this.cap) {
+      this.cap = Math.ceil(nInst * 1.5);
+      this.mesh.setInstanceCount(this.cap);
+    }
+    if (vNeed > this.vcap) {
+      this.vcap = Math.ceil(vNeed * 1.5);
+      this.mesh.setGeometrySize(this.vcap, 0);
+    }
+  }
+  geometryId(key, geo) {
+    let id = this.geoIds.get(key);
+    if (id != null) return id;
+    const g = this._prep(geo);
+    const vc = g.attributes.position.count;
+    this._ensure(this.cap, this.vUsed + vc);
+    id = this.mesh.addGeometry(g);
+    this.vUsed += vc;
+    this.geoIds.set(key, id);
+    return id;
+  }
+  begin() {
+    this.k = 0;
+    this.shown = 0;
+  }
+  push(key, geo, matrix, color = null, visible = true) {
+    const gid = this.geometryId(key, geo);
+    const i = this.k++;
+    const m = this.mesh;
+    if (i >= this.nInst) {
+      this._ensure(i + 1, this.vUsed);
+      m.addInstance(gid);
+      this.nInst++;
+    } else if (m.getGeometryIdAt(i) !== gid) m.setGeometryIdAt(i, gid);
+    m.setMatrixAt(i, matrix);
+    if (color) m.setColorAt(i, color);
+    if (m.getVisibleAt(i) !== visible) m.setVisibleAt(i, visible);
+    if (visible) this.shown++;
+  }
+  end() {
+    const m = this.mesh;
+    if (!m) return;
+    for (let i = this.k; i < this.nInst; i++) if (m.getVisibleAt(i)) m.setVisibleAt(i, false);
+    m.visible = this.shown > 0;
+  }
+}
+
 export class BuildingRenderer {
   constructor(game) {
     this.game = game;
@@ -284,12 +381,17 @@ export class BuildingRenderer {
     scene.add(this.footing);
     this.bannerMat = bannerMaterial(this.uniforms);
     this.bannerMeshes = new Map();
-    this.bladeMeshes = new Map();
-    this.boatMeshes = new Map();
+    // windmill sails, boats and scarecrows of every style: one batched draw
+    this.propBatch = new PropBatch(this.group, this.propMat, { name: 'props', vertexColors: true });
+    this.bladeGeo = new Map();
+    this.boatGeo = new Map();
+    this.scareGeo = new Map();
+    this._scareList = [];
+    this._eu = new THREE.Euler();
     for (const st of ['vale', 'dune', 'frost', 'mire']) {
       this.bannerMeshes.set(st, this._inst(bannerGeometry(st), this.bannerMat, 32, false, 'banners:' + st));
-      this.bladeMeshes.set(st, this._inst(bladesGeometry(st), this.propMat, 8, false, 'blades:' + st));
-      this.boatMeshes.set(st, this._inst(boatGeometry(st), this.propMat, 16, false, 'boats:' + st));
+      this.bladeGeo.set(st, bladesGeometry(st));
+      this.boatGeo.set(st, boatGeometry(st));
     }
     // ground glow under lanterns & doors at night
     const dgeo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
@@ -300,27 +402,15 @@ export class BuildingRenderer {
     this.decals.frustumCulled = false;
     scene.add(this.decals);
     // fences
-    this.fenceMeshes = new Map();
-    const box = new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0);
-    for (const st of Object.keys(FENCE)) {
-      const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.92 });
-      const posts = new THREE.InstancedMesh(box, mat, 64);
-      const rails = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), mat, 64);
-      for (const m of [posts, rails]) {
-        m.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(64 * 3), 3);
-        m.castShadow = true;
-        m.receiveShadow = true;
-        m.count = 0;
-        scene.add(m);
-      }
-      this.fenceMeshes.set(st, { posts, rails, cap: 64 });
-    }
+    // (posts and rails of every style: one batched draw and one shadow draw)
+    this.fenceBatch = new PropBatch(this.group, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.92 }), { shadow: true, name: 'fences' });
+    this.postGeo = new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0);
+    this.railGeo = new THREE.BoxGeometry(1, 1, 1);
     // tall staffs for capital standards and army standard-bearers
     this.staffGeo = new THREE.CylinderGeometry(0.03, 0.04, 1, 6).translate(0, 0.5, 0);
     this.staffMesh = this._inst(this.staffGeo, new THREE.MeshStandardMaterial({ color: 0x5a3c24, roughness: 0.8 }), 16, true, 'staffs');
     this.staffMap = new Map([['s', this.staffMesh]]);
-    this.scarecrows = new Map();
-    for (const st of ['vale', 'frost', 'mire']) this.scarecrows.set(st, this._inst(scarecrowGeometry(st), this.propMat, 16, false, 'scarecrows:' + st));
+    for (const st of ['vale', 'frost', 'mire']) this.scareGeo.set(st, scarecrowGeometry(st));
     // selection ring
     const ring = new THREE.RingGeometry(0.92, 1.0, 64).rotateX(-Math.PI / 2);
     this.ring = new THREE.Mesh(ring, new THREE.MeshBasicMaterial({ color: 0xffe2a0, transparent: true, opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending }));
@@ -759,8 +849,8 @@ export class BuildingRenderer {
     const world = g.world;
     const per = new Map();
     const scare = new Map();
-    for (const st of this.fenceMeshes.keys()) per.set(st, { posts: [], rails: [] });
-    for (const st of this.scarecrows.keys()) scare.set(st, []);
+    for (const st of Object.keys(FENCE)) per.set(st, { posts: [], rails: [] });
+    for (const st of this.scareGeo.keys()) scare.set(st, []);
     const q = this._q;
     for (const v of civ.villages) {
       if (!v.alive) continue;
@@ -815,34 +905,19 @@ export class BuildingRenderer {
     }
     const dir = new THREE.Vector3();
     const X = new THREE.Vector3(1, 0, 0);
+    const fb = this.fenceBatch;
+    fb.begin();
     for (const [st, P] of per) {
       const F = FENCE[st];
-      let fm = this.fenceMeshes.get(st);
-      const need = Math.max(P.posts.length, P.rails.length);
-      if (need > fm.cap) {
-        const cap = Math.ceil(need * 1.5);
-        for (const k of ['posts', 'rails']) {
-          const old = fm[k];
-          const nm = new THREE.InstancedMesh(old.geometry, old.material, cap);
-          nm.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(cap * 3), 3);
-          nm.castShadow = true;
-          nm.receiveShadow = true;
-          this.group.remove(old);
-          old.dispose();
-          this.group.add(nm);
-          fm[k] = nm;
-        }
-        fm.cap = cap;
-      }
       const base = new THREE.Color(F.color);
-      for (let i = 0; i < P.posts.length; i++) {
-        const [x, y, z] = P.posts[i];
-        const s = F.post;
-        this._m.compose(this._p.set(x, y - 0.06, z), q.setFromAxisAngle(this._up, hash2(Math.round(x * 7), Math.round(z * 7), 3) * 0.4), this._s.set(s[0] * PS, s[1] * PS + 0.06, s[2] * PS));
-        fm.posts.setMatrixAt(i, this._m);
-        this._c.copy(base).multiplyScalar(0.85 + hash2(i, 7, 1) * 0.3);
-        fm.posts.setColorAt(i, this._c);
-      }
+      if (!F.wall)
+        for (let i = 0; i < P.posts.length; i++) {
+          const [x, y, z] = P.posts[i];
+          const s = F.post;
+          this._m.compose(this._p.set(x, y - 0.06, z), q.setFromAxisAngle(this._up, hash2(Math.round(x * 7), Math.round(z * 7), 3) * 0.4), this._s.set(s[0] * PS, s[1] * PS + 0.06, s[2] * PS));
+          this._c.copy(base).multiplyScalar(0.85 + hash2(i, 7, 1) * 0.3);
+          fb.push('post', this.postGeo, this._m, this._c);
+        }
       for (let i = 0; i < P.rails.length; i++) {
         const [ax, ay, az, bx, by, bz] = P.rails[i];
         dir.set(bx - ax, by - ay, bz - az);
@@ -851,28 +926,20 @@ export class BuildingRenderer {
         q.setFromUnitVectors(X, dir);
         const th = F.rail;
         this._m.compose(this._p.set((ax + bx) / 2, (ay + by) / 2, (az + bz) / 2), q, this._s.set(len + (F.wall ? th[0] * 0.5 * PS : 0.02), th[1] * PS, th[0] * PS));
-        fm.rails.setMatrixAt(i, this._m);
         this._c.copy(base).multiplyScalar(0.8 + hash2(i, 9, 2) * 0.35);
-        fm.rails.setColorAt(i, this._c);
-      }
-      fm.posts.count = F.wall ? 0 : P.posts.length;
-      fm.rails.count = P.rails.length;
-      for (const k of ['posts', 'rails']) {
-        fm[k].instanceMatrix.needsUpdate = true;
-        if (fm[k].instanceColor) fm[k].instanceColor.needsUpdate = true;
-        fm[k].computeBoundingSphere();
+        fb.push('rail', this.railGeo, this._m, this._c);
       }
     }
-    for (const [st, list] of scare) {
-      const m = this._grow(this.scarecrows, st, list.length);
+    fb.end();
+    this._fenceN = fb.k;
+    if (fb.mesh) fb.mesh.visible = !!this._props && fb.k > 0; // (shown as a whole with the props)
+    // scarecrows join the sails and boats (written every frame)
+    const sl = (this._scareList = []);
+    for (const [st, list] of scare)
       for (let i = 0; i < list.length; i++) {
         const [x, y, z, r] = list[i];
-        this._m.compose(this._p.set(x, y, z), q.setFromAxisAngle(this._up, r), this._s.set(PS, PS, PS));
-        m.setMatrixAt(i, this._m);
+        sl.push(st, new THREE.Matrix4().compose(this._p.set(x, y, z), q.setFromAxisAngle(this._up, r), this._s.set(PS, PS, PS)));
       }
-      m.count = list.length;
-      m.instanceMatrix.needsUpdate = true;
-    }
   }
 
   // ------------------------------------------------------------------ animation
@@ -952,36 +1019,32 @@ export class BuildingRenderer {
       L.push(b);
     }
     const spin = this.t * (0.5 + (wind.strength ?? 0.3) * 2.2);
-    for (const st of this.bladeMeshes.keys()) {
-      const L = per.get(st) || [];
-      const mesh = this._grow(this.bladeMeshes, st, L.length);
+    const D = this.game.cameraRig?.cur?.dist ?? 60;
+    const pb = this.propBatch;
+    pb.begin();
+    const showBlades = !this._far,
+      showBoats = D < this.lodDist,
+      showScare = !!this._props;
+    for (const [st, L] of per) {
+      const geo = this.bladeGeo.get(st);
+      if (!geo) continue;
       for (let i = 0; i < L.length; i++) {
         this._m.copy(L[i].m).multiply(this._m2.makeRotationZ(spin + L[i].phase));
-        mesh.setMatrixAt(i, this._m);
+        pb.push('blades|' + st, geo, this._m, null, showBlades);
       }
-      mesh.count = L.length;
-      mesh.instanceMatrix.needsUpdate = true;
     }
-    const bp = new Map();
     for (const b of this.boats) {
-      let L = bp.get(b.style);
-      if (!L) bp.set(b.style, (L = []));
-      L.push(b);
+      const geo = this.boatGeo.get(b.style);
+      if (!geo) continue;
+      const t = this.t + b.phase;
+      const bob = Math.sin(t * 1.6) * 0.025;
+      this._q.setFromEuler(this._eu.set(Math.sin(t * 1.3) * 0.05, b.ry + Math.PI / 2 + Math.sin(t * 0.3) * 0.08, Math.sin(t * 1.1 + 1) * 0.04));
+      this._m.compose(this._p.set(b.x + Math.sin(t * 0.25) * 0.08, SEA_LEVEL - 0.03 + bob, b.z), this._q, this._s.set(b.s || 1, b.s || 1, b.s || 1));
+      pb.push('boat|' + b.style, geo, this._m, null, showBoats);
     }
-    for (const st of this.boatMeshes.keys()) {
-      const L = bp.get(st) || [];
-      const mesh = this._grow(this.boatMeshes, st, L.length);
-      for (let i = 0; i < L.length; i++) {
-        const b = L[i];
-        const t = this.t + b.phase;
-        const bob = Math.sin(t * 1.6) * 0.025;
-        this._q.setFromEuler(new THREE.Euler(Math.sin(t * 1.3) * 0.05, b.ry + Math.PI / 2 + Math.sin(t * 0.3) * 0.08, Math.sin(t * 1.1 + 1) * 0.04));
-        this._m.compose(this._p.set(b.x + Math.sin(t * 0.25) * 0.08, SEA_LEVEL - 0.03 + bob, b.z), this._q, this._s.set(b.s || 1, b.s || 1, b.s || 1));
-        mesh.setMatrixAt(i, this._m);
-      }
-      mesh.count = L.length;
-      mesh.instanceMatrix.needsUpdate = true;
-    }
+    const sl = this._scareList;
+    for (let i = 0; i < sl.length; i += 2) pb.push('scare|' + sl[i], this.scareGeo.get(sl[i]), sl[i + 1], null, showScare);
+    pb.end();
     void dt;
     void force;
   }
@@ -1004,13 +1067,10 @@ export class BuildingRenderer {
       this.dSmall.showKey('lamppost', props);
       this.dSmall.showKey('streetlamp', props);
     }
-    for (const fm of this.fenceMeshes.values()) {
-      fm.posts.visible = props && fm.posts.count > 0;
-      fm.rails.visible = props && fm.rails.count > 0;
-    }
-    for (const m of this.scarecrows.values()) m.visible = props && m.count > 0;
-    for (const m of this.boatMeshes.values()) m.visible = D < this.lodDist && m.count > 0;
-    for (const m of this.bladeMeshes.values()) m.visible = !far && m.count > 0;
+    // fences: shown or hidden as a whole (the sails, boats and scarecrows
+    // read the same flags when they are written each frame)
+    const fb = this.fenceBatch;
+    if (fb.mesh) fb.mesh.visible = props && (this._fenceN || 0) > 0;
     for (const m of this.bannerMeshes.values()) m.visible = !far && m.count > 0;
     if (this.decals) this.decals.visible = props && this.decalMat.opacity > 0.01;
   }
