@@ -63,6 +63,7 @@ function miasmaPuff(fx, x, y, z, s, bank = false) {
 // a strike always lands and a quake always ends on game time.
 const VIS_LAG = 0.25; // visual seconds a set piece may trail game time before tick() plays it on
 const VIS_STEP = 0.1; // largest visual step of one update (as a capped frame)
+const MUTED_EMIT = () => {};
 function visualSpeed(g) {
   return Math.min(3, Math.max(1, Math.pow(g.speed || 1, 0.4)));
 }
@@ -101,12 +102,22 @@ export class Disasters {
   _catchUp(step) {
     const vs = visualSpeed(this.game);
     const owe = (step * vs) / (this.game.speed || 1);
+    // what tick() plays is not seen (fast-forward, or frames far behind): the
+    // set pieces do their damage with the particle effects held back to a
+    // trickle, so a long fast-forward does not pay for smoke nobody sees
+    const fx = this.game.fx;
+    let fxB = null;
     for (let i = this.active.length - 1; i >= 0; i--) {
       const e = this.active[i];
       e._owe = (e._owe || 0) + owe;
       if (e._owe <= VIS_LAG) continue;
       let d = e._owe - VIS_LAG * 0.5;
       e._owe -= d;
+      if (fx && fxB === null) {
+        fxB = fx.budget;
+        fx.budget = 0.08;
+        fx.emit = MUTED_EMIT;
+      }
       let alive = true;
       while (alive && d > 1e-6) {
         const c = Math.min(VIS_STEP, d);
@@ -114,6 +125,10 @@ export class Disasters {
         alive = this._run(e, c, c / vs);
       }
       if (!alive) this._drop(e);
+    }
+    if (fxB !== null) {
+      fx.budget = fxB;
+      delete fx.emit; // back to the class method
     }
   }
 
