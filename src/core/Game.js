@@ -68,7 +68,7 @@ export class Game {
     this.laws = loadLaws();
     // Round world (docs/ROUND-WORLD.md): kept with the world (URL wrap=0|1), on
     // by default; the World instance carries it for src/world/geo.js
-    this.laws.worldWrap = params.wrap ?? true;
+    this.laws.worldWrap = params.wrap ?? !params.region; // (a regional map never wraps)
     this.world.wrapTravel = this.laws.worldWrap;
     this.settings = {
       // ?hour= pins the time of day (screenshots) without touching the law.

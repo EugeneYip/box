@@ -42,11 +42,32 @@ export const air = {
     if (this.canUse(kid, 'patrol') && r < 0.75) return 'patrol';
     if (this.canUse(kid, 'battleship')) return 'battleship';
     if (this.canUse(kid, 'ironclad')) return 'ironclad';
-    return null;
+    return this._modernEra(kid) ? 'patrol' : null;
+  },
+  // A realm of the Modern era or later (era 5+) fields no old kinds: no rams,
+  // ox carts, galleys or cogs (a Future realm still sent a battering ram to
+  // war at Year 600). Civilization retires the ones it still has.
+  _modernEra(kid) {
+    return (this.kingdom(kid)?.era ?? 0) >= 5;
   },
   siegeModel(kid, kind) {
-    if (kind === 'ram') return this.hasTech(kid, 'battleships') ? 'tank' : null;
-    if (kind === 'catapult') return this.hasTech(kid, 'battleships') ? 'artillery' : this.hasTech(kid, 'gunpowder') ? 'cannon' : null;
+    const late = this._modernEra(kid);
+    if (kind === 'ram') return late || this.hasTech(kid, 'battleships') ? 'tank' : null;
+    if (kind === 'catapult') return late || this.hasTech(kid, 'battleships') ? 'artillery' : this.hasTech(kid, 'gunpowder') ? 'cannon' : null;
+    return null;
+  },
+  // Road haulage: trucks take over from carts, a few carts at a time, and
+  // carts are gone altogether in the Modern era
+  cartModel(kid) {
+    if (this._modernEra(kid)) return 'truck';
+    return this.hasTech(kid, 'combustion') && this.rng() < 0.75 ? 'truck' : null;
+  },
+  // The modern ship of the same routine for an old kind a Modern realm asks
+  // for (requestVoyage), or null to sail the old kind
+  voyageModel(kid, kind) {
+    if (!this._modernEra(kid)) return null;
+    if (kind === 'galley') return this.warModel(kid);
+    if (kind === 'cog') return this.canUse(kid, 'freighter') ? 'freighter' : 'steamer';
     return null;
   },
   // Sea trade: the newest hull most of the time, the one before it now and
@@ -60,7 +81,7 @@ export const air = {
     if (this.canUse(kid, 'freighter')) L.push('freighter');
     if (this.canUse(kid, 'container')) L.push(this.canUse(kid, 'tanker') && this.rng() < 0.35 ? 'tanker' : 'container');
     if (this.canUse(kid, 'autocargo')) L.push(this.rng() < 0.5 ? 'trimaran' : 'autocargo');
-    if (!L.length) return null;
+    if (!L.length) return this._modernEra(kid) ? 'steamer' : null;
     if (o.passengers && this.canUse(kid, 'liner') && this.rng() < 0.3 && this.count(kid, 'liner') < 2) return 'liner';
     if (o.short && this.canUse(kid, 'hydrofoil') && this.rng() < 0.4 && this.count(kid, 'hydrofoil') < 3) return 'hydrofoil';
     const r = this.rng();

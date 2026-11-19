@@ -139,6 +139,7 @@ export const techById = Object.fromEntries(TECHS.map((t) => [t.id, t]));
 // mean cost of each era's arts (the research choice weighs a modern art
 // against its own era's price)
 const ERA_COST = {};
+const OLD_KINDS = new Set(['ram', 'oxcart', 'galley', 'cog']);
 for (let e = 0; e <= LAST_ERA; e++) {
   const L = TECHS.filter((t) => t.era === e && !t.side);
   ERA_COST[e] = L.length ? L.reduce((a, t) => a + t.cost, 0) / L.length : 1000;
@@ -255,6 +256,35 @@ export const tech = {
     k.techs = k.techs instanceof Set ? k.techs : new Set();
     k.era = k.era || 0;
     k.researching = null;
+  },
+
+  // Realms of the Modern era and later lay up their old kinds over a few
+  // years (the fleet gives them only modern kinds from then on: air.js
+  // _modernEra): a ram, ox cart, galley or cog still about is retired once
+  // it is idle, or regardless after three years more.
+  _retireOldKinds() {
+    const F = this.game.fleet;
+    if (!F?.list) return;
+    const now = this.game.time.total;
+    for (const v of F.list) {
+      if (!v.alive || !OLD_KINDS.has(v.kind) || (this.kingdoms[v.kingdom]?.era ?? 0) < 5) continue;
+      if (v.retireAt == null) {
+        v.retireAt = now + YEAR * (1 + this.rng.next() * 3);
+        continue;
+      }
+      if (now < v.retireAt) continue;
+      const idle = v.state === 'moored' || v.state === 'anchored' || !v.mission || v.abandon > 0;
+      if (idle || now > v.retireAt + YEAR * 3) F.remove(v, 'retired');
+    }
+  },
+
+  // A realm that rises from no parent (wanderers) knows what every living
+  // realm already knows, and stands in the era they all share.
+  _commonTechs(k) {
+    const live = this.kingdoms.filter((o) => o !== k && o.alive && o.villages.length && o.techs);
+    if (!live.length) return;
+    for (const t of live[0].techs) if (live.every((o) => o.techs.has(t))) k.techs.add(t);
+    k.era = Math.min(...live.map((o) => o.era || 0));
   },
 
   _availableTechs(k) {
