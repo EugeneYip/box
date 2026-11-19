@@ -701,8 +701,9 @@ export const planner = {
     const W = w.w;
     const rng = this.rng;
     const sizes = PLOT_SIZES;
-    const minD = (4 + v.tier) * F + 1.5;
-    const maxD = v.buildRadius + 11 * F;
+    // a city (tier 2+) keeps its fields beyond its core, round the outskirts
+    const minD = v.tier >= 2 ? Math.max((4 + v.tier) * F + 1.5, v.radius * 0.8) : (4 + v.tier) * F + 1.5;
+    const maxD = Math.max(v.buildRadius + 11 * F, minD + 6);
     const steep = this._terraceSlope(v); // Terracing (breadth.js)
     let best = null,
       bs = Infinity;

@@ -513,53 +513,100 @@ const BUILD = {
       tree(g, x, z, 0, 1.3);
   },
 
-  skyscraper(g, P) {
+  // four seeded towers (BuildingRenderer: the building's own variant) so a
+  // downtown is a skyline, not a row of copies: 0 the stepped tower with a
+  // mast, 1 a slender tower with a pointed crown, 2 a broad slab with a
+  // rooftop deck, 3 a round tower with a ringed crown
+  skyscraper(g, P, level = 1, variant = 0) {
     const e = P.era;
-    const glassC = e >= 7 ? 0x7cc4d4 : e >= 6 ? 0x5f8fb8 : 0x6a8aa4;
-    const frameC = e >= 7 ? 0xf2f4f0 : e >= 6 ? 0x9aa4ac : 0xb4ab98;
-    // the podium and lobby
-    g.box(0, -0.06, 0, 1.75, 0.1, 1.75, P.concrete2);
-    g.box(0, 0, 0, 1.65, 0.45, 1.65, frameC);
-    g.box(0, 0.06, 0, 1.67, 0.3, 1.67, glassC, { glow: 1, noTop: true });
-    flatRoof(g, 0, 0.45, 0, 1.65, 1.65, frameC, e >= 7 ? P.green : P.slate, 0.05);
-    door(g, P, 0, 0.84, 0.36, 0.26, glassC, { canopy: P.accent });
-    // the shaft: glass between piers, then a setback, then the crown
-    const tiers = [
-      [1.25, 0.49, 3.2],
-      [0.95, 3.69, 1.25],
-      [0.66, 4.94, 0.5],
-    ];
-    for (const [s, y0, h] of tiers) {
-      g.box(0, y0, 0, s, h, s, glassC, { glow: 1, top: frameC });
-      mullions(g, 0, y0, 0, s, s, h, 0.16, frameC, 0.03);
+    const v = variant % 4;
+    const glassC = e >= 7 ? [0x7cc4d4, 0x8ad0c8, 0x9ccad8, 0x74b8cc][v] : e >= 6 ? [0x5f8fb8, 0x4f7c9e, 0x6e9cb4, 0x58849a][v] : [0x6a8aa4, 0x7a8c98, 0x6a7e8e, 0x7894a8][v];
+    const frameC = e >= 7 ? 0xf2f4f0 : e >= 6 ? [0x9aa4ac, 0x6e767e, 0xb8bec4, 0x8a9096][v] : [0xb4ab98, 0x9a8e7a, 0xc4bcaa, 0xa49a88][v];
+    const shaft = (s, sd, y0, h) => {
+      g.box(0, y0, 0, s, h, sd, glassC, { glow: 1, top: frameC });
+      mullions(g, 0, y0, 0, s, sd, h, v === 2 ? 0.22 : 0.16, frameC, 0.03);
       const fl = Math.round(h / 0.34);
-      for (let i = 1; i < fl; i++) g.box(0, y0 + (h * i) / fl, 0, s + 0.035, 0.03, s + 0.035, frameC, { noTop: true });
-      g.box(0, y0 + h, 0, s + 0.06, 0.06, s + 0.06, frameC);
+      for (let i = 1; i < fl; i++) g.box(0, y0 + (h * i) / fl, 0, s + 0.035, 0.03, sd + 0.035, frameC, { noTop: true });
+      g.box(0, y0 + h, 0, s + 0.06, 0.06, sd + 0.06, frameC);
       if (e >= 7) {
-        // planted setbacks
-        g.box(0, y0 + h + 0.06, 0, s - 0.02, 0.04, s - 0.02, P.green);
+        g.box(0, y0 + h + 0.06, 0, s - 0.02, 0.04, sd - 0.02, P.green);
         for (const [sx, sz] of [
           [1, 1],
           [-1, -1],
           [1, -1],
           [-1, 1],
         ])
-          g.bead((sx * s) / 2.6, y0 + h + 0.06, (sz * s) / 2.6, 0.09, P.leaf);
+          g.bead((sx * s) / 2.6, y0 + h + 0.06, (sz * sd) / 2.6, 0.09, P.leaf);
       }
+    };
+    // the podium and lobby
+    const pw = v === 2 ? 1.8 : v === 1 ? 1.4 : 1.65,
+      pd = v === 2 ? 1.5 : v === 1 ? 1.4 : 1.65;
+    g.box(0, -0.06, 0, pw + 0.1, 0.1, pd + 0.1, P.concrete2);
+    g.box(0, 0, 0, pw, 0.45, pd, frameC);
+    g.box(0, 0.06, 0, pw + 0.02, 0.3, pd + 0.02, glassC, { glow: 1, noTop: true });
+    flatRoof(g, 0, 0.45, 0, pw, pd, frameC, e >= 7 ? P.green : P.slate, 0.05);
+    door(g, P, 0, pd / 2 + 0.015, 0.36, 0.26, glassC, { canopy: P.accent });
+    let top;
+    if (v === 1) {
+      // slender: one tall shaft and a four-sided pointed crown
+      shaft(0.95, 0.95, 0.49, 4.9);
+      top = 5.45;
+      g.cone(0, top, 0, 0.62, 1.1, 4, e >= 7 ? 0xf2f4f0 : frameC, { rot: Math.PI / 4 });
+      g.cyl(0, top + 1.0, 0, 0.02, 0.6, 5, P.steel, {});
+      g.box(0, top + 1.6, 0, 0.05, 0.05, 0.05, P.red, { glow: BEACON });
+      if (e >= 7) g.box(0, top + 0.02, 0, 0.9, 0.04, 0.9, 0x7fe8f0, { glow: CYAN, noTop: true });
+    } else if (v === 2) {
+      // broad slab: wide and lower, a rooftop deck with plant rooms
+      shaft(1.55, 1.05, 0.49, 3.1);
+      top = 3.65;
+      g.box(-0.35, top, 0, 0.6, 0.3, 0.6, P.concrete2);
+      g.box(0.4, top, 0, 0.5, 0.04, 0.5, P.dark);
+      g.box(0.4, top + 0.04, 0, 0.36, 0.005, 0.04, P.yellow);
+      g.box(0.4, top + 0.04, 0, 0.04, 0.005, 0.36, P.yellow);
+      g.box(-0.35, top + 0.3, 0, 0.05, 0.05, 0.05, P.red, { glow: BEACON });
+      sign(g, 0, 2.9, 0.54, 0.7, 0.1);
+      if (e >= 7) for (const x of [-0.6, 0.6]) g.bead(x, top, 0.35, 0.12, P.leaf);
+      return;
+    } else if (v === 3) {
+      // round: a glass drum between white ribs and a ringed crown
+      const r = 0.62,
+        h = 4.2;
+      g.cyl(0, 0.49, 0, r, h, 16, glassC, { glow: 1, capCol: frameC });
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        g.box(Math.cos(a) * (r + 0.01), 0.49, Math.sin(a) * (r + 0.01), 0.05, h, 0.05, frameC, { ry: -a });
+      }
+      for (let k = 1; k < 12; k++) g.cyl(0, 0.49 + (h * k) / 12, 0, r + 0.015, 0.025, 16, frameC, { cap: false });
+      top = 0.49 + h;
+      g.cyl(0, top, 0, r * 0.75, 0.35, 16, frameC, { r2: r * 0.55 });
+      g.cyl(0, top + 0.35, 0, r * 0.62, 0.05, 16, e >= 7 ? 0x7fe8f0 : P.accent, { glow: e >= 7 ? CYAN : 0, cap: false });
+      g.cyl(0, top + 0.4, 0, 0.025, 0.7, 5, P.steel, {});
+      g.box(0, top + 1.1, 0, 0.05, 0.05, 0.05, P.red, { glow: BEACON });
+      if (e >= 7) g.bead(0, top + 0.35, 0, 0.2, P.leaf);
+      return;
+    } else {
+      // stepped: the shaft, a setback, the crown and a mast
+      for (const [sz, y0, h] of [
+        [1.25, 0.49, 3.2],
+        [0.95, 3.69, 1.25],
+        [0.66, 4.94, 0.5],
+      ])
+        shaft(sz, sz, y0, h);
+      for (const [sx, sz] of [
+        [1, 1],
+        [-1, 1],
+        [1, -1],
+        [-1, -1],
+      ])
+        g.box(sx * 0.6, 0.49, sz * 0.6, 0.08, 3.2, 0.08, frameC);
+      g.box(0, 5.44, 0, 0.36, 0.18, 0.36, P.steel);
+      g.cyl(0, 5.62, 0, 0.025, 0.9, 5, P.steel, {});
+      g.box(0, 6.5, 0, 0.06, 0.06, 0.06, P.red, { glow: BEACON });
+      if (e >= 7) g.box(0, 5.43, 0, 0.68, 0.04, 0.68, 0x7fe8f0, { glow: CYAN, noTop: true });
+      top = 5.44;
     }
-    // corner piers on the shaft
-    for (const [sx, sz] of [
-      [1, 1],
-      [-1, 1],
-      [1, -1],
-      [-1, -1],
-    ])
-      g.box(sx * 0.6, 0.49, sz * 0.6, 0.08, 3.2, 0.08, frameC);
-    g.box(0, 5.44, 0, 0.36, 0.18, 0.36, P.steel);
-    g.cyl(0, 5.62, 0, 0.025, 0.9, 5, P.steel, {});
-    g.box(0, 6.5, 0, 0.06, 0.06, 0.06, P.red, { glow: BEACON });
-    if (e >= 7) g.box(0, 5.43, 0, 0.68, 0.04, 0.68, 0x7fe8f0, { glow: CYAN, noTop: true });
-    sign(g, 0, 3.4, 0.635, 0.5, 0.1);
+    sign(g, 0, 3.4, v === 1 ? 0.485 : 0.635, 0.5, 0.1);
   },
 
   nuclear(g, P) {
@@ -603,13 +650,15 @@ const BUILD = {
   },
 
   arcology(g, P) {
+    // the tallest landmark of a Future realm: about 2.5-3x a skyscraper to the
+    // top of its spire, stepping in from a wide green base to a white needle
     const tiers = [
-      [3.7, 0.75],
-      [3.05, 0.9],
-      [2.45, 1.0],
-      [1.85, 1.1],
-      [1.3, 1.25],
-      [0.8, 1.2],
+      [3.7, 1.1],
+      [3.05, 1.5],
+      [2.45, 2.0],
+      [1.85, 2.6],
+      [1.3, 3.2],
+      [0.8, 3.6],
     ];
     let y = 0;
     g.box(0, -0.05, 0, 3.85, 0.07, 3.85, P.concrete);
@@ -618,7 +667,8 @@ const BUILD = {
       const round = t >= 4;
       if (round) {
         g.cyl(0, y, 0, s / 2, h, 14, P.white, { capCol: P.green });
-        g.cyl(0, y + h * 0.25, 0, s / 2 + 0.01, h * 0.45, 14, P.glass, { glow: 1, cap: false });
+        const nb = Math.max(2, Math.round(h / 0.4));
+        for (let i = 0; i < nb; i++) g.cyl(0, y + (h * (i + 0.3)) / nb, 0, s / 2 + 0.01, (h / nb) * 0.55, 14, P.glass, { glow: 1, cap: false });
       } else {
         g.box(0, y, 0, s, h, s, P.white, { top: P.green });
         bands(g, P, 0, y + 0.02, 0, s, s, Math.max(1, Math.round(h / 0.36)), h / Math.max(1, Math.round(h / 0.36)), { k: 0.5 });
@@ -629,6 +679,8 @@ const BUILD = {
           g.box((sgn * s) / 2 + 0.02, y + h - 0.12, 0, 0.03, 0.12, s * 0.9, P.leaf);
         }
       }
+      // a band of clean cyan light at each terrace: the arcology reads at night
+      if (t >= 1) g.box(0, y - 0.02, 0, s + 0.03, 0.04, s + 0.03, 0x7fe8f0, { glow: CYAN, noTop: true });
       // trees on the terrace this tier leaves free
       const ns = tiers[t + 1]?.[0];
       if (ns != null) {
@@ -642,10 +694,11 @@ const BUILD = {
       }
       y += h;
     }
-    // the crown: a glowing ring and a spire
-    g.cyl(0, y, 0, 0.32, 0.06, 12, 0x7fe8f0, { glow: CYAN });
-    g.cyl(0, y + 0.06, 0, 0.05, 1.1, 6, P.white, { r2: 0.015 });
-    g.box(0, y + 1.16, 0, 0.07, 0.07, 0.07, P.red, { glow: BEACON });
+    // the crown: a glowing ring and a tall spire
+    g.cyl(0, y, 0, 0.32, 0.08, 12, 0x7fe8f0, { glow: CYAN });
+    g.cone(0, y + 0.08, 0, 0.3, 0.6, 10, P.white, {});
+    g.cyl(0, y + 0.6, 0, 0.06, 3.6, 6, P.white, { r2: 0.015 });
+    g.box(0, y + 4.2, 0, 0.08, 0.08, 0.08, P.red, { glow: BEACON });
     // entrances at the foot
     for (const ry of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
       g.push();
@@ -957,9 +1010,9 @@ export function modernFallback(g, P, def, level = 1) {
 }
 
 // Build a modern model into `g`; false when the kind has none.
-export function modernModel(g, kind, style, level = 1, era = 5) {
+export function modernModel(g, kind, style, level = 1, era = 5, variant = 0) {
   const fn = BUILD[kind];
   if (!fn) return false;
-  fn(g, modernPalette(style, era), level);
+  fn(g, modernPalette(style, era), level, variant);
   return true;
 }

@@ -51,13 +51,21 @@ const DIRS8 = [
 // variant, and 'h' for a heritage building (its plaque). A heritage building
 // keeps the look of the era it was built in, never the realm's later dress.
 // Modern types (catalog `modern`) have one model per kind, culture and era.
-export function lookEra(b) {
+// In the modern eras (realm era 4+) the older buildings of a realm show at
+// least its previous era (and at least Industrial), so a whole realm reads as
+// its era at once while the new era still spreads building by building
+// (Civilization: b.era rises one step at a time). Heritage never changes.
+export function lookEra(b, realmEra = 0) {
   if (b.heritage) return b.heritage.era ?? b.builtEra ?? b.era ?? 1;
-  return b.era ?? 1;
+  const e = b.era ?? 1;
+  if (realmEra >= 4 && e < realmEra) return Math.max(e, realmEra - 1, 4);
+  return e;
 }
-function archKey(b, def, lvl) {
-  const era = lookEra(b);
-  if (def.modern) return `${b.type}|${b.style}|${lvl}|${Math.max(4, era)}`;
+// a building's own seeded variant (skyscraper towers: 4 shapes)
+const towerVariant = (b) => ((b.id * 2654435761) >>> 0) % 4;
+function archKey(b, def, lvl, realmEra = 0) {
+  const era = lookEra(b, realmEra);
+  if (def.modern) return `${b.type}|${b.style}|${lvl}|${Math.max(4, era)}${b.type === 'skyscraper' ? '|' + towerVariant(b) : ''}`;
   return `${b.type}|${b.style}|${lvl}|${era}${b.gilded ? 'g' : ''}${b.variant || b.heritage ? '|' + (b.variant || 0) : ''}${b.heritage ? '|h' : ''}`;
 }
 
@@ -460,7 +468,7 @@ export class BuildingRenderer {
         continue;
       }
       const lvl = Math.min(b.level || 1, def.levels);
-      const akey = archKey(b, def, lvl);
+      const akey = archKey(b, def, lvl, civ.kingdoms[b.kingdom]?.era ?? 0);
       const a = this._arch(akey);
       if (stage === 'found' || stage === 'frame' || stage === 'build') {
         // footings, then a timber frame, then walls rising, then the roof;
@@ -519,11 +527,13 @@ export class BuildingRenderer {
     }
     // lampposts along town streets
     for (const v of civ.villages) {
-      if (!v.alive || v.tier < 1) continue;
+      // a town, or a busy village of a realm with electricity (its powered street)
+      if (!v.alive) continue;
+      if (v.tier < 1 && !(v.pop >= 20 && (v.powered || civ.hasTech?.(v.kingdom, 'electricity')))) continue;
       col.setHex(civ.kingdomColor(v.kingdom));
       // a realm of masters lights more of its streets; a powered town lights
       // them with electric street lights
-      const lit = !!v.powered;
+      const lit = !!v.powered || (v.tier < 1 && !!civ.hasTech?.(v.kingdom, 'electricity'));
       const lampP = lit ? 0.3 : 0.11 + Math.min(0.12, (civ.kingdoms[v.kingdom]?.mastery || 0) * 0.015);
       for (const i of v.roadTiles) {
         if (civ.use?.[i] !== 2) continue;
@@ -572,8 +582,8 @@ export class BuildingRenderer {
       const key = 'proxy|' + b.style;
       let L = proxies.get(key);
       if (!L) proxies.set(key, (L = { m: [], col: [], bs: [] }));
-      const a = this._arch(def.wall ? `wpost|${b.style}` : archKey(b, def, Math.min(b.level || 1, def.levels)));
-      const hgt = (def.wall ? 1.1 : Math.max(0.5, Math.min(def.monument ? 12 : def.modern ? 7.5 : 3, a.maxY)) * (b.constructing ? Math.max(0.2, b.progress) : 1)) * BS;
+      const a = this._arch(def.wall ? `wpost|${b.style}` : archKey(b, def, Math.min(b.level || 1, def.levels), civ.kingdoms[b.kingdom]?.era ?? 0));
+      const hgt = (def.wall ? 1.1 : Math.max(0.5, Math.min(def.monument ? 12 : b.type === 'arcology' ? 19 : def.modern ? 7.5 : 3, a.maxY)) * (b.constructing ? Math.max(0.2, b.progress) : 1)) * BS;
       const pw = def.wall || b.type === 'bridge' ? def.w : (def.dw ?? def.w) * BS,
         ph = def.wall || b.type === 'bridge' ? def.h : (def.dh ?? def.h) * BS;
       const pm = this._m2.makeRotationY(b.rotation || 0).setPosition(b.x, b.y, b.z).multiply(this._m3.makeScale(pw * 0.82, hgt, ph * 0.82));
@@ -1174,6 +1184,8 @@ export class BuildingRenderer {
       let sig = '';
       for (const v of civ.villages) if (v.alive && v.powered) sig += v.id + ',';
       for (const b of civ.buildings) if (b.heritage && !b.gone) sig += 'h' + b.id + (civ.kingdoms[b.kingdom]?.era ?? 0);
+      // a realm's era sets the least era its older buildings show (lookEra)
+      for (const k of civ.kingdoms) if (k.alive && (k.era ?? 0) >= 4) sig += 'k' + k.id + 'e' + k.era;
       if (sig !== this._powerSig) {
         this._powerSig = sig;
         this._ver = -1;
@@ -1182,7 +1194,8 @@ export class BuildingRenderer {
     this._applyLod();
     this.glow.uniforms.uTime.value = this.t;
     this.glow.update(this.uniforms.uNight.value, !this._far);
-    this.haze.update(dt, civ.haze?.(), (x, z) => Math.max(g.world.heightAt(x, z), SEA_LEVEL), day, this.t);
+    // (null over water: no haze puffs over the sea, lakes or rivers)
+    this.haze.update(dt, civ.haze?.(), (x, z) => (g.world.isWater(Math.floor(x), Math.floor(z)) ? null : Math.max(g.world.heightAt(x, z), SEA_LEVEL)), day, this.t);
     this._updateBanners();
     this._updateBoatsAndBlades(dt);
     this._smoke(dt);
