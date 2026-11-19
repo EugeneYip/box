@@ -962,10 +962,11 @@ export function installDaily(Units) {
     if (u.job === 'soldier' && u._bedT > now - 6) return u._bedB ? 'Walking to the barracks' : 'Walking home';
     // (at bedtime the walk home comes first: a load still in hand is not
     // "carried to the store" through the night)
-    if (u._homeT > now - 30 && this._bedtimeCheap(u)) return 'Walking home';
-    if (u.carry) return `Carrying ${u.carry.type} to the store`;
     const d = u.data;
     if (d.civ?.army != null) return 'Marching';
+    const tk = d.civ?.task?.kind;
+    if (u.job !== 'soldier' && tk !== 'migrate' && tk !== 'arrive' && !d.robot && (u._homeT > now - 30 || this.game.settings?.dayNight) && this._bedtimeCheap(u)) return 'Walking home';
+    if (u.carry) return `Carrying ${u.carry.type} to the store`;
     switch (u.job) {
       case 'farmer':
         return 'Walking to the fields';
