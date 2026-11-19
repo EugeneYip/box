@@ -121,11 +121,19 @@ export const humanModel = {
     });
     // 2 armoured suit (Future era): bulky plates in the realm's colour
     B.with({ bone: 'torso', slot: 'armor', opt: 2 }, () => {
-      B.add(P.lathe([[0.084, 0.17], [0.09, 0.22], [0.094, 0.29], [0.098, 0.34], [0.09, 0.375], [0.064, 0.395], [0.042, 0.402]], 14), { scl: [1, 1, 0.9], mat: 'sash' });
-      for (const s of [1, -1]) B.add(P.dome(0.052, 10, 4, 0.55), { pos: [0.1 * s, 0.37, 0], rot: [0, 0, -0.55 * s], scl: [1, 0.85, 1.1], mat: 'steel' });
+      B.add(P.lathe([[0.084, 0.17], [0.09, 0.22], [0.094, 0.29], [0.098, 0.34], [0.09, 0.375], [0.064, 0.395], [0.042, 0.402]], 14), { scl: [1, 1, 0.9], mat: 'cloth' });
+      for (const s of [1, -1]) B.add(P.dome(0.06, 10, 4, 0.55), { pos: [0.104 * s, 0.372, 0], rot: [0, 0, -0.55 * s], scl: [1, 0.9, 1.15], mat: 'sash' });
+      for (const s of [1, -1]) B.add(P.box(0.008, 0.11, 0.008), { pos: [0.05 * s, 0.29, 0.088], mat: 'visor' });
       B.add(P.box(0.11, 0.09, 0.05), { pos: [0, 0.31, -0.1], mat: 'steel' });
       B.add(P.box(0.05, 0.012, 0.01), { pos: [0, 0.33, 0.092], mat: 'visor' });
       B.add(P.torus(0.088, 0.012, 4, 16), { pos: [0, 0.2, 0], rot: [Math.PI / 2, 0, 0], scl: [1, 0.9, 1], mat: 'steel' });
+    });
+    // 5 field kit (fatigues): webbing straps, a pack on the back, a realm armband
+    B.with({ bone: 'torso', slot: 'armor', opt: 5 }, () => {
+      for (const s of [1, -1]) B.add(P.box(0.016, 0.2, 0.008), { pos: [0.035 * s, 0.3, 0.07], rot: [-0.08, 0, 0.12 * s], mat: 'gunmetal' });
+      B.add(P.box(0.13, 0.13, 0.07), { pos: [0, 0.31, -0.105], mat: 'olive' });
+      B.add(P.box(0.14, 0.035, 0.05), { pos: [0, 0.395, -0.1], mat: 'gunmetal' });
+      B.add(P.torus(0.03, 0.009, 4, 10), { pos: [0.104, 0.33, 0.0], rot: [Math.PI / 2, 0, 0], mat: 'sash', bone: 'armL' });
     });
     // 3 space suit: white, bulky, a life-support pack on the back
     B.with({ bone: 'torso', slot: 'armor', opt: 3 }, () => {
@@ -222,9 +230,9 @@ export const humanModel = {
         B.add(P.torus(0.114, 0.01, 4, 18), { pos: [0, 0.548, 0], rot: [Math.PI / 2 - 0.18, 0, 0], mat: 'gunmetal', opt: 10 });
         B.add(P.box(0.07, 0.022, 0.02), { pos: [0, 0.585, 0.1], rot: [-0.3, 0, 0], mat: 'gunmetal', opt: 10 });
         // 11 suit helmet (Future): closed, a glowing visor, the realm's colour
-        B.add(P.sphere(0.124, 14, 10), { pos: [0, 0.505, -0.006], scl: [1, 1.02, 1.04], mat: 'sash', opt: 11 });
-        B.add(P.box(0.15, 0.03, 0.02), { pos: [0, 0.51, 0.115], mat: 'visor', opt: 11 });
-        B.add(P.box(0.02, 0.05, 0.12), { pos: [0, 0.62, -0.01], mat: 'steel', opt: 11 });
+        B.add(P.sphere(0.126, 14, 10), { pos: [0, 0.505, -0.006], scl: [1, 1.02, 1.04], mat: 'cloth', opt: 11 });
+        B.add(P.box(0.17, 0.036, 0.03), { pos: [0, 0.51, 0.112], mat: 'visor', opt: 11 });
+        B.add(P.box(0.024, 0.04, 0.14), { pos: [0, 0.626, -0.01], mat: 'sash', opt: 11 });
         // 12 firefighter's helmet: red, a long back brim, a front shield
         B.add(P.dome(0.116, 14, 6, 0.55), { pos: [0, 0.51, 0], rot: [-0.1, 0, 0], mat: 'firered', opt: 12 });
         B.add(P.cyl(0.15, 0.16, 0.012, 18), { pos: [0, 0.52, -0.03], scl: [0.9, 1, 1.15], rot: [-0.12, 0, 0], mat: 'firered', opt: 12 });
@@ -394,6 +402,6 @@ export const NEUTRAL_CLOTH = [0xcdb994, 0x8a6a4a, 0x7f8f6a, 0xa0583a, 0x6f7f8f, 
 export const TOOL_OPT = { none: 0, axe: 1, hoe: 2, pickaxe: 3, hammer: 4, spear: 5, rod: 6, scepter: 7, sword: 8, bow: 9, musket: 10, rifle: 11, carbine: 12, blaster: 13, hose: 14, baton: 15 };
 export const OFF_OPT = { none: 0, shield: 1, bucket: 2, bag: 3, clipboard: 4, book: 5, sapling: 6 };
 export const OUTFIT_OPT = { tunic: 0, dress: 1, robe: 2, fatigues: 3, coat: 4, turnout: 5, jacket: 6 };
-export const ARMOR_OPT = { none: 0, plate: 1, suit: 2, space: 3, belts: 4 };
+export const ARMOR_OPT = { none: 0, plate: 1, suit: 2, space: 3, belts: 4, kit: 5 };
 export const HAT_OPT = { none: 0, straw: 1, helmet: 2, crown: 3, hood: 4, miner: 5, headband: 6, oilskin: 7, tricorne: 8, steel: 9, combat: 10, suit: 11, fire: 12, police: 13, space: 14, town: 15 };
 export const BACK_OPT = { none: 0, wood: 1, stone: 2, food: 3, gold: 4 };

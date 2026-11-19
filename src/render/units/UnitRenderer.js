@@ -10,10 +10,15 @@ import { Overlays, DECAL, EMOTE } from './Overlays.js';
 import { AmbientFauna } from './AmbientFauna.js';
 import { TINY, MID } from './models/tiny.js';
 import { horseModel, SADDLE_Y, SADDLE_Z } from './models/horse.js';
+import { bikeModel, BIKE_SEAT_Y, BIKE_SEAT_Z, BIKE_COLORS } from './models/bike.js';
+// soldiers' uniforms by gear (docs/MODERN-ERAS.md): the field green of fatigues
+// and the pale armour of Future suits read apart from any realm colour
+const FATIGUE_GREEN = 0x56663a,
+  SUIT_PLATE = 0xd4dade;
 import { MATERIALS, WEAPON_TOOL } from '../../sim/units/items.js';
 import { STATUS_BY_ID } from '../../sim/units/statuses.js';
 import { UNIT } from '../../core/scale.js';
-const HAT_TINT = [null, 0xe6c870, 0xc4ccd6, 0xf2c14e, 0x5d5a3a, 0x5b3a26, null, 0xf0c030, 0x26232a, 0x5c6468, 0x59633e, 0x6a7a8a, 0xc0302a, 0x24324e, 0xf2f2ee, 0x4a3a2a];
+const HAT_TINT = [null, 0xe6c870, 0xc4ccd6, 0xf2c14e, 0x5d5a3a, 0x5b3a26, null, 0xf0c030, 0x26232a, 0x5c6468, 0x59633e, 0xd4dade, 0xc0302a, 0x24324e, 0xf2f2ee, 0x4a3a2a];
 // civilian dress by era (4 Industrial, 5 Modern, 6 Atomic, 7 Future)
 const ERA_CLOTH = {
   4: [0x3a3a44, 0x5a4a3a, 0x2e3a4a, 0x6a5a48, 0x7a2e2e, 0x4a4f3a, 0x8a7a60],
@@ -127,7 +132,7 @@ export class UnitRenderer {
     this.group.name = 'units';
     game.scene.add(this.group);
     this.defs = new Map();
-    for (const d of [humanModel, horseModel, ...ANIMAL_MODELS, ...MONSTER_MODELS, ...AMBIENT_MODELS]) this.defs.set(d.id, d);
+    for (const d of [humanModel, horseModel, bikeModel, ...ANIMAL_MODELS, ...MONSTER_MODELS, ...AMBIENT_MODELS]) this.defs.set(d.id, d);
     this.models = new Map();
     this.lo = new Map();
     this.tiny = new Map();
@@ -142,6 +147,7 @@ export class UnitRenderer {
     this.corpses = [];
     this.ripples = [];
     this.puffs = [];
+    this.shots = [];
     this._frustum = new THREE.Frustum();
     this._pm = new THREE.Matrix4();
     this._sph = new THREE.Sphere();
@@ -423,19 +429,22 @@ export class UnitRenderer {
         hat = HAT_OPT.steel;
         tool = TOOL_OPT.rifle;
         outfit = OUTFIT_OPT.fatigues;
-        clothOver = mixc(lin(0x8a7a50), kc, 0.35);
+        cape = 0;
+        clothOver = mixc(lin(0x8a7a50), kc, 0.25);
       } else if (gear === 'fatigues') {
         hat = HAT_OPT.combat;
         tool = TOOL_OPT.carbine;
         outfit = OUTFIT_OPT.fatigues;
-        clothOver = mixc(lin(0x59633e), kc, 0.3);
+        armor = ARMOR_OPT.kit; // webbing, a pack and a realm armband: the only realm colour
+        cape = 0;
+        clothOver = lin(FATIGUE_GREEN);
       } else {
         hat = HAT_OPT.suit;
         tool = TOOL_OPT.blaster;
         outfit = OUTFIT_OPT.fatigues;
-        armor = ARMOR_OPT.suit;
+        armor = ARMOR_OPT.suit; // pale plates, realm-coloured shoulders, a glowing visor
         cape = 0;
-        clothOver = lin(0x3a3e44);
+        clothOver = lin(SUIT_PLATE);
       }
       rs.gun = gear;
     } else rs.gun = null;
@@ -536,7 +545,8 @@ export class UnitRenderer {
     };
     rs.dot = bright(kc || [0.85, 0.8, 0.7]);
     // tiny LOD: the head-top block shows the hat colour (or the hair)
-    rs.apTiny = { ...rs.ap, b: kc && !child ? kc : rs.ap.b, c: HAT_TINT[hat] != null ? lin(HAT_TINT[hat]) : rs.ap.c };
+    // (uniformed gear and modern dress keep their own colour: a Future crowd is not a realm-coloured mass)
+    rs.apTiny = { ...rs.ap, b: kc && !child && !clothOver ? kc : rs.ap.b, c: HAT_TINT[hat] != null ? lin(HAT_TINT[hat]) : rs.ap.c };
     rs.apMid = HAT_TINT[hat] != null ? { ...rs.ap, c: lin(HAT_TINT[hat]) } : rs.ap;
   }
 
@@ -597,16 +607,26 @@ export class UnitRenderer {
     rs.k = Math.max(rs.k, 18);
   }
   // Pose the horse under a rider (its own smoothed channels on rs.horse).
+  // From the Modern era riders sit on a light vehicle instead (bike.js): a
+  // motorbike, then a hoverbike in the Future era.
   _poseHorse(u, rs, ctx, skipPose, kSmooth) {
-    const md = horseModel;
+    const bike = (rs.era || 0) >= 5;
+    const md = bike ? bikeModel : horseModel;
     let hrs = rs.horse;
     if (!hrs) hrs = rs.horse = this._initRS({ id: u.id * 7 + 13 }, null);
-    if (hrs.apSrc !== rs.ap && rs.ap) {
+    if ((hrs.apSrc !== rs.ap || hrs.bike !== bike) && rs.ap) {
       hrs.apSrc = rs.ap;
-      const e = pickWeighted(md.palette.combos, h1(u.id, 41));
+      hrs.bike = bike;
       const pants = lin(humanModel.secondary[rs.ap.sec] ?? 0x5b3a26);
       const k = Math.floor((rs.ap.var?.[3] ?? 0) + 1e-4);
-      hrs.ap = { a: jitter(lin(e[0]), h1(u.id, 42)), b: lin(e[1]), c: pants, sec: 0, var: [0, 0, 0, k + hrs.seed * 0.98] };
+      if (bike) {
+        const era = Math.min(7, rs.era);
+        const bc = BIKE_COLORS[era] || BIKE_COLORS[5];
+        hrs.ap = { a: lin(bc[0]), b: lin(bc[1]), c: rs.gun === 'suit' ? lin(SUIT_PLATE) : rs.gun === 'fatigues' ? lin(FATIGUE_GREEN) : pants, sec: 0, var: [era >= 7 ? 1 : 0, 0, 0, k + hrs.seed * 0.98] };
+      } else {
+        const e = pickWeighted(md.palette.combos, h1(u.id, 41));
+        hrs.ap = { a: jitter(lin(e[0]), h1(u.id, 42)), b: lin(e[1]), c: pants, sec: 0, var: [0, 0, 0, k + hrs.seed * 0.98] };
+      }
     }
     const P2 = this._Pt2;
     if (!skipPose || !hrs.init) {
@@ -882,13 +902,15 @@ export class UnitRenderer {
             fz = Math.cos(heading) * 0.3;
           hTilt = -Math.atan2(w.heightAt(ix + fx, iz + fz) - w.heightAt(ix - fx, iz - fz), 0.6) * 0.8;
           hrs = this._poseHorse(u, rs, ctx, skipPose, kSmooth);
-          lift = (SADDLE_Y + 0.035 - 0.19 + hrs.sY) * scale;
-          tilt = hTilt + hrs.sPitch + hrs.P[0] * 0.6;
+          // a hoverbike floats a hand's breadth off the ground and bobs
+          hrs.hover = hrs.bike && rs.era >= 7 ? (0.05 + 0.012 * Math.sin(now * 3 + rs.seed * 7)) * scale : 0;
+          lift = ((hrs.bike ? BIKE_SEAT_Y : SADDLE_Y) + 0.035 - 0.19 + hrs.sY) * scale + hrs.hover;
+          tilt = hTilt + hrs.sPitch + hrs.P[0] * (hrs.bike ? 0.15 : 0.6);
         }
         this._e.set(rs.sPitch + tilt + climb, heading + rs.rootYaw, rs.sRoll + bank, 'YXZ');
         this._q.setFromEuler(this._e);
         const s = scale * pop;
-        const fwd = (rs.fwd + (riding ? SADDLE_Z : 0)) * scale;
+        const fwd = (rs.fwd + (riding ? (hrs?.bike ? BIKE_SEAT_Z : SADDLE_Z) : 0)) * scale;
         this._p.set(ix + Math.sin(heading) * fwd, y + rs.sY * scale + lift - emerge * md.height * scale, iz + Math.cos(heading) * fwd);
         this._m.compose(this._p, this._q, this._s.set(s, s, s));
         const flash = Math.max(0, 1 - (simNow - u.lastHurt) / 0.28) + (u.mad > simNow ? 0.12 + 0.08 * Math.sin(now * 7) : 0);
@@ -905,9 +927,9 @@ export class UnitRenderer {
           // the horse under the rider (same heading, the rider's realm on its saddle cloth)
           this._e.set(hrs.sPitch + hTilt, heading + hrs.rootYaw, hrs.sRoll, 'YXZ');
           this._q2.setFromEuler(this._e);
-          this._p.set(ix, y + hrs.sY * scale, iz);
+          this._p.set(ix, y + hrs.sY * scale + (hrs.hover || 0), iz);
           this._m2.compose(this._p, this._q2, this._s.set(s, s, s));
-          const hm = this.pick(this._horseRM || (this._horseRM = this.model('horse')), pxH * 1.1, hrs);
+          const hm = hrs.bike ? this.pick(this._bikeRM || (this._bikeRM = this.model('bike')), pxH * 1.1, hrs) : this.pick(this._horseRM || (this._horseRM = this.model('horse')), pxH * 1.1, hrs);
           hm.write(this._m2, hrs.P, hrs.ap, Math.min(1, flash), lod, 0, near);
         }
         // gunfire: a muzzle flash at each shot, a puff of smoke from muskets
@@ -919,10 +941,13 @@ export class UnitRenderer {
               this.puffs.push({ x: mz[0], y: mz[1], z: mz[2], t0: realNow, s: scale });
             }
           }
+          // (long and big enough to be caught at mid zoom: automatic guns flash twice, a short burst)
           const st = simNow - u.lastAttack;
-          if (st >= 0 && st < 0.12) {
+          const win = rs.gun === 'musket' ? 0.16 : 0.24;
+          if (st >= 0 && st < win) {
             const mz = this._muzzle(ix, y + lift, iz, heading, scale, weaponGrow);
-            const fs = Math.max(0.32 * scale, 10 / ppu) * (rs.gun === 'musket' ? 1.5 : 1) * (1 - st / 0.16);
+            const burst = rs.gun === 'fatigues' || rs.gun === 'suit' ? 0.55 + 0.45 * Math.abs(Math.cos(st * 40)) : 1;
+            const fs = Math.max(0.38 * scale, 15 / ppu) * (rs.gun === 'musket' ? 1.5 : 1) * (1 - st / (win * 1.3)) * burst;
             ov.emotes.add(mz[0], mz[1], mz[2], fs, EMOTE.flash, 1, rs.seed * 6);
           }
         }
@@ -1054,7 +1079,7 @@ export class UnitRenderer {
           const popS = easeOutBack(k);
           const fade = Math.min(1, (em.until - simNow) / 0.35);
           ov.emotes.add(ix, top + 0.08 + t * 0.05, iz, esz * popS, EMOTE_KIND[em.kind] ?? EMOTE.alert, ea * fade, Math.sin(now * 3) * 0.08);
-        } else if (u.sleeping) {
+        } else if (u.sleeping && u.state === 'sleep' && !u.moving && !(u.speedNow > 0.05)) {
           const t = (now * 0.5 + rs.seed) % 1;
           ov.emotes.add(ix + t * 0.1, top + t * 0.25, iz, esz * (0.7 + t * 0.4), EMOTE.zzz, ea * Math.sin(t * Math.PI) * 0.95, 0);
         } else if (u.mad > simNow) {
@@ -1107,15 +1132,29 @@ export class UnitRenderer {
         continue;
       }
       if (p.kind === 'ball' || dotsOnly) continue;
+      // bullets and beams fly in a frame or two: each is kept as a tracer that
+      // crosses the gap over a fixed fifth of a second, so gunfire reads at any speed
+      if (!p._seen && this.shots.length < 220) {
+        p._seen = true;
+        this.shots.push({ x0: p.x0, y0: p.y0, z0: p.z0, x1: p.x1, y1: p.y1, z1: p.z1, t0: simNow, beam: p.kind === 'beam' });
+      }
+    }
+    let sj = 0;
+    for (const f of this.shots) {
+      const t = (simNow - f.t0) / 0.22;
+      if (t >= 1 || t < -0.5 || dotsOnly) continue;
+      this.shots[sj++] = f;
+      if (t < 0) continue;
+      const dx = f.x1 - f.x0,
+        dy = f.y1 - f.y0,
+        dz = f.z1 - f.z0;
       // the streak's angle on screen: the shot's direction in view space
-      const dx = p.x1 - p.x0,
-        dy = p.y1 - p.y0,
-        dz = p.z1 - p.z0;
       const vx = vmi[0] * dx + vmi[4] * dy + vmi[8] * dz,
         vy = vmi[1] * dx + vmi[5] * dy + vmi[9] * dz;
-      const len = Math.max(0.45, 0.012 * camDist) * (p.kind === 'beam' ? 1.3 : 1);
-      ov.emotes.add(x, y, z, len, EMOTE.tracer, p.kind === 'beam' ? 1 : 0.9, Math.atan2(vy, vx));
+      const len = Math.max(0.55, 0.016 * camDist) * (f.beam ? 1.4 : 1);
+      ov.emotes.add(f.x0 + dx * t, f.y0 + dy * t, f.z0 + dz * t, len, EMOTE.tracer, (f.beam ? 1 : 0.95) * (1 - t * 0.4), Math.atan2(vy, vx));
     }
+    this.shots.length = sj;
     // ---- musket smoke: puffs that swell, drift up and fade
     let pj = 0;
     for (const f of this.puffs) {

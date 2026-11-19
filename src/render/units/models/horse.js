@@ -8,9 +8,9 @@ import { P, limb } from '../ModelBuilder.js';
 export const SADDLE_Y = 0.43;
 export const SADDLE_Z = -0.035;
 
-const pv = { body: [0, 0.35, 0], head: [0, 0.46, 0.2], tail: [0, 0.42, -0.25], fl: [0.06, 0.29, 0.15], bl: [0.06, 0.29, -0.16], ear: [0.03, 0.65, 0.31] };
+export const pv = { body: [0, 0.35, 0], head: [0, 0.46, 0.2], tail: [0, 0.42, -0.25], fl: [0.06, 0.29, 0.15], bl: [0.06, 0.29, -0.16], ear: [0.03, 0.65, 0.31] };
 
-function quadBones(p) {
+export function quadBones(p) {
   return [
     { name: 'body', parent: -1, pivot: p.body, ch: [0, -1, 1, 2] },
     { name: 'head', parent: 0, pivot: p.head, ch: [3, 4, -1, -1] },

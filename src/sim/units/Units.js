@@ -1258,6 +1258,7 @@ export class Units {
   // ---- combat ---------------------------------------------------------------
   engage(a, t, opts = {}) {
     if (!a || !t || !a.alive || !t.alive || a === t) return false;
+    if (a._offd) this._offDutyEnd(a); // called out of the barracks
     if (a.flags?.pacifist) return false;
     const now = this.game.time.total;
     if (this.attackDamage(a) <= 0) return false;
@@ -1358,6 +1359,9 @@ export class Units {
       if (u.attackCd <= 0) this._fire(u, t, d, gun);
       return;
     }
+    // closing in: soldiers fire on the move from twice their reach (wilder
+    // shots), so gunfire starts as soon as two lines engage
+    if (gun && u.attackCd <= 0 && d > reach && d <= u.data.reach * 2 + t.def.radius && !tAir) this._fire(u, t, d, gun, 0.25);
     if (ranged && d > reach && d < 7 && !tAir) {
       this._face(u, dx, dz, dt);
       u.target = null;
@@ -1404,14 +1408,14 @@ export class Units {
   }
 
   // One shot from a soldier's gun: a miss lands in the dirt beside the target.
-  _fire(u, t, d, gun) {
+  _fire(u, t, d, gun, wild = 0) {
     const g = this.game;
     const rng = g.rng;
     const now = g.time.total;
-    u.attackCd = gun.cd * rng.float(0.85, 1.2);
+    u.attackCd = gun.cd * rng.float(0.85, 1.2) * (wild ? 1.3 : 1);
     u.lastAttack = now;
     if (u.combat) u.combat.struck = true;
-    const miss = rng.chance(gun.miss + Math.min(0.2, d * 0.02));
+    const miss = rng.chance(gun.miss + wild + Math.min(0.2, d * 0.02));
     let ox = 0,
       oz = 0;
     if (miss) {
@@ -2477,6 +2481,7 @@ export class Units {
       const pl = this._peopleLabel(u);
       if (pl) return pl;
     }
+    if (u._offd) return u._offd.ph === 'go' && u.moving ? 'Walking to the barracks' : u._offd.lab;
     if (u._dl) {
       const dl = this._dailyLabel(u);
       if (dl) return dl;

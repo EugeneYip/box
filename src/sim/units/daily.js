@@ -121,12 +121,14 @@ export function installDaily(Units) {
     c.day = day;
     c.t = g.time.total;
     c.nb = v.buildings.length;
+    c.barracks = null;
     let market = null,
       temple = null,
       docks = null,
       station = null,
       library = null,
       hall = null,
+      plaza = null,
       houses = 0;
     for (const b of v.buildings) {
       if (!b.alive || b.constructing || b.doorX == null) continue;
@@ -136,10 +138,12 @@ export function installDaily(Units) {
       else if (t === 'docks') docks = docks || b;
       else if (t === 'station') station = station || b;
       else if (t === 'library' || t === 'academy' || t === 'campus') library = library || b;
-      else if (t === 'hall') hall = b;
+      else if (t === 'hall') hall = c.hallB = b;
+      else if (t === 'plaza') plaza = plaza || b;
+      else if (t === 'barracks') c.barracks = c.barracks?.alive && c.barracks !== b ? c.barracks : b;
       else if (t === 'house' || t === 'rowhouse' || t === 'apartment') houses++;
     }
-    const sq = market || hall;
+    const sq = plaza || market || hall;
     // the square: in front of the market (or the hall), a step out from the door
     let sx = v.cx + 0.5,
       sz = v.cz + 0.5;
@@ -229,6 +233,10 @@ export function installDaily(Units) {
     u._dl = null;
     if (u._hid) u._hid = false;
     if (dl && u.activity && u.activity !== 'fish') u.activity = null;
+    if (dl && (dl.k === 'chore' || dl.k === 'drill')) {
+      u.data.workAnim = null;
+      if (u.state === 'work') u.state = 'idle';
+    }
     if (u.state === 'eat' || u.state === 'idle') u.state = 'idle';
     u.busyUntil = 0;
   };
@@ -243,9 +251,14 @@ export function installDaily(Units) {
     u.state = dl.k === 'eat' ? 'eat' : 'idle';
     u.activity = dl.act;
     if (dl.fx != null) u.heading = Math.atan2(dl.fx - u.x, dl.fz - u.z);
-    if (dl.k === 'privy') {
+    if (dl.k === 'privy' || dl.k === 'school' || dl.k === 'inside') {
       u._hid = true;
       u.activity = null;
+    }
+    if (dl.k === 'chore' || dl.k === 'drill') {
+      u.state = 'work';
+      u.activity = null;
+      u.data.workAnim = dl.anim;
     }
   };
 
@@ -274,8 +287,11 @@ export function installDaily(Units) {
     if (child && u._dl && !u.flags?.frozenAge && !d.frozenAge) u.age += ((elapsed || 0) / 30) * 1.7;
     if (u._dl) {
       if (now < u._dl.until && this._dlStep(u, now, v)) return true;
+      const was = u._dl.k;
       this._dlEnd(u);
-      u._dlNext = now + (child ? 1.5 : 4) + hash(u.id, (now * 7) | 0) * 4;
+      // after a chore the brain looks for real work this think; if it has
+      // none, the next think finds another chore (no idle gap between them)
+      u._dlNext = was === 'chore' || was === 'school' ? now + 0.5 : now + (child ? 1.5 : 4) + hash(u.id, (now * 7) | 0) * 4;
       return false;
     }
     if (now < u._dlNext) return false;
@@ -307,11 +323,14 @@ export function installDaily(Units) {
         const pl = this._dlPlaces(v);
         const happy = u.hunger < 0.5 && u.energy > 0.25 && !u.statuses?.has('mourning');
         let a;
-        if (pl.fest) a = r < 0.38 ? 'dance' : r < 0.58 ? 'sing' : r < 0.74 ? 'laugh' : r < 0.84 ? 'cheer' : 'talk';
+        const hr = this.game.time.hour ?? 19;
+        if (dl.music) a = 'sing';
+        else if (dl.supper && hr < 19.6) a = 'eat';
+        else if (pl.fest) a = r < 0.38 ? 'dance' : r < 0.58 ? 'sing' : r < 0.74 ? 'laugh' : r < 0.84 ? 'cheer' : 'talk';
         else a = r < 0.56 ? 'talk' : r < (happy ? 0.76 : 0.64) ? 'laugh' : r < (happy ? 0.86 : 0.7) ? 'sing' : 'talk';
-        if (!happy && r > 0.9) a = 'sit';
+        if (!happy && r > 0.9 && !dl.music) a = 'sit';
         u.activity = a;
-        dl.lab = a === 'talk' ? (dl.wn ? `Chatting with ${dl.wn}` : pl.market ? 'Gossiping at the market' : 'Chatting') : a === 'cheer' ? (pl.harvest ? 'Celebrating the harvest' : 'Celebrating the festival') : a === 'sing' && pl.fest ? 'Singing at the festival' : null;
+        dl.lab = dl.music ? (pl.era >= 5 ? 'Playing guitar on the square' : 'Playing music on the square') : a === 'eat' ? 'Sharing supper on the square' : a === 'talk' ? (dl.wn ? `Chatting with ${dl.wn}` : pl.market ? 'Gossiping at the market' : 'Chatting') : a === 'cheer' ? (pl.harvest ? 'Celebrating the harvest' : 'Celebrating the festival') : a === 'sing' && pl.fest ? 'Singing at the festival' : null;
         if (dl.fx != null) u.heading = Math.atan2(dl.fx - u.x, dl.fz - u.z);
         return true;
       }
@@ -394,6 +413,12 @@ export function installDaily(Units) {
       }
       case 'eat':
         if (u.state !== 'eat') u.state = 'eat';
+        return true;
+      case 'chore':
+      case 'drill':
+        if (u.state !== 'work') u.state = 'work';
+        u.data.workAnim = dl.anim;
+        if (dl.fx != null) u.heading = Math.atan2(dl.fx - u.x, dl.fz - u.z);
         return true;
       default:
         if (dl.fx != null && dl.k !== 'privy') u.heading = Math.atan2(dl.fx - u.x, dl.fz - u.z);
@@ -481,13 +506,23 @@ export function installDaily(Units) {
     if (evening && !guard) return this._dlEvening(u, now, v, pl, child, bed, h);
     // children by day: play with the others, now and then
     if (child) {
-      if (u.age >= 4 && rng() < 0.4) return this._dlPlay(u, v, pl, 12 + rng() * 14, u.x, u.z);
+      const school = pl.library || pl.era >= 3 ? pl.library || pl.hallB : null;
+      if (u.age >= 6 && school && h < 15 && rng() < 0.5) {
+        this._dlStart(u, 'school', 20 + rng() * 25, { x: school.doorX, z: school.doorZ, lab: 'At school', go: 'Walking to school', free: true });
+        return true;
+      }
+      if (u.age >= 4 && rng() < 0.8) return this._dlPlay(u, v, pl, 12 + rng() * 14, u.x, u.z);
       return false;
     }
     // by day: rulers think, the idle shop and wait, workers take a short break
     if (job === 'king') {
-      if (rng() < 0.12) {
+      if (rng() < 0.2) {
         this._dlStart(u, 'think', 8 + rng() * 8, { lab: 'Pondering the realm', act: 'think' });
+        return true;
+      }
+      const hb = pl.hallB;
+      if (hb && !u.moving && rng() < 0.6) {
+        this._dlStart(u, 'hold', 14 + rng() * 12, { x: hb.doorX, z: hb.doorZ, fx: hb.x ?? hb.doorX, fz: hb.z ?? hb.doorZ, lab: 'Holding court', go: 'Walking to the hall', act: 'talk' });
         return true;
       }
       return false;
@@ -506,7 +541,10 @@ export function installDaily(Units) {
       }
       return false;
     }
-    if (u.job && u.job !== 'soldier') return false;
+    if (u.job && u.job !== 'soldier') {
+      if (h >= wake + 1.4 && h < 16.6 && u.state === 'idle' && !u.moving && !d.civ?.task) return this._dlChore(u, v, pl, rng);
+      return false;
+    }
     // the jobless and the off-duty: errands about town
     const r = rng();
     if (pl.market && r < 0.28) {
@@ -541,6 +579,61 @@ export function installDaily(Units) {
       }
     }
     return false;
+  };
+
+  // A chore of the person's own trade while the village brain has no task for
+  // them (crops still growing, no tree marked, nothing to build): short, so the
+  // brain looks again soon. Farmers tend and weed their plots (mend fences in
+  // winter), woodcutters split firewood, builders patch a house, miners and
+  // fishers mend their tools and nets, healers grind remedies.
+  P._dlChore = function (u, v, pl, rng) {
+    const w = this.game.world;
+    const job = u.job;
+    const dur = 18 + rng() * 14;
+    const home = this._homeOf(u, v);
+    const near = (b, r = 1.2) => (b ? { x: b.doorX + (rng() - 0.5) * r * 2, z: b.doorZ + (rng() - 0.5) * r * 2, fx: b.x ?? b.doorX, fz: b.z ?? b.doorZ } : { x: u.x, z: u.z });
+    let at, anim, lab;
+    if (job === 'farmer') {
+      const plots = v.plots || [];
+      const p = plots.length ? plots[(rng() * plots.length) | 0] : null;
+      const i = p?.tiles?.length ? p.tiles[(rng() * p.tiles.length) | 0] : -1;
+      const winter = (this.game.time.season ?? 1.5) >= 3;
+      if (i >= 0) {
+        at = { x: (i % w.w) + 0.5, z: ((i / w.w) | 0) + 0.5 };
+        anim = winter ? 'hammer' : 'harvest';
+        lab = winter ? 'Mending the fences' : rng() < 0.5 ? 'Weeding the fields' : 'Tending the crops';
+      } else {
+        at = near(home);
+        anim = 'hammer';
+        lab = 'Mending tools';
+      }
+    } else if (job === 'woodcutter') {
+      at = near(home);
+      anim = 'chop';
+      lab = 'Splitting firewood';
+    } else if (job === 'builder') {
+      const hs = v.buildings;
+      const b = hs.length ? hs[(rng() * hs.length) | 0] : null;
+      at = near(b && b.alive && !b.constructing && b.doorX != null ? b : home);
+      anim = 'hammer';
+      lab = pl.era >= 5 ? 'Doing repairs' : 'Patching a roof';
+    } else if (job === 'miner') {
+      at = near(home);
+      anim = 'hammer';
+      lab = 'Sharpening tools';
+    } else if (job === 'fisher') {
+      at = near(pl.docks || home);
+      anim = 'hammer';
+      lab = 'Mending the nets';
+    } else if (job === 'healer') {
+      at = near(home);
+      anim = 'harvest';
+      lab = 'Grinding remedies';
+    } else return false;
+    this._dlStart(u, 'chore', dur, { x: at.x, z: at.z, fx: at.fx, fz: at.fz, lab, go: 'Walking to work', act: null });
+    if (u._dl) u._dl.anim = anim;
+    if (u._dl?.ph === 'do') this._dlArrive(u, u._dl);
+    return true;
   };
 
   P._hardTimes = function (v) {
@@ -666,6 +759,9 @@ export function installDaily(Units) {
     const a = hash(u.id, day + 17) * Math.PI * 2;
     const rr = 0.3 + hash(u.id, 23) * 0.12;
     const dl = this._dlStart(u, 'social', Math.min(40, Math.max(8, dur)), { x: gx + Math.sin(a) * rr, z: gz + Math.cos(a) * rr, fx: gx, fz: gz, g: v.id * 16 + gi + 1, go: pl.market ? 'Walking to the market' : 'Walking to the square', act: 'talk' });
+    // one in eight plays music for the group; some bring their supper along
+    if (!child && hash(u.id, day + 5) < 0.12) dl.music = true;
+    else if (!child && hash(u.id, day + 9) < 0.3) dl.supper = true;
     // a friend to name ("Chatting with ...")
     const key = dl.g;
     let best = null,
@@ -707,8 +803,9 @@ export function installDaily(Units) {
     if (dl.k === 'privy') return dl.lab || 'Visiting the privy';
     if (dl.ph === 'go' && u.moving) return dl.go || (dl.k === 'social' ? 'Walking to the square' : 'Walking over');
     if (dl.k === 'play' && u.activity === 'laugh') return 'Laughing';
+    if ((dl.k === 'play' || u.activity === 'play') && u.age >= ADULT) return u.age > 55 ? 'Watching the children' : 'Laughing';
     if (dl.k === 'social') {
-      if (dl.lab && (u.activity === 'talk' || u.activity === 'cheer' || u.activity === 'sing')) return dl.lab;
+      if (dl.lab && (u.activity === 'talk' || u.activity === 'cheer' || u.activity === 'sing' || u.activity === 'eat')) return dl.lab;
       return ACT_LABEL[u.activity] || 'Chatting';
     }
     if (dl.k === 'court' && u.moving) return dl.lab;
