@@ -1,4 +1,5 @@
 import { TILE, TILE_INFO, FLORA, FLORA_INFO, SEA_LEVEL, DIRS8 } from '../../world/constants.js';
+import { BUILDING_TYPES } from '../civ/catalog.js';
 import { law, fireFactor, regionName, yearLabel, withAge, wildfireDamp, simWeather, HOT_FIRE, FIRE_WILD, FIRE_SKY, FIRE_SPARK } from './util.js';
 
 // Wildfire simulation on world.fire (0 = not burning, (0..1] intensity).
@@ -502,7 +503,7 @@ export class FireSim {
           // the heat reaches the buildings next door too
           this.markBuildings(x + 0.5, y + 0.5, 1.4, cause);
           try {
-            g.civ?.damageArea?.(x + 0.5, y + 0.5, 0.9, 7 * f * nb, 'fire');
+            this._heat(x, y, 7 * f * nb);
           } catch (err) {
             console.error('[fire] civ.damageArea', err);
           }
@@ -534,6 +535,41 @@ export class FireSim {
       w.markDirty('fire', d.x0, d.y0, d.x1, d.y1);
       this._selfFlush = false;
     }
+  }
+
+  // The flames' heat on the buildings within 0.9 of a burning tile's centre:
+  // the same damage as civ.damageArea(x+0.5, y+0.5, 0.9, amount, 'fire'), but
+  // found through the building grid on the 3x3 tiles round it instead of a
+  // pass over every building on the map (thousands on a Vast map, once per
+  // burning building tile every half second).
+  _heat(x, y, amount) {
+    const C = this.game.civ;
+    if (!C) return;
+    if (!C._bById || !C.damageBuilding) return C.damageArea?.(x + 0.5, y + 0.5, 0.9, amount, 'fire');
+    const w = this.game.world;
+    const cx = x + 0.5,
+      cz = y + 0.5;
+    const seen = this._heatSeen || (this._heatSeen = []);
+    seen.length = 0;
+    for (let dy = -1; dy <= 1; dy++)
+      for (let dx = -1; dx <= 1; dx++) {
+        const tx = x + dx,
+          ty = y + dy;
+        if (tx < 0 || ty < 0 || tx >= w.w || ty >= w.h) continue;
+        const id = w.building[ty * w.w + tx];
+        if (id < 0 || seen.includes(id)) continue;
+        seen.push(id);
+        const b = C._bById.get(id);
+        if (!b || !b.alive) continue;
+        const nx = Math.min(b.tx + b.w, Math.max(b.tx, cx)),
+          nz = Math.min(b.ty + b.h, Math.max(b.ty, cz));
+        const d = Math.hypot(nx - cx, nz - cz);
+        if (d > 0.9) continue;
+        const k = 1 - (d / 0.9) * 0.6;
+        const mult = BUILDING_TYPES[b.type]?.wall ? 0.5 : 1;
+        b.burning = Math.max(b.burning || 0, 0.5);
+        C.damageBuilding(b, amount * k * mult * (C._bGuard ? C._bGuard(b, 'fire') : 1), 'fire');
+      }
   }
 
   _burnOut(i, x, y, fuelFrac) {
