@@ -455,7 +455,7 @@ export class Civilization {
       if (!opts.silent) this._sfx('bell', v.cx, v.cz, 0, true);
     }
     this._assignJobs(v);
-    this._territory();
+    this._territory(v);
     this.colorVersion++;
     return v;
   }
@@ -2407,7 +2407,10 @@ export class Civilization {
     this._territory();
   }
 
-  _territory() {
+  // addV: a village just founded. Its claim is spread into the last fill's
+  // map at once (the rest stands until the next scheduled refresh, which the
+  // new village's arrival triggers within seconds) instead of a whole new fill.
+  _territory(addV = null) {
     const w = this.world;
     const W = w.w;
     const best = this._terrBest; // normalised cost (cost / strength)
@@ -2425,17 +2428,21 @@ export class Civilization {
     const prev = this._tPrev,
       prevN = this._tPrevN;
     const full = prevN < 0 || this._tWorld !== w.owner;
-    if (full) {
+    if (addV && full) addV = null; // (no fill to add to yet: a whole one)
+    const add = !!addV;
+    const chg = add ? [] : null;
+    if (!add && full) {
       best.fill(1e9);
       own.fill(-1);
-    } else
+    } else if (!add)
       for (let k = 0; k < prevN; k++) {
         const i = prev[k];
         best[i] = 1e9;
         own[i] = -1;
       }
-    const touch = this._tTouch;
-    let nt = 0;
+    // (adding: newly reached tiles join the last fill's list, reset next time)
+    const touch = add ? prev : this._tTouch;
+    let nt = add ? prevN : 0;
     if (!this._tq || this._tq.length < w.size * 2) {
       this._tq = new Int32Array(w.size * 2);
       this._tqf = new Float32Array(w.size * 2);
@@ -2488,6 +2495,7 @@ export class Civilization {
       const i = ty * W + tx;
       if (best[i] <= 0) return;
       if (best[i] === 1e9) touch[nt++] = i;
+      if (add) chg.push(i);
       best[i] = 0;
       own[i] = kid;
       str[i] = strength;
@@ -2496,7 +2504,7 @@ export class Civilization {
     };
     // (on a big map the same number of villages holds wider country)
     const reach = this._territoryReach();
-    for (const v of this.villages) {
+    for (const v of add ? [addV] : this.villages) {
       if (!v.alive) continue;
       const k = this.kingdoms[v.kingdom];
       if (!k || !k.alive) continue;
@@ -2543,12 +2551,38 @@ export class Civilization {
         const bj = best[j];
         if (nc > R || nc >= bj) continue;
         if (bj === 1e9) touch[nt++] = j;
+        if (add) chg.push(j);
         best[j] = nc;
         own[j] = kid;
         str[j] = sr;
         lim[j] = R;
         push(j, nc);
       }
+    }
+    if (add) {
+      // publish only what the newcomer took; labels and border lengths wait
+      // for the next refresh
+      const owner = w.owner;
+      let x0 = W,
+        y0 = w.h,
+        x1 = -1,
+        y1 = -1;
+      for (const i of chg) {
+        let o = own[i];
+        if (o >= 0 && H[i] < SEA_LEVEL) own[i] = o = -1;
+        if (owner[i] === o) continue;
+        owner[i] = o;
+        const x = i % W,
+          y = (i / W) | 0;
+        if (x < x0) x0 = x;
+        if (x > x1) x1 = x;
+        if (y < y0) y0 = y;
+        if (y > y1) y1 = y;
+      }
+      if (x1 >= 0) w.markDirty('owner', x0, y0, x1, y1);
+      this._tPrevN = nt;
+      this._terrDirty = true;
+      return;
     }
     // land only; publish the changes; sum each realm's land for its label
     // (over the tiles reached now and the ones reached last time: every tile
