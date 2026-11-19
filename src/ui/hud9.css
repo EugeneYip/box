@@ -608,3 +608,18 @@
 .ws-eramarks i.is-on {
   color: var(--ws-gold-hi);
 }
+
+/* read by screen readers, not drawn (the clock's season name when only its glyph fits) */
+.ws-sr,
+.ws-clock__day .ws-season__name.ws-sr {
+  position: absolute !important;
+  width: 1px !important;
+  min-width: 0 !important;
+  height: 1px !important;
+  overflow: hidden !important;
+  clip: rect(0 0 0 0) !important;
+  white-space: nowrap !important;
+}
+.ws-clock__sep[hidden] {
+  display: none !important;
+}

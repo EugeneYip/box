@@ -333,9 +333,28 @@ export class TopBar {
         this._dayKey = key;
         const fixed = this.game.laws?.weatherSeasons === false;
         const epoch = !fixed && len >= 1.5;
-        // short enough for the 1280 px bar; the tip names the next season
+        // the longest wording that fits the bar: "Spring · 6 yrs to Summer",
+        // then "Spring · Summer in 6y", then the season's glyph (its name kept
+        // for screen readers) with "6 yrs to Summer"; the tip says it in full
         const until = left <= 1 ? `1 yr to ${next}` : `${left} yrs to ${next}`;
-        this.dayEl.innerHTML = `<i class="ws-season" style="--season:${SEASON_TINT[season]}">${uiIcon(SEASON_GLYPH[season] || 'sun')}</i><span class="ws-season__name">${season}</span><span class="ws-clock__sep">·</span><span class="ws-clock__epoch">${epoch ? until : time}</span>`;
+        const short = `${next} in ${left}y`;
+        const paint = (txt, iconOnly) => {
+          this.dayEl.innerHTML = `<i class="ws-season" style="--season:${SEASON_TINT[season]}">${uiIcon(SEASON_GLYPH[season] || 'sun')}</i><span class="ws-season__name${iconOnly ? ' ws-sr' : ''}">${season}</span><span class="ws-clock__sep"${iconOnly ? ' hidden' : ''}>·</span><span class="ws-clock__epoch">${txt}</span>`;
+          const ep = this.dayEl.lastElementChild;
+          return ep.scrollWidth <= ep.clientWidth + 1;
+        };
+        if (!epoch) paint(time, false);
+        else {
+          const fitKey = `${season}|${left}|${innerWidth}`;
+          const tries = [[until, false], [short, false], [until, true], [short, true]];
+          let pick = this._fitKey === fitKey ? this._fitPick : -1;
+          if (pick < 0 || !paint(...tries[pick])) {
+            pick = tries.findIndex((t) => paint(...t));
+            if (pick < 0) paint(...tries[(pick = tries.length - 1)]);
+          }
+          this._fitKey = fitKey;
+          this._fitPick = pick;
+        }
         this.dayEl.style.setProperty('--season', SEASON_TINT[season]);
         this.timeBox.dataset.tip = fixed
           ? `Seasons are paused by World Law · ${time}`

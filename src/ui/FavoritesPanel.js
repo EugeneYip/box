@@ -68,6 +68,14 @@ export class FavoritesPanel {
     this._pT = 0;
     this._ver = -1;
     this.list.addEventListener('click', (e) => this.onClick(e));
+    // a row just unstarred keeps its place (and its Undo) while the pointer is
+    // over the list, so nothing moves under it; it goes once the pointer leaves
+    this.list.addEventListener('pointerenter', (e) => {
+      if (e.pointerType !== 'touch') this._hover = true;
+    });
+    this.list.addEventListener('pointerleave', () => {
+      this._hover = false;
+    });
     this.list.addEventListener('keydown', (e) => this.onKeyDown(e));
     // phones: one sheet at a time, so the inspector is never hidden under this
     this.game.events.on('inspect', () => {
@@ -266,7 +274,7 @@ export class FavoritesPanel {
     const now = performance.now();
     this.pending ||= new Map();
     this.seq ||= new Map();
-    for (const [key, P] of this.pending) if (now > P.until || this.store.map.has(key)) this.pending.delete(key);
+    for (const [key, P] of this.pending) if ((now > P.until && !this._hover) || this.store.map.has(key)) this.pending.delete(key);
     const hasAny = all.length > 0 || this.pending.size > 0;
     this.empty.hidden = hasAny;
     this.list.hidden = !hasAny;
