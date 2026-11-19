@@ -74,7 +74,7 @@ function monumentTitle(type, style, variant) {
 // 1.8x, buildings 1.7x per map area).
 const BUDGET = { humans: 1.6, buildings: 1.7, villages: 1.8, start: 1.34 };
 const BIG_EXP = 0.25,
-  BIG_MAX = 1.4;
+  BIG_MAX = 1.25;
 function budgets(w, h, area = w * h) {
   const a = area / (256 * 256);
   // (round 15) a big map holds more people, villages and buildings with its
