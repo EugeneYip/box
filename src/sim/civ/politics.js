@@ -268,7 +268,7 @@ export const politics = {
         let claimant = null;
         for (const vid of k.villages) {
           const v = this.villages[vid];
-          if (!v?.alive || vid === k.capital) continue;
+          if (!v?.alive || vid === k.capital || this._keyHeld?.(v)) continue;
           if (!claimant || v.pop - v.loyalty * 0.3 > claimant.pop - claimant.loyalty * 0.3) claimant = v;
         }
         if (claimant && claimant.pop >= 10) {
@@ -334,7 +334,7 @@ export const politics = {
         fd = -1;
       for (const vid of k.villages) {
         const v = this.villages[vid];
-        if (!v?.alive || vid === k.capital || v.pop < 8) continue;
+        if (!v?.alive || vid === k.capital || v.pop < 8 || this._keyHeld?.(v)) continue;
         const d = geoDist(this.world, v.cx, v.cz, cap.cx, cap.cz) - v.loyalty * 0.3;
         if (d > fd) (fd = d), (far = v);
       }
@@ -1217,7 +1217,7 @@ export const politics = {
       fd = -1;
     for (const vid of bestK.villages) {
       const v = this.villages[vid];
-      if (!v?.alive || vid === bestK.capital || v.pop < 8) continue;
+      if (!v?.alive || vid === bestK.capital || v.pop < 8 || this._keyHeld?.(v)) continue;
       const d = cap ? geoDist(this.world, cap.cx, cap.cz, v.cx, v.cz) : 0;
       const sc = d + (100 - v.loyalty) * 0.4 + v.pop * 0.2;
       if (sc > fd) {
@@ -1287,7 +1287,7 @@ export const politics = {
     // discontented neighbours join
     for (const vid of [...old.villages]) {
       const o = this.villages[vid];
-      if (!o?.alive || o.id === old.capital) continue;
+      if (!o?.alive || o.id === old.capital || this._keyHeld?.(o)) continue;
       if (geoDist(this.world, o.cx, o.cz, v.cx, v.cz) < (this._civilWar ? 55 : 34) && o.loyalty < (this._civilWar ? 65 : 40) && this.rng.chance(0.6)) {
         this._transferVillage(o, K.id, 'rebellion');
         this._note(`${o.name} joins the rebels`, 'war', { x: o.cx, z: o.cz }, 'joinreb' + K.id, 60);
