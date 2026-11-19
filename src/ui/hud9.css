@@ -765,3 +765,15 @@
     margin-bottom: 4px;
   }
 }
+
+/* phones (portrait): the Favorites sheet keeps a gap above the powers handle,
+   and the actual-speed line (which would sit on the stats row) stays in the
+   speed button's tooltip */
+@media (max-width: 720px) {
+  .ws-favs {
+    bottom: calc(var(--ws-edge) + 90px);
+  }
+  .ws-clock .ws-speed__eff {
+    display: none !important;
+  }
+}
