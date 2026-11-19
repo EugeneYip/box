@@ -74,14 +74,15 @@ function monumentTitle(type, style, variant) {
 // 1.8x, buildings 1.7x per map area).
 const BUDGET = { humans: 1.6, buildings: 1.7, villages: 1.8, start: 1.34 };
 const BIG_EXP = 0.25,
-  BIG_MAX = 1.25;
+  BIG_MAX = 1;
 function budgets(w, h, area = w * h) {
   const a = area / (256 * 256);
   // (round 15) a big map holds more people, villages and buildings with its
   // land, moderately (the fourth root of the area beyond a Medium map, at
   // most +40%, for the Vast tick): the World Map (Vast, about 5x a Medium
   // map's habitable land) reached its cap of 1440 by Year 100, barely more
-  // people than a Medium map
+  // people than a Medium map. (Held at 1 for now: at +25% the Vast tick ran
+  // about twice its budget; raise BIG_MAX again once it fits.)
   const big = a > 1 ? Math.min(BIG_MAX, Math.pow(a, BIG_EXP)) : 1;
   const humans = Math.round(Math.min(900, 850 * Math.pow(a, 0.04)) * big * BUDGET.humans);
   return {

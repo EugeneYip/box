@@ -401,6 +401,11 @@ export const land = {
       if (d < bd) (bd = d), (best = { t, b: base });
     }
     if (!best) return this.remove(v);
+    // a realm in peace keeps a small standing armour park (2, plus one for
+    // every three towns); the rest are laid up for good
+    let kept = 0;
+    for (const o of this.list) if (o.alive && o !== v && o.parkAt != null && o.kingdom === v.kingdom) kept++;
+    if (kept >= 2 + Math.floor((k.villages?.length || 0) / 3)) return this.remove(v);
     const b = best.b;
     let slot = 0;
     for (const o of this.list) if (o.alive && o !== v && o.parkAt === b.id) slot++;

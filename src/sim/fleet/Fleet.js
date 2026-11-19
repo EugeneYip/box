@@ -395,9 +395,12 @@ export class Fleet {
     for (const v of this.list) if (v.alive && v.role === 'fishing') n++;
     return n;
   }
+  // land vehicles that count against the world's land budget: armour laid up
+  // in a barracks yard in peace does not (it would otherwise crowd out the
+  // trains, trucks, buses and ambulances of modern realms)
   landCount() {
     let n = 0;
-    for (const v of this.list) if (v.alive && v.cls === 'land') n++;
+    for (const v of this.list) if (v.alive && v.cls === 'land' && v.parkAt == null) n++;
     return n;
   }
   // per-realm caps (a realm with many harbours keeps more ships)
