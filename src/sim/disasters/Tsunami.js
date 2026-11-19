@@ -8,6 +8,9 @@ import { WaveMesh } from '../../render/fx/WaveMesh.js';
 // battering units and buildings, soaking the ground and putting out fires,
 // until its energy is spent against rising ground. Each column of the crest
 // carries its own energy, so the wave wraps around headlands and islands.
+// Low ground lets it run on: it reaches a few tiles further inland over flat
+// shore, and a town on low ground takes the brunt (damage scales with its
+// share of lowland). A town guarded by levees breaks the wave at its edge.
 
 const N = 44;
 
@@ -58,6 +61,7 @@ export class Tsunami {
     }
     this.mesh = new WaveMesh(this.game.fx, N);
     this._sound = 0;
+    this._low = new Map();
     play(this.game, 'splash', { x, z }, 1, 0.5);
   }
 
@@ -81,7 +85,8 @@ export class Tsunami {
         const v = onLand ? 2.6 + 2.4 * c.e : 4.2 + 2.6 * Math.min(1, depth / 4);
         c.s += v * vt;
         if (onLand) {
-          c.e -= vt * (0.28 + Math.max(0, gh) * 0.22 + w.slopeAt(Math.floor(x), Math.floor(z)) * 0.12);
+          // (flat low shore drains the wave slowly: it carries 2-4 tiles further inland)
+          c.e -= vt * (0.17 + Math.max(0, gh) * 0.24 + w.slopeAt(Math.floor(x), Math.floor(z)) * 0.12);
           if (!c.land) {
             c.land = true;
             fx.emit('splash', { x, y: SEA_LEVEL, z }, { scale: 1.6 + c.e * 1.5, dir: { x: hx, y: 0.5, z: hz } });
@@ -89,7 +94,9 @@ export class Tsunami {
           c.hit -= vt;
           if (c.hit <= 0) {
             c.hit = 0.25;
-            this._flood(x, z, c.e);
+            const lev = this._flood(x, z, c.e);
+            // levees break the wave at the town's edge
+            if (lev > 0) c.e *= 1 - 0.55 * lev;
           }
         }
       }
@@ -150,10 +157,40 @@ export class Tsunami {
     return alive > 0 && this.t < 22;
   }
 
+  // The town at (x, z), its share of low ground (cached) and its levees.
+  _town(x, z) {
+    const civ = this.game.civ;
+    let v = null;
+    try {
+      v = civ?.villageAt?.(x, z, 16) || null;
+    } catch (err) {
+      v = null;
+    }
+    if (!v || Math.hypot(v.cx - x, v.cz - z) > (v.radius || 6) + 2) return null;
+    let low = this._low.get(v.id);
+    if (low == null) {
+      const w = this.game.world;
+      let n = 0,
+        lo = 0;
+      w.forEachInRadius(v.cx, v.cz, Math.max(5, v.radius || 6), (tx, ty, d, i) => {
+        if (w.height[i] < SEA_LEVEL) return;
+        n++;
+        if (w.height[i] < SEA_LEVEL + 1.2) lo++;
+      });
+      low = n ? lo / n : 0;
+      this._low.set(v.id, low);
+    }
+    return { v, low, levee: v.guard?.flood || 0 };
+  }
+
   _flood(x, z, e) {
     const g = this.game;
     const w = g.world;
     const fx = g.fx;
+    const town = this._town(x, z);
+    // an unguarded town on low ground takes the full force (up to about four
+    // times the open shore's harm to its buildings); levees keep their guard
+    const low = town && !(town.levee > 0) ? town.low : 0;
     w.forEachInRadius(x, z, 1.3, (tx, ty, d, i) => {
       if (w.height[i] < SEA_LEVEL) return;
       if (w.wetness) w.wetness[i] = 1;
@@ -168,7 +205,8 @@ export class Tsunami {
       }
     });
     fx.emit('splash', { x, y: w.heightAt(x, z), z }, { scale: 0.7 + e, dir: { x: this.hx, y: 0.3, z: this.hz } });
-    hurt(g, x, z, 1.6, 18 * e, 30 * e, 'tsunami');
+    hurt(g, x, z, 1.6 + low * 0.6, 18 * e * (1 + low * 1.5), 30 * e * (1 + low * 3.2), 'tsunami');
+    return town ? town.levee : 0;
   }
 
   dispose() {
