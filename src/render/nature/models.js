@@ -1385,10 +1385,11 @@ function buildWheat(b, v, lod) {
   const ripe = C(0xeab43e),
     ripeD = C(0xb07c24),
     head = C(0xf8d86a),
-    base = mul3(ripeD, 0.72);
+    base = mul3(ripeD, 0.5),
+    mat = mix3(ripeD, ripe, 0.45);
   const rows = lod ? 3 : 5;
   const segs = lod ? 2 : 4;
-  const tufts = lod ? 4 : 9;
+  const tufts = lod ? 4 : 11;
   const E = 0.46;
   const wr = (0.44 / rows) * 0.8; // ridge half-width at the soil (thin furrows between)
   // bend comes from the height curve (nothing explicit), so the ridge foot
@@ -1398,7 +1399,8 @@ function buildWheat(b, v, lod) {
     const z0 = -0.44 + ((r + 0.5) / rows) * 0.88 + b.r(-0.012, 0.012);
     // ridge crest: slightly uneven along the row
     const crest = [];
-    for (let k = 0; k <= segs; k++) crest.push((0.13 + b.r(-0.02, 0.02)) * K * (k === 0 || k === segs ? 0.8 : 1));
+    // (a low leafy mat, shaded: the bright ears above it carry the color)
+    for (let k = 0; k <= segs; k++) crest.push((0.08 + b.r(-0.015, 0.015)) * K * (k === 0 || k === segs ? 0.75 : 1));
     for (let k = 0; k < segs; k++) {
       const xa = -E + (2 * E * k) / segs,
         xb = -E + (2 * E * (k + 1)) / segs;
@@ -1408,8 +1410,8 @@ function buildWheat(b, v, lod) {
         const ba = V(xa, -0.005, z0 + side * wr),
           bb = V(xb, -0.005, z0 + side * wr);
         const o = { ...ridge, pivot: V((xa + xb) / 2, 0, z0) };
-        b.tri(ba, bb, tb, [base, base, ripe], o);
-        b.tri(ba, tb, ta, [base, ripe, ripe], o);
+        b.tri(ba, bb, tb, [base, base, mat], o);
+        b.tri(ba, tb, ta, [base, mat, mat], o);
       }
     }
     // stalks and ears along the crest
@@ -1418,7 +1420,7 @@ function buildWheat(b, v, lod) {
       const z = z0 + b.r(-wr * 0.5, wr * 0.5);
       const h = b.r(0.24, 0.32) * K;
       const lean = V(b.r(-0.03, 0.03), 0, b.r(-0.03, 0.03));
-      const sb = V(x, 0.08 * K, z);
+      const sb = V(x, 0.05 * K, z);
       const top = V(x + lean.x, h, z + lean.z);
       const sd = V(0.008, 0, 0.008).applyAxisAngle(V(0, 1, 0), b.r(0, TAU));
       const o = { leaf: 0.35, flutter: 0.5, mat: MAT.WHEAT, pivot: sb };
@@ -1435,7 +1437,8 @@ function buildWheat(b, v, lod) {
       }
     }
   }
-  return { bendScale: 1.1, height: 0.34 * K };
+  // a gentle sway: the crop is short, a tree-sized gust would lay it flat
+  return { bendScale: 0.5, height: 0.34 * K };
 }
 
 // ---------------------------------------------------------------------------
