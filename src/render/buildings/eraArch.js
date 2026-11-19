@@ -1,5 +1,6 @@
 import { shade } from './geom.js';
 import { bands, mullions, flatRoof, tree, door, sign } from './modernModels.js';
+import { planters } from './eraTown.js';
 
 // Homes and halls of the Modern, Atomic and Future eras (5-7). The Industrial
 // era (4) keeps the older forms in brick, iron and slate (archetypes.js
@@ -43,8 +44,10 @@ function hedge(g, x, z, w, d) {
 export function eraHouse(g, K, style, lv, era) {
   const acc = K.accent ?? K.trim;
   const frame = era >= 7 ? 0xf2f4f0 : era >= 6 ? 0x6e767e : shade(K.wall, 0.78);
-  const roofTop = era >= 7 ? 0x5f9a5a : K.tile;
-  const floors = Math.max(1, Math.min(3, lv));
+  // Modern roofs are flat and grey (the mire's red tin goes), Future roofs planted
+  const roofTop = era >= 7 ? 0x5f9a5a : style === 'mire' ? (era >= 6 ? 0x6a7078 : 0x5c6066) : K.tile;
+  // two floors from the first level: a modern street of houses reads as town, not huts
+  const floors = Math.max(2, Math.min(3, lv + 1));
   if (style === 'dune') {
     // stacked cubes, each floor smaller, with a terrace and a dome on top
     const w = 1.3 + lv * 0.06,
@@ -62,6 +65,7 @@ export function eraHouse(g, K, style, lv, era) {
       bands(g, K, cx, y, bz, cw, cd, 1, FH, { k: 0.3 });
       // the parapet round the roof of this floor
       flatRoof(g, cx, y + FH, bz, cw, cd, K.wall2, roofTop, 0.08);
+      if (era >= 7) planters(g, cx, y + FH + 0.04, bz, cw * 0.96, cd * 0.92);
       y += FH + 0.04;
       cx += f % 2 ? 0.12 : -0.12;
       cw *= 0.72;
@@ -106,7 +110,10 @@ export function eraHouse(g, K, style, lv, era) {
       const gh = 0.62 + lv * 0.06;
       g.tri([-w / 2 + 0.06, h + 0.02, bz + d / 2 + 0.016], [w / 2 - 0.06, h + 0.02, bz + d / 2 + 0.016], [0, h + gh - 0.08, bz + d / 2 + 0.016], K.glass, 0, 1, [0, h, bz]);
     }
-    if (era >= 7) solar(g, w * 0.22, h + 0.22, bz - 0.15, 0.28, 0.4, 1);
+    if (era >= 7) {
+      solar(g, w * 0.22, h + 0.22, bz - 0.15, 0.28, 0.4, 1);
+      for (let f = 1; f < floors; f++) planters(g, 0, f * FH - 0.04, bz, w - 0.04, d);
+    }
     g.box(-w * 0.3, h + 0.1, bz - 0.2, 0.1, 0.5, 0.1, 0x3a3d42);
     g.anchor('chimneys', -w * 0.3, h + 0.64, bz - 0.2, { rate: era >= 6 ? 0.3 : 0.6 });
     door(g, K, -0.25, bz + d / 2, 0.2, 0.34, acc, { canopy: K.tile, tint: 0.3 });
@@ -130,8 +137,14 @@ export function eraHouse(g, K, style, lv, era) {
     // veranda railing and steps
     g.box(0, lift + 0.01, bz + d / 2 + 0.31, w + 0.2, 0.14, 0.02, K.timber, { noTop: true });
     for (let i = 0; i < 3; i++) g.box(w / 2 - 0.15, i * 0.1 - 0.04, bz + d / 2 + 0.38 + i * 0.07, 0.24, 0.05, 0.08, K.timber2);
-    g.hip(0, lift + h, bz + 0.1, w + 0.3, d + 0.5, 0.32, era >= 7 ? 0x5f9a5a : K.tile, { over: 0.2, rows: 3, tint: era >= 7 ? 0 : 0.15 });
-    if (era >= 7) solar(g, 0, lift + h + 0.18, bz - 0.1, 0.4, 0.3, 1);
+    // a wide flat roof slab on thin columns over the veranda
+    for (const sx of [-1, 1]) g.box((sx * (w + 0.1)) / 2, lift, bz + d / 2 + 0.4, 0.04, h, 0.04, frame);
+    g.box(0, lift + h, bz + 0.15, w + 0.36, 0.07, d + 0.62, shade(K.wall2, 0.72), { top: roofTop });
+    if (era >= 7) {
+      planters(g, 0, lift + h + 0.07, bz + 0.15, w + 0.3, d + 0.56);
+      for (let f = 1; f < floors; f++) planters(g, 0, lift + f * FH - 0.04, bz, w - 0.04, d);
+      solar(g, -w * 0.15, lift + h + 0.1, bz, 0.4, 0.3, 1);
+    } else g.box(w * 0.25, lift + h + 0.07, bz - 0.1, 0.22, 0.14, 0.18, 0x6e757c);
     door(g, K, -0.25, bz + d / 2, 0.2, 0.32, acc, { lamp: true, tint: 0.3 });
     g.push();
     g.translate(0, lift, 0);
@@ -161,6 +174,7 @@ export function eraHouse(g, K, style, lv, era) {
     if (era >= 6) glassFront(g, K, ox + 0.1, y, bz - 0.02, uw * 0.5, ud, FH, frame);
     else g.box(ox, y + 0.13, bz - 0.02 + ud / 2 + 0.014, uw * 0.7, 0.16, 0.02, K.glass, { glow: 1 });
     bands(g, K, ox, y, bz - 0.02, uw, ud, 1, FH, { k: 0.3 });
+    if (era >= 7) planters(g, ox, y - 0.04, bz - 0.02, uw - 0.04, ud);
     y += FH;
   }
   // a thin roof slab with a deep overhang

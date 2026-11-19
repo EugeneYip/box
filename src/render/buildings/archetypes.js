@@ -1,6 +1,7 @@
 import { GeoBuilder, shade, mix } from './geom.js';
 import { modernModel, modernFallback, modernPalette } from './modernModels.js';
 import { eraHouse, eraHall } from './eraArch.js';
+import { industrialHouse, eraCivic, ERA_CIVIC } from './eraTown.js';
 import { BUILDING_TYPES } from '../../sim/civ/catalog.js';
 
 // Procedural architecture for every building type x culture style x level.
@@ -1783,7 +1784,7 @@ const MODERN_DRESS = {
   ],
   frost: [
     { wall: 0x7c3c2e, wall2: 0x8e4a38, timber: 0x2e2a28, timber2: 0x3e3834, tile: 0x34393f, thatch: 0x34393f, thatch2: 0x2a2e34, stone: 0x8a857c, stone2: 0x6a655e, glass: 0x7a9ab8, trim: 0xe8e4dc, metal: 0x2e3034 },
-    { wall: 0x5a4434, wall2: 0x8a8478, timber: 0x3a3634, timber2: 0x4a4644, tile: 0x2e343a, thatch: 0x2e343a, thatch2: 0x262a30, stone: 0x9a958c, stone2: 0x7a756c, glass: 0x8aaac4, trim: 0xc09a45, accent: 0xc09a45, door: 0x8a3a2a },
+    { wall: 0x9e9a92, wall2: 0x7a7670, timber: 0x3a3634, timber2: 0x4a4644, tile: 0x2e343a, thatch: 0x2e343a, thatch2: 0x262a30, stone: 0x9a958c, stone2: 0x7a756c, glass: 0x8aaac4, trim: 0xc09a45, accent: 0xc09a45, door: 0x8a3a2a },
     { wall: 0x4a4440, wall2: 0x8a9096, timber: 0x30343a, timber2: 0x40444a, tile: 0x262b31, thatch: 0x262b31, thatch2: 0x1e2228, stone: 0xa4a29c, stone2: 0x84827c, glass: 0x6aa0c8, trim: 0xd0a850, accent: 0xd0a850, door: 0x9a3a2a },
     { wall: 0xe4e6e8, wall2: 0xcad4cc, timber: 0x7a8a7e, timber2: 0x8a9a8e, tile: 0x6f8a4a, thatch: 0x6f8a4a, thatch2: 0x5a7038, stone: 0xc4c8c4, stone2: 0xa4aaa4, glass: 0x8ad0dc, trim: 0xd8b860, accent: 0xd8b860, door: 0x5a7a9a },
   ],
@@ -2441,11 +2442,13 @@ export function buildArchetype(type, style, level, era = 1, variant = 0, gilded 
   const fn = BUILDERS[type];
   let info = {};
   if (def?.modern) {
-    if (!modernModel(g, def.kind || type, style, level, era)) modernFallback(g, modernPalette(style, era), def, level);
+    if (!modernModel(g, def.kind || type, style, level, era, variant)) modernFallback(g, modernPalette(style, era), def, level);
     // a levelled platform under the whole plot keeps big sites grounded on slopes
     info = { base: { x: 0, z: 0, w: (def.dw ?? def.w) * 0.9, d: (def.dh ?? def.h) * 0.9 } };
-  } else if (era >= 5 && type === 'house') info = eraHouse(g, K, style, level, era) || {};
+  } else if (era === 4 && type === 'house') info = industrialHouse(g, K, style, level) || {};
+  else if (era >= 5 && type === 'house') info = eraHouse(g, K, style, level, era) || {};
   else if (era >= 5 && type === 'hall') info = eraHall(g, K, style, level, era) || {};
+  else if (era >= 4 && ERA_CIVIC.has(type)) info = eraCivic(g, K, modernPalette(style, era), type, style, level, era, def) || {};
   else if (fn) info = fn(g, K, style, level, variant) || {};
   else if (era >= 4) modernFallback(g, modernPalette(style, era), def, level);
   else {
@@ -2458,7 +2461,7 @@ export function buildArchetype(type, style, level, era = 1, variant = 0, gilded 
     doorOn(g, K, 0, 0, w, d, 'F', 0, 0.06, { w: 0.2, h: 0.36 });
     for (const f of ['L', 'R']) windowOn(g, K, 0, 0, w, d, f, 0, 0.3, {});
   }
-  const modernHome = era >= 5 && (type === 'house' || type === 'hall');
+  const modernHome = (era >= 5 && (type === 'house' || type === 'hall')) || (era === 4 && type === 'house');
   // every home flies a small pennant in its kingdom's colours
   if (type === 'house' && !modernHome && !(style === 'mire' && level >= 3)) bannerPole(g, K, 0.88, 0, 0.88, style === 'mire' ? 1.35 : 1.0, { s: 0.55 });
   if (era >= 3 && (type === 'hall' || (type === 'house' && !modernHome)) && level >= 2) bannerPole(g, K, -0.9, 0, 0.86, 1.25, { s: 0.65 });

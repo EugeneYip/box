@@ -1,4 +1,4 @@
-import { TILE, SEA_LEVEL } from '../../world/constants.js';
+import { TILE, SEA_LEVEL, FLORA } from '../../world/constants.js';
 import { BUILDING_TYPES } from './catalog.js';
 import { USE, YEAR, clamp } from './util.js';
 import { civPath } from './pathing.js';
@@ -142,6 +142,10 @@ export const modern = {
     const pop = v.pop;
     const town = v.tier >= 1;
     const city = v.tier >= 2;
+    // a busy village (about 20 people) builds the common works of its era
+    // too: a workshop-factory, a block of flats, its powered street, so a
+    // whole realm reads as its era, not only its capital and cities
+    const busy = town || pop >= 20;
     const isCap = K.capital === v.id;
     const now = this.game.time.total;
     const realm = this._realmTypeCount(kid);
@@ -165,8 +169,8 @@ export const modern = {
     // Industry: factories on the edge of town, row houses for their workers
     // (Zoning: the factories stand well away from the homes, in their own district)
     const zoned = has('zoning');
-    if (room() && has('industry') && town && count('factory') < (city ? 2 : 1)) tryBuild('factory', out('factory', zoned ? 7 : 4, zoned ? 9 : 5));
-    if (room() && has('industry') && town && count('factory') > 0 && count('rowhouse') < 1 + v.tier && v.housing - pop < 4) tryBuild('rowhouse');
+    if (room() && has('industry') && busy && count('factory') < (city ? 2 : 1)) tryBuild('factory', out('factory', zoned ? 7 : 4, zoned ? 9 : 5));
+    if (room() && has('industry') && busy && count('factory') > 0 && count('rowhouse') < 1 + v.tier && (v.housing - pop < 4 || count('rowhouse') === 0)) tryBuild('rowhouse');
     // Electricity: a power station for every few towns; later the atom and fusion
     const plants = rc('powerstation') + rc('nuclear') + rc('fusion');
     if (room() && has('electricity') && town && count('powerstation') === 0 && plants < Math.max(1, Math.ceil(towns / 3)) && !has('nuclear')) tryBuild('powerstation', out('powerstation', 4, 6));
@@ -180,10 +184,23 @@ export const modern = {
     // Radio
     if (room() && has('radio') && town && count('radiomast') === 0) tryBuild('radiomast', out('radiomast', 3, 2));
     // Reinforced Concrete: apartment blocks (and taller ones in the cities)
-    if (room() && has('concrete') && town && (v.housing - pop < 6 + v.tier * 2 || count('apartment') === 0) && count('apartment') < 1 + v.tier * 2) tryBuild('apartment');
+    if (room() && has('concrete') && busy && (v.housing - pop < 6 + v.tier * 2 || count('apartment') === 0) && count('apartment') < 1 + v.tier * 2) tryBuild('apartment');
     else if (room() && has('concrete') && city) {
       const a = v.buildings.find((b) => b.alive && b.type === 'apartment' && !b.constructing && !b.upgrading && b.level < 2);
       if (a && v.housing - pop < 6) upgrade(a);
+    }
+    // A modern city's core is for towers, not wheat: one field plot inside
+    // the core is given up at a time (new plots go beyond it: _placePlot)
+    if (city && (K.era || 0) >= 5 && v.plots?.length && this.rng.chance(0.5)) {
+      const core = v.radius * 0.7;
+      const p = v.plots.find((q) => Math.hypot((q.x0 + q.x1 + 1) / 2 - v.cx, (q.y0 + q.y1 + 1) / 2 - v.cz) < core);
+      if (p) {
+        const w = this.world;
+        for (const i of [...p.tiles]) {
+          this._removePlotTile(i);
+          if (w.flora[i] === FLORA.WHEAT) w.setFlora(i % w.w, (i / w.w) | 0, FLORA.NONE);
+        }
+      }
     }
     // Railways: a station in each town a line reaches
     if (room() && has('railways') && v.railEnds > 0 && count('station') === 0) tryBuild('station');

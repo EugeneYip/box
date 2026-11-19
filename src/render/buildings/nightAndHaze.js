@@ -5,8 +5,9 @@ import { BUILDING } from '../../core/scale.js';
 //  GlowSprites — soft points of light at street lights and floodlights, so a
 //                powered town glows at night out to mid zoom (the lamp models
 //                and ground pools stop at prop range).
-//  HazeLayer   — factory haze (civ.haze()): a few soft brownish puffs low over
-//                each working factory and power station, fading as it clears.
+//  HazeLayer   — factory haze (civ.haze()): a few wide, soft, translucent
+//                grey-beige puffs low over each working factory and power
+//                station, never over water, fading as it clears (fusion).
 // Both are camera-facing quads expanded in the vertex shader from an
 // InstancedMesh; no per-light or per-puff objects.
 
@@ -102,7 +103,7 @@ void main() {
 
 export class HazeLayer {
   constructor(parent) {
-    this.uniforms = { uTime: { value: 0 }, uDrift: { value: 0.35 }, uColor: { value: new THREE.Color(0x8a7458) }, uOpacity: { value: 0.32 } };
+    this.uniforms = { uTime: { value: 0 }, uDrift: { value: 0.35 }, uColor: { value: new THREE.Color(0xb4ab9a) }, uOpacity: { value: 0.15 } };
     this.frag = `
 uniform vec3 uColor;
 uniform float uOpacity;
@@ -114,7 +115,7 @@ void main() {
   float d = length(p) * 2.0;
   float wob = 0.85 + 0.15 * sin(atan(p.y, p.x) * 3.0 + vSeed * 9.0);
   float a = smoothstep(1.0, 0.0, d / wob);
-  a *= a;
+  a = a * a * (3.0 - 2.0 * a) * 0.85;
   gl_FragColor = vec4(uColor, a * vA * uOpacity);
 }`;
     this.mesh = this._make(64);
@@ -130,7 +131,7 @@ void main() {
   update(dt, haze, ground, daylight, t) {
     this.uniforms.uTime.value = t;
     // dusk and night: the haze darkens with the land
-    this.uniforms.uColor.value.setRGB(0.54, 0.455, 0.345).multiplyScalar(0.35 + 0.65 * daylight);
+    this.uniforms.uColor.value.setRGB(0.71, 0.68, 0.61).multiplyScalar(0.35 + 0.65 * daylight);
     const seen = new Set();
     for (const h of haze || []) {
       const key = Math.round(h.x * 4) * 65536 + Math.round(h.z * 4);
@@ -152,22 +153,31 @@ void main() {
         continue;
       }
       list.push(e);
-      n += 5;
+      n += 7;
     }
     const m = grow(this, 'mesh', n, (c) => this._make(c));
     const al = m.geometry.getAttribute('aAlpha'),
       sd = m.geometry.getAttribute('aSeed');
     let i = 0;
     for (const e of list) {
-      const gy = ground(e.x, e.z);
-      for (let j = 0; j < 5; j++) {
+      const g0 = ground(e.x, e.z);
+      if (g0 == null) continue;
+      for (let j = 0; j < 7; j++) {
         const sx = Math.sin(e.k * 0.37 + j * 2.4),
           sz = Math.cos(e.k * 0.53 + j * 1.7);
-        const off = j === 0 ? 0 : e.r * 0.45;
-        const s = e.r * (j === 0 ? 1.5 : 1.1);
-        _m.makeScale(s, s, s).setPosition(e.x + sx * off, gy + 1.0 + j * 0.25 + e.r * 0.12, e.z + sz * off);
+        const off = j === 0 ? 0 : e.r * (0.4 + 0.12 * (j % 3));
+        const px = e.x + sx * off,
+          pz = e.z + sz * off;
+        // a puff whose middle would sit over water is left out
+        const gy = ground(px, pz);
+        if (gy == null) continue;
+        let s = e.r * (j === 0 ? 2.3 : 1.7);
+        // by the shore the puff shrinks so its soft body stays over the land
+        const q = s * 0.3;
+        if (ground(px + q, pz) == null || ground(px - q, pz) == null || ground(px, pz + q) == null || ground(px, pz - q) == null) s *= 0.45;
+        _m.makeScale(s, s, s).setPosition(px, Math.max(gy, g0) + 1.2 + j * 0.2 + e.r * 0.12, pz);
         m.setMatrixAt(i, _m);
-        al.array[i] = e.a * (j === 0 ? 0.9 : 0.7);
+        al.array[i] = e.a * (j === 0 ? 0.85 : 0.6);
         sd.array[i] = ((e.k % 997) / 997 + j * 0.31) % 1;
         i++;
       }
