@@ -1,9 +1,9 @@
 import { TILE, TILE_INFO, FLORA, SEA_LEVEL } from '../../world/constants.js';
-import { geoInfo, geoRegion, geoTile } from '../../world/geo.js';
+import { geoInfo, geoRegion, geoTile, geoDist } from '../../world/geo.js';
 import { HERALDRY, colorDist, realStyleName, REAL_TITLE } from './cultures.js';
 import { realmsFor, regionStyle } from './places/index.js';
 import { peopleCultureId } from './peoples.js';
-import { USE, SPIRAL, spiralCount, clamp, YEAR } from './util.js';
+import { USE, SPIRAL, spiralCount, clamp, YEAR, ADULT_AGE } from './util.js';
 
 // Real realms on World Map worlds (contract: docs/REGIONS.md section 3).
 // A map of the Earth (or of one of its regions) starts with real countries
@@ -16,6 +16,10 @@ import { USE, SPIRAL, spiralCount, clamp, YEAR } from './util.js';
 const GAP_SAME = 9,
   GAP_LAND = 10,
   GAP_SEA = 7;
+// Seats and must-exist cities are kept (not razed, emptied or merged) for
+// this many years, and refilled when they fall under this many people.
+const KEY_YEARS = 150,
+  KEY_MIN_POP = 8;
 
 export const realms = {
   // The real realms for this world's region, or null (square presets).
@@ -667,14 +671,80 @@ export const realms = {
   },
 
   // A seat of a country seeded at the start, or a city that must exist
-  // (docs/REGIONS.md section 4), still held by that country in the map's
-  // first century: it is not razed, merged away or roused to rebellion, and a
-  // siege of it ends in a peace bought by the besieged (politics.js _capture).
+  // (docs/REGIONS.md section 4), in the map's first 150 years, whoever holds
+  // it: it is not razed, emptied, merged away, joined to another crown in
+  // union or roused to crown a realm of its own; it changes hands only by
+  // conquest, and migrants refill it when it dwindles (_keepKeyCities). By
+  // Year 103 on Vast Pyongyang, Kumamoto, Denver and San Juan had emptied.
+  _keyCity(v) {
+    return !!(v?.alive && v.keyCity != null && this.game.time.total < YEAR * KEY_YEARS);
+  },
   _keyHeld(v) {
-    if (v?.keyCity == null || v.kingdom !== v.keyCity || !v.alive) return false;
-    if (this.game.time.total >= YEAR * 100) return false;
+    return this._keyCity(v);
+  },
+  // Still held by its own country in the first century: a siege of it ends
+  // in a peace bought by the besieged (politics.js _capture).
+  _keyFirm(v) {
+    if (!this._keyCity(v) || v.kingdom !== v.keyCity || this.game.time.total >= YEAR * 100) return false;
     const k = this.kingdoms[v.keyCity];
     return !!(k?.alive && k.realm >= 0);
+  },
+
+  // Key cities that dwindle are refilled from the towns around them: young
+  // families move in from the holder's biggest town on the same land, else
+  // from the nearest big town at peace with it. Run with the diplomacy pass.
+  _keepKeyCities() {
+    if (this.game.time.total >= YEAR * KEY_YEARS || !this._realMapOn()) return;
+    for (const v of this.villages) {
+      if (!this._keyCity(v) || v.pop >= KEY_MIN_POP || this.expeditions.some((e) => e.village === v.id)) continue;
+      this._refillKey(v, KEY_MIN_POP + 2 - v.pop);
+    }
+  },
+  // Move up to n settlers into key city v; returns how many came.
+  _refillKey(v, n) {
+    let src = null,
+      sd = Infinity;
+    for (const o of this.villages) {
+      if (!o.alive || o === v || o.landId !== v.landId || o.starving || o.pop < 16 || this._keyCity(o) && o.pop < 24) continue;
+      if (o.kingdom !== v.kingdom && this.atWar(o.kingdom, v.kingdom)) continue;
+      const d = geoDist(this.world, o.cx, o.cz, v.cx, v.cz) * (o.kingdom === v.kingdom ? 0.4 : 1) - o.pop * 0.5;
+      if (d < sd) (sd = d), (src = o);
+    }
+    let moved = 0;
+    if (src) {
+      for (const u of [...src.members]) {
+        if (moved >= n) break;
+        if (!u.alive || u.age < ADULT_AGE || u.age > 45 || u.job === 'king' || u.job === 'soldier' || u.data?.civ?.army || u.data?.civ?.royal) continue;
+        this._moveMember(u, v);
+        if (u.data.civ) u.data.civ.task = { kind: 'arrive' };
+        if (u.kingdom !== v.kingdom) u.kingdom = v.kingdom;
+        moved++;
+      }
+      if (moved) this._history(`Families from ${src.name} settle in ${v.name}`, 'info', { x: v.cx, z: v.cz });
+    }
+    // nobody near to come: a handful of newcomers arrive from beyond (so a
+    // must-exist city never stands empty)
+    if (!moved && v.pop + moved < 3) {
+      const w = this.world;
+      for (let i = 0; i < 4; i++) {
+        const a = this.rng.next() * Math.PI * 2;
+        const x = v.cx + Math.cos(a) * 2.5,
+          z = v.cz + Math.sin(a) * 2.5;
+        if (!w.isWalkable(Math.floor(x), Math.floor(z))) continue;
+        const u = this.spawnHuman(v, x, z, { age: this.rng.float(18, 30) });
+        if (u) {
+          if (u.data.civ) u.data.civ.task = { kind: 'arrive' };
+          moved++;
+        }
+      }
+    }
+    return moved;
+  },
+  // Civilization._abandon asks before a town is given up: a key city is
+  // peopled again instead (true: keep it).
+  _holdKeyCity(v) {
+    if (!this._keyCity(v) || v.razed) return false;
+    return this._refillKey(v, KEY_MIN_POP) > 0;
   },
 
   // Does a town stand in its real country's own land? (the place data's

@@ -171,6 +171,13 @@ export const SIDE_TECHS = TECHS.filter((t) => t.side);
 export const ERA_YEAR = { 4: 225, 5: 325, 6: 425, 7: 515 };
 const PACE_MIN = 0.12;
 const PACE_LEAD = 2.2; // most the leading realm is hurried when late
+// Catch-up: an art that a neighbour, ally or trade partner already knows is
+// learned far sooner than it was first invented, the more so the further
+// behind the realm stands (x2.4 one era behind, x5.7 two, x13 three, x32
+// four). The world's leaders teach a realm out of touch one era less. A
+// one-town realm sat in the Enlightened era for 294 years beside Future realms.
+const CATCH_BASE = 2;
+const CATCH_EXP = 1.25;
 
 // Extra research on big maps (planner _bigMap: none on Medium): their realms
 // stay small and far apart, and on their own reached the Enlightened arts
@@ -388,6 +395,42 @@ export const tech = {
     return out;
   },
 
+  // Trade partners (realms whose caravans, trains or ships delivered to one
+  // another's towns in the last ten years), recorded from fleet deliveries.
+  _hookTrade() {
+    if (this._tradeHooked) return;
+    this._tradeHooked = true;
+    this._trade = new Map();
+    this.game.events?.on?.('fleet:delivered', (e) => {
+      const a = e?.kingdom,
+        b = this.villages[e?.to]?.kingdom;
+      if (a == null || b == null || a === b || a < 0 || b < 0) return;
+      const t = this.game.time.total;
+      (this._trade.get(a) || this._trade.set(a, new Map()).get(a)).set(b, t);
+      (this._trade.get(b) || this._trade.set(b, new Map()).get(b)).set(a, t);
+    });
+  },
+  // How many eras a realm stands behind those it can learn from (0 when
+  // level): its neighbours, allies and trade partners, else the world's
+  // leading realm less one era. Only while the art under study is known to
+  // one of them.
+  _catchUp(k, lore, leader) {
+    const era = k.era || 0;
+    const id = k.researching;
+    let gap = 0;
+    const learn = (o) => {
+      if (!o?.alive || !o.villages.length || !o.techs) return;
+      const d = (o.era || 0) - era;
+      if (d > gap && (!id || id === 'mastery' || o.techs.has(id))) gap = d;
+    };
+    for (const o of lore?.get(k.id) || []) learn(o);
+    const now = this.game.time.total;
+    const tr = this._trade?.get(k.id);
+    if (tr) for (const [kid, t] of tr) if (now - t < YEAR * 10) learn(this.kingdoms[kid]);
+    if (leader && leader !== k && (!id || id === 'mastery' || leader.techs?.has(id))) gap = Math.max(gap, (leader.era || 0) - era - 1);
+    return gap;
+  },
+
   _chooseResearch(k) {
     let opts = this._availableTechs(k);
     if (!opts.length) return null;
@@ -425,7 +468,8 @@ export const tech = {
     const big = this._bigMap();
     // an age of learning: knowledge spreads between the courts (any map)
     const spread = Math.max(0, ageRate - 1);
-    const lore = big > 0 || spread > 0 ? this._contactLore() : null;
+    const lore = this._contactLore();
+    this._hookTrade();
     // the world's single most advanced realm (the pacing hurries only it when
     // late): the latest era, then the most main arts known, then the most
     // knowledge in hand. Every realm tied for the top era used to count as a
@@ -493,6 +537,9 @@ export const tech = {
         const c = lore.get(k.id)?.length || 0;
         if (c) rate *= 1 + spread * LORE_EXCHANGE * Math.min(5, c);
       }
+      // a realm left behind learns from those ahead of it
+      const lag = this._catchUp(k, lore, leader);
+      if (lag > 0) rate *= Math.pow(CATCH_BASE, lag * CATCH_EXP);
       if (big > 0) {
         // big maps: scholars, letters and travellers cross the wide lands
         rate *= 1 + big * BIG_RESEARCH;

@@ -1535,6 +1535,7 @@ export class Civilization {
 
   _abandon(v, why = 'empty') {
     if (!v.alive) return;
+    if (why !== 'razed' && this._holdKeyCity?.(v)) return; // a World Map key city is refilled (realms.js)
     v.alive = false;
     const k = this.kingdoms[v.kingdom];
     for (const u of [...v.members]) this._removeMember(u);
