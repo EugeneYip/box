@@ -23,8 +23,8 @@ import { pylonModel, PYLON_ARMS } from './modernModels.js';
 const BS = BUILDING.scale;
 // sizes at the design scale (one tile = one unit, a person 0.6 tall), times BS
 const GAUGE = 0.26 * BS; // rail to rail
-const RAIL_W = 0.034 * BS,
-  RAIL_H = 0.03 * BS;
+const RAIL_W = 0.045 * BS,
+  RAIL_H = 0.034 * BS;
 const SLEEPER_L = 0.24 * BS, // half length
   SLEEPER_W = 0.07 * BS,
   SLEEPER_H = 0.025 * BS;
@@ -41,13 +41,15 @@ const GUIDE_W = 0.36 * BS,
   PILLAR_GAP = 2.2; // tiles between pillars
 const HW_W = 0.62; // the highway's carriageway (a road, sized by the tiles)
 const FAR = 150; // beyond this camera distance: thin lines only
-const WIRE_D = 115; // wires drawn up to here
+const WIRE_D = 75; // wires drawn up to here (past it: pylons only, no dark scratches)
+const VIADUCT = 0.12; // a rail bed this far over the ground rides on a bridge, below it on an embankment
+const PIER_GAP = 1.6; // tiles between a bridge's piers
 
 const COL = {
-  ballast: 0x8c8882,
-  ballast2: 0x76726c,
-  sleeper: 0x4e4844,
-  rail: 0xc4cad2,
+  ballast: 0x6c6a66,
+  ballast2: 0x585550,
+  sleeper: 0x3a2b21,
+  rail: 0xe4e8ee,
   deck: 0x5a5e64,
   girder: 0x7a3a2c,
   pier: 0x9a948a,
@@ -190,7 +192,7 @@ export class InfraRenderer {
     this.group.name = 'civ-infrastructure';
     game.scene.add(this.group);
     this.mat = infraMaterial(uniforms);
-    this.wireMat = new THREE.LineBasicMaterial({ color: 0x24262a, transparent: true, opacity: 0.8 });
+    this.wireMat = new THREE.LineBasicMaterial({ color: 0x4a4e54, transparent: true, opacity: 0.55 });
     this.farMat = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.85 });
     this.mesh = null;
     this.wires = null;
@@ -225,31 +227,17 @@ export class InfraRenderer {
       const [tx, tz] = tanAt(P, i);
       S.push([P[i * 2], P[i * 2 + 1], tx, tz]);
     }
-    const Y = S.map(([x, z]) => {
+    // levels from the sim (seg.ys: a gentle grade over dips, on piers where
+    // the track leaves the ground); the ground is read here for the piers
+    const ys = seg.ys && seg.ys.length === n ? seg.ys : null;
+    const Y = S.map(([x, z], i) => {
       const h = this._h(x, z);
-      return { g: h, wet: h < SEA_LEVEL, y: h < SEA_LEVEL ? SEA_LEVEL + 0.3 * BS : h + 0.02 };
+      const y = ys ? ys[i] : h < SEA_LEVEL ? SEA_LEVEL + 0.3 * BS : h + 0.02;
+      return { g: h, wet: h < SEA_LEVEL, y, deck: ys ? ys[i] : Math.max(h, SEA_LEVEL) + MAG_Y };
     });
-    // a bridge's approaches ramp down to the banks
-    for (let i = 0; i < Y.length; i++)
-      if (!Y[i].wet)
-        for (let k = 1; k <= 3; k++) {
-          const j = Y[i - k]?.wet ? i - k : Y[i + k]?.wet ? i + k : -1;
-          if (j >= 0) Y[i].y = Math.max(Y[i].y, Y[i].g + 0.02 + (SEA_LEVEL + 0.3 * BS - Y[i].g - 0.02) * (1 - k / 4));
-        }
-    // a guideway's deck runs level over bumps in the ground: its height is
-    // averaged over a few tiles (never lower than most of its clearance)
-    if (elevated) {
-      const raw = Y.map((q) => Math.max(q.y + 0.2 * BS, q.g + MAG_Y));
-      for (let i = 0; i < Y.length; i++) {
-        let s = 0,
-          c = 0;
-        for (let j = Math.max(0, i - 6); j <= Math.min(Y.length - 1, i + 6); j++) (s += raw[j]), c++;
-        Y[i].deck = Math.max(s / c, Y[i].g + MAG_Y * 0.8, Y[i].wet ? SEA_LEVEL + MAG_Y * 0.8 : -1e9);
-      }
-      seg._deck = [Y[0].deck, Y[Y.length - 1].deck];
-    }
+    if (elevated) seg._deck = [Y[0].deck, Y[Y.length - 1].deck];
     let arc = 0,
-      lastPier = -9,
+      lastPier = -1e9,
       lastPillar = -1e9;
     const swLen = seg.junction ? 1.1 : 0;
     for (let i = 0; i + 1 < S.length; i++) {
@@ -276,31 +264,42 @@ export class InfraRenderer {
         if (a0 - lastPillar >= PILLAR_GAP && a0 > 0.3 && arc < seg.len - 0.3) {
           lastPillar = a0;
           const bed = Math.min(Y[i].g, SEA_LEVEL - 0.3);
-          E.post(ax, az, bed, ga - GUIDE_H, PILLAR_W, COL.guide2);
+          // a tall pier over a valley is a thicker one
+          E.post(ax, az, bed, ga - GUIDE_H, PILLAR_W * (ga - Y[i].g > 1.4 ? 1.7 : 1), COL.guide2);
           E.bar(ax + tz * GUIDE_W * 0.6, az - tx * GUIDE_W * 0.6, ax - tz * GUIDE_W * 0.6, az + tx * GUIDE_W * 0.6, ga - GUIDE_H, ga - GUIDE_H, PILLAR_W * 0.8, PILLAR_W * 0.5, COL.guide2);
         }
         continue;
       }
       far.push(ax, ya + 0.02, az, bx, yb + 0.02, bz);
-      const bridge = Y[i].wet || Y[i + 1].wet || ya > Y[i].g + 0.08;
+      const ha = ya - Y[i].g,
+        hb = yb - Y[i + 1].g;
+      const bridge = Y[i].wet || Y[i + 1].wet || Math.max(ha, hb) > VIADUCT;
       const sw = a0 < swLen;
       if (bridge) {
-        // steel deck with red girders and stone piers
+        // a steel deck on red girders, on stone piers down to the ground or
+        // the river bed
         E.bar(ax, az, bx, bz, ya, yb, DECK_W * 1.2, GIRDER_H, COL.girder);
         E.bar(ax, az, bx, bz, ya + 0.002, yb + 0.002, DECK_W, 0, COL.deck, 0, false);
-        if (Y[i].wet && i - lastPier >= 5) {
-          lastPier = i;
-          E.post(ax, az, Y[i].g - 0.2, ya - GIRDER_H, PIER_W, COL.pier);
+        if (a0 - lastPier >= (Y[i].wet ? 2 : PIER_GAP) && (Y[i].wet || ha > GIRDER_H + 0.04)) {
+          lastPier = a0;
+          const tall = ya - Y[i].g > 1.2;
+          E.post(ax, az, Y[i].g - 0.2, ya - GIRDER_H, PIER_W * (tall ? 1.5 : 1), COL.pier);
+          if (tall) E.bar(ax + px * DECK_W * 0.75, az + pz * DECK_W * 0.75, ax - px * DECK_W * 0.75, az - pz * DECK_W * 0.75, ya - GIRDER_H, ya - GIRDER_H, PIER_W * 1.2, PIER_W * 0.6, COL.pier);
         }
       } else if (!sw) {
-        // ballast: a low trapezoid bed
+        // ballast: a low trapezoid bed, its sides running down to the ground
+        // where it rides on an embankment
         const T1a = [ax + px * BAL_T, ya, az + pz * BAL_T],
           T2a = [ax - px * BAL_T, ya, az - pz * BAL_T],
           T1b = [bx + px * BAL_T, yb, bz + pz * BAL_T],
           T2b = [bx - px * BAL_T, yb, bz - pz * BAL_T];
         E.quad(T1a, T1b, T2b, T2a, COL.ballast);
-        E.quad([ax + px * BAL_B, ya - BAL_H, az + pz * BAL_B], [bx + px * BAL_B, yb - BAL_H, bz + pz * BAL_B], T1b, T1a, COL.ballast2);
-        E.quad([ax - px * BAL_B, ya - BAL_H, az - pz * BAL_B], [bx - px * BAL_B, yb - BAL_H, bz - pz * BAL_B], T2b, T2a, COL.ballast2);
+        const da = Math.max(BAL_H, ha + 0.03),
+          db = Math.max(BAL_H, hb + 0.03);
+        const wa = BAL_B + (da - BAL_H) * 1.2,
+          wb = BAL_B + (db - BAL_H) * 1.2;
+        E.quad([ax + px * wa, ya - da, az + pz * wa], [bx + px * wb, yb - db, bz + pz * wb], T1b, T1a, COL.ballast2);
+        E.quad([ax - px * wa, ya - da, az - pz * wa], [bx - px * wb, yb - db, bz - pz * wb], T2b, T2a, COL.ballast2);
       }
       // sleepers, three per step (none over the switch: the trunk's serve)
       if (!sw)
@@ -374,7 +373,7 @@ export class InfraRenderer {
       for (const e of [-0.6, 0.6]) E.post(cx + tx * e, cz + tz * e, Math.min(g, SEA_LEVEL - 0.3), y - GUIDE_H, PILLAR_W * 1.3, COL.guide2);
       return;
     }
-    const y = g + 0.02;
+    const y = seg.ys ? seg.ys[i] : g + 0.02;
     if (!info?.station) {
       const po = 0.26;
       const cx = x - tx * 0.6 + px * po,
@@ -395,24 +394,39 @@ export class InfraRenderer {
     const n = P.length / 2;
     const C = [];
     for (let i = 0; i < n; i++) C.push(hwPoint(P, i));
+    // its level: on the ground, on a bridge over water (hw 2) with ramps
+    // at a gentle grade either side
+    const G = C.map(([x, z]) => this._h(x, z));
+    const Yh = G.map((g, i) => (hw[i] === 2 || g < SEA_LEVEL ? SEA_LEVEL + 0.3 * BS : g + 0.03));
+    for (let i = 1; i < n; i++) Yh[i] = Math.max(Yh[i], Yh[i - 1] - 0.08);
+    for (let i = n - 2; i >= 0; i--) Yh[i] = Math.max(Yh[i], Yh[i + 1] - 0.08);
+    let lastPier = -9;
     for (let i = 0; i + 1 < n; i++) {
       if (!hw[i] || !hw[i + 1]) continue;
       const [ax, az] = C[i],
         [bx, bz] = C[i + 1];
       const L = Math.hypot(bx - ax, bz - az);
       if (L < 1e-4 || L > 3) continue;
-      const ga = this._h(ax, az),
-        gb = this._h(bx, bz);
-      const ya = ga + 0.03,
-        yb = gb + 0.03;
+      const ya = Yh[i],
+        yb = Yh[i + 1];
       far.push(ax, ya + 0.02, az, bx, yb + 0.02, bz);
       const px = -(bz - az) / L,
         pz = (bx - ax) / L;
-      // gravel shoulders, then the carriageway
-      for (const s of [1, -1]) {
-        const o = (HW_W / 2 + 0.07) * s;
-        E.bar(ax + px * o, az + pz * o, bx + px * o, bz + pz * o, ya - 0.006, yb - 0.006, 0.14, 0.03, COL.ballast);
-      }
+      const raised = ya - G[i] > 0.1 || yb - G[i + 1] > 0.1;
+      if (raised) {
+        // a bridge: a concrete deck with parapets, on piers
+        E.bar(ax, az, bx, bz, ya - 0.004, yb - 0.004, HW_W + 0.14, 0.1, COL.pier);
+        for (const s of [1, -1]) E.bar(ax + px * (HW_W / 2 + 0.05) * s, az + pz * (HW_W / 2 + 0.05) * s, bx + px * (HW_W / 2 + 0.05) * s, bz + pz * (HW_W / 2 + 0.05) * s, ya + 0.05, yb + 0.05, 0.04, 0.05, COL.pier);
+        if (i - lastPier >= 5) {
+          lastPier = i;
+          E.post(ax, az, G[i] - 0.2, ya - 0.1, PIER_W, COL.pier);
+        }
+      } else
+        // gravel shoulders, then the carriageway
+        for (const s of [1, -1]) {
+          const o = (HW_W / 2 + 0.07) * s;
+          E.bar(ax + px * o, az + pz * o, bx + px * o, bz + pz * o, ya - 0.006, yb - 0.006, 0.14, 0.03, COL.ballast);
+        }
       E.bar(ax, az, bx, bz, ya, yb, HW_W, 0.04, COL.asphalt);
       for (const s of [1, -1]) E.bar(ax + px * HW_W * 0.44 * s, az + pz * HW_W * 0.44 * s, bx + px * HW_W * 0.44 * s, bz + pz * HW_W * 0.44 * s, ya + 0.003, yb + 0.003, 0.016, 0, COL.edge, 0, false);
       if (i % 2 === 0) E.bar(ax, az, ax + (bx - ax) * 0.55, az + (bz - az) * 0.55, ya + 0.003, ya + (yb - ya) * 0.55 + 0.003, 0.016, 0, COL.mark, 0, false);
@@ -482,7 +496,7 @@ export class InfraRenderer {
         if (Math.abs(A[0][0] - B[0][0]) > W / 2) continue;
         const n0 = far.length / 3;
         far.push(A[0][0], A[0][1], A[0][2], B[0][0], B[0][1], B[0][2]);
-        farCol(n0, 0x2a2c30);
+        farCol(n0, 0xa8a69e);
         for (let w = 0; w < A.length; w++) {
           const a = A[w],
             b = B[w];
@@ -557,6 +571,11 @@ export class InfraRenderer {
     const v = (civ.infraVersion || 0) * 1000 + this._hver;
     if (v !== this._ver) {
       this._ver = v;
+      // the ground moved: the sim works out the tracks' levels again
+      if (this._hver !== this._hSeen) {
+        this._hSeen = this._hver;
+        civ.railRelevel?.();
+      }
       this._rebuild();
     }
     this._lod();
