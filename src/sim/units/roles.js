@@ -556,7 +556,9 @@ export function installRoles(Units) {
         gy = Math.min(w.h - 1, Math.max(0, Math.floor(z)));
       let p = null;
       try {
-        p = civPath(w, sx, sy, gx, gy, cost, 3000, 0.5);
+        // (a leg ending across the water from all the rider could reach can
+        // only come back empty: Civ's _cutOff says so without the search)
+        if (!g.civ._cutOff?.(sx, sy, gx, gy)) p = civPath(w, sx, sy, gx, gy, cost, 3000, 0.5);
       } catch (err) {
         p = null;
       }
