@@ -111,15 +111,32 @@ export class FloraSim {
   // One-off ecological tidy of a freshly generated world: trees outside their
   // climate become a species that belongs there, and wildflowers gather into
   // drifts instead of an even sprinkle.
+  // Farmed lowland on the regional World Maps (a plain such as Taiwan's west
+  // coast or the North China plain): low, flat grassland keeps only about
+  // three in ten of its lone trees, and no wild tree seeds itself into the
+  // rest, so the plain reads as open farmland rather than a park. True for a
+  // tile where no lone tree may stand.
+  openPlain(i, tx, ty) {
+    const world = this.game.world;
+    if (this._plainThin === undefined) this._plainThin = world.meta?.preset === 'earth' && !!world.meta.region && world.meta.region !== 'world';
+    if (!this._plainThin || world.type[i] !== TILE.GRASS) return false;
+    const h = world.height[i];
+    return h >= SEA_LEVEL && h < 1.5 && this.hash(i * 17 + 9) >= 0.3 && world.slopeAt(tx, ty) < 0.3;
+  }
+
   settle() {
     const world = this.game.world;
     const W = world.w;
+    this._plainThin = undefined;
     for (let i = 0; i < world.size; i++) {
       const f = world.flora[i];
       const tx = i % W,
         ty = (i / W) | 0;
       const mis = misfitAs(world, f, i);
-      if ((isTreeId(f) && world.slopeAt(tx, ty) > TREE_MAX_SLOPE) || (isSmallPlant(f) && f !== FLORA.REEDS && world.slopeAt(tx, ty) > TREE_MAX_SLOPE + 0.1)) {
+      if (isTreeId(f) && this.openPlain(i, tx, ty)) {
+        world.flora[i] = FLORA.NONE;
+        world.floraGrowth[i] = 0;
+      } else if ((isTreeId(f) && world.slopeAt(tx, ty) > TREE_MAX_SLOPE) || (isSmallPlant(f) && f !== FLORA.REEDS && world.slopeAt(tx, ty) > TREE_MAX_SLOPE + 0.1)) {
         // trees do not cling to cliff faces
         world.flora[i] = FLORA.NONE;
         world.floraGrowth[i] = 0;
@@ -655,6 +672,7 @@ export class FloraSim {
     if (BARREN[t]) return false;
     if (t === TILE.FARMLAND && f !== FLORA.WHEAT) return false;
     if (this.town[i] && isTreeId(f)) return false; // no wild trees seed into a town
+    if (isTreeId(f) && this.openPlain(i, tx, ty)) return false; // farmed lowland stays open
     if (world.height[i] < SEA_LEVEL && !(f === FLORA.REEDS && world.height[i] > SEA_LEVEL - 0.5)) return false;
     if (world.slopeAt(tx, ty) > 2.6 && !isTreeId(f)) return false;
     if (suitAt(world, f, tx, ty, i, this._tOff || 0) < 0.5) return false;

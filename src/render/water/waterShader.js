@@ -247,11 +247,14 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   // canals. Toward the banks the water clears to the riparian strip the
   // terrain draws there, so a river thins out with distance, and channels only
   // a pixel or two wide keep less ink instead of a fixed bright band.
-  float mzR = uMapZoom * narrow;
+  // (at map zoom a little wider channels count too: the regional maps' great
+  // rivers are 3-6 tiles across and otherwise took the open sea's navy)
+  float mzR = uMapZoom * (1.0 - smoothstep(2.6, 6.0, wide)) * (1.0 - outK) * smoothstep(0.0, 0.22, depth);
   float relC = clamp(edt / max(wide, 0.6), 0.0, 1.0);
   float rivPx = max(wide, 0.5) * 2.0 / max(fw, 1e-3);
   float rivCore = smoothstep(mix(0.30, 0.55, uMapZoom), 0.98, relC) * mix(0.7, 1.0, smoothstep(1.5, 5.0, rivPx));
-  vec3 rivFar = waterDeepColorV(lightVis) * vec3(2.4, 2.0, 1.45);
+  // (a light blue-green, not the deep sea's navy: dark ribbons read as ink)
+  vec3 rivFar = mix(vec3(0.048, 0.190, 0.195), vec3(0.050, 0.110, 0.125), gCold) * waterIrradianceV(lightVis);
   scat = mix(scat, rivFar, mzR);
   veil = mix(veil, 0.94 * rivCore, mzR);
   float crest = smoothstep(0.10, 0.30, length(sl)) * open * 0.25;

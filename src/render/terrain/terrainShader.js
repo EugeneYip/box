@@ -50,6 +50,7 @@ uniform vec3 uTilePalette[32];
 uniform sampler2D uHeightTex;
 uniform float uHeightLin;
 uniform sampler2D uShoreTex;
+uniform sampler2D uSettleTex;
 ${WATER_PARS_GLSL}
 
 // global surface outputs (set in terrainSurface)
@@ -62,6 +63,7 @@ float tCloud;
 float tSpecK;
 float tCold;
 float tRivBed;
+float tRivBank; // map zoom: land beside a river channel (no crease shading there)
 
 const mat2 ROT1 = mat2(0.80, -0.60, 0.60, 0.80);
 const mat2 ROT2 = mat2(0.28, 0.96, -0.96, 0.28);
@@ -1022,10 +1024,15 @@ void terrainSurface() {
 
   // ---- overview relief: at far zoom a map-style hillshade, slope darkening and a
   // cool lift on high ground let ranges read through the green (close-ups unchanged)
+  tRivBank = 0.0;
   float farR = 1.0 - uDetail;
   if (farR > 0.0 && s.p.y > 0.0) {
     float hs = dot(nrm, normalize(vec3(-0.5, 0.8, -0.35)));
-    albedo *= mix(1.0, (0.76 + 0.44 * hs) * mix(0.68, 1.0, smoothstep(0.55, 0.98, nrm.y)), farR * 0.85);
+    // (the steep banks of a river channel take no slope shading at map zoom:
+    // it outlined every river with a dark rim)
+    float wideL = texture2D(uShoreTex, p / uWorldSize).g * 16.0;
+    float rivBank = tRivBank = uMapZoom * smoothstep(0.1, 0.5, wideL) * (1.0 - smoothstep(3.0, 6.0, wideL)) * (1.0 - smoothstep(1.0, 3.0, s.p.y));
+    albedo *= mix(1.0, (0.76 + 0.44 * hs) * mix(0.68, 1.0, smoothstep(0.55, 0.98, nrm.y)), farR * 0.85 * (1.0 - rivBank));
     albedo = mix(albedo, albedo * vec3(0.96, 1.0, 1.08) * 1.14, smoothstep(6.0, 16.0, s.p.y) * 0.5 * farR);
     albedo *= mix(1.0, mix(0.90, 1.08, smoothstep(0.6, 5.5, s.p.y)), farR * (1.0 - snowB));
     albedo = mix(albedo, albedo * vec3(0.80, 0.84, 0.90), snowB * farR * (0.6 + 0.4 * smoothstep(0.4, 0.7, s.macro.g)));
@@ -1072,6 +1079,55 @@ void terrainSurface() {
     albedo = mix(albedo, vec3(lum(albedo)) * vec3(0.93, 1.0, 1.08), highv * 0.40 * farR * (1.0 - snowB) * (1.0 - cliff));
   }
 
+  // ---- settlement: farmed plots around towns, and towns as urban patches
+  if (s.p.y > 0.0) {
+    vec4 st = texture2D(uSettleTex, p / uWorldSize);
+    // fields (World Map worlds): low flat grassland near a town becomes a
+    // mosaic of plots ~4-7 units across in three crop tints (young green
+    // paddy, ripening gold, fallow brown) with thin dark field banks, so a
+    // farmed plain no longer reads as an empty lawn; its ragged outer edge
+    // drops plot by plot rather than in a circle
+    float openB = dot(vec4(equal(vec4(t0, t1, t2, t3), vec4(1.0))) * live, b) + dot(vec4(equal(vec4(t0, t1, t2, t3), vec4(4.0))) * live, b);
+    if (st.g > 0.01 && openB > 0.01) {
+      vec2 fq = (p + (s.macro.rg - 0.5) * 3.0) / vec2(5.5, 4.3);
+      vec2 blk = floor(fq);
+      float r1 = hash12(blk + 3.7);
+      float r2 = hash12(blk + 11.3);
+      float inF = smoothstep(r1 * 0.55 + 0.02, r1 * 0.55 + 0.18, st.g) * openB * (1.0 - snowB) * (1.0 - cliff);
+      vec3 young = vec3(0.46, 0.60, 0.16);
+      vec3 ripe = vec3(0.62, 0.55, 0.24);
+      vec3 fallow = vec3(0.42, 0.32, 0.18);
+      vec3 fc = r2 < 0.45 ? young : (r2 < 0.78 ? ripe : fallow);
+      fc *= 0.88 + 0.22 * hash12(blk + 5.1) + 0.08 * (s.det.r - 0.5);
+      fc = mix(fc, fc * vec3(0.86, 0.86, 0.92), smoothstep(-0.10, 0.0, uSnowT - s.temp));
+      vec2 fb = fract(fq);
+      float bank = 1.0 - smoothstep(0.03, 0.09 + s.fw * 0.4, min(min(fb.x, 1.0 - fb.x), min(fb.y, 1.0 - fb.y)));
+      fc = mix(fc, vec3(0.12, 0.20, 0.07), bank * 0.6 * (1.0 - smoothstep(0.25, 0.6, s.fw)));
+      // keep the scene's light level: plots at the ground's own brightness
+      fc *= clamp(lum(albedo) / max(lum(fc), 0.02), 0.85, 1.6);
+      albedo = mix(albedo, fc, inF * 0.85);
+    }
+    // towns at far zoom (past ~80 units): the build area is a pale urban
+    // patch of roofs and streets, so a town reads as a town once its houses
+    // are a pixel or two (trees inside it are hidden there too)
+    float urbK = smoothstep(68.0, 92.0, uCamDist) * (1.0 - snowB * 0.5);
+    if (st.r > 0.02 && urbK > 0.0) {
+      float core = smoothstep(0.35, 0.85, st.r);
+      float ring = smoothstep(0.08, 0.40, st.r);
+      vec2 gq = (p + (s.macro.gb - 0.5) * 1.2) / 2.2;
+      vec2 gc = floor(gq);
+      vec2 gf = fract(gq);
+      float street = 1.0 - smoothstep(0.08, 0.20, min(min(gf.x, 1.0 - gf.x), min(gf.y, 1.0 - gf.y)));
+      float roofR = hash12(gc + 2.9);
+      vec3 roof = mix(vec3(0.47, 0.43, 0.38), vec3(0.56, 0.31, 0.22), step(0.6, roofR));
+      roof = mix(roof, vec3(0.40, 0.39, 0.38), step(0.86, roofR));
+      vec3 urb = mix(roof, vec3(0.28, 0.26, 0.24), street * 0.75);
+      float uk = (ring * 0.4 + core * 0.6) * urbK;
+      albedo = mix(albedo, urb, uk * 0.82);
+      rough = mix(rough, 0.8, uk);
+    }
+  }
+
   // ---- seabed & shore
   float depth = -s.p.y;
   float hb = 0.0;
@@ -1086,22 +1142,23 @@ void terrainSurface() {
   rough = mix(rough, 0.6, under);
   // wet band above the waterline (with a slow swash)
   float swash = 0.10 * sin(uLTime * 0.9 + s.meso.r * 12.0) + 0.05 * sin(uLTime * 1.7 + s.det.g * 9.0);
-  float wetShore = smoothstep(0.55, 0.0, s.p.y - swash) * (1.0 - under);
+  float wetShore = smoothstep(0.55, 0.0, s.p.y - swash) * (1.0 - under) * (1.0 - 0.8 * uMapZoom); // (sub-pixel at map zoom: it only darkened river valleys)
   albedo *= mix(1.0, 0.62, wetShore);
   rough = mix(rough, 0.35, wetShore);
-  // map zoom: the bed and low banks of rivers and small lakes (water no wider
-  // than a few tiles nearby) become a dark riparian green strip instead of
-  // brown soil under a bright water column, so a river reads as a thin line
-  // of water in a green valley rather than a wide pale canal
+  // map zoom: the bed of rivers and small lakes (water no wider than a few
+  // tiles nearby) takes a light blue-green instead of brown soil under a
+  // bright water column, so a river reads as a thin line of water rather
+  // than a wide pale canal. Only the wet channel takes it: the dry banks keep
+  // their own ground (a dark riparian strip there drew a black rim and made
+  // rivers read nearly twice their width at overview distance).
   tRivBed = 0.0;
-  if (uMapZoom > 0.001 && s.p.y < 0.9) {
+  if (uMapZoom > 0.001 && s.p.y < 0.12) {
     float wideT = texture2D(uShoreTex, p / uWorldSize).g * 16.0;
-    tRivBed = uMapZoom * (1.0 - smoothstep(1.4, 3.8, wideT)) * smoothstep(0.15, 0.6, wideT) * (1.0 - smoothstep(0.35, 0.9, s.p.y)) * (1.0 - snowB) * (1.0 - lavaRaw);
-    vec3 rip = mix(vec3(0.050, 0.110, 0.040), vec3(0.075, 0.130, 0.050), s.meso.g) * (0.85 + 0.3 * s.det.r);
-    rip = seasonal(rip, 0.5, s.temp);
-    rip = mix(rip, vec3(0.10, 0.11, 0.08), 1.0 - smoothstep(0.15, 0.40, s.temp));
+    tRivBed = uMapZoom * (1.0 - smoothstep(2.6, 6.0, wideT)) * smoothstep(0.15, 0.6, wideT) * (1.0 - smoothstep(-0.05, 0.12, s.p.y)) * (1.0 - snowB) * (1.0 - lavaRaw);
+    vec3 rip = mix(vec3(0.060, 0.150, 0.140), vec3(0.075, 0.170, 0.150), s.meso.g) * (0.9 + 0.2 * s.det.r);
+    rip = mix(rip, vec3(0.12, 0.14, 0.14), 1.0 - smoothstep(0.15, 0.40, s.temp));
     albedo = mix(albedo, rip, tRivBed * 0.9);
-    rough = mix(rough, 0.85, tRivBed);
+    rough = mix(rough, 0.6, tRivBed);
   }
 
   // ---- weather wetness (rain): darker, glossier, puddles in hollows
@@ -1145,7 +1202,7 @@ void terrainSurface() {
   tRough = clamp(rough, 0.04, 1.0);
   tEmissive = emit;
   // baked horizon AO, plus cliff creases
-  tAO = mix(0.35, 1.0, s.ao);
+  tAO = mix(mix(0.35, 1.0, s.ao), 1.0, tRivBank * 0.8);
   tCloud = cloudShadowAt(p);
   tSpecK = 1.0;
   tCold = 1.0 - smoothstep(0.22, 0.50, s.temp);

@@ -88,6 +88,19 @@ export class Terrain {
     this.climTexture.needsUpdate = true;
     this.ao = new Float32Array(W * H).fill(1);
 
+    // settlement: R = town (FloraSim.town: inner core / outer ring of every
+    // village's build radius), G = cultivated fields around towns on low flat
+    // grassland (World Map worlds). Linear filtering softens both outlines.
+    this.settleData = new Uint8Array(W * H * 4);
+    this.settleTexture = new THREE.DataTexture(this.settleData, W, H, THREE.RGBAFormat, THREE.UnsignedByteType);
+    this.settleTexture.magFilter = this.settleTexture.minFilter = THREE.LinearFilter;
+    this.settleTexture.wrapS = this.settleTexture.wrapT = THREE.ClampToEdgeWrapping;
+    this.settleTexture.generateMipmaps = false;
+    this.settleTexture.colorSpace = THREE.NoColorSpace;
+    this.settleTexture.needsUpdate = true;
+    this._settleDirty = true;
+    this._settleT = 0;
+
     this.noiseTextures = getNoiseTextures();
     const blank = new THREE.DataTexture(new Uint8Array([0, 0, 0, 0]), 1, 1);
     blank.needsUpdate = true;
@@ -113,6 +126,7 @@ export class Terrain {
       // water shore field (distance to land, local water width); the Water
       // module points this at its own texture. Fallback: wide open water
       uShoreTex: { value: this._openShore() },
+      uSettleTex: { value: this.settleTexture },
       uTilePalette: { value: palette },
       // 1 when the float height texture filters linearly (else the shader
       // interpolates its four texels itself)
@@ -148,6 +162,7 @@ export class Terrain {
     ev.on('world:height', (r) => (this._dirtyHeight = unionRect(this._dirtyHeight, r)));
     ev.on('world:type', (r) => (this._dirtyType = unionRect(this._dirtyType, r)));
     ev.on('world:fire', (r) => (this._dirtyFire = unionRect(this._dirtyFire, r)));
+    ev.on('flora:town', () => (this._settleDirty = true));
   }
 
   // ------------------------------------------------------------ public API
@@ -190,6 +205,14 @@ export class Terrain {
       const r = this._dirtyFire;
       this._dirtyFire = null;
       this._applyFire(r);
+    }
+    // towns and their fields: rebuilt when a town changes shape (at most
+    // every 1.5 s; FloraSim refreshes the outlines every few game seconds)
+    this._settleT -= dt;
+    if (this._settleDirty && this._settleT <= 0) {
+      this._settleDirty = false;
+      this._settleT = 1.5;
+      this._writeSettle();
     }
     // AO is a broader bake; throttle it while the player is sculpting
     if (this._aoPending) {
@@ -239,6 +262,7 @@ export class Terrain {
     }
     this._buildSkirt();
     this._dirtyHeight = this._dirtyType = this._dirtyFire = this._aoPending = null;
+    this._settleDirty = true;
   }
 
   _applyHeight(r) {
@@ -306,6 +330,52 @@ export class Terrain {
         d[i * 4 + 3] = clamp255(world.fire[i] * 255);
       }
     this.climTexture.needsUpdate = true;
+  }
+  _writeSettle() {
+    const g = this.game,
+      world = g.world;
+    const W = this.w,
+      H = this.h;
+    const d = this.settleData;
+    d.fill(0);
+    const town = g.flora?.town;
+    if (town) for (let i = 0; i < W * H; i++) if (town[i]) d[i * 4] = town[i] >= 2 ? 255 : 120;
+    // fields: a mosaic of farmed plots on low, flat grassland around every
+    // town of a World Map world, fading out a couple of build radii away
+    // (square maps farm their own FARMLAND tiles)
+    if (world.meta?.preset === 'earth') {
+      const hgt = world.height,
+        type = world.type;
+      for (const v of g.civ?.villages || []) {
+        if (!v || v.alive === false || !Number.isFinite(v.cx)) continue;
+        const r0 = Math.max(4, v.buildRadius || 4);
+        const r1 = r0 * 1.6 + 5,
+          r2 = r0 * 3.2 + 12;
+        const x0 = Math.max(1, Math.floor(v.cx - r2)),
+          x1 = Math.min(W - 2, Math.ceil(v.cx + r2)),
+          y0 = Math.max(1, Math.floor(v.cz - r2)),
+          y1 = Math.min(H - 2, Math.ceil(v.cz + r2));
+        for (let y = y0; y <= y1; y++)
+          for (let x = x0; x <= x1; x++) {
+            const i = y * W + x;
+            const t = type[i];
+            if (t !== 1 && t !== 4) continue; // grass, savanna
+            const h = hgt[i];
+            if (h < 0.02 || h > 1.5) continue;
+            const sl = Math.max(Math.abs(hgt[i + 1] - hgt[i - 1]), Math.abs(hgt[i + W] - hgt[i - W])) * 0.5;
+            if (sl > 0.3) continue;
+            const dx = x + 0.5 - v.cx,
+              dz = y + 0.5 - v.cz;
+            const dd = Math.sqrt(dx * dx + dz * dz);
+            if (dd > r2) continue;
+            let k = dd < r1 ? 1 : 1 - (dd - r1) / (r2 - r1);
+            k *= Math.min(1, (1.5 - h) / 0.5) * Math.min(1, (0.3 - sl) / 0.12);
+            const val = Math.round(k * 255);
+            if (val > d[i * 4 + 1]) d[i * 4 + 1] = val;
+          }
+      }
+    }
+    this.settleTexture.needsUpdate = true;
   }
   _writeAO(r) {
     const d = this.climData;
