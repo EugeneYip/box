@@ -1227,8 +1227,15 @@ export const brain = {
     }
     const night = live && U._bedtime && U._bedtime(u);
     // wood is short: lend a hand with the axe (by day, in peace)
-    if (!war && !night && (d.task?.kind === 'chop' || (!onDuty && v.wood < Math.max(15, (v.woodCap || 90) * 0.2)))) {
-      if (d.task?.kind === 'chop' || !u.carry) return this._jobWood(u, v, d, dt);
+    // (a tree is looked for at most every fifteen seconds; with none in reach, back to duty)
+    if (!war && !night) {
+      if (d.task?.kind === 'chop') return this._jobWood(u, v, d, dt);
+      if (!onDuty && !u.carry && !(d.woodT > now) && v.wood < Math.max(15, (v.woodCap || 90) * 0.2)) {
+        d.woodT = now + 15;
+        this._jobWood(u, v, d, dt);
+        if (d.task?.kind === 'chop') return;
+        if (d.task && d.task.kind !== 'patrol') d.task = null;
+      }
     }
     if (u.carry) return this._deposit(u, v, d);
     // patrol: walk to a post, then guard it or drill there (a daily episode,
