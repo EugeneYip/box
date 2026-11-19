@@ -380,7 +380,9 @@ export const politics = {
         if (!r.ally || r.opinion < 30 || baseCulture(A.culture) !== baseCulture(B.culture)) continue;
         [small, big] = A.villages.length <= B.villages.length ? [A, B] : [B, A];
         if (small.villages.length > 2 || big.villages.length < small.villages.length + 1) continue;
-        if (now - small.founded < YEAR * 25) continue; // a young crown keeps its freedom a while
+        // a young crown keeps its freedom a while (unions were half of all
+        // fallen realms, most of them at 25-30 years)
+        if (now - small.founded < YEAR * 40) continue;
       }
       if (small.player?.name) continue;
       // a seat or must-exist city in the map's first 150 years changes hands
@@ -423,7 +425,7 @@ export const politics = {
       if (small.seeded) return r.ally && r.opinion >= 40 && ns <= 1 && nb >= 3 ? [small, big] : null;
       return r.ally && r.opinion >= 30 && ns <= 2 && nb >= ns + 1 ? [small, big] : null;
     }
-    if (now - small.founded < YEAR * 20) return null; // a young crown fights for its freedom first
+    if (now - small.founded < YEAR * 30) return null; // a young crown fights for its freedom first
     const regional = geoRegion(this.world) !== 'world';
     if (ns > (regional ? 3 : 2)) return null;
     if (big.realm >= 0 ? nb < ns - 1 : nb < ns + 1) return null;

@@ -2,6 +2,7 @@ import { TILE, TILE_INFO, FLORA, SEA_LEVEL } from '../../world/constants.js';
 import { geoInfo, geoRegion, geoTile, geoDist } from '../../world/geo.js';
 import { HERALDRY, colorDist, realStyleName, REAL_TITLE } from './cultures.js';
 import { realmsFor, regionStyle } from './places/index.js';
+import { REGIONS } from './places/regions.js';
 import { peopleCultureId } from './peoples.js';
 import { USE, SPIRAL, spiralCount, clamp, YEAR, ADULT_AGE } from './util.js';
 
@@ -646,6 +647,10 @@ export const realms = {
     // "Anchorage" read oddly on the World Map)
     const near = this._freeCountryNear(opts.x, opts.z, living);
     if (near >= 0) return real(near);
+    // the region of the country it rises in ("State of Queensland",
+    // "Republic of Sumatra") before the name of one city
+    const reg = this._regionNear(opts.x, opts.z, living, d);
+    if (reg) return { name: reg, realm: -1, placesFrom: d };
     if (base && !living.has(base)) return { name: base, realm: -1, placesFrom: d };
     let best = null,
       bd = Infinity;
@@ -658,6 +663,30 @@ export const realms = {
       }
     }
     return { name: best ? best.name : base, realm: -1, placesFrom: d };
+  },
+
+  // The name of the region (places/regions.js) nearest a tile, within a
+  // country's reach, that no living realm carries, as "State of …" or
+  // "Republic of …"; regions of the land's own country (place-data index
+  // `own`) come first. Null when none is near.
+  _regionNear(x, z, living, own = -1) {
+    if (x == null) return null;
+    if (!this._regionPts) {
+      this._regionPts = [];
+      for (const [name, lon, lat, style] of REGIONS) {
+        const p = geoTile(this.world, lon, lat);
+        if (p) this._regionPts.push({ name: `${style} ${name}`, x: p.x, z: p.z, realm: this._placeRealmAt(p.x, p.z) });
+      }
+    }
+    const R = this._placeReach.own * 2.5;
+    let best = null,
+      bd = Infinity;
+    for (const p of this._regionPts) {
+      if (living.has(p.name)) continue;
+      const d = geoDist(this.world, p.x, p.z, x, z) * (own >= 0 && p.realm === own ? 0.6 : 1);
+      if (d < R && d < bd) (bd = d), (best = p);
+    }
+    return best ? best.name : null;
   },
 
   // The real realm a town belongs to (World Map): the first real realm that
