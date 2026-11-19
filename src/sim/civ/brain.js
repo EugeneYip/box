@@ -278,6 +278,14 @@ export const brain = {
         return true;
       }
     }
+    // a goal across the water from every tile the walker could reach: the
+    // search would only come back empty (after up to 32,000 tiles)
+    if (this._cutOff(w.clampTx(sx), w.clampTy(sy), gx, gy)) {
+      PC.set(key, null);
+      u.target = null;
+      u.path = null;
+      return false;
+    }
     if (long ? this._longBudget <= 0 : this._pathBudget <= 0) return WAIT;
     if (long) this._longBudget--;
     else this._pathBudget--;
@@ -292,6 +300,92 @@ export const brain = {
     u.path = p;
     u.pathIdx = 0;
     u.target = { x, z };
+    return true;
+  },
+
+  // Pieces of the map a walker could ever cross between, at their most
+  // generous: land and road over water, 4-connected (a walk never cuts a
+  // blocked corner), with buildings, rock, steep ground and thickets left
+  // open. Built again after a terrain edit or a new bridge (_wcDirty) and
+  // every 30 s.
+  _walkComp() {
+    const w = this.world;
+    const now = this.game.time.total;
+    let L = this._wcl;
+    if (L && L.length === w.size && !this._wcDirty && now >= this._wcT && now - this._wcT < (this._wcSoft ? 10 : 30)) return L;
+    if (!L || L.length !== w.size) L = this._wcl = new Int32Array(w.size);
+    this._wcDirty = false;
+    this._wcSoft = false;
+    this._wcT = now;
+    const W = w.w,
+      H = w.h,
+      size = w.size;
+    const hh = w.height,
+      use = this.use,
+      ROAD = USE.ROAD;
+    L.fill(-1);
+    const st = this._wcStack && this._wcStack.length === size ? this._wcStack : (this._wcStack = new Int32Array(size));
+    let next = 0;
+    for (let s = 0; s < size; s++) {
+      if (L[s] !== -1 || (hh[s] < SEA_LEVEL && use[s] !== ROAD)) continue;
+      let sp = 0;
+      st[sp++] = s;
+      L[s] = next;
+      while (sp) {
+        const i = st[--sp];
+        const x = i % W;
+        if (x > 0 && L[i - 1] === -1 && (hh[i - 1] >= SEA_LEVEL || use[i - 1] === ROAD)) (L[i - 1] = next), (st[sp++] = i - 1);
+        if (x < W - 1 && L[i + 1] === -1 && (hh[i + 1] >= SEA_LEVEL || use[i + 1] === ROAD)) (L[i + 1] = next), (st[sp++] = i + 1);
+        if (i >= W && L[i - W] === -1 && (hh[i - W] >= SEA_LEVEL || use[i - W] === ROAD)) (L[i - W] = next), (st[sp++] = i - W);
+        if (i < size - W && L[i + W] === -1 && (hh[i + W] >= SEA_LEVEL || use[i + W] === ROAD)) (L[i + W] = next), (st[sp++] = i + W);
+      }
+      next++;
+    }
+    void H;
+    return L;
+  },
+
+  // True when a civPath search from (sx,sy) to (gx,gy) can only fail: no tile
+  // the walker could reach lies within six tiles of the goal (the most a
+  // search may stop short and still give a path). Never true for a walk that
+  // could succeed.
+  _cutOff(sx, sy, gx, gy) {
+    const dx = Math.abs(sx - gx),
+      dy = Math.abs(sy - gy);
+    if (Math.max(dx, dy) + (Math.SQRT2 - 1) * Math.min(dx, dy) <= 6.5) return false;
+    const w = this.world;
+    const W = w.w,
+      H = w.h;
+    const L = this._walkComp();
+    // the walker's own pieces: its tile and the eight round it (a walker on
+    // a jetty or in the shallows steps off onto any of them)
+    let a = -1,
+      b = -1,
+      c = -1,
+      n = 0;
+    for (let oy = -1; oy <= 1; oy++)
+      for (let ox = -1; ox <= 1; ox++) {
+        const x = sx + ox,
+          y = sy + oy;
+        if (x < 0 || y < 0 || x >= W || y >= H) continue;
+        const l = L[y * W + x];
+        if (l < 0 || l === a || l === b || l === c) continue;
+        if (n === 0) a = l;
+        else if (n === 1) b = l;
+        else if (n === 2) c = l;
+        else return false; // (more pieces than kept: no verdict)
+        n++;
+      }
+    if (!n) return false;
+    const x0 = Math.max(0, gx - 6),
+      x1 = Math.min(W - 1, gx + 6),
+      y0 = Math.max(0, gy - 6),
+      y1 = Math.min(H - 1, gy + 6);
+    for (let y = y0; y <= y1; y++)
+      for (let x = x0, i = y * W + x0; x <= x1; x++, i++) {
+        const l = L[i];
+        if (l >= 0 && (l === a || l === b || l === c)) return false;
+      }
     return true;
   },
 

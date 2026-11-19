@@ -272,6 +272,7 @@ export const unlocks = {
         b.groundMin = Math.min(w.height[p.i], SEA_LEVEL - 0.5);
         if (w.building[p.i] === b.id) w.building[p.i] = -1; // the deck is walkable
         this.use[p.i] = USE.ROAD;
+        this._wcDirty = true; // (a new crossing for the walkers' map: brain.js _walkComp)
         this._completeInstantly?.(b);
         spans++;
         continue;
