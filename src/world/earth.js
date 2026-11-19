@@ -1191,23 +1191,39 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
   fillCraters(hgt, W, H, sea, marsh, !REG);
   _t('rivers');
 
-  // regional maps: land that runs off the window keeps its relief to within
-  // a few tiles of the border and then dips under the deep border ring, with
-  // no beach or shelf: the terrain skirt and the water beyond the map
-  // continue the edge tiles outward and expect deep open sea there (land or
-  // shallows at the very edge were stretched into streaks beyond the border)
+  // regional maps: land that runs off the window fades out instead of ending
+  // in a cliff. Over its last ~10 tiles the relief eases down to a low
+  // coastal plain, then a shallow shelf that deepens into the deep border
+  // ring. The fading coast wanders 5 to 13 tiles in from the border (capes
+  // and bays at two scales), so it never runs as a straight line along the
+  // window. The terrain skirt and the water beyond the map continue the edge
+  // tiles outward and expect deep open sea at the border itself (land or
+  // shallows at the very edge were stretched into streaks beyond it).
   const edgeFade = new Uint8Array(REG ? N : 0);
   if (REG)
     for (let y = 0; y < H; y++)
       for (let x = 0; x < W; x++) {
         const e = edgeDist(x, y);
-        if (e >= 9) continue;
+        if (e >= 48) continue;
         const i = y * W + x;
         if (!land[i]) continue;
-        const k = smoothstep(4.2, 9, e);
-        const f = -2.4 + (Math.max(hgt[i], 0.3) + 2.4) * k;
-        if (f < hgt[i]) hgt[i] = f;
+        const coast = Math.max(5.5, 12 + fbm(nDetail, x / 46 + 31.7, y / 46 - 17.3, 3) * 13 + fbm(nBank, x / 9 + 3.1, y / 9 + 8.9, 2) * 3.5);
+        const dc = e - coast; // tiles inland of the fading coast
+        // (high ground eases down over a longer run, so ranges sink rather than drop)
+        const run = 10 + Math.min(16, Math.max(0, hgt[i]) * 1.3);
+        if (dc >= run) continue;
         edgeFade[i] = 1;
+        if (dc > 0) {
+          // the last tiles of land: relief eases down to a low coastal plain
+          const k = smoothstep(0, run, dc);
+          const low = 0.12 + 0.2 * k;
+          const f = low + (Math.max(hgt[i], low) - low) * k;
+          if (f < hgt[i]) hgt[i] = f;
+        } else {
+          // a shallow shelf beyond it, deepening steadily toward the border
+          const f = -0.25 + dc * (0.35 + 0.035 * -dc) + fbm(nBank, x / 9, y / 9, 2) * 0.15;
+          hgt[i] = Math.min(hgt[i], Math.max(f, -6.5));
+        }
       }
   // the border ring is deep open sea: the water shader and the terrain skirt
   // extend the edge tiles' depth outward, so shallows there would show as a
