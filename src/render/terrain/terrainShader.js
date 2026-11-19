@@ -1135,8 +1135,8 @@ void terrainSurface() {
       // keep the scene's light level: plots at the ground's own brightness
       fc *= clamp(lum(albedo) / max(lum(fc), 0.02), 0.85, 1.6);
       // hedgerows: dark bushy lines along district edges
-      float hedgeW = 0.32 + s.fw * 1.2;
-      float hedge = (1.0 - smoothstep(hedgeW, hedgeW + 0.25, hedgeD + (s.micro.r - 0.5) * 0.25)) * step(0.25, hash12(bid + 6.6));
+      float hedgeW = 0.1 + s.fw * 0.5;
+      float hedge = (1.0 - smoothstep(hedgeW, hedgeW + 0.1 + s.fw * 0.5, hedgeD + (s.micro.r - 0.5) * 0.12)) * step(0.25, hash12(bid + 6.6));
       fc = mix(fc, vec3(0.07, 0.14, 0.05) * (0.8 + 0.4 * s.det.g), hedge * 0.85);
       albedo = mix(albedo, fc, inF * 0.85);
     }
