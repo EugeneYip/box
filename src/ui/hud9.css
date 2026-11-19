@@ -755,3 +755,13 @@
   line-clamp: 2;
   overflow: hidden;
 }
+
+/* short landscape phones: one row of kinds, so the chooser leaves the map in view */
+@media (max-height: 500px) {
+  .ws-vehpick__row {
+    grid-template-rows: 44px;
+  }
+  .ws-vehpick__head {
+    margin-bottom: 4px;
+  }
+}
