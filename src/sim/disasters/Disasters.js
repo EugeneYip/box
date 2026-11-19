@@ -56,7 +56,16 @@ function miasmaPuff(fx, x, y, z, s, bank = false) {
 // Simulation (fire spread, lava flow, plague) runs in tick() on game time.
 // Disaster set pieces (meteor flight, tornado, quake, eruption) advance in
 // frame() on a visual clock: real time scaled gently with game speed so
-// they stay readable at 16x and freeze while paused.
+// they stay readable at 16x and freeze while paused. The game clock backs
+// that up: every tick pays each set piece the visual time that much game
+// time is worth at the current speed, and whatever the frames have not
+// played (fast-forward, a very low frame rate) is played on in tick(), so
+// a strike always lands and a quake always ends on game time.
+const VIS_LAG = 0.25; // visual seconds a set piece may trail game time before tick() plays it on
+const VIS_STEP = 0.1; // largest visual step of one update (as a capped frame)
+function visualSpeed(g) {
+  return Math.min(3, Math.max(1, Math.pow(g.speed || 1, 0.4)));
+}
 export class Disasters {
   constructor(game) {
     this.game = game;
@@ -85,22 +94,53 @@ export class Disasters {
     this.plagueSim.tick(step);
     this.calamities.tick(step);
     for (const e of this.active) e.tick?.(step);
+    if (this.active.length) this._catchUp(step);
+  }
+
+  // Game-clock side of the set pieces: what the frames owe, tick() plays.
+  _catchUp(step) {
+    const vs = visualSpeed(this.game);
+    const owe = (step * vs) / (this.game.speed || 1);
+    for (let i = this.active.length - 1; i >= 0; i--) {
+      const e = this.active[i];
+      e._owe = (e._owe || 0) + owe;
+      if (e._owe <= VIS_LAG) continue;
+      let d = e._owe - VIS_LAG * 0.5;
+      e._owe -= d;
+      let alive = true;
+      while (alive && d > 1e-6) {
+        const c = Math.min(VIS_STEP, d);
+        d -= c;
+        alive = this._run(e, c, c / vs);
+      }
+      if (!alive) this._drop(e);
+    }
+  }
+
+  _run(e, vt, dt) {
+    try {
+      return e.update(vt, dt);
+    } catch (err) {
+      console.error('[disasters]', e.constructor?.name, err);
+      return false;
+    }
+  }
+
+  _drop(e) {
+    e.dispose?.();
+    const i = this.active.indexOf(e);
+    if (i >= 0) this.active.splice(i, 1);
   }
 
   // Visual clock: called every rendered frame by game.fx.update(dt).
   frame(dt) {
     const g = this.game;
-    const vs = g.paused ? 0 : Math.min(3, Math.max(1, Math.pow(g.speed || 1, 0.4)));
+    const vs = g.paused ? 0 : visualSpeed(g);
     const vt = dt * vs;
     for (let i = this.active.length - 1; i >= 0; i--) {
       const e = this.active[i];
-      let alive = true;
-      try {
-        alive = e.update(vt, dt);
-      } catch (err) {
-        console.error('[disasters]', e.constructor?.name, err);
-        alive = false;
-      }
+      const alive = this._run(e, vt, dt);
+      if (e._owe) e._owe = Math.max(0, e._owe - vt); // played on the visual clock
       if (!alive) {
         e.dispose?.();
         this.active.splice(i, 1);
