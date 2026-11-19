@@ -971,7 +971,14 @@ export class Inspector {
   // No structural re-render while a finger/pointer is down in the panel or a popover is open on it.
   frozen() {
     const pop = this.ui.popover;
-    return !!this._ptr || !!(pop?.target && pop.el.classList.contains('is-shown') && this.el.contains(pop.target));
+    if (this._ptr || !!(pop?.target && pop.el.classList.contains('is-shown') && this.el.contains(pop.target))) return true;
+    // nor while the mouse rests on one of its buttons (the Heritage switch, Follow…),
+    // so a click always lands on the button the player aimed at, nor while a
+    // keyboard user has focus on one
+    const hov = this.el.matches(':hover') && this.el.querySelector('button:hover, [role="switch"]:hover, input:hover');
+    const ae = document.activeElement;
+    const kbd = ae && ae !== this.el && this.el.contains(ae) && safe(() => ae.matches(':focus-visible'), false);
+    return !!(hov || kbd);
   }
 
   toggleFollow() {
