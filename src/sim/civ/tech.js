@@ -572,9 +572,11 @@ export const tech = {
 
   _gainMastery(k) {
     k.mastery = (k.mastery || 0) + 1;
-    this._history(`📜 ${this._kn(k)} attains Mastery ${k.mastery}`, 'info', this._kingdomPos(k));
+    // the realm's name opens the sentence, so it takes a capital ("The Elderley March")
+    const kn = this._kn(k), Kn = kn.charAt(0).toUpperCase() + kn.slice(1);
+    this._history(`${Kn} attains Mastery ${k.mastery}`, 'info', this._kingdomPos(k));
     const unlock = { 2: 'statues of its heroes rise', 3: 'a second great work may begin', 4: 'its halls are gilded', 6: 'scholars found an academy', 8: 'its harbors fill with ships', 10: 'lamps line its grand roads' }[k.mastery];
-    if (unlock || k.mastery % 3 === 0) this._note(`📜 ${this._kn(k)} attains Mastery ${k.mastery}${unlock ? ': ' + unlock : ''}`, 'good', this._kingdomPos(k), 'mastery' + k.id, 1);
+    if (unlock || k.mastery % 3 === 0) this._note(`${Kn} attains Mastery ${k.mastery}${unlock ? ': ' + unlock : ''}`, 'good', this._kingdomPos(k), 'mastery' + k.id, 1);
   },
 
   learnTech(k, id, silent = false) {
