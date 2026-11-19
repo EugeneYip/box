@@ -1089,22 +1089,55 @@ void terrainSurface() {
     // drops plot by plot rather than in a circle
     float openB = dot(vec4(equal(vec4(t0, t1, t2, t3), vec4(1.0))) * live, b) + dot(vec4(equal(vec4(t0, t1, t2, t3), vec4(4.0))) * live, b);
     if (st.g > 0.01 && openB > 0.01) {
-      vec2 fq = (p + (s.macro.rg - 0.5) * 3.0) / vec2(5.5, 4.3);
-      vec2 blk = floor(fq);
+      // farm districts (irregular cells ~24 units across), each with its own
+      // plot orientation and plot size, so the mosaic never lines up into
+      // graph paper; hedgerows run along the district edges
+      vec2 wq = p + (s.macro.rg - 0.5) * 4.0;
+      vec2 dc = wq / 24.0;
+      vec2 di = floor(dc);
+      float dB = 9.0, dS = 9.0;
+      vec2 bid = di;
+      for (int j = -1; j <= 1; j++)
+        for (int i = -1; i <= 1; i++) {
+          vec2 c = di + vec2(float(i), float(j));
+          vec2 o = vec2(hash12(c + 1.7), hash12(c + 9.2)) * 0.8 + 0.1;
+          float dd = length(dc - c - o);
+          if (dd < dB) { dS = dB; dB = dd; bid = c; } else if (dd < dS) dS = dd;
+        }
+      float hedgeD = (dS - dB) * 12.0; // ~units to the district edge
+      float ang = (hash12(bid + 4.4) - 0.5) * 1.5;
+      float ca = cos(ang), sa = sin(ang);
+      vec2 q = vec2(ca * wq.x - sa * wq.y, sa * wq.x + ca * wq.y);
+      vec2 psz = vec2(3.6 + 3.2 * hash12(bid + 2.1), 1.9 + 1.8 * hash12(bid + 3.3));
+      vec2 fq = q / psz;
+      // staggered rows: each strip of plots is offset, so banks do not cross
+      fq.x += hash12(vec2(floor(fq.y), bid.x * 7.0 + bid.y)) * 0.9;
+      vec2 blk = floor(fq) + bid * 31.0;
       float r1 = hash12(blk + 3.7);
       float r2 = hash12(blk + 11.3);
       float inF = smoothstep(r1 * 0.55 + 0.02, r1 * 0.55 + 0.18, st.g) * openB * (1.0 - snowB) * (1.0 - cliff);
-      vec3 young = vec3(0.46, 0.60, 0.16);
-      vec3 ripe = vec3(0.62, 0.55, 0.24);
-      vec3 fallow = vec3(0.42, 0.32, 0.18);
-      vec3 fc = r2 < 0.45 ? young : (r2 < 0.78 ? ripe : fallow);
-      fc *= 0.88 + 0.22 * hash12(blk + 5.1) + 0.08 * (s.det.r - 0.5);
+      vec3 fc;
+      if (r2 < 0.22) fc = vec3(0.40, 0.56, 0.14);        // young green
+      else if (r2 < 0.38) fc = vec3(0.30, 0.46, 0.13);   // deep green
+      else if (r2 < 0.52) fc = vec3(0.36, 0.52, 0.30);   // flooded paddy
+      else if (r2 < 0.70) fc = vec3(0.64, 0.57, 0.26);   // ripening gold
+      else if (r2 < 0.82) fc = vec3(0.70, 0.64, 0.42);   // stubble
+      else fc = vec3(0.44, 0.34, 0.20);                  // fallow brown
+      fc *= 0.88 + 0.2 * hash12(blk + 5.1) + 0.08 * (s.det.r - 0.5);
       fc = mix(fc, fc * vec3(0.86, 0.86, 0.92), smoothstep(-0.10, 0.0, uSnowT - s.temp));
       vec2 fb = fract(fq);
-      float bank = 1.0 - smoothstep(0.03, 0.09 + s.fw * 0.4, min(min(fb.x, 1.0 - fb.x), min(fb.y, 1.0 - fb.y)));
-      fc = mix(fc, vec3(0.12, 0.20, 0.07), bank * 0.6 * (1.0 - smoothstep(0.25, 0.6, s.fw)));
+      // furrows along the plot's long side (close zoom only)
+      float furK = 1.0 - smoothstep(0.02, 0.06, s.fw);
+      fc *= 1.0 - 0.07 * furK * smoothstep(0.3, 0.7, abs(fract(q.y * 3.0 + r1) - 0.5) * 2.0);
+      float bankW = 0.03 + s.fw * 0.25 / max(psz.y, 1.0);
+      float bank = 1.0 - smoothstep(bankW, bankW + 0.06, min(min(fb.x, 1.0 - fb.x), min(fb.y, 1.0 - fb.y)));
+      fc = mix(fc, fc * 0.72 + vec3(0.02, 0.04, 0.0), bank * 0.5 * (1.0 - smoothstep(0.25, 0.6, s.fw)));
       // keep the scene's light level: plots at the ground's own brightness
       fc *= clamp(lum(albedo) / max(lum(fc), 0.02), 0.85, 1.6);
+      // hedgerows: dark bushy lines along district edges
+      float hedgeW = 0.32 + s.fw * 1.2;
+      float hedge = (1.0 - smoothstep(hedgeW, hedgeW + 0.25, hedgeD + (s.micro.r - 0.5) * 0.25)) * step(0.25, hash12(bid + 6.6));
+      fc = mix(fc, vec3(0.07, 0.14, 0.05) * (0.8 + 0.4 * s.det.g), hedge * 0.85);
       albedo = mix(albedo, fc, inF * 0.85);
     }
     // paved towns (Terrain._writeSettle: B = paving of the town, A = its
@@ -1197,16 +1230,14 @@ void terrainSurface() {
     if (st.r > 0.02 && urbK > 0.0) {
       float core = smoothstep(0.35, 0.85, st.r);
       float ring = smoothstep(0.08, 0.40, st.r);
-      vec2 gq = (p + (s.macro.gb - 0.5) * 1.2) / 2.2;
-      vec2 gc = floor(gq);
-      vec2 gf = fract(gq);
-      float street = 1.0 - smoothstep(0.08, 0.20, min(min(gf.x, 1.0 - gf.x), min(gf.y, 1.0 - gf.y)));
-      float roofR = hash12(gc + 2.9);
-      vec3 roof = mix(vec3(0.47, 0.43, 0.38), vec3(0.56, 0.31, 0.22), step(0.6, roofR));
-      roof = mix(roof, vec3(0.40, 0.39, 0.38), step(0.86, roofR));
-      vec3 urb = mix(roof, vec3(0.28, 0.26, 0.24), street * 0.75);
-      float uk = (ring * 0.4 + core * 0.6) * urbK;
-      albedo = mix(albedo, urb, uk * 0.82);
+      // a solid warm patch of roofs: soft tonal variation, no street grid
+      // (a grid read as graph paper over the continent at far zoom)
+      float rv = s.macro.g * 0.6 + s.meso.r * 0.4;
+      vec3 urb = mix(vec3(0.50, 0.42, 0.34), vec3(0.56, 0.38, 0.27), smoothstep(0.35, 0.7, rv));
+      urb = mix(urb, vec3(0.44, 0.41, 0.38), core * 0.35);
+      urb *= 0.94 + 0.08 * s.det.r;
+      float uk = (ring * 0.45 + core * 0.55) * urbK;
+      albedo = mix(albedo, urb, uk * 0.78);
       rough = mix(rough, 0.8, uk);
     }
   }

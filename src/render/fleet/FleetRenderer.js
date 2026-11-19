@@ -1046,7 +1046,9 @@ export class FleetRenderer {
     const on = !far && z01 > 0.12 && dist > 45 && !this.game.settings?.powerSaver;
     this.lanes.visible = on;
     if (!on) return;
-    this.uniforms.uLaneAlpha.value = Math.min(0.55, (dist - 45) / 60) * 0.85;
+    // faint at mid zoom, gone by far zoom (white dashes over the sea read as debug lines)
+    const laneFar = 1 - Math.min(1, Math.max(0, (dist - 70) / 30));
+    this.uniforms.uLaneAlpha.value = Math.min(0.55, (dist - 45) / 60) * 0.6 * laneFar;
     if ((this._laneT -= dt) > 0) return;
     this._laneT = 0.5;
     const geo = this.lanes.geometry;
