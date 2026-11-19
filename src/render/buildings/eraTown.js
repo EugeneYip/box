@@ -1,4 +1,4 @@
-import { shade } from './geom.js';
+import { shade, mix } from './geom.js';
 import { bands, mullions, flatRoof, tree, door, sign, chimneyStack, vault } from './modernModels.js';
 
 // The common buildings of the Industrial to Future eras (4-7), so that a
@@ -122,10 +122,42 @@ export function industrialHouse(g, K, style, lv) {
 // ---------------------------------------------------------------- civic buildings
 // The era look for the common working buildings (workshop, granary, market
 // and the rest) in eras 4-7. Footprint from the catalog design size.
-export const ERA_CIVIC = new Set(['granary', 'workshop', 'market', 'barn', 'kiln', 'stables', 'bloomery', 'healer', 'library', 'barracks', 'foundry']);
+export const ERA_CIVIC = new Set(['granary', 'workshop', 'market', 'barn', 'kiln', 'stables', 'bloomery', 'healer', 'library', 'barracks', 'foundry', 'smokehouse', 'lazaretto', 'firestation', 'academy']);
 
+// the era's wall, tinted a third of the way to the culture's own colour
 function walls(K, P, era) {
-  return era >= 7 ? 0xf0f2ec : era >= 6 ? 0xd4d9de : era >= 5 ? 0xc4beb2 : K.wall;
+  if (era < 5) return K.wall;
+  return mix(era >= 7 ? 0xf0f2ec : era >= 6 ? 0xd4d9de : 0xc4beb2, K.wall, 0.32);
+}
+// The roof of a culture in eras 5-7, so a street of civic blocks is told
+// apart by culture at mid zoom: vale a flat roof with a plant room; frost a
+// low metal gable; dune a thick white parapet round a small dome; mire a
+// thin slab with deep eaves on slim posts. Future roofs are planted.
+function cultureRoof(g, K, P, era, style, cx, h, cz, w, d, wc) {
+  const green = era >= 7;
+  if (style === 'frost') {
+    const rh = Math.min(0.3, d * 0.28);
+    g.gable(cx, h, cz, w, d, rh, green ? GREEN : shade(K.tile, 1.05), { over: 0.07, th: 0.04, gable: wc, rows: 3 });
+    if (green) {
+      g.push();
+      g.translate(cx, h + rh * 0.55, cz - d * 0.22);
+      g.rotateX(-Math.atan2(rh, d / 2));
+      g.box(0, 0, 0, w * 0.7, 0.02, d * 0.3, 0x23324a, { top: 0x2f4a78 });
+      g.pop();
+    }
+    return rh;
+  }
+  if (style === 'dune') {
+    flatRoof(g, cx, h, cz, w, d, K.trim ?? 0xf0e8d8, green ? GREEN : shade(wc, 0.85), 0.12);
+    g.dome(cx + w * 0.22, h + 0.06, cz, Math.min(0.2, w * 0.16), 10, 3, K.accent ?? P.accent, {});
+    return 0.14;
+  }
+  if (style === 'mire') {
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) g.box(cx + sx * (w / 2 + 0.1), 0, cz + sz * (d / 2 + 0.1), 0.035, h + 0.02, 0.035, shade(wc, 0.7));
+    g.box(cx, h + 0.02, cz, w + 0.36, 0.06, d + 0.36, shade(K.wall2 ?? wc, 0.72), { top: green ? GREEN : K.tile });
+    return 0.08;
+  }
+  return 0;
 }
 // a plain block of the era: brick under a slate gable with arched windows
 // (4), concrete with ribbon windows under a flat roof (5), glass and steel
@@ -160,6 +192,7 @@ function eraBlock(g, K, P, era, cx, cz, w, d, floors, o = {}) {
     bands(g, P, cx, 0.02, cz, w, d, floors, fh, { k: 0.5 });
     for (let f = 1; f <= floors; f++) planters(g, cx, f * fh - 0.04, cz, w - 0.04, d);
   }
+  if (!o.noRoof && o.style && o.style !== 'vale') return h + cultureRoof(g, K, P, era, o.style, cx, h, cz, w, d, wc);
   if (!o.noRoof) {
     flatRoof(g, cx, h, cz, w, d, shade(wc, 0.8), era >= 7 ? GREEN : era >= 6 ? 0x60707e : 0x5c6066, 0.06);
     if (era >= 7) {
@@ -217,7 +250,7 @@ export function eraCivic(g, K, P, type, style, lv, era, def) {
       d = dh * 0.7,
       bx = -dw * 0.18;
     g.box(0, -0.06, 0, dw * 0.9, 0.1, dh * 0.78, P.concrete2);
-    const bh = eraBlock(g, K, P, era, bx, 0, w, d, era === 4 ? 2 : 1);
+    const bh = eraBlock(g, K, P, era, bx, 0, w, d, era === 4 ? 2 : 1, { style });
     const siloC = era >= 7 ? 0xeef0ea : era >= 6 ? 0xc8ced4 : era >= 5 ? 0xbab4a8 : 0x8a9096;
     const sh = era === 4 ? 0.9 : 1.35 + (era - 5) * 0.15;
     const r = era === 4 ? 0.2 : 0.24;
@@ -264,7 +297,7 @@ export function eraCivic(g, K, P, type, style, lv, era, def) {
       door(g, K, 0, bz + d * 0.4, 0.34, 0.4, K.door ?? acc, {});
     } else {
       const floors = era >= 6 ? 2 : 1 + (lv >= 2 ? 1 : 0);
-      const h = eraBlock(g, K, P, era, 0, bz, w, d, floors);
+      const h = eraBlock(g, K, P, era, 0, bz, w, d, floors, { style });
       // shop fronts with awnings in a row, a big sign over the door
       const n = 4;
       for (let i = 0; i < n; i++) {
@@ -285,10 +318,16 @@ export function eraCivic(g, K, P, type, style, lv, era, def) {
     bz = -dh * 0.04;
   const floors = Math.max(1, Math.min(3, Math.round(Math.min(dw, dh) * 0.8) + (lv - 1)));
   g.box(0, -0.06, bz, w + 0.06, 0.1, d + 0.06, P.concrete2);
-  const h = eraBlock(g, K, P, era, 0, bz, w, d, floors);
+  const h = eraBlock(g, K, P, era, 0, bz, w, d, floors, { style });
   if (era === 4) stack(g, w / 2 - 0.15, h - 0.35, bz - 0.05, 0.6, shade(K.wall, 0.9), 0xb06a48, 0.6);
   door(g, K, 0, bz + d / 2, Math.min(0.3, w * 0.3), 0.3, era >= 6 ? P.glass : acc, { canopy: era >= 5 ? acc : null });
   sign(g, 0, Math.min(floors * 0.38 - 0.08, 0.5), bz + d / 2 + 0.02, Math.min(0.8, w * 0.6));
+  if (type === 'firestation') {
+    // red engine doors and a hose-drying tower
+    for (const x of [-w * 0.22, w * 0.22]) g.box(x, 0, bz + d / 2 + 0.014, Math.min(0.32, w * 0.3), 0.3, 0.02, 0xb8322a);
+    g.box(-w / 2 + 0.12, 0, bz - d / 2 + 0.12, 0.2, h + 0.5, 0.2, era === 4 ? K.wall : wc);
+    g.box(-w / 2 + 0.12, h + 0.36, bz - d / 2 + 0.12, 0.22, 0.1, 0.22, 0xb8322a);
+  }
   if (type === 'healer') g.box(w * 0.3, Math.min(floors * 0.38 - 0.2, 0.5), bz + d / 2 + 0.03, 0.14, 0.14, 0.02, 0xd8382c, { glow: 0.5 });
   return { base: { x: 0, z: bz, w: w + 0.06, d: d + 0.06 } };
 }

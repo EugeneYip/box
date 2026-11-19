@@ -206,8 +206,8 @@ export const modern = {
     if (room() && has('railways') && v.railEnds > 0 && count('station') === 0) tryBuild('station');
     // Computing: a research campus in the capital and the cities
     if (room() && has('computing') && (city || isCap) && count('campus') === 0) tryBuild('campus', out('campus', 3, 4));
-    // Skyscrapers rise at city centres
-    if (room() && has('skyscrapers') && city && count('skyscraper') < (isCap ? 3 : 2) && v.housing - pop < 10) tryBuild('skyscraper', () => this.placeAlongRoad(v, 'skyscraper', this._bias(v, 'market')));
+    // Skyscrapers rise at city centres (one office tower in a big town)
+    if (room() && has('skyscrapers') && (city || (town && pop >= 40)) && count('skyscraper') < (isCap ? 3 : city ? 2 : 1) && v.housing - pop < 10) tryBuild('skyscraper', () => this.placeAlongRoad(v, 'skyscraper', this._bias(v, 'market')));
     // Arcology: a whole city in one green tower
     if (room() && has('arcology') && (isCap || city) && count('arcology') === 0 && rc('arcology') < 2) tryBuild('arcology', out('arcology', 4, 7));
     // Flight: airfields; Jets: airports

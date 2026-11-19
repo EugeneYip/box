@@ -583,7 +583,7 @@ export class BuildingRenderer {
       let L = proxies.get(key);
       if (!L) proxies.set(key, (L = { m: [], col: [], bs: [] }));
       const a = this._arch(def.wall ? `wpost|${b.style}` : archKey(b, def, Math.min(b.level || 1, def.levels), civ.kingdoms[b.kingdom]?.era ?? 0));
-      const hgt = (def.wall ? 1.1 : Math.max(0.5, Math.min(def.monument ? 12 : def.modern ? 7.5 : 3, a.maxY)) * (b.constructing ? Math.max(0.2, b.progress) : 1)) * BS;
+      const hgt = (def.wall ? 1.1 : Math.max(0.5, Math.min(def.monument ? 12 : b.type === 'arcology' ? 19 : def.modern ? 7.5 : 3, a.maxY)) * (b.constructing ? Math.max(0.2, b.progress) : 1)) * BS;
       const pw = def.wall || b.type === 'bridge' ? def.w : (def.dw ?? def.w) * BS,
         ph = def.wall || b.type === 'bridge' ? def.h : (def.dh ?? def.h) * BS;
       const pm = this._m2.makeRotationY(b.rotation || 0).setPosition(b.x, b.y, b.z).multiply(this._m3.makeScale(pw * 0.82, hgt, ph * 0.82));

@@ -697,8 +697,8 @@ const BUILD = {
     // the crown: a glowing ring and a tall spire
     g.cyl(0, y, 0, 0.32, 0.08, 12, 0x7fe8f0, { glow: CYAN });
     g.cone(0, y + 0.08, 0, 0.3, 0.6, 10, P.white, {});
-    g.cyl(0, y + 0.6, 0, 0.06, 2.6, 6, P.white, { r2: 0.015 });
-    g.box(0, y + 3.2, 0, 0.08, 0.08, 0.08, P.red, { glow: BEACON });
+    g.cyl(0, y + 0.6, 0, 0.06, 3.6, 6, P.white, { r2: 0.015 });
+    g.box(0, y + 4.2, 0, 0.08, 0.08, 0.08, P.red, { glow: BEACON });
     // entrances at the foot
     for (const ry of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
       g.push();
