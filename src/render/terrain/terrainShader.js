@@ -1141,7 +1141,7 @@ void terrainSurface() {
         float swW = mix(0.11, 0.15, modern);
         float side = 1.0 - smoothstep(swW - aa, swW + aa, dE);
         float curb = (1.0 - smoothstep(swW + 0.035 - aa, swW + 0.035 + aa, dE)) * (1.0 - side);
-        float lum0 = clamp(lum(albedo) / 0.09, 0.75, 1.5);
+        float lum0 = clamp(lum(albedo) / 0.09, 0.8, 1.15);
         // carriageway: setts (4) or asphalt (5+)
         vec2 sq = p * vec2(7.0, 11.0);
         sq.x += step(1.0, mod(floor(sq.y), 2.0)) * 0.5;
@@ -1163,14 +1163,14 @@ void terrainSurface() {
         // sidewalk: flagstones (4) or concrete slabs (5+), slab joints every third of a tile
         vec2 sj = abs(fract(p * 3.0) - 0.5);
         float slab = 1.0 - (1.0 - smoothstep(0.43, 0.48, max(sj.x, sj.y))) * jtK * 0.5;
-        vec3 walk = mix(vec3(0.33, 0.31, 0.28), mix(vec3(0.42, 0.41, 0.39), vec3(0.56, 0.57, 0.56), fut), modern) * (0.94 + 0.1 * s.det.g);
+        vec3 walk = mix(vec3(0.33, 0.31, 0.28), mix(vec3(0.40, 0.39, 0.37), vec3(0.48, 0.49, 0.48), fut), modern) * (0.94 + 0.1 * s.det.g);
         walk *= mix(0.86, 1.0, slab);
         vec3 kerb = mix(vec3(0.46, 0.44, 0.40), vec3(0.62, 0.62, 0.60), modern);
         // the square: big stone slabs in two tones (no curbs inside it)
         vec2 pq = p * 2.0;
         vec2 pf = abs(fract(pq) - 0.5);
         float pj = (1.0 - smoothstep(0.44, 0.48, max(pf.x, pf.y))) * jtK;
-        vec3 sqC = mix(vec3(0.46, 0.41, 0.34), mix(vec3(0.50, 0.48, 0.44), vec3(0.62, 0.63, 0.60), fut), modern);
+        vec3 sqC = mix(vec3(0.46, 0.41, 0.34), mix(vec3(0.48, 0.46, 0.42), vec3(0.52, 0.53, 0.50), fut), modern);
         sqC *= 0.9 + 0.16 * hash12(floor(pq) + 4.1);
         sqC = mix(sqC * 0.74, sqC, max(pj, 1.0 - jtK));
         vec3 pave = mix(mix(way, walk, side), kerb, curb);
