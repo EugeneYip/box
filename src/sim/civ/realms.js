@@ -678,12 +678,19 @@ export const realms = {
         if (p) this._regionPts.push({ name: `${style} ${name}`, x: p.x, z: p.z, realm: this._placeRealmAt(p.x, p.z) });
       }
     }
-    const R = this._placeReach.own * 2.5;
+    // (regions are wide: up to about 16 degrees, east-west distances
+    // shrunk toward the poles, where Alaska's and Siberia's lie)
+    const R = this._placeReach.own * 4;
+    const gi = geoInfo(this.world);
+    const lat = gi ? gi.latMax - (z / this.world.h) * (gi.latMax - gi.latMin) : 0;
+    const cx = Math.max(0.35, Math.cos((lat * Math.PI) / 180));
     let best = null,
       bd = Infinity;
     for (const p of this._regionPts) {
       if (living.has(p.name)) continue;
-      const d = geoDist(this.world, p.x, p.z, x, z) * (own >= 0 && p.realm === own ? 0.6 : 1);
+      const dx = geoDist(this.world, p.x, z, x, z),
+        dz = p.z - z;
+      const d = Math.hypot(dx * cx, dz) * (own >= 0 && p.realm === own ? 0.6 : 1);
       if (d < R && d < bd) (bd = d), (best = p);
     }
     return best ? best.name : null;
