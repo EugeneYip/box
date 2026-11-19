@@ -467,7 +467,8 @@
 
 /* ---- modals opaque enough that the HUD never shows through their text */
 .ws-modal.ws-glass {
-  background: linear-gradient(180deg, rgba(255, 246, 226, 0.05), rgba(255, 246, 226, 0) 46%), linear-gradient(180deg, rgba(27, 31, 45, 0.975), rgba(12, 14, 22, 0.985));
+  background: linear-gradient(180deg, rgba(255, 246, 226, 0.05), rgba(255, 246, 226, 0) 46%), linear-gradient(180deg, rgb(27, 31, 45), rgb(12, 14, 22));
+  backdrop-filter: none;
 }
 
 /* ---- closed panels leave the Tab order; keyboard focus is always visible */
@@ -607,4 +608,24 @@
 }
 .ws-eramarks i.is-on {
   color: var(--ws-gold-hi);
+}
+
+/* read by screen readers, not drawn (the clock's season name when only its glyph fits) */
+.ws-sr,
+.ws-clock__day .ws-season__name.ws-sr {
+  position: absolute !important;
+  width: 1px !important;
+  min-width: 0 !important;
+  height: 1px !important;
+  overflow: hidden !important;
+  clip: rect(0 0 0 0) !important;
+  white-space: nowrap !important;
+}
+.ws-clock__sep[hidden] {
+  display: none !important;
+}
+
+/* no keyboard letters on the card's buttons for a touch screen (tablets too) */
+.is-touch .ws-insp__actions .ws-key {
+  display: none;
 }
