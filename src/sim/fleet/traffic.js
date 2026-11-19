@@ -7,7 +7,10 @@ import { USE } from '../civ/util.js';
 // pathfinding: at each tile it picks the way on (straight ahead more often
 // than a turn, never back the way it came unless the street ends, keeping
 // inside its town and off the railway where it can). FleetRenderer draws them
-// in the fleet's batch on the right-hand side of the street. Budgets: a
+// in the fleet's batch on the right-hand side of the street. On a straight
+// stretch of street in front of a building a car now and then pulls in and
+// stays parked a while along the curb, nose along the street (a car joining
+// the traffic may start out parked there). Budgets: a
 // share per town by its size and era, and a cap for the whole world
 // (budget.traffic).
 //
@@ -89,6 +92,8 @@ export const traffic = {
       c.h = c.ph = Math.atan2(c.tz - c.z, c.tx - c.x);
       c.px = c.x;
       c.pz = c.z;
+      c.park = 0;
+      if (this.rng() < 0.4 && this._trafficKerb(x, z, c)) c.park = 4 + this.rng() * 30;
       this.traffic.push(c);
       this.totals.cars = (this.totals.cars || 0) + 1;
       this.first(k.id, 'car', { x: c.x, z: c.z });
@@ -136,6 +141,22 @@ export const traffic = {
     c.tz = ((best / w.w) | 0) + 0.5;
     return true;
   },
+  // A straight stretch of street (the way on and the way back both street,
+  // the street not crossing here) with a building beside it: a place to park.
+  _trafficKerb(x, z, c) {
+    const w = this.world;
+    const use = this.game.civ.use;
+    if (x < 1 || z < 1 || x >= w.w - 1 || z >= w.h - 1) return false;
+    const r = (dx, dz) => use[(z + dz) * w.w + x + dx] === USE.ROAD;
+    const ew = r(1, 0) && r(-1, 0),
+      ns = r(0, 1) && r(0, -1);
+    if (ew === ns) return false;
+    // heading along the street (the way the car is going, else east / south)
+    const along = ew ? Math.abs(Math.cos(c.h)) > 0.7 : Math.abs(Math.sin(c.h)) > 0.7;
+    if (!along) return false;
+    const B = USE.BUILDING;
+    return ew ? use[(z + 1) * w.w + x] === B || use[(z - 1) * w.w + x] === B : use[z * w.w + x + 1] === B || use[z * w.w + x - 1] === B;
+  },
   _trafficTick(step) {
     const T = this.traffic;
     const use = this.game.civ?.use;
@@ -147,6 +168,15 @@ export const traffic = {
       c.px = c.x;
       c.pz = c.z;
       c.ph = c.h;
+      // parked at the curb: waits, then drives on (or leaves if the street went)
+      if (c.park > 0) {
+        c.park -= step;
+        if (use[Math.floor(c.z) * w.w + Math.floor(c.x)] !== USE.ROAD) {
+          c.gone = true;
+          drop = true;
+        }
+        continue;
+      }
       let mv = c.s * step;
       for (let guard = 0; guard < 3 && mv > 0; guard++) {
         const dx = c.tx - c.x,
@@ -167,6 +197,13 @@ export const traffic = {
         if (use[tz * w.w + tx] !== USE.ROAD || !this._trafficNext(c, tx, tz)) {
           c.gone = true;
           drop = true;
+          break;
+        }
+        // now and then pull in at the curb (only once squared up to the street)
+        if (this.rng() < 0.07 && Math.abs(Math.sin(Math.atan2(c.tz - c.z, c.tx - c.x) - c.h)) < 0.05 && Math.cos(Math.atan2(c.tz - c.z, c.tx - c.x) - c.h) > 0 && this._trafficKerb(tx, tz, c)) {
+          c.park = 6 + this.rng() * 26;
+          // square the car up exactly with the street
+          c.h = Math.round(c.h / (Math.PI / 2)) * (Math.PI / 2);
           break;
         }
       }
