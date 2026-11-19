@@ -1732,10 +1732,19 @@ export class Civilization {
     let sites = 0;
     for (const b of v.buildings) if (b.alive && (b.constructing || b.upgrading) && !BUILDING_TYPES[b.type].wall) sites++;
     const maxSites = 1 + Math.floor(v.adults / 7);
+    // (the town's buildings by type, counted once and again only after a
+    // building is added, lost or changed: the plan asks dozens of times)
+    let cnt = null,
+      cntN = -1,
+      cntV = -1;
     const count = (type) => {
-      let c = 0;
-      for (const b of v.buildings) if (b.alive && b.type === type) c++;
-      return c;
+      if (!cnt || cntN !== v.buildings.length || cntV !== this.version) {
+        cnt = new Map();
+        cntN = v.buildings.length;
+        cntV = this.version;
+        for (const b of v.buildings) if (b.alive) cnt.set(b.type, (cnt.get(b.type) || 0) + 1);
+      }
+      return cnt.get(type) || 0;
     };
     let actions = 0;
     const room = () => sites < maxSites && actions < 2 * (this._planMul || 1);
