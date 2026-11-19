@@ -1119,11 +1119,11 @@ void terrainSurface() {
       vec2 gf = fract(gq);
       float street = 1.0 - smoothstep(0.08, 0.20, min(min(gf.x, 1.0 - gf.x), min(gf.y, 1.0 - gf.y)));
       float roofR = hash12(gc + 2.9);
-      vec3 roof = mix(vec3(0.62, 0.58, 0.52), vec3(0.66, 0.36, 0.26), step(0.62, roofR));
-      roof = mix(roof, vec3(0.48, 0.47, 0.46), step(0.86, roofR));
-      vec3 urb = mix(roof, vec3(0.36, 0.34, 0.31), street * 0.75);
-      float uk = (ring * 0.45 + core * 0.55) * urbK;
-      albedo = mix(albedo, urb, uk * 0.92);
+      vec3 roof = mix(vec3(0.47, 0.43, 0.38), vec3(0.56, 0.31, 0.22), step(0.6, roofR));
+      roof = mix(roof, vec3(0.40, 0.39, 0.38), step(0.86, roofR));
+      vec3 urb = mix(roof, vec3(0.28, 0.26, 0.24), street * 0.75);
+      float uk = (ring * 0.4 + core * 0.6) * urbK;
+      albedo = mix(albedo, urb, uk * 0.82);
       rough = mix(rough, 0.8, uk);
     }
   }

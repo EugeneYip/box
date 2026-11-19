@@ -254,7 +254,7 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   float rivPx = max(wide, 0.5) * 2.0 / max(fw, 1e-3);
   float rivCore = smoothstep(mix(0.30, 0.55, uMapZoom), 0.98, relC) * mix(0.7, 1.0, smoothstep(1.5, 5.0, rivPx));
   // (a light blue-green, not the deep sea's navy: dark ribbons read as ink)
-  vec3 rivFar = mix(vec3(0.034, 0.150, 0.165), vec3(0.040, 0.090, 0.105), gCold) * waterIrradianceV(lightVis);
+  vec3 rivFar = mix(vec3(0.048, 0.190, 0.195), vec3(0.050, 0.110, 0.125), gCold) * waterIrradianceV(lightVis);
   scat = mix(scat, rivFar, mzR);
   veil = mix(veil, 0.94 * rivCore, mzR);
   float crest = smoothstep(0.10, 0.30, length(sl)) * open * 0.25;
