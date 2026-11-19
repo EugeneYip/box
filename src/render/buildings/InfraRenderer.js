@@ -236,6 +236,18 @@ export class InfraRenderer {
           const j = Y[i - k]?.wet ? i - k : Y[i + k]?.wet ? i + k : -1;
           if (j >= 0) Y[i].y = Math.max(Y[i].y, Y[i].g + 0.02 + (SEA_LEVEL + 0.3 * BS - Y[i].g - 0.02) * (1 - k / 4));
         }
+    // a guideway's deck runs level over bumps in the ground: its height is
+    // averaged over a few tiles (never lower than most of its clearance)
+    if (elevated) {
+      const raw = Y.map((q) => Math.max(q.y + 0.2 * BS, q.g + MAG_Y));
+      for (let i = 0; i < Y.length; i++) {
+        let s = 0,
+          c = 0;
+        for (let j = Math.max(0, i - 6); j <= Math.min(Y.length - 1, i + 6); j++) (s += raw[j]), c++;
+        Y[i].deck = Math.max(s / c, Y[i].g + MAG_Y * 0.8, Y[i].wet ? SEA_LEVEL + MAG_Y * 0.8 : -1e9);
+      }
+      seg._deck = [Y[0].deck, Y[Y.length - 1].deck];
+    }
     let arc = 0,
       lastPier = -9,
       lastPillar = -1e9;
@@ -255,8 +267,8 @@ export class InfraRenderer {
         // maglev: a white guideway on pillars with a glowing strip
         const la = seg.lift ? seg.lift[i] : 0,
           lb = seg.lift ? seg.lift[i + 1] : 0;
-        const ga = Math.max(ya + 0.2 * BS, Y[i].g + MAG_Y) + la,
-          gb = Math.max(yb + 0.2 * BS, Y[i + 1].g + MAG_Y) + lb;
+        const ga = Y[i].deck + la,
+          gb = Y[i + 1].deck + lb;
         far.push(ax, ga, az, bx, gb, bz);
         E.bar(ax, az, bx, bz, ga, gb, GUIDE_W, GUIDE_H, COL.guide);
         E.bar(ax, az, bx, bz, ga + 0.003, gb + 0.003, GUIDE_W * 0.22, 0, COL.glow, 1, false);
@@ -349,7 +361,7 @@ export class InfraRenderer {
     const g = Math.max(this._h(x, z), SEA_LEVEL);
     const info = atStart ? seg.start : seg.end;
     if (seg.kind === 'maglev') {
-      const y = Math.max(g + 0.2 * BS, g + MAG_Y) + (seg.lift ? seg.lift[i] : 0);
+      const y = (seg._deck ? seg._deck[atStart ? 0 : 1] : g + MAG_Y) + (seg.lift ? seg.lift[i] : 0);
       const cx = x - tx * 0.8,
         cz = z - tz * 0.8;
       for (const s of [1, -1]) {
