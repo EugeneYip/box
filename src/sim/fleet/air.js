@@ -100,15 +100,14 @@ export const air = {
     const kid = o.kingdom ?? line.kingdom;
     // one train at a time on a line
     if (this.list.some((v) => v.alive && v.mission?.rail === line.id)) return null;
-    // on the rails themselves (InfraRenderer lays them beside the road)
-    const rails = railPts(line.pts);
-    const fwd = o.reverse ? reversePts(rails) : rails;
+    // on the rails themselves: a line's pts are the centre of the drawn track
+    const fwd = o.reverse ? reversePts(line.pts) : line.pts;
     const from = o.reverse ? b : a,
       to = o.reverse ? a : b;
     const model = line.kind === 'maglev' ? 'maglev' : 'train';
     const v = this.spawn('oxcart', kid, fwd[0], fwd[1], { home: from.id, state: 'move', heading: Math.atan2(fwd[3] - fwd[1], fwd[2] - fwd[0]), model });
     if (!v) return null;
-    v.trail = []; // the cars follow the engine along the rails it has run
+    v.trail = null; // (the cars ride the rails behind the engine: FleetRenderer reads v.path)
     // goods ride from the fuller store to the emptier
     const cargo = {};
     for (const r of ['food', 'wood', 'stone']) {
@@ -123,9 +122,30 @@ export const air = {
     v.anim.cargoType = cargo.wood ? 0 : cargo.stone ? 1 : 2;
     v.mission = { type: 'train', phase: 'out', from: from.id, to: to.id, rail: line.id };
     v.voyage = { from: from.id, to: to.id, fromName: from.name, toName: to.name };
-    this.setPath(v, fwd);
+    this._trainOnto(v, fwd);
     this.totals.trains = (this.totals.trains || 0) + 1;
     return v;
+  },
+  // Set a train on its route with its whole length on the rails: the engine
+  // a train's length along from the start (its cars behind it to the buffer).
+  _trainOnto(v, P) {
+    this.setPath(v, P);
+    let back = Math.max(0, (v.def.cars || 1) - 1) * v.def.length + 0.1;
+    for (let k = 0; k + 3 < P.length; k += 2) {
+      const L = Math.hypot(P[k + 2] - P[k], P[k + 3] - P[k + 1]);
+      if (L >= back) {
+        const t = back / (L || 1);
+        v.x = v.px = P[k] + (P[k + 2] - P[k]) * t;
+        v.z = v.pz = P[k + 1] + (P[k + 3] - P[k + 1]) * t;
+        v.heading = v.ph = Math.atan2(P[k + 3] - P[k + 1], P[k + 2] - P[k]);
+        v.pi = k + 2;
+        return;
+      }
+      back -= L;
+    }
+    // (a line shorter than the train: it starts at the beginning)
+    v.x = v.px = P[0];
+    v.z = v.pz = P[1];
   },
   _trainArrive(v, m, to) {
     const civ = this.game.civ;
@@ -135,7 +155,8 @@ export const air = {
     m.phase = 'home';
     const line = civ.railLine?.(m.rail);
     if (!line?.pts) return this.remove(v);
-    this.setPath(v, line.a === m.from ? reversePts(railPts(line.pts)) : railPts(line.pts));
+    // the engine runs round to the other end of its train for the way home
+    this._trainOnto(v, line.a === m.from ? reversePts(line.pts) : line.pts);
     v.state = 'rest';
     v.stateT = 0;
   },
@@ -850,24 +871,6 @@ function reversePts(p) {
   for (let i = 0; i < p.length; i += 2) {
     out[p.length - 2 - i] = p[i];
     out[p.length - 1 - i] = p[i + 1];
-  }
-  return out;
-}
-
-// A line's points moved onto its rails: InfraRenderer lays the track a
-// little to the left of the road it follows (in the line's own direction).
-const RAIL_SIDE = 0.45;
-function railPts(p) {
-  const out = new Array(p.length);
-  const n = p.length / 2;
-  for (let i = 0; i < n; i++) {
-    const a = Math.max(0, i - 1),
-      b = Math.min(n - 1, i + 1);
-    const dx = p[b * 2] - p[a * 2],
-      dz = p[b * 2 + 1] - p[a * 2 + 1];
-    const L = Math.hypot(dx, dz) || 1;
-    out[i * 2] = p[i * 2] - (dz / L) * RAIL_SIDE;
-    out[i * 2 + 1] = p[i * 2 + 1] + (dx / L) * RAIL_SIDE;
   }
   return out;
 }

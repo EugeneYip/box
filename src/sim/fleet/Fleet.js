@@ -7,6 +7,7 @@ import { land } from './land.js';
 import { war } from './war.js';
 import { air } from './air.js';
 import { modern } from './modern.js';
+import { traffic } from './traffic.js';
 import { hullR, hullHalf, segDist, HULL_GAP, PIER_END, PIER, BERTH } from './hull.js';
 import { geoDist, geoWrapOn } from '../../world/geo.js';
 
@@ -121,9 +122,11 @@ export class Fleet {
       land: Math.round(Math.min(120, 36 * Math.pow(area, 0.55)) * MORE),
       debris: 240,
       air: Math.round(Math.min(60, 18 * Math.pow(area, 0.5))), // aircraft and rockets (air.js)
+      traffic: Math.round(Math.min(300, 110 * Math.pow(area, 0.5))), // cars in town streets (traffic.js)
     };
     this.air = []; // aircraft and rockets in flight (air.js)
     this.orbit = []; // satellites and stations circling the world
+    this.traffic = []; // cars in the streets of Modern towns (traffic.js)
   }
 
   reset() {
@@ -686,6 +689,11 @@ export class Fleet {
       }
     }
     if (this.air.length || this.orbit.length) this._airTick(step);
+    if (this.traffic.length) this._trafficTick(step);
+    if ((T.traffic = (T.traffic || 0) + step) >= 2) {
+      T.traffic = 0;
+      this._trafficPlan();
+    }
     this._separate(step);
     if ((T.war += step) >= 0.5) {
       this._warTick(T.war);
@@ -1622,5 +1630,5 @@ export function angDiff(a, b) {
 }
 
 
-Object.assign(Fleet.prototype, missions, land, war, air, modern);
+Object.assign(Fleet.prototype, missions, land, war, air, modern, traffic);
 export { KINDS, SEA_KINDS, pathLength, SEA_LEVEL };
