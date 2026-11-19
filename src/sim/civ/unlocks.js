@@ -202,7 +202,7 @@ export const unlocks = {
       if (age > 30) continue;
       // grain from home covers what the colony eats while its fields come in
       if (v.food < 40 + v.pop * 2) v.food += 1 + v.pop * 0.15;
-      if (v.pop < 14 && now - (v.supplyT || 0) > YEAR * 3) {
+      if (v.pop < 14 && now - (v.supplyT || 0) > YEAR * 3 && (this.game.units.count?.('human') ?? 0) < this._humanCap() - 2) {
         v.supplyT = now;
         for (let i = 0; i < 2; i++) {
           const a = this.rng.float(0, Math.PI * 2);
