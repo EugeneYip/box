@@ -99,8 +99,10 @@ export function industrialHouse(g, K, style, lv) {
       g.gable(x, top + 0.26, bz + d * 0.22, 0.26, 0.24, 0.12, slate, { axis: 'z', over: 0.03, th: 0.03, gable: trim, rows: 2 });
     }
   } else if (style === 'mire') {
+    // galvanized corrugated iron, not the old red tile, so it reads as the
+    // new era at mid zoom (the red stays on the veranda roof)
     rh = 0.3;
-    g.hip(0, top, bz, w + 0.12, d + 0.12, rh, slate, { over: 0.08, rows: 3 });
+    g.hip(0, top, bz, w + 0.12, d + 0.12, rh, 0x8e979e, { over: 0.08, rows: 6 });
     // an iron veranda along the front
     for (let i = 0; i < 5; i++) g.box(-w / 2 + (w * i) / 4, 0, bz + d / 2 + 0.26, 0.03, lift + fh, 0.03, 0x34373c);
     g.box(0, lift + fh, bz + d / 2 + 0.15, w + 0.06, 0.03, 0.3, shade(slate, 0.85), { top: slate });
