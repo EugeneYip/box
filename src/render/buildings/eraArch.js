@@ -130,7 +130,7 @@ function eraHouseAlt(g, K, style, lv, era, v, { acc, frame, roofTop, floors }) {
       const rr = r * (f ? 0.82 : 1);
       g.cyl(0, y, bz, rr, FH, 14, f % 2 ? 0xe4ece6 : K.wall, {});
       // a ribbon of glass round each floor
-      g.cyl(0, y + FH * 0.3, bz, rr + 0.012, FH * 0.38, 14, K.glass, { glow: 1 });
+      g.cyl(0, y + FH * 0.3, bz, rr + 0.012, FH * 0.38, 14, K.glass, { glow: _glassGlow * 0.8 });
       g.cyl(0, y + FH, bz, rr + 0.06, 0.05, 14, 0xf2f4f0, { top: roofTop });
       y += FH + 0.05;
     }
