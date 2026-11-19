@@ -52,7 +52,9 @@ export const LAWS = [
   N('civGrowth', 'civilization', 'Birth rate', 'How quickly villages grow.', 1, 0.25, 3, 0.25, 'civ'),
   B('civTechnology', 'civilization', 'Knowledge', 'Kingdoms research technologies and advance through eras.', true, 'civ'),
   N('civTechSpeed', 'civilization', 'Research speed', 'How quickly kingdoms gain knowledge.', 1, 0.25, 4, 0.25, 'civ'),
-  S('civEraCap', 'civilization', 'Latest era', 'The latest era realms may reach, from Hearth to Future. Choose Enlightened for a world that never leaves the age of sail and steel.', 7, ['Hearth', 'Bronze', 'Iron', 'Enlightened', 'Industrial', 'Modern', 'Atomic', 'Future'], 'civ'),
+  // (kept with this world only: a cap of Hearth chosen for one world froze
+  // research on the next one, silently, through the saved laws)
+  { ...S('civEraCap', 'civilization', 'Latest era', 'The latest era realms may reach, from Hearth to Future. Choose Enlightened for a world that never leaves the age of sail and steel. Kept for this world only: a new page starts at Future.', 7, ['Hearth', 'Bronze', 'Iron', 'Enlightened', 'Industrial', 'Modern', 'Atomic', 'Future'], 'civ'), perWorld: true },
   S('civRenewal', 'civilization', 'Urban renewal', 'From Zoning on, old low houses are rebuilt denser on the same ground and outgrown walls give way to ring roads; heritage buildings always stay.', 2, ['Off', 'Slow', 'Normal'], 'civ'),
   B('civSkyShield', 'civilization', 'Planetary defense', 'Realms with Planetary Defense break up meteors falling on their towns. Off lets every meteor land.', true, 'civ'),
   B('civRoads', 'civilization', 'Roads', 'Villages pave paths between their buildings and neighbors.', true, 'civ'),
@@ -140,7 +142,7 @@ export function loadLaws() {
     const saved = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
     if (saved && typeof saved === 'object') {
       for (const l of LAWS) {
-        if (l.perWorld) continue; // kept with the world, not across worlds
+        if (l.perWorld) continue; // kept with the world, not across worlds (worldWrap, civEraCap)
         const v = saved[l.key];
         if (l.type === 'bool' && typeof v === 'boolean') laws[l.key] = v;
         if (l.type === 'number' && typeof v === 'number' && isFinite(v)) laws[l.key] = Math.min(l.max, Math.max(l.min, v));

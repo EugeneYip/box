@@ -59,8 +59,30 @@ const RULES = [
   [/raises a|completes|builds|built/, 'settle', 'build'],
 ];
 
+// Realms whose names are plural ("Gravby Holds", "Isles of Ruareva", "Sands of
+// Sulesh") take plural verbs: "Isles of Ruareva enter the Bronze Age", "Gravby
+// Holds are at war". (Real countries keep the usual singular: "the United
+// States is".) Only a verb right after the name changes.
+const PLURAL_REALM = /\b((?:Free Shires|Sands|Shieldlands|Riverlands|Isles) of [A-Z][\p{L}'’-]+(?: [A-Z][\p{L}'’-]+)?|[A-Z][\p{L}'’-]+ Holds)(’s?| )(is|has|was|does|[a-z]{2,}(?:ches|shes|sses|xes|zzes|ies|s))\b/gu;
+const IRREGULAR = { is: 'are', has: 'have', was: 'were', does: 'do' };
+// (words after a name that end in -s but are not verbs here)
+const NOT_VERB = new Set(['its', 'this', 'towns', 'villages', 'cities', 'borders', 'people', 'armies', 'ships', 'forces', 'troops', 'settlers', 'scholars', 'farmers', 'workers', 'walls', 'fields', 'mines', 'roads', 'riches', 'stores', 'kings', 'queens', 'chiefs', 'heirs', 'nobles', 'allies', 'rivals', 'enemies', 'neighbors', 'capitals', 'colonies', 'provinces', 'princes', 'banners', 'gods', 'relics', 'wonders', 'treasures', 'arts', 'plus', 'as', 'was', 'has', 'is', 'does', 'yes', 'thus', 'always', 'perhaps']);
+export function pluralRealmVerbs(text) {
+  return String(text).replace(PLURAL_REALM, (m, name, sep, verb) => {
+    if (sep !== ' ') return m;
+    if (IRREGULAR[verb]) return `${name} ${IRREGULAR[verb]}`;
+    if (NOT_VERB.has(verb)) return m;
+    let base = verb;
+    if (/ies$/.test(verb)) base = verb.slice(0, -3) + 'y';
+    else if (/(ch|sh|ss|x|zz)es$/.test(verb)) base = verb.slice(0, -2);
+    else if (/[^s]s$/.test(verb)) base = verb.slice(0, -1);
+    else return m;
+    return `${name} ${base}`;
+  });
+}
+
 export function classify(n) {
-  let text = String(n?.text ?? '');
+  let text = pluralRealmVerbs(String(n?.text ?? ''));
   let icon = null;
   const lead = text.match(/^\s*((?:[←-⇿⌀-➿⤀-⯿\u{1F000}-\u{1FAFF}][️‍]*)+)\s*/u);
   if (lead) {
@@ -120,7 +142,7 @@ export class ChroniclePanel {
       pills.append(b);
     }
     this.list = el('div', { class: 'ws-chron__list' });
-    this.empty = el('div', { class: 'ws-empty ws-chron__empty' }, el('div', { class: 'ws-empty__art', html: uiIcon('chronicle') }), el('div', { class: 'ws-empty__title', text: 'The pages are blank' }), el('p', { class: 'ws-empty__txt', text: 'Wars, disasters and the rise of kingdoms will be written here as they happen.' }));
+    this.empty = el('div', { class: 'ws-empty ws-chron__empty' }, el('div', { class: 'ws-empty__art', html: uiIcon('chronicle') }), el('div', { class: 'ws-empty__title', text: 'The pages are blank' }), el('p', { class: 'ws-empty__txt', text: 'Wars, disasters and the rise of realms will be written here as they happen.' }));
     this.el.append(
       el(
         'header',

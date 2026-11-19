@@ -897,7 +897,7 @@ export class Inspector {
         .filter(([key]) => src[key] != null)
         .map(([key, [icon, label]]) => `<span class="ws-inv" data-tip="${label}">${uiIcon(icon)}<b>${fmtNum(src[key])}</b><small>${label}</small></span>`)
         .join('');
-      if (cells) html += `<section class="ws-dsec"><h5>${inv ? 'Kingdom treasury' : 'Village stores'}</h5><div class="ws-invgrid">${cells}</div></section>`;
+      if (cells) html += `<section class="ws-dsec"><h5>${inv ? 'Realm treasury' : 'Village stores'}</h5><div class="ws-invgrid">${cells}</div></section>`;
       if (isKingdom && k) {
         const n = k.techs instanceof Set ? k.techs.size : Array.isArray(k.techs) ? k.techs.length : 0;
         if (n) html += `<section class="ws-dsec"><h5>Latest discoveries</h5><div class="ws-chips">${[...(k.techs instanceof Set ? k.techs : k.techs || [])].slice(-6).map((id) => this.chip(techDef(g, id)?.name || prettyId(id), techDef(g, id)?.description || '', 'is-tech', 'good')).join('')}</div></section>`;

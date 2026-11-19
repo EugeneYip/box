@@ -31,7 +31,7 @@ export const land = {
       any += take;
     }
     // Combustion: trucks take over the hauling, a few carts at a time
-    const model = o.model || (this.hasTech(kid ?? a.kingdom, 'combustion') && this.rng() < 0.75 ? 'truck' : null);
+    const model = o.model || this.cartModel(kid ?? a.kingdom);
     const v = this.spawn('oxcart', kid ?? a.kingdom, path[0], path[1], { home: a.id, state: 'move', heading: Math.atan2(path[3] - path[1], path[2] - path[0]), model });
     v.cargo = any ? cargo : null;
     v.anim.cargoType = cargo.wood ? 0 : cargo.stone ? 1 : cargo.ore ? 3 : 2;

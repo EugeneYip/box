@@ -8,6 +8,7 @@ import { techPanel } from './TechPanel.js';
 import { eraNames, traitDef } from './depth.js';
 import { WORLD_SIZES, EARTH_DEFAULT_SIZE, isWidePreset, worldDims, sizeForPreset, earthChoices, earthChoice, earthLabel } from '../core/params.js';
 import { earthRegion } from '../world/data/regions.js';
+import { realmsFor } from '../sim/civ/places/index.js';
 import { WORLD_PRESET_IDS } from '../world/worldgen.js';
 
 const SIZE_NOTES = {
@@ -58,6 +59,62 @@ export function autoStartVillages(game, size, preset, region = null) {
     return Math.max(Math.max(4, Math.round(20 * s)), Math.round(Math.min(0.75 * villages, 26 * s)));
   }
   return Math.max(1, Math.round(3 * Math.pow(area / 65536, 0.7)));
+}
+// About how many villages a World Map starts with when the map picks the count
+// itself: the usual capitals and largest cities above, plus the cities that
+// must exist at the start (docs/REGIONS.md section 4) and the realms seated
+// only for them. A sketch of seedRealRealms that assumes every place finds
+// room (the map may seat one or two fewer); { usual, must, total }.
+export function realStartVillages(game, size, preset, region = null) {
+  const usual = autoStartVillages(game, size, preset, region);
+  const data = isWidePreset(preset) ? realmsFor(region || 'world') : null;
+  if (!data?.length) return { usual, must: 0, total: usual };
+  const d = worldDims(size, preset, region);
+  const maxRealms = Math.max(4, Math.round(20 * Math.sqrt((d.w * d.h) / (1024 * 512))));
+  const R = region ? earthRegion(region) : null;
+  const inside = (c) => !R || (c.lon >= R.lonMin && c.lon <= R.lonMax && c.lat >= R.latMin && c.lat <= R.latMax);
+  const seated = [];
+  let regular = 0;
+  for (const r of data) {
+    if (r.seed === false) continue;
+    const full = regular >= maxRealms || regular >= usual;
+    if (full && !r.must?.length) continue;
+    const seat = (r.edge ? [r.capital, ...r.cities] : [r.capital]).find(inside);
+    if (!seat) continue;
+    seated.push({ r, seat, next: 0, given: 0, extra: full, weight: 1 / (1 + 0.35 * Math.max(0, seated.length - 1)) });
+    if (!full) regular++;
+  }
+  const must = new Set();
+  for (const e of seated)
+    for (const n of e.r.must || []) {
+      const c = n === e.r.capital.name ? e.r.capital : e.r.cities.find((p) => p.name === n);
+      if (n !== e.seat.name && c && inside(c)) must.add(`${e.r.name}|${n}`);
+    }
+  // the largest cities, shared out by rank; a city that must exist anyway
+  // counts as one of them (a realm's old seat never does)
+  let villages = regular,
+    counted = 0;
+  while (villages < usual) {
+    let best = null,
+      bs = -1;
+    for (const e of seated) if (!e.done && !e.extra && e.weight / (1 + e.given) > bs) (bs = e.weight / (1 + e.given)), (best = e);
+    if (!best) break;
+    let ok = false;
+    while (best.next < best.r.cities.length) {
+      const c = best.r.cities[best.next++];
+      if (c === best.seat || !inside(c)) continue;
+      const key = `${best.r.name}|${c.name}`;
+      if (must.has(key) && c.name === best.r.oldSeat) continue;
+      if (must.has(key)) counted++;
+      ok = true;
+      best.given++;
+      villages++;
+      break;
+    }
+    if (!ok) best.done = true;
+  }
+  const extra = seated.filter((e) => e.extra).length;
+  return { usual, must: must.size - counted + extra, total: villages + extra + must.size - counted };
 }
 // Remember a reload's purpose so the boot splash can name it and pace its bar.
 export function bootNote(label) {
@@ -518,21 +575,25 @@ export class Modals {
     const earthZ = () => earthChoices().find((z) => z.id === state.earth) || earthChoice(EARTH_DEFAULT_SIZE);
     const syncCivs = () => {
       const ez = isWidePreset(state.preset) ? earthZ() : null;
-      const auto = autoStartVillages(g, ez ? ez.size : state.size, state.preset, ez?.region);
+      // (World Map worlds: the real countries and cities, with the cities that
+      // must exist at the start on top of the usual ones: about 47 on Vast, not 26)
+      const real = isWidePreset(state.preset);
+      const est = realStartVillages(g, ez ? ez.size : state.size, state.preset, ez?.region);
+      const auto = real ? est.total : est.usual;
       const max = Math.max(8, auto, state.civsSet ? state.civs : 0);
       civ.max = max;
       const v = state.civsSet ? state.civs : auto;
       civ.value = v;
       civ.style.setProperty('--p', (v / max) * 100 + '%');
-      civOut.textContent = String(v);
+      civOut.textContent = real && !state.civsSet ? `~${v}` : String(v);
       civAuto.classList.toggle('is-on', !state.civsSet);
       civAuto.disabled = !state.civsSet;
-      // (World Map worlds: the real countries and cities, up to this many villages)
-      const real = isWidePreset(state.preset);
       civAuto.textContent = real ? 'Auto (real places)' : 'Auto';
+      const realTip = `About ${auto} villages: ${est.usual} capitals and largest cities${est.must > 0 ? `, and ${est.must} more cities that must exist at the start` : ''}`;
       // (the pill has its own line under the slider, hud7.css, so neither label takes the slider's room)
-      civAuto.dataset.tip = real ? 'Back to the real countries and cities this map starts with' : 'Back to the count this size starts with';
-      civAuto.setAttribute('aria-label', state.civsSet ? `Use the automatic count (${real ? 'real places, up to ' : ''}${auto})` : real ? `Real countries and cities, up to ${auto} villages` : 'Automatic count for this size');
+      civAuto.dataset.tip = real ? (state.civsSet ? `Back to the real countries and cities. ${realTip}` : realTip) : 'Back to the count this size starts with';
+      civOut.title = real && !state.civsSet ? realTip : '';
+      civAuto.setAttribute('aria-label', state.civsSet ? `Use the automatic count (${real ? 'real places, about ' : ''}${auto})` : real ? `Real countries and cities. ${realTip}` : 'Automatic count for this size');
     };
     civ.addEventListener('input', () => {
       state.civs = +civ.value;
