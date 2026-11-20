@@ -1225,7 +1225,13 @@ void terrainSurface() {
           vec2 cc = pcf - 0.5;
           float nN = float(rL) + float(rR) + float(rD) + float(rU);
           float dC = length(cc);
-          if (nN == 2.0 && (rL || rR) && (rD || rU)) dC = abs(length(pcf - vec2(rR ? 1.0 : 0.0, rU ? 1.0 : 0.0)) - 0.5);
+          // (only a bend that is one step of a staircase is an arc: a
+          // street turning a block corner on the grid keeps a square corner;
+          // the arcs drew every small block ringed by lanes as a round loop,
+          // and rows of them as figure-8 knots)
+          ivec2 bA = ivec2(rR ? 1 : -1, 0), bB = ivec2(0, rU ? 1 : -1);
+          bool stair = nN == 2.0 && (rL || rR) && (rD || rU) && (tileTypeAt(pci + bA - bB) == 13.0 || tileTypeAt(pci + bB - bA) == 13.0);
+          if (stair) dC = abs(length(pcf - vec2(rR ? 1.0 : 0.0, rU ? 1.0 : 0.0)) - 0.5);
           else {
             if (rL) dC = min(dC, pcf.x <= 0.5 ? abs(cc.y) : length(cc));
             if (rR) dC = min(dC, pcf.x >= 0.5 ? abs(cc.y) : length(cc));

@@ -78,7 +78,7 @@ float wsHash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p
       .replace(
         '#include <color_fragment>',
         `#include <color_fragment>
-${clip ? 'if (vLocal.y > vState.w) discard; if (!gl_FrontFacing) diffuseColor.rgb = vec3(0.2, 0.135, 0.085);' : ''}
+${clip ? 'if (vLocal.y > vState.w) discard; if (!gl_FrontFacing) diffuseColor.rgb = vec3(0.5, 0.47, 0.42) * (0.75 + 0.25 * clamp(vLocal.y / max(vState.w, 0.1), 0.0, 1.0));' : ''}
 // roof surface detail: courses, tiles, slate, turf, eave shadow, weathering
 if (vRoof.x > 0.5) {
   float kind = vRoof.x;

@@ -384,6 +384,11 @@ export const modern = {
     // town had no factory and no station: the newer branches took every
     // builder): the factory with its stack, workers' rows, the station
     // (a village saving up for its factory or station spends on nothing newer)
+    // a Modern or Future town keeps its paving free of farming before any
+    // other plan (it ran after the Industrial core, which returns early
+    // while a town saves up for its factory or station: fenced fields and
+    // pens stayed among the apartments)
+    if ((K.era || 0) >= 5) this._clearTownFarms(v);
     if (this._anyModern(K) && this._planIndustry(v, K, room, build, count)) return;
     // the food, medicine, land, city and planning branches (breadth.js)
     this._planBreadth(v, K, room, build, upgrade, count);
@@ -488,6 +493,49 @@ export const modern = {
     // Rocketry: a launch pad; Orbital Industry: a spaceport (far out of town)
     if (room() && has('rocketry') && (isCap || city) && rc('launchpad') === 0) tryBuild('launchpad', out('launchpad', 6, 12));
     if (room() && has('orbital') && (isCap || city) && rc('spaceport') === 0) tryBuild('spaceport', out('spaceport', 6, 12));
+  },
+  // Fields, pens and farm works inside a Modern or Future town's paving
+  // (planner _pavedRadius) are given up, a few at a time, whichever village
+  // they belong to (a hamlet's plots and pens lay inside a grown town), and
+  // so are plots round a wonder (fenced fields stood by a Future wonder).
+  // A plot is judged by its nearest tile, not its centre (plots straddling
+  // the edge kept their inner half). New plots stay out (planner _planPlot).
+  _clearTownFarms(v) {
+    const w = this.world;
+    const core = this._pavedRadius(v);
+    const near = (q, x, z, r) => Math.hypot(Math.max(q.x0 - x, 0, x - q.x1 - 1), Math.max(q.y0 - z, 0, z - q.y1 - 1)) < r;
+    const mons = [];
+    for (const b of v.buildings) if (b.alive && BUILDING_TYPES[b.type]?.monument) mons.push(b);
+    let n = 0;
+    const nearV = [];
+    for (const u of this.villages) if (u?.alive && Math.abs(u.cx - v.cx) < core + 30 && Math.abs(u.cz - v.cz) < core + 30) nearV.push(u);
+    for (const u of nearV) {
+      if (!u.plots?.length) continue;
+      for (const p of [...u.plots]) {
+        let drop = near(p, v.cx, v.cz, core);
+        for (const m of mons) if (!drop && Math.max(p.x0 - (m.tx + m.w), m.tx - p.x1 - 1, p.y0 - (m.ty + m.h), m.ty - p.y1 - 1) < 3) drop = true;
+        if (!drop) continue;
+        for (const i of [...p.tiles]) {
+          this._removePlotTile(i);
+          const x = i % w.w,
+            y = (i / w.w) | 0;
+          if (w.flora[i] === FLORA.WHEAT) w.setFlora(x, y, FLORA.NONE);
+          if (w.type[i] === TILE.FARMLAND) w.setType(x, y, TILE.GRASS);
+        }
+        if (++n >= 2) return;
+      }
+    }
+    // pens, silos, barns and granaries inside the paving (any village's)
+    const FARM = new Set(['pasture', 'silo', 'barn', 'granary']);
+    let p = null;
+    for (const u of nearV) {
+      p = u.buildings.find((b) => b.alive && FARM.has(b.type) && !b.constructing && Math.hypot(b.x - v.cx, b.z - v.cz) < core);
+      if (p) break;
+    }
+    if (p) {
+      this.destroyBuilding(p, 'cancelled');
+      p.ruinT -= YEAR * 10; // no ruin: cleared on the next sweep
+    }
   },
   // The Industrial core of a busy village (about 20 people) of an era-4+
   // realm: a brick factory on the edge of town, a terrace of row houses for

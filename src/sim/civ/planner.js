@@ -1102,6 +1102,17 @@ export const planner = {
     if ((this.kingdoms[v.kingdom]?.era || 0) >= 4) minD = Math.max(minD, this._pavedRadius(v) + 1);
     const maxD = Math.max(v.buildRadius + 11 * F, minD + 6);
     const steep = this._terraceSlope(v); // Terracing (breadth.js)
+    // never inside a Modern or Future town's paving (this village's or a
+    // neighbour's), nor within three tiles of a wonder there (modern.js
+    // _clearTownFarms gives such plots up)
+    const keepOut = [];
+    for (const u of this.villages) {
+      if (!u?.alive || (this.kingdoms[u.kingdom]?.era || 0) < 5) continue;
+      const R = this._pavedRadius(u);
+      if (Math.abs(u.cx - v.cx) > R + maxD + 8 || Math.abs(u.cz - v.cz) > R + maxD + 8) continue;
+      keepOut.push([u.cx - 0.5, u.cz - 0.5, u.cx + 0.5, u.cz + 0.5, R]);
+      for (const b of u.buildings) if (b.alive && BUILDING_TYPES[b.type]?.monument) keepOut.push([b.tx, b.ty, b.tx + b.w, b.ty + b.h, 3]);
+    }
     let best = null,
       bs = Infinity;
     for (let k = 0; k < 90; k++) {
@@ -1138,6 +1149,9 @@ export const planner = {
         cy = y0 + sh / 2;
       const d = Math.hypot(cx - v.cx, cy - v.cz);
       if (d < minD || d > maxD + 3 * F) continue;
+      let out = false;
+      for (const [a0, b0, a1, b1, r] of keepOut) if (Math.hypot(Math.max(a0 - x0 - sw, 0, x0 - a1), Math.max(b0 - y0 - sh, 0, y0 - b1)) < r) out = true;
+      if (out) continue;
       let ok = true,
         trees = 0,
         fert = 0,
