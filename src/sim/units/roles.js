@@ -293,9 +293,16 @@ export function installRoles(Units) {
     // parade square before the barracks, in ranks (daily.js _parade); out of
     // them most are indoors (round 19: one in three used to drill alone on a
     // spot of its own, so a yard held a lone figure swinging an axe)
+    // (round 21) a drill on the hall's square (a barracks with no room for
+    // one before its door) runs as a daily episode: let it be
+    if (dh && u._dl && u._dl.k === 'drill' && now < u._dl.until) {
+      if (o) this._offDutyEnd(u);
+      return false;
+    }
     if (o) this._offDutyEnd(u);
     if (u._dl) this._dlEnd(u);
     const pd = this._parade(v, b);
+    if (dh && !pd && this._drillJoin(u, v, pl)) return false;
     const spot = pd && (dh || Math.random() < 0.15) ? this._paradeSlot(pd, u) : null;
     const yard = !!spot;
     const x = yard ? spot.x : b.doorX,

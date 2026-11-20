@@ -357,6 +357,42 @@ export function installDaily(Units) {
     const h = this.game.time.hour ?? 12;
     return (h >= 8 && h < 11) || (h >= 13.5 && h < 16.3);
   };
+  // (round 21) A soldier free in the drill hours falls in on the town's
+  // parade square (before the barracks, else the hall) while the ranks have
+  // a place: true when a drill episode began. Called on every decision in
+  // the drill hours, not only as they begin (at 10:30 three soldiers drilled
+  // in the whole world against 91 on guard).
+  P._drillJoin = function (u, v, pl, need = 18) {
+    if (!this.game.settings?.dayNight || !this._drillHours() || pl.war) return false;
+    if (u.kingdom >= 0 && (this.game.civ?.warCount?.(u.kingdom) || 0) > 0) return false;
+    let pb = null,
+      pd = null;
+    for (const b of [pl.barracks, pl.hallB || v.hall]) {
+      if (!b || b.alive === false || b.doorX == null) continue;
+      pd = this._parade(v, b);
+      if (pd) {
+        pb = b;
+        break;
+      }
+    }
+    if (!pd) return false;
+    let n = 0;
+    for (const id of pd.slots) {
+      const o = id >= 0 ? this.byId.get(id) : null;
+      if (o && o !== u && o.alive && ((o._dl && o._dl.pd === pd) || (o._offd && o._offd.pd === pd))) n++;
+    }
+    if (n >= need) return false;
+    const spot = this._paradeSlot(pd, u);
+    if (!spot) return false;
+    const era = this.game.civ?.kingdoms?.[v.kingdom]?.era || 0;
+    const lab = pb.type === 'barracks' ? 'Drilling on the parade square' : era >= 4 ? 'Drilling on the parade ground' : 'Drilling on the square';
+    const dl = this._dlStart(u, 'drill', 26 + Math.random() * 16, { lab, act: null, x: spot.x, z: spot.z, free: true, fx: spot.fx, fz: spot.fz, go: 'Falling in for drill' });
+    dl.anim = 'drill';
+    dl.nt = false;
+    dl.pd = pd;
+    if (dl.ph === 'do') this._dlArrive(u, dl);
+    return true;
+  };
 
   // ---- episodes ---------------------------------------------------------------
   P._dlStart = function (u, k, dur, opts = {}) {
@@ -758,6 +794,7 @@ export function installDaily(Units) {
       // off duty with no barracks in town: wood while it is short, a post to
       // guard or a drill on the square (the brain), a rest at home, an errand
       if (v.wood < Math.max(15, (v.woodCap || 90) * 0.2)) return false;
+      if (this._drillJoin(u, v, pl)) return true;
       const r0 = rng();
       if (r0 < 0.3 && home) {
         this._dlStart(u, 'inside', 18 + rng() * 18, { x: hx, z: hz, free: true, lab: 'Off duty at home', go: 'Walking home', act: null });
@@ -1009,8 +1046,18 @@ export function installDaily(Units) {
       }
       return this._dlPlay(u, v, pl, Math.min(left, 14 + rng() * 10), s.x, s.z);
     }
-    const r = rng();
     const d = u.data;
+    // (round 21) the square keeps its crowd the whole evening: from six to
+    // half past nine, while the main square holds fewer than eight, a
+    // grown-up who lives within reach goes there first (it used to fill
+    // only as the evening began, and a square could stand empty at 19:18)
+    if (h >= 18 && h < 21.5 && pl.sqs?.[0]) {
+      const E = v._eve;
+      const n = E && E.day === (this.game.time.day | 0) ? E.ids.filter((id) => this.byId.get(id)?._dl?.sq0).length : 0;
+      const sq0 = pl.sqs[0];
+      if (n < 8 && (u.x - sq0.x) ** 2 + (u.z - sq0.z) ** 2 < 26 * 26) return this._dlSocial(u, v, pl, left, false);
+    }
+    const r = rng();
     // courting: the unwed of an age walk out together
     if (r < 0.16 && u.age < 40 && d.civ && d.civ.spouse == null) {
       const p = this.nearest(u.x, u.z, 14, (o) => o !== u && o.species === 'human' && o.village === u.village && o.sex !== u.sex && o.age >= ADULT + 1 && o.age < 42 && o.data.civ && o.data.civ.spouse == null && (!o._dl || o._dl.k === 'social') && !o.combat && !o.data.inside);

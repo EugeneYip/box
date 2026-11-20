@@ -1438,6 +1438,9 @@ export const brain = {
     // patrol: walk to a post, then guard it or drill there (a daily episode,
     // so the inspector names it and the far camera costs a label)
     let t = d.task;
+    // (round 21) in the drill hours half the guards' new rounds are a drill
+    // in the ranks on the parade square while it has room for twelve
+    if ((!t || t.kind !== 'patrol') && !war && !night && pl && U._drillJoin && this.rng.chance(0.5) && U._drillJoin(u, v, pl, 12)) return;
     if (!t || t.kind !== 'patrol') {
       const posts = v.buildings.filter((b) => b.alive && !b.constructing && b.doorX != null && (b.type === 'watchtower' || b.type === 'tower' || b.type === 'gate' || b.type === 'wall' || b.type === 'barracks'));
       let x,
