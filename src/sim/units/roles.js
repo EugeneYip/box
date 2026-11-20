@@ -274,6 +274,9 @@ export function installRoles(Units) {
     const b = pl.barracks;
     if (!b || !b.alive) return quit();
     let o = u._offd;
+    // the drill hours begin or end: a new spell (fall in, or go indoors)
+    const dh = this._drillHours();
+    if (o && o.dh !== dh) o.until = 0;
     if (o && now < o.until && o.b === b.id) {
       if (o.ph === 'go') {
         const dd = (o.x - u.x) ** 2 + (o.z - u.z) ** 2;
@@ -293,12 +296,12 @@ export function installRoles(Units) {
     if (o) this._offDutyEnd(u);
     if (u._dl) this._dlEnd(u);
     const pd = this._parade(v, b);
-    const spot = pd && (this._drillHours() || Math.random() < 0.15) ? this._paradeSlot(pd, u) : null;
+    const spot = pd && (dh || Math.random() < 0.15) ? this._paradeSlot(pd, u) : null;
     const yard = !!spot;
     const x = yard ? spot.x : b.doorX,
       z = yard ? spot.z : b.doorZ;
     const face = yard ? Math.atan2(spot.fx - x, spot.fz - z) : 0;
-    o = u._offd = { ph: 'go', until: now + (yard ? 30 : 30) + Math.random() * 20, x, z, b: b.id, yard, face, lab: '', pd: yard ? pd : null };
+    o = u._offd = { ph: 'go', until: now + (yard ? 30 : 30) + Math.random() * 20, x, z, b: b.id, yard, face, lab: '', pd: yard ? pd : null, dh };
     this.stop(u);
     if ((x - u.x) ** 2 + (z - u.z) ** 2 < 0.5 || !this.moveTo(u, x, z)) this._offDutyArrive(u, o, b);
     else u.state = 'walk';

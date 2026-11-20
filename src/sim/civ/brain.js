@@ -1479,7 +1479,7 @@ export const brain = {
         fx = x + ox * 4;
         fz = z + oz * 4;
         // the barracks or the hall by day: often the ranks on the parade square instead
-        if (!night && !war && (b.type === 'barracks' || b === v.hall) && this.rng.chance(0.4)) {
+        if (!night && !war && (b.type === 'barracks' || b === v.hall) && this.rng.chance(U._drillHours?.() ? 0.75 : 0.3)) {
           e[side] = -1;
           bid = null;
           post = b === v.hall ? 'hall' : 'barracks';
