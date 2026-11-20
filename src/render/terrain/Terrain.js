@@ -131,6 +131,9 @@ export class Terrain {
       // 1 when the float height texture filters linearly (else the shader
       // interpolates its four texels itself)
       uHeightLin: { value: floatLinear ? 1 : 0 },
+      // regional World Map windows (not the whole Earth): the land itself
+      // fades toward the shelf over its outer tiles where it meets the frame
+      uEdgeFade: { value: (() => { const g = game.world.meta?.geo; return g && g.region && g.region !== 'world' && !g.wrap ? 1 : 0; })() },
     };
     // make sure the cloud sampler always has a texture bound
     if (!shared.uCloudTex.value) shared.uCloudTex.value = blank;

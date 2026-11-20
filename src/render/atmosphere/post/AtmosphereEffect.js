@@ -99,7 +99,8 @@ vec3 moonSheen(vec3 dir, float water) {
   // the sheen thins out toward the horizon, where the far sea melts into the
   // night sky (no pale strip ruled under a dark sky)
   float hzF = smoothstep(0.004, 0.09, -dir.y);
-  return uMoonSea * water * hzF * (0.55 + 0.45 * grazing + pow(azm, 60.0) * 1.4 * grazing);
+  // (mostly along the moon's path: an even sheen made all water glow like ice)
+  return uMoonSea * water * hzF * (0.30 + 0.35 * grazing + pow(azm, 60.0) * 1.6 * grazing);
 }
 
 void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor) {

@@ -642,7 +642,7 @@ export class Atmosphere {
     {
       const nk = M.night;
       const moon = M.keyIsMoon ? M.keyIntensity : 0.25 * nk;
-      P.moonSea.copy(M.keyIsMoon ? M.keyColor : M.hemiSky).multiplyScalar(0.012 + 0.03 * moon).add(this._c2 || (this._c2 = new THREE.Color()).copy(M.zenith).multiplyScalar(0.35)).multiplyScalar(nk);
+      P.moonSea.copy(M.keyIsMoon ? M.keyColor : M.hemiSky).multiplyScalar(0.008 + 0.022 * moon).add(this._c2 || (this._c2 = new THREE.Color()).copy(M.zenith).multiplyScalar(0.10)).multiplyScalar(nk); // (dim: rivers and sea glowed pale blue at night)
     }
     // wet sheen on rain-soaked surfaces
     P.wet = Math.min(1, this.weather.wetness * 1.1) * (0.4 + 0.6 * W.rain);

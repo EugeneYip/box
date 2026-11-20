@@ -339,7 +339,8 @@ export class Precipitation {
         arr[i * 4 + 3] = time - this._rnd() * 0.05;
       }
       this.splashAttr.needsUpdate = true;
-      this.splashU.uSize.value = 0.1 + D * 0.006;
+      // (small rings, a hand's width at street scale: they read car-sized)
+      this.splashU.uSize.value = 0.045 + D * 0.0022;
       this.splashU.uOpacity.value = 0.6 * Math.min(1, rain * 1.4) * (1 - THREE.MathUtils.smoothstep(D, 60, 120));
       this.splashU.uColor.value.copy(this.rainU.uColor.value).multiplyScalar(1.1);
     }

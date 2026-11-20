@@ -166,6 +166,8 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   vec3 Nr = normalize(vec3(-sl.x * calmN, 1.0, -sl.y * calmN));
   vec3 R = reflect(-V, Nr);
   vec3 sky = mix(horizonE, uZenCol, pow(clamp(R.y, 0.0, 1.0), 0.55));
+  // night: the dark sky mirrors dimly (rivers glowed pale blue like ice)
+  sky *= 1.0 - 0.6 * (1.0 - smoothstep(0.08, 0.5, uDay));
   // ~3.5% straight down, rising towards grazing angles (Schlick)
   float F = clamp(0.035 + 0.965 * pow(1.0 - max(dot(Nr, V), 0.0), 5.0), 0.0, 1.0);
 
@@ -226,7 +228,9 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   // cloud shadows dim the body of the water only gently: full-strength cloud
   // blotches read as dirt on the open sea up close
   float scatVis = sunSh * mix(1.0, cloud, 0.55);
-  vec3 scat = mix(waterShallowColorV(scatVis), waterDeepColorV(scatVis), waterDeepMix(depth));
+  // a smooth depth gradient with gentle broad noise over the shelf
+  float depthN = depth * (0.86 + 0.28 * texture2D(uNoise, p * (1.0 / 47.0) + 0.23).g);
+  vec3 scat = mix(waterShallowColorV(scatVis), waterDeepColorV(scatVis), waterDeepMix(depthN));
   // broad colour variation so open water is never a flat slab (kept low in
   // contrast: stronger reads as stains)
   float mac = texture2D(uNoise, p * (1.0 / 190.0) + vec2(t * 0.0015, 0.0)).r;
@@ -277,11 +281,10 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   float contact = 1.0 - smoothstep(contactW * 0.25, contactW * 1.15, shoreD);
   contact *= (0.45 + 0.55 * breakup) * mix(0.08, 1.0, open) * (1.0 - 0.5 * uMapZoom);
   float wash = (1.0 - smoothstep(0.0, 1.6 + 0.6 * breath, shoreD)) * 0.30 * open * smoothstep(0.08, 0.40, uKeyDir.y) * (1.0 - gCold * 0.7);
-  float ph = shoreD * 0.95 - t * 0.32 + (fn.r - 0.5) * 1.3;
-  float bandWave = fract(ph);
-  float band = smoothstep(0.0, 0.10, bandWave) * (1.0 - smoothstep(0.10, 0.34, bandWave));
-  float bandMask = exp(-shoreD * 0.55) * smoothstep(0.15, 0.6, shoreD) * open * 0.8;
-  float bands = band * bandMask * smoothstep(0.30, 0.75, breakup + 0.1);
+  // (no repeating surf lines offshore: on wide shallow shelves and lagoons
+  // they read as pale contour stripes parallel to every coast; the one foam
+  // band is the contact line at the shore)
+  float bands = 0.0;
   float lace = smoothstep(0.90, 0.98, 1.0 - fcl.g) * smoothstep(0.66, 0.84, fn.g) * open * 0.06 * (1.0 - smoothstep(0.4, 1.6, fw)) * (1.0 - gCold * 0.7);
   // river foam: flecks at bends and riffles, carried downstream
   float rivFoam = narrow * clamp(bend * 0.8 * smoothstep(0.55, 0.85, st1.b) + riffle * 0.55 + (1.0 - smoothstep(0.05, 0.45, shoreD)) * 0.25 * st1.a, 0.0, 1.0);
