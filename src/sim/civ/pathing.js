@@ -71,7 +71,12 @@ const SQ2 = Math.SQRT2;
 
 // cost(i) -> step cost multiplier (>= minCost) or Infinity for impassable.
 // goalTest(i) optional: accept any tile satisfying it as the goal.
-export function civPath(world, sx, sy, gx, gy, rawCost, maxNodes = 4000, minCost = 0.5, goalTest = null) {
+// cross optional {m, bit, c(i)}: a step onto a tile flagged in m (m[i] & bit)
+// from one not flagged costs c(i) instead (round 21: a walker steps onto a
+// level crossing at the street's price and pays the railway's only to walk
+// along it; the dearer crossing step made every search through a rail town
+// spread round each line)
+export function civPath(world, sx, sy, gx, gy, rawCost, maxNodes = 4000, minCost = 0.5, goalTest = null, cross = null) {
   const W = world.w;
   ensure(world.size);
   stampId++;
@@ -116,6 +121,7 @@ export function civPath(world, sx, sy, gx, gy, rawCost, maxNodes = 4000, minCost
     const cx = cur % W,
       cy = (cur / W) | 0;
     const gc = g[cur];
+    const xm = cross && !(cross.m[cur] & cross.bit) ? cross.m : null;
     for (let dy = -1; dy <= 1; dy++) {
       const ny = cy + dy;
       if (ny < 0 || ny >= Hh) continue;
@@ -132,6 +138,7 @@ export function civPath(world, sx, sy, gx, gy, rawCost, maxNodes = 4000, minCost
           cs[ni] = stamp;
           c = cv[ni] = rawCost(ni);
         }
+        if (xm && xm[ni] & cross.bit && c !== Infinity) c = cross.c(ni, c);
         if (ni === goal) c = Math.min(c, 2);
         if (c === Infinity) continue;
         if (dx && dy) {

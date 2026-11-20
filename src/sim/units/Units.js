@@ -817,7 +817,7 @@ export class Units {
     if (b >= 0 && b !== u._allowB) return false;
     return TILE_INFO[w.type[i]].walkable && !FLORA_INFO[w.flora[i]].blocksMovement;
   }
-  _pathCost(tx, ty) {
+  _pathCost(tx, ty, from = -1) {
     const w = this.game.world;
     const i = ty * w.w + tx;
     let c = 0;
@@ -826,8 +826,11 @@ export class Units {
     if (w.type[i] === TILE.ROAD) c -= 0.25;
     // (round 19) people cross a railway or a highway strip but do not walk
     // along it (civ/modern.js railMask: 1 rail, 2 guideway, 4 highway)
+    // (round 21: the step onto the line from off it is free, each further
+    // step along it costs; the dearer first step made every search near a
+    // line spread round it before crossing)
     const rm = this.game.civ?.railMask;
-    if (rm && rm.length === w.size && rm[i] & 5) c += 2.5;
+    if (rm && rm.length === w.size && rm[i] & 5 && (from < 0 || rm[from] & 5 || globalThis.__lod8Off)) c += 2.5;
     return c;
   }
   _groundY(u) {
@@ -912,7 +915,7 @@ export class Units {
       gy,
       (tx, ty) => (tx === sx && ty === sy) || this._pathable(u, tx, ty),
       2500,
-      u.def.habitat === 'land' ? (tx, ty) => this._pathCost(tx, ty) : null,
+      u.def.habitat === 'land' ? (tx, ty, from) => this._pathCost(tx, ty, from) : null,
     );
     if (!path) {
       u.target = null;
@@ -2056,7 +2059,9 @@ export class Units {
     // eighth tick instead of every fourth, gliding between updates, and the
     // people among them re-think on their timer half as often (arrivals and
     // fights still decide at once: see the skip below)
-    const far8 = stepK >= 3 && w.w * w.h > 65536 * 2 && !globalThis.__lod8Off;
+    // (round 21: from the 8x step, 2/15, up; it was 3/15 and up, so 8x on a
+    // big map ran every distant walker at the fourth-tick rate)
+    const far8 = stepK >= 2 && w.w * w.h > 65536 * 2 && !globalThis.__lod8Off;
     const far8d2 = Math.max(lr2 * 16, FAR8_DIST * FAR8_DIST);
     const yearDt = dt / YEAR;
     const list = this.list;

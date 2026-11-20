@@ -698,6 +698,12 @@ export class Fleet {
     // every tick. (fleet._noLod turns this off, for measuring.)
     const landLod = cam && !this._noLod;
     const landR = cam ? cam.dist * 1.7 + 36 : 0;
+    // (round 21) ships in the overview (camera farther than Life's
+    // OVERVIEW_DIST, 110, where a hull is a few pixels long) take the far
+    // rates even inside the radius: every second tick, every fourth beyond
+    // it or lying in port. On a Medium map the radius (capped at 140) held
+    // nearly every ship, so all of them ran every tick.
+    const seaOv = cam && cam.dist > 110 && !this._noLod && !globalThis.__lod8Off;
     for (let i = 0; i < this.list.length; i++) {
       const v = this.list[i];
       if (!v.alive) continue;
@@ -709,8 +715,8 @@ export class Fleet {
         v._skip = false;
         if (cam && v.state !== 'sinking' && v.state !== 'break' && !v.chase && v.target == null && v.role !== 'hover' && !(v.burning > 0)) {
           const d2 = (v.x - cam.x) ** 2 + (v.z - cam.z) ** 2;
-          if (d2 > lodR2) {
-            const mask = d2 > lodR2 * 4 || v.state === 'moored' ? 3 : 1;
+          if (d2 > lodR2 || seaOv) {
+            const mask = d2 > lodR2 * 4 || v.state === 'moored' || (seaOv && d2 > lodR2) ? 3 : 1;
             if (((gwt + v.id) & mask) !== 0) {
               v._skip = true;
               v._lodAcc = (v._lodAcc || 0) + step;

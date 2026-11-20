@@ -689,7 +689,10 @@ export function installRoles(Units) {
   // instead of one pass per question; the same people in the same order)
   P.aboard = function (vesselId) {
     let ix = this._aboardIx;
-    if (!ix || this._aboardIxT !== this._tickN || this._aboardIxV !== (this._aboardV | 0) || this._aboardIxL !== this.list) {
+    // (round 21: rebuilt only after someone boards; no longer every tick or
+    // when the dead are dropped from the list. Those who stepped ashore or
+    // died are left out on the read below, and the order is the list's.)
+    if (!ix || this._aboardIxV !== (this._aboardV | 0)) {
       ix = this._aboardIx = new Map();
       this._aboardIxT = this._tickN;
       this._aboardIxV = this._aboardV | 0;

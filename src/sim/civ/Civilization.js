@@ -692,6 +692,11 @@ export class Civilization {
     // FAR_PATHS of a tick's searches)
     const coarseBig = step > 0.1 && this.world.size > 65536 * 2 && !globalThis.__lod8Off;
     this._coarseBig = coarseBig;
+    // (round 21) smaller maps at the coarsest step (4/15, 16x and above) take
+    // the big map's coarse intervals for the village tick and plan, the
+    // buildings pass, territory and research (each covering its longer
+    // interval as above); far walkers' path share stays big-map only
+    const coarse = coarseBig || (step > 0.2 && !globalThis.__lod8Off);
     if (g.frame !== this._seenFrame) {
       this._seenFrame = g.frame;
       this._ticksSinceFrame = 0;
@@ -709,7 +714,10 @@ export class Civilization {
     // the realm-wide passes below (buildings, research, unlocks, territory)
     // run less often or on ticks of their own, so the coarse tick holds its
     // budget
-    const rate = clamp(nv / 32, 1, 2) * (coarseBig ? 1.5 : 1);
+    const base = clamp(nv / 32, 1, 2);
+    const rate = base * (coarse ? 1.5 : 1);
+    // (job assignment keeps the big-map-only stretch: idle hands wait no longer on a smaller map)
+    const jobRate = base * (coarseBig ? 1.5 : 1);
     this._planMul = rate;
     for (const v of this.villages) {
       if (!v.alive) continue;
@@ -718,8 +726,8 @@ export class Civilization {
         this._villageTick(v, rate);
         if (!v.alive) continue;
       }
-      if ((v._jobAcc += step) >= 2.5 * rate) {
-        v._jobAcc -= 2.5 * rate;
+      if ((v._jobAcc += step) >= 2.5 * jobRate) {
+        v._jobAcc -= 2.5 * jobRate;
         this._assignJobs(v);
       }
       if ((v._planAcc += step) >= 3 * rate) {
@@ -732,7 +740,7 @@ export class Civilization {
       }
     }
     const T = this._timers;
-    if ((T.b += step) >= (coarseBig ? 1 : 0.5)) {
+    if ((T.b += step) >= (coarse ? 1 : 0.5)) {
       this._buildingsTick(T.b);
       T.b = 0;
     }
@@ -741,7 +749,7 @@ export class Civilization {
     if ((T.terr += step) >= 2 * Math.min(6, Math.max(1, this.world.size / 65536))) {
       T.terr = 0;
       // the full flood fill is costly on big maps: only when the realms changed
-      this._territoryIfChanged(coarseBig ? 60 : 30);
+      this._territoryIfChanged(coarse ? 60 : 30);
     }
     if ((T.dip += step) >= 4) {
       T.dip = 0;
@@ -766,7 +774,7 @@ export class Civilization {
     }
     // (research and the realm's stores on one tick, its unlocks and works
     // half an interval later, so the two passes never share a tick)
-    const techEvery = coarseBig ? 3 : 2;
+    const techEvery = coarse ? 3 : 2;
     if ((T.tech = (T.tech || 0) + step) >= techEvery) {
       this._researchTick(T.tech);
       this._inventoryTick(T.tech);
