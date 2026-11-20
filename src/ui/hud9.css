@@ -1346,3 +1346,11 @@ button.ws-techcard__more:hover {
   white-space: normal;
   text-overflow: clip;
 }
+
+/* round 21: the New World pill sits centered on the bottom edge (a block-level
+   flex box, so auto margins center it in the block body) */
+.ws-nw__below:not([hidden]) {
+  display: flex;
+  margin-left: auto;
+  margin-right: auto;
+}
