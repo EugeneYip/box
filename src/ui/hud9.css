@@ -951,6 +951,23 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.ws-tech__nowmeter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.ws-tech__nowmeter .ws-meter {
+  flex: 1;
+  margin: 0;
+}
+.ws-tech__nowbody .ws-tech__nowpct {
+  flex: none;
+  min-width: 36px;
+  color: #e0d0ff;
+  font: 700 13px var(--ws-display);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
 .ws-tech__nowbody .ws-meter {
   margin-top: 3px;
 }
@@ -977,8 +994,8 @@
     position: sticky;
     top: -6px;
     z-index: 4;
-    margin: -10px -20px 0;
-    padding: 10px 20px 10px;
+    margin: -4px -20px 0;
+    padding: 8px 20px 10px;
     background: rgb(19, 22, 33);
     box-shadow: 0 10px 14px -10px rgba(0, 0, 0, 0.7);
   }

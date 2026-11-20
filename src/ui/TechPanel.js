@@ -66,8 +66,7 @@ export function techPanel(ui, kingdomId) {
   // the realm line, what it studies now and the folded eras stay in view as the
   // eras scroll under them (a compact sticky header)
   const top = el('div', { class: 'ws-tech__top' });
-  body.append(top);
-  top.append(
+  body.append(
     el(
       'header',
       { class: 'ws-tech__head' },
@@ -80,6 +79,8 @@ export function techPanel(ui, kingdomId) {
       ),
     ),
   );
+  // (the realm line scrolls away; what it studies and the folded eras stay)
+  body.append(top);
   top.append(
     el(
       'div',
@@ -92,7 +93,7 @@ export function techPanel(ui, kingdomId) {
         el('b', { text: res ? res.name : '—' }),
         // one line of what it is and brings; the full text is the box's tooltip
         res ? ((d, u) => (d || u.length ? el('p', { class: 'ws-tech__nowdesc', text: [d, u.length ? `Brings: ${u.join('; ')}` : ''].filter(Boolean).join(' · ') }) : null))(res.def?.description || '', Array.isArray(res.def?.unlocks) ? res.def.unlocks : []) : null,
-        res && res.pct != null ? el('span', { class: 'ws-meter' }, el('i', { style: `width:${(res.pct * 100).toFixed(1)}%` })) : null,
+        res && res.pct != null ? el('span', { class: 'ws-tech__nowmeter' }, el('span', { class: 'ws-meter' }, el('i', { style: `width:${(res.pct * 100).toFixed(1)}%` })), el('b', { class: 'ws-tech__nowpct', text: `${Math.round(res.pct * 100)}%` })) : null,
         // the second line of study: a side art, learned beside the main one
         side
           ? el(
@@ -105,7 +106,6 @@ export function techPanel(ui, kingdomId) {
             )
           : null,
       ),
-      res && res.pct != null ? el('span', { class: 'ws-tech__pct', text: `${Math.round(res.pct * 100)}%` }) : null,
     ),
   );
   if (all.length) {
