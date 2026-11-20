@@ -280,6 +280,8 @@ export const land = {
       }
     } else if (v.state === 'parked') {
       v.speed = 0;
+      // an ambulance or a fire engine on standby goes back in after a while
+      if (v.standby != null && this.game.time.total > v.standby) return this.remove(v);
       // a train with no railway looks again for one now and then
       if (v.def.rail && v.stateT > 6) {
         v.stateT = 0;
@@ -366,6 +368,7 @@ export const land = {
       return;
     }
     if (m.phase === 'home') {
+      if ((m.type === 'fire' || m.type === 'medic') && v.base) return this._standBy(v);
       if (v.role === 'caravan') {
         const home = civ.villages[m.from];
         if (home?.alive) home.gold = (home.gold || 0) + 10 * (civ.techMod?.(v.kingdom, 'gold') ?? 1) * 0.67;

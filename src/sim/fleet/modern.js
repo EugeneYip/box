@@ -388,7 +388,18 @@ export const modern = {
     return path;
   },
   _service(kind, k, v, from, path, mission) {
-    const veh = this.spawn(kind, k.id, path[0], path[1], { home: v.id, state: 'move', heading: Math.atan2(path[3] - path[1], path[2] - path[0]) });
+    // one standing by at the station answers the call (else a new one sets out)
+    let veh = null;
+    for (const o of this.list)
+      if (o.alive && o.kind === kind && o.standby != null && o.home === v.id && this.dist(o.x, o.z, path[0], path[1]) < 3) {
+        veh = o;
+        break;
+      }
+    if (veh) {
+      veh.standby = null;
+      veh.state = 'move';
+      veh.stateT = 0;
+    } else veh = this.spawn(kind, k.id, path[0], path[1], { home: v.id, state: 'move', heading: Math.atan2(path[3] - path[1], path[2] - path[0]) });
     if (!veh) return null;
     veh.mission = { from: v.id, to: v.id, ...mission };
     veh.voyage = { from: v.id, to: v.id, fromName: v.name, toName: v.name };
@@ -429,7 +440,7 @@ export const modern = {
         if (d < bd) (bd = d), (tgt = { x: L[i], z: L[i + 1] });
       }
     }
-    if (!tgt || this.count(k.id, 'fireengine') >= 2 + (k.villages.length >> 2) || !this.landRoom('fireengine')) return false;
+    if (!tgt || this._onCall(k.id, 'fireengine') >= 2 + (k.villages.length >> 2) || !this.landRoom('fireengine')) return false;
     const base = this._base(v, ['firestation', 'firehouse', 'fire']);
     if (!base) return false;
     const d = this._doorOf(base);
@@ -466,7 +477,7 @@ export const modern = {
     const U = this.game.units;
     if (!U?.query) return;
     if (this.list.some((o) => o.alive && o.kind === 'ambulance' && o.mission?.vid === v.id && o.mission.phase === 'out')) return;
-    if (this.count(k.id, 'ambulance') >= 1 + (k.villages.length >> 2)) return;
+    if (this._onCall(k.id, 'ambulance') >= 1 + (k.villages.length >> 2)) return;
     const pts = U.query(v.cx, v.cz, (v.radius || 6) + 3, (u) => u.alive && u.species === 'human' && u.kingdom === k.id && !u._away && (u.statuses?.has('wounded') || u.statuses?.has('sick')));
     if (!pts?.length) return;
     const u = pts[Math.floor(this.rng() * pts.length)];
@@ -584,6 +595,21 @@ export const modern = {
     if (!base || bd > 90) return;
     const f = this.requestFlight({ kind: 'helicopter', kingdom: k.id, from: base.id, to: { x: best.x, z: best.z }, cargo: { rescue: true } });
     if (f) this.note(`🚁 A rescue helicopter of ${this.kname(k.id)} flies to the disaster at ${best.v.name}`, 'info', { x: best.x, z: best.z }, 'rescue' + best.v.id, 90);
+  },
+  // Ambulances or fire engines of a realm out on a call (not standing by)
+  _onCall(kid, kind) {
+    let n = 0;
+    for (const o of this.list) if (o.alive && o.kingdom === kid && o.kind === kind && o.standby == null) n++;
+    return n;
+  },
+  // Back at the station from a call: an ambulance or a fire engine stands by
+  // there a minute or two (parked at the door, ready for the next call), so a
+  // modern town shows its emergency services between emergencies too.
+  _standBy(v) {
+    v.state = 'parked';
+    v.speed = 0;
+    v.mission = { type: 'standby', phase: 'standby', from: v.home, to: v.home, vid: v.home };
+    v.standby = this.game.time.total + 60 + this.rng() * 90;
   },
   // A civic vehicle has reached where it was going.
   _serviceArrive(v) {
