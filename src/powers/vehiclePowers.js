@@ -102,7 +102,11 @@ function render() {
     };
     return;
   }
-  const list = GROUPS.find(([id]) => id === tab)[2];
+  // in era order (stable within an era), filled row by row
+  const list = GROUPS.find(([id]) => id === tab)[2]
+    .map((k, i) => [k, i])
+    .sort((a, b) => eraOfKind(a[0]) - eraOfKind(b[0]) || a[1] - b[1])
+    .map(([k]) => k);
   panel.innerHTML = `
     <div class="ws-vehpick__head">
       <div class="ws-vehpick__tabs" role="tablist" aria-label="Kind of vehicle">${GROUPS.map(([id, label]) => `<button class="ws-vehpick__tab${id === tab ? ' is-on' : ''}${id === groupOf(chosen) ? ' has-pick' : ''}" type="button" role="tab" aria-selected="${id === tab}" tabindex="${id === tab ? 0 : -1}" data-tab="${id}"${id === groupOf(chosen) ? ` aria-label="${label}, holds your pick: ${defOf(chosen).name}" data-tip="Your pick: ${defOf(chosen).name}"` : ''}>${label}${id === groupOf(chosen) ? '<i class="ws-vehpick__dot" aria-hidden="true"></i>' : ''}</button>`).join('')}</div>
@@ -135,10 +139,13 @@ function render() {
   const row = panel.querySelector('.ws-vehpick__row');
   // a short list (Space: four kinds) keeps one row
   row.classList.toggle('is-short', list.length <= 4);
+  row.style.setProperty('--n', String(list.length));
+  row.style.setProperty('--half', String(Math.ceil(list.length / 2)));
   // the mouse wheel scrolls the kinds sideways; the edge fades show there is more
+  // (phones in portrait scroll a two-column list up and down instead)
   const edges = () => {
-    row.classList.toggle('at-start', row.scrollLeft <= 2);
-    row.classList.toggle('at-end', row.scrollLeft + row.clientWidth >= row.scrollWidth - 2);
+    row.classList.toggle('at-start', row.scrollLeft <= 2 && row.scrollTop <= 2);
+    row.classList.toggle('at-end', row.scrollLeft + row.clientWidth >= row.scrollWidth - 2 && row.scrollTop + row.clientHeight >= row.scrollHeight - 2);
   };
   row.addEventListener('scroll', edges, { passive: true });
   row.addEventListener(
@@ -155,7 +162,10 @@ function render() {
   );
   // the chosen kind scrolls into view
   const on = panel.querySelector('.ws-vehpick__opt.is-on');
-  if (on) row.scrollLeft = Math.max(0, on.offsetLeft - row.clientWidth / 2 + on.offsetWidth / 2);
+  if (on) {
+    row.scrollLeft = Math.max(0, on.offsetLeft - row.offsetLeft - row.clientWidth / 2 + on.offsetWidth / 2);
+    if (row.scrollHeight > row.clientHeight + 2) row.scrollTop = Math.max(0, on.offsetTop - row.offsetTop - row.clientHeight / 2 + on.offsetHeight / 2);
+  }
   edges();
 }
 // the power's name strip names the chosen kind ("Spawn Vehicle: Container ship")

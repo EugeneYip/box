@@ -40,17 +40,17 @@ export const LAWS = [
   B('harmonyUnrest', 'harmony', 'Hardship breeds unrest', 'Famine, plague and heavy war losses stir discontent.', true, 'civ'),
   N('harmonyLoyalty', 'harmony', 'Loyalty', 'Higher keeps villages loyal to their kingdom.', 1, 0.25, 3, 0.25, 'civ'),
   // ---- Diplomacy -------------------------------------------------------------
-  B('civWars', 'diplomacy', 'Wars', 'Kingdoms may declare war and march armies.', true, 'civ'),
+  B('civWars', 'diplomacy', 'Wars', 'Realms may declare war and march armies.', true, 'civ'),
   B('civDiplomacy', 'diplomacy', 'Alliances', 'Friendly kingdoms forge alliances and fight side by side.', true, 'civ'),
   B('diploPeace', 'diplomacy', 'Peace treaties', 'War-weary kingdoms sue for peace.', true, 'civ'),
-  B('diploCultureFriction', 'diplomacy', 'Cultural rivalry', 'Kingdoms of different cultures distrust one another.', true, 'civ'),
+  B('diploCultureFriction', 'diplomacy', 'Cultural rivalry', 'Realms of different cultures distrust one another.', true, 'civ'),
   N('diploWarlike', 'diplomacy', 'Warmongering', 'How eager rulers are to start wars.', 1, 0, 3, 0.25, 'civ'),
   B('fleetNaval', 'diplomacy', 'Naval war', 'War galleys of realms at war fight at sea, blockade harbors and sink transports.', true, 'fleet'),
   // ---- Civilization -------------------------------------------------------------
   B('civExpansion', 'civilization', 'Settlers', 'Villages send settlers to found new villages.', true, 'civ'),
   B('civNewKingdoms', 'civilization', 'New kingdoms', 'Far-flung settlements may crown rulers of their own.', true, 'civ'),
   N('civGrowth', 'civilization', 'Birth rate', 'How quickly villages grow.', 1, 0.25, 3, 0.25, 'civ'),
-  B('civTechnology', 'civilization', 'Knowledge', 'Kingdoms research technologies and advance through eras.', true, 'civ'),
+  B('civTechnology', 'civilization', 'Knowledge', 'Realms research and advance through eras.', true, 'civ'),
   N('civTechSpeed', 'civilization', 'Research speed', 'How quickly kingdoms gain knowledge.', 1, 0.25, 4, 0.25, 'civ'),
   // (kept with this world only: a cap of Hearth chosen for one world froze
   // research on the next one, silently, through the saved laws)

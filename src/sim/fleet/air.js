@@ -931,7 +931,7 @@ export const air = {
       stats: [
         ['Doing', doing],
         ['Altitude', `${Math.max(0, Math.round((best.y - Math.max(0, this.world.heightAt(best.x, best.z))) * 10))} paces`],
-        ['Speed', `${Math.round((best.cls === 'space' ? Math.abs(best.vy || 0) : best.speedNow || 0) * 10)} paces a moment`],
+        best.cls === 'space' ? ['Climb', `${Math.round(Math.abs(best.vy || 0) * 10)} paces up`] : ['Speed', `${Math.round((best.speedNow || 0) * 10)} knots`],
         ['Health', `${Math.ceil(best.hp)} / ${best.maxHp}`],
       ],
       x: best.x,

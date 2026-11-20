@@ -784,18 +784,18 @@
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
   width: 100%;
-  max-width: 480px;
   margin: 0 auto;
 }
 .ws-chips--regions .ws-chip {
   display: inline-flex;
   align-items: center;
   justify-content: flex-start;
-  gap: 8px;
+  gap: 7px;
   height: 42px;
   min-width: 0;
-  padding: 0 10px 0 5px;
+  padding: 0 8px 0 5px;
   border-radius: 12px;
+  font-size: 12px;
   text-align: left;
   line-height: 1.15;
 }
@@ -804,7 +804,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 46px;
+  width: 44px;
   height: 32px;
   border-radius: 7px;
   background: #123e66;
@@ -813,7 +813,7 @@
 }
 .ws-chips--regions .ws-chip__map {
   display: block;
-  max-width: 46px;
+  max-width: 44px;
   max-height: 32px;
   margin: 0;
   border-radius: 0;
@@ -828,6 +828,29 @@
 @media (max-width: 460px) {
   .ws-chips.ws-chips--regions {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+/* short desktops (1024 x 640): no crest, no key hint and lower region chips, so
+   the World Map card stays inside the window */
+@media (max-height: 680px) and (min-height: 501px) {
+  .ws-title__emblem,
+  .ws-title__hint {
+    display: none;
+  }
+  .ws-logo {
+    margin-top: 0;
+    font-size: clamp(36px, min(6.6vw, 8.6vh), 64px);
+  }
+  .ws-chips--regions .ws-chip {
+    height: 36px;
+  }
+  .ws-chip__mapbox {
+    width: 38px;
+    height: 27px;
+  }
+  .ws-chips--regions .ws-chip__map {
+    max-width: 38px;
+    max-height: 27px;
   }
 }
 
@@ -1017,5 +1040,59 @@
   }
   .ws-vehpick__hint {
     font-size: 11px;
+  }
+}
+
+/* ---- Spawn Vehicle: kinds in era order, filled row by row (reading order), with
+   20 px icons; phones in portrait get a two-column list that scrolls down */
+.ws-vehpick__row {
+  grid-auto-flow: row;
+  grid-template-rows: none;
+  grid-auto-rows: 44px;
+  grid-template-columns: repeat(var(--half, 11), max-content);
+}
+.ws-vehpick__row.is-short {
+  grid-template-columns: repeat(var(--n, 4), max-content);
+}
+.ws-vehpick__ico .ico {
+  width: 20px;
+  height: 20px;
+}
+@media (max-height: 500px) {
+  .ws-vehpick__row,
+  .ws-vehpick__row.is-short {
+    grid-template-rows: none;
+    grid-template-columns: repeat(var(--n, 11), max-content);
+  }
+}
+@media (max-width: 720px) and (min-height: 501px) {
+  .ws-vehpick__row,
+  .ws-vehpick__row.is-short {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    max-height: calc(44px * 3 + 6px * 2 + 6px);
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 var(--fl), #000 calc(100% - var(--fr)), transparent 100%);
+    mask-image: linear-gradient(180deg, transparent 0, #000 var(--fl), #000 calc(100% - var(--fr)), transparent 100%);
+    --fl: 16px;
+    --fr: 22px;
+  }
+  .ws-vehpick__row.at-start {
+    --fl: 0px;
+  }
+  .ws-vehpick__row.at-end {
+    --fr: 0px;
+  }
+  .ws-vehpick__opt {
+    min-width: 0;
+    padding-right: 8px;
+  }
+  .ws-vehpick__txt {
+    min-width: 0;
+  }
+  .ws-vehpick__txt b,
+  .ws-vehpick__txt small {
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 }

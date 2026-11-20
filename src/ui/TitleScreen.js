@@ -66,7 +66,7 @@ export class TitleScreen {
             this.seedEl,
             el('button', { class: 'ws-iconbtn ws-iconbtn--sm', type: 'button', 'aria-label': 'Reroll world', 'data-tip': 'Reroll world', html: uiIcon('dice'), onclick: () => this.reroll() }),
           ),
-          el('button', { class: 'ws-btn ws-btn--gold ws-btn--xl ws-title__begin', type: 'button', onclick: () => this.begin() }, el('span', { text: 'Begin' })),
+          (this.beginBtn = el('button', { class: 'ws-btn ws-btn--gold ws-btn--xl ws-title__begin', type: 'button', onclick: () => this.begin() }, el('span', { text: 'Begin' }))),
           el(
             'div',
             { class: 'ws-title__links' },
@@ -81,6 +81,10 @@ export class TitleScreen {
     );
     ui.root.append(this.el);
     requestAnimationFrame(() => requestAnimationFrame(() => this.el.classList.add('is-in')));
+    // keyboard focus starts on Begin (Enter begins; Tab walks the choices)
+    setTimeout(() => {
+      if (this.active && this.beginBtn?.isConnected && (!document.activeElement || document.activeElement === document.body)) this.beginBtn.focus({ preventScroll: true });
+    }, 120);
 
     // cinematic framing behind the logo
     const rig = g.cameraRig;
@@ -106,7 +110,7 @@ export class TitleScreen {
           onclick: () => this.chooseSize(z),
         },
         // a regional map shows its own coastline beside its name
-        z.region ? el('span', { class: 'ws-chip__mapbox' }, ((t) => (t ? el('img', { class: 'ws-chip__map', src: t.url, alt: '', width: t.w, height: t.h, draggable: 'false' }) : null))(regionThumb(z.region, 46, 30))) : null,
+        z.region ? el('span', { class: 'ws-chip__mapbox' }, ((t) => (t ? el('img', { class: 'ws-chip__map', src: t.url, alt: '', width: t.w, height: t.h, draggable: 'false' }) : null))(regionThumb(z.region, 44, 32))) : null,
         z.region ? el('span', { class: 'ws-chip__txt', text: z.name }) : z.name,
       ),
     );
