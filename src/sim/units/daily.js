@@ -1198,7 +1198,7 @@ export function installDaily(Units) {
     const d = u.data;
     if (d.civ?.army != null) return 'Marching';
     const tk = d.civ?.task?.kind;
-    if (u.job !== 'soldier' && tk !== 'migrate' && tk !== 'arrive' && !d.robot && (u._homeT > now - 30 || this.game.settings?.dayNight) && this._bedtimeCheap(u)) return 'Walking home';
+    if (u.job !== 'soldier' && tk !== 'migrate' && tk !== 'arrive' && (u._homeT > now - 30 || this.game.settings?.dayNight) && this._bedtimeCheap(u)) return 'Walking home';
     if (u.carry) return `Carrying ${u.carry.type} to the store`;
     switch (u.job) {
       case 'farmer':

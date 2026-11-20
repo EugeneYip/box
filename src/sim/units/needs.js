@@ -94,9 +94,14 @@ export function installNeeds(Units) {
     const g = this.game;
     const civ = g.civ;
     if (!civ || u.combat || u.state === 'flee' || u.data.aboard != null || u.def.kind !== 'humanoid') return false;
-    // robots work through the night; astronauts in orbit are away
-    if (u.data.robot || u._space > 0) return false;
+    // astronauts in orbit are away
+    if (u._space > 0) return false;
     const d = u.data;
+    // (round 21) robot workers keep the same hours as everyone: at bedtime
+    // they go in to recharge (they used to work through the night, and in
+    // Future realms one worker in four out in the fields, woods and mines at
+    // 1 am was 8-10% of the grown-ups); by day they skip naps and famine hunts
+    const robot = !!d.robot;
     // a nap where they stand, until rested enough to go on
     if (u._nap) {
       if (u.energy > 0.45 || u.combat) {
@@ -118,10 +123,12 @@ export function installNeeds(Units) {
     // to sleep in the town they had left, a long walk each way every night,
     // and many expeditions ran out of time and gave up)
     const travel = d.civ?.task && (d.civ.task.kind === 'migrate' || d.civ.task.kind === 'arrive');
+    // emergencies keep people up past bedtime: a fire to fight (firefighters
+    // and bucket brigades), and the hunters of a town in famine
     // night: home to bed at the person's bedtime (daily.js: later in summer,
     // earlier in winter and in the rain; children first); riders on the road
     // and armies on the march press on
-    if (!guard && !army && !ride && !travel && this._bedtime(u)) {
+    if (!guard && !army && !ride && !travel && !this._nightEmergency(u, now) && this._bedtime(u)) {
       if (u._dl) this._dlEnd(u);
       // (round 19) the day's load goes into the town's store at bedtime, so
       // nobody walks home through the night (or naps) with food, wood or ore
@@ -170,6 +177,7 @@ export function installNeeds(Units) {
       this._goInside(u, b);
       return true;
     }
+    if (robot) return false;
     // worn out by day: a nap on the spot
     if (u.energy < 0.07 && !guard && !army) return this._nap0(u);
     // famine: the hungry go hunting to feed their town
@@ -197,6 +205,15 @@ export function installNeeds(Units) {
         return true;
       }
     }
+    return false;
+  };
+  // An emergency that keeps a person up and at it past bedtime: a fire they
+  // are fighting (a firefighter's run, a bucket brigade), or a famine hunt.
+  P._nightEmergency = function (u, now) {
+    if (u._brigade > now) return true;
+    const d = u.data;
+    if (d.role === 'firefighter' && d.ff && (d.ff.i >= 0 || d.ff.b)) return true;
+    if (u._forager != null && u.combat) return true;
     return false;
   };
   P._nap0 = function (u) {

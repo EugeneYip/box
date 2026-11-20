@@ -10,7 +10,8 @@
 //
 // Bucket brigades: when a building of a town burns, a few grown neighbours
 // nearby grab buckets (u._brigade = until) and fight the fire as well.
-// Robots (u.data.robot, realms that know robotics) work through the night.
+// Robots (u.data.robot, realms that know robotics) work the day through
+// without rest or play, and go in to recharge at bedtime (units/needs.js).
 
 export const PEOPLE_ROLES = { firefighter: 'Firefighter', doctor: 'Doctor', forester: 'Forester', police: 'Police officer', scientist: 'Scientist', astronaut: 'Astronaut' };
 const FIRE_R = 14; // tiles a firefighter looks for flames

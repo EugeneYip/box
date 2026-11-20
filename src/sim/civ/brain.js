@@ -17,6 +17,9 @@ const CARRY_MAX = { wood: 32, stone: 18, food: 40, gold: 3 };
 const FAR_PATHS = 10; // of a tick's 16 searches, most a far walker takes at coarse steps on a big map
 const CHILD_AGE_RATE = 1.7; // extra years per year while a child (childhood ~6 game years)
 
+// trades that stop at bedtime (soldiers keep the watch, kings and messengers their own hours)
+const NIGHT_SHUT = new Set(['woodcutter', 'farmer', 'builder', 'miner', 'fisher']);
+
 export const brain = {
   think(u, dt) {
     try {
@@ -104,6 +107,15 @@ export const brain = {
       d.threat = null;
     }
 
+    // (round 21) no trade after bedtime outside an emergency: Life's needs
+    // (units/needs.js) send people home first on every think, and this keeps
+    // the job routine from starting a walk to the fields, woods, mine or site
+    // in the small hours for anyone that check let through
+    if (NIGHT_SHUT.has(u.job) && g.settings?.dayNight && g.units._bedtime?.(u) && !g.units._nightEmergency?.(u, now)) {
+      if (d.task) d.task = null;
+      if (u.state === 'work') u.state = 'idle';
+      return this._idle(u);
+    }
     switch (u.job) {
       case 'woodcutter':
         return this._jobWood(u, v, d, dt);
