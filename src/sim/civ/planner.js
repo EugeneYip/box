@@ -868,11 +868,69 @@ export const planner = {
         removed++;
       }
     }
+    // Industrial and later: wide paved bands (streets, door paths and
+    // links laid side by side, three and four tiles deep) are thinned to
+    // single lanes, a tile at a time, never cutting a street in two
+    if ((this.kingdoms[v.kingdom]?.era || 0) >= 4) removed += this._thinRoads(v, doors, isR);
     if (removed) {
       v.roadTiles = v.roadTiles.filter((i) => this.use[i] === USE.ROAD);
       this.fieldVersion++;
     }
     return removed;
+  },
+
+  // A road tile in a 2 x 2 block of road whose removal leaves its road
+  // neighbours joined round it (the ring of eight about it holds them in one
+  // run) is taken up: not a door's tile, not beside a building (its
+  // frontage), not on the square or the parade pad, not under a bridge.
+  _thinRoads(v, doors, isR) {
+    const w = this.world;
+    const W = w.w;
+    const RING = [[-1, -1], [0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0]];
+    let n = 0;
+    for (const i of v.roadTiles) {
+      if (n >= 24) break;
+      if (this.use[i] !== USE.ROAD || doors.has(i) || w.building[i] >= 0 || this.keepClear?.[i]) continue;
+      const x = i % W,
+        y = (i / W) | 0;
+      const r = RING.map(([ox, oy]) => isR(x + ox, y + oy));
+      // in a 2 x 2 block of road
+      let blob = false;
+      for (let k = 0; k < 8; k += 2) if (r[k] && r[(k + 1) & 7] && r[(k + 7) & 7]) blob = true;
+      if (!blob) continue;
+      // frontage: no building beside it
+      let front = false;
+      for (let k = 1; k < 8; k += 2) {
+        const xx = x + RING[k][0],
+          yy = y + RING[k][1];
+        if (w.inBounds(xx, yy) && (this.use[yy * W + xx] === USE.BUILDING || doors.has(yy * W + xx))) front = true;
+      }
+      if (front) continue;
+      // its road neighbours stay one run round the ring
+      let edges = 0,
+        runs = 0;
+      for (let k = 1; k < 8; k += 2) if (r[k]) edges++;
+      if (edges < 2) continue;
+      let start = r.indexOf(false);
+      if (start < 0) continue; // inside a paved field: keep its edge tiles first
+      let inRun = false,
+        runHasEdge = false;
+      for (let s = 1; s <= 8; s++) {
+        const k = (start + s) & 7;
+        if (r[k]) {
+          if (!inRun) (inRun = true), (runHasEdge = false);
+          if (k & 1) runHasEdge = true;
+        } else if (inRun) {
+          inRun = false;
+          if (runHasEdge) runs++;
+        }
+      }
+      if (inRun && runHasEdge) runs++;
+      if (runs !== 1) continue;
+      this._unlayRoad(i);
+      n++;
+    }
+    return n;
   },
 
   _unlayRoad(i) {
