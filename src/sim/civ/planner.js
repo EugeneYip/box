@@ -31,6 +31,8 @@ const PLOT_SIZES = [
 const BASE_FERT = TILE_INFO.map((t) => t?.fertile ?? 0);
 // Town Planning: cross streets every GRID tiles
 const GRID = Math.max(3, cells(5));
+// farm works kept beyond a Modern town's paving
+const FARM_OUT = new Set(['granary', 'silo', 'pasture', 'barn']);
 const FIELD_TYPES = new Set([TILE.GRASS, TILE.FOREST, TILE.SOIL, TILE.SAVANNA, TILE.JUNGLE, TILE.SWAMP, TILE.TUNDRA, TILE.FARMLAND, TILE.ASH]);
 
 export const planner = {
@@ -321,6 +323,12 @@ export const planner = {
   },
 
   // Find the nearest valid hall position (top-left) around a tile.
+  // radius of the paving the terrain draws round an Industrial or later town
+  // (Terrain._writeSettle uses the same figure)
+  _pavedRadius(v) {
+    return Math.max(5, (v.buildRadius || v.radius || 6) * 1.15 + 2);
+  },
+
   _hallSpotNear(tx, ty, maxR = 7) {
     const n = spiralCount(maxR);
     for (let k = 0; k < n; k++) {
@@ -409,6 +417,15 @@ export const planner = {
     const def = BUILDING_TYPES[type];
     const w = this.world;
     const W = w.w;
+    // the town's plan (a main street and its cross streets) is laid before
+    // the houses fill in, and laid out further as it becomes a town
+    this._layTownPlan(v);
+    // from the Modern era the farm works (silos, granaries, barns, pens)
+    // stand out beyond the paved town, never in its square or core
+    if (FARM_OUT.has(type) && (this.kingdoms[v.kingdom]?.era || 0) >= 5) {
+      const rp = this._pavedRadius(v);
+      return this._placeOutskirts(v, type, rp + 0.5, rp + 5);
+    }
     const roads = v.roadTiles;
     if (!roads.length) return null;
     const rng = this.rng;
@@ -564,10 +581,9 @@ export const planner = {
         if (w.inBounds(x + dx, y + dy) && this.use[(y + dy) * W + x + dx] === USE.ROAD) nb.push(d);
       }
       if (nb.length === 1) {
-        const o = (nb[0] + 2) & 3;
-        cands.push({ x, y, d: o, tip: true });
-        cands.push({ x, y, d: (o + 1) & 3, tip: true, turn: true });
-        cands.push({ x, y, d: (o + 3) & 3, tip: true, turn: true });
+        // a street grows on straight from its end (turning at the tip drew
+        // stair-step zigzags and a maze of dead ends)
+        cands.push({ x, y, d: (nb[0] + 2) & 3, tip: true });
       } else if (nb.length === 2 && ((nb[0] + 2) & 3) === nb[1]) {
         cands.push({ x, y, d: (nb[0] + 1) & 3, tip: false });
         cands.push({ x, y, d: (nb[0] + 3) & 3, tip: false });
@@ -611,7 +627,7 @@ export const planner = {
         }
         ok = k;
       }
-      if (ok < Math.min(3, cells(3, 2))) continue;
+      if (ok < 3) continue;
       const ex = c.x + dx * ok,
         ey = c.y + dy * ok;
       const outward = Math.hypot(ex - v.cx, ey - v.cz) - Math.hypot(c.x - v.cx, c.y - v.cz);
@@ -623,12 +639,161 @@ export const planner = {
         best = { ...c, len: ok };
       }
     }
+    this._pruneStubs(v);
     if (!best) return false;
     const [dx, dy] = ROT_DIR[best.d];
     const laid = this._street(v, best.x + dx, best.y + dy, dx, dy, best.len);
     if (grid && !best.tip && laid >= 3 && ((dx ? best.y : best.x) % GRID === 0)) this._firstUse(this.kingdoms[v.kingdom], 'gridstreets', { x: best.x, z: best.y });
     this.fieldVersion++;
     return true;
+  },
+
+  // The town plan: a main street along the hall front, run out to the edge
+  // of the build area, with cross streets every few tiles along it (a comb
+  // of blocks two plots deep). Phase 1 at founding, phase 2 (further out,
+  // more cross streets) once the village is a town or modern.
+  _layTownPlan(v) {
+    const h = v.hall;
+    if (!h || h.alive === false) return;
+    const era = this.kingdoms[v.kingdom]?.era || 0;
+    const want = 1 + (v.tier >= 1 || era >= 4 ? 1 : 0) + (v.tier >= 2 ? 1 : 0);
+    if ((v.planPhase || 0) >= want) return;
+    v.planPhase = want;
+    const w = this.world;
+    const [dx, dz] = ROT_DIR[h.rot ?? 0];
+    const hx = h.tx + (h.w >> 1),
+      hy = h.ty + (h.h >> 1);
+    // the main street runs across the hall front, two tiles out from its centre
+    const off = Math.ceil(Math.max(h.w, h.h) / 2);
+    const fx = hx + dx * off,
+      fy = hy + dz * off;
+    const px = dz,
+      pz = dx;
+    const R = Math.max(cells(9, 5), Math.round((v.buildRadius || 6) * (want >= 2 ? 0.95 : 0.7)));
+    const mainA = this._street(v, fx, fy, px, pz, R + 1);
+    const mainB = this._street(v, fx - px, fy - pz, -px, -pz, R);
+    // cross streets every SPACE tiles along it, both ways from the main street
+    const SPACE = 3;
+    const nCross = want === 1 ? 1 : want === 2 ? 3 : 5;
+    const crossLen = Math.max(cells(6, 3), Math.round(R * (want >= 2 ? 0.8 : 0.55)));
+    let made = 0;
+    for (let k = 1; k <= 8 && made < nCross * 2; k++) {
+      for (const sg of [1, -1]) {
+        const reach = sg > 0 ? mainA : mainB + 1;
+        const o = k * SPACE;
+        if (o >= reach) continue;
+        const sx = fx + px * o * sg,
+          sy = fy + pz * o * sg;
+        if (!w.inBounds(sx, sy) || this.use[sy * w.w + sx] !== USE.ROAD) continue;
+        const a = this._street(v, sx + dx, sy + dz, dx, dz, crossLen);
+        const b = this._street(v, sx - dx, sy - dz, -dx, -dz, crossLen);
+        if (a + b >= 3) made++;
+      }
+    }
+    // a street behind the hall, parallel to the main one, ties the comb into blocks
+    if (want >= 2) {
+      const bo = SPACE + 1;
+      const bx = hx - dx * bo,
+        by = hy - dz * bo;
+      if (w.inBounds(bx, by) && this._roadOK(bx, by)) {
+        this._street(v, bx, by, px, pz, Math.round(R * 0.7));
+        this._street(v, bx - px, by - pz, -px, -pz, Math.round(R * 0.7));
+      }
+      const ax = fx + dx * SPACE,
+        ay = fy + dz * SPACE;
+      if (w.inBounds(ax, ay) && this._roadOK(ax, ay)) {
+        this._street(v, ax, ay, px, pz, Math.round(R * 0.8));
+        this._street(v, ax - px, ay - pz, -px, -pz, Math.round(R * 0.8));
+      }
+    }
+    this._pruneStubs(v, true);
+    this.fieldVersion++;
+  },
+
+  // Dead-end spurs shorter than two tiles that lead to no door are taken up
+  // again (a maze of tile-wide stubs grew where streets met at odd angles).
+  _pruneStubs(v, force = false) {
+    const now = this.game.time.total;
+    if (!force && now - (v.stubT ?? -1e9) < 20) return 0;
+    v.stubT = now;
+    const w = this.world;
+    const W = w.w;
+    const doors = new Set();
+    for (const b of v.buildings) {
+      if (!b.alive) continue;
+      const t = this._doorTile(b);
+      if (t) doors.add(t[1] * W + t[0]);
+    }
+    const hall = v.hall;
+    const hdx = hall ? Math.floor(hall.doorX) : -99,
+      hdz = hall ? Math.floor(hall.doorZ) : -99;
+    const isR = (x, y) => w.inBounds(x, y) && this.use[y * W + x] === USE.ROAD;
+    let removed = 0;
+    for (let pass = 0; pass < 2; pass++) {
+      for (const i of v.roadTiles) {
+        if (this.use[i] !== USE.ROAD || doors.has(i)) continue;
+        if (w.building[i] >= 0) continue; // a bridge deck or a gate
+        const x = i % W,
+          y = (i / W) | 0;
+        if (Math.abs(x - hdx) <= 2 && Math.abs(y - hdz) <= 2) continue; // the square
+        const nb = [];
+        for (const [ox, oy] of ROT_DIR) if (isR(x + ox, y + oy)) nb.push([x + ox, y + oy]);
+        if (nb.length > 1) continue;
+        // a door may face this tile from beside it
+        let door = false;
+        for (const [ox, oy] of ROT_DIR) if (doors.has((y + oy) * W + x + ox)) door = true;
+        if (door) continue;
+        // diagonal road neighbours must all belong to the junction it hangs off
+        let diag = false;
+        for (const [ox, oy] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+          if (!isR(x + ox, y + oy)) continue;
+          if (!nb.length) diag = true;
+          else {
+            const [nx, ny] = nb[0];
+            if (Math.abs(x + ox - nx) + Math.abs(y + oy - ny) !== 1) diag = true;
+          }
+        }
+        if (diag) continue;
+        if (nb.length === 1) {
+          // a spur: only when the tile it hangs off is a junction or a run
+          // across it (so the end of a real street is kept)
+          const [nx, ny] = nb[0];
+          let m = 0;
+          for (const [ox, oy] of ROT_DIR) if (isR(nx + ox, ny + oy)) m++;
+          if (m < 3) continue;
+        }
+        this._unlayRoad(i);
+        removed++;
+      }
+    }
+    if (removed) {
+      v.roadTiles = v.roadTiles.filter((i) => this.use[i] === USE.ROAD);
+      this.fieldVersion++;
+    }
+    return removed;
+  },
+
+  _unlayRoad(i) {
+    const w = this.world;
+    const W = w.w;
+    const x = i % W,
+      y = (i / W) | 0;
+    this.use[i] = USE.FREE;
+    if (w.type[i] !== TILE.ROAD) return;
+    // the ground returns as what is round it (grass by default)
+    const cnt = new Map();
+    for (let oy = -1; oy <= 1; oy++)
+      for (let ox = -1; ox <= 1; ox++) {
+        if (!ox && !oy) continue;
+        if (!w.inBounds(x + ox, y + oy)) continue;
+        const t = w.type[(y + oy) * W + x + ox];
+        if (t === TILE.ROAD || t === TILE.FARMLAND || !TILE_INFO[t]?.walkable || !TILE_INFO[t]?.buildable) continue;
+        cnt.set(t, (cnt.get(t) || 0) + 1);
+      }
+    let bt = TILE.GRASS,
+      bn = 0;
+    for (const [t, c] of cnt) if (c > bn) (bn = c), (bt = t);
+    w.setType(x, y, bt);
   },
 
   _roadCost() {
@@ -668,13 +833,109 @@ export const planner = {
     const cost = this._roadCost();
     const p = civPath(w, x, y, Math.floor(v.cx), Math.floor(v.cz), cost, maxNodes, 0.4, (i) => this.use[i] === USE.ROAD);
     if (!p) return false;
-    if (this.use[start] === USE.FREE || this.use[start] === USE.PLOT) this.layRoad(v, start);
+    // stop where the path meets the network, then lay it as straight runs
+    const run = [start];
     for (const i of p) {
+      run.push(i);
       if (this.use[i] === USE.ROAD) break;
-      if (this.use[i] === USE.BUILDING) continue;
-      this.layRoad(v, i);
+    }
+    for (const i of this._straightPath(run)) {
+      const u = this.use[i];
+      if (u === USE.FREE || u === USE.PLOT) this.layRoad(v, i);
     }
     return true;
+  },
+
+  // A path from civPath steps diagonally, and laid tile by tile that drew a
+  // stair-step of square pads that touched only at their corners. This lays
+  // it as a few straight runs instead: from each corner it reaches as far
+  // along the path as an L of open, gently sloping ground allows (each
+  // diagonal step at least gets a corner tile, so the street is continuous).
+  _straightPath(path) {
+    const w = this.world;
+    const W = w.w;
+    const n = path.length;
+    if (n < 2) return path.slice();
+    const okTile = (i) => {
+      const u = this.use[i];
+      if (u === USE.ROAD) return true;
+      if (u !== USE.FREE && u !== USE.PLOT) return false;
+      if (w.height[i] < SEA_LEVEL + 0.05) return false;
+      const t = w.type[i];
+      if (!TILE_INFO[t]?.walkable || t === TILE.LAVA || t === TILE.ICE) return false;
+      if (w.flora[i] === FLORA.BOULDER) return false;
+      if (this.railMask?.[i]) return false;
+      return true;
+    };
+    // the tiles of an L from a to b (first along x when xFirst), or null
+    const lRoute = (a, b, xFirst) => {
+      const ax = a % W,
+        ay = (a / W) | 0,
+        bx = b % W,
+        by = (b / W) | 0;
+      const out = [];
+      let x = ax,
+        y = ay,
+        ph = w.height[a];
+      const step = (nx, ny) => {
+        const i = ny * W + nx;
+        if (!okTile(i)) return false;
+        const h = w.height[i];
+        if (Math.abs(h - ph) > 0.7) return false;
+        ph = h;
+        out.push(i);
+        return true;
+      };
+      const sx = Math.sign(bx - ax),
+        sy = Math.sign(by - ay);
+      if (xFirst) {
+        while (x !== bx) if (!step((x += sx), y)) return null;
+        while (y !== by) if (!step(x, (y += sy))) return null;
+      } else {
+        while (y !== by) if (!step(x, (y += sy))) return null;
+        while (x !== bx) if (!step((x += sx), y)) return null;
+      }
+      return out;
+    };
+    const res = [path[0]];
+    let a = 0;
+    while (a < n - 1) {
+      let bestJ = -1,
+        bestR = null;
+      for (let j = Math.min(n - 1, a + 28); j > a; j--) {
+        const pa = path[a],
+          pb = path[j];
+        const dx = Math.abs((pb % W) - (pa % W)),
+          dy = Math.abs(((pb / W) | 0) - ((pa / W) | 0));
+        const r = lRoute(pa, pb, dx >= dy) || lRoute(pa, pb, dx < dy);
+        if (r) {
+          bestJ = j;
+          bestR = r;
+          break;
+        }
+      }
+      if (bestJ < 0) {
+        // no open L even to the next tile: keep the step, with a corner tile
+        const pa = path[a],
+          pb = path[a + 1];
+        const ax = pa % W,
+          ay = (pa / W) | 0,
+          bx = pb % W,
+          by = (pb / W) | 0;
+        if (ax !== bx && ay !== by) {
+          const c1 = ay * W + bx,
+            c2 = by * W + ax;
+          if (okTile(c1)) res.push(c1);
+          else if (okTile(c2)) res.push(c2);
+        }
+        res.push(pb);
+        a++;
+        continue;
+      }
+      for (const i of bestR) res.push(i);
+      a = bestJ;
+    }
+    return res;
   },
 
   // Long road between two villages (trade route).
@@ -691,10 +952,12 @@ export const planner = {
     if (Math.hypot((last % W) - sb[0], ((last / W) | 0) - sb[1]) > 3) return false;
     a.tradeLinks = (a.tradeLinks || 0) + 1;
     b.tradeLinks = (b.tradeLinks || 0) + 1;
-    const mid = (p.length / 2) | 0;
-    for (let k = 0; k < p.length; k++) {
-      const i = p[k];
-      if (this.use[i] === USE.BUILDING) continue;
+    const sp = this._straightPath([sa[1] * W + sa[0], ...p]);
+    const mid = (sp.length / 2) | 0;
+    for (let k = 0; k < sp.length; k++) {
+      const i = sp[k];
+      const u = this.use[i];
+      if (u === USE.BUILDING || u === USE.RUIN) continue;
       this.layRoad(k < mid ? a : b, i);
     }
     return true;
@@ -1093,6 +1356,10 @@ export const planner = {
     if (type === 'pasture' && v.tier >= 2) {
       minR = Math.max(minR, v.radius * 0.95);
       maxR = Math.max(maxR, minR + 4);
+    }
+    if (FARM_OUT.has(type) && (this.kingdoms[v.kingdom]?.era || 0) >= 5) {
+      minR = Math.max(minR, this._pavedRadius(v) + 0.5);
+      maxR = Math.max(maxR, minR + 5);
     }
     let best = null,
       bs = Infinity;

@@ -403,13 +403,27 @@ export class Terrain {
           x1 = Math.min(W - 1, Math.ceil(v.cx + R)),
           y0 = Math.max(0, Math.floor(v.cz - R)),
           y1 = Math.min(H - 1, Math.ceil(v.cz + R));
+        const typ = world.type,
+          hg = world.height;
         for (let y = y0; y <= y1; y++)
           for (let x = x0; x <= x1; x++) {
             const dx = x + 0.5 - v.cx,
               dz = y + 0.5 - v.cz;
-            if (dx * dx + dz * dz > R * R) continue;
+            const dd = dx * dx + dz * dz;
+            if (dd > R * R) continue;
             const i = (y * W + x) * 4 + 2;
             if (d[i] < lvl) d[i] = lvl;
+            // Modern and later: every open plot inside the paving is mown
+            // lawn (A, fading over the outer three tiles), not bare dirt;
+            // fields, water and streets keep their own look
+            if (era >= 5 && use) {
+              const ti = y * W + x;
+              const u = use[ti];
+              if (u === 2 || u === 3 || typ[ti] === 13 || typ[ti] === 12 || hg[ti] < 0.05) continue;
+              const k = Math.min(1, (R - Math.sqrt(dd)) / 3);
+              const val = Math.max(1, Math.min(250, Math.round(k * 250)));
+              if (d[i + 1] < val) d[i + 1] = val;
+            }
           }
         // the square before the hall (Masonry), and in a modern town the
         // street tiles round the hall door, as a plaza
@@ -435,7 +449,7 @@ export class Terrain {
     const civ = this.game.civ;
     if (!civ?.villages) return 0;
     let s = 0;
-    for (const v of civ.villages) if (v && v.alive !== false) s = (s * 31 + (v.roadTiles?.length || 0) * 8 + (civ.kingdoms?.[v.kingdom]?.era || 0) + (v.squarePaved ? 3 : 0)) | 0;
+    for (const v of civ.villages) if (v && v.alive !== false) s = (s * 31 + (v.roadTiles?.length || 0) * 8 + (v.buildings?.length || 0) * 5 + (v.plots?.length || 0) * 3 + (civ.kingdoms?.[v.kingdom]?.era || 0) + (v.squarePaved ? 3 : 0)) | 0;
     return s;
   }
   _writeAO(r) {

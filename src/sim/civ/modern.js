@@ -445,14 +445,15 @@ export const modern = {
         }
       }
     }
-    // ...and its pens: a pasture inside the core is given up (its herd went
-    // grazing among the towers); a new one goes out beyond the core
-    if (city && (K.era || 0) >= 5 && this.rng.chance(0.3)) {
-      const core = v.radius * 0.8;
-      const p = v.buildings.find((b) => b.alive && b.type === 'pasture' && !b.constructing && Math.hypot(b.x - v.cx, b.z - v.cz) < core);
+    // ...and its farm works: a pen, silo, barn or granary inside the paved
+    // town is given up (a herd grazed among the towers, silos stood in the
+    // capital's square); a new one goes out beyond the paving (planner.js)
+    if ((K.era || 0) >= 5 && this.rng.chance(0.3)) {
+      const core = this._pavedRadius(v) - 1.5;
+      const p = v.buildings.find((b) => b.alive && (b.type === 'pasture' || b.type === 'silo' || b.type === 'barn' || b.type === 'granary') && !b.constructing && Math.hypot(b.x - v.cx, b.z - v.cz) < core);
       if (p) {
         this.destroyBuilding(p, 'cancelled');
-        p.ruinT -= YEAR * 10; // pens leave no ruin: cleared on the next sweep
+        p.ruinT -= YEAR * 10; // they leave no ruin: cleared on the next sweep
       }
     }
     // Railways: a station in each town a line reaches

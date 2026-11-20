@@ -432,15 +432,18 @@ const BUILD = {
     g.box(0.28, 0.06, 0.445, 0.1, 0.16, 0.02, P.accent);
   },
 
-  apartment(g, P, lv) {
+  apartment(g, P, lv, variant = 0) {
     const e = P.era;
-    const floors = lv >= 2 ? 7 : 4,
+    // three designs: the broad block, a taller narrow one in the culture's
+    // brick or tinted render, and a low wide one
+    const av = variant % 3;
+    const floors = (lv >= 2 ? 7 : 4) + (av === 1 ? 2 : av === 2 ? -1 : 0),
       fh = 0.38;
-    const w = 1.6,
-      d = 1.25,
+    const w = av === 1 ? 1.2 : av === 2 ? 1.75 : 1.6,
+      d = av === 1 ? 1.2 : 1.25,
       bz = -0.12;
     const h = floors * fh;
-    const wallC = e >= 7 ? P.white : e >= 6 ? 0xe2e0d8 : 0xc9c2b4;
+    const wallC = av === 1 ? (e >= 7 ? 0xdfe9dc : e >= 6 ? 0xb9a58a : P.brick) : av === 2 ? (e >= 7 ? 0xf0ebe0 : e >= 6 ? 0xd2c8b8 : P.trim) : e >= 7 ? P.white : e >= 6 ? 0xe2e0d8 : 0xc9c2b4;
     g.box(0, -0.06, bz, w + 0.08, 0.1, d + 0.08, P.concrete2);
     g.box(0, 0, bz, w, h, d, wallC);
     bands(g, P, 0, 0.05, bz, w, d, floors, fh, { k: e >= 6 ? 0.62 : 0.45 });
@@ -518,10 +521,23 @@ const BUILD = {
   // mast, 1 a slender tower with a pointed crown, 2 a broad slab with a
   // rooftop deck, 3 a round tower with a ringed crown
   skyscraper(g, P, level = 1, variant = 0) {
+    // variant % 6: the silhouette (BuildingRenderer picks five per culture);
+    // variant / 6: the height class, tall at the town's core, lower out
+    // toward its edge. Facades vary too: bronze, smoked and teal glass and
+    // stone beside the blue (an Atomic downtown was all one blue glass).
+    const v = variant % 6;
+    const hk = [1.22, 1.0, 0.74][Math.min(2, Math.floor(variant / 6))];
+    g.push();
+    g.translate(0, 0.49, 0);
+    g.scale(1, hk, 1);
+    g.translate(0, -0.49, 0);
+    BUILD._tower(g, P, level, v);
+    g.pop();
+  },
+  _tower(g, P, level, v) {
     const e = P.era;
-    const v = variant % 4;
-    const glassC = e >= 7 ? [0x7cc4d4, 0x8ad0c8, 0x9ccad8, 0x74b8cc][v] : e >= 6 ? [0x5f8fb8, 0x4f7c9e, 0x6e9cb4, 0x58849a][v] : [0x6a8aa4, 0x7a8c98, 0x6a7e8e, 0x7894a8][v];
-    const frameC = e >= 7 ? 0xf2f4f0 : e >= 6 ? [0x9aa4ac, 0x6e767e, 0xb8bec4, 0x8a9096][v] : [0xb4ab98, 0x9a8e7a, 0xc4bcaa, 0xa49a88][v];
+    const glassC = e >= 7 ? [0x7cc4d4, 0x9ad4b8, 0xb4c4cc, 0x74b8cc, 0xa8d8c4, 0xd4c8a4][v] : e >= 6 ? [0x5f8fb8, 0x8a6e4e, 0x4c5a66, 0x4f8c8a, 0x9aa8b4, 0x6a7c58][v] : [0x6a8aa4, 0x8a7a64, 0x6a7e8e, 0x7894a8, 0x8c8478, 0x5e7488][v];
+    const frameC = e >= 7 ? [0xf2f4f0, 0xf2f4f0, 0xe8ece8, 0xf2f4f0, 0xf6f4ec, 0xe4dccb][v] : e >= 6 ? [0x9aa4ac, 0x3e3a36, 0xb8bec4, 0xd8d4cc, 0x6e767e, P.trim][v] : [0xb4ab98, 0x9a8e7a, 0xc4bcaa, 0xa49a88, 0xc8b89a, P.trim][v];
     const shaft = (s, sd, y0, h) => {
       g.box(0, y0, 0, s, h, sd, glassC, { glow: 1, top: frameC });
       mullions(g, 0, y0, 0, s, sd, h, v === 2 ? 0.22 : 0.16, frameC, 0.03);
@@ -540,15 +556,48 @@ const BUILD = {
       }
     };
     // the podium and lobby
-    const pw = v === 2 ? 1.8 : v === 1 ? 1.4 : 1.65,
-      pd = v === 2 ? 1.5 : v === 1 ? 1.4 : 1.65;
+    const pw = v === 2 || v === 4 ? 1.8 : v === 1 ? 1.4 : v === 5 ? 1.85 : 1.65,
+      pd = v === 2 ? 1.5 : v === 1 ? 1.4 : v === 4 ? 1.3 : v === 5 ? 1.85 : 1.65;
     g.box(0, -0.06, 0, pw + 0.1, 0.1, pd + 0.1, P.concrete2);
     g.box(0, 0, 0, pw, 0.45, pd, frameC);
     g.box(0, 0.06, 0, pw + 0.02, 0.3, pd + 0.02, glassC, { glow: 1, noTop: true });
     flatRoof(g, 0, 0.45, 0, pw, pd, frameC, e >= 7 ? P.green : P.slate, 0.05);
     door(g, P, 0, pd / 2 + 0.015, 0.36, 0.26, glassC, { canopy: P.accent });
     let top;
-    if (v === 1) {
+    if (v === 4) {
+      // twin towers on one podium, joined by a skybridge, each with its crown
+      for (const sx of [-0.46, 0.46]) {
+        const h = sx < 0 ? 4.4 : 3.8;
+        g.push();
+        g.translate(sx, 0, 0);
+        shaft(0.7, 0.9, 0.49, h);
+        g.cone(0, 0.49 + h + (e >= 7 ? 0.1 : 0.06), 0, 0.3, 0.45, 4, frameC, { rot: Math.PI / 4 });
+        g.box(0, 0.49 + h + 0.55, 0, 0.05, 0.05, 0.05, P.red, { glow: BEACON });
+        g.pop();
+      }
+      g.box(0, 2.5, 0, 0.26, 0.24, 0.42, glassC, { glow: 1, top: frameC });
+      g.box(0, 2.46, 0, 0.3, 0.04, 0.46, frameC);
+      return;
+    } else if (v === 5) {
+      // a stepped stone-and-glass tower on a broad podium, its crown a
+      // lantern of fins under a spire
+      for (const [sz, y0, h] of [
+        [1.55, 0.49, 1.1],
+        [1.2, 1.59, 1.6],
+        [0.9, 3.19, 1.2],
+        [0.62, 4.39, 0.6],
+      ])
+        shaft(sz, sz, y0, h);
+      top = 4.99;
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        g.box(Math.cos(a) * 0.24, top, Math.sin(a) * 0.24, 0.05, 0.5, 0.16, e >= 7 ? 0xf2f4f0 : P.accent, { ry: -a });
+      }
+      g.cone(0, top + 0.5, 0, 0.26, 0.8, 8, frameC, {});
+      g.box(0, top + 1.3, 0, 0.05, 0.05, 0.05, P.red, { glow: BEACON });
+      if (e >= 7) g.box(0, top, 0, 0.5, 0.04, 0.5, 0x7fe8f0, { glow: CYAN, noTop: true });
+      return;
+    } else if (v === 1) {
       // slender: one tall shaft and a four-sided pointed crown
       shaft(0.95, 0.95, 0.49, 4.9);
       top = 5.45;
@@ -1109,7 +1158,7 @@ export function pylonModel(g, col) {
   }
 }
 
-export const MODERN_MODELS = Object.keys(BUILD);
+export const MODERN_MODELS = Object.keys(BUILD).filter((k) => k[0] !== '_');
 
 // A neutral block for any modern kind without a model (other modules add
 // kinds): the right footprint and era, flat roof, window bands, a door.

@@ -61,14 +61,41 @@ export function lookEra(b, realmEra = 0) {
   if (realmEra >= 4 && e < realmEra) return Math.max(e, realmEra - 1, 4);
   return e;
 }
-// a building's own seeded variant (skyscraper towers: 4 shapes)
-const towerVariant = (b) => ((b.id * 2654435761) >>> 0) % 4;
+// a building's own seeded variant (skyscraper towers: six silhouettes, five
+// of them per culture, so each culture's skyline has its own mix), and its
+// height class by distance from the town's core (tall at the centre,
+// stepping down to the edge): variant + 6 * class (modernModels.js)
+const TOWER_SETS = { vale: [0, 1, 2, 3, 4], dune: [0, 2, 3, 4, 5], frost: [1, 2, 3, 4, 5], mire: [0, 1, 3, 4, 5] };
+let _towerCiv = null;
+const towerVariant = (b) => {
+  const set = TOWER_SETS[b.style] || TOWER_SETS.vale;
+  const v = set[((b.id * 2654435761) >>> 0) % set.length];
+  let hc = 1;
+  const t = _towerCiv?.villages?.[b.village];
+  if (t && Number.isFinite(t.cx)) {
+    const r = Math.hypot(b.x - t.cx, b.z - t.cz) / Math.max(4, t.radius || t.buildRadius || 6);
+    hc = r < 0.38 ? 0 : r < 0.72 ? 1 : 2;
+  }
+  return v + 6 * hc;
+};
+// apartment blocks: three designs per culture
+const blockVariant = (b) => ((b.id * 40503) >>> 0) % 3;
 function archKey(b, def, lvl, realmEra = 0) {
   const era = lookEra(b, realmEra);
-  if (def.modern) return `${b.type}|${b.style}|${lvl}|${Math.max(4, era)}${b.type === 'skyscraper' ? '|' + towerVariant(b) : ''}`;
+  if (def.modern) return `${b.type}|${b.style}|${lvl}|${Math.max(4, era)}${b.type === 'skyscraper' ? '|' + towerVariant(b) : b.type === 'apartment' ? '|' + blockVariant(b) : ''}`;
   // modern homes come in a few designs per culture (Future: four), picked by the plot's seed
   const vv = b.variant || (b.type === 'house' && era >= 5 ? Math.floor((b.seed || 0) * 997) % (era >= 7 ? 4 : 3) : 0);
   return `${b.type}|${b.style}|${lvl}|${era}${b.gilded ? 'g' : ''}${vv || b.heritage ? '|' + vv : ''}${b.heritage ? '|h' : ''}`;
+}
+
+// works whose stacks smoke thickly
+const INDUSTRY = new Set(['factory', 'foundry', 'bloomery', 'powerstation', 'cannery', 'kiln']);
+// landmarks keep drawing at far zoom; houses and small buildings do not
+const LANDMARK = new Set(['hall', 'wonder', 'colossus', 'temple', 'market', 'forum', 'academy', 'skyscraper', 'arcology', 'factory', 'powerstation', 'nuclear', 'fusion', 'airport', 'airfield', 'station', 'campus', 'spaceport', 'launchpad', 'containerport', 'hospital', 'controlspire', 'climatetower', 'radiomast', 'observatory', 'castle', 'bridge', 'docks', 'shipyard', 'skyshield', 'genelab', 'desal']);
+function isMinor(b) {
+  const def = BUILDING_TYPES[b.type];
+  if (!def || def.wall || def.monument || LANDMARK.has(b.type)) return false;
+  return true;
 }
 
 class Batch {
@@ -203,8 +230,14 @@ class DetailBatch {
     this.items = L.map((e) => e.item);
     this.extra = L.map((e) => e.extra);
     this.keys = L.map((e) => e.key);
+    this.minor = L.map((e) => !!e.minor);
     this.n = n;
     m.visible = n > 0;
+  }
+  // past mid zoom houses and small buildings are hidden (landmarks stay)
+  hideMinor(hide) {
+    if (!this.mesh || !this.minor) return;
+    for (let i = 0; i < this.n; i++) if (this.minor[i] && this.mesh.getVisibleAt(i) === hide) this.mesh.setVisibleAt(i, !hide);
   }
   // per-instance visibility for one archetype key (lampposts beyond prop range)
   showKey(key, on) {
@@ -339,6 +372,7 @@ export class BuildingRenderer {
     this._m2 = new THREE.Matrix4();
     this._m3 = new THREE.Matrix4();
     this.lodDist = 150; // beyond this camera distance whole towns draw as one proxy batch per style
+    this.minorDist = 90; // beyond this houses and small buildings are hidden (landmarks stay)
     this.propDist = 120; // fences, lanterns, scarecrows, boats culled beyond this
     this._far = false;
     this._q = new THREE.Quaternion();
@@ -490,6 +524,31 @@ export class BuildingRenderer {
     return a;
   }
 
+  // [horizontal, vertical] scale on top of the building scale, or null
+  _upscale(b, def, a, civ) {
+    const t = b.type;
+    if (t === 'colossus') {
+      const v = civ.villages?.[b.village];
+      return v && (v.tier || 0) < 2 ? [0.72, 0.72] : null;
+    }
+    if (t === 'factory' || t === 'foundry' || t === 'powerstation') return [1, 1.3];
+    if (t !== 'house' && t !== 'apartment' && t !== 'rowhouse') return null;
+    if (lookEra(b, civ.kingdoms[b.kingdom]?.era ?? 0) < 5) return null;
+    // as wide as the plot allows (footprints stay as they are)
+    if (a._fitK == null) {
+      const g = a.geo;
+      if (!g.boundingBox) g.computeBoundingBox();
+      const bb = g.boundingBox;
+      const hw = Math.max(Math.abs(bb.min.x), Math.abs(bb.max.x)) * 2 * BS,
+        hd = Math.max(Math.abs(bb.min.z), Math.abs(bb.max.z)) * 2 * BS;
+      const dw = def.dw ?? def.w,
+        dh = def.dh ?? def.h;
+      a._fitK = Math.min((dw * 0.98) / Math.max(0.1, hw), (dh * 0.98) / Math.max(0.1, hd));
+    }
+    const k = Math.max(1, Math.min(1.28, a._fitK));
+    return [k, Math.max(k, 1.25)];
+  }
+
   // which DetailBatch draws an archetype (casters, small pieces, rising sites)
   _detailFor(key, clip) {
     if (clip) return this.dClip;
@@ -508,9 +567,10 @@ export class BuildingRenderer {
     const civ = g.civ;
     const world = g.world;
     const lists = new Map(this.details.map((d) => [d, []]));
+    _towerCiv = civ;
     const push = (key, clip, m, color, b, extra = null) => {
       const d = this._detailFor(key, clip);
-      lists.get(d).push({ key, geo: this._arch(key).geo, m: m.elements.slice(), o: 0, col: [color.r, color.g, color.b], item: b, extra });
+      lists.get(d).push({ key, geo: this._arch(key).geo, m: m.elements.slice(), o: 0, col: [color.r, color.g, color.b], item: b, extra, minor: b ? isMinor(b) : true });
     };
     const footings = [];
     this.chimneys.length = 0;
@@ -564,6 +624,12 @@ export class BuildingRenderer {
       const lvl = Math.min(b.level || 1, def.levels);
       const akey = archKey(b, def, lvl, civ.kingdoms[b.kingdom]?.era ?? 0);
       const a = this._arch(akey);
+      // Modern and later homes and blocks stand about a quarter larger (a car
+      // was 0.8 of a house), as wide as their plot allows; the works of
+      // industry rise taller (a factory reads at least twice a house); a
+      // colossus is cut to the size of a small town
+      const ups = this._upscale(b, def, a, civ);
+      if (ups) M.multiply(this._m3.makeScale(ups[0], ups[1], ups[0]));
       if (stage === 'found' || stage === 'frame' || stage === 'build') {
         // footings, then a timber frame, then walls rising, then the roof;
         // timber and stone stacked by the site until it is done
@@ -593,14 +659,15 @@ export class BuildingRenderer {
         }
       }
       if (a.base && !a.stilts && stage !== 'found') {
-        const bx = a.base.x || 0,
-          bz = a.base.z || 0;
+        const bus = ups ? ups[0] : 1;
+        const bx = (a.base.x || 0) * bus,
+          bz = (a.base.z || 0) * bus;
         const top = b.y + 0.04;
         const bottom = Math.min(b.groundMin ?? b.y, b.y) - 0.35;
         const fm = new THREE.Matrix4().makeRotationY(b.rotation || 0);
         fm.setPosition(b.x, top, b.z);
         fm.multiply(new THREE.Matrix4().makeTranslation(bx * BS, 0, bz * BS));
-        fm.multiply(new THREE.Matrix4().makeScale((a.base.w + 0.04) * BS, top - bottom, (a.base.d + 0.04) * BS));
+        fm.multiply(new THREE.Matrix4().makeScale((a.base.w + 0.04) * BS * bus, top - bottom, (a.base.d + 0.04) * BS * bus));
         footings.push({ m: fm, style: b.style });
       }
     }
@@ -673,6 +740,9 @@ export class BuildingRenderer {
       if (b.gone || !b.alive) continue;
       const def = BUILDING_TYPES[b.type];
       if (!def) continue;
+      // (houses and small buildings are not drawn at far zoom: the terrain's
+      // urban patch stands for them, and the landmarks mark the town)
+      if (isMinor(b)) continue;
       const key = 'proxy|' + b.style;
       let L = proxies.get(key);
       if (!L) proxies.set(key, (L = { m: [], col: [], bs: [] }));
@@ -754,7 +824,8 @@ export class BuildingRenderer {
     const p = this._p;
     for (const c of an.chimneys) {
       p.set(c.x, c.y, c.z).applyMatrix4(M);
-      this.chimneys.push({ x: p.x, y: p.y, z: p.z, rate: c.rate || 1, forge: !!c.forge, steam: !!c.steam, b, t: Math.random() * 3 });
+      const stack = !c.steam && INDUSTRY.has(b.type);
+      this.chimneys.push({ x: p.x, y: p.y, z: p.z, rate: c.rate || 1, forge: !!c.forge, steam: !!c.steam, stack, b, t: Math.random() * 3 });
     }
     for (const c of an.banners) {
       p.set(c.x, c.y, c.z).applyMatrix4(M);
@@ -1058,10 +1129,21 @@ export class BuildingRenderer {
     const z01 = this.game.view?.zoom01 ?? 0;
     const far = this._far ? D > this.lodDist - 12 : D > this.lodDist || !!this.game.view?.far;
     const props = D <= this.propDist && z01 < 0.42;
-    if (!force && far === this._far && props === this._props && this._lampsOn === props) return;
+    // past about 90 tiles houses and small buildings are hidden (the town
+    // reads as its urban patch and its landmarks, not salt and pepper)
+    const mid = this._mid ? D > this.minorDist - 6 : D > this.minorDist;
+    if (!force && far === this._far && props === this._props && this._lampsOn === props && mid === this._mid) return;
+    const midChanged = mid !== this._mid;
     this._far = far;
     this._props = props;
+    this._mid = mid;
     for (const d of this.details) if (d.mesh) d.mesh.visible = !far && d.n > 0;
+    if (this.dSmall.mesh) this.dSmall.mesh.visible = !far && !mid && this.dSmall.n > 0;
+    if (force || midChanged) {
+      this.dSolid.hideMinor(mid);
+      this.dClip.hideMinor(mid);
+      this._lampsOn = null;
+    }
     for (const b of (this.proxyBatches || new Map()).values()) if (b.mesh) b.mesh.visible = far && b.mesh.count > 0;
     if (this.footing) this.footing.visible = !far;
     if (this._lampsOn !== props) {
@@ -1122,7 +1204,24 @@ export class BuildingRenderer {
     let budget = 10;
     const close = rig.cur.dist < 140;
     if (close) {
+      // the stacks of factories, foundries and power stations: a thick,
+      // steady plume (they had the same wisp as a cottage, lost in the
+      // budget); own budget, so homes' chimneys cannot starve them
+      let sb = 8;
       for (const c of this.chimneys) {
+        if (!c.stack) continue;
+        c.t -= dt;
+        if (c.t > 0) continue;
+        c.t = (0.55 / Math.max(0.6, c.rate)) * (0.8 + Math.random() * 0.4) * (g.settings?.powerSaver ? 2 : 1);
+        const b = c.b;
+        if (!b.alive || b.constructing) continue;
+        if ((c.x - cx) ** 2 + (c.z - cz) ** 2 > R2) continue;
+        if (sb-- <= 0) break;
+        if (real) fx.emit?.('smoke', { x: c.x, y: c.y, z: c.z }, { scale: 1.05 * BS });
+        else this.puffs.emit(c.x, c.y, c.z, 'smoke', 1.3 * BS);
+      }
+      for (const c of this.chimneys) {
+        if (c.stack) continue;
         c.t -= dt;
         if (c.t > 0) continue;
         c.t = ((c.forge ? 0.55 : 2.4 + Math.random() * 2.6) / (c.rate || 1)) * (g.settings?.powerSaver ? 2 : 1);
