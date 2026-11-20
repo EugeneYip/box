@@ -274,6 +274,9 @@ export function installRoles(Units) {
     const b = pl.barracks;
     if (!b || !b.alive) return quit();
     let o = u._offd;
+    // the drill hours begin or end: a new spell (fall in, or go indoors)
+    const dh = this._drillHours();
+    if (o && o.dh !== dh) o.until = 0;
     if (o && now < o.until && o.b === b.id) {
       if (o.ph === 'go') {
         const dd = (o.x - u.x) ** 2 + (o.z - u.z) ** 2;
@@ -281,27 +284,24 @@ export function installRoles(Units) {
         else if (u.state !== 'walk' && u.state !== 'run') u.state = 'walk';
       } else if (o.ph === 'yard') {
         u.state = 'work';
-        u.data.workAnim = 'chop'; // (drill: the same swing as the brain's)
+        u.data.workAnim = 'drill'; // in step with the ranks (poses.js)
         u.heading = o.face;
       }
       return true;
     }
-    // a new spell: two in three indoors, the rest at drill in the yard
+    // a new spell: in the drill hours the off-duty soldiers fall in on the
+    // parade square before the barracks, in ranks (daily.js _parade); out of
+    // them most are indoors (round 19: one in three used to drill alone on a
+    // spot of its own, so a yard held a lone figure swinging an axe)
     if (o) this._offDutyEnd(u);
     if (u._dl) this._dlEnd(u);
-    const yard = Math.random() < 0.34;
-    const dx = b.doorX - (b.x ?? b.doorX),
-      dz = b.doorZ - (b.z ?? b.doorZ);
-    const L = Math.hypot(dx, dz) || 1;
-    const ux = dx / L,
-      uz = dz / L;
-    // the yard: a few rows before the door, each soldier on a fixed spot
-    const slot = (u.id >> 1) % 12;
-    const col = (slot % 4) - 1.5,
-      row = 1 + Math.floor(slot / 4);
-    const x = yard ? b.doorX + ux * (0.5 + row * 0.55) - uz * col * 0.55 : b.doorX,
-      z = yard ? b.doorZ + uz * (0.5 + row * 0.55) + ux * col * 0.55 : b.doorZ;
-    o = u._offd = { ph: 'go', until: now + (yard ? 18 : 30) + Math.random() * 20, x, z, b: b.id, yard, face: Math.atan2(-ux, -uz), lab: '' };
+    const pd = this._parade(v, b);
+    const spot = pd && (dh || Math.random() < 0.15) ? this._paradeSlot(pd, u) : null;
+    const yard = !!spot;
+    const x = yard ? spot.x : b.doorX,
+      z = yard ? spot.z : b.doorZ;
+    const face = yard ? Math.atan2(spot.fx - x, spot.fz - z) : 0;
+    o = u._offd = { ph: 'go', until: now + (yard ? 30 : 30) + Math.random() * 20, x, z, b: b.id, yard, face, lab: '', pd: yard ? pd : null, dh };
     this.stop(u);
     if ((x - u.x) ** 2 + (z - u.z) ** 2 < 0.5 || !this.moveTo(u, x, z)) this._offDutyArrive(u, o, b);
     else u.state = 'walk';
@@ -311,9 +311,9 @@ export function installRoles(Units) {
     this.stop(u);
     if (o.yard) {
       o.ph = 'yard';
-      o.lab = 'Drilling in the barracks yard';
+      o.lab = 'Drilling on the parade square';
       u.state = 'work';
-      u.data.workAnim = 'chop';
+      u.data.workAnim = 'drill';
       u.heading = o.face;
     } else {
       o.ph = 'in';

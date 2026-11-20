@@ -824,6 +824,10 @@ export class Units {
     if (w.height[i] < SEA_LEVEL) c += 3;
     if (w.fire[i] > 0) c += 6;
     if (w.type[i] === TILE.ROAD) c -= 0.25;
+    // (round 19) people cross a railway or a highway strip but do not walk
+    // along it (civ/modern.js railMask: 1 rail, 2 guideway, 4 highway)
+    const rm = this.game.civ?.railMask;
+    if (rm && rm.length === w.size && rm[i] & 5) c += 2.5;
     return c;
   }
   _groundY(u) {
@@ -1370,6 +1374,22 @@ export class Units {
     // muzzle flash (and smoke for muskets) that the renderer draws
     const gun = u.data.reach > 0 && u.def.kind === 'humanoid' ? GUN[u.data.gear] || GUN.rifle : null;
     if (gun && d > reach * 0.9 && d <= u.data.reach + t.def.radius + 0.2 && !(tAir && t.alt > 6)) {
+      // (round 19) a gunman pressed closer than half his reach steps back a
+      // pace before firing again, so two sides hold a loose line at range
+      // instead of a melee clump (soldiers only, not while cornered)
+      if (d < u.data.reach * 0.5 && u.job === 'soldier' && !(c.backT > now)) {
+        c.backT = now + 2.5;
+        const bx = u.x - (dx / (d || 1)) * 0.9,
+          bz = u.z - (dz / (d || 1)) * 0.9;
+        if (this._pathable(u, Math.floor(bx), Math.floor(bz))) {
+          u.path = null;
+          u.target = { x: bx, z: bz };
+          u.state = 'walk';
+          if (u.attackCd <= 0) this._fire(u, t, d, gun, 0.15);
+          return;
+        }
+      }
+      if (c.backT > now + 1.6 && u.target) return; // still stepping back
       this._face(u, dx, dz, dt);
       u.target = null;
       u.path = null;

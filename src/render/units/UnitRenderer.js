@@ -8,13 +8,18 @@ import { MONSTER_MODELS, AMBIENT_MODELS } from './models/monsters.js';
 import { poseHumanoid, poseQuad, poseChicken, poseSerpent, poseWyrm } from './poses.js';
 import { Overlays, DECAL, EMOTE } from './Overlays.js';
 import { AmbientFauna } from './AmbientFauna.js';
+import { SquareProps } from './SquareProps.js';
 import { TINY, MID } from './models/tiny.js';
 import { horseModel, SADDLE_Y, SADDLE_Z } from './models/horse.js';
 import { bikeModel, BIKE_SEAT_Y, BIKE_SEAT_Z, BIKE_COLORS } from './models/bike.js';
-// soldiers' uniforms by gear (docs/MODERN-ERAS.md): the field green of fatigues
-// and the pale armour of Future suits read apart from any realm colour
-const FATIGUE_GREEN = 0x56663a,
-  SUIT_PLATE = 0xd4dade;
+// soldiers' uniforms by gear (docs/MODERN-ERAS.md): mid-tone field colours
+// by era (khaki riflemen, olive fatigues, grey-blue Future plates) that read
+// against dark ground; the realm shows on armbands and helmet bands
+// (round 19: the old dark olive and near-black trousers drew soldiers as
+// silhouettes with no team colour)
+const RIFLE_KHAKI = 0xb3a070,
+  FATIGUE_GREEN = 0x7f8b56,
+  SUIT_PLATE = 0x9eb0c6;
 import { MATERIALS, WEAPON_TOOL } from '../../sim/units/items.js';
 import { STATUS_BY_ID } from '../../sim/units/statuses.js';
 import { UNIT } from '../../core/scale.js';
@@ -144,6 +149,7 @@ export class UnitRenderer {
     for (const id of this.defs.keys()) this.model(id);
     this.overlays = new Overlays(game);
     this.ambient = new AmbientFauna(game, this);
+    this.props = new SquareProps(game, this.group); // benches, food stalls, parade squares: one draw
     this.corpses = [];
     this.ripples = [];
     this.puffs = [];
@@ -426,25 +432,29 @@ export class UnitRenderer {
         armor = ARMOR_OPT.belts;
         cape = 0;
       } else if (gear === 'rifle') {
-        hat = HAT_OPT.steel;
+        hat = HAT_OPT.steel; // with a realm-coloured band
         tool = TOOL_OPT.rifle;
         outfit = OUTFIT_OPT.fatigues;
+        armor = ARMOR_OPT.kit; // webbing, a pack and realm armbands
         cape = 0;
-        clothOver = mixc(lin(0x8a7a50), kc, 0.25);
+        clothOver = mixc(lin(RIFLE_KHAKI), kc, 0.12);
+        sec = 4; // tan trousers
       } else if (gear === 'fatigues') {
-        hat = HAT_OPT.combat;
+        hat = HAT_OPT.combat; // covered in the uniform colour, a realm band
         tool = TOOL_OPT.carbine;
         outfit = OUTFIT_OPT.fatigues;
-        armor = ARMOR_OPT.kit; // webbing, a pack and a realm armband: the only realm colour
+        armor = ARMOR_OPT.kit; // webbing, a pack and realm armbands
         cape = 0;
-        clothOver = lin(FATIGUE_GREEN);
+        clothOver = mixc(lin(FATIGUE_GREEN), kc, 0.06);
+        sec = 2; // olive-drab trousers
       } else {
         hat = HAT_OPT.suit;
         tool = TOOL_OPT.blaster;
         outfit = OUTFIT_OPT.fatigues;
-        armor = ARMOR_OPT.suit; // pale plates, realm-coloured shoulders, a glowing visor
+        armor = ARMOR_OPT.suit; // grey-blue plates, realm-coloured shoulders, a glowing visor
         cape = 0;
         clothOver = lin(SUIT_PLATE);
+        sec = 1;
       }
       rs.gun = gear;
     } else rs.gun = null;
@@ -546,8 +556,11 @@ export class UnitRenderer {
     rs.dot = bright(kc || [0.85, 0.8, 0.7]);
     // tiny LOD: the head-top block shows the hat colour (or the hair)
     // (uniformed gear and modern dress keep their own colour: a Future crowd is not a realm-coloured mass)
-    rs.apTiny = { ...rs.ap, b: kc && !child && !clothOver ? kc : rs.ap.b, c: HAT_TINT[hat] != null ? lin(HAT_TINT[hat]) : rs.ap.c };
-    rs.apMid = HAT_TINT[hat] != null ? { ...rs.ap, c: lin(HAT_TINT[hat]) } : rs.ap;
+    // soldiers in field gear: the head-top block is the realm colour at mid and
+    // far zoom (the helmet band), so sides read in a battle seen from afar
+    const hatC = gear && kc ? kc : HAT_TINT[hat] != null ? lin(HAT_TINT[hat]) : null;
+    rs.apTiny = { ...rs.ap, b: kc && !child && !clothOver ? kc : rs.ap.b, c: hatC || rs.ap.c };
+    rs.apMid = hatC ? { ...rs.ap, c: hatC } : rs.ap;
   }
 
   _initRS(u, rm) {
@@ -1166,6 +1179,7 @@ export class UnitRenderer {
     this.puffs.length = pj;
     // ---- ambient birds & fish
     if (!dotsOnly) this.ambient.update(dt, ctx);
+    this.props.update();
     // ---- ripples
     let j = 0;
     for (const r of this.ripples) {

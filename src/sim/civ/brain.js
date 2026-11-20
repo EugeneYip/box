@@ -1432,9 +1432,70 @@ export const brain = {
         z,
         post = 'round',
         fx = null,
-        fz = null;
+        fz = null,
+        bid = null,
+        side = -1;
       const r0 = this.rng.next();
-      if (posts.length && r0 < (night ? 0.6 : 0.5)) {
+      // guards stand in pairs, one each side of a gate, the hall, the barracks
+      // or a tower door: a lone guard's post is taken first (round 19)
+      const GP = v._gp || (v._gp = new Map());
+      const onPost = (id, b) => {
+        const o = U.byId.get(id);
+        if (!o || !o.alive || o === u) return false;
+        const od = o.data.civ;
+        return (o._dl && o._dl.k === 'guard' && o._dl.bid === b) || (od && od.task && od.task.kind === 'patrol' && od.task.bid === b);
+      };
+      let pair = null;
+      const cands = v.hall && v.hall.alive !== false && v.hall.doorX != null ? [...posts, v.hall] : posts;
+      for (const b of cands) {
+        if (b.type === 'wall') continue;
+        const e = GP.get(b.id);
+        if (!e) continue;
+        const a0 = onPost(e[0], b.id),
+          a1 = onPost(e[1], b.id);
+        if (a0 !== a1) {
+          pair = b;
+          side = a0 ? 1 : 0;
+          break;
+        }
+      }
+      if (!pair && r0 < (night ? 0.75 : 0.62)) {
+        const pp = cands.filter((b) => b.type !== 'wall');
+        if (pp.length) {
+          const b = pp[(this.rng.next() * pp.length) | 0];
+          const e = GP.get(b.id);
+          const a0 = e ? onPost(e[0], b.id) : false,
+            a1 = e ? onPost(e[1], b.id) : false;
+          if (!a0 || !a1) {
+            pair = b;
+            side = a0 ? 1 : 0;
+          }
+        }
+      }
+      if (pair) {
+        const b = pair;
+        const e = GP.get(b.id) || [-1, -1];
+        e[side] = u.id;
+        GP.set(b.id, e);
+        const ddx = b.doorX - (b.x ?? b.doorX),
+          ddz = b.doorZ - (b.z ?? b.doorZ);
+        const L = Math.hypot(ddx, ddz) || 1;
+        const ox = ddx / L,
+          oz = ddz / L;
+        const sgn = side ? 1 : -1;
+        x = b.doorX + ox * 0.3 - oz * 0.42 * sgn;
+        z = b.doorZ + oz * 0.3 + ox * 0.42 * sgn;
+        post = b === v.hall ? 'hall' : b.type;
+        bid = b.id;
+        fx = x + ox * 4;
+        fz = z + oz * 4;
+        // the barracks or the hall by day: often the ranks on the parade square instead
+        if (!night && !war && (b.type === 'barracks' || b === v.hall) && this.rng.chance(U._drillHours?.() ? 0.75 : 0.3)) {
+          e[side] = -1;
+          bid = null;
+          post = b === v.hall ? 'hall' : 'barracks';
+        }
+      } else if (posts.length && r0 < (night ? 0.85 : 0.7)) {
         const b = posts[(this.rng.next() * posts.length) | 0];
         x = b.doorX + this.rng.float(-0.4, 0.4);
         z = b.doorZ + this.rng.float(-0.4, 0.4);
@@ -1457,23 +1518,31 @@ export const brain = {
         fx = x + Math.cos(a);
         fz = z + Math.sin(a);
       }
-      t = d.task = { kind: 'patrol', x, z, phase: 'go', t: 0, post, fx, fz };
+      t = d.task = { kind: 'patrol', x, z, phase: 'go', t: 0, post, fx, fz, bid };
     }
     if (t.phase === 'go') {
-      const r = this._go(u, t.x, t.z, 0.6);
+      const r = this._go(u, t.x, t.z, t.bid != null ? 0.25 : 0.6);
       if (r === FAIL) d.task = null;
       if (r !== ARRIVED) return;
     }
     d.task = null;
     if (!U._dlStart) return this._idle(u);
     const era = this.kingdoms[v.kingdom]?.era || 0;
-    // drill by day at the barracks or on the square before the hall
-    if (!night && !war && (t.post === 'barracks' || t.post === 'hall') && this.rng.chance(0.55)) {
-      const dl = U._dlStart(u, 'drill', 18 + this.rng.next() * 16, { lab: t.post === 'barracks' ? 'Drilling in the barracks yard' : era >= 4 ? 'Drilling on the parade ground' : 'Drilling on the square', act: null, fx: t.fx, fz: t.fz });
-      dl.anim = 'chop';
-      dl.nt = false;
-      U._dlArrive(u, dl);
-      return;
+    // drill by day: in the ranks on the parade square before the barracks
+    // (or the hall), in step with the others (daily.js _parade, poses.js)
+    if (!night && !war && t.bid == null && (t.post === 'barracks' || t.post === 'hall') && U._parade) {
+      const pb = t.post === 'barracks' ? pl?.barracks : v.hall;
+      const pd = pb && pb.alive !== false ? U._parade(v, pb) : null;
+      const spot = pd ? U._paradeSlot(pd, u) : null;
+      if (spot) {
+        const lab = t.post === 'barracks' ? 'Drilling on the parade square' : era >= 4 ? 'Drilling on the parade ground' : 'Drilling on the square';
+        const dl = U._dlStart(u, 'drill', 26 + this.rng.next() * 16, { lab, act: null, x: spot.x, z: spot.z, free: true, fx: spot.fx, fz: spot.fz, go: 'Falling in for drill' });
+        dl.anim = 'drill';
+        dl.nt = false;
+        dl.pd = pd;
+        if (dl.ph === 'do') U._dlArrive(u, dl);
+        return;
+      }
     }
     const lab = night
       ? 'Keeping the night watch'
@@ -1490,7 +1559,9 @@ export const brain = {
                 : 'Keeping watch';
     // at war a guard looks round more often (the brain answers threats between spells)
     const dur = war ? 8 + this.rng.next() * 6 : t.post === 'round' ? 8 + this.rng.next() * 8 : 22 + this.rng.next() * 22;
-    U._dlStart(u, 'guard', dur, { lab, act: 'wait', fx: t.fx, fz: t.fz }).nt = !!night;
+    const gd = U._dlStart(u, 'guard', dur, { lab, act: 'wait', fx: t.fx, fz: t.fz });
+    gd.nt = !!night;
+    gd.bid = t.bid;
   },
 
   _threatTo(v) {

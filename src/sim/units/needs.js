@@ -123,6 +123,22 @@ export function installNeeds(Units) {
     // and armies on the march press on
     if (!guard && !army && !ride && !travel && this._bedtime(u)) {
       if (u._dl) this._dlEnd(u);
+      // (round 19) the day's load goes into the town's store at bedtime, so
+      // nobody walks home through the night (or naps) with food, wood or ore
+      // on the back; the Civ brain's task is dropped so it does not resume
+      // the work in the small hours (the Year 600 night count was 11-22% of
+      // grown-ups, mostly loads carried home or slept on)
+      if (u.carry) {
+        const c = u.carry;
+        if (c.type === 'food') v.food = Math.min(v.foodCap ?? Infinity, (v.food || 0) + c.amount);
+        else if (c.type === 'wood') v.wood = (v.wood || 0) + c.amount;
+        else if (c.type === 'stone') v.stone = (v.stone || 0) + c.amount;
+        else if (c.type === 'gold') v.gold = (v.gold || 0) + c.amount;
+        else if (c.type === 'ore') v.ore = Math.min(80, (v.ore || 0) + c.amount);
+        u.carry = null;
+      }
+      if (d.civ?.task && d.civ.task.kind !== 'migrate' && d.civ.task.kind !== 'arrive') d.civ.task = null;
+      if (u.state === 'work') u.state = 'idle';
       const b = this._homeOf(u, v);
       if (!b) return this._nap0(u);
       const dx = b.doorX - u.x,
