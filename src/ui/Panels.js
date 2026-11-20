@@ -760,7 +760,11 @@ export class Modals {
       addEventListener('resize', sync);
       card?.addEventListener('transitionend', sync);
       body.addEventListener('click', () => setTimeout(sync, 60));
+      // and a cheap poll while the dialog is open (a resize that ends with no
+      // observer callback after the final layout once left it hidden)
+      const poll = setInterval(sync, 500);
       function stop() {
+        clearInterval(poll);
         io?.disconnect();
         ro?.disconnect();
         mo.disconnect();
