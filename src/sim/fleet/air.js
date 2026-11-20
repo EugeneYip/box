@@ -948,7 +948,7 @@ export const air = {
 // raised apron; the airfield's strip lies under the levelled site's platform).
 const RUNWAYS = {
   airfield: { x0: -1.35, x1: 1.65, z: 0.42, y: 0.07 },
-  airport: { x0: -2.1, x1: 2.1, z: -0.98, y: 0.11 },
+  airport: { x0: -6.8, x1: 6.8, z: -1.6, y: 0.11 },
 };
 // An aircraft on its wheels: the belly above the surface it rolls on.
 const BELLY = 0.13 * VEHICLE.air;
