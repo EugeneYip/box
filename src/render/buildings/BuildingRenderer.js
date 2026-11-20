@@ -750,7 +750,7 @@ export class BuildingRenderer {
       // (houses and small buildings are not drawn at far zoom: the terrain's
       // urban patch stands for them, and the landmarks mark the town)
       if (isMinor(b)) continue;
-      const key = 'proxy|' + b.style;
+      const key = b.type === 'skyscraper' || b.type === 'arcology' ? 'proxy|tower' : 'proxy|' + b.style;
       let L = proxies.get(key);
       if (!L) proxies.set(key, (L = { m: [], col: [], bs: [] }));
       const a = this._arch(def.wall ? `wpost|${b.style}` : archKey(b, def, Math.min(b.level || 1, def.levels), civ.kingdoms[b.kingdom]?.era ?? 0));
