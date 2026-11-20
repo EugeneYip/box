@@ -1,0 +1,165 @@
+/* ==== round 23 ==== */
+
+/* ---- tech panel: the studied era is "Studying" (an outlined tag), and only the
+   realm's own era is "Current era" */
+.ws-tech__curtag.is-next {
+  color: color-mix(in srgb, var(--e) 70%, #fff 30%);
+  background: transparent;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--e) 75%, transparent);
+}
+
+/* ---- tech panel: the sticky header on one line (now studying, also studying,
+   learned eras) on wide dialogs */
+@media (min-width: 900px) {
+  .ws-tech__top {
+    flex-direction: row;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .ws-tech__top .ws-tech__now {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 6px 12px;
+  }
+  .ws-tech__top .ws-tech__nowico {
+    width: 28px;
+    height: 28px;
+    font-size: 17px;
+  }
+  .ws-tech__top .ws-tech__nowbody {
+    grid-template-columns: auto minmax(70px, 1fr) minmax(240px, 40%);
+    grid-template-rows: auto auto;
+    align-items: center;
+    gap: 1px 12px;
+  }
+  .ws-tech__top .ws-tech__nowbody > small {
+    grid-column: 1 / span 2;
+    grid-row: 1;
+  }
+  .ws-tech__top .ws-tech__nowbody > b {
+    grid-column: 1;
+    grid-row: 2;
+    max-width: 260px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* (the description stays in the box's tooltip) */
+  .ws-tech__top .ws-tech__nowdesc {
+    display: none;
+  }
+  .ws-tech__top .ws-tech__nowmeter {
+    grid-column: 2;
+    grid-row: 2;
+  }
+  .ws-tech__top .ws-tech__nowbody .ws-meter {
+    margin-top: 0;
+  }
+  .ws-tech__top .ws-tech__nowbody .ws-tech__also {
+    grid-column: 3;
+    grid-row: 1 / span 2;
+    flex-wrap: nowrap;
+  }
+  .ws-tech__top .ws-tech__nowbody .ws-tech__also .ws-tech__alsotxt {
+    flex: 1 1 auto;
+  }
+  .ws-tech__top .ws-tech__also .ws-tech__alsometer {
+    flex: 0 1 90px;
+    min-width: 40px;
+  }
+  .ws-tech__top .ws-tech__now.is-idle .ws-tech__nowbody > small {
+    grid-column: 1 / -1;
+  }
+  .ws-tech__top .ws-tech__done {
+    display: grid;
+    flex: 0 1 auto;
+    max-width: 36%;
+    grid-template-columns: minmax(0, auto) auto;
+    align-content: center;
+    gap: 3px 10px;
+    padding: 5px 10px;
+  }
+  .ws-tech__top .ws-tech__donelbl {
+    grid-column: 1;
+    grid-row: 1;
+    font-size: 10px;
+  }
+  .ws-tech__top .ws-tech__doneeras {
+    grid-column: 1;
+    grid-row: 2;
+    flex-wrap: nowrap;
+    overflow: hidden;
+  }
+  .ws-tech__top .ws-tech__doneeras .ws-era {
+    white-space: nowrap;
+  }
+  .ws-tech__top .ws-tech__donebtn {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    align-self: center;
+  }
+}
+@media (min-width: 900px) and (min-height: 501px) {
+  .ws-tech__top {
+    padding: 6px 20px 7px;
+  }
+}
+
+/* ---- top bar: the season name's slot is as wide as the widest name (measured),
+   so the years follow it closely and never move; no separator dot */
+.ws-clock__day .ws-season__name {
+  min-width: var(--season-w, 4.6em);
+}
+/* portrait phones: the power-saver leaf sits left of the pause button, clear
+   of the speed button's amber "running slow" ring */
+@media (max-width: 720px) {
+  .ws-clock .ws-speed__flags {
+    top: 50%;
+    right: auto;
+    left: -24px;
+    transform: translateY(-50%);
+  }
+}
+
+/* ---- onboarding: a pulsing ring on the control each step names */
+.ws-coach__ring {
+  position: fixed;
+  z-index: 60;
+  display: none;
+  border-radius: 14px;
+  pointer-events: none;
+  box-shadow:
+    0 0 0 2px rgba(255, 214, 140, 0.95),
+    0 0 18px 4px rgba(255, 190, 90, 0.55);
+  animation: ws-coach-ring 1.6s ease-in-out infinite;
+}
+.ws-coach__ring.is-shown {
+  display: block;
+}
+@keyframes ws-coach-ring {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 2px rgba(255, 214, 140, 0.95),
+      0 0 14px 2px rgba(255, 190, 90, 0.45);
+  }
+  50% {
+    box-shadow:
+      0 0 0 3px rgba(255, 228, 170, 1),
+      0 0 26px 8px rgba(255, 190, 90, 0.7);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ws-coach__ring {
+    animation: none;
+  }
+}
+
+/* ---- World Laws: search matches are highlighted */
+.ws-lawmark {
+  padding: 0 1px;
+  border-radius: 3px;
+  color: inherit;
+  background: rgba(255, 196, 92, 0.32);
+  box-shadow: 0 0 0 1px rgba(255, 196, 92, 0.25);
+}

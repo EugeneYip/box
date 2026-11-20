@@ -97,9 +97,9 @@ export function regionThumb(id, maxW = 56, maxH = 36) {
     const ctx = cv.getContext('2d');
     const img = ctx.createImageData(W, H);
     const at = (x, y) => (x < 0 || y < 0 || x >= W || y >= H ? 0 : cov[y * W + x]);
-    // a region that is mostly land (Asia Mainland) would be a green box: its land
-    // fades into the blue toward the cut edges, so it too reads as a coastline
-    // on blue like the other maps
+    // a region that is mostly land (Asia Mainland) keeps its real coast crisp,
+    // and where its land is cut by the map's edge (inland borders, not shores)
+    // a thin dashed atlas line marks the cut
     let landShare = 0;
     for (let j = 0; j < cov.length; j++) landShare += cov[j];
     landShare /= cov.length;
@@ -113,12 +113,7 @@ export function regionThumb(id, maxW = 56, maxH = 36) {
         // a pixel beside the sea is shore (sand), the rest is green land
         const near = Math.min(at(x - 1, y), at(x + 1, y), at(x, y - 1), at(x, y + 1));
         const land = near > 0.5 ? mix(LAND, LAND_HI, (1 - y / H) * 0.5) : SAND;
-        let t = Math.max(0, Math.min(1, (c - 0.2) / 0.5));
-        if (inland) {
-          const e = Math.min(x / W, (W - 1 - x) / W, y / H, (H - 1 - y) / H) / 0.2;
-          const f = Math.max(0, Math.min(1, e));
-          t *= 0.25 + 0.75 * f * f * (3 - 2 * f);
-        }
+        const t = Math.max(0, Math.min(1, (c - 0.2) / 0.5));
         const col = mix(sea, land, t);
         const o = (y * W + x) * 4;
         img.data[o] = col[0];
@@ -128,6 +123,30 @@ export function regionThumb(id, maxW = 56, maxH = 36) {
       }
     }
     ctx.putImageData(img, 0, 0);
+    if (inland) {
+      const u = Math.max(1, W / 112);
+      ctx.strokeStyle = 'rgba(255, 246, 222, 0.9)';
+      ctx.lineWidth = u;
+      ctx.setLineDash([3 * u, 2 * u]);
+      const off = u * 0.5 + 0.5;
+      // runs of land along one edge: [start, end) in pixels
+      const runs = (n, landAt) => {
+        const r = [];
+        let s0 = -1;
+        for (let i = 0; i <= n; i++) {
+          const l = i < n && landAt(i) > 0.5;
+          if (l && s0 < 0) s0 = i;
+          else if (!l && s0 >= 0) r.push([s0, i]), (s0 = -1);
+        }
+        return r;
+      };
+      ctx.beginPath();
+      for (const [a, b] of runs(W, (x) => at(x, 0))) ctx.moveTo(a, off), ctx.lineTo(b, off);
+      for (const [a, b] of runs(W, (x) => at(x, H - 1))) ctx.moveTo(a, H - off), ctx.lineTo(b, H - off);
+      for (const [a, b] of runs(H, (y) => at(0, y))) ctx.moveTo(off, a), ctx.lineTo(off, b);
+      for (const [a, b] of runs(H, (y) => at(W - 1, y))) ctx.moveTo(W - off, a), ctx.lineTo(W - off, b);
+      ctx.stroke();
+    }
     out = { url: cv.toDataURL(), w: Math.round(w), h: Math.round(h) };
   } catch (e) {
     out = null;

@@ -737,8 +737,13 @@ export class Modals {
         const first = regionCards.firstElementChild;
         if (regionLabel.hidden || regionCards.hidden || !first) return (below.hidden = true);
         const bottom = sc.getBoundingClientRect().bottom;
-        // the label and the first row of maps clear of the pill's strip
-        below.hidden = first.getBoundingClientRect().bottom <= bottom - 6;
+        // only while the "Regional maps" label itself is below the fold: once the
+        // label shows, the cards under it speak for themselves (the pill never
+        // sits on the card it points to)
+        below.hidden = regionLabel.getBoundingClientRect().top <= bottom - 22;
+        const n = regionCards.children.length;
+        const txt = `${n} regional map${n === 1 ? '' : 's'} below`;
+        if (below.firstElementChild && below.firstElementChild.textContent !== txt) below.firstElementChild.textContent = txt;
       };
       const io = typeof IntersectionObserver === 'function' ? new IntersectionObserver(sync, { root: sc, threshold: [0, 0.5, 1] }) : null;
       const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(sync) : null;
@@ -852,8 +857,9 @@ export class Modals {
           });
           // a slider with named steps reads its step's name to screen readers ("Atomic")
           if (Array.isArray(def.labels)) r.setAttribute('aria-valuetext', fmtLaw(def, v));
-          // Latest era: a mark for each era under the slider, the chosen era named
-          // under its mark (and the far ends, when they do not crowd it)
+          // Latest era: a mark for each era under the slider, the chosen one lit
+          // (its name is the value beside the slider, so it is not printed twice),
+          // and the far ends named when they do not crowd it
           const marks =
             def.key === 'civEraCap' && Array.isArray(def.labels)
               ? el('span', { class: 'ws-eramarks', 'aria-hidden': 'true' }, ...def.labels.map((n, i) => el('i', { class: i === Math.round(v) ? 'is-on' : '', title: n }, el('span'))))
@@ -862,7 +868,7 @@ export class Modals {
             const last = def.labels.length - 1;
             [...marks.children].forEach((m, i) => {
               m.classList.toggle('is-on', i === cur);
-              m.firstChild.textContent = i === cur || ((i === 0 || i === last) && Math.abs(i - cur) >= 3) ? def.labels[i] : '';
+              m.firstChild.textContent = i !== cur && (i === 0 || i === last) && Math.abs(i - cur) >= 3 ? def.labels[i] : '';
             });
           };
           if (marks) markNames(Math.round(v));
@@ -900,17 +906,21 @@ export class Modals {
           });
           row.querySelector('.ws-law__txt').append(more);
           const desc = row.querySelector('.ws-row__desc');
+          // (half a line of slack: descenders and rounding are not cut text;
+          // measured again whenever the card changes size)
           const fit = () => {
-            if (!row.isConnected || row.classList.contains('is-expanded')) return;
-            more.hidden = desc.scrollHeight <= desc.clientHeight + 1;
+            if (!row.isConnected || row.classList.contains('is-expanded') || !desc.clientHeight) return;
+            const lh = parseFloat(getComputedStyle(desc).lineHeight) || 16;
+            more.hidden = desc.scrollHeight <= desc.clientHeight + lh * 0.5;
           };
           requestAnimationFrame(fit);
           setTimeout(fit, 350);
+          if (typeof ResizeObserver === 'function') new ResizeObserver(fit).observe(desc);
         }
         // searched by word starts ("war" finds "Wars" and "warships", not "toward");
         // the key's camelCase parts count as words too
         const words = `${def.label} ${def.description} ${c.name} ${String(def.key).replace(/([a-z])([A-Z])/g, '$1 $2')}`.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
-        rows.push({ row, def, sec, words });
+        rows.push({ row, def, sec, words, label: row.querySelector('.ws-row__label'), desc: row.querySelector('.ws-row__desc') });
         grid.append(row);
       }
       list.append(sec);
@@ -945,6 +955,18 @@ export class Modals {
       this._lawSearch = q;
       const terms = q.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
       for (const r of rows) r.row.hidden = !!terms.length && !terms.every((t) => r.words.some((w) => w.startsWith(t)));
+      // the matching word starts are highlighted in the names and descriptions
+      const rx = terms.length ? new RegExp(`(^|[^\\p{L}\\p{N}])(${terms.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'giu') : null;
+      const mark = (node, text) => {
+        if (!node) return;
+        if (!rx) return void (node.textContent = text);
+        node.innerHTML = esc(text).replace(rx, (m, pre, w) => `${pre}<mark class="ws-lawmark">${w}</mark>`);
+      };
+      for (const r of rows) {
+        if (r.row.hidden && rx) continue;
+        mark(r.label, r.def.label);
+        mark(r.desc, r.def.description);
+      }
       let any = false;
       for (const [cid, sec] of sections) {
         const vis = [...sec.querySelectorAll('.ws-law')].some((x) => !x.hidden);

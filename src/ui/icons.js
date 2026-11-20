@@ -1019,6 +1019,8 @@ const U = {
   sparkle: `<path class="s" d="${sparkle(16, 16, 11)}"/>`,
   compass: '<circle cx="16" cy="16" r="12"/><path class="ts" d="M16 6.5l3.2 9.5h-6.4z" style="stroke:none"/><path class="s" d="M16 25.5 12.8 16h6.4z" opacity=".55"/>',
   expand: '<path d="M5 12V5h7M27 12V5h-7M5 20v7h7M27 20v7h-7"/>',
+  // Overview: a folded map (not the four corners, which read as full screen)
+  overview: '<path class="f" d="M4 8.5 11 5.5l10 3 7-3v18l-7 3-10-3-7 3z"/><path d="M4 8.5 11 5.5l10 3 7-3v18l-7 3-10-3-7 3zM11 5.5v18M21 8.5v18"/>',
   collapse: '<path d="M12 5v7H5M20 5v7h7M12 27v-7H5M20 27v-7h7"/>',
   check: '<path d="M7 16.5l6 6L25.5 9.5"/>',
   wall: '<path class="f" d="M4 27V13h4v-3h4v3h3v-3h2v3h3v-3h4v3h4v14z"/><path d="M4 27V13h4v-3h4v3h3v-3h2v3h3v-3h4v3h4v14zM4 20h24M10 20v7M16 13v7M22 20v7"/>',

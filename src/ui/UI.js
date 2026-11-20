@@ -9,6 +9,7 @@ import './hud6.css';
 import './hud8.css';
 import './hud7.css';
 import './hud9.css';
+import './hud10.css';
 import { CATEGORIES, listPowers, getPower } from '../powers/registry.js';
 import { el, safe, hexCss } from './dom.js';
 import { SEA_LEVEL } from '../world/constants.js';
@@ -105,7 +106,7 @@ export class UI {
     this.overviewBtn = el(
       'button',
       { class: 'ws-overview ws-glass', type: 'button', 'aria-label': 'Overview (M)', 'data-tip': 'Overview · M', onclick: () => this.overview() },
-      el('span', { class: 'ws-overview__ico', html: uiIcon('expand') }),
+      el('span', { class: 'ws-overview__ico', html: uiIcon('overview') }),
       el('span', { class: 'ws-overview__txt', text: 'Overview' }),
     );
     this.hud.append(this.overviewBtn);
