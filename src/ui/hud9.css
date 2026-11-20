@@ -1105,3 +1105,23 @@
     --ws-clocktxt: 168px;
   }
 }
+
+/* ---- Favorites: on desktops the panel opens just above its button (bottom
+   left), not at the far top; on phones the sheet grows to fit its rows, up to
+   the stats row; a row that cannot be followed keeps the button's place */
+@media (min-width: 721px) and (min-height: 501px) {
+  .ws-side.ws-favs {
+    top: auto;
+    bottom: calc(var(--ws-edge) + 58px);
+  }
+}
+@media (max-width: 720px) and (min-height: 501px) {
+  .ws-side.ws-favs {
+    max-height: calc(100vh - 140px - var(--ws-edge) - 90px);
+    max-height: calc(100dvh - 140px - var(--ws-edge) - 90px);
+  }
+}
+.ws-favs__acts .ws-favs__follow[hidden] {
+  display: grid !important;
+  visibility: hidden;
+}
