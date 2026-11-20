@@ -1171,7 +1171,9 @@ void terrainSurface() {
         float plaza = step(0.5, pvs.a);
         float modern = step(1.5, plvl);
         float fut = step(2.5, plvl);
-        float swW = mix(0.11, 0.15, modern);
+        // (a modern carriageway is about 0.6 of a tile, with 0.2 sidewalks,
+        // so a car and a house keep their proportions)
+        float swW = mix(0.11, 0.2, modern);
         float side = 1.0 - smoothstep(swW - aa, swW + aa, dE);
         float curb = (1.0 - smoothstep(swW + 0.035 - aa, swW + 0.035 + aa, dE)) * (1.0 - side);
         float lum0 = clamp(lum(albedo) / 0.09, 0.8, 1.15);
@@ -1190,7 +1192,7 @@ void terrainSurface() {
         float lc = alongX > 0.5 ? pcf.y : pcf.x;
         float la = alongX > 0.5 ? p.x : p.y;
         float dash = (alongX + alongZ) * (1.0 - smoothstep(0.014, 0.014 + aa, abs(lc - 0.5))) * step(0.45, fract(la * 1.6)) * (1.0 - smoothstep(0.025, 0.06, s.fw));
-        asph = mix(asph, asph * 0.82, (alongX + alongZ) * (1.0 - smoothstep(0.04, 0.10, abs(abs(lc - 0.5) - 0.2))) * 0.6);
+        asph = mix(asph, asph * 0.82, (alongX + alongZ) * (1.0 - smoothstep(0.03, 0.08, abs(abs(lc - 0.5) - 0.15))) * 0.6);
         asph = mix(asph, mix(vec3(0.62, 0.55, 0.30), vec3(0.75, 0.78, 0.80), fut), dash * (1.0 - plaza));
         vec3 way = mix(setts, asph, modern);
         // sidewalk: flagstones (4) or concrete slabs (5+), slab joints every third of a tile
@@ -1219,6 +1221,25 @@ void terrainSurface() {
         vec3 lawn = vec3(0.17, 0.30, 0.085) * (0.88 + 0.2 * s.det.r + 0.1 * (s.meso.g - 0.5));
         lawn = mix(lawn, vec3(lum(lawn)) * vec3(0.95, 0.95, 1.0), snowB);
         float lk = clamp(rdBlend + soilB * 0.85, 0.0, 1.0) * flat0 * smoothstep(0.08, 0.3, st.r + pvs.b);
+        // every open plot inside the paving (Terrain._writeSettle A): lawn
+        // with faint mowing stripes, and here and there a small park
+        // (deeper green, a gravel path across it, a few flower beds)
+        float lawnA = pvs.a * flat0 * smoothstep(0.62, 0.82, s.n.y);
+        vec2 lq = p - floor(p);
+        float mow = step(0.5, fract((hash12(vec2(pci)) > 0.5 ? p.x : p.y) * 3.0));
+        lawn *= 0.96 + 0.06 * mow * (1.0 - smoothstep(0.02, 0.05, s.fw));
+        float parkT = step(hash12(vec2(pci) + 17.3), 0.22) * step(0.6, pvs.a);
+        if (parkT > 0.5) {
+          lawn *= vec3(0.86, 0.95, 0.82);
+          float pth = hash12(vec2(pci) + 3.7) > 0.5 ? abs(lq.x - 0.5) : abs(lq.y - 0.5);
+          float path = 1.0 - smoothstep(0.06 - aa, 0.06 + aa, pth);
+          vec2 fq4 = fract(p * 4.0) - 0.5;
+          float bed = (1.0 - smoothstep(0.16, 0.22, length(fq4))) * step(0.72, hash12(floor(p * 4.0) + 9.1)) * (1.0 - path);
+          vec3 flw = mix(vec3(0.62, 0.22, 0.30), vec3(0.72, 0.62, 0.22), step(0.5, hash12(floor(p * 4.0) + 2.2)));
+          lawn = mix(lawn, vec3(0.42, 0.39, 0.33), path * 0.9);
+          lawn = mix(lawn, flw, bed * 0.8 * (1.0 - smoothstep(0.02, 0.05, s.fw)));
+        }
+        lk = max(lk, lawnA);
         albedo = mix(albedo, lawn * clamp(lum(albedo) / 0.12, 0.8, 1.4), lk);
         H *= 1.0 - lk * 0.5;
       }
