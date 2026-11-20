@@ -8,6 +8,7 @@ import { MONSTER_MODELS, AMBIENT_MODELS } from './models/monsters.js';
 import { poseHumanoid, poseQuad, poseChicken, poseSerpent, poseWyrm } from './poses.js';
 import { Overlays, DECAL, EMOTE } from './Overlays.js';
 import { AmbientFauna } from './AmbientFauna.js';
+import { SquareProps } from './SquareProps.js';
 import { TINY, MID } from './models/tiny.js';
 import { horseModel, SADDLE_Y, SADDLE_Z } from './models/horse.js';
 import { bikeModel, BIKE_SEAT_Y, BIKE_SEAT_Z, BIKE_COLORS } from './models/bike.js';
@@ -148,6 +149,7 @@ export class UnitRenderer {
     for (const id of this.defs.keys()) this.model(id);
     this.overlays = new Overlays(game);
     this.ambient = new AmbientFauna(game, this);
+    this.props = new SquareProps(game, this.group); // benches, food stalls, parade squares: one draw
     this.corpses = [];
     this.ripples = [];
     this.puffs = [];
@@ -1177,6 +1179,7 @@ export class UnitRenderer {
     this.puffs.length = pj;
     // ---- ambient birds & fish
     if (!dotsOnly) this.ambient.update(dt, ctx);
+    this.props.update();
     // ---- ripples
     let j = 0;
     for (const r of this.ripples) {

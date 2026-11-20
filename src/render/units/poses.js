@@ -185,7 +185,40 @@ export function poseHumanoid(u, rs, c, P, model) {
     const anim = u.data?.workAnim || 'hammer';
     P[9] = -0.18;
     P[10] = 0.18;
-    if (anim === 'chop' || anim === 'dig') {
+    if (anim === 'drill') {
+      // drill in step with the ranks (round 19): the whole parade shares the
+      // clock (no per-person seed). Eight beats marking time, arms swinging,
+      // the weapon at the shoulder; then present arms for four, the weapon
+      // held upright before the chest; a short stamp between.
+      rs.k = 22;
+      const T = 6;
+      const p = frac(now / T);
+      const beat = now * 2 * Math.PI * 1.25; // steps per second
+      if (p < 0.6) {
+        const st = sin(beat);
+        P[9] = -0.55 * Math.max(0, st);
+        P[10] = -0.55 * Math.max(0, -st);
+        rs.rootY = Math.abs(st) * 0.012;
+        P[5] = 0.35 * st;
+        P[6] = -0.1;
+        P[7] = -0.35; // weapon shouldered
+        P[8] = 0.12;
+        P[14] = -0.3;
+        P[0] = -0.04;
+        P[3] = -0.06;
+      } else {
+        const q = smooth(Math.min(1, (p - 0.6) / 0.06));
+        P[9] = 0;
+        P[10] = 0;
+        P[5] = -1.05 * q;
+        P[6] = -0.42 * q - 0.1 * (1 - q);
+        P[7] = -0.35 - 0.8 * q;
+        P[8] = 0.12 + 0.22 * q;
+        P[14] = -0.3 + 1.2 * q;
+        P[0] = -0.06;
+        P[3] = -0.1;
+      }
+    } else if (anim === 'chop' || anim === 'dig') {
       const T = anim === 'chop' ? 1.2 : 1.05;
       const p = frac(now / T + c.seed);
       const arm = track(p, anim === 'chop' ? CHOP : DIG);

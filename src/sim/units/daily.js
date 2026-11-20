@@ -1,4 +1,5 @@
 import { simWeather } from '../disasters/util.js';
+import { SEA_LEVEL } from '../../world/constants.js';
 
 // Daily life (Life module, docs/DAILY-LIFE.md): the everyday round of village
 // people on top of their work. A daily rhythm (sleep at night, three meals,
@@ -25,6 +26,8 @@ import { simWeather } from '../disasters/util.js';
 // else the hall), the temple, the docks, the station, festival nights.
 
 const ADULT = 16;
+// day episodes the evening ends (round 19)
+const DAY_EP = new Set(['inside', 'chore', 'shop', 'wait', 'school', 'hold']);
 const DAY_S = 360; // game seconds per day (src/core/Game.js DAY_SECONDS)
 const H = DAY_S / 24; // game seconds per hour
 const MEAL = [
@@ -199,6 +202,11 @@ export function installDaily(Units) {
       const p = { x: b.doorX + (dx / l) * 1.6, z: b.doorZ + (dz / l) * 1.6 };
       if (c.sqs.every((q) => (q.x - p.x) ** 2 + (q.z - p.z) ** 2 > 16)) c.sqs.push(p);
     }
+    // benches and a food stall about the main square of a town (round 19;
+    // drawn by the units renderer's prop batch from v._props)
+    c.props = null;
+    if ((v.pop || 0) >= 10) c.props = v._props = this._dlProps(v, c.sq, c.era);
+    else v._props = null;
     c.market = market;
     c.temple = temple;
     c.docks = docks;
@@ -219,6 +227,42 @@ export function installDaily(Units) {
     return c;
   };
 
+  // Benches and a food stall round a square: free land tiles at the edge of
+  // the gathering, facing in. {stall: {x, z, rot} | null, benches: [...]}
+  P._dlProps = function (v, sq, era) {
+    const old = v._props;
+    if (old && Math.abs(old.sx - sq.x) < 0.01 && Math.abs(old.sz - sq.z) < 0.01 && old.era === era) return old;
+    const w = this.game.world;
+    const ok = (x, z) => {
+      const tx = Math.floor(x),
+        tz = Math.floor(z);
+      if (!w.inBounds(tx, tz)) return false;
+      const i = tz * w.w + tx;
+      return w.building[i] < 0 && w.height[i] > SEA_LEVEL + 0.05;
+    };
+    const used = [];
+    const place = (r, a0) => {
+      for (let k = 0; k < 12; k++) {
+        const a = a0 + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 0.45;
+        const x = sq.x + Math.sin(a) * r,
+          z = sq.z + Math.cos(a) * r;
+        if (!ok(x, z) || used.some((p) => (p.x - x) ** 2 + (p.z - z) ** 2 < 0.8)) continue;
+        const p = { x, z, rot: Math.atan2(sq.x - x, sq.z - z) };
+        used.push(p);
+        return p;
+      }
+      return null;
+    };
+    const a0 = hash(v.id, 31) * Math.PI * 2;
+    const stall = place(2.7, a0);
+    const benches = [];
+    for (const da of [2.0, -2.0, Math.PI]) {
+      const b = place(2.3, a0 + da);
+      if (b) benches.push(b);
+    }
+    return { sx: sq.x, sz: sq.z, era, stall, benches, y: w.heightAt(sq.x, sq.z) };
+  };
+
   // A free standing spot near (x, z) for this person (not in a building or the water).
   P._dlSpot = function (u, x, z, r = 3) {
     const w = this.game.world;
@@ -227,6 +271,88 @@ export function installDaily(Units) {
     if (w.inBounds(tx, tz) && w.building[tz * w.w + tx] < 0 && this._pathable(u, tx, tz)) return { x, z };
     const t = this.findNearestTile(x, z, r, (ax, ay, i) => w.building[i] < 0 && this._pathable(u, ax, ay));
     return t ? { x: t.x + (hash(u.id, 9) - 0.5) * 0.5, z: t.z + (hash(u.id, 10) - 0.5) * 0.5 } : null;
+  };
+
+  // ---- the parade square (round 19) ------------------------------------------
+  // Soldiers drill together in ranks of up to six on a paved square before the
+  // barracks (or the hall), facing it, in step (the renderer's 'drill' pose
+  // runs on the shared clock). v._parade = {b, ok, x, z, ax, az (out from the
+  // door), W, D, slots: unit ids}. The renderer paves it (units/props).
+  P._parade = function (v, b) {
+    const g = this.game;
+    const now = g.time.total;
+    let pd = v._parade;
+    if (pd && pd.b === b.id && (pd.ok || now - pd.t < 60)) return pd.ok ? pd : null;
+    const w = g.world;
+    const dx = b.doorX - (b.x ?? b.doorX),
+      dz = b.doorZ - (b.z ?? b.doorZ);
+    const L = Math.hypot(dx, dz) || 1;
+    const ux = dx / L,
+      uz = dz / L;
+    const W = 3.4,
+      D = 2.4;
+    const free = (x, z) => {
+      const tx = Math.floor(x),
+        tz = Math.floor(z);
+      if (!w.inBounds(tx, tz)) return false;
+      const i = tz * w.w + tx;
+      return w.building[i] < 0 && w.height[i] > SEA_LEVEL + 0.05;
+    };
+    for (const [ax, az] of [[ux, uz], [-uz, ux], [uz, -ux]]) {
+      for (const dist of [1.9, 2.6, 3.4]) {
+        const cx = b.doorX + ax * dist,
+          cz = b.doorZ + az * dist;
+        let ok = true,
+          lo = 1e9,
+          hi = -1e9;
+        for (let a = -0.5; a <= 0.5 && ok; a += 0.25)
+          for (let c = -0.5; c <= 0.5 && ok; c += 0.5) {
+            const x = cx - az * a * W + ax * c * D,
+              z = cz + ax * a * W + az * c * D;
+            if (!free(x, z)) ok = false;
+            else {
+              const h = w.heightAt(x, z);
+              lo = Math.min(lo, h);
+              hi = Math.max(hi, h);
+            }
+          }
+        if (ok && hi - lo < 0.16) {
+          pd = v._parade = { b: b.id, ok: true, x: cx, z: cz, ax, az, W, D, y: hi, lo, slots: [], t: now, v: v.id };
+          return pd;
+        }
+      }
+    }
+    v._parade = { b: b.id, ok: false, t: now };
+    return null;
+  };
+  // This soldier's place in the ranks (null: the ranks are full). Six to a
+  // rank, filled from the middle out; places of those no longer drilling free up.
+  const COLS = [2, 3, 1, 4, 0, 5];
+  P._paradeSlot = function (pd, u) {
+    const live = (id) => {
+      const o = this.byId.get(id);
+      return o && o.alive && ((o._dl && o._dl.pd === pd) || (o._offd && o._offd.pd === pd));
+    };
+    let i = pd.slots.indexOf(u.id);
+    if (i < 0) {
+      for (let k = 0; k < pd.slots.length; k++) if (pd.slots[k] !== u.id && !live(pd.slots[k])) pd.slots[k] = -1;
+      i = pd.slots.indexOf(-1);
+      if (i < 0) {
+        if (pd.slots.length >= 18) return null;
+        i = pd.slots.length;
+        pd.slots.push(u.id);
+      } else pd.slots[i] = u.id;
+    }
+    const row = Math.floor(i / 6),
+      col = COLS[i % 6] - 2.5;
+    // rank 0 nearest the barracks; everyone faces it
+    const f = (row - 1) * 0.55;
+    return { x: pd.x - pd.az * col * 0.5 + pd.ax * f, z: pd.z + pd.ax * col * 0.5 + pd.az * f, fx: pd.x - pd.ax * 9, fz: pd.z - pd.az * 9 };
+  };
+  // Drill hours: the morning parade and the afternoon one.
+  P._drillHours = function () {
+    const h = this.game.time.hour ?? 12;
+    return (h >= 8 && h < 11) || (h >= 13.5 && h < 16.3);
   };
 
   // ---- episodes ---------------------------------------------------------------
@@ -251,6 +377,7 @@ export function installDaily(Units) {
       act: opts.act === null ? null : opts.act || k,
       tries: 0,
       t0: now,
+      h0: this.game.time.hour ?? 12,
     });
     if (opts.x != null) {
       const s = opts.free ? { x: opts.x, z: opts.z } : this._dlSpot(u, opts.x, opts.z);
@@ -338,6 +465,17 @@ export function installDaily(Units) {
     // children grow up while they play (the village brain ages them, see civ/brain.js)
     const child = u.age < ADULT;
     if (child && u._dl && !u.flags?.frozenAge && !d.frozenAge) u.age += ((elapsed || 0) / 30) * 1.7;
+    // the evening begins: the day's errands end (indoors at work or a
+    // neighbor's, a chore, the market, school), so the town comes out to the
+    // square at dusk (round 19; also when the clock is set straight to evening)
+    if (u._dl && DAY_EP.has(u._dl.k) && u.job !== 'soldier' && this.game.settings?.dayNight) {
+      const h = this.game.time.hour ?? 12;
+      const e0 = 16.9 + hash(u.id, 6) * 0.6;
+      if (h >= e0 && u._dl.h0 < e0 - 0.05 && h < 23) {
+        this._dlEnd(u);
+        u._dlNext = now;
+      }
+    }
     if (u._dl) {
       if (now < u._dl.until && this._dlStep(u, now, v)) return true;
       const was = u._dl.k;
@@ -377,13 +515,19 @@ export function installDaily(Units) {
         const happy = u.hunger < 0.5 && u.energy > 0.25 && !u.statuses?.has('mourning');
         let a;
         const hr = this.game.time.hour ?? 19;
+        if (dl.bench) {
+          u.activity = r < 0.8 ? 'sit' : 'laugh';
+          dl.lab = 'Sitting on a bench';
+          if (dl.fx != null) u.heading = Math.atan2(dl.fx - u.x, dl.fz - u.z);
+          return true;
+        }
         if (dl.music) a = 'sing';
-        else if (dl.supper && hr < 19.6) a = 'eat';
+        else if (dl.supper && hr < 20.2) a = 'eat';
         else if (pl.fest) a = r < 0.38 ? 'dance' : r < 0.58 ? 'sing' : r < 0.74 ? 'laugh' : r < 0.84 ? 'cheer' : 'talk';
         else a = r < 0.56 ? 'talk' : r < (happy ? 0.76 : 0.64) ? 'laugh' : r < (happy ? 0.86 : 0.7) ? 'sing' : 'talk';
         if (!happy && r > 0.9 && !dl.music) a = 'sit';
         u.activity = a;
-        dl.lab = dl.music ? (pl.era >= 5 ? 'Playing guitar on the square' : 'Playing music on the square') : a === 'eat' ? 'Sharing supper on the square' : a === 'talk' ? (dl.wn ? `Chatting with ${dl.wn}` : pl.market ? 'Gossiping at the market' : 'Chatting') : a === 'cheer' ? (pl.harvest ? 'Celebrating the harvest' : 'Celebrating the festival') : a === 'sing' && pl.fest ? 'Singing at the festival' : null;
+        dl.lab = dl.music ? (pl.era >= 5 ? 'Playing guitar on the square' : 'Playing music on the square') : a === 'eat' ? (dl.sq0 && pl.props?.stall ? 'Eating at the food stall' : 'Sharing supper on the square') : a === 'talk' ? (dl.wn ? `Chatting with ${dl.wn}` : dl.lab0 || (pl.market ? 'Gossiping at the market' : 'Chatting')) : a === 'cheer' ? (pl.harvest ? 'Celebrating the harvest' : 'Celebrating the festival') : a === 'sing' && pl.fest ? 'Singing at the festival' : null;
         if (dl.fx != null) u.heading = Math.atan2(dl.fx - u.x, dl.fz - u.z);
         return true;
       }
@@ -889,21 +1033,38 @@ export function installDaily(Units) {
   };
 
   // Groups of two to five at the square, facing in.
+  // (round 19) The main square fills first: up to fifteen grown-ups who live
+  // within reach of it gather there each evening, in three chatting groups
+  // round a musician, with some eating from the food stall; the rest go to the
+  // town's other squares or chat with the neighbors by their doors.
   P._dlSocial = function (u, v, pl, dur, child) {
     const day = this.game.time.day | 0;
+    const sq0 = pl.sqs[0];
+    let E = v._eve;
+    if (!E || E.day !== day) E = v._eve = { day, ids: [] };
+    if (!child) {
+      E.ids = E.ids.filter((id) => {
+        const o = this.byId.get(id);
+        return o && o !== u && o.alive && o._dl && o._dl.k === 'social' && o._dl.sq0;
+      });
+      if (E.ids.length < 15 && (u.x - sq0.x) ** 2 + (u.z - sq0.z) ** 2 < 26 * 26) return this._dlSquare(u, v, pl, dur, E);
+    }
     const ng = pl.groups;
     const gi = Math.floor(hash(u.id, day) * ng);
     const ga = (gi / ng) * Math.PI * 2 + hash(v.id, day) * 3;
-    const sq = pl.sqs[gi % pl.sqs.length];
-    const gq = Math.floor(gi / pl.sqs.length);
-    const gr = ng <= pl.sqs.length ? 0 : 1.1 + (gq % 3) * 0.75;
+    const others = pl.sqs.length > 1 ? pl.sqs.length - 1 : 0;
+    const home = !child && !others ? this._homeOf(u, v) : null;
+    const sq = others ? pl.sqs[1 + (gi % others)] : home ? { x: home.doorX, z: home.doorZ } : sq0;
+    const gq = Math.floor(gi / Math.max(1, others));
+    const gr = home ? 0.9 : ng <= pl.sqs.length ? 0 : 1.1 + (gq % 3) * 0.75;
     const gx = sq.x + Math.sin(ga) * gr,
       gz = sq.z + Math.cos(ga) * gr;
     const a = hash(u.id, day + 17) * Math.PI * 2;
     const rr = 0.3 + hash(u.id, 23) * 0.12;
-    const dl = this._dlStart(u, 'social', Math.min(40, Math.max(8, dur)), { x: gx + Math.sin(a) * rr, z: gz + Math.cos(a) * rr, fx: gx, fz: gz, g: v.id * 16 + gi + 1, go: pl.market ? 'Walking to the market' : 'Walking to the square', act: 'talk' });
+    const dl = this._dlStart(u, 'social', Math.min(40, Math.max(8, dur)), { x: gx + Math.sin(a) * rr, z: gz + Math.cos(a) * rr, fx: gx, fz: gz, g: home ? -(home.id + 1) : v.id * 16 + gi + 1, go: home ? 'Walking home' : pl.market ? 'Walking to the market' : 'Walking to the square', act: 'talk' });
+    if (home) dl.lab0 = 'Chatting with the neighbors';
     // one in eight plays music for the group; some bring their supper along
-    if (!child && hash(u.id, day + 5) < 0.12) dl.music = true;
+    if (!child && !home && hash(u.id, day + 5) < 0.12) dl.music = true;
     else if (!child && hash(u.id, day + 9) < 0.3) dl.supper = true;
     // a friend to name ("Chatting with ...")
     const key = dl.g;
@@ -919,6 +1080,75 @@ export function installDaily(Units) {
       dl.wn = first(best.name);
       if (best._dl && !best._dl.wn) best._dl.wn = first(u.name);
     }
+    return true;
+  };
+
+  P._dlSquare = function (u, v, pl, dur, E) {
+    const sq = pl.sqs[0];
+    const day = this.game.time.day | 0;
+    const k = E.ids.length;
+    E.ids.push(u.id);
+    const props = pl.props;
+    const base = hash(v.id, day) * Math.PI * 2;
+    // is anyone playing yet? the first to come brings an instrument
+    const mus = E.ids.some((id) => id !== u.id && this.byId.get(id)?._dl?.music);
+    let x,
+      z,
+      fx = sq.x,
+      fz = sq.z,
+      g = v.id * 16 + 15,
+      music = false,
+      supper = false;
+    const r = hash(u.id, day + 9);
+    if (!mus) {
+      // the musician: at the middle of the square, facing the biggest group
+      music = true;
+      x = sq.x + Math.sin(base) * 0.35;
+      z = sq.z + Math.cos(base) * 0.35;
+      fx = sq.x + Math.sin(base) * 3;
+      fz = sq.z + Math.cos(base) * 3;
+    } else if (props?.stall && r < 0.3 && (this.game.time.hour ?? 19) < 20.2) {
+      // supper from the food stall, standing before it
+      supper = true;
+      const st = props.stall;
+      const lat = (hash(u.id, 41) - 0.5) * 1.0;
+      const ox = Math.sin(st.rot),
+        oz = Math.cos(st.rot);
+      x = st.x + ox * 0.6 + oz * lat;
+      z = st.z + oz * 0.6 - ox * lat;
+      fx = st.x;
+      fz = st.z;
+      g = v.id * 16 + 14;
+    } else if (props?.benches?.length && r >= 0.3 && r < 0.46) {
+      // a seat on a bench, looking over the square
+      const b = props.benches[k % props.benches.length];
+      const lat = (hash(u.id, 43) < 0.5 ? -0.1 : 0.1) * 1.0;
+      const ox = Math.sin(b.rot),
+        oz = Math.cos(b.rot);
+      x = b.x + oz * lat - ox * 0.02;
+      z = b.z - ox * lat - oz * 0.02;
+      fx = b.x + ox * 3;
+      fz = b.z + oz * 3;
+      g = v.id * 16 + 13;
+    } else {
+      // three groups round the musician, four or five to a group
+      const gi = k % 3;
+      const ga = base + (gi / 3) * Math.PI * 2 + 0.5;
+      const gx = sq.x + Math.sin(ga) * 1.35,
+        gz = sq.z + Math.cos(ga) * 1.35;
+      const a = (Math.floor(k / 3) / 5) * Math.PI * 2 + hash(u.id, 17);
+      const rr = 0.32 + hash(u.id, 23) * 0.08;
+      x = gx + Math.sin(a) * rr;
+      z = gz + Math.cos(a) * rr;
+      fx = gx;
+      fz = gz;
+      g = v.id * 16 + 1 + gi;
+    }
+    const dl = this._dlStart(u, 'social', Math.min(40, Math.max(12, dur)), { x, z, fx, fz, g, go: pl.market ? 'Walking to the market' : 'Walking to the square', act: 'talk' });
+    dl.sq0 = true;
+    dl.music = music;
+    dl.supper = supper;
+    if (g === v.id * 16 + 13) dl.bench = true;
     return true;
   };
 
