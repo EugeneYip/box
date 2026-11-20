@@ -2056,7 +2056,9 @@ export class Units {
     // eighth tick instead of every fourth, gliding between updates, and the
     // people among them re-think on their timer half as often (arrivals and
     // fights still decide at once: see the skip below)
-    const far8 = stepK >= 3 && w.w * w.h > 65536 * 2 && !globalThis.__lod8Off;
+    // (round 21: from the 8x step, 2/15, up; it was 3/15 and up, so 8x on a
+    // big map ran every distant walker at the fourth-tick rate)
+    const far8 = stepK >= 2 && w.w * w.h > 65536 * 2 && !globalThis.__lod8Off;
     const far8d2 = Math.max(lr2 * 16, FAR8_DIST * FAR8_DIST);
     const yearDt = dt / YEAR;
     const list = this.list;

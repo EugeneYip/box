@@ -229,6 +229,19 @@ export const brain = {
     return this.__walkCost;
   },
 
+  // (round 21) the level crossing for civPath: stepping onto a street tile a
+  // railway runs over from off the line costs the street's 0.5, not the 2.5
+  // of walking along the line (_walkCost); off-street track keeps its 6
+  _levelCrossing() {
+    const m = this.railMask;
+    if (!m || m.length !== this.world.size || globalThis.__lod8Off) return null;
+    let X = this.__lx;
+    if (!X || X.m !== m) {
+      X = this.__lx = { m, bit: 1, c: (i, c) => (this.use[i] === USE.ROAD ? 0.5 : c) };
+    }
+    return X;
+  },
+
   _pathTo(u, x, z, long = false) {
     const w = this.world;
     const sx = Math.floor(u.x),
@@ -301,7 +314,7 @@ export const brain = {
     }
     if (long) this._longBudget--;
     else this._pathBudget--;
-    const p = civPath(w, w.clampTx(sx), w.clampTy(sy), gx, gy, this._walkCost(), long ? 32000 : 3200, 0.5);
+    const p = civPath(w, w.clampTx(sx), w.clampTy(sy), gx, gy, this._walkCost(), long ? 32000 : 3200, 0.5, null, this._levelCrossing());
     PC.set(key, p || null);
     if (long && p && p.length > 24 && p[p.length - 1] === gy * w.w + gx) this._addTrunk(w.clampTx(sx), w.clampTy(sy), gx, gy, p);
     if (!p) {
