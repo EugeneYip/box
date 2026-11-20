@@ -1306,3 +1306,43 @@
     visibility: hidden;
   }
 }
+
+/* ---- round 21, tech panel: the current-era frame lines up with the header
+   (no outward margin); a locked card's requirements wrap to a full second
+   line; "and N more" is a link that opens the whole list in place */
+.ws-tech__col.is-cur {
+  margin: 0;
+  padding: 6px;
+}
+.ws-techcard__head {
+  flex-wrap: wrap;
+  row-gap: 1px;
+}
+.ws-techcard__head .ws-techcard__needs {
+  flex-basis: 100%;
+  overflow: visible;
+  white-space: normal;
+  text-overflow: clip;
+}
+button.ws-techcard__more {
+  margin: 0;
+  padding: 0 0 0 3px;
+  border: 0;
+  color: var(--ws-gold);
+  font: inherit;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+  background: none;
+  cursor: pointer;
+}
+button.ws-techcard__more:hover {
+  color: var(--ws-gold-hi);
+}
+.ws-techcard__brings.is-open {
+  white-space: normal;
+}
+.ws-techcard__brings.is-open .ws-techcard__item {
+  overflow: visible;
+  white-space: normal;
+  text-overflow: clip;
+}
