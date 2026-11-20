@@ -152,7 +152,9 @@ float wsHash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p
   float dmg = vState.x;
   if (dmg > 0.0) {
     float n = wsHash(floor(vLocal * 7.0) + 3.0);
-    diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.25, 0.22, 0.2), dmg * smoothstep(0.25, 0.9, n + dmg * 0.5));
+    // (neutral soot: a warm one turned a damaged grey carrier's deck into a
+    // brown checker, round 20)
+    diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.3, 0.3, 0.31), dmg * smoothstep(0.25, 0.9, n + dmg * 0.5));
   }
 }`,
       )

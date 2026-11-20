@@ -1123,7 +1123,16 @@ export class FleetRenderer {
     if (!on) return;
     // faint at mid zoom, gone by far zoom (white dashes over the sea read as debug lines)
     const laneFar = 1 - Math.min(1, Math.max(0, (dist - 70) / 30));
-    this.uniforms.uLaneAlpha.value = Math.min(0.55, (dist - 45) / 60) * 0.6 * laneFar;
+    // and gone when the camera looks (nearly) straight down: from above a
+    // pale dashed line across open sea reads as a debug line (round 20)
+    const rig = this.game.cameraRig;
+    const pitch = rig?.pitchFor ? rig.pitchFor(dist) : 0.8;
+    const laneTop = 1 - Math.min(1, Math.max(0, (pitch - 0.9) / 0.15)); // 52 to 60 degrees
+    this.uniforms.uLaneAlpha.value = Math.min(0.55, (dist - 45) / 60) * 0.6 * laneFar * laneTop;
+    if (laneTop <= 0.01) {
+      this.lanes.visible = false;
+      return;
+    }
     if ((this._laneT -= dt) > 0) return;
     this._laneT = 0.5;
     const geo = this.lanes.geometry;

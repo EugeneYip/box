@@ -47,6 +47,8 @@ export const planner = {
     if (t === TILE.ROAD) return false;
     // never on a railway, a guideway's footing or a highway's strip (modern.js railMask)
     if (this.railMask?.[i]) return false;
+    // nor in an airport's clear zone (modern.js airZone)
+    if (this.airZone?.[i]) return false;
     const f = w.flora[i];
     if (f === FLORA.BOULDER) return false;
     if (!allowTrees && FLORA_INFO[f]?.isTree) return false;
@@ -809,6 +811,9 @@ export const planner = {
         return b && b.type === 'gate' ? 0.4 : Infinity;
       }
       if (u === USE.ROAD) return 0.4;
+      // an airport's clear zone: no street off a runway's end, dear beside it
+      const az = this.airZone?.[i];
+      if (az === 2) return Infinity;
       if (u === USE.RUIN) return 5;
       if (u === USE.PLOT) return 4;
       if (w.flora[i] === FLORA.BOULDER) return Infinity;
@@ -819,6 +824,7 @@ export const planner = {
       const x = i % w.w,
         y = (i / w.w) | 0;
       c += w.slopeAt(x, y) * 1.4;
+      if (az === 1) c += 8;
       return c;
     };
     return this.__roadCost;
@@ -865,6 +871,7 @@ export const planner = {
       if (!TILE_INFO[t]?.walkable || t === TILE.LAVA || t === TILE.ICE) return false;
       if (w.flora[i] === FLORA.BOULDER) return false;
       if (this.railMask?.[i]) return false;
+      if (this.airZone?.[i]) return false;
       return true;
     };
     // the tiles of an L from a to b (first along x when xFirst), or null
