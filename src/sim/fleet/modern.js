@@ -327,7 +327,7 @@ export const modern = {
     if (!fire && !medic && !farm && !transit && !heli) return;
     const now = this.game.time.total;
     const T = this._civT || (this._civT = new Map());
-    const roomy = this.landCount() < this.budget.land;
+    // (each service by its own share of the land limit: Fleet.landRoom)
     if (fire) this._fireScan();
     for (const vid of k.villages) {
       const v = civ.villages[vid];
@@ -335,16 +335,15 @@ export const modern = {
       let t = T.get(vid);
       if (!t) T.set(vid, (t = { fire: 0, medic: 0, farm: now + this.rng() * 20, transit: now + this.rng() * 10 }));
       if (fire && now >= t.fire && this._fireCall(k, v)) t.fire = now + 6;
-      if (!roomy) continue;
-      if (medic && now >= t.medic) {
+      if (medic && now >= t.medic && this.landRoom('ambulance')) {
         t.medic = now + 8;
         this._medicCall(k, v);
       }
-      if (farm && now >= t.farm) {
+      if (farm && now >= t.farm && this.landRoom('tractor')) {
         t.farm = now + 25 + this.rng() * 20;
         this._sendTractor(k, v);
       }
-      if (transit && now >= t.transit && (v.tier || 0) >= 1) {
+      if (transit && now >= t.transit && (v.tier || 0) >= 1 && this.landRoom('bus')) {
         t.transit = now + 14 + this.rng() * 10;
         this._sendTransit(k, v);
       }
@@ -430,7 +429,7 @@ export const modern = {
         if (d < bd) (bd = d), (tgt = { x: L[i], z: L[i + 1] });
       }
     }
-    if (!tgt || this.count(k.id, 'fireengine') >= 2 + (k.villages.length >> 2) || this.landCount() >= this.budget.land * 1.05) return false;
+    if (!tgt || this.count(k.id, 'fireengine') >= 2 + (k.villages.length >> 2) || !this.landRoom('fireengine')) return false;
     const base = this._base(v, ['firestation', 'firehouse', 'fire']);
     if (!base) return false;
     const d = this._doorOf(base);

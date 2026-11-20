@@ -18,7 +18,9 @@ export const land = {
     const a = civ?.villages?.[o.from],
       b = civ?.villages?.[o.to];
     if (!a?.alive || !b?.alive || a === b) return null;
-    if (this.landCount() >= this.budget.land) return null;
+    // Combustion: trucks take over the hauling (no more ox carts)
+    const model = o.model || this.cartModel(kid ?? a.kingdom);
+    if (!this.landRoom(model || 'oxcart')) return null;
     const path = this._roadPath(a, b);
     if (!path) return null;
     const cargo = {};
@@ -30,8 +32,6 @@ export const land = {
       cargo[r] = take;
       any += take;
     }
-    // Combustion: trucks take over the hauling, a few carts at a time
-    const model = o.model || this.cartModel(kid ?? a.kingdom);
     const v = this.spawn('oxcart', kid ?? a.kingdom, path[0], path[1], { home: a.id, state: 'move', heading: Math.atan2(path[3] - path[1], path[2] - path[0]), model });
     v.cargo = any ? cargo : null;
     v.anim.cargoType = cargo.wood ? 0 : cargo.stone ? 1 : cargo.ore ? 3 : 2;
@@ -47,17 +47,26 @@ export const land = {
     const a = civ?.villages?.[o.from],
       b = civ?.villages?.[o.to];
     if (!a?.alive || !b?.alive || a === b) return null;
-    if (this.landCount() >= this.budget.land) return null;
+    if (!this.landRoom('caravan')) return null;
     // (a big map's towns lie further apart: the caravan masters look further)
     const reach = this._landReach();
     const path = this._roadPath(a, b, Math.round(5000 * reach * reach));
     if (!path) return null;
     const kid = o.kingdom ?? a.kingdom;
-    const v = this.spawn('caravan', kid, path[0], path[1], { home: a.id, state: 'move', heading: Math.atan2(path[3] - path[1], path[2] - path[0]) });
+    // a realm that knows Combustion sends its trade by truck (the camels and
+    // pack oxen of the caravans are gone from the Industrial era on)
+    const truck = this.hasTech(kid, 'combustion');
+    const v = this.spawn('caravan', kid, path[0], path[1], { home: a.id, state: 'move', heading: Math.atan2(path[3] - path[1], path[2] - path[0]), model: truck ? 'truck' : null });
+    if (!v) return null;
     v.cargo = { goods: 24 };
-    const style = civ.cultureDef?.(a.culture)?.style || '';
-    v.anim.cargoType = /dune/.test(style) || /dune/.test(a.culture || '') ? 2 : 0; // camels in the desert realms
-    v.trail = [];
+    if (truck) {
+      v.role = 'caravan'; // (a truck on the caravan's trade run)
+      v.anim.cargoType = 2;
+    } else {
+      const style = civ.cultureDef?.(a.culture)?.style || '';
+      v.anim.cargoType = /dune/.test(style) || /dune/.test(a.culture || '') ? 2 : 0; // camels in the desert realms
+      v.trail = [];
+    }
     v.mission = { type: 'caravan', phase: 'out', from: a.id, to: b.id, partner: b.kingdom };
     v.voyage = { from: a.id, to: b.id, fromName: a.name, toName: b.name };
     this.setPath(v, path);
@@ -137,14 +146,38 @@ export const land = {
     // ox carts: surplus goes to the capital, or to the realm's neediest town
     if (this.auto.carts && this.hasTech(kid, 'wheel') && k.villages.length >= 2 && now - t.cart > 9) {
       t.cart = now;
-      if (this.count(kid, 'oxcart') < this.cap(kid, 'oxcart') && this.landCount() < this.budget.land) this._sendCart(k);
+      if (this.count(kid, 'oxcart') < this.cap(kid, 'oxcart') && this.landRoom(this.cartModel(kid) || 'oxcart')) this._sendCart(k);
     }
     // caravans to a neighbour at peace
     if (this.auto.caravans && this.hasTech(kid, 'banking') && now - t.caravan > 24) {
       t.caravan = now;
-      if (this.count(kid, 'caravan') < this.cap(kid, 'caravan') && this.landCount() < this.budget.land) this._sendCaravan(k);
+      if (this.count(kid, 'caravan') < this.cap(kid, 'caravan') && this.landRoom('caravan')) this._sendCaravan(k);
+    }
+    // Combustion: the realm's last ox carts and caravans are retired (trucks
+    // and freight trains carry its goods now): one standing at a stop, or out
+    // of sight, goes at once; one on the road in view at its next stop
+    if (this.hasTech(kid, 'combustion') && now - (t.retire ?? -999) > 4) {
+      t.retire = now;
+      const cam = this.game.cameraRig?.cur;
+      for (const v of this.list) {
+        if (!v.alive || v.kingdom !== kid || !this._retired(v)) continue;
+        if (v.state === 'rest' || !cam || Math.max(Math.abs(v.x - cam.x), Math.abs(v.z - cam.z)) > Math.max(50, cam.dist * 1.8 + 24)) this._retireNow(v);
+      }
     }
     void civ;
+  },
+  // An ox cart or a caravan of a realm that knows Combustion
+  _retired(v) {
+    return (v.kind === 'oxcart' || v.kind === 'caravan') && !v.keep && this.hasTech(v.kingdom, 'combustion');
+  },
+  _retireNow(v) {
+    // a caravan on its way home brings its takings with it
+    const m = v.mission;
+    if (v.kind === 'caravan' && m?.phase === 'home') {
+      const home = this.game.civ?.villages?.[m.from];
+      if (home?.alive) home.gold = (home.gold || 0) + 10 * (this.game.civ.techMod?.(v.kingdom, 'gold') ?? 1) * 0.67;
+    }
+    this.remove(v, 'retired');
   },
 
   // Ox carts even out a realm's stores. Food goes by need: from the town with
@@ -350,6 +383,7 @@ export const land = {
       if (to?.alive && v.cargo) for (const [r, n] of Object.entries(v.cargo)) to[r] = (to[r] || 0) + n;
       this.game.events.emit('fleet:delivered', { vehicle: v, kind: v.kind, kingdom: v.kingdom, from: m.from, to: m.to, cargo: v.cargo });
       v.cargo = null;
+      if (this._retired(v)) return this.remove(v, 'retired');
       // trundle home empty
       m.phase = 'home';
       const back = civ.villages[m.from];
@@ -372,6 +406,7 @@ export const land = {
       if (to) this.history(`A caravan of ${kp} trades in ${to.name}`, 'info', { x: to.cx, z: to.cz });
       v.cargo = { gold: 10 };
       m.phase = 'home';
+      if (this._retired(v)) return this._retireNow(v);
       const back = civ.villages[m.from];
       const p = back?.alive && to ? this._roadPath(to, back, 5000) : null;
       if (p) {
@@ -442,7 +477,7 @@ export const land = {
       if (!this.auto.siege || army.dead || army.state === 'gather' || !army.units?.size) continue;
       if (!this.hasTech(army.kingdom, 'siegecraft')) continue;
       if (this._siege.has(army.id)) continue;
-      if ((army.size0 || army.units.size) < 6 || this.landCount() >= this.budget.land) continue;
+      if ((army.size0 || army.units.size) < 6 || !this.landRoom('tank')) continue;
       const bearer = this.game.units?.byId?.get(army.bearer);
       const c = bearer || civ._armyCentre?.(army);
       if (!c) continue;

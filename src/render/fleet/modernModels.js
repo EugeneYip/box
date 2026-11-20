@@ -397,10 +397,12 @@ function deckJet(g, x, y, z, ry, s = 1) {
 function carrier(lo) {
   const g = new VB(227);
   // neutral naval grey, the same in every realm and culture: the realm's
-  // colour only on the island's stripe and the flag
-  const HULL = 0x8a9097,
-    FDECK = 0x6a7077,
-    ISL = 0x949aa2;
+  // colour only on the island's stripe and the flag. (A cool, fairly dark
+  // grey: a lighter one went tan under the warm sun and the color grade, and
+  // the flight deck read as copper, rounds 16 and 18.)
+  const HULL = 0x6f767e,
+    FDECK = 0x535b65,
+    ISL = 0x7a828b;
   const st = steelHull(g, { L: 4.6, W: 0.8, H: 0.36, D: 0.3, col: HULL, low: 0x6a2c26, deck: FDECK, band: 0.025, bowRise: 0.05, rake: 0.2, n: 12, fullB: 0.7 });
   // the flight deck overhangs the hull to port; the island stands to starboard
   const dy = st[6].gy + 0.06;

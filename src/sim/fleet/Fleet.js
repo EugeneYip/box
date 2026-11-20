@@ -14,6 +14,8 @@ import { geoDist, geoWrapOn } from '../../world/geo.js';
 const _SD = { x: 0, z: 0 };
 
 const YEAR = 30; // == YEAR_SECONDS
+// land vehicle groups for the shares of the world's land limit (landRoom)
+const LAND_GROUP = { train: 'rail', maglev: 'rail', ambulance: 'aid', fireengine: 'aid', bus: 'transit', tram: 'transit', tractor: 'transit' };
 const ROT_DIR = [
   [0, 1],
   [1, 0],
@@ -399,9 +401,42 @@ export class Fleet {
   // in a barracks yard in peace does not (it would otherwise crowd out the
   // trains, trucks, buses and ambulances of modern realms)
   landCount() {
-    let n = 0;
-    for (const v of this.list) if (v.alive && v.cls === 'land' && v.parkAt == null) n++;
-    return n;
+    return this.landTally().all;
+  }
+  // The same, by group (counted once a tick and again whenever a vehicle
+  // comes or goes): trains and maglevs ('rail'), ambulances and fire engines
+  // ('aid'), buses, trams and tractors ('transit'), everything else ('other').
+  landTally() {
+    const c = this._lt;
+    if (c && c.ver === this.version && c.tick === this._gwTick) return c;
+    const t = (this._lt = c || {});
+    t.ver = this.version;
+    t.tick = this._gwTick;
+    t.all = t.rail = t.aid = t.transit = t.other = 0;
+    for (const v of this.list) {
+      if (!v.alive || v.cls !== 'land' || v.parkAt != null) continue;
+      t.all++;
+      t[LAND_GROUP[v.kind] || 'other']++;
+    }
+    return t;
+  }
+  // Room under the world's land limit for one more vehicle of this kind.
+  // The limit is shared by quota, not first come first served (round 18: at
+  // Year 600 the trains and caravans had taken every place and no realm sent
+  // out an ambulance or a fire engine): trains and maglevs hold at most 30%
+  // of it, and a quarter is kept for the services (ambulances, fire engines,
+  // buses, trams, tractors), which the haulage, trade, cars and armour may
+  // not take. Emergencies (ambulances and fire engines) find a little room
+  // even over the limit; buses, trams and tractors leave the last few places
+  // to them and take at most 30% between them.
+  landRoom(kind) {
+    const L = this.budget.land;
+    const t = this.landTally();
+    const g = LAND_GROUP[kind] || 'other';
+    if (g === 'aid') return t.all < Math.ceil(L * 1.06) && t.aid < Math.max(4, Math.round(L * 0.15));
+    if (g === 'transit') return t.all < L - Math.max(2, Math.round(L * 0.05)) && t.transit < Math.max(3, Math.round(L * 0.3));
+    if (t.all >= L || t.rail + t.other >= Math.round(L * 0.75)) return false;
+    return g !== 'rail' || t.rail < Math.max(2, Math.round(L * 0.3));
   }
   // per-realm caps (a realm with many harbours keeps more ships)
   cap(kid, kind) {

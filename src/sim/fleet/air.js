@@ -60,8 +60,7 @@ export const air = {
   // Road haulage: trucks take over from carts, a few carts at a time, and
   // carts are gone altogether in the Modern era
   cartModel(kid) {
-    if (this._modernEra(kid)) return 'truck';
-    return this.hasTech(kid, 'combustion') && this.rng() < 0.75 ? 'truck' : null;
+    return this._modernEra(kid) || this.hasTech(kid, 'combustion') ? 'truck' : null;
   },
   // The modern ship of the same routine for an old kind a Modern realm asks
   // for (requestVoyage), or null to sail the old kind
@@ -94,7 +93,7 @@ export const air = {
     const civ = this.game.civ;
     const line = typeof o.line === 'object' ? o.line : civ?.railLine?.(o.line);
     if (!line || !line.pts || line.pts.length < 4) return null;
-    if (this.landCount() >= this.budget.land) return null;
+    if (!this.landRoom(line.kind === 'maglev' ? 'maglev' : 'train')) return null;
     const a = civ.villages[line.a],
       b = civ.villages[line.b];
     if (!a?.alive || !b?.alive) return null;
@@ -165,7 +164,7 @@ export const air = {
   requestCar(o = {}) {
     const civ = this.game.civ;
     const v0 = civ?.villages?.[o.village];
-    if (!v0?.alive || !v0.roadTiles?.length || this.landCount() >= this.budget.land * 0.9) return null;
+    if (!v0?.alive || !v0.roadTiles?.length || !this.landRoom('car') || this.landCount() >= this.budget.land * 0.9) return null;
     const w = this.world;
     const R = v0.roadTiles;
     const i0 = R[(this.rng() * R.length) | 0],
@@ -262,13 +261,21 @@ export const air = {
     if (!def || def.cls !== 'air') return refuse('no such aircraft');
     const K = this.kingdom(o.kingdom);
     if (!K || K.alive === false) return refuse('no such realm');
-    // drones, sky taxis and helicopters share half the air budget, so the
-    // planes that use the runways always find room in the sky (round 16: the
-    // drones of a Future realm filled it and no airport saw a take-off)
-    if (this._airFull(def)) return refuse('the skies are crowded');
     const from = this._airPoint(o.from),
       to = this._airPoint(o.to);
     if (!from || !to) return refuse('no airfield');
+    // The air budget is a hard limit on the aircraft aloft, shared by quota:
+    // drones, sky taxis and helicopters take at most 40% of it, war sorties
+    // 40%, and a field's own circuits leave the last places free (round 16:
+    // the drones of a Future realm filled the sky and no airport saw a
+    // take-off; round 18: the sky held 22 against a limit of 18, yet an
+    // airport with its runway clear was told the skies were crowded). A
+    // take-off asked of a runway when the sky is full makes room: a circuit,
+    // drone or sky taxi far out of sight lands early.
+    const full = this._airFull(def, o);
+    if (full && !(full === 'total' && !o.auto && from.rw && !def.vtol && this._airMakeRoom())) return refuse('the skies are crowded');
+    // a runway takes so many at a time: those on its own approach and climb-out
+    if (from.rw && from.building != null && this._approachBusy(from.building)) return refuse('the runway is busy');
     if (this.grounded(from.x, from.z)) return refuse(this.solarStormLevel() > 0.2 ? 'aircraft are grounded by the solar storm' : this.storm() > 0.5 ? 'aircraft are grounded by the storm' : 'the airfield has no power');
     if (this.dist(from.x, from.z, to.x, to.z) < 1) return refuse('nowhere to fly');
     const f = this._airRecord(o.kind, def, o.kingdom, from, to, o.cargo);
@@ -279,12 +286,57 @@ export const air = {
     this.game.events.emit('fleet:launched', { vessel: f, kind: o.kind, model: o.kind, kingdom: o.kingdom });
     return f;
   },
-  _airFull(def) {
-    let vt = 0,
-      wing = 0;
-    for (const f of this.air) if (f.alive && f.cls === 'air') f.def?.vtol ? vt++ : wing++;
+  // '' when there is room for one more of this kind, 'total' when the sky
+  // holds its limit, 'share' when its group holds its share
+  _airFull(def, o = {}) {
+    let all = 0,
+      vt = 0,
+      war = 0;
+    for (const f of this.air) {
+      if (!f.alive) continue;
+      all++;
+      if (f.cls !== 'air') continue;
+      if (f.def?.vtol) vt++;
+      if (f.cargo?.strike) war++;
+    }
     const cap = this.budget.air;
-    return def.vtol ? vt >= Math.ceil(cap * 0.5) || vt + wing >= cap : wing >= cap;
+    if (all >= cap) return 'total';
+    if (def.vtol) return vt >= Math.ceil(cap * 0.4) ? 'share' : '';
+    if (o.cargo?.strike) return war >= Math.ceil(cap * 0.4) ? 'share' : '';
+    if (o.auto && all >= cap - Math.max(2, Math.round(cap * 0.15))) return 'share';
+    return '';
+  },
+  // Room in a full sky: the circuit, drone or sky taxi farthest out of sight
+  // (cruising, with nothing aboard that matters) lands early. False if none.
+  _airMakeRoom() {
+    const cam = this.game.cameraRig?.cur;
+    const R = cam ? Math.max(40, cam.dist * 1.8 + 24) : 0;
+    let best = null,
+      bd = -1;
+    for (const f of this.air) {
+      if (!f.alive || f.cls !== 'air' || f.phase !== 'cruise' || f.cargo?.strike || f.cargo?.rescue) continue;
+      if (!f.local && !f.def.vtol) continue;
+      const d = cam ? Math.max(Math.abs(f.x - cam.x), Math.abs(f.z - cam.z)) : 1e9;
+      if (d > R && d > bd) (bd = d), (best = f);
+    }
+    if (!best) return false;
+    this._land(best, true);
+    this.air = this.air.filter((f) => f.alive);
+    return true;
+  },
+  // Aircraft on a field's own runway, climb-out or approach: rolling or
+  // climbing away from it, or bound for it and near (final approach, the
+  // roll-out, parked on the apron). A runway takes three at a time.
+  _approachBusy(bid) {
+    let n = 0;
+    for (const f of this.air) {
+      if (!f.alive || f.cls !== 'air' || f.def.vtol) continue;
+      const out = f.from?.building === bid && (f.phase === 'roll' || f.phase === 'climb');
+      const tob = f.to?.building === bid || f.circuit?.building === bid;
+      const inb = tob && (f.phase === 'final' || f.phase === 'rollout' || f.phase === 'parked' || (f.phase === 'cruise' && f._ap != null));
+      if ((out || inb) && ++n >= 3) return true;
+    }
+    return false;
   },
   // Airports and airfields keep busy: every so often each sends a plane up
   // (to another field of its realm or a friendly airport, or round a circuit
@@ -305,11 +357,16 @@ export const air = {
       if (b._airNext == null) b._airNext = now + 4 + this.rng() * 10;
       if (now < b._airNext) continue;
       const port = b.type === 'airport';
-      b._airNext = now + (port ? 16 : 28) + this.rng() * (port ? 12 : 16);
+      // (an airfield sends one up every quarter of a minute or so, an airport
+      // more often: a look at either soon finds a take-off or a landing)
+      b._airNext = now + (port ? 10 : 14) + this.rng() * (port ? 8 : 10);
       const K = this.kingdom(b.kingdom);
       if (!K || K.alive === false || !this.hasTech(b.kingdom, 'flight')) continue;
       const kind = port && this.hasTech(b.kingdom, 'jets') ? 'airliner' : 'plane';
-      if (this._airFull(AIR_KINDS[kind]) || this.grounded(b.x, b.z)) continue;
+      if (this._airFull(AIR_KINDS[kind], { auto: true }) || this.grounded(b.x, b.z) || this._approachBusy(b.id)) {
+        b._airNext = now + 3 + this.rng() * 4; // (tries again soon)
+        continue;
+      }
       // somewhere to fly: a field of its own realm or a friendly airport,
       // not too near and not across half the world; else a circuit
       let to = null;
@@ -319,7 +376,7 @@ export const air = {
       }
       const rw = this._runway(b);
       let f;
-      if (to) f = this.requestFlight({ kind, kingdom: b.kingdom, from: b.id, to: to.id });
+      if (to) f = this.requestFlight({ kind, kingdom: b.kingdom, from: b.id, to: to.id, auto: true });
       else if (rw) {
         // out along the runway, a wide turn and back in to land
         const ux = (rw.b.x - rw.a.x) / (rw.len || 1),
@@ -329,7 +386,7 @@ export const air = {
         const W = this.world;
         const px = Math.max(2, Math.min(W.w - 2, b.x + ux * out * sd - uz * out * 0.6)),
           pz = Math.max(2, Math.min(W.h - 2, b.z + uz * out * sd + ux * out * 0.6));
-        f = this.requestFlight({ kind, kingdom: b.kingdom, from: b.id, to: { x: px, z: pz } });
+        f = this.requestFlight({ kind, kingdom: b.kingdom, from: b.id, to: { x: px, z: pz }, auto: true });
         if (f) f.circuit = { x: b.x, z: b.z, building: b.id, rw };
       }
       if (f) f.local = true;
@@ -770,6 +827,8 @@ export const air = {
       base = 0.48;
     }
     const def = AIR_KINDS[kind];
+    // (rockets count against the air budget too: a full sky makes room)
+    if (this._airFull(def) && !this._airMakeRoom()) return refuse('the skies are crowded');
     const f = this._airRecord(kind, def, o.kingdom, from, { x: from.x, z: from.z, building: from.building }, { payload });
     f.dur = kind === 'starship' ? 26 : 20; // the climb to orbit
     f.stageAt = kind === 'starship' ? 13 : 9;
