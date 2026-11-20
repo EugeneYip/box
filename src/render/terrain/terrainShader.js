@@ -1256,16 +1256,16 @@ void terrainSurface() {
       // (a noise-broken soft edge: the patch fades out over the outer ring)
       float sr = st.r + (s.meso.b - 0.5) * 0.16 + (s.det.g - 0.5) * 0.06;
       float core = smoothstep(0.30, 0.85, sr);
-      float ring = smoothstep(0.03, 0.42, sr);
+      float ring = smoothstep(0.08, 0.45, sr);
       // a solid light patch of roofs and pavement, clearly lighter in value
       // than any ground around it (the warm patch vanished on dry land):
       // soft tonal variation, no street grid (graph paper at far zoom)
       float rv = s.macro.g * 0.6 + s.meso.r * 0.4;
-      vec3 urb = mix(vec3(0.62, 0.60, 0.57), vec3(0.66, 0.61, 0.56), smoothstep(0.35, 0.7, rv));
-      urb = mix(urb, vec3(0.72, 0.71, 0.69), core * 0.6);
+      vec3 urb = mix(vec3(0.55, 0.53, 0.50), vec3(0.58, 0.54, 0.49), smoothstep(0.35, 0.7, rv));
+      urb = mix(urb, vec3(0.62, 0.61, 0.58), core * 0.6);
       urb *= 0.95 + 0.07 * s.det.r;
       float uk = (ring * 0.45 + core * 0.55) * urbK;
-      albedo = mix(albedo, urb, uk * 0.85);
+      albedo = mix(albedo, urb, uk * 0.75);
       rough = mix(rough, 0.8, uk);
     }
   }
