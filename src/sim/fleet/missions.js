@@ -224,6 +224,7 @@ export const missions = {
     const def = self?.def || KINDS[kind] || KINDS.cog;
     const L = def.length;
     if (def === KINDS.fishing) return this._boatSlot(h, self);
+    if (def.carrier) return this._offshoreMooring(h, self, def);
     if (this.berthed(h, self) >= this.harbourCap(h)) return null;
     const px = -h.dirZ,
       pz = h.dirX;
@@ -265,6 +266,41 @@ export const missions = {
       if (taken(x, z)) continue;
       if (!nav.los(h.berth.x, h.berth.z, x, z, 0)) continue;
       return { x, z, berth: true };
+    }
+    return null;
+  },
+  // A carrier never lies at a jetty: she moors out in the roads off her
+  // harbour, her whole hull at least three tiles from any shore (round 20:
+  // one lay beached on a sand bank beside a farm plot), clear of the other
+  // ships and of where they are bound.
+  _offshoreMooring(h, self, def) {
+    const nav = this.nav;
+    const half = def.length * 0.5;
+    const a0 = Math.atan2(h.dirZ, h.dirX);
+    for (const need of [3 + half, 3 + half * 0.5, 3]) {
+      for (let r = 5; r <= 22; r += 1.5) {
+        for (let k = 0; k < 13; k++) {
+          const a = a0 + (k & 1 ? 1 : -1) * Math.ceil(k / 2) * 0.28;
+          const x = h.berth.x + Math.cos(a) * r,
+            z = h.berth.z + Math.sin(a) * r;
+          if (nav.clearAt(x, z) < need || nav.comp(x, z) !== h.water) continue;
+          // (bow and stern too: three tiles of water all round her)
+          if (nav.clearAt(x + h.dirX * half, z + h.dirZ * half) < 3 || nav.clearAt(x - h.dirX * half, z - h.dirZ * half) < 3) continue;
+          if (!this._hullFits(x, z, h.dirX, h.dirZ, def) || this._inBerth(x, z, 0.5)) continue;
+          let busy = false;
+          for (const o of this.list) {
+            if (!o.alive || o === self || o.cls !== 'sea' || o.state === 'sinking') continue;
+            const gap = (o.def.length + def.length) * 0.6 + 0.5;
+            const ox = o.state === 'sail' && o.dest ? o.dest.x : o.x,
+              oz = o.state === 'sail' && o.dest ? o.dest.z : o.z;
+            if (Math.hypot(o.x - x, o.z - z) < gap || Math.hypot(ox - x, oz - z) < gap) {
+              busy = true;
+              break;
+            }
+          }
+          if (!busy) return { x, z, berth: true, offshore: true };
+        }
+      }
     }
     return null;
   },
