@@ -185,6 +185,9 @@ const CATCH_EXP = 1.25;
 // it has built (no temple, library or campus needed): its study goes at least
 // fast enough to cross its next era in LAG_YEARS / (eras behind - 1) years.
 const LAG_YEARS = 30;
+// One era behind, a much gentler floor (an era in LAG1_YEARS) keeps a small
+// realm from standing still for a century until it falls two behind.
+const LAG1_YEARS = 90;
 
 // Extra research on big maps (planner _bigMap: none on Medium): their realms
 // stay small and far apart, and on their own reached the Enlightened arts
@@ -547,10 +550,10 @@ export const tech = {
       // a realm left behind learns from those ahead of it
       const lag = this._catchUp(k, lore, leader);
       if (lag > 0) rate *= Math.pow(CATCH_BASE, lag * CATCH_EXP);
-      // ...and two or more eras behind, at no less than a floor rate (by
-      // contact and travellers, not its own buildings: see LAG_YEARS)
+      // ...and behind it, at no less than a floor rate (by contact and
+      // travellers, not its own buildings: see LAG_YEARS, LAG1_YEARS)
       const behind = leader && leader !== k ? (leader.era || 0) - (k.era || 0) : 0;
-      const floor = behind >= 2 ? (2.2 * (ERA_COST[(k.era || 0) + 1] || 0)) / ((YEAR * LAG_YEARS) / (behind - 1)) : 0;
+      const floor = behind >= 1 ? (2.2 * (ERA_COST[(k.era || 0) + 1] || 0)) / (YEAR * (behind >= 2 ? LAG_YEARS / (behind - 1) : LAG1_YEARS)) : 0;
       k.lagFloor = floor; // (knowledge a second; 0 when not far behind)
       if (big > 0) {
         // big maps: scholars, letters and travellers cross the wide lands
