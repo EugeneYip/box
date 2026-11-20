@@ -140,7 +140,7 @@ export function installDaily(Units) {
     if (u.job === 'soldier' || u.job === 'king' || u.data.robot || !(u.village >= 0)) return false;
     const v = this.game.civ?.villages?.[u.village];
     if (!v || !v.alive) return false;
-    const p = v._owlP ?? ((v.pop || 0) >= 10 ? Math.min(1, 17 / Math.max(1, v.pop * 0.5)) : 0);
+    const p = v._owlP ?? ((v.pop || 0) >= 10 ? Math.min(1, 20 / Math.max(1, v.pop * 0.5)) : 0);
     return hash(u.id, (this.game.time.day | 0) * 7 + 77) < p;
   };
   // Bedtime now? (the hour runs: by the person's hours; pinned: by daylight)
@@ -242,7 +242,7 @@ export function installDaily(Units) {
     c.groups = Math.max(1, Math.min(8 * c.sqs.length, Math.round((v.pop || 6) / 5)));
     // tonight's regulars on the main square (see _owl): enough grown-ups that
     // twelve to fifteen of them are there through the evening
-    v._owlP = (v.pop || 0) >= 10 ? Math.min(1, 17 / Math.max(1, (v.pop || 6) * 0.5)) : 0;
+    v._owlP = (v.pop || 0) >= 10 ? Math.min(1, 20 / Math.max(1, (v.pop || 6) * 0.5)) : 0;
     return c;
   };
 
@@ -597,7 +597,7 @@ export function installDaily(Units) {
     }
     // (round 23) the drill hours begin: an off-duty soldier busy with the
     // morning's errands (or caught by a jump of the clock) falls in
-    if (u._dl && u.job === 'soldier' && (u.id & 1) === 1 && !SOLDIER_KEEP.has(u._dl.k) && this.game.settings?.dayNight && this._drillHours() && !this._drillHours(u._dl.h0)) {
+    if (u._dl && u.job === 'soldier' && ((u.id & 1) === 1 ? !SOLDIER_KEEP.has(u._dl.k) : u._dl.k === 'guard') && this.game.settings?.dayNight && this._drillHours() && !this._drillHours(u._dl.h0)) {
       this._dlEnd(u);
       u._dlNext = now;
     }
@@ -835,6 +835,11 @@ export function installDaily(Units) {
         if (!guard || rng() < 0.5) return this._dlPrivy(u, v, pl);
       }
     }
+    // (round 23) in the drill hours every soldier's decision fills the ranks
+    // first: the off-duty half to twelve, guards on duty to six (guards are
+    // led by the Civ brain's rounds and used to fall in only now and then,
+    // so a town of a dozen soldiers drilled one or two)
+    if (soldier && this._drillHours(h) && !(v.wood < Math.max(15, (v.woodCap || 90) * 0.2)) && this._drillJoin(u, v, pl)) return true;
     const evening = h >= 16.9 + hash(u.id, 6) * 0.6 && h < bed;
     if (evening && !guard) return this._dlEvening(u, now, v, pl, child, bed, h);
     // children by day: play with the others, now and then
@@ -1151,7 +1156,7 @@ export function installDaily(Units) {
       const E = v._eve;
       const n = E && E.day === (this.game.time.day | 0) ? E.ids.filter((id) => this.byId.get(id)?._dl?.sq0).length : 0;
       const sq0 = pl.sqs[0];
-      if ((n < 8 || (n < 15 && this._owl(u))) && (u.x - sq0.x) ** 2 + (u.z - sq0.z) ** 2 < 26 * 26) return this._dlSocial(u, v, pl, left, false);
+      if ((n < 10 || (n < 15 && this._owl(u))) && (u.x - sq0.x) ** 2 + (u.z - sq0.z) ** 2 < 26 * 26) return this._dlSocial(u, v, pl, left, false);
     }
     const r = rng();
     // courting: the unwed of an age walk out together
