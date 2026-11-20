@@ -1033,6 +1033,13 @@ export class BuildingRenderer {
 
   // ------------------------------------------------------------------ animation
   _updateBanners() {
+    // flags and standards are a few pixels past ~75 tiles: not drawn there
+    // (5 draws and a shadow draw at mid zoom, one per culture's flag)
+    const show = !this._far && (this.game.cameraRig?.cur?.dist ?? 60) < 75;
+    this.staffMesh = this.staffMap.get('s');
+    this.staffMesh.visible = show;
+    for (const m of this.bannerMeshes.values()) m.visible = show && m.count > 0;
+    if (!show) return;
     const env = this.game.env;
     const civ = this.game.civ;
     const units = this.game.units;
@@ -1068,6 +1075,7 @@ export class BuildingRenderer {
       sm.setMatrixAt(i, this._m);
     }
     sm.count = staffs.length;
+    sm.visible = staffs.length > 0;
     sm.instanceMatrix.needsUpdate = true;
     for (const [st, mesh0] of this.bannerMeshes) {
       const L = per.get(st) || [];
@@ -1093,6 +1101,7 @@ export class BuildingRenderer {
         mesh.setColorAt(i, this._c.setHex(b.color));
       }
       mesh.count = L.length;
+      mesh.visible = L.length > 0;
       mesh.instanceMatrix.needsUpdate = true;
       ea.needsUpdate = true;
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
