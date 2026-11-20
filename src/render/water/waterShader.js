@@ -370,7 +370,7 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   ice = max(ice * (1.0 - openLead * smoothstep(0.05, 0.4, ice)), floeDrift);
   // a pocket of open water ringed by sheet ice is skimmed with thin new ice
   // (a dark navy hole in a pale sheet read as a stain)
-  ice = max(ice, smoothstep(0.55, 0.9, margin) * 0.75 * (1.0 - outK) * step(0.001, depth));
+  ice = max(ice, smoothstep(0.82, 0.98, margin) * 0.75 * (1.0 - outK) * step(0.001, depth));
   float iceRim = (1.0 - smoothstep(gapW, gapW * 2.4, fl.g)) * (1.0 - lead);
   iceRim = max(iceRim, floeDrift * smoothstep(floeR - 0.07, floeR - 0.01, floeE));
   // icebergs: rare faceted bergs in cold open water
