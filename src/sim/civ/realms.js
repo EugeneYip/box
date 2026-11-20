@@ -20,7 +20,10 @@ const GAP_SAME = 9,
 // Seats and must-exist cities are kept (not razed, emptied or merged) for
 // this many years, and refilled when they fall under this many people.
 const KEY_YEARS = 150,
-  KEY_MIN_POP = 8;
+  KEY_MIN_POP = 8,
+  // a seat (the capital of the country that must hold it) is kept fuller:
+  // the ROC seat at Taipei and San Juan sat at 4-7 people
+  KEY_SEAT_POP = 15;
 
 export const realms = {
   // The real realms for this world's region, or null (square presets).
@@ -718,10 +721,11 @@ export const realms = {
   _keyHeld(v) {
     return this._keyCity(v);
   },
-  // Still held by its own country in the first century: a siege of it ends
-  // in a peace bought by the besieged (politics.js _capture).
+  // Still held by its own country through the key years (150): a siege of
+  // it ends in a peace bought by the besieged (politics.js _capture). (It
+  // ended at Year 100, so Pyongyang fell to the Mainland Region by Year 150.)
   _keyFirm(v) {
-    if (!this._keyCity(v) || v.kingdom !== v.keyCity || this.game.time.total >= YEAR * 100) return false;
+    if (!this._keyCity(v) || v.kingdom !== v.keyCity) return false;
     const k = this.kingdoms[v.keyCity];
     return !!(k?.alive && k.realm >= 0);
   },
@@ -732,8 +736,11 @@ export const realms = {
   _keepKeyCities() {
     if (this.game.time.total >= YEAR * KEY_YEARS || !this._realMapOn()) return;
     for (const v of this.villages) {
-      if (!this._keyCity(v) || v.pop >= KEY_MIN_POP || this.expeditions.some((e) => e.village === v.id)) continue;
-      this._refillKey(v, KEY_MIN_POP + 2 - v.pop);
+      if (!this._keyCity(v) || this.expeditions.some((e) => e.village === v.id)) continue;
+      const seat = this.kingdoms[v.keyCity]?.capital === v.id;
+      const floor = seat ? KEY_SEAT_POP : KEY_MIN_POP;
+      if (v.pop >= floor) continue;
+      this._refillKey(v, floor + 2 - v.pop);
     }
   },
   // Move up to n settlers into key city v; returns how many came.
