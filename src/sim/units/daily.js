@@ -238,8 +238,9 @@ export function installDaily(Units) {
         tz = Math.floor(z);
       if (!w.inBounds(tx, tz)) return false;
       const i = tz * w.w + tx;
-      return w.building[i] < 0 && w.height[i] > SEA_LEVEL + 0.05;
+      return w.building[i] < 0 && w.height[i] > SEA_LEVEL + 0.05 && !rm?.[i];
     };
+    const rm = this.game.civ?.railMask?.length === w.size ? this.game.civ.railMask : null;
     const used = [];
     const place = (r, a0) => {
       for (let k = 0; k < 12; k++) {
@@ -291,12 +292,13 @@ export function installDaily(Units) {
       uz = dz / L;
     const W = 3.4,
       D = 2.4;
+    const rm = g.civ?.railMask?.length === w.size ? g.civ.railMask : null; // never across a railway or highway
     const free = (x, z) => {
       const tx = Math.floor(x),
         tz = Math.floor(z);
       if (!w.inBounds(tx, tz)) return false;
       const i = tz * w.w + tx;
-      return w.building[i] < 0 && w.height[i] > SEA_LEVEL + 0.05;
+      return w.building[i] < 0 && w.height[i] > SEA_LEVEL + 0.05 && !rm?.[i];
     };
     for (const [ax, az] of [[ux, uz], [-uz, ux], [uz, -ux]]) {
       for (const dist of [1.9, 2.6, 3.4]) {
