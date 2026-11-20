@@ -28,6 +28,8 @@ import { SEA_LEVEL } from '../../world/constants.js';
 const ADULT = 16;
 // day episodes the evening ends (round 19)
 const DAY_EP = new Set(['inside', 'chore', 'shop', 'wait', 'school', 'hold']);
+// episodes a soldier keeps when the drill begins
+const SOLDIER_KEEP = new Set(['drill', 'guard', 'privy', 'eat', 'mourn', 'cheer']);
 const DAY_S = 360; // game seconds per day (src/core/Game.js DAY_SECONDS)
 const H = DAY_S / 24; // game seconds per hour
 const MEAL = [
@@ -124,8 +126,22 @@ export function installDaily(Units) {
     let bed = 20.7 + off * 1.3 + (s === 1 ? 0.4 : s === 3 ? -0.8 : 0) - wet * 0.9;
     if (u.age < ADULT) bed -= 1.3 - Math.min(1, u.age / ADULT) * 0.6;
     else if (u.age > 58) bed -= 0.5;
+    // the evening's regulars keep the main square until half past nine in any
+    // season or weather (round 23: in winter, or in the rain, everyone used
+    // to be abed by 20:30 and the square stood empty)
+    else if (this._owl(u)) bed = Math.max(bed, 21.55 + hash(u.id, 61) * 0.4);
     const wake = 5.2 + hash(u.id, 4) * 1.0 + (s === 3 ? 0.5 : 0);
     return { bed, wake };
+  };
+  // One of tonight's regulars on the town's main square: about sixteen of
+  // the grown-ups, a different few each day (soldiers on duty keep their own
+  // hours). v._owlP is the share, set with the village places.
+  P._owl = function (u) {
+    if (u.job === 'soldier' || u.job === 'king' || u.data.robot || !(u.village >= 0)) return false;
+    const v = this.game.civ?.villages?.[u.village];
+    if (!v || !v.alive) return false;
+    const p = v._owlP ?? ((v.pop || 0) >= 10 ? Math.min(1, 17 / Math.max(1, v.pop * 0.5)) : 0);
+    return hash(u.id, (this.game.time.day | 0) * 7 + 77) < p;
   };
   // Bedtime now? (the hour runs: by the person's hours; pinned: by daylight)
   P._bedtime = function (u) {
@@ -224,6 +240,9 @@ export function installDaily(Units) {
     const s = g.time.season ?? 1.5;
     c.harvest = c.fest && s >= 2 && s < 2.6;
     c.groups = Math.max(1, Math.min(8 * c.sqs.length, Math.round((v.pop || 6) / 5)));
+    // tonight's regulars on the main square (see _owl): enough grown-ups that
+    // twelve to fifteen of them are there through the evening
+    v._owlP = (v.pop || 0) >= 10 ? Math.min(1, 17 / Math.max(1, (v.pop || 6) * 0.5)) : 0;
     return c;
   };
 
@@ -279,54 +298,106 @@ export function installDaily(Units) {
   // barracks (or the hall), facing it, in step (the renderer's 'drill' pose
   // runs on the shared clock). v._parade = {b, ok, x, z, ax, az (out from the
   // door), W, D, slots: unit ids}. The renderer paves it (units/props).
-  P._parade = function (v, b) {
+  // (round 23) ONE parade square per town, whichever building asks (the
+  // barracks first, else the hall): the barracks and the hall used to be
+  // tried in turn and each overwrote the other's square, so the ranks were
+  // reset and the site searched again on every call; and the site had to lie
+  // straight before the door on nearly level ground, which 16 of 19 Modern
+  // towns on seed 7 did not have, so drill almost never happened there. Now
+  // the search walks all four sides of the barracks and the hall, out to
+  // about six tiles and along each side, and takes the most level site near
+  // the door (a free or paved tile, never a field, a railway or the water).
+  P._parade = function (v, b0) {
     const g = this.game;
     const now = g.time.total;
+    const pl = this._dlPlaces(v);
+    const cands = [];
+    for (const b of [pl.barracks, pl.hallB || v.hall, b0]) if (b && b.alive !== false && b.doorX != null && !cands.includes(b)) cands.push(b);
+    if (!cands.length) return null;
+    const key = cands.map((b) => b.id).join(':');
     let pd = v._parade;
-    if (pd && pd.b === b.id && (pd.ok || now - pd.t < 60)) return pd.ok ? pd : null;
+    if (pd && pd.key === key && now - pd.t < (pd.ok ? 90 : 60)) return pd.ok ? pd : null;
     const w = g.world;
-    const dx = b.doorX - (b.x ?? b.doorX),
-      dz = b.doorZ - (b.z ?? b.doorZ);
-    const L = Math.hypot(dx, dz) || 1;
-    const ux = dx / L,
-      uz = dz / L;
-    // a full square on level ground first, then a smaller one on gentler
-    // ground (a dense town rarely has the full square free before its door)
     const rm = g.civ?.railMask?.length === w.size ? g.civ.railMask : null; // never across a railway or highway
+    const use = g.civ?.use?.length === w.size ? g.civ.use : null;
     const free = (x, z) => {
       const tx = Math.floor(x),
         tz = Math.floor(z);
-      if (!w.inBounds(tx, tz)) return false;
+      if (!w.inBounds(tx, tz)) return -1;
       const i = tz * w.w + tx;
-      return w.building[i] < 0 && w.height[i] > SEA_LEVEL + 0.05 && !rm?.[i];
+      if (w.building[i] >= 0 || w.height[i] <= SEA_LEVEL + 0.05 || rm?.[i]) return -1;
+      const us = use ? use[i] : 0;
+      return us === 0 ? 0 : us === 2 ? 1 : -1; // open ground, or a paved street (a little worse)
     };
-    for (const [W, D, flat] of [[3.4, 2.4, 0.16], [2.8, 2.0, 0.3]])
-    for (const [ax, az] of [[ux, uz], [-uz, ux], [uz, -ux], [-ux, -uz]]) {
-      for (const dist of [1.7, 2.4, 3.2, 4.2]) {
-        const cx = b.doorX + ax * dist,
-          cz = b.doorZ + az * dist;
-        let ok = true,
-          lo = 1e9,
-          hi = -1e9;
-        for (let a = -0.5; a <= 0.5 && ok; a += 0.25)
-          for (let c = -0.5; c <= 0.5 && ok; c += 0.5) {
-            const x = cx - az * a * W + ax * c * D,
-              z = cz + ax * a * W + az * c * D;
-            if (!free(x, z)) ok = false;
-            else {
-              const h = w.heightAt(x, z);
-              lo = Math.min(lo, h);
-              hi = Math.max(hi, h);
+    const sq = pl.sq;
+    let best = null,
+      bs = 1e9;
+    for (let bi = 0; bi < cands.length; bi++) {
+      const b = cands[bi];
+      const bx = b.x ?? b.doorX,
+        bz = b.z ?? b.doorZ;
+      const dx = b.doorX - bx,
+        dz = b.doorZ - bz;
+      const L = Math.hypot(dx, dz) || 1;
+      const ux = dx / L,
+        uz = dz / L;
+      const hw = (b.w || 1) / 2,
+        hh = (b.h || 1) / 2;
+      for (const [W, D, flat] of [
+        [3.4, 2.4, 0.22],
+        [2.8, 2.0, 0.34],
+      ])
+        for (const [ax, az] of [
+          [ux, uz],
+          [-uz, ux],
+          [uz, -ux],
+          [-ux, -uz],
+        ]) {
+          // out from the building's side, the ranks facing it
+          const half = Math.abs(ax) > 0.5 ? hw : hh;
+          const door = ax * ux + az * uz > 0.5;
+          for (let k = 0; k < 9; k++) {
+            const dist = half + 0.35 + D / 2 + k * 0.55;
+            for (const lat of [0, -1, 1, -2, 2, -3, 3]) {
+              const cx = bx + ax * dist - az * lat,
+                cz = bz + az * dist + ax * lat;
+              // not on the evening square's gathering
+              if ((cx - sq.x) ** 2 + (cz - sq.z) ** 2 < 6.5 && cands[bi] !== pl.barracks) continue;
+              let ok = true,
+                lo = 1e9,
+                hi = -1e9,
+                paved = 0;
+              for (let a = -0.5; a <= 0.5 && ok; a += 0.25)
+                for (let c = -0.5; c <= 0.5 && ok; c += 0.5) {
+                  const x = cx - az * a * W + ax * c * D,
+                    z = cz + ax * a * W + az * c * D;
+                  const f = free(x, z);
+                  if (f < 0) ok = false;
+                  else {
+                    paved += f;
+                    const h = w.heightAt(x, z);
+                    if (h < lo) lo = h;
+                    if (h > hi) hi = h;
+                  }
+                }
+              if (!ok || hi - lo >= flat) continue;
+              const s = (hi - lo) * 6 + k * 0.35 + Math.abs(lat) * 0.3 + paved * 0.05 + (door ? 0 : 0.6) + bi * 1.5 + (W < 3 ? 0.8 : 0);
+              if (s < bs) {
+                bs = s;
+                best = { b: b.id, key, ok: true, x: cx, z: cz, ax, az, W, D, y: hi, lo, slots: [], t: now, v: v.id, type: b.type };
+              }
             }
           }
-        if (ok && hi - lo < flat) {
-          pd = v._parade = { b: b.id, ok: true, x: cx, z: cz, ax, az, W, D, y: hi, lo, slots: [], t: now, v: v.id };
-          return pd;
         }
-      }
     }
-    v._parade = { b: b.id, ok: false, t: now };
-    return null;
+    // the ranks already formed keep their places when the site holds
+    if (best && pd && pd.ok && Math.abs(pd.x - best.x) < 0.01 && Math.abs(pd.z - best.z) < 0.01) {
+      pd.key = key;
+      pd.t = now;
+      return pd;
+    }
+    v._parade = best || { b: cands[0].id, key, ok: false, t: now };
+    return best;
   };
   // This soldier's place in the ranks (null: the ranks are full). Six to a
   // rank, filled from the middle out; places of those no longer drilling free up.
@@ -341,52 +412,61 @@ export function installDaily(Units) {
       for (let k = 0; k < pd.slots.length; k++) if (pd.slots[k] !== u.id && !live(pd.slots[k])) pd.slots[k] = -1;
       i = pd.slots.indexOf(-1);
       if (i < 0) {
-        if (pd.slots.length >= 18) return null;
+        if (pd.slots.length >= 12) return null;
         i = pd.slots.length;
         pd.slots.push(u.id);
       } else pd.slots[i] = u.id;
     }
     const row = Math.floor(i / 6),
       col = (COLS[i % 6] - 2.5) * (pd.W / 6.8);
-    // rank 0 nearest the barracks; everyone faces it
-    const f = (row - 1) * (pd.D / 4.4);
+    // two ranks of six (round 23: 6-12 to a square), rank 0 nearest the
+    // barracks; everyone faces it
+    const f = (row - 0.5) * (pd.D / 2.9);
     return { x: pd.x - pd.az * col + pd.ax * f, z: pd.z + pd.ax * col + pd.az * f, fx: pd.x - pd.ax * 9, fz: pd.z - pd.az * 9 };
   };
   // Drill hours: the morning parade and the afternoon one.
-  P._drillHours = function () {
-    const h = this.game.time.hour ?? 12;
+  P._drillHours = function (h = this.game.time.hour ?? 12) {
     return (h >= 8 && h < 11) || (h >= 13.5 && h < 16.3);
+  };
+  // Game seconds left in this drill (the morning or the afternoon parade).
+  P._drillLeft = function () {
+    const h = this.game.time.hour ?? 12;
+    const end = h < 11 ? 11 : 16.3;
+    return Math.max(0, (end - h) * H);
+  };
+  // Drilling now on this square (in the ranks or falling in).
+  P._drillN = function (pd, not) {
+    let n = 0;
+    for (const id of pd.slots) {
+      const o = id >= 0 ? this.byId.get(id) : null;
+      if (o && o !== not && o.alive && ((o._dl && o._dl.pd === pd) || (o._offd && o._offd.pd === pd))) n++;
+    }
+    return n;
   };
   // (round 21) A soldier free in the drill hours falls in on the town's
   // parade square (before the barracks, else the hall) while the ranks have
   // a place: true when a drill episode began. Called on every decision in
   // the drill hours, not only as they begin (at 10:30 three soldiers drilled
   // in the whole world against 91 on guard).
-  P._drillJoin = function (u, v, pl, need = 18) {
+  // (round 23) The off-duty half fill the ranks to twelve; guards on duty
+  // top them up only to six, so the posts stay manned. A soldier who falls
+  // in stays until the drill ends (a spell of half an hour used to leave the
+  // ranks thin), and the square is the town's one parade square.
+  P._drillJoin = function (u, v, pl, need = 12) {
     if (!this.game.settings?.dayNight || !this._drillHours() || pl.war) return false;
     if (u.kingdom >= 0 && (this.game.civ?.warCount?.(u.kingdom) || 0) > 0) return false;
-    let pb = null,
-      pd = null;
-    for (const b of [pl.barracks, pl.hallB || v.hall]) {
-      if (!b || b.alive === false || b.doorX == null) continue;
-      pd = this._parade(v, b);
-      if (pd) {
-        pb = b;
-        break;
-      }
-    }
+    const pb = pl.barracks || pl.hallB || v.hall;
+    if (!pb || pb.alive === false || pb.doorX == null) return false;
+    const pd = this._parade(v, pb);
     if (!pd) return false;
-    let n = 0;
-    for (const id of pd.slots) {
-      const o = id >= 0 ? this.byId.get(id) : null;
-      if (o && o !== u && o.alive && ((o._dl && o._dl.pd === pd) || (o._offd && o._offd.pd === pd))) n++;
-    }
-    if (n >= need) return false;
+    if ((u.id & 1) === 0) need = Math.min(need, 6);
+    if (this._drillN(pd, u) >= need) return false;
     const spot = this._paradeSlot(pd, u);
     if (!spot) return false;
     const era = this.game.civ?.kingdoms?.[v.kingdom]?.era || 0;
-    const lab = pb.type === 'barracks' ? 'Drilling on the parade square' : era >= 4 ? 'Drilling on the parade ground' : 'Drilling on the square';
-    const dl = this._dlStart(u, 'drill', 26 + Math.random() * 16, { lab, act: null, x: spot.x, z: spot.z, free: true, fx: spot.fx, fz: spot.fz, go: 'Falling in for drill' });
+    const lab = pd.type === 'barracks' ? 'Drilling on the parade square' : era >= 4 ? 'Drilling on the parade ground' : 'Drilling on the square';
+    const left = this._drillLeft();
+    const dl = this._dlStart(u, 'drill', Math.max(10, left - 1 + Math.random() * 2), { lab, act: null, x: spot.x, z: spot.z, free: true, fx: spot.fx, fz: spot.fz, go: 'Falling in for drill' });
     dl.anim = 'drill';
     dl.nt = false;
     dl.pd = pd;
@@ -515,13 +595,21 @@ export function installDaily(Units) {
         u._dlNext = now;
       }
     }
+    // (round 23) the drill hours begin: an off-duty soldier busy with the
+    // morning's errands (or caught by a jump of the clock) falls in
+    if (u._dl && u.job === 'soldier' && (u.id & 1) === 1 && !SOLDIER_KEEP.has(u._dl.k) && this.game.settings?.dayNight && this._drillHours() && !this._drillHours(u._dl.h0)) {
+      this._dlEnd(u);
+      u._dlNext = now;
+    }
     if (u._dl) {
       if (now < u._dl.until && this._dlStep(u, now, v)) return true;
       const was = u._dl.k;
+      const sq0 = !!u._dl.sq0;
       this._dlEnd(u);
       // after a chore the brain looks for real work this think; if it has
-      // none, the next think finds another chore (no idle gap between them)
-      u._dlNext = was === 'chore' || was === 'school' || (child && was !== 'goto') ? now + 0.5 : now + (child ? 1.5 : 4) + hash(u.id, (now * 7) | 0) * 4;
+      // none, the next think finds another chore (no idle gap between them);
+      // one of the square's crowd finds a new place in it at once
+      u._dlNext = was === 'chore' || was === 'school' || sq0 || (child && was !== 'goto') ? now + 0.5 : now + (child ? 1.5 : 4) + hash(u.id, (now * 7) | 0) * 4;
       return false;
     }
     if (now < u._dlNext) return false;
@@ -1051,11 +1139,14 @@ export function installDaily(Units) {
     // half past nine, while the main square holds fewer than eight, a
     // grown-up who lives within reach goes there first (it used to fill
     // only as the evening began, and a square could stand empty at 19:18)
+    // (round 23) tonight's regulars (see _owl) go there too while it holds
+    // fewer than fifteen, from any decision in the window, so the crowd is
+    // there after a jump of the clock and in every season
     if (h >= 18 && h < 21.5 && pl.sqs?.[0]) {
       const E = v._eve;
       const n = E && E.day === (this.game.time.day | 0) ? E.ids.filter((id) => this.byId.get(id)?._dl?.sq0).length : 0;
       const sq0 = pl.sqs[0];
-      if (n < 8 && (u.x - sq0.x) ** 2 + (u.z - sq0.z) ** 2 < 26 * 26) return this._dlSocial(u, v, pl, left, false);
+      if ((n < 8 || (n < 15 && this._owl(u))) && (u.x - sq0.x) ** 2 + (u.z - sq0.z) ** 2 < 26 * 26) return this._dlSocial(u, v, pl, left, false);
     }
     const r = rng();
     // courting: the unwed of an age walk out together

@@ -1376,6 +1376,11 @@ export class Units {
     // Civ's modern.js) stand at their reach and fire: a ball or a bullet with a
     // muzzle flash (and smoke for muskets) that the renderer draws
     const gun = u.data.reach > 0 && u.def.kind === 'humanoid' ? GUN[u.data.gear] || GUN.rifle : null;
+    // (round 23) soldiers with guns facing another realm's soldiers hold a
+    // front line: each side forms up across the axis between the two sides,
+    // spread along it, and fires from there (they used to pair off and
+    // scatter over the streets with no line)
+    if (gun && u.job === 'soldier' && !tAir && t.def.kind === 'humanoid' && t.kingdom >= 0 && t.kingdom !== u.kingdom && this._holdLine(u, t, c, d, dx, dz, gun, now, dt)) return;
     if (gun && d > reach * 0.9 && d <= u.data.reach + t.def.radius + 0.2 && !(tAir && t.alt > 6)) {
       // (round 19) a gunman pressed closer than half his reach steps back a
       // pace before firing again, so two sides hold a loose line at range
@@ -1469,6 +1474,96 @@ export class Units {
     this.shoot(u, t, { kind: gun.kind, speed: gun.speed, arc: 0, damage: dmg, ox, oz, quiet: true });
     this.sfx('hit', u.x, u.z, { volume: gun.kind === 'ball' ? 0.5 : 0.3, pitch: gun.kind === 'ball' ? 0.55 : gun.kind === 'beam' ? 1.9 : 1.35 });
     g.events.emit('unit:attack', { unit: u, target: t, damage: miss ? 0 : dmg });
+  }
+
+  // A gunman's place in his side's front line (round 23). Every second and a
+  // half: the two sides' centres within twelve tiles, the line across the
+  // axis between them a little short of half the gun's reach from the middle,
+  // and this soldier's place along it (spread by id, so the line has no
+  // clumps); the nearest foe in reach becomes the target. True when the step
+  // was taken here.
+  _holdLine(u, t, c, d, dx, dz, gun, now, dt) {
+    let L = c.line;
+    if (!L || now - L.t > 1.5) {
+      let ax = 0,
+        az = 0,
+        an = 0,
+        bx = 0,
+        bz = 0,
+        bn = 0,
+        near = null,
+        nd = Infinity;
+      const rr = u.data.reach + 0.4;
+      this.forEachNear(u.x, u.z, 12, (o, d2) => {
+        if (o.species !== 'human' || o.job !== 'soldier') return;
+        if (o.kingdom === u.kingdom) {
+          if (o.combat) {
+            ax += o.x;
+            az += o.z;
+            an++;
+          }
+        } else if (o.kingdom === t.kingdom) {
+          bx += o.x;
+          bz += o.z;
+          bn++;
+          if (d2 < nd && d2 < rr * rr) {
+            nd = d2;
+            near = o;
+          }
+        }
+      });
+      if (!an || !bn) return false;
+      ax /= an;
+      az /= an;
+      bx /= bn;
+      bz /= bn;
+      let nx = bx - ax,
+        nz = bz - az;
+      let nl = Math.hypot(nx, nz);
+      if (nl < 0.8) {
+        nx = dx;
+        nz = dz;
+        nl = d || 1;
+      }
+      nx /= nl;
+      nz /= nl;
+      const mx = (ax + bx) / 2,
+        mz = (az + bz) / 2;
+      const off = Math.max(1.1, Math.min(3, u.data.reach * 0.42));
+      const width = Math.max(1.4, Math.min(an, 14) * 0.62);
+      const lat = (((u.id * 0.6180339) % 1) - 0.5) * width;
+      L = c.line = { t: now, x: mx - nx * off - nz * lat, z: mz - nz * off + nx * lat };
+      if (!this._pathable(u, Math.floor(L.x), Math.floor(L.z))) L.x = null;
+      if (near && near.id !== c.target) {
+        c.target = near.id;
+        return false; // the new target from the next step
+      }
+    }
+    if (L.x == null) return false;
+    const px = L.x - u.x,
+      pz = L.z - u.z;
+    const p2 = px * px + pz * pz;
+    const inReach = d <= u.data.reach + t.def.radius + 0.2;
+    if (p2 > 0.3) {
+      // into the line, firing on the way when the foe is near enough
+      if (p2 > 16 && now - c.repath > 1.5) {
+        c.repath = now;
+        this.moveTo(u, L.x, L.z);
+      } else if (!u.path || p2 <= 16) {
+        u.path = null;
+        u.target = { x: L.x, z: L.z };
+      }
+      u.state = p2 > 4 ? 'run' : 'walk';
+      if (u.attackCd <= 0 && d <= u.data.reach * 2 + t.def.radius) this._fire(u, t, d, gun, inReach ? 0.1 : 0.25);
+      return true;
+    }
+    // in the line: face the foe and fire
+    this._face(u, dx, dz, dt);
+    u.target = null;
+    u.path = null;
+    u.state = 'attack';
+    if (u.attackCd <= 0 && d <= u.data.reach * 2 + t.def.radius) this._fire(u, t, d, gun, inReach ? 0 : 0.25);
+    return true;
   }
 
   _face(u, dx, dz, dt) {

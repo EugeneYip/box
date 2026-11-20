@@ -1052,8 +1052,10 @@ export class UnitRenderer {
         const gy = Math.max(ground, SEA_LEVEL);
         ov.ground.add(ix, gy, iz, (md.radius * 1.2 + 0.18) * scale, 0, 1, 0, DECAL.ring, 1.0, 0.85, 0.4, 0.45 + 0.1 * Math.sin(now * 2 + rs.seed * 5));
       }
-      // fighters stand on a ring of their kingdom's colour: sides read in battle
-      if (u.combat && def.kind === 'humanoid' && u.kingdom >= 0 && hab === 'land') {
+      // the selected (or followed) fighter stands on a ring of its kingdom's
+      // colour (round 23: every fighter had one, and a battle read as a field
+      // of pink target rings; the sides now read from their lines and colours)
+      if (u.combat && def.kind === 'humanoid' && u.kingdom >= 0 && hab === 'land' && (g.selected?.ref === u || g.cameraRig.follow === u)) {
         const kc = this._kingdomColor(u.kingdom);
         if (kc) ov.ground.add(ix, ground, iz, (md.radius * 1.5 + 0.2) * scale, 0, 1, 0, DECAL.ring, Math.min(1, kc[0] * 1.6 + 0.1), Math.min(1, kc[1] * 1.6 + 0.1), Math.min(1, kc[2] * 1.6 + 0.1), 0.85);
       }
