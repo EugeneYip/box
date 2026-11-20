@@ -163,6 +163,9 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   // the full chop mirrored the pale horizon and the sun into cloud-like
   // blotches over the deep sea
   float calmN = 1.0 - 0.7 * smoothstep(0.01, 0.07, fw);
+  // (deep open water too, at every zoom: the chop mirrored the warm horizon
+  // as a mottled brown haze over the deep sea, round 22)
+  calmN *= mix(1.0, 0.45, smoothstep(2.0, 5.0, depth) * (1.0 - smoothstep(0.0, 0.6, narrow)));
   vec3 Nr = normalize(vec3(-sl.x * calmN, 1.0, -sl.y * calmN));
   vec3 R = reflect(-V, Nr);
   vec3 sky = mix(horizonE, uZenCol, pow(clamp(R.y, 0.0, 1.0), 0.55));
