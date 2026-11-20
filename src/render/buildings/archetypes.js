@@ -1719,6 +1719,14 @@ export function bastionGeometry(style) {
 export function proxyGeometry(style) {
   const K = PAL[style] || PAL.vale;
   const g = new GeoBuilder(5, { roofKind });
+  if (style === 'tower') {
+    // far-zoom tower: a blue-grey glass shaft with a pale stone base and
+    // setback crown (towers read as plain tan cubes from the whole map)
+    g.box(0, -0.4, 0, 1, 0.22, 1, 0xb9b4aa);
+    g.box(0, -0.18, 0, 0.92, 0.86, 0.92, 0x587087, { top: 0x8a9aa8 });
+    g.box(0, 0.68, 0, 0.66, 0.2, 0.66, 0xc9ccd0, { top: 0x9aa6b0 });
+    return g.build();
+  }
   if (style === 'dune') {
     g.box(0, -0.4, 0, 1, 1.25, 1, K.wall, { top: shade(K.wall, 0.92) });
     parapet(g, K, 0, 0.85, 0, 1, 1, 0.08, 0.06, K.wall2);

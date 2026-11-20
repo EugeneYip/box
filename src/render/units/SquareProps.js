@@ -89,7 +89,9 @@ export class SquareProps {
     const r = Math.atan2(pd.ax, pd.az);
     const W = (pd.W + 0.3) / S,
       D = (pd.D + 0.3) / S;
-    const lo = (pd.lo ?? pd.y) - 0.04;
+    // laid flush: a thin slab just proud of the highest ground under it (it
+    // stood on a plinth down to the lowest ground, a raised platform)
+    const lo = Math.max((pd.lo ?? pd.y) - 0.04, pd.y - 0.05);
     const h = (pd.y + 0.012 - lo) / S;
     this._box(pd.x, lo, pd.z, r, 0, 0, 0, W + 0.14, h - 0.012 / S, D + 0.14, C.paveEdge);
     this._box(pd.x, lo, pd.z, r, 0, 0, 0, W, h, D, C.pave);
@@ -120,8 +122,18 @@ export class SquareProps {
         const pr = v._props;
         if (pr) {
           const modern = (pr.era || 0) >= 5;
-          if (pr.stall) this._stall(pr.stall, w.heightAt(pr.stall.x, pr.stall.z), modern);
-          for (const b of pr.benches) this._bench(b, w.heightAt(b.x, b.z));
+          // stalls and benches stand on paved street or square tiles only
+          // (never in a field), and never on the parade square
+          const use = civ.use;
+          const ok = (p) => {
+            const tx = Math.floor(p.x),
+              tz = Math.floor(p.z);
+            if (!w.inBounds(tx, tz) || (use && use[tz * w.w + tx] !== 2)) return false;
+            if (pd && pd.ok && Math.hypot(p.x - pd.x, p.z - pd.z) < Math.max(pd.W, pd.D) * 0.5 + 0.4) return false;
+            return true;
+          };
+          if (pr.stall && ok(pr.stall)) this._stall(pr.stall, w.heightAt(pr.stall.x, pr.stall.z), modern);
+          for (const b of pr.benches) if (ok(b)) this._bench(b, w.heightAt(b.x, b.z));
         }
       }
     }

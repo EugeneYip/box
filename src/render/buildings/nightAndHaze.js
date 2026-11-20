@@ -104,7 +104,7 @@ void main() {
 
 export class HazeLayer {
   constructor(parent) {
-    this.uniforms = { uTime: { value: 0 }, uDrift: { value: 0.35 }, uColor: { value: new THREE.Color(0xb4ab9a) }, uOpacity: { value: 0.15 } };
+    this.uniforms = { uTime: { value: 0 }, uDrift: { value: 0.35 }, uColor: { value: new THREE.Color(0xb4ab9a) }, uOpacity: { value: 0.11 } };
     this.frag = `
 uniform vec3 uColor;
 uniform float uOpacity;
@@ -132,7 +132,7 @@ void main() {
   update(dt, haze, ground, daylight, t) {
     this.uniforms.uTime.value = t;
     // dusk and night: the haze darkens with the land
-    this.uniforms.uColor.value.setRGB(0.71, 0.68, 0.61).multiplyScalar(0.35 + 0.65 * daylight);
+    this.uniforms.uColor.value.setRGB(0.67, 0.67, 0.66).multiplyScalar(0.35 + 0.65 * daylight);
     const seen = new Set();
     for (const h of haze || []) {
       const key = Math.round(h.x * 4) * 65536 + Math.round(h.z * 4);
@@ -176,7 +176,8 @@ void main() {
         // by the shore the puff shrinks so its soft body stays over the land
         const q = s * 0.3;
         if (ground(px + q, pz) == null || ground(px - q, pz) == null || ground(px, pz + q) == null || ground(px, pz - q) == null) s *= 0.45;
-        _m.makeScale(s, s, s).setPosition(px, Math.max(gy, g0) + 1.2 + j * 0.2 + e.r * 0.12, pz);
+        // (lifted well clear of the roofs: low down it read as brown smears on the ground)
+        _m.makeScale(s, s, s).setPosition(px, Math.max(gy, g0) + 2.6 + j * 0.3 + e.r * 0.15, pz);
         m.setMatrixAt(i, _m);
         al.array[i] = e.a * (j === 0 ? 0.85 : 0.6);
         sd.array[i] = ((e.k % 997) / 997 + j * 0.31) % 1;
@@ -188,5 +189,124 @@ void main() {
     al.needsUpdate = true;
     sd.needsUpdate = true;
     m.visible = i > 0;
+  }
+}
+
+// StackPlumes — the smoke of factory, foundry and power-station stacks (and
+// the steam of cooling towers): per stack a column of soft puffs that rise,
+// bend over and drift downwind, growing and thinning as they go, so a works
+// town shows its plumes at day and mid zoom (the particle puffs were lost at
+// that range, and the low haze read as brown smears on the ground). The
+// whole life of each puff is computed in the vertex shader from the time,
+// so this is ONE instanced draw with no per-frame CPU work; instances are
+// written only when the town changes (BuildingRenderer._rebuild).
+const PLUME_VERT = `
+attribute float aTone;
+attribute float aSeed;
+uniform float uTime;
+uniform vec2 uWind;
+varying vec2 vUv;
+varying float vA;
+varying float vTone;
+varying float vSeed;
+void main() {
+  vUv = uv;
+  vTone = aTone;
+  vSeed = aSeed;
+  vec3 c = vec3(instanceMatrix[3][0], instanceMatrix[3][1], instanceMatrix[3][2]);
+  float s = length(vec3(instanceMatrix[0][0], instanceMatrix[0][1], instanceMatrix[0][2]));
+  float t = fract(uTime * 0.085 + aSeed);
+  // buoyant rise that slows as the plume bends over, then drifts downwind
+  c.y += s * (0.15 + 3.4 * sqrt(t) + 0.6 * t);
+  vec2 w = uWind * s * (0.5 * t + 4.2 * t * t);
+  c.x += w.x + sin(uTime * 0.6 + aSeed * 23.0) * 0.18 * s * t;
+  c.z += w.y + cos(uTime * 0.5 + aSeed * 17.0) * 0.18 * s * t;
+  float size = s * (0.42 + 1.55 * t);
+  vA = smoothstep(0.0, 0.07, t) * (1.0 - smoothstep(0.5, 1.0, t));
+  vec4 mv = modelViewMatrix * vec4(c, 1.0);
+  mv.xy += position.xy * size;
+  gl_Position = projectionMatrix * mv;
+}`;
+const PLUME_FRAG = `
+uniform float uLight;
+uniform float uOpacity;
+varying vec2 vUv;
+varying float vA;
+varying float vTone;
+varying float vSeed;
+void main() {
+  vec2 p = vUv - 0.5;
+  float d = length(p) * 2.0;
+  float wob = 0.82 + 0.18 * sin(atan(p.y, p.x) * 4.0 + vSeed * 31.0);
+  float a = 1.0 - smoothstep(0.35, 1.0, d / wob);
+  if (a <= 0.003) discard;
+  // pale grey smoke (works), dark soot (foundries), white steam (cooling towers)
+  vec3 col = vTone > 1.5 ? vec3(0.93, 0.94, 0.95) : mix(vec3(0.74, 0.73, 0.71), vec3(0.34, 0.32, 0.30), vTone);
+  // a lit top and a shaded underside, so a puff reads as a volume
+  col *= 0.8 + 0.32 * (p.y + 0.5);
+  col *= uLight;
+  gl_FragColor = vec4(col, a * vA * uOpacity);
+}`;
+
+export class StackPlumes {
+  constructor(parent, puffs = 9) {
+    this.puffs = puffs;
+    this.uniforms = { uTime: { value: 0 }, uWind: { value: new THREE.Vector2(0.6, 0.2) }, uLight: { value: 1 }, uOpacity: { value: 0.72 } };
+    this.parent = parent;
+    this.mesh = this._make(64);
+    parent.add(this.mesh);
+  }
+  _make(cap) {
+    const geo = new THREE.PlaneGeometry(1, 1);
+    const mat = new THREE.ShaderMaterial({ vertexShader: PLUME_VERT, fragmentShader: PLUME_FRAG, uniforms: this.uniforms, transparent: true, depthWrite: false });
+    const mesh = new THREE.InstancedMesh(geo, mat, cap);
+    mesh.name = 'buildings:plumes';
+    mesh.frustumCulled = false;
+    mesh.count = 0;
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+    mesh.renderOrder = 6;
+    geo.setAttribute('aTone', new THREE.InstancedBufferAttribute(new Float32Array(cap), 1));
+    geo.setAttribute('aSeed', new THREE.InstancedBufferAttribute(new Float32Array(cap), 1));
+    return mesh;
+  }
+  // list of {x, y, z, s (plume scale, world units), tone (0 smoke, 1 soot, 2 steam)}
+  set(L) {
+    const n = L.length * this.puffs;
+    if (this.mesh.instanceMatrix.count < n) {
+      const nm = this._make(Math.ceil(n * 1.5));
+      this.parent.remove(this.mesh);
+      this.mesh.geometry.dispose();
+      this.mesh = nm;
+      this.parent.add(nm);
+    }
+    const m = this.mesh;
+    const tone = m.geometry.getAttribute('aTone'),
+      seed = m.geometry.getAttribute('aSeed');
+    let i = 0;
+    for (let k = 0; k < L.length; k++) {
+      const e = L[k];
+      const ph = Math.abs(Math.sin(e.x * 12.9898 + e.z * 78.233)) % 1;
+      for (let j = 0; j < this.puffs; j++, i++) {
+        _m.makeScale(e.s, e.s, e.s).setPosition(e.x, e.y, e.z);
+        m.setMatrixAt(i, _m);
+        tone.array[i] = e.tone;
+        seed.array[i] = (j / this.puffs + ph + (j % 2) * 0.031) % 1;
+      }
+    }
+    m.count = i;
+    m.instanceMatrix.needsUpdate = true;
+    tone.needsUpdate = true;
+    seed.needsUpdate = true;
+  }
+  update(t, wind, daylight, show) {
+    this.uniforms.uTime.value = t;
+    const st = Math.max(0.3, Math.min(1.2, wind?.strength ?? 0.35));
+    const wx = wind?.x ?? 1,
+      wz = wind?.z ?? 0;
+    const l = Math.hypot(wx, wz) || 1;
+    this.uniforms.uWind.value.set((wx / l) * st, (wz / l) * st);
+    this.uniforms.uLight.value = 0.3 + 0.7 * daylight;
+    this.mesh.visible = show && this.mesh.count > 0;
   }
 }

@@ -3,6 +3,13 @@ import { KINDS, AIR_KINDS } from './kinds.js';
 import { civPath } from '../civ/pathing.js';
 import { USE } from '../civ/util.js';
 
+const CURB_DIRS = [
+  [1, 0],
+  [-1, 0],
+  [0, 1],
+  [0, -1],
+];
+
 function revPts(p) {
   const out = new Array(p.length);
   for (let i = 0; i < p.length; i += 2) {
@@ -387,11 +394,50 @@ export const modern = {
     if (path.length < 4) path.push(x1, z1);
     return path;
   },
+  // The nearest curb off a town's paved square, when (x, z) is on it (the
+  // street tiles round the hall door: Terrain._writeSettle): a street tile
+  // beside a plot or building, 3+ tiles from the door, with the heading a
+  // vehicle parks along it. null when (x, z) is not on a square.
+  _curbFor(x, z) {
+    const civ = this.game.civ;
+    const w = this.world;
+    const use = civ?.use;
+    if (!use || !civ.villageAt) return null;
+    const t = civ.villageAt(x, z, 16);
+    const h = t?.hall;
+    if (!h || h.alive === false || h.doorX == null) return null;
+    const hx = Math.floor(h.doorX),
+      hz = Math.floor(h.doorZ);
+    const sq = (tx, tz) => Math.max(Math.abs(tx - hx), Math.abs(tz - hz)) <= 2;
+    const x0 = Math.floor(x),
+      z0 = Math.floor(z);
+    if (!sq(x0, z0)) return null;
+    let best = null,
+      bd = Infinity;
+    for (let dz = -7; dz <= 7; dz++)
+      for (let dx = -7; dx <= 7; dx++) {
+        const tx = x0 + dx,
+          tz = z0 + dz;
+        if (!w.inBounds(tx, tz) || sq(tx, tz) || use[tz * w.w + tx] !== USE.ROAD) continue;
+        const d = dx * dx + dz * dz;
+        if (d >= bd) continue;
+        for (const [ax, az] of CURB_DIRS) {
+          if (!w.inBounds(tx + ax, tz + az) || use[(tz + az) * w.w + tx + ax] === USE.ROAD) continue;
+          bd = d;
+          best = { x: tx + 0.5 + ax * 0.28, z: tz + 0.5 + az * 0.28, heading: ax ? Math.PI / 2 : 0 };
+          break;
+        }
+      }
+    return best;
+  },
   _service(kind, k, v, from, path, mission) {
+    // a station on the square (or the hall, with none): its vehicles stand by
+    // at the nearest curb, not in the middle of the square
+    const home = this._curbFor(path[0], path[1]) || { x: path[0], z: path[1] };
     // one standing by at the station answers the call (else a new one sets out)
     let veh = null;
     for (const o of this.list)
-      if (o.alive && o.kind === kind && o.standby != null && o.home === v.id && this.dist(o.x, o.z, path[0], path[1]) < 3) {
+      if (o.alive && o.kind === kind && o.standby != null && o.home === v.id && this.dist(o.x, o.z, home.x, home.z) < 3) {
         veh = o;
         break;
       }
@@ -403,7 +449,7 @@ export const modern = {
     if (!veh) return null;
     veh.mission = { from: v.id, to: v.id, ...mission };
     veh.voyage = { from: v.id, to: v.id, fromName: v.name, toName: v.name };
-    veh.base = { x: path[0], z: path[1] };
+    veh.base = { x: home.x, z: home.z, heading: home.heading };
     this.setPath(veh, path);
     return veh;
   },
@@ -610,6 +656,7 @@ export const modern = {
     v.speed = 0;
     v.mission = { type: 'standby', phase: 'standby', from: v.home, to: v.home, vid: v.home };
     v.standby = this.game.time.total + 60 + this.rng() * 90;
+    if (v.base?.heading != null) v.heading = v.ph = v.base.heading;
   },
   // A civic vehicle has reached where it was going.
   _serviceArrive(v) {
@@ -741,6 +788,16 @@ export const modern = {
   // Parked where it stands, waiting (a train with no railway in reach looks
   // again now and then).
   _parkHere(v) {
+    // idling on a town's square: it drives to the nearest curb and parks there
+    const c = !v.def.rail && this._curbFor(v.x, v.z);
+    const p = c && this._streetPath(v.x, v.z, c.x, c.z);
+    if (p) {
+      v.parkHeading = c.heading;
+      v.mission = { type: 'park', phase: 'out', power: true };
+      this.setPath(v, p);
+      v.state = 'move';
+      return;
+    }
     v.state = 'parked';
     v.speed = 0;
     v.path = null;

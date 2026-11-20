@@ -69,17 +69,143 @@ function makeLabel(text, color, kind, banner = null) {
     x.arc(10, cy + 1, 5, 0, Math.PI * 2);
     x.fill();
   }
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 4;
-  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, depthWrite: false, opacity: 0 });
-  const sp = new THREE.Sprite(mat);
-  sp.renderOrder = 20;
+  const sp = labelNode(c);
   sp.userData.aspect = c.width / c.height;
   sp.userData.text = text;
   sp.userData.color = color;
   sp.userData.banner = banner ? banner.symbol + '|' + banner.field : '';
   return sp;
+}
+
+// A label is a positioner (an Object3D, never drawn itself) whose image sits
+// in the shared atlas; LabelBatch draws every visible label in ONE instanced
+// draw (each canvas sprite was its own draw call: ~19 at mid zoom).
+function labelNode(canvas) {
+  const sp = new THREE.Object3D();
+  sp.material = { opacity: 0, map: { dispose() {} }, dispose() {} };
+  sp.userData.canvas = canvas;
+  sp.userData.rect = null;
+  sp.visible = false;
+  return sp;
+}
+
+const ATLAS = 2048;
+const PAD = 4;
+class LabelBatch {
+  constructor(parent) {
+    const c = document.createElement('canvas');
+    c.width = c.height = ATLAS;
+    this.canvas = c;
+    this.ctx = c.getContext('2d');
+    this.tex = new THREE.CanvasTexture(c);
+    this.tex.colorSpace = THREE.SRGBColorSpace;
+    this.tex.anisotropy = 4;
+    this.x = this.y = this.row = 0;
+    this.parent = parent;
+    this.mesh = this._make(64);
+    parent.add(this.mesh);
+  }
+  _make(cap) {
+    const geo = new THREE.PlaneGeometry(1, 1);
+    geo.setAttribute('aUv', new THREE.InstancedBufferAttribute(new Float32Array(cap * 4), 4));
+    geo.setAttribute('aSO', new THREE.InstancedBufferAttribute(new Float32Array(cap * 3), 3));
+    const mat = new THREE.ShaderMaterial({
+      uniforms: { uMap: { value: this.tex } },
+      vertexShader: `
+attribute vec4 aUv;
+attribute vec3 aSO;
+varying vec2 vUv;
+varying float vA;
+void main() {
+  vUv = aUv.xy + uv * aUv.zw;
+  vA = aSO.z;
+  vec4 mv = modelViewMatrix * vec4(instanceMatrix[3][0], instanceMatrix[3][1], instanceMatrix[3][2], 1.0);
+  mv.xy += position.xy * aSO.xy;
+  gl_Position = projectionMatrix * mv;
+}`,
+      fragmentShader: `
+uniform sampler2D uMap;
+varying vec2 vUv;
+varying float vA;
+void main() {
+  vec4 t = texture2D(uMap, vUv);
+  gl_FragColor = vec4(t.rgb, t.a * vA);
+  if (gl_FragColor.a < 0.004) discard;
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
+}`,
+      transparent: true,
+      depthTest: false,
+      depthWrite: false,
+    });
+    const m = new THREE.InstancedMesh(geo, mat, cap);
+    m.name = 'civ-labels:batch';
+    m.frustumCulled = false;
+    m.renderOrder = 20;
+    m.count = 0;
+    return m;
+  }
+  reset() {
+    this.ctx.clearRect(0, 0, ATLAS, ATLAS);
+    this.x = this.y = this.row = 0;
+    this.tex.needsUpdate = true;
+  }
+  // packs a label's canvas into the atlas: its uv rect, or null when full
+  add(src) {
+    const w = src.width + PAD * 2,
+      h = src.height + PAD * 2;
+    if (this.x + w > ATLAS) {
+      this.x = 0;
+      this.y += this.row;
+      this.row = 0;
+    }
+    if (this.y + h > ATLAS || w > ATLAS) return null;
+    const px = this.x + PAD,
+      py = this.y + PAD;
+    this.ctx.drawImage(src, px, py);
+    this.x += w;
+    this.row = Math.max(this.row, h);
+    this.tex.needsUpdate = true;
+    return [px / ATLAS, 1 - (py + src.height) / ATLAS, src.width / ATLAS, src.height / ATLAS];
+  }
+  // every visible label, in draw order
+  draw(lists) {
+    let n = 0;
+    for (const L of lists) for (const sp of L) if (sp.visible && sp.userData.rect && sp.material.opacity > 0.01) n++;
+    if (this.mesh.instanceMatrix.count < n) {
+      const nm = this._make(Math.ceil(n * 1.5));
+      this.parent.remove(this.mesh);
+      this.mesh.geometry.dispose();
+      this.mesh.material.dispose();
+      this.mesh = nm;
+      this.parent.add(nm);
+    }
+    const m = this.mesh;
+    const uvA = m.geometry.getAttribute('aUv'),
+      soA = m.geometry.getAttribute('aSO');
+    const M = m.instanceMatrix.array;
+    let i = 0;
+    for (const L of lists)
+      for (const sp of L) {
+        const r = sp.userData.rect;
+        if (!sp.visible || !r || sp.material.opacity <= 0.01) continue;
+        M.fill(0, i * 16, i * 16 + 16);
+        M[i * 16] = M[i * 16 + 5] = M[i * 16 + 10] = M[i * 16 + 15] = 1;
+        M[i * 16 + 12] = sp.position.x;
+        M[i * 16 + 13] = sp.position.y;
+        M[i * 16 + 14] = sp.position.z;
+        uvA.array.set(r, i * 4);
+        soA.array[i * 3] = sp.scale.x;
+        soA.array[i * 3 + 1] = sp.scale.y;
+        soA.array[i * 3 + 2] = sp.material.opacity;
+        i++;
+      }
+    m.count = i;
+    m.visible = i > 0;
+    m.instanceMatrix.needsUpdate = true;
+    uvA.needsUpdate = true;
+    soA.needsUpdate = true;
+  }
 }
 
 // Spots tried for a realm's name, in label widths (x) and heights (y) from
@@ -126,9 +252,7 @@ function swordsTexture() {
     x.fill();
     x.restore();
   }
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  return t;
+  return c;
 }
 
 export class Labels {
@@ -140,7 +264,8 @@ export class Labels {
     this.kLabels = new Map(); // kingdom id -> sprite
     this.vLabels = new Map(); // village id -> sprite
     this.swords = [];
-    this.swordTex = swordsTexture();
+    this.swordCanvas = swordsTexture();
+    this.batch = new LabelBatch(this.group);
     this._t = 0;
     this._fontReady = false;
     // player edits (names, colours, banners) show at once
@@ -156,13 +281,23 @@ export class Labels {
   }
 
   clear() {
-    for (const s of [...this.kLabels.values(), ...this.vLabels.values()]) {
-      this.group.remove(s);
-      s.material.map.dispose();
-      s.material.dispose();
-    }
+    for (const s of [...this.kLabels.values(), ...this.vLabels.values()]) this.group.remove(s);
     this.kLabels.clear();
     this.vLabels.clear();
+    this.batch.reset();
+    for (const sp of this.swords) sp.userData.rect = null;
+  }
+
+  // a label's place in the atlas; a full atlas is repacked from the labels
+  // still in use
+  _pack(sp) {
+    let r = this.batch.add(sp.userData.canvas);
+    if (!r) {
+      this.batch.reset();
+      for (const o of [...this.kLabels.values(), ...this.vLabels.values(), ...this.swords]) if (o !== sp) o.userData.rect = o.userData.canvas ? this.batch.add(o.userData.canvas) : null;
+      r = this.batch.add(sp.userData.canvas);
+    }
+    sp.userData.rect = r;
   }
 
   _sync() {
@@ -180,15 +315,11 @@ export class Labels {
       seenK.add(k.id);
       let s = this.kLabels.get(k.id);
       const bkey = k.banner ? k.banner.symbol + '|' + k.banner.field : '';
-      if (s && (s.userData.text !== k.name || s.userData.color !== k.color || s.userData.banner !== bkey)) {
-        this.group.remove(s);
-        s.material.map.dispose();
-        s = null;
-      }
+      if (s && (s.userData.text !== k.name || s.userData.color !== k.color || s.userData.banner !== bkey)) s = null;
       if (!s) {
         s = makeLabel(k.name, k.color, 'kingdom', k.banner);
         this.kLabels.set(k.id, s);
-        this.group.add(s);
+        this._pack(s);
       }
     }
     for (const v of civ.villages) {
@@ -196,27 +327,17 @@ export class Labels {
       seenV.add(v.id);
       const col = civ.kingdomColor(v.kingdom);
       let s = this.vLabels.get(v.id);
-      if (s && (s.userData.text !== v.name || s.userData.color !== col)) {
-        this.group.remove(s);
-        s.material.map.dispose();
-        s = null;
-      }
+      if (s && (s.userData.text !== v.name || s.userData.color !== col)) s = null;
       if (!s) {
         s = makeLabel(v.name, col, 'village');
         this.vLabels.set(v.id, s);
-        this.group.add(s);
+        this._pack(s);
       }
     }
     for (const [id, s] of this.kLabels)
-      if (!seenK.has(id)) {
-        this.group.remove(s);
-        this.kLabels.delete(id);
-      }
+      if (!seenK.has(id)) this.kLabels.delete(id);
     for (const [id, s] of this.vLabels)
-      if (!seenV.has(id)) {
-        this.group.remove(s);
-        this.vLabels.delete(id);
-      }
+      if (!seenV.has(id)) this.vLabels.delete(id);
   }
 
   update(dt) {
@@ -301,11 +422,11 @@ export class Labels {
     // battle markers
     const battles = civ.battles || [];
     while (this.swords.length < battles.length) {
-      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.swordTex, transparent: true, depthTest: false, depthWrite: false }));
-      sp.renderOrder = 21;
-      this.group.add(sp);
+      const sp = labelNode(this.swordCanvas);
+      sp.userData.aspect = 1;
       this.swords.push(sp);
     }
+    for (const sp of this.swords) if (!sp.userData.rect) this._pack(sp);
     const sA = smooth(14, 26, D);
     for (let i = 0; i < this.swords.length; i++) {
       const sp = this.swords[i];
@@ -322,6 +443,7 @@ export class Labels {
       cand.push({ s: sp, a: sA, prio: 2.5 });
     }
     this._declutter(cand, dt);
+    this.batch.draw([this.vLabels.values(), this.kLabels.values(), this.swords]);
   }
 
   // Hide labels that collide with a higher-priority label or with the HUD.

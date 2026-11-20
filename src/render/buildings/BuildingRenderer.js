@@ -7,7 +7,7 @@ import { emblemAtlas, EMBLEM_IDS, FIELD_IDS } from './emblems.js';
 import { bannerGeometry, bannerMaterial, bladesGeometry, boatGeometry, FENCE, scarecrowGeometry, glowTexture, PuffSystem } from './props.js';
 import { TerritoryOverlay } from './TerritoryOverlay.js';
 import { InfraRenderer } from './InfraRenderer.js';
-import { GlowSprites, HazeLayer } from './nightAndHaze.js';
+import { GlowSprites, HazeLayer, StackPlumes } from './nightAndHaze.js';
 import { BUILDING_TYPES } from '../../sim/civ/catalog.js';
 import { CULTURES, baseCulture } from '../../sim/civ/cultures.js';
 import { SEA_LEVEL, TILE } from '../../world/constants.js';
@@ -393,6 +393,7 @@ export class BuildingRenderer {
     this.lights = [];
     this.glow = new GlowSprites(this.group); // street lights and floodlights at night, out to mid zoom
     this.haze = new HazeLayer(this.group); // factory haze over industrial towns
+    this.plumes = new StackPlumes(this.group); // rising plumes over works stacks and cooling towers
     this._powerSig = '';
   }
 
@@ -531,9 +532,11 @@ export class BuildingRenderer {
       const v = civ.villages?.[b.village];
       return v && (v.tier || 0) < 2 ? [0.72, 0.72] : null;
     }
-    if (t === 'factory' || t === 'foundry' || t === 'powerstation') return [1, 1.3];
-    if (t !== 'house' && t !== 'apartment' && t !== 'rowhouse') return null;
-    if (lookEra(b, civ.kingdoms[b.kingdom]?.era ?? 0) < 5) return null;
+    // the works of industry fill their plot (a factory read the size of a
+    // row house): as wide as the footprint allows, and taller
+    const works = t === 'factory' || t === 'foundry' || t === 'powerstation';
+    if (!works && t !== 'house' && t !== 'apartment' && t !== 'rowhouse') return null;
+    if (!works && lookEra(b, civ.kingdoms[b.kingdom]?.era ?? 0) < 5) return null;
     // as wide as the plot allows (footprints stay as they are)
     if (a._fitK == null) {
       const g = a.geo;
@@ -544,6 +547,10 @@ export class BuildingRenderer {
       const dw = def.dw ?? def.w,
         dh = def.dh ?? def.h;
       a._fitK = Math.min((dw * 0.98) / Math.max(0.1, hw), (dh * 0.98) / Math.max(0.1, hd));
+    }
+    if (works) {
+      const k = Math.max(1.15, Math.min(1.6, a._fitK));
+      return [k, Math.max(1.3, k * 0.95)];
     }
     const k = Math.max(1, Math.min(1.28, a._fitK));
     return [k, Math.max(k, 1.25)];
@@ -743,7 +750,7 @@ export class BuildingRenderer {
       // (houses and small buildings are not drawn at far zoom: the terrain's
       // urban patch stands for them, and the landmarks mark the town)
       if (isMinor(b)) continue;
-      const key = 'proxy|' + b.style;
+      const key = b.type === 'skyscraper' || b.type === 'arcology' ? 'proxy|tower' : 'proxy|' + b.style;
       let L = proxies.get(key);
       if (!L) proxies.set(key, (L = { m: [], col: [], bs: [] }));
       const a = this._arch(def.wall ? `wpost|${b.style}` : archKey(b, def, Math.min(b.level || 1, def.levels), civ.kingdoms[b.kingdom]?.era ?? 0));
@@ -815,6 +822,15 @@ export class BuildingRenderer {
     this.decals.instanceMatrix.needsUpdate = true;
     this._updateBoatsAndBlades(0, true);
     this.glow.set(this.lights);
+    // smoke plumes over the stacks of working industry, steam over cooling towers
+    const pl = [];
+    for (const c of this.chimneys) {
+      if (!(c.stack || c.steam) || !c.b.alive || c.b.constructing) continue;
+      const t = c.b.type;
+      const soot = t === 'foundry' || t === 'bloomery' || t === 'kiln';
+      pl.push({ x: c.x, y: c.y, z: c.z, s: c.steam ? 1.15 : soot ? 0.8 : t === 'powerstation' ? 1.05 : 0.95, tone: c.steam ? 2 : soot ? 0.85 : 0.2 });
+    }
+    this.plumes.set(pl);
   }
 
   _collectAnchors(b, a, M, col, decals) {
@@ -1017,6 +1033,13 @@ export class BuildingRenderer {
 
   // ------------------------------------------------------------------ animation
   _updateBanners() {
+    // flags and standards are a few pixels past ~75 tiles: not drawn there
+    // (5 draws and a shadow draw at mid zoom, one per culture's flag)
+    const show = !this._far && (this.game.cameraRig?.cur?.dist ?? 60) < 75;
+    this.staffMesh = this.staffMap.get('s');
+    this.staffMesh.visible = show;
+    for (const m of this.bannerMeshes.values()) m.visible = show && m.count > 0;
+    if (!show) return;
     const env = this.game.env;
     const civ = this.game.civ;
     const units = this.game.units;
@@ -1052,6 +1075,7 @@ export class BuildingRenderer {
       sm.setMatrixAt(i, this._m);
     }
     sm.count = staffs.length;
+    sm.visible = staffs.length > 0;
     sm.instanceMatrix.needsUpdate = true;
     for (const [st, mesh0] of this.bannerMeshes) {
       const L = per.get(st) || [];
@@ -1077,6 +1101,7 @@ export class BuildingRenderer {
         mesh.setColorAt(i, this._c.setHex(b.color));
       }
       mesh.count = L.length;
+      mesh.visible = L.length > 0;
       mesh.instanceMatrix.needsUpdate = true;
       ea.needsUpdate = true;
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
@@ -1210,9 +1235,11 @@ export class BuildingRenderer {
       // the stacks of factories, foundries and power stations: a thick,
       // steady plume (they had the same wisp as a cottage, lost in the
       // budget); own budget, so homes' chimneys cannot starve them
-      let sb = 8;
+      // (now drawn by the plume layer, StackPlumes; the particle puffs were
+      // lost at mid zoom). Kept for the fallback puffs only.
+      let sb = real ? 0 : 8;
       for (const c of this.chimneys) {
-        if (!c.stack) continue;
+        if (!c.stack || sb <= 0) continue;
         c.t -= dt;
         if (c.t > 0) continue;
         c.t = (0.55 / Math.max(0.6, c.rate)) * (0.8 + Math.random() * 0.4) * (g.settings?.powerSaver ? 2 : 1);
@@ -1233,9 +1260,8 @@ export class BuildingRenderer {
         if ((c.x - cx) ** 2 + (c.z - cz) ** 2 > R2) continue;
         if (budget-- <= 0) break;
         if (c.steam) {
-          // cooling towers breathe white steam
-          if (real) fx.emit?.('steam', { x: c.x, y: c.y, z: c.z }, { scale: 1.4 * BS });
-          else this.puffs.emit(c.x, c.y, c.z, 'smoke', 1.2 * BS);
+          // cooling towers breathe white steam (the plume layer draws it)
+          if (!real) this.puffs.emit(c.x, c.y, c.z, 'smoke', 1.2 * BS);
         } else if (real) fx.emit?.('smoke', { x: c.x, y: c.y, z: c.z }, { scale: (c.forge ? 0.6 : 0.42) * BS });
         else this.puffs.emit(c.x, c.y, c.z, 'smoke', (c.forge ? 0.85 : 0.6) * BS);
       }
@@ -1361,6 +1387,7 @@ export class BuildingRenderer {
     this.glow.uniforms.uTime.value = this.t;
     this.glow.update(this.uniforms.uNight.value, !this._far);
     // (null over water: no haze puffs over the sea, lakes or rivers)
+    this.plumes.update(this.t, env.wind, day, !this._far && (g.cameraRig?.cur?.dist ?? 60) < 175);
     this.haze.update(dt, civ.haze?.(), (x, z) => (g.world.isWater(Math.floor(x), Math.floor(z)) ? null : Math.max(g.world.heightAt(x, z), SEA_LEVEL)), day, this.t);
     this._updateBanners();
     this._updateBoatsAndBlades(dt);

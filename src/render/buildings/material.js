@@ -145,8 +145,11 @@ if (vRoof.x > 0.5) {
     // never a solid white bar. Electric light mixes warm and cool windows.
     // (towers at 22:00 read fully lit: the upper floors of a tall block
     // light fewer windows, and electric light is a little dimmer)
-    float share = mix(0.32, 0.58, fract(vState.z * 13.7)) * mix(1.0, 0.82, smoothstep(1.4, 3.0, vLocal.y));
-    float lit = step(1.0 - mix(0.8, share, powered), wr);
+    // (towers at 22:00 still read ~75% lit: electric light now 26-46% of
+    // the windows, 20-36% on the upper floors, and the lamplight of a tall
+    // block in an unpowered town no more than 40%, not a cottage's 80%)
+    float share = mix(0.26, 0.46, fract(vState.z * 13.7)) * mix(1.0, 0.78, smoothstep(1.4, 3.0, vLocal.y));
+    float lit = step(1.0 - mix(mix(0.8, 0.4, smoothstep(1.3, 2.6, vLocal.y)), share, powered), wr);
     float fy = fract(vLocal.y * 3.0);
     float fa = fract((vLocal.x + vLocal.z) * 4.0 + 0.5);
     float pane = smoothstep(0.06, 0.16, fy) * smoothstep(0.94, 0.82, fy) * mix(1.0, smoothstep(0.08, 0.18, fa) * smoothstep(0.92, 0.82, fa), powered);
@@ -160,7 +163,7 @@ if (vRoof.x > 0.5) {
     totalEmissiveRadiance += vec3(1.0, 0.12, 0.06) * (0.25 + (0.6 + night * 5.0) * blink);
   } else if (vGlow < 3.5) {
     // screens behind the glass: cool blue-white, each window its own
-    float lit = step(0.45, wr);
+    float lit = step(0.62, wr);
     float sc = 0.8 + 0.2 * sin(uTime * 1.3 + wid * 2.1);
     totalEmissiveRadiance += vec3(0.5, 0.78, 1.0) * (night * 1.3 * lit * sc + 0.08 * lit);
   } else if (vGlow < 4.5) {

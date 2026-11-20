@@ -1213,6 +1213,30 @@ void terrainSurface() {
         float swW = mix(0.11, 0.2, modern);
         float side = 1.0 - smoothstep(swW - aa, swW + aa, dE);
         float curb = (1.0 - smoothstep(swW + 0.035 - aa, swW + 0.035 + aa, dE)) * (1.0 - side);
+        // Industrial setts: a lane along the tile's centre line toward each
+        // street neighbour, about half a tile wide with flagstone footways
+        // (narrower than the cottages), and a bend (two perpendicular
+        // neighbours) drawn as a quarter arc, so a street climbing a slope
+        // on the tile grid winds smoothly instead of stair-stepping; the
+        // rest of the tile is a grass verge. (The square stays solid.)
+        float laneK = 1.0;
+        float settK = (1.0 - modern) * (1.0 - plaza);
+        if (settK > 0.5) {
+          vec2 cc = pcf - 0.5;
+          float nN = float(rL) + float(rR) + float(rD) + float(rU);
+          float dC = length(cc);
+          if (nN == 2.0 && (rL || rR) && (rD || rU)) dC = abs(length(pcf - vec2(rR ? 1.0 : 0.0, rU ? 1.0 : 0.0)) - 0.5);
+          else {
+            if (rL) dC = min(dC, pcf.x <= 0.5 ? abs(cc.y) : length(cc));
+            if (rR) dC = min(dC, pcf.x >= 0.5 ? abs(cc.y) : length(cc));
+            if (rD) dC = min(dC, pcf.y <= 0.5 ? abs(cc.x) : length(cc));
+            if (rU) dC = min(dC, pcf.y >= 0.5 ? abs(cc.x) : length(cc));
+          }
+          float hw = 0.2;
+          laneK = 1.0 - smoothstep(hw + 0.075 - aa, hw + 0.075 + aa, dC);
+          side = smoothstep(hw - aa, hw + aa, dC) * laneK;
+          curb = (1.0 - smoothstep(0.012, 0.012 + aa * 1.5, abs(dC - hw))) * laneK;
+        }
         float lum0 = clamp(lum(albedo) / 0.09, 0.8, 1.15);
         // carriageway: setts (4) or asphalt (5+)
         vec2 sq = p * vec2(7.0, 11.0);
@@ -1249,6 +1273,12 @@ void terrainSurface() {
         pave = mix(pave, sqC, plaza);
         pave *= lum0;
         float pk = flat0 * smoothstep(0.62, 0.82, s.n.y);
+        if (settK > 0.5) {
+          vec3 verge = vec3(0.19, 0.26, 0.10) * (0.88 + 0.22 * s.det.r + 0.08 * (s.meso.g - 0.5));
+          verge = mix(verge, vec3(lum(verge)) * vec3(0.95, 0.95, 1.0), snowB);
+          albedo = mix(albedo, verge * clamp(lum(albedo) / 0.12, 0.8, 1.3), (1.0 - laneK) * flat0 * 0.9);
+          pk *= laneK;
+        }
         albedo = mix(albedo, pave, pk);
         rough = mix(rough, mix(0.9, 0.78, modern * (1.0 - side)), pk);
         H *= 1.0 - pk * 0.85;

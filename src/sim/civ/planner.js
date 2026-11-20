@@ -424,7 +424,7 @@ export const planner = {
     this._layTownPlan(v);
     // from the Modern era the farm works (silos, granaries, barns, pens)
     // stand out beyond the paved town, never in its square or core
-    if (FARM_OUT.has(type) && (this.kingdoms[v.kingdom]?.era || 0) >= 5) {
+    if (FARM_OUT.has(type) && (this.kingdoms[v.kingdom]?.era || 0) >= (type === 'pasture' ? 4 : 5)) {
       const rp = this._pavedRadius(v);
       return this._placeOutskirts(v, type, rp + 0.5, rp + 5);
     }
@@ -996,7 +996,10 @@ export const planner = {
     const rng = this.rng;
     const sizes = PLOT_SIZES;
     // a city (tier 2+) keeps its fields beyond its core, round the outskirts
-    const minD = v.tier >= 2 ? Math.max((4 + v.tier) * F + 1.5, v.radius * 0.8) : (4 + v.tier) * F + 1.5;
+    let minD = v.tier >= 2 ? Math.max((4 + v.tier) * F + 1.5, v.radius * 0.8) : (4 + v.tier) * F + 1.5;
+    // from the Industrial era fields lie beyond the paved streets (Terrain
+    // paves out to _pavedRadius), never between the houses
+    if ((this.kingdoms[v.kingdom]?.era || 0) >= 4) minD = Math.max(minD, this._pavedRadius(v) + 1);
     const maxD = Math.max(v.buildRadius + 11 * F, minD + 6);
     const steep = this._terraceSlope(v); // Terracing (breadth.js)
     let best = null,
@@ -1364,7 +1367,7 @@ export const planner = {
       minR = Math.max(minR, v.radius * 0.95);
       maxR = Math.max(maxR, minR + 4);
     }
-    if (FARM_OUT.has(type) && (this.kingdoms[v.kingdom]?.era || 0) >= 5) {
+    if (FARM_OUT.has(type) && (this.kingdoms[v.kingdom]?.era || 0) >= (type === 'pasture' ? 4 : 5)) {
       minR = Math.max(minR, this._pavedRadius(v) + 0.5);
       maxR = Math.max(maxR, minR + 5);
     }
