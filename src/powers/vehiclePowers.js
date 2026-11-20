@@ -66,7 +66,12 @@ function place() {
   if (dock) top = Math.min(top, dock.top);
   if (brush && brush.bottom <= top + 4) top = Math.min(top, brush.top);
   panel.style.bottom = Math.round(vh - top + 8) + 'px';
+  // short landscape phones: no wider than the powers bar, so the camera pad and
+  // the Favorites button at the sides stay clear
+  const short = vh <= 500 && innerWidth > vh;
+  panel.style.maxWidth = short && dock ? Math.round(Math.max(320, dock.width)) + 'px' : '';
 }
+const touch = () => !!gRef?.ui?.root?.classList.contains('is-touch');
 function openChooser(g) {
   closeChooser();
   gRef = g;
@@ -101,7 +106,7 @@ function render() {
   panel.innerHTML = `
     <div class="ws-vehpick__head">
       <div class="ws-vehpick__tabs" role="tablist" aria-label="Kind of vehicle">${GROUPS.map(([id, label]) => `<button class="ws-vehpick__tab${id === tab ? ' is-on' : ''}${id === groupOf(chosen) ? ' has-pick' : ''}" type="button" role="tab" aria-selected="${id === tab}" tabindex="${id === tab ? 0 : -1}" data-tab="${id}"${id === groupOf(chosen) ? ` aria-label="${label}, holds your pick: ${defOf(chosen).name}" data-tip="Your pick: ${defOf(chosen).name}"` : ''}>${label}${id === groupOf(chosen) ? '<i class="ws-vehpick__dot" aria-hidden="true"></i>' : ''}</button>`).join('')}</div>
-      <span class="ws-vehpick__hint">Pick one, then click the map. It joins the nearest realm.</span>
+      <span class="ws-vehpick__hint">${touch() ? 'Pick one, then tap the map.' : 'Pick one, then click the map.'} It joins the nearest realm.</span>
     </div>
     <div class="ws-vehpick__row" role="listbox" aria-label="Vehicle to spawn" aria-orientation="horizontal">${list
       .map((k) => {

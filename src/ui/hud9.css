@@ -974,3 +974,48 @@
   outline-offset: -2px;
   box-shadow: 0 0 0 4px rgba(251, 229, 173, 0.18);
 }
+
+/* ---- phones (portrait and landscape): one bar for the chosen power. The handle
+   names it and carries the put-away button; the separate name strip is drawn
+   only when the power has a brush size to set */
+.ws-dock__cancel {
+  display: none;
+}
+@media (max-width: 720px), (max-height: 500px) {
+  .ws-dock.has-power .ws-dock__cancel {
+    display: grid;
+    place-items: center;
+    position: absolute;
+    top: 8px;
+    right: 56px;
+    z-index: 2;
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    font-size: 18px;
+    color: var(--ws-ink-2);
+    background: var(--ws-well-2);
+  }
+  .ws-dock.has-power .ws-dock__handle-text {
+    min-width: 0;
+    padding-right: 52px;
+  }
+  .ws-dock.has-power .ws-dock__handle-text b,
+  .ws-dock.has-power .ws-dock__handle-text small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ws-dock.has-power .ws-brush:not(.has-brush) {
+    display: none !important;
+  }
+}
+@media (max-height: 500px) and (min-width: 721px) {
+  .ws-dock.has-power .ws-dock__cancel {
+    top: 4px;
+    right: 64px;
+  }
+  .ws-vehpick__hint {
+    font-size: 11px;
+  }
+}

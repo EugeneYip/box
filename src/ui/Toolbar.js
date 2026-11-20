@@ -86,7 +86,20 @@ export class Toolbar {
       html: uiIcon('chev-down'),
       onclick: () => this.setMin(!this.el.classList.contains('is-min')),
     });
-    this.panel.append(this.handle, el('div', { class: 'ws-dock__body' }, el('div', { class: 'ws-tabrow' }, this.tabsEl, this.minBtn), this.gridEl));
+    // phones: the handle names the power, so the put-away button rides on it
+    // (one bar, not a second strip that says the same)
+    this.cancelBtn = el('button', {
+      class: 'ws-iconbtn ws-dock__cancel',
+      type: 'button',
+      'aria-label': 'Put the power away (Esc)',
+      'data-tip': 'Put away · Esc',
+      html: uiIcon('close'),
+      onclick: (e) => {
+        e.stopPropagation();
+        this.game.selectPower(null);
+      },
+    });
+    this.panel.append(this.handle, this.cancelBtn, el('div', { class: 'ws-dock__body' }, el('div', { class: 'ws-tabrow' }, this.tabsEl, this.minBtn), this.gridEl));
     const row = this.tabsEl.parentElement;
     const hint = (this.tabHint = () => {
       const t = this.tabsEl;
@@ -387,7 +400,8 @@ export class Toolbar {
     }
     const hasBrush = !!p.brush;
     B.el.classList.toggle('has-brush', hasBrush);
-    B.mode.textContent = p.mode === 'click' ? (hasBrush ? 'Click to cast · area' : 'Click to cast') : 'Hold to paint';
+    const tap = this.ui.root?.classList.contains('is-touch');
+    B.mode.textContent = p.mode === 'click' ? (tap ? (hasBrush ? 'Tap to cast · area' : 'Tap the map') : hasBrush ? 'Click to cast · area' : 'Click to cast') : tap ? 'Touch and drag to paint' : 'Hold to paint';
     if (hasBrush) {
       const min = p.brush.min ?? 1,
         max = p.brush.max ?? 30;
