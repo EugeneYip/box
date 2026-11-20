@@ -838,8 +838,11 @@ export function installDaily(Units) {
     // children by day: play with the others, now and then
     if (child) {
       const school = pl.library || pl.era >= 3 ? pl.library || pl.hallB : null;
-      if (u.age >= 6 && school && h < 15 && rng() < 0.5) {
-        this._dlStart(u, 'school', 20 + rng() * 25, { x: school.doorX, z: school.doorZ, lab: 'At school', go: 'Walking to school', free: true });
+      // (round 23) a longer school day, more of it spent in class than on the
+      // walk there (7% of the children were at school by day, 5% walking)
+      if (u.age >= 6 && school && h >= 7.6 && h < 14.8 && rng() < 0.65) {
+        const dur = Math.max(12, Math.min(30 + rng() * 25, (15.6 - h) * H));
+        this._dlStart(u, 'school', dur, { x: school.doorX, z: school.doorZ, lab: 'At school', go: 'Walking to school', free: true });
         return true;
       }
       // the older ones help lightly (water, the hens, the animals), never in the fields
