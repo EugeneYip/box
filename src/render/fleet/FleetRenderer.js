@@ -25,6 +25,11 @@ import { hwPoint } from '../../sim/civ/modern.js';
 
 const TICK = 1 / 15;
 const DETAIL_DIST = 175; // beyond this camera distance vehicles draw as dots
+// past this camera distance parked and slow land vehicles (cars at the curb,
+// carts, idling trucks) and the street traffic are not drawn: they only
+// peppered a town's grey patch with dots. Trains, ships and aircraft stay.
+const FAR_CUT = 90;
+const farHidden = (v) => v.cls !== 'sea' && !v.def.rail && !(v.speed > 0.5 * (v.def.speed || 1));
 const FLAG_DIST = 115;
 const WAKE_DIST = 165;
 const LO_ZOOM = 120; // beyond this camera distance every kind with a distant model uses it
@@ -354,6 +359,7 @@ export class FleetRenderer {
       cz = rig?.cur?.z ?? 0;
     const ps = !!g.settings?.powerSaver;
     const far = !!g.view?.far || dist > DETAIL_DIST;
+    const farCut = dist > FAR_CUT;
     const viewR = dist * 1.7 + 24;
     const alpha = g.paused ? 1 : Math.min(1, Math.max(0, (g._acc || 0) / (g.simStep || TICK)));
     const list = F.list;
@@ -392,11 +398,12 @@ export class FleetRenderer {
           if (Math.abs(t.x - cx) <= viewR && Math.abs(t.z - cz) <= viewR) this._drawVehicle(t, C);
         }
         if (Math.abs(v.x - cx) > viewR || Math.abs(v.z - cz) > viewR) continue;
+        if (farCut && farHidden(v)) continue;
         this._drawVehicle(v, C);
         visible++;
       }
     }
-    if (!far && F.traffic?.length) visible += this._drawTraffic(F.traffic, C, cx, cz, Math.min(viewR, ps ? 50 : 80));
+    if (!far && !farCut && F.traffic?.length) visible += this._drawTraffic(F.traffic, C, cx, cz, Math.min(viewR, ps ? 50 : 80));
     this.air.collect(vb, C, far, dist, cx, cz, viewR);
     vb.end(!ps);
     this._flags(flagList, flagsOn, wind);
@@ -967,7 +974,7 @@ export class FleetRenderer {
       const base = Math.max(0.5, dist * 0.0068);
       for (const v of list) {
         if (n >= max) break;
-        if (!v.alive || v.state === 'sinking') continue;
+        if (!v.alive || v.state === 'sinking' || farHidden(v)) continue;
         if (Math.abs(v.x - cx) > R || Math.abs(v.z - cz) > R) continue;
         const sc = base * (v.cls === 'sea' ? (v.def.length > 2.3 * VEHICLE.sea ? 1.35 : v.kind === 'fishing' ? 0.7 : 1.1) : 0.75);
         const y = v.cls === 'sea' ? 0.6 + dist * 0.004 : W.heightAt(v.x, v.z) + 1.2 + dist * 0.004;

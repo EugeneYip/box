@@ -64,6 +64,7 @@ float tCloud;
 float tSpecK;
 float tCold;
 float tRivBed;
+float tUrb; // far-zoom urban patch weight (the realm tint stays light over towns)
 float tRivBank; // map zoom: land beside a river channel (no crease shading there)
 
 const mat2 ROT1 = mat2(0.80, -0.60, 0.60, 0.80);
@@ -675,6 +676,9 @@ Mat matCliff(NS s, float volc, out vec3 facetN) {
   float lens = smoothstep(0.30, 0.70, t.g * 0.75 + lh * 0.5 - 0.1);
   // high alpine rock (crystalline cores) shows little bedding: no fortress courses
   float bandK = bandFade * mix(0.30, 1.0, lens) * (1.0 - 0.8 * volc) * (1.0 - 0.65 * smoothstep(8.0, 13.0, p.y));
+  // no bedding under the sea: on a gently sloping seabed the beds' isolines
+  // showed through shallow water as fine contour lines at close zoom
+  bandK *= smoothstep(-0.9, -0.05, p.y);
   lr = mix(0.5, lr, bandK);
   vec3 cA = vec3(0.370, 0.345, 0.310);
   vec3 cB = vec3(0.275, 0.265, 0.252);
@@ -773,10 +777,12 @@ vec3 seabedColor(NS s, float depth, out float hgt) {
   sand *= 1.0 - 0.10 * rip * (1.0 - smoothstep(0.1, 0.4, s.fw));
   vec3 silt = vec3(0.24, 0.24, 0.20) * (0.8 + 0.3 * s.meso.r);
   vec3 rock = vec3(0.12, 0.13, 0.13) * (0.7 + 0.5 * s.cellL.b) * (0.6 + 0.4 * smoothstep(0.0, 0.1, s.cellL.g));
-  float k1 = smoothstep(1.8, 4.5, depth + (s.macro.r - 0.5) * 2.5);
+  // (broad and finer noise on the sand line: the shallow halo round an islet
+  // is wide on one side and narrow on another, never a uniform ring)
+  float k1 = smoothstep(1.8, 4.5, depth + (s.macro.r - 0.5) * 4.0 + (s.meso.b - 0.5) * 2.2);
   float k2 = smoothstep(4.0, 7.5, depth + (s.meso.g - 0.5) * 3.0);
   // patches of seagrass in sunny shallows
-  float grass = smoothstep(0.62, 0.78, s.meso.b * 0.5 + s.macro.g * 0.5) * smoothstep(0.4, 1.0, depth) * (1.0 - k1);
+  float grass = smoothstep(0.56, 0.74, s.meso.b * 0.5 + s.macro.g * 0.5) * smoothstep(0.4, 1.0, depth) * (1.0 - k1);
   vec3 c = mix(sand, vec3(0.07, 0.16, 0.05) * (0.8 + 0.4 * s.det.r), grass * 0.8);
   c = mix(c, silt, k1);
   c = mix(c, rock, k2);
@@ -857,17 +863,23 @@ void applyOverlay(vec2 p, inout vec3 albedo, inout vec3 emissive, float snowK) {
   tintC = mix(tintC, col * 0.6, 0.2);
   // snow composites above the territory tint (borders still read)
   float onSnow = 1.0 - 0.85 * snowK;
-  albedo = mix(albedo, tintC, min(1.0, aFill * fillAmt * 1.3) * onSnow);
+  // (a town's grey patch keeps most of its grey under the realm's tint)
+  albedo = mix(albedo, tintC, min(1.0, aFill * fillAmt * 1.3) * onSnow * (1.0 - 0.7 * tUrb));
   vec3 lineCol = col * 1.05 + 0.015;
   albedo = mix(albedo, albedo * (1.0 - 0.35 * a) + col * 0.35 * a, glow * mix(0.3, 0.6, fillK) * onSnow);
-  float aLine = min(1.0, a * 1.3);
+  // far zoom (past ~90): the border softens - a fainter coloured band and
+  // almost no dark outer edge - so a small realm's border round its town no
+  // longer draws a hard outlined box (round 21)
+  float farSoft = smoothstep(80.0, 120.0, uCamDist) * (1.0 - smoothstep(260.0, 420.0, uCamDist));
+  float aLine = min(1.0, a * 1.3) * (1.0 - 0.45 * farSoft);
   albedo = mix(albedo, lineCol, line * aLine);
-  albedo = mix(albedo, albedo * 0.3 + col * 0.06, edge * aLine * 0.85);
+  albedo = mix(albedo, albedo * 0.3 + col * 0.06, edge * aLine * 0.85 * (1.0 - 0.75 * farSoft));
   // gentle self-glow by day, dim at night (lamps and fires must stay brighter)
   emissive += (lineCol * line * 0.9 + col * glow * 0.3) * a * mix(0.05, 0.30, uDay);
 }
 
 void terrainSurface() {
+  tUrb = 0.0;
   NS s;
   s.p = vWPos;
   s.n = normalize(vWNormal);
@@ -1278,17 +1290,27 @@ void terrainSurface() {
       float sr = st.r + (s.meso.b - 0.5) * 0.16 + (s.det.g - 0.5) * 0.06;
       float core = smoothstep(0.30, 0.85, sr);
       float ring = smoothstep(0.08, 0.45, sr);
-      // a solid light patch of roofs and pavement, clearly lighter in value
-      // than any ground around it (the warm patch vanished on dry land):
-      // soft tonal variation, no street grid (graph paper at far zoom)
+      // a mid grey patch of roofs and pavement (about #b5b0a8 on screen),
+      // darker and far less saturated than beach sand or dry ground, so a
+      // town no longer reads as a sand flat (round 21: the pale warm beige
+      // matched the beaches). Soft tonal variation, a faint street texture:
+      // the town's own streets as soft darker lines, and a fine block grid
+      // that fades out before it could turn to graph paper.
       float rv = s.macro.g * 0.6 + s.meso.r * 0.4;
       // (a touch warm: a neutral grey took the blue sky fill as lilac)
-      vec3 urb = mix(vec3(0.57, 0.53, 0.47), vec3(0.60, 0.54, 0.46), smoothstep(0.35, 0.7, rv));
-      urb = mix(urb, vec3(0.64, 0.60, 0.54), core * 0.6);
+      vec3 urb = mix(vec3(0.335, 0.322, 0.300), vec3(0.355, 0.338, 0.312), smoothstep(0.35, 0.7, rv));
+      urb = mix(urb, vec3(0.375, 0.362, 0.340), core * 0.5);
       urb *= 0.95 + 0.07 * s.det.r;
+      float rdU = dot(vec4(equal(vec4(t0, t1, t2, t3), vec4(13.0))) * live, b);
+      urb *= 1.0 - 0.22 * rdU;
+      vec2 bq = (0.5 - abs(fract(p / 2.5 + vec2(hash12(floor(p / 40.0)) * 0.5)) - 0.5)) * 2.5; // (units to the block's edge)
+      float bw = max(s.fw, 0.05);
+      float grid = (1.0 - smoothstep(0.16, 0.16 + bw * 1.5, min(bq.x, bq.y))) * (1.0 - smoothstep(0.35, 0.8, bw));
+      urb *= 1.0 - 0.10 * grid * core;
       float uk = (ring * 0.45 + core * 0.55) * urbK;
-      albedo = mix(albedo, urb, uk * 0.75);
-      rough = mix(rough, 0.8, uk);
+      albedo = mix(albedo, urb, uk * 0.85);
+      rough = mix(rough, 0.82, uk);
+      tUrb = uk;
     }
   }
 
@@ -1359,16 +1381,15 @@ void terrainSurface() {
     emit += uKeyCol * KEYN * spark * 1.2 * snowAll;
   }
 
-  // ---- regional windows: the land itself fades toward the shelf over its
-  // outer ~30 tiles where it meets the frame (desaturated, lowered toward
-  // the shallow sea's tone), so the map ends in sea haze, not a box of land
+  // ---- regional windows: the land that runs off the window already ends in
+  // a ragged coast well inside the frame (earth.js); only a headland kept
+  // for a city near the border fades toward the shelf over its last tiles.
+  // (A ~30-70 tile band measured straight from the frame greyed the land
+  // into a fogged rectangle at the overview.)
   if (uEdgeFade > 0.5 && s.p.y > -0.3) {
     vec2 ex = min(p, uWorldSize - p);
-    float en = (textureLod(uNoise, p * (1.0 / 140.0) + 0.37, 0.0).r - 0.5) * 22.0 + (s.macro.b - 0.5) * 8.0;
-    // (measured from the inner side of the edge mist, which widens with the
-    // view like Atmosphere's: under the mist alone the fade did not show)
-    float mw = clamp(uCamDist * 0.075, 16.0, max(uWorldSize.x, uWorldSize.y) * 0.08);
-    float ek = 1.0 - smoothstep(mw * 0.5, mw + 32.0, min(ex.x, ex.y) + en);
+    float en = (textureLod(uNoise, p * (1.0 / 60.0) + 0.37, 0.0).r - 0.5) * 6.0 + (s.macro.b - 0.5) * 3.0;
+    float ek = 1.0 - smoothstep(3.0, 14.0, min(ex.x, ex.y) + en);
     if (ek > 0.0) {
       vec3 shelfC = vec3(0.105, 0.175, 0.185);
       vec3 grey = vec3(lum(albedo)) * vec3(0.90, 0.98, 1.04);
@@ -1432,8 +1453,14 @@ export function patchTerrainMaterial(material, uniforms) {
         `// cloud shadows by day darken ALL light by the same factor (taking
          // only the warm sun away left the blue sky fill: purple bruises on
          // dry ground); at night they only dim the moonlight
-         float cloudN = 1.0 - (1.0 - tCloud) * 0.62 * uDay;
+         // (far zoom: cloud shadows are lighter, and the blue sky fill on
+         // shaded slopes is turned toward a neutral warm grey - on warm
+         // ground it read as mauve bruises over every hill)
+         float farL = smoothstep(55.0, 120.0, uCamDist);
+         float cloudN = 1.0 - (1.0 - tCloud) * 0.62 * uDay * (1.0 - 0.45 * farL);
          float cloudD = mix(tCloud, 1.0, uDay);
+         vec3 ind0 = reflectedLight.indirectDiffuse;
+         reflectedLight.indirectDiffuse = mix(ind0, vec3(dot(ind0, vec3(0.2126, 0.7152, 0.0722))) * vec3(1.04, 1.0, 0.93), 0.55 * farL * uDay);
          reflectedLight.indirectDiffuse *= tAO * cloudN;
          reflectedLight.indirectSpecular *= tAO * cloudN;
          reflectedLight.directDiffuse *= mix(1.0, tAO, 0.45) * cloudN * cloudD;
@@ -1441,5 +1468,5 @@ export function patchTerrainMaterial(material, uniforms) {
       )
       .replace('#include <opaque_fragment>', TERRAIN_FRAGMENT_POST + '\n#include <opaque_fragment>');
   };
-  material.customProgramCacheKey = () => 'worldseed-terrain-v9';
+  material.customProgramCacheKey = () => 'worldseed-terrain-v10';
 }

@@ -42,6 +42,9 @@ const SHADOW_RANGE = 60; // creatures farther than this from the camera target c
 const LOD_HI = 64, LOD_LO = 30; // on-screen height (px) thresholds for hi / lo / tiny models
 const HI_CAP = 16; // at most this many full-detail rigs per frame (the rest use the mid model)
 const DOTS_DIST = 190;
+// past this camera distance people are not drawn (fighters excepted): a town
+// is a grey urban patch there, and its folk only peppered it with specks
+const PEOPLE_CUT = 90;
 const SHADOW_ZOOM = 70; // creatures cast shadow-map shadows only when the camera is closer than this // camera distance beyond which creatures are dots on any map size
 
 // Creature renderer (Life module). Every species is one instanced, shader-rigged
@@ -792,10 +795,15 @@ export class UnitRenderer {
     const kSmooth = (k) => 1 - Math.exp(-dt * k);
     const P = this._Pt;
     const nrm = this._n;
+    const peopleCut = camDist > PEOPLE_CUT;
 
     for (let li = 0; li < U.list.length; li++) {
       const u = U.list[li];
       if (!u.alive || u._hid || u.data.hidden || u.data.inside === true || u.hidden || u.data.aboard != null) continue;
+      if (peopleCut && u.def.kind === 'humanoid' && !u.combat) {
+        if (u._rs) u._rs.init = false;
+        continue;
+      }
       const rm = this.modelFor(u);
       const md = rm.def;
       let rs = u._rs;

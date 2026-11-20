@@ -5,6 +5,7 @@ import { EARTH_MASK } from './data/earthMask.js';
 import { RANGES, PLATEAUS, BASINS, SHELVES, MOISTURE, WARMTH, WETLANDS, RIVERS, LAKES, ISLAND_SPINES, COAST_PLAINS } from './data/earthFeatures.js';
 import { earthRegion } from './data/regions.js';
 import { REGION_SETS } from './data/regionFeatures.js';
+import { REALMS_BY_REGION as REALM_PLACES } from '../sim/civ/places/index.js'; // (data only: cities the fading regional coast must keep)
 import { REGION_MASK as MASK_GEA } from './data/mask-great-east-asia.js';
 import { REGION_MASK as MASK_AM } from './data/mask-asia-mainland.js';
 import { REGION_MASK as MASK_JP } from './data/mask-japan.js';
@@ -1192,22 +1193,53 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
   _t('rivers');
 
   // regional maps: land that runs off the window fades out instead of ending
-  // in a cliff. Over its last ~10 tiles the relief eases down to a low
+  // in a cliff. Over its last ~10 to 26 tiles the relief eases down to a low
   // coastal plain, then a shallow shelf that deepens into the deep border
-  // ring. The fading coast wanders 5 to 13 tiles in from the border (capes
-  // and bays at two scales), so it never runs as a straight line along the
-  // window. The terrain skirt and the water beyond the map continue the edge
-  // tiles outward and expect deep open sea at the border itself (land or
-  // shallows at the very edge were stretched into streaks beyond it).
+  // ring. The fading coast is a coast, not a frame: it wanders from about 8
+  // to 80 tiles in from the border (on an ~900-tile map) with broad bays and
+  // capes at three scales, so the map ends in an irregular falloff to the
+  // sea instead of land cut along the window (round 21: a coast only 5 to 13
+  // tiles in read as a straight cut under the edge haze). Known cities near
+  // the border sit on a cape of their own. The terrain skirt and the water
+  // beyond the map continue the edge tiles outward and expect deep open sea
+  // at the border itself (land or shallows at the very edge were stretched
+  // into streaks beyond it).
   const edgeFade = new Uint8Array(REG ? N : 0);
+  const SR = Math.max(W, H);
+  const coastBig = SR * 0.066, coastBase = SR * 0.011;
+  const fadeReach = coastBase + coastBig + 18 + 26;
+  // the cities of the region's realms within reach of the fading coast (the
+  // seats and leading ones, seeded at the start, keep a broad cape)
+  const keepPts = [];
+  if (REG)
+    for (const rl of REALM_PLACES[REG.id] || [])
+      (rl.cities || []).concat([rl.capital]).forEach((c, k, all) => {
+        if (!c) return;
+        const cx = (c.lon - REG.lonMin) * W / (REG.lonMax - REG.lonMin), cy = (REG.latMax - c.lat) * H / (REG.latMax - REG.latMin);
+        if (cx < 0 || cy < 0 || cx >= W || cy >= H) return;
+        const ce = edgeDist(Math.floor(cx), Math.floor(cy));
+        // (other named places keep a small headland of their own)
+        const lead = k < 8 || k === all.length - 1 || (rl.must && rl.must.includes(c.name));
+        if (ce < fadeReach + 30) keepPts.push([cx, cy, ce, lead ? 1.4 : 2.2, lead ? 64 : 30]);
+      });
   if (REG)
     for (let y = 0; y < H; y++)
       for (let x = 0; x < W; x++) {
         const e = edgeDist(x, y);
-        if (e >= 48) continue;
+        if (e >= fadeReach) continue;
         const i = y * W + x;
         if (!land[i]) continue;
-        const coast = Math.max(5.5, 12 + fbm(nDetail, x / 46 + 31.7, y / 46 - 17.3, 3) * 13 + fbm(nBank, x / 9 + 3.1, y / 9 + 8.9, 2) * 3.5);
+        // broad bays and capes (~120-tile swells, warped), then ~45- and
+        // ~9-tile wiggles along the shore
+        const wx = x + fbm(nWarp, x / 70 + 11.3, y / 70 - 4.7, 2) * 28, wy = y + fbm(nWarp, x / 70 - 7.9, y / 70 + 2.2, 2) * 28;
+        const big = Math.min(1, Math.max(0, 0.5 + fbm(nBorder, wx / (SR * 0.13) + 5.3, wy / (SR * 0.13) - 2.1, 3) * 1.8));
+        let coast = Math.max(7, coastBase + coastBig * big + fbm(nDetail, x / 46 + 31.7, y / 46 - 17.3, 3) * 16 + fbm(nBank, x / 9 + 3.1, y / 9 + 8.9, 2) * 3.5);
+        // a known city keeps up to ~12 tiles of land toward the border,
+        // widening into a cape around it
+        for (const [cx, cy, ce, sl, rk] of keepPts) {
+          const dk = Math.hypot(x - cx, y - cy) * (1 + fbm(nBank, x / 13 - 4.4, y / 13 + 6.1, 2) * 0.6); // (a ragged headland, not a disc)
+          if (dk < rk) coast = Math.min(coast, Math.max(6, ce - 12 + Math.max(0, dk - 9) * sl));
+        }
         const dc = e - coast; // tiles inland of the fading coast
         // (high ground eases down over a longer run, so ranges sink rather than drop)
         const run = 10 + Math.min(16, Math.max(0, hgt[i]) * 1.3);
