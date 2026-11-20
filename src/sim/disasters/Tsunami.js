@@ -14,7 +14,7 @@ import { WaveMesh } from '../../render/fx/WaveMesh.js';
 
 const N = 44;
 const LEVEE_CROWN = 1.0; // wave crest (world units) a levee holds back in full
-const TARGET_E = 0.6; // least strength the wave keeps until it has crossed an unguarded town it was sent at
+const TARGET_E = 0.45; // least strength the wave keeps until it reaches the middle of an unguarded town it was sent at
 
 function findDeep(w, x, z, dx, dz, max) {
   for (let d = 2; d < max; d += 1) {
@@ -170,15 +170,17 @@ export class Tsunami {
     return alive > 0 && this.t < 22;
   }
 
-  // Is this column bound for (or crossing) the unguarded town the wave was
-  // sent at? (its lane takes in the town, and it has not yet passed it)
+  // Is this column bound for the unguarded town the wave was sent at? (its
+  // lane takes in the town, and it has not reached the town's middle; past
+  // it the wave drains as usual: held up through the whole town at 0.6 it
+  // razed 67-100% of an unguarded town)
   _toTarget(c, x, z) {
     const v = this.tgt;
     if (!v.alive || (v.guard?.flood || 0) > 0) return false;
     const r = (v.radius || 6) + 1;
     const tl = (v.cx - this.ox) * -this.hz + (v.cz - this.oz) * this.hx;
     if (Math.abs(c.l - tl) > r) return false;
-    return (v.cx - x) * this.hx + (v.cz - z) * this.hz > -r * 0.5;
+    return (v.cx - x) * this.hx + (v.cz - z) * this.hz > 0;
   }
 
   // The town at (x, z), its share of low ground (cached) and its levees.
