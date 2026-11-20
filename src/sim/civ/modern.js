@@ -71,6 +71,7 @@ export const MODERN_FIRST = {
 };
 
 const MODERN_TECHS = TECHS.filter((t) => t.era >= 4).map((t) => t.id);
+const FARM_WORKS = new Set(['pasture', 'silo', 'barn', 'granary']);
 const REACH = { musket: 2.6, rifle: 3.4, fatigues: 3.8, suit: 4.4 };
 
 // ------------------------------------------------------------ rail geometry
@@ -495,9 +496,9 @@ export const modern = {
     if (room() && has('orbital') && (isCap || city) && rc('spaceport') === 0) tryBuild('spaceport', out('spaceport', 6, 12));
   },
   // Fields, pens and farm works inside a Modern or Future town's paving
-  // (planner _pavedRadius) are given up, a few at a time, whichever village
-  // they belong to (a hamlet's plots and pens lay inside a grown town), and
-  // so are plots round a wonder (fenced fields stood by a Future wonder).
+  // (planner _pavedRadius) are given up, a few at a time (its plots and any
+  // neighbour's: a hamlet's plots lay inside a grown town), and so are
+  // plots round a wonder (fenced fields stood by a Future wonder).
   // A plot is judged by its nearest tile, not its centre (plots straddling
   // the edge kept their inner half). New plots stay out (planner _planPlot).
   _clearTownFarms(v) {
@@ -525,13 +526,10 @@ export const modern = {
         if (++n >= 2) return;
       }
     }
-    // pens, silos, barns and granaries inside the paving (any village's)
-    const FARM = new Set(['pasture', 'silo', 'barn', 'granary']);
-    let p = null;
-    for (const u of nearV) {
-      p = u.buildings.find((b) => b.alive && FARM.has(b.type) && !b.constructing && Math.hypot(b.x - v.cx, b.z - v.cz) < core);
-      if (p) break;
-    }
+    // its pens, silos, barns and granaries inside the paving, out to its
+    // edge (they were kept within a tile and a half of it, by the
+    // apartments); they are raised again beyond it (planner _placeOutskirts)
+    const p = v.buildings.find((b) => b.alive && FARM_WORKS.has(b.type) && !b.constructing && Math.hypot(b.x - v.cx, b.z - v.cz) < core);
     if (p) {
       this.destroyBuilding(p, 'cancelled');
       p.ruinT -= YEAR * 10; // no ruin: cleared on the next sweep
