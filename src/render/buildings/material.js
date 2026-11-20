@@ -143,7 +143,9 @@ if (vRoof.x > 0.5) {
     // own per building), with a dark frame between floors and panes, and a
     // capped brightness, so a tower at night is a grid of lights under bloom,
     // never a solid white bar. Electric light mixes warm and cool windows.
-    float share = mix(0.35, 0.6, fract(vState.z * 13.7));
+    // (towers at 22:00 read fully lit: the upper floors of a tall block
+    // light fewer windows, and electric light is a little dimmer)
+    float share = mix(0.32, 0.58, fract(vState.z * 13.7)) * mix(1.0, 0.82, smoothstep(1.4, 3.0, vLocal.y));
     float lit = step(1.0 - mix(0.8, share, powered), wr);
     float fy = fract(vLocal.y * 3.0);
     float fa = fract((vLocal.x + vLocal.z) * 4.0 + 0.5);
@@ -151,7 +153,7 @@ if (vRoof.x > 0.5) {
     float flick = mix(0.88 + 0.12 * sin(uTime * 2.7 + vState.z * 40.0 + wid), 1.0, powered);
     float cool = step(0.62, fract(wr * 17.3)) * powered;
     vec3 wc = mix(vec3(1.0, 0.6, 0.26), mix(vec3(1.0, 0.8, 0.52), vec3(0.72, 0.86, 1.0), cool), powered);
-    totalEmissiveRadiance += vGlow * wc * (night * mix(1.4, 1.2, powered) * lit * pane * flick + 0.02);
+    totalEmissiveRadiance += vGlow * wc * (night * mix(1.4, 1.0, powered) * lit * pane * flick + 0.02);
   } else if (vGlow < 2.5) {
     // a red beacon blinking on a mast or tower
     float blink = step(0.55, fract(uTime * 0.7 + vState.z * 3.0));
