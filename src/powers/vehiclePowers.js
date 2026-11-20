@@ -281,7 +281,11 @@ registerPower({
     if (!v) return g.notify?.(cap(F.lastRefusal || 'it cannot go there') + '.', 'bad', { x: c.x, z: c.z });
     g.fx?.emit?.('spawn', { x: c.x, z: c.z }, { scale: 0.8 });
     g.audio?.play?.('spawn', { pos: { x: c.x, z: c.z }, volume: 0.5 });
-    g.notify?.(`${cap(withArticle(def.name.toLowerCase()))} joins ${theK(g.civ, k.id)}.`, 'good', { x: c.x, z: c.z });
+    const line = `${cap(withArticle(def.name.toLowerCase()))} joins ${theK(g.civ, k.id)}.`;
+    g.notify?.(line, 'good', { x: c.x, z: c.z });
+    // a short toast and a brief gold ring where it lands
+    g.ui?.toast?.(line.replace(/\.$/, ''), 2200);
+    g.fx?.shockwave?.(Number.isFinite(v.x) ? v.x : c.x, Number.isFinite(v.z) ? v.z : c.z, 3.2, { color: 0xf3d488, life: 1.1 });
   },
 });
 

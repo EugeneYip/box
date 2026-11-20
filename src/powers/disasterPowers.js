@@ -248,6 +248,12 @@ registerPower({
         d = Math.sqrt(R()) * r;
       g.fx.emit?.('dust', { x: c.x + Math.cos(a) * d, z: c.z + Math.sin(a) * d }, { scale: 1.2, count: 3 });
     }
-    herald(g, 'drought', c, hit.length ? `Drought parches ${hit.length === 1 ? hit[0].name : hit.length + ' towns'} in %: the harvest fails.` : 'Drought parches the land in %.');
+    // one town is named once ("Drought parches Frostheim: the harvest fails."),
+    // not again by the place line ("…in the woods near Frostheim")
+    herald(g, 'drought', c, hit.length === 1 ? `Drought parches ${hit[0].name}: the harvest fails.` : hit.length ? `Drought parches ${hit.length} towns in %: the harvest fails.` : 'Drought parches the land in %.');
+    // a short toast and a brief amber ring on each town that goes hungry
+    g.ui?.toast?.(hit.length === 1 ? `Drought: ${hit[0].name} goes hungry` : hit.length ? `Drought: ${hit.length} towns go hungry` : 'Drought: the land dries out', 2400);
+    for (const v of hit.slice(0, 8)) if (Number.isFinite(v?.cx) && Number.isFinite(v?.cz)) g.fx?.shockwave?.(v.cx, v.cz, Math.max(6, (v.radius || 6) * 1.2), { color: 0xe0a040, life: 1.4 });
+    if (!hit.length) g.fx?.shockwave?.(c.x, c.z, Math.min(r, 12), { color: 0xe0a040, life: 1.2 });
   },
 });
