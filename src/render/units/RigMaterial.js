@@ -275,7 +275,8 @@ totalEmissiveRadiance += vRigCol * vRigMat.z;
 vec3 rimC = mix(uRimCol, vKing.rgb * 1.5 + 0.12, vKing.a);
 float rimW = pow(1.0 - rndv, 2.2);
 totalEmissiveRadiance += uRimCol * rrim * uRim;
-totalEmissiveRadiance += rimC * rimW * uOutline * (0.35 + 0.85 * vKing.a);
+// (plus a faint realm-coloured rim at every zoom: sides read in a close battle)
+totalEmissiveRadiance += rimC * rimW * (uOutline * (0.35 + 0.85 * vKing.a) + 0.06 * vKing.a);
 totalEmissiveRadiance += vec3(1.0, 0.72, 0.22) * vFx.w * (0.18 + 1.1 * rrim);
 totalEmissiveRadiance += vec3(0.9, 0.1, 0.04) * vFx.x * 0.5;`,
       );

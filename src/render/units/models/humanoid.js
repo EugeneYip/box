@@ -14,7 +14,7 @@ export const humanModel = {
   radius: 0.45,
   aoHeight: 0.16,
   aoMin: 0.62,
-  rim: 0.16,
+  rim: 0.27, // a subtle rim so people read against dark ground (round 19)
   bones: [
     { name: 'pelvis', parent: -1, pivot: [0, 0.2, 0] },
     { name: 'torso', parent: -1, pivot: [0, 0.2, 0], ch: [0, 1, 2, 11] },
@@ -27,7 +27,7 @@ export const humanModel = {
   ],
   slots: ['hair', 'hat', 'beard', 'tool', 'offhand', 'back', 'cape', 'outfit', 'armor'],
   // secondary palette (index in iCol2.a): trousers / hoods / sashes
-  secondary: [0x6b4a32, 0x4a4a52, 0x5d5a3a, 0x3a4660, 0x8f7658, 0x6a3438, 0x3e5a3a, 0x333338],
+  secondary: [0x6b4a32, 0x5a5c66, 0x6c6a46, 0x3a4660, 0x8f7658, 0x6a3438, 0x3e5a3a, 0x333338],
   materials: {
     skin: { src: 'A', rough: 0.62 },
     cloth: { src: 'B', noise: 'cloth', rough: 0.88 },
@@ -57,8 +57,8 @@ export const humanModel = {
     wheat: { color: 0xe8c45a, noise: 'cloth', rough: 0.9 },
     // modern eras: soldiers' gear, firefighters, police, scientists, astronauts
     steel: { color: 0x5c6468, rough: 0.45, metal: 0.55 },
-    olive: { color: 0x59633e, noise: 'cloth', rough: 0.85 },
-    gunmetal: { color: 0x2a2c30, rough: 0.35, metal: 0.6 },
+    olive: { color: 0x737d4c, noise: 'cloth', rough: 0.85 },
+    gunmetal: { color: 0x3a3d42, rough: 0.35, metal: 0.6 },
     visor: { color: 0x7fe6ff, emissive: 1.6, rough: 0.15 },
     goldvisor: { color: 0xd9a63a, rough: 0.12, metal: 0.9 },
     firered: { color: 0xc0302a, rough: 0.45 },
@@ -133,7 +133,8 @@ export const humanModel = {
       for (const s of [1, -1]) B.add(P.box(0.016, 0.2, 0.008), { pos: [0.035 * s, 0.3, 0.07], rot: [-0.08, 0, 0.12 * s], mat: 'gunmetal' });
       B.add(P.box(0.13, 0.13, 0.07), { pos: [0, 0.31, -0.105], mat: 'olive' });
       B.add(P.box(0.14, 0.035, 0.05), { pos: [0, 0.395, -0.1], mat: 'gunmetal' });
-      B.add(P.torus(0.03, 0.009, 4, 10), { pos: [0.104, 0.33, 0.0], rot: [Math.PI / 2, 0, 0], mat: 'sash', bone: 'armL' });
+      // realm armbands on both upper arms (wide enough to read from above)
+      for (const s of [1, -1]) B.add(P.cyl(0.031, 0.03, 0.036, 10), { pos: [0.104 * s, 0.33, 0.001], mat: 'sash', bone: s > 0 ? 'armL' : 'armR' });
     });
     // 3 space suit: white, bulky, a life-support pack on the back
     B.with({ bone: 'torso', slot: 'armor', opt: 3 }, () => {
@@ -225,9 +226,10 @@ export const humanModel = {
         // 9 steel helmet (riflemen): a round shell with a wide brim
         B.add(P.dome(0.112, 14, 6, 0.5), { pos: [0, 0.52, 0], rot: [-0.08, 0, 0], mat: 'steel', opt: 9 });
         B.add(P.cyl(0.155, 0.15, 0.01, 18), { pos: [0, 0.53, 0], rot: [-0.08, 0, 0], mat: 'steel', opt: 9 });
+        B.add(P.torus(0.108, 0.014, 4, 18), { pos: [0, 0.548, 0], rot: [Math.PI / 2 - 0.08, 0, 0], mat: 'band', opt: 9 });
         // 10 combat helmet (modern): covered, with a goggle band
-        B.add(P.dome(0.118, 14, 7, 0.62), { pos: [0, 0.5, -0.004], rot: [-0.18, 0, 0], mat: 'olive', opt: 10 });
-        B.add(P.torus(0.114, 0.01, 4, 18), { pos: [0, 0.548, 0], rot: [Math.PI / 2 - 0.18, 0, 0], mat: 'gunmetal', opt: 10 });
+        B.add(P.dome(0.118, 14, 7, 0.62), { pos: [0, 0.5, -0.004], rot: [-0.18, 0, 0], mat: 'cloth', opt: 10 });
+        B.add(P.torus(0.115, 0.015, 4, 18), { pos: [0, 0.55, 0], rot: [Math.PI / 2 - 0.18, 0, 0], mat: 'band', opt: 10 });
         B.add(P.box(0.07, 0.022, 0.02), { pos: [0, 0.585, 0.1], rot: [-0.3, 0, 0], mat: 'gunmetal', opt: 10 });
         // 11 suit helmet (Future): closed, a glowing visor, the realm's colour
         B.add(P.sphere(0.126, 14, 10), { pos: [0, 0.505, -0.006], scl: [1, 1.02, 1.04], mat: 'cloth', opt: 11 });
