@@ -432,25 +432,33 @@ export const modern = {
       const a = v.buildings.find((b) => b.alive && b.type === 'apartment' && !b.constructing && !b.upgrading && b.level < 2);
       if (a && v.housing - pop < 6) upgrade(a);
     }
-    // A modern city's core is for towers, not wheat: one field plot inside
-    // the core is given up at a time (new plots go beyond it: _placePlot)
-    if (city && (K.era || 0) >= 5 && v.plots?.length && this.rng.chance(0.5)) {
-      const core = v.radius * 0.7;
+    // A paved town's streets are for houses, not wheat: from the Industrial
+    // era a field plot inside the paving (planner _pavedRadius) is given up
+    // at a time and turns to grass (mown lawn from the Modern era, Terrain);
+    // new plots go out beyond the paving (_planPlot). Fenced fields stood
+    // between the apartments of Modern towns.
+    if ((K.era || 0) >= 4 && v.plots?.length && this.rng.chance((K.era || 0) >= 5 ? 1 : 0.5)) {
+      const core = this._pavedRadius(v);
       const p = v.plots.find((q) => Math.hypot((q.x0 + q.x1 + 1) / 2 - v.cx, (q.y0 + q.y1 + 1) / 2 - v.cz) < core);
       if (p) {
         const w = this.world;
         for (const i of [...p.tiles]) {
           this._removePlotTile(i);
-          if (w.flora[i] === FLORA.WHEAT) w.setFlora(i % w.w, (i / w.w) | 0, FLORA.NONE);
+          const x = i % w.w,
+            y = (i / w.w) | 0;
+          if (w.flora[i] === FLORA.WHEAT) w.setFlora(x, y, FLORA.NONE);
+          if (w.type[i] === TILE.FARMLAND) w.setType(x, y, TILE.GRASS);
         }
       }
     }
     // ...and its farm works: a pen, silo, barn or granary inside the paved
     // town is given up (a herd grazed among the towers, silos stood in the
-    // capital's square); a new one goes out beyond the paving (planner.js)
-    if ((K.era || 0) >= 5 && this.rng.chance(0.3)) {
+    // capital's square, cows by an Industrial town's square); a new one goes
+    // out beyond the paving (planner.js)
+    if ((K.era || 0) >= 4 && this.rng.chance(0.3)) {
       const core = this._pavedRadius(v) - 1.5;
-      const p = v.buildings.find((b) => b.alive && (b.type === 'pasture' || b.type === 'silo' || b.type === 'barn' || b.type === 'granary') && !b.constructing && Math.hypot(b.x - v.cx, b.z - v.cz) < core);
+      const e5 = (K.era || 0) >= 5;
+      const p = v.buildings.find((b) => b.alive && (b.type === 'pasture' || (e5 && (b.type === 'silo' || b.type === 'barn' || b.type === 'granary'))) && !b.constructing && Math.hypot(b.x - v.cx, b.z - v.cz) < core);
       if (p) {
         this.destroyBuilding(p, 'cancelled');
         p.ruinT -= YEAR * 10; // they leave no ruin: cleared on the next sweep

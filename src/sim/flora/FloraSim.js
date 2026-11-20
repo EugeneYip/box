@@ -510,6 +510,47 @@ export class FloraSim {
         this.age[i] = 0;
       }
     }
+    this._clearPaving(world);
+  }
+
+  // Paved streets and squares are kept clear: no boulder, pebble, stump or
+  // bush on a road tile, and from the Industrial era nothing wild (rocks,
+  // stumps, dead trees, bushes) anywhere inside the town's paving (a dozen
+  // boulders lay strewn across a Future plaza). The paving radius is the
+  // one the terrain draws (planner _pavedRadius).
+  _clearPaving(world) {
+    const civ = this.game.civ;
+    if (!civ) return;
+    const W = world.w,
+      H = world.h,
+      flora = world.flora,
+      type = world.type;
+    for (const v of civ.villages || []) {
+      if (!v || v.alive === false || !(v.buildRadius > 0) || !Number.isFinite(v.cx)) continue;
+      const era = civ.kingdoms?.[v.kingdom]?.era ?? 0;
+      const r = era >= 4 ? Math.max(5, (v.buildRadius || v.radius || 6) * 1.15 + 2) : v.buildRadius;
+      const x0 = Math.max(0, Math.floor(v.cx - r)),
+        x1 = Math.min(W - 1, Math.floor(v.cx + r)),
+        y0 = Math.max(0, Math.floor(v.cz - r)),
+        y1 = Math.min(H - 1, Math.floor(v.cz + r));
+      for (let y = y0; y <= y1; y++) {
+        const dz = y + 0.5 - v.cz;
+        for (let x = x0; x <= x1; x++) {
+          const i = y * W + x;
+          const f = flora[i];
+          if (!f) continue;
+          const dx = x + 0.5 - v.cx;
+          if (dx * dx + dz * dz > r * r) continue;
+          const road = type[i] === TILE.ROAD;
+          const wild = isMineral(f) || f === FLORA.STUMP || f === FLORA.DEAD_TREE || f === FLORA.BUSH || f === FLORA.BERRY_BUSH;
+          if (road ? f !== FLORA.WHEAT || era >= 4 : era >= 4 && wild) {
+            world.setFlora(x, y, FLORA.NONE);
+            this.stress[i] = 0;
+            this.age[i] = 0;
+          }
+        }
+      }
+    }
   }
 
   nearBuilding(tx, ty) {
