@@ -161,7 +161,9 @@ export const land = {
       const cam = this.game.cameraRig?.cur;
       for (const v of this.list) {
         if (!v.alive || v.kingdom !== kid || !this._retired(v)) continue;
-        if (v.state === 'rest' || !cam || Math.max(Math.abs(v.x - cam.x), Math.abs(v.z - cam.z)) > Math.max(50, cam.dist * 1.8 + 24)) this._retireNow(v);
+        // (and any still about a year on: a long road, or a stuck one)
+        if (v._retT == null) v._retT = now;
+        if (v.state === 'rest' || now - v._retT > 30 || !cam || Math.max(Math.abs(v.x - cam.x), Math.abs(v.z - cam.z)) > Math.max(50, cam.dist * 1.8 + 24)) this._retireNow(v);
       }
     }
     void civ;
