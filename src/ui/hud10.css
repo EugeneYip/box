@@ -171,23 +171,100 @@
     display: none;
   }
 }
-/* phones in portrait: the era headings stay at the top of the list while it
-   scrolls (in place of the "N more above" pill that covered the top row),
-   names may take two lines, and the list grows to about 60% of the screen */
-@media (max-width: 720px) and (min-height: 501px) {
-  .ws-vehpick__row,
-  .ws-vehpick__row.is-short {
-    max-height: max(calc(52px * 3 + 6px * 2 + 26px), calc(60vh - 190px));
+/* the kinds sit in one group per era; the era's name reads across the top of
+   its group (horizontal, not a rotated divider) and stays pinned at the strip's
+   left edge while that era is scrolled past, so the leftmost cards always
+   show their era */
+.ws-vehpick__row.is-grouped {
+  display: flex;
+  align-items: flex-start;
+  gap: 0;
+  --fl: 10px;
+}
+.ws-vehpick__row.is-grouped.at-start {
+  --fl: 0px;
+}
+.ws-vehpick__grp {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 3px;
+  padding: 0 6px 0 7px;
+  border-left: 1px solid rgba(235, 201, 119, 0.24);
+}
+.ws-vehpick__grp:first-child {
+  padding-left: 0;
+  border-left: 0;
+}
+.ws-vehpick__grp:last-child {
+  padding-right: 0;
+}
+.ws-vehpick__glbl {
+  position: sticky;
+  left: 10px;
+  z-index: 1;
+  align-self: flex-start;
+}
+.ws-vehpick__glbl i {
+  display: block;
+  padding-right: 4px;
+  color: var(--ws-gold);
+  font: 700 10px/14px var(--ws-font);
+  font-style: normal;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.ws-vehpick__gopts {
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(2, 44px);
+  grid-auto-columns: max-content;
+  gap: 6px;
+}
+.ws-vehpick__row.is-short .ws-vehpick__gopts {
+  grid-template-rows: 44px;
+}
+@media (max-height: 500px) {
+  .ws-vehpick__gopts {
+    grid-template-rows: 44px;
   }
-  .ws-vehpick__era {
+}
+/* phones in portrait: a list in two columns; each era's heading stays at the
+   top of the list while its kinds scroll under it (in place of the "N more
+   above" pill that covered the top row); names may take two lines; the list
+   grows to about 60% of the screen */
+@media (max-width: 720px) and (min-height: 501px) {
+  .ws-vehpick__row.is-grouped {
+    display: block;
+    max-height: max(calc(52px * 3 + 6px * 2 + 26px), calc(60vh - 190px));
+    --fl: 0px;
+  }
+  .ws-vehpick__grp,
+  .ws-vehpick__grp:first-child {
+    display: block;
+    padding: 0;
+    border: 0;
+  }
+  .ws-vehpick__glbl {
     position: sticky;
     top: 0;
+    left: auto;
     z-index: 2;
-    height: 22px;
-    margin: 0;
-    padding-left: 4px;
+    display: block;
+    padding: 2px 0 2px 4px;
     background: rgb(24, 27, 39);
     box-shadow: 0 6px 8px -6px rgba(0, 0, 0, 0.7);
+  }
+  .ws-vehpick__glbl i {
+    line-height: 18px;
+  }
+  .ws-vehpick__gopts {
+    grid-auto-flow: row;
+    grid-template-rows: none;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-auto-rows: auto;
+    margin: 2px 0 6px;
   }
   .ws-vehpick__more,
   .ws-vehpick__more:not([hidden]) {
