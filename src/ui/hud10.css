@@ -163,3 +163,43 @@
   background: rgba(255, 196, 92, 0.32);
   box-shadow: 0 0 0 1px rgba(255, 196, 92, 0.25);
 }
+
+/* ---- Spawn Vehicle chooser: a smaller footprint on desktops (the tray's tab
+   row folds away while kinds are being chosen; it returns once one is picked) */
+@media (min-width: 721px) and (min-height: 501px) {
+  .ws-root:has(.ws-vehpick:not(.is-folded)) .ws-dock .ws-tabrow {
+    display: none;
+  }
+}
+/* phones in portrait: the era headings stay at the top of the list while it
+   scrolls (in place of the "N more above" pill that covered the top row),
+   names may take two lines, and the list grows to about 60% of the screen */
+@media (max-width: 720px) and (min-height: 501px) {
+  .ws-vehpick__row,
+  .ws-vehpick__row.is-short {
+    max-height: max(calc(52px * 3 + 6px * 2 + 26px), calc(60vh - 190px));
+  }
+  .ws-vehpick__era {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    height: 22px;
+    margin: 0;
+    padding-left: 4px;
+    background: rgb(24, 27, 39);
+    box-shadow: 0 6px 8px -6px rgba(0, 0, 0, 0.7);
+  }
+  .ws-vehpick__more,
+  .ws-vehpick__more:not([hidden]) {
+    display: none;
+  }
+  .ws-vehpick__txt b {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    white-space: normal;
+    line-height: 1.2;
+  }
+}

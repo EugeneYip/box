@@ -1019,6 +1019,23 @@ const U = {
   sparkle: `<path class="s" d="${sparkle(16, 16, 11)}"/>`,
   compass: '<circle cx="16" cy="16" r="12"/><path class="ts" d="M16 6.5l3.2 9.5h-6.4z" style="stroke:none"/><path class="s" d="M16 25.5 12.8 16h6.4z" opacity=".55"/>',
   expand: '<path d="M5 12V5h7M27 12V5h-7M5 20v7h7M27 20v7h-7"/>',
+  // vehicles that once shared a silhouette each have their own (Spawn Vehicle chooser)
+  'veh-carrack': '<path class="f" d="M3 19h26l-3 6H7z"/><path d="M3 19h26l-3 6H7zM3 19l-1-4h5v4M29 19l1-3h-5v3M11 19V6M18 19V5M24 19v-9"/><path class="f" d="M8 8h6v6H8zM15 7h6v8h-6zM22 11h4v5h-4z"/>',
+  'veh-explorer': '<path class="f" d="M4 20h24l-3 5.5H7z"/><path d="M4 20h24l-3 5.5H7zM14 20V5M21 20V9"/><path class="f" d="M14 6 6 18h8zM21 10l6 8h-6z"/><path d="M14 5h4l-1 1.5 1 1.5h-4"/>',
+  'veh-transport': '<path class="f" d="M4 19h24l-3 6H7z"/><path d="M4 19h24l-3 6H7zM16 19V6"/><path class="f" d="M10 7h12v9H10z"/><path d="M6 19v-3h4v3M22 19v-3h4v3"/>',
+  'veh-hydrofoil': '<path class="f" d="M5 15h22l-3 5H8z"/><path d="M5 15h22l-3 5H8zM10 20v5M22 20v5M7 25h6M19 25h6M11 15v-3h9v3"/>',
+  'veh-research': '<path class="f" d="M3 19h26l-3 6H6z"/><path d="M3 19h26l-3 6H6zM8 19v-5h8v5M21 19l4-9M25 10l2 9M25 10v4"/><circle class="f" cx="12" cy="10.5" r="2.5"/><circle cx="12" cy="10.5" r="2.5"/>',
+  'veh-container': '<path class="f" d="M3 19h26l-3 6.5H6z"/><path d="M3 19h26l-3 6.5H6z"/><path class="f" d="M7 15h15v4H7zM9.5 11h10v4h-10z"/><path d="M7 15h15v4H7zM9.5 11h10v4h-10zM12 15v4M17 15v4M14.5 11v4M24 19v-8h3v8"/>',
+  'veh-tanker': '<path class="f" d="M2 20h28l-3 5.5H5z"/><path d="M2 20h28l-3 5.5H5zM24 20v-6h4v6"/><path class="f" d="M5 17.5a2.5 2.5 0 0 1 5 0V20H5zM11 17.5a2.5 2.5 0 0 1 5 0V20h-5zM17 17.5a2.5 2.5 0 0 1 5 0V20h-5z"/><path d="M5 20v-2.5a2.5 2.5 0 0 1 5 0V20M11 20v-2.5a2.5 2.5 0 0 1 5 0V20M17 20v-2.5a2.5 2.5 0 0 1 5 0V20"/>',
+  'veh-autocargo': '<path class="f" d="M3 19h26l-3 6.5H6z"/><path d="M3 19h26l-3 6.5H6z"/><path class="f" d="M7 15h18v4H7z"/><path d="M7 15h18v4H7zM16 15V10M12.5 8a5 5 0 0 1 7 0M10.2 5.4a8.4 8.4 0 0 1 11.6 0"/>',
+  'veh-ironclad': '<path class="f" d="M3 20h26l-4 5H7z"/><path d="M3 20h26l-4 5H7zM9 20v-3h6v3M15 18.5h5M20 20v-7h3v7"/><path d="M21.5 10.5c.6-1.6 2-2 2.6-3.5"/>',
+  'veh-battleship': '<path class="f" d="M2 19.5h28l-4.5 6H6.5z"/><path d="M2 19.5h28l-4.5 6H6.5zM13 19.5v-5h6v5M16 14.5V8M13.5 10h5M5 19.5v-2h4v2M23 19.5v-2h4v2M9 18l3-1M23 18l-3-1"/>',
+  'veh-caravan': '<path class="f" d="M5 18c0-6 4-9 9-9s9 3 9 9z"/><path d="M5 18c0-6 4-9 9-9s9 3 9 9zM3 18h22M23 15l5-2M10 9.8V18M18 9.8V18"/><circle cx="9" cy="22" r="3"/><circle cx="19" cy="22" r="3"/>',
+  'veh-ram': '<path class="f" d="M6 16 13 8h8l5 8z"/><path d="M6 16 13 8h8l5 8zM2 14h22M6 16v2M26 16v2"/><circle cx="10" cy="21" r="3"/><circle cx="22" cy="21" r="3"/>',
+  'veh-cannon': '<path class="f" d="M6 17.5 24 9l2 4-17 8z"/><path d="M6 17.5 24 9l2 4-17 8zM4 26h16"/><circle cx="12" cy="22" r="4"/><circle class="s" cx="12" cy="22" r="1.2"/>',
+  'veh-maglev': '<path class="f" d="M3 19v-6h17c4 0 7 2.5 9 6z"/><path d="M3 19v-6h17c4 0 7 2.5 9 6zM2 23h28M8 13v6M14 13v6M5 19v4M25 19v4"/>',
+  'veh-tram': '<path class="f" d="M6 10h20v13H6z"/><path d="M6 10h20v13H6zM6 15h20M11 10v5M16 10v5M21 10v5M12 10l4-5 4 5M10 5h12"/><circle cx="11" cy="25.5" r="1.8"/><circle cx="21" cy="25.5" r="1.8"/>',
+  'veh-artillery': '<path class="f" d="M4 20h20l3 4H5z"/><path d="M4 20h20l3 4H5zM8 20v-4h9v4M13 16 28 7"/><circle cx="8" cy="26" r="1.6"/><circle cx="14" cy="26" r="1.6"/><circle cx="20" cy="26" r="1.6"/>',
   // Overview: a folded map (not the four corners, which read as full screen)
   overview: '<path class="f" d="M4 8.5 11 5.5l10 3 7-3v18l-7 3-10-3-7 3z"/><path d="M4 8.5 11 5.5l10 3 7-3v18l-7 3-10-3-7 3zM11 5.5v18M21 8.5v18"/>',
   collapse: '<path d="M12 5v7H5M20 5v7h7M12 27v-7H5M20 27v-7h7"/>',
@@ -1076,9 +1093,11 @@ const U = {
   fireengine: '<path class="f" d="M3 14h18v8H3zM21 14h4l3 4v4h-7z"/><path d="M3 14h18v8H3zM21 14h4l3 4v4h-7zM4.5 11 20 7M5.5 13.5 21 9.5M8.5 10.2l.6 2.3M12.5 9.2l.6 2.3M16.5 8.2l.6 2.3"/><circle cx="8" cy="23" r="2.5"/><circle cx="23" cy="23" r="2.5"/>',
 };
 // The icon (uiIcon name) for a vessel or vehicle kind, from its def.
+const OWN_VEH_ICON = new Set(['carrack', 'explorer', 'transport', 'hydrofoil', 'research', 'container', 'tanker', 'autocargo', 'ironclad', 'battleship', 'caravan', 'ram', 'cannon', 'maglev', 'tram', 'artillery']);
 export function vehicleIconName(def) {
   const k = def?.kind || '';
   const cls = def?.cls;
+  if (OWN_VEH_ICON.has(k)) return `veh-${k}`;
   if (cls === 'sea') {
     if (k === 'submarine') return 'submarine';
     if (k === 'fishing') return 'fishboat';

@@ -358,6 +358,12 @@ export class BrushCursor {
     this.t = 0;
     this.press = 0;
     this.appear = 0;
+    // after a one-click cast (Drought, Spawn Vehicle, ...) the cursor steps aside
+    // for a moment, so the cast's own ring on the ground reads on its own
+    this.hush = 0;
+    game.events?.on?.('power:apply', ({ power } = {}) => {
+      if (power?.mode === 'click') this.hush = 1.1;
+    });
   }
 
   tint(p) {
@@ -380,7 +386,8 @@ export class BrushCursor {
     this.press += ((pressed ? 1 : 0) - this.press) * Math.min(1, dt * 14);
 
     const inspectMode = !p || p.id === 'inspect';
-    const showPower = !!(hit && p && !inspectMode);
+    this.hush = Math.max(0, this.hush - dt);
+    const showPower = !!(hit && p && !inspectMode && this.hush <= 0);
     this.appear += ((showPower ? 1 : 0) - this.appear) * Math.min(1, dt * 16);
 
     // ---- power cursor

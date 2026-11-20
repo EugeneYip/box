@@ -202,8 +202,8 @@ function choose(k, fold) {
   gRef?.audio?.play?.('ui-click', { volume: 0.4 });
   if (fold) panel?.querySelector('.ws-vehpick__pill')?.focus({ preventScroll: true });
 }
-// arrow keys: left/right walk the kinds (or the tabs), up/down change the tab,
-// Enter or Space picks
+// arrow keys: left/right walk the kinds (or the tabs), up/down move between
+// the rows, Page Up/Down (or Ctrl+Up/Down) change the tab, Enter or Space picks
 function onKey(e) {
   const t = e.target;
   const isTab = t.classList?.contains('ws-vehpick__tab');
@@ -231,13 +231,38 @@ function onKey(e) {
     }
     return;
   }
-  if (isOpt && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+  // Page Up / Page Down (or Ctrl with an arrow) change the tab
+  const tabKey = e.key === 'PageDown' || e.key === 'PageUp' || ((e.ctrlKey || e.metaKey) && (e.key === 'ArrowUp' || e.key === 'ArrowDown'));
+  if (isOpt && tabKey) {
     e.preventDefault();
     e.stopPropagation();
     const gi = GROUPS.findIndex(([id]) => id === tab);
-    tab = GROUPS[(gi + (e.key === 'ArrowDown' ? 1 : GROUPS.length - 1)) % GROUPS.length][0];
+    tab = GROUPS[(gi + (e.key === 'ArrowDown' || e.key === 'PageDown' ? 1 : GROUPS.length - 1)) % GROUPS.length][0];
     render();
     (panel.querySelector('.ws-vehpick__opt.is-on') || panel.querySelector('.ws-vehpick__opt'))?.focus();
+    return;
+  }
+  // Up / Down move between the rows: to the nearest kind in the row above or below
+  if (isOpt && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+    e.preventDefault();
+    e.stopPropagation();
+    const down = e.key === 'ArrowDown';
+    const r0 = t.getBoundingClientRect();
+    let best = null;
+    for (const o of sib) {
+      if (o === t) continue;
+      const r = o.getBoundingClientRect();
+      const dy = down ? r.top - r0.top : r0.top - r.top;
+      if (dy < 4) continue;
+      const score = dy * 1000 + Math.abs(r.left - r0.left);
+      if (!best || score < best[0]) best = [score, o];
+    }
+    if (best) {
+      chosen = best[1].dataset.kind;
+      render();
+      syncStrip();
+      panel.querySelector('.ws-vehpick__opt.is-on')?.focus();
+    }
     return;
   }
   if (isOpt && (e.key === 'Enter' || e.key === ' ')) {
