@@ -178,6 +178,13 @@ const PACE_LEAD = 2.2; // most the leading realm is hurried when late
 // one-town realm sat in the Enlightened era for 294 years beside Future realms.
 const CATCH_BASE = 2;
 const CATCH_EXP = 1.25;
+// A realm two or more eras behind the world's leader still sat for two
+// centuries (a one-town realm learned one art from Year 206 to 401): the
+// multiplier above scales a rate of under one point a second, and a modern
+// art costs over 30,000. Such a realm learns from the wider world, whatever
+// it has built (no temple, library or campus needed): its study goes at least
+// fast enough to cross its next era in LAG_YEARS / (eras behind - 1) years.
+const LAG_YEARS = 30;
 
 // Extra research on big maps (planner _bigMap: none on Medium): their realms
 // stay small and far apart, and on their own reached the Enlightened arts
@@ -540,6 +547,11 @@ export const tech = {
       // a realm left behind learns from those ahead of it
       const lag = this._catchUp(k, lore, leader);
       if (lag > 0) rate *= Math.pow(CATCH_BASE, lag * CATCH_EXP);
+      // ...and two or more eras behind, at no less than a floor rate (by
+      // contact and travellers, not its own buildings: see LAG_YEARS)
+      const behind = leader && leader !== k ? (leader.era || 0) - (k.era || 0) : 0;
+      const floor = behind >= 2 ? (2.2 * (ERA_COST[(k.era || 0) + 1] || 0)) / ((YEAR * LAG_YEARS) / (behind - 1)) : 0;
+      k.lagFloor = floor; // (knowledge a second; 0 when not far behind)
       if (big > 0) {
         // big maps: scholars, letters and travellers cross the wide lands
         rate *= 1 + big * BIG_RESEARCH;
@@ -585,6 +597,10 @@ export const tech = {
           k.masteryKnowledge -= this.masteryCost(k);
           this._gainMastery(k);
         }
+      }
+      if (floor > 0 && k.researching !== 'mastery' && gain < floor * speed * dt) {
+        gain = floor * speed * dt;
+        k.knowRate = Math.max(k.knowRate, floor * speed);
       }
       k.knowledge += gain;
       // the side arts (breadth branches) beside the main study
