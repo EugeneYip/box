@@ -31,6 +31,10 @@ const BUDGET = 1300;
 // about the same per game second instead of the same per tick (a great fire
 // on a Vast map holds well over a thousand burning tiles)
 const BUDGET_COARSE = 700;
+// ...and on maps larger than Large (the World Map) fewer again: a Vast map
+// keeps several wildfires alight at once (its natural fires scale with its
+// area), which held the coarse tick 0.7 ms over a Medium one
+const BUDGET_COARSE_BIG = 420;
 const _windF = new Float32Array(8);
 // natExp: natural ignition falls off as factor^natExp below the Embers
 // factor; skyOff: spread of lightning fires still burning while the
@@ -404,7 +408,8 @@ export class FireSim {
     const capS = 450 * area;
     const capB = 1000 * area;
     const ageF = Math.pow(fireFactor(g), 0.25) * (n > capS ? Math.max(0.3, capS / n) : 1) * (this._recent > capB ? Math.max(0.12, Math.pow(capB / this._recent, 1.5)) : 1);
-    const todo = Math.min(n, step > 0.1 ? BUDGET_COARSE : BUDGET);
+    const big = w.w * w.h > 65536 * 2 && !globalThis.__lod8Off;
+    const todo = Math.min(n, step > 0.1 ? (big ? BUDGET_COARSE_BIG : BUDGET_COARSE) : BUDGET);
     // the wind's pull in each of the eight directions (the same for every tile this tick)
     for (let d = 0; d < 8; d++) {
       const diag = d >= 4 ? 0.7071 : 1;
@@ -598,7 +603,9 @@ export class FireSim {
     const g = this.game;
     this._stT = (this._stT || 0) - step;
     if (this._stT > 0) return;
-    this._stT = 0.5;
+    // (every half second; at coarse steps on a big map every second: the
+    // Burning status lasts four)
+    this._stT = step > 0.1 && g.world.size > 65536 * 2 && !globalThis.__lod8Off ? 1 : 0.5;
     const w = g.world;
     const now = g.time.total;
     const burned = (this._burned ||= new Map());

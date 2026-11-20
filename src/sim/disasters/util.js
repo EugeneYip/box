@@ -186,7 +186,7 @@ const AGE_KINDS = {
   embers: ['wildfire', 'fire', 'inferno', 'volcano', 'lava'],
   tempests: ['storm', 'lightning', 'tornado'],
   rime: ['blizzard'],
-  blight: ['plague'],
+  blight: ['plague', 'drought'],
   twilight: ['meteor', 'meteor-shower'],
   iron: ['earthquake'],
 };

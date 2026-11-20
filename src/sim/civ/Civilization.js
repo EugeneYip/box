@@ -687,6 +687,11 @@ export class Civilization {
     const g = this.game;
     this._pathBudget = 16;
     this._longBudget = 2;
+    // big maps at coarse steps (8x and above): see the village passes below
+    // (and brain._pathTo: walkers far from the camera take at most
+    // FAR_PATHS of a tick's searches)
+    const coarseBig = step > 0.1 && this.world.size > 65536 * 2 && !globalThis.__lod8Off;
+    this._coarseBig = coarseBig;
     if (g.frame !== this._seenFrame) {
       this._seenFrame = g.frame;
       this._ticksSinceFrame = 0;
@@ -699,7 +704,12 @@ export class Civilization {
     // work; each village keeps its own phase, so the work stays spread.
     let nv = 0;
     for (const v of this.villages) if (v.alive) nv++;
-    const rate = clamp(nv / 32, 1, 2);
+    // big maps at coarse steps (8x and above): the village passes run a
+    // further half as often, each covering the longer interval as above, and
+    // the realm-wide passes below (buildings, research, unlocks, territory)
+    // run less often or on ticks of their own, so the coarse tick holds its
+    // budget
+    const rate = clamp(nv / 32, 1, 2) * (coarseBig ? 1.5 : 1);
     this._planMul = rate;
     for (const v of this.villages) {
       if (!v.alive) continue;
@@ -722,7 +732,7 @@ export class Civilization {
       }
     }
     const T = this._timers;
-    if ((T.b += step) >= 0.5) {
+    if ((T.b += step) >= (coarseBig ? 1 : 0.5)) {
       this._buildingsTick(T.b);
       T.b = 0;
     }
@@ -731,7 +741,7 @@ export class Civilization {
     if ((T.terr += step) >= 2 * Math.min(6, Math.max(1, this.world.size / 65536))) {
       T.terr = 0;
       // the full flood fill is costly on big maps: only when the realms changed
-      this._territoryIfChanged();
+      this._territoryIfChanged(coarseBig ? 60 : 30);
     }
     if ((T.dip += step) >= 4) {
       T.dip = 0;
@@ -754,13 +764,19 @@ export class Civilization {
       T.tower = 0;
       this._towerTick();
     }
-    if ((T.tech = (T.tech || 0) + step) >= 2) {
+    // (research and the realm's stores on one tick, its unlocks and works
+    // half an interval later, so the two passes never share a tick)
+    const techEvery = coarseBig ? 3 : 2;
+    if ((T.tech = (T.tech || 0) + step) >= techEvery) {
       this._researchTick(T.tech);
       this._inventoryTick(T.tech);
-      this._wonderFx();
-      this._unlockTick(T.tech);
-      this._worksTick();
       T.tech = 0;
+    }
+    if ((T.unl = (T.unl ?? 1) + step) >= techEvery) {
+      this._wonderFx();
+      this._unlockTick(T.unl);
+      this._worksTick();
+      T.unl = 0;
     }
     if ((T.cult = (T.cult || 0) + step) >= 5) {
       T.cult = 0;
@@ -910,12 +926,14 @@ export class Civilization {
     // the village while the farmers thresh and mend)
     const seasonGrow = winter ? 0 : season < 1 ? 1.15 : season >= 2 ? 1.3 : 1;
     const fert = 1 + (this._easedMods().fertility - 1) * 0.5;
-    const growRate = (dt / 42) * (golden ? 1.3 : 1) * (rain ? 1.25 : 1) * seasonGrow * fert * this.techMod(v.kingdom, 'harvest');
-    if (winter) v.food += (v.jobCount.farmer || 0) * 0.6 * dt * fert;
+    // a drought (the Drought power) parches the fields: next to nothing grows
+    const dry = now < (v.droughtUntil || 0);
+    const growRate = (dt / 42) * (golden ? 1.3 : 1) * (rain ? 1.25 : 1) * seasonGrow * fert * this.techMod(v.kingdom, 'harvest') * (dry ? 0.04 : 1);
+    if (winter && !dry) v.food += (v.jobCount.farmer || 0) * 0.6 * dt * fert;
     // spring sowing: seed is broadcast on the bare tilled fields of the village
     // (a handful of farmers could never resow every field one by one after the
     // winter, and a small town with wide fields went hungry until summer)
-    const sow = season < 1.8 && !winter ? 0.05 * dt : 0;
+    const sow = season < 1.8 && !winter && !dry ? 0.05 * dt : 0;
     for (const p of v.plots) {
       let dirty = false;
       for (const i of p.tiles) {
@@ -2172,6 +2190,36 @@ export class Civilization {
     return out.slice();
   }
 
+  // A drought (the Drought power): the towns within radius of (x, z) see
+  // their unripe crops wither and their stores spoil, and for some
+  // years their fields bear next to nothing, so a famine follows unless kin
+  // send grain. Returns the towns struck.
+  drought(x, z, radius, years = 4) {
+    const w = this.world;
+    const now = this.game.time.total;
+    const hit = [];
+    for (const v of this.villages) {
+      if (!v.alive || geoDist(w, v.cx, v.cz, x, z) > radius + (v.radius || 6) * 0.5) continue;
+      v.droughtUntil = Math.max(v.droughtUntil || 0, now + YEAR * years);
+      // the stores spoil: the famine is declared at the town's next tick
+      v.food = 0;
+      v.emptyT = Math.max(v.emptyT || 0, 12);
+      for (const p of v.plots) {
+        let dirty = false;
+        for (const i of p.tiles)
+          if (w.flora[i] === FLORA.WHEAT && w.floraGrowth[i] < 1) {
+            w.flora[i] = FLORA.NONE;
+            w.floraGrowth[i] = 0;
+            dirty = true;
+          }
+        if (dirty) w.markDirty('flora', p.x0, p.y0, p.x1, p.y1);
+      }
+      hit.push(v);
+    }
+    if (w.wetness) w.forEachInRadius(x, z, radius, (tx, ty, d, i) => (w.wetness[i] = 0));
+    return hit;
+  }
+
   damageArea(x, z, radius, amount, cause = 'disaster') {
     // (only the buildings the grid puts near the point, in list order: the
     // same buildings as a pass over the whole list; NaN or huge radii fall back)
@@ -2421,13 +2469,13 @@ export class Civilization {
   // Territory changes only when settlements grow, shrink, change hands or the
   // land itself is reshaped; otherwise skip the map-wide flood fill (a refresh
   // still runs every 30 s for the slow incumbency drift).
-  _territoryIfChanged() {
+  _territoryIfChanged(every = 30) {
     let sig = this.villages.length * 7919;
     // (radius in two-tile steps: a birth or a death no longer redraws the map)
     for (const v of this.villages) if (v.alive) sig = (Math.imul(sig, 31) + v.id * 131 + v.kingdom * 977 + Math.round(v.radius / 2) * 17 + v.tier * 5) | 0;
     for (const b of this.buildings) if (b.alive && !b.constructing && (b.type === 'watchtower' || b.type === 'tower')) sig = (Math.imul(sig, 31) + b.id) | 0;
     const now = this.game.time.total;
-    if (sig === this._terrSig && !this._terrDirty && now - (this._terrT ?? -1e9) < 30) return;
+    if (sig === this._terrSig && !this._terrDirty && now - (this._terrT ?? -1e9) < every) return;
     this._terrSig = sig;
     this._terrDirty = false;
     this._terrT = now;

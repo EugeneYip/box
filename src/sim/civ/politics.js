@@ -15,6 +15,23 @@ const REALM_MIN_POP = 30;
 
 export const politics = {
   // ---------------------------------------------------------------- kingdoms
+  _uniqueRealmName(name, culture, base, real) {
+    const taken = new Set();
+    for (const o of this.kingdoms) if (o?.alive && o.name) taken.add(o.name);
+    if (!taken.has(name)) return name;
+    const forms = real ? [] : CULTURES[baseCulture(culture)]?.forms || [];
+    for (const f of forms) {
+      const n = f.replace('{n}', base);
+      if (!taken.has(n)) return n;
+    }
+    for (const q of ['New', 'Upper', 'Lower', 'Greater', 'Outer']) {
+      const n = name.includes(base) ? name.replace(base, q + ' ' + base) : q + ' ' + name;
+      if (!taken.has(n)) return n;
+    }
+    let i = 2;
+    while (taken.has(name + ' ' + i)) i++;
+    return name + ' ' + i;
+  },
   createKingdom(culture, opts = {}) {
     const rng = this.rng;
     const id = this.kingdoms.length;
@@ -26,9 +43,13 @@ export const politics = {
     if (opts.color != null) her = HERALDRY.find((h) => h.color === opts.color) || her;
     else if (real?.color != null && this._tinctureFree(real.color, opts.x, opts.z)) her = HERALDRY.find((h) => h.color === real.color) || her;
     if (!her) her = HERALDRY[id % HERALDRY.length];
+    let name = opts.name || real?.name || makeKingdomName(culture, base, rng);
+    // no two living realms share a name (two "Kingdom of Dunwick"s rose
+    // from towns of one name): another form of the culture's, else "New ..."
+    if (!opts.name) name = this._uniqueRealmName(name, culture, real ? real.name : base, !!real);
     const k = {
       id,
-      name: opts.name || real?.name || makeKingdomName(culture, base, rng),
+      name,
       base: real ? real.name : base,
       color: her.color,
       colorName: her.name,

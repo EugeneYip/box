@@ -90,6 +90,7 @@ const SFX_GAP = { hit: 0.07, death: 0.18, birth: 0.6, growl: 0.5, bleat: 1.4 };
 const THINK_BUDGET_MS = 5; // per rendered frame (high game speeds defer the rest)
 const DCELL = 16; // danger grid cell (tiles): where predators, monsters or fights are
 const OVERVIEW_DIST = 110; // camera farther than this: every creature takes the cheap path
+const FAR8_DIST = 90; // big maps at coarse steps: beyond this, every eighth tick
 const WILD_TARGET = 620; // wild creatures on a 256 x 256 map with no people
 const WILD_FLOOR = 420; // ...and however large the realms grow
 const WILD_FLOOR_BIG = 330; // ...on maps larger than Medium, where the total cap rules
@@ -2030,6 +2031,13 @@ export class Units {
       focus.lr2 = lr * lr;
     }
     const lr2 = focus.lr2 ?? focus.r2;
+    // big maps at coarse steps (8x and above): creatures beyond FAR8_DIST of
+    // the camera's target (and beyond 4x the distant radius) update every
+    // eighth tick instead of every fourth, gliding between updates, and the
+    // people among them re-think on their timer half as often (arrivals and
+    // fights still decide at once: see the skip below)
+    const far8 = stepK >= 3 && w.w * w.h > 65536 * 2 && !globalThis.__lod8Off;
+    const far8d2 = Math.max(lr2 * 16, FAR8_DIST * FAR8_DIST);
     const yearDt = dt / YEAR;
     const list = this.list;
     const lifeLaw = typeof g.laws?.lifeLifespan === 'number' ? g.laws.lifeLifespan : 1;
@@ -2083,7 +2091,7 @@ export class Units {
         fdz0 = u.z - focus.z;
       const fd2 = fdx0 * fdx0 + fdz0 * fdz0;
       let lod = 0;
-      if (!u.combat && (overview || fd2 > lr2) && def.habitat !== 'air' && !BRAIN_TICKS[def.brain]) lod = overview || fd2 > lr2 * 4 ? 2 : 1;
+      if (!u.combat && (overview || fd2 > lr2) && def.habitat !== 'air' && !BRAIN_TICKS[def.brain]) lod = far8 && fd2 > far8d2 ? 3 : overview || fd2 > lr2 * 4 ? 2 : 1;
       if (lod && (slot & ((1 << lod) - 1)) !== 0 && u.thinkT > 0.05) {
         u.anim += dt * (u.moving ? 1 : 0.35);
         // its last stride is shown in even steps, one a tick, so a distant
@@ -2103,7 +2111,8 @@ export class Units {
         if (u.x < 0 || u.x >= w.w) u.x = ((u.x % w.w) + w.w) % w.w; // (only on the Round world)
       }
       const el = now - u._simT;
-      const udt = el > 1e-4 ? (el < 1.2 ? el : 1.2) : dt;
+      const cap = lod === 3 ? 2.4 : 1.2;
+      const udt = el > 1e-4 ? (el < cap ? el : cap) : dt;
       u._simT = now;
       // ---- needs
       const active = u.state === 'run' || u.state === 'flee' || u.state === 'hunt' || u.state === 'attack';
@@ -2207,7 +2216,7 @@ export class Units {
         if (budgetOn && this._frameThinkMs > THINK_BUDGET_MS && !u.combat) {
           u.thinkT = 0.05 + g.rng.next() * 0.15; // over budget: think a little later
         } else {
-          let mul = u._far ? (FAR_THINK[def.kind] || 2) * (def.kind === 'humanoid' ? fastFarPeople : fastFar) : u.combat ? 1 : fastNear;
+          let mul = u._far ? (FAR_THINK[def.kind] || 2) * (def.kind === 'humanoid' ? fastFarPeople : fastFar) * (lod === 3 ? 2 : 1) : u.combat ? 1 : fastNear;
           // calm grazers with no danger about re-decide less often
           if (def.kind === 'animal' && def.diet === 'herbivore' && !u.combat && u.hunger < 0.4 && !u.alarm && u.fleeUntil < now && !this.dangerNear(u.x, u.z, def.sight)) mul *= 1.6;
           u.thinkT = THINK_INTERVAL * (0.8 + g.rng.next() * 0.4) * mul;
@@ -2226,7 +2235,7 @@ export class Units {
         if (!u.alive) continue;
       }
       // personal space: less often the farther away (the overview LOD most rarely)
-      const sepEvery = (lod === 2 ? 16 : u._far ? 8 : 4) * (u.moving || u.target ? 1 : 2);
+      const sepEvery = (lod >= 2 ? 4 << lod : u._far ? 8 : 4) * (u.moving || u.target ? 1 : 2);
       if (slot % sepEvery === 0) this._separate(u);
       // ---- locomotion
       // distant creatures out of a fight step every other tick (twice as far)
