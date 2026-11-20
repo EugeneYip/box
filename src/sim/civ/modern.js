@@ -612,7 +612,7 @@ export const modern = {
     const W = w.w;
     const rng = this.rng;
     const minR = Math.max(6, (v.buildRadius || 8) * 0.8),
-      maxR = (v.buildRadius || 8) + 24;
+      maxR = (v.buildRadius || 8) + 30;
     const M = AIR_CLEAR;
     let best = null,
       bs = Infinity;
@@ -628,7 +628,22 @@ export const modern = {
         y = Math.floor(v.cz + Math.sin(a) * r - fh / 2);
       if (x < M + 2 || y < M + 2 || x + fw + M + 2 > w.w || y + fh + M + 2 > w.h) continue;
       if (this.landId[y * W + x] !== v.landId) continue;
-      if (!this._footprintOK(x, y, fw, fh, L.fp)) continue;
+      // (open ground or the town's own fields: an airport may take over
+      // field plots, which ringed every town and left no room)
+      let fmin = Infinity,
+        fmax = -Infinity,
+        ok = true;
+      for (let yy = y; yy < y + fh && ok; yy++)
+        for (let xx = x; xx < x + fw; xx++) {
+          const i = yy * W + xx;
+          if (!(this._tileFree(i) || (this.use[i] === USE.PLOT && !this.railMask?.[i] && w.height[i] >= SEA_LEVEL + 0.05))) {
+            ok = false;
+            break;
+          }
+          fmin = Math.min(fmin, w.height[i]);
+          fmax = Math.max(fmax, w.height[i]);
+        }
+      if (!ok || fmax - fmin > L.fp) continue;
       // the plot and its clear zone: level, open, no line, no building
       let hmin = Infinity,
         hmax = -Infinity,
@@ -670,6 +685,17 @@ export const modern = {
       if (sc < bs) (bs = sc), (best = { x, y, rot });
     }
     if (!best) return null;
+    {
+      const fw = best.rot & 1 ? def.h : def.w,
+        fh = best.rot & 1 ? def.w : def.h;
+      for (let yy = best.y; yy < best.y + fh; yy++)
+        for (let xx = best.x; xx < best.x + fw; xx++) {
+          const i = yy * W + xx;
+          if (this.use[i] !== USE.PLOT) continue;
+          this._removePlotTile(i);
+          if (w.flora[i] === FLORA.WHEAT) w.setFlora(xx, yy, FLORA.NONE);
+        }
+    }
     const b = this.addBuilding(v, type, best.x, best.y, best.rot);
     const dx = Math.floor(b.doorX),
       dz = Math.floor(b.doorZ);
