@@ -2519,7 +2519,7 @@ export class Units {
     const now = this.game.time.total;
     if (!u.alive) return 'Dead';
     if (u.mad > now) return u.combat ? 'Rampaging' : 'Raging';
-    if (u.sleeping) return u._nap ? 'Napping' : 'Sleeping';
+    if (u.sleeping) return u.data.robot ? 'Recharging' : u._nap ? 'Napping' : 'Sleeping';
     if (u.combat) {
       const t = this.byId.get(u.combat.target);
       const who = t ? (t.name || t.def.name) : 'foe';

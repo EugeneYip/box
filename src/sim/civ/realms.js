@@ -737,8 +737,9 @@ export const realms = {
     if (this.game.time.total >= YEAR * KEY_YEARS || !this._realMapOn()) return;
     for (const v of this.villages) {
       if (!this._keyCity(v) || this.expeditions.some((e) => e.village === v.id)) continue;
-      const seat = this.kingdoms[v.keyCity]?.capital === v.id;
-      const floor = seat ? KEY_SEAT_POP : KEY_MIN_POP;
+      // (round 21) the seats' floor holds for the cities that must exist too
+      // (San Juan sat at 4-5 people under the old floor of 8)
+      const floor = KEY_SEAT_POP;
       if (v.pop >= floor) continue;
       this._refillKey(v, floor + 2 - v.pop);
     }
@@ -765,11 +766,17 @@ export const realms = {
       }
       if (moved) this._history(`Families from ${src.name} settle in ${v.name}`, 'info', { x: v.cx, z: v.cz });
     }
-    // nobody near to come: a handful of newcomers arrive from beyond (so a
-    // must-exist city never stands empty)
-    if (!moved && v.pop + moved < 3) {
+    // (round 21) no town on its own land to draw from (an island seat:
+    // Taipei, London, Jakarta and San Juan sat at 3-5 people at Year 150 on
+    // Vast): families of the realm come over by sea
+    if (!moved) moved = this._refillBySea(v, Math.min(n, 5));
+    // nobody to come: a handful of newcomers arrive from beyond (so a
+    // must-exist city never stands empty), while the world has room for them
+    const room = v.pop < 3 || this.game.units.count('human') < this._humanCap();
+    if (!moved && room && !(this.game.time.total - (v._newT ?? -1e9) < 8)) {
+      v._newT = this.game.time.total;
       const w = this.world;
-      for (let i = 0; i < 4; i++) {
+      for (let i = 0; i < Math.min(4, n); i++) {
         const a = this.rng.next() * Math.PI * 2;
         const x = v.cx + Math.cos(a) * 2.5,
           z = v.cz + Math.sin(a) * 2.5;
@@ -781,6 +788,47 @@ export const realms = {
         }
       }
     }
+    return moved;
+  },
+  // Families who cross the water to a key city with no town on its own land
+  // to draw from: young grown-ups of the holder's biggest town elsewhere (else
+  // of a realm at peace with it) land at the city's docks or hall. At most n,
+  // one crossing every twelve seconds per city; returns how many came.
+  _refillBySea(v, n) {
+    const now = this.game.time.total;
+    if (n <= 0 || now - (v._seaT ?? -1e9) < 12) return 0;
+    v._seaT = now;
+    let src = null,
+      ss = -Infinity;
+    for (const o of this.villages) {
+      if (!o?.alive || o === v || o.landId === v.landId || o.starving || o.pop < 16 || (this._keyCity(o) && o.pop < KEY_SEAT_POP + 9)) continue;
+      const own = o.kingdom === v.kingdom;
+      if (!own && (o.kingdom < 0 || this.atWar(o.kingdom, v.kingdom))) continue;
+      const s = o.pop * (own ? 3 : 1) - geoDist(this.world, o.cx, o.cz, v.cx, v.cz) * 0.05;
+      if (s > ss) (ss = s), (src = o);
+    }
+    if (!src) return 0;
+    const U = this.game.units;
+    const land = (v.buildings || []).find((b) => b.alive && !b.constructing && (b.type === 'docks' || b.type === 'containerport') && b.doorX != null) || v.hall;
+    const lx = land?.doorX ?? v.cx,
+      lz = land?.doorZ ?? v.cz;
+    let moved = 0;
+    for (const u of [...src.members]) {
+      if (moved >= n) break;
+      if (!u.alive || u.age < ADULT_AGE || u.age > 45 || u.job === 'king' || u.job === 'soldier' || u.data?.civ?.army || u.data?.civ?.royal || u.data?.inside || u.data?.aboard != null || u.combat) continue;
+      this._moveMember(u, v);
+      if (u.kingdom !== v.kingdom) u.kingdom = v.kingdom;
+      U.stop?.(u);
+      const a = this.rng.next() * Math.PI * 2;
+      u.x = u.px = lx + Math.cos(a) * 0.8;
+      u.z = u.pz = lz + Math.sin(a) * 0.8;
+      if (!this.world.isWalkable(Math.floor(u.x), Math.floor(u.z))) U._ashore?.(u, 8);
+      u.y = u.py = U._groundY ? U._groundY(u) : u.y;
+      if (u._cell >= 0) U._gridUpdate?.(u);
+      if (u.data.civ) u.data.civ.task = { kind: 'arrive' };
+      moved++;
+    }
+    if (moved) this._history(`Families from ${src.name} cross the water to settle in ${v.name}`, 'info', { x: v.cx, z: v.cz });
     return moved;
   },
   // Civilization._abandon asks before a town is given up: a key city is

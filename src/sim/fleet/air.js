@@ -4,6 +4,8 @@ import { BUILDING, VEHICLE } from '../../core/scale.js';
 import { civPath } from '../civ/pathing.js';
 import { USE } from '../civ/util.js';
 
+const AIRLINER_KEEP = 2; // places in the sky kept for airliners (_airFull)
+
 const YEAR = 30;
 const COUNT = 6; // a rocket's countdown on the pad (seconds) before it lifts off
 
@@ -291,16 +293,22 @@ export const air = {
   _airFull(def, o = {}) {
     let all = 0,
       vt = 0,
-      war = 0;
+      war = 0,
+      liners = 0;
     for (const f of this.air) {
       if (!f.alive) continue;
       all++;
       if (f.cls !== 'air') continue;
       if (f.def?.vtol) vt++;
       if (f.cargo?.strike) war++;
+      if (f.kind === 'airliner') liners++;
     }
     const cap = this.budget.air;
     if (all >= cap) return 'total';
+    // two places are kept for airliners (round 21: with the sky full of
+    // drones, sky taxis and circuits, 37% of the airports' airliner flights
+    // were refused): the others see a full sky two short of the limit
+    if (def.kind !== 'airliner' && all >= cap - Math.max(0, AIRLINER_KEEP - liners)) return 'total';
     if (def.vtol) return vt >= Math.ceil(cap * 0.4) ? 'share' : '';
     if (o.cargo?.strike) return war >= Math.ceil(cap * 0.4) ? 'share' : '';
     if (o.auto && all >= cap - Math.max(2, Math.round(cap * 0.15))) return 'share';

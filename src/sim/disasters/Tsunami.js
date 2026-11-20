@@ -14,6 +14,7 @@ import { WaveMesh } from '../../render/fx/WaveMesh.js';
 
 const N = 44;
 const LEVEE_CROWN = 1.0; // wave crest (world units) a levee holds back in full
+const TARGET_E = 0.45; // least strength the wave keeps until it reaches the middle of an unguarded town it was sent at
 
 function findDeep(w, x, z, dx, dz, max) {
   for (let d = 2; d < max; d += 1) {
@@ -60,6 +61,15 @@ export class Tsunami {
       const edge = 1 - Math.pow(Math.abs(i / (N - 1) - 0.5) * 2, 3);
       this.cols.push({ l, s: 0, e: edge, e0: edge, x: 0, z: 0, y: 0, amp: 0, alpha: 0, land: false, hit: 0, spray: Math.random() });
     }
+    // the town the wave was sent at: without levees it takes at least a
+    // strong wave whatever the approach (round 21: an unguarded town lost 3%
+    // or 75% by the lie of the ground the wave crossed to reach it)
+    try {
+      const tv = this.game.civ?.villageAt?.(x, z, 16);
+      if (tv && tv.alive !== false && Math.hypot(tv.cx - x, tv.cz - z) <= (tv.radius || 6) + 2) this.tgt = tv;
+    } catch (err) {
+      this.tgt = null;
+    }
     this.mesh = new WaveMesh(this.game.fx, N);
     this._sound = 0;
     this._low = new Map();
@@ -88,6 +98,7 @@ export class Tsunami {
         if (onLand) {
           // (flat low shore drains the wave slowly: it carries 2-4 tiles further inland)
           c.e -= vt * (0.17 + Math.max(0, gh) * 0.24 + w.slopeAt(Math.floor(x), Math.floor(z)) * 0.12);
+          if (this.tgt && c.e < TARGET_E && this._toTarget(c, x, z)) c.e = TARGET_E;
           if (!c.land) {
             c.land = true;
             fx.emit('splash', { x, y: SEA_LEVEL, z }, { scale: 1.6 + c.e * 1.5, dir: { x: hx, y: 0.5, z: hz } });
@@ -157,6 +168,19 @@ export class Tsunami {
       fx.shake(this.cols[N >> 1].x, this.cols[N >> 1].z, 0.25 * dt * Math.min(1, alive / 10));
     }
     return alive > 0 && this.t < 22;
+  }
+
+  // Is this column bound for the unguarded town the wave was sent at? (its
+  // lane takes in the town, and it has not reached the town's middle; past
+  // it the wave drains as usual: held up through the whole town at 0.6 it
+  // razed 67-100% of an unguarded town)
+  _toTarget(c, x, z) {
+    const v = this.tgt;
+    if (!v.alive || (v.guard?.flood || 0) > 0) return false;
+    const r = (v.radius || 6) + 1;
+    const tl = (v.cx - this.ox) * -this.hz + (v.cz - this.oz) * this.hx;
+    if (Math.abs(c.l - tl) > r) return false;
+    return (v.cx - x) * this.hx + (v.cz - z) * this.hz > 0;
   }
 
   // The town at (x, z), its share of low ground (cached) and its levees.
