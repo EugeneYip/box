@@ -525,7 +525,9 @@ export class Civilization {
     if (aliveVillages >= this.budget.villages || k.villages.length >= 14 || (aliveVillages >= 12 && k.villages.length >= 5 && k.villages.length > 0.33 * aliveVillages)) return false; // a hegemon stops growing (only in a settled world)
     // a full world founds no more hamlets: they would only dwindle and be
     // merged away (round 22: 123 of 180 founded were; _villageTick)
-    if (aliveVillages >= this.budget.villages * 0.8 && (this.game.units.count?.('human') ?? 0) > this._humanCap() * 0.85) return false;
+    // (founding stops, and the merging starts, at nine tenths of the village
+    // limit: at four fifths the world kept only 44 towns)
+    if (aliveVillages >= this.budget.villages * 0.9 && (this.game.units.count?.('human') ?? 0) > this._humanCap() * 0.85) return false;
     if (this.expeditions.some((e) => e.from === v.id)) return false;
     v.lastExpand = now;
     const site = this._findExpansionSite(v);
@@ -1039,7 +1041,7 @@ export class Civilization {
     // world is full, and a dozen such remnants held the World Map's village
     // places while its towns stayed small); a village the player has named or
     // given policies is left alone
-    if (fullWorld && pop <= 6 && now - v.founded > YEAR * 15 && !this._keyHeld?.(v) && this._aliveVillageCount() >= this.budget.villages * 0.8 && this.kingdoms[v.kingdom]?.capital !== v.id && !(v.colony && now - v.founded < YEAR * 30) && !v.player && !(v.policy && Object.keys(v.policy).length) && this.rng.chance(0.012 * dt)) {
+    if (fullWorld && pop <= 6 && now - v.founded > YEAR * 15 && !this._keyHeld?.(v) && this._aliveVillageCount() >= this.budget.villages * 0.9 && this.kingdoms[v.kingdom]?.capital !== v.id && !(v.colony && now - v.founded < YEAR * 30) && !v.player && !(v.policy && Object.keys(v.policy).length) && this.rng.chance(0.012 * dt)) {
       let to = null,
         td = 70 * Math.sqrt(this.budget.area);
       for (const vid of this.kingdoms[v.kingdom]?.villages || []) {
