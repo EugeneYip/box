@@ -4,7 +4,8 @@
 //   findPath(world, sx, sy, gx, gy, passable(tx,ty)->bool, maxNodes=3000, cost?(tx,ty)->extra)
 //
 // `cost` (optional) adds a per-tile penalty, e.g. to make wading through
-// shallow water possible but less attractive than walking on land.
+// shallow water possible but less attractive than walking on land. It gets
+// the tile stepped from as a third argument (cost(tx, ty, fromIndex)).
 // On the Round world (docs/ROUND-WORLD.md) the whole Earth's left and right
 // edges are neighbours, so a path may cross the seam (Greenland, Antarctica).
 import { geoWrapOn } from '../../world/geo.js';
@@ -153,7 +154,7 @@ export function findPath(world, sx, sy, gx, gy, passable, maxNodes = 3000, cost 
         if (dx && dy && (!pass(nx, cy) || !pass(cx, cy + dy))) continue;
         const climb = Math.max(0, height[ni] - ch);
         let g = gScore[cur] + (dx && dy ? SQRT2 : 1) + climb * 0.6;
-        if (cost) g += cost(nx, ny);
+        if (cost) g += cost(nx, ny, cur);
         if (stamp[ni] !== curStamp || g < gScore[ni]) {
           stamp[ni] = curStamp;
           gScore[ni] = g;
