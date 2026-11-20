@@ -106,8 +106,8 @@ export class TitleScreen {
           onclick: () => this.chooseSize(z),
         },
         // a regional map shows its own coastline beside its name
-        z.region ? ((t) => (t ? el('img', { class: 'ws-chip__map', src: t.url, alt: '', width: t.w, height: t.h, draggable: 'false' }) : null))(regionThumb(z.region, 30, 20)) : null,
-        z.name,
+        z.region ? el('span', { class: 'ws-chip__mapbox' }, ((t) => (t ? el('img', { class: 'ws-chip__map', src: t.url, alt: '', width: t.w, height: t.h, draggable: 'false' }) : null))(regionThumb(z.region, 46, 30))) : null,
+        z.region ? el('span', { class: 'ws-chip__txt', text: z.name }) : z.name,
       ),
     );
     const whole = this.sizeBtns.filter((b, k) => !list[k].region);

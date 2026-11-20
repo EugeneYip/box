@@ -76,7 +76,7 @@ export class Toolbar {
       el('span', { class: 'ws-dock__handle-text' }, el('b', { text: 'God Powers' }), el('small', { text: 'Tap to choose' })),
       el('span', { class: 'ws-dock__handle-chev', html: uiIcon('chev-up') }),
     );
-    this.tabsEl = el('div', { class: 'ws-tabs', role: 'tablist' });
+    this.tabsEl = el('div', { class: 'ws-tabs', role: 'tablist', 'aria-label': 'Power categories', onkeydown: (e) => this.onTabsKey(e) });
     this.gridEl = el('div', { class: 'ws-powers', role: 'toolbar' });
     this.minBtn = el('button', {
       class: 'ws-iconbtn ws-iconbtn--sm ws-dock__min',
@@ -173,6 +173,29 @@ export class Toolbar {
     if (!ids.length) return;
     const i = ids.indexOf(this.cat);
     this.setCategory(ids[(i + dir + ids.length) % ids.length]);
+  }
+
+  // Keyboard: focus the open tab (the first Tab from the world lands here).
+  // Returns false when the tab list is not on screen (folded drawer, hidden UI).
+  focusTab() {
+    const t = this.tabEls?.get(this.cat);
+    if (!t || !t.getClientRects().length || getComputedStyle(t).visibility === 'hidden') return false;
+    t.focus({ preventScroll: true });
+    return document.activeElement === t;
+  }
+
+  // arrows, Home and End move between categories inside the tab list (one tab
+  // stop for the whole list, as a tab list should have)
+  onTabsKey(e) {
+    const dir = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.code];
+    if (!dir && e.code !== 'Home' && e.code !== 'End') return;
+    e.preventDefault();
+    e.stopPropagation();
+    const ids = CATEGORIES.map((c) => c.id).filter((id) => listPowers(id).length);
+    if (!ids.length) return;
+    if (dir) this.cycleCategory(dir);
+    else this.setCategory(e.code === 'Home' ? ids[0] : ids[ids.length - 1]);
+    this.tabEls?.get(this.cat)?.focus({ preventScroll: true });
   }
 
   // ------------------------------------------------------------------ grid
@@ -294,6 +317,7 @@ export class Toolbar {
     for (const [id, t] of this.tabEls) {
       t.classList.toggle('is-active', id === this.cat);
       t.setAttribute('aria-selected', id === this.cat ? 'true' : 'false');
+      t.tabIndex = id === this.cat ? 0 : -1;
       t.classList.toggle('has-power', !!ap && ap.category === id && id !== this.cat);
     }
     // handle (drawer mode)

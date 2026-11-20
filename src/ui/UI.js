@@ -96,7 +96,10 @@ export class UI {
     this.popover = new Popover(this);
     // ages: chip under the clock, banner on change
     this.ageChip = new AgeChip(this);
-    this.topbar.centre.insertBefore(this.ageChip.el, this.topbar.pausedEl);
+    // the age chip and the actual-speed note share one row under the clock: the
+    // chip stays centered and the note hangs to its right, so neither moves the other
+    this.ageRow = el('div', { class: 'ws-agerow' }, this.ageChip.el, this.topbar.effEl);
+    this.topbar.centre.insertBefore(this.ageRow, this.topbar.pausedEl);
     this.ageBanner = new AgeBanner(this);
     // Overview replaces the always-on minimap (M)
     this.overviewBtn = el(
@@ -168,6 +171,8 @@ export class UI {
     // typing in any field never reaches game hotkeys (Input, power slots, ...)
     root.addEventListener('keydown', (e) => {
       if (this.isTyping(e)) e.stopPropagation();
+      // a focused control takes Space and Enter for itself (no pause, no hotkey)
+      else if ((e.code === 'Space' || e.code === 'Enter' || e.code === 'NumpadEnter') && e.target !== root && e.target?.closest?.('button, a[href], [role="tab"], [role="switch"], [role="radio"]')) e.stopPropagation();
     });
     // mouse clicks should not leave focus on buttons (Space would re-trigger them)
     root.addEventListener('click', (e) => {
@@ -1054,15 +1059,18 @@ export class UI {
     if (e.key === '?') return this.modals.toggle('help');
     switch (code) {
       case 'Tab': {
-        // Tab cycles power categories only while nothing has focus (the world has
-        // the keyboard); on a button, pill or field it moves focus as usual, so the
-        // inspector, panels and dialogs stay keyboard-navigable.
+        // From the world (nothing has focus) the first Tab lands on the power
+        // dock's open tab; from there Tab walks the controls as usual and the
+        // arrow keys switch categories inside the tab list.
         const a = document.activeElement;
         if (a && a !== document.body && a !== document.documentElement && a.tagName !== 'CANVAS') break;
-        e.preventDefault();
-        this.toolbar.cycleCategory(e.shiftKey ? -1 : 1);
+        if (this.toolbar.focusTab?.()) e.preventDefault();
         break;
       }
+      case 'KeyT':
+        // T (Shift+T back) switches power categories from the world
+        this.toolbar.cycleCategory(e.shiftKey ? -1 : 1);
+        break;
       case 'KeyI': {
         const p = getPower('inspect');
         if (p) {

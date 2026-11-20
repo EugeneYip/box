@@ -284,6 +284,7 @@ export class TopBar {
     this.cycleBtn.innerHTML = `${g.speed}<small>×</small>`;
     this._eff = { t: performance.now(), sim: g.time.total, ema: null };
     this.effEl.classList.remove('is-shown');
+    this.cycleBtn.classList.remove('is-slow');
     this.ui.root.classList.toggle('is-paused', !!g.paused);
   }
 
@@ -382,6 +383,8 @@ export class TopBar {
       // a crawl reads "under 0.1×", never "0×"
       const slow = E.ema < g.speed * 0.7;
       this.effEl.classList.toggle('is-shown', slow);
+      this.cycleBtn.classList.toggle('is-slow', slow);
+      this.cycleBtn.setAttribute('aria-label', slow ? 'Change speed (the world is running slower than chosen)' : 'Change speed');
       if (slow) {
         const v = E.ema < 0.1 ? null : E.ema < 9.95 ? E.ema.toFixed(1).replace(/\.0$/, '') : Math.round(E.ema);
         this.effEl.textContent = v == null ? 'Actual speed under 0.1×' : `Actual speed ${v}×`;

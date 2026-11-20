@@ -776,3 +776,201 @@
     display: none !important;
   }
 }
+
+/* ---- title: regional maps as a 3 x 2 grid of chips, each a centered coastline
+   tile beside its name (round 19: the thumbnail no longer stacks above the label) */
+.ws-chips.ws-chips--regions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+}
+.ws-chips--regions .ws-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  height: 42px;
+  min-width: 0;
+  padding: 0 10px 0 5px;
+  border-radius: 12px;
+  text-align: left;
+  line-height: 1.15;
+}
+.ws-chip__mapbox {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 32px;
+  border-radius: 7px;
+  background: #123e66;
+  box-shadow: 0 0 0 1px rgba(255, 240, 200, 0.26);
+  overflow: hidden;
+}
+.ws-chips--regions .ws-chip__map {
+  display: block;
+  max-width: 46px;
+  max-height: 32px;
+  margin: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.ws-chip__txt {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 460px) {
+  .ws-chips.ws-chips--regions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* ---- top bar: the actual-speed note sits in the age chip's row under the clock,
+   as a pill to the chip's right (the chip stays centered and never moves) */
+.ws-agerow {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+.ws-agerow .ws-speed__eff {
+  position: absolute;
+  left: calc(100% + 8px);
+  top: 50%;
+  transform: translateY(-50%);
+  height: 26px;
+  padding: 0 11px;
+  border-radius: 13px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  color: #f6cf92;
+  background: rgba(10, 12, 19, 0.74);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 180, 90, 0.5),
+    0 6px 16px rgba(0, 0, 0, 0.35);
+  text-shadow: none;
+}
+.is-touch .ws-agerow .ws-speed__eff {
+  pointer-events: none;
+}
+/* where the age chip is not drawn (phones, short screens) the note is centered alone */
+@media (max-width: 720px), (max-height: 500px) {
+  .ws-agerow .ws-speed__eff {
+    position: static;
+    transform: none;
+    height: 22px;
+    padding: 0 9px;
+    font-size: 10.5px;
+  }
+}
+@media (max-width: 720px) {
+  .ws-agerow .ws-speed__eff {
+    display: none !important;
+  }
+}
+/* phones: the speed button itself carries the slow-down cue (an amber ring and dot) */
+.ws-speed__cycle.is-slow {
+  position: relative;
+  color: #f6cf92;
+  box-shadow: inset 0 0 0 1.5px rgba(255, 180, 90, 0.75);
+}
+.ws-speed__cycle.is-slow::after {
+  content: '';
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ffb35a;
+  box-shadow: 0 0 6px rgba(255, 179, 90, 0.9);
+}
+
+/* ---- Tech panel: a compact header (realm, now studying, folded eras) that stays
+   in view, and the eras in view spread across the full width */
+.ws-tech__top {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ws-tech__top .ws-tech__done {
+  margin: 0;
+  padding: 6px 10px;
+}
+.ws-tech__top .ws-tech__now {
+  padding: 8px 12px;
+  gap: 10px;
+}
+.ws-tech__top .ws-tech__nowico {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  font-size: 18px;
+}
+.ws-tech__nowbody {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px 14px;
+}
+.ws-tech__nowbody > :not(.ws-tech__also) {
+  grid-column: 1;
+}
+.ws-tech__nowdesc {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ws-tech__nowbody .ws-meter {
+  margin-top: 3px;
+}
+@media (min-width: 900px) {
+  .ws-tech__nowbody {
+    grid-template-columns: minmax(0, 1fr) minmax(220px, 34%);
+  }
+  .ws-tech__nowbody .ws-tech__also {
+    grid-column: 2;
+    grid-row: 1 / span 4;
+    align-self: center;
+    flex-wrap: wrap;
+    margin: 0;
+    padding: 2px 0 2px 14px;
+    border-top: 0;
+    border-left: 1px solid var(--ws-line);
+  }
+  .ws-tech__nowbody .ws-tech__also .ws-tech__alsotxt {
+    flex: 1 1 120px;
+  }
+}
+@media (min-width: 721px) and (min-height: 501px) {
+  .ws-tech__top {
+    position: sticky;
+    top: -6px;
+    z-index: 4;
+    margin: -10px -20px 0;
+    padding: 10px 20px 10px;
+    background: rgb(19, 22, 33);
+    box-shadow: 0 10px 14px -10px rgba(0, 0, 0, 0.7);
+  }
+  .ws-tech__grid .ws-tech__era {
+    top: calc(var(--tt, 0px) - 6px);
+  }
+  .ws-tech__grid {
+    grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr));
+  }
+}
+
+/* ---- keyboard: the focused power tab shows a ring inside its own edge (the tab
+   row scrolls, so an outer outline would be clipped) */
+.ws-root .ws-tabs .ws-tab:focus-visible {
+  outline: 2px solid var(--ws-gold-hi);
+  outline-offset: -2px;
+  box-shadow: 0 0 0 4px rgba(251, 229, 173, 0.18);
+}
