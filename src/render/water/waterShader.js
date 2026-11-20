@@ -410,7 +410,7 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   if (ice > 0.0) {
     float cracks = 1.0 - smoothstep(0.0, 0.06, fc.g);
     // (a light cool ice: the old mid grey took the warm light as a beige-grey sheet)
-    vec3 iceAlb = mix(vec3(0.36, 0.43, 0.50), vec3(0.47, 0.54, 0.60), smoothstep(0.3, 0.8, fn.r));
+    vec3 iceAlb = mix(vec3(0.31, 0.38, 0.45), vec3(0.42, 0.49, 0.55), smoothstep(0.3, 0.8, fn.r));
     iceAlb = mix(iceAlb, vec3(0.20, 0.24, 0.33), smoothstep(0.55, 0.85, fn.b) * 0.5); // blue-violet hollows
     float cracks2 = 1.0 - smoothstep(0.0, 0.05, fc2.g);
     iceAlb *= (1.0 - cracks * 0.30) * (1.0 - cracks2 * 0.14);
