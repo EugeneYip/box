@@ -1096,3 +1096,12 @@
     text-overflow: ellipsis;
   }
 }
+
+/* ---- top bar 1024-1200: the speed control is one button here, so the day
+   column takes the room it frees and the full season line fits
+   ("Autumn · 4 yrs to Winter"), measured once after the fonts load */
+@media (max-width: 1200px) and (min-width: 721px) and (min-height: 501px) {
+  :root {
+    --ws-clocktxt: 168px;
+  }
+}

@@ -76,7 +76,7 @@ export function techPanel(ui, kingdomId) {
         'div',
         { class: 'ws-tech__titles' },
         el('div', { class: 'ws-tech__name', text: k.name || 'Realm' }),
-        el('div', { class: 'ws-tech__meta' }, el('span', { class: `ws-era is-era${era}`, html: `${uiIcon(ERA_ICON[era])}<span>${esc(eras[era] || '')} Era</span>` }), sideAll.length ? el('span', { text: `${nMain} of ${mainAll.length} main arts`, 'data-tip': 'Main arts carry the realm from era to era' }) : el('span', { text: `${learned.length}${all.length ? ` of ${all.length}` : ''} learned` }), sideAll.length ? el('span', { text: `${nSide} of ${sideAll.length} side arts`, 'data-tip': 'Side arts (food, medicine, land, city and urban planning) are studied beside the main art and do not count toward eras' }) : null, k.knowledge != null ? el('span', { text: `${Math.floor(k.knowledge)} knowledge` }) : null),
+        el('div', { class: 'ws-tech__meta' }, el('span', { class: `ws-era is-era${era}`, html: `${uiIcon(ERA_ICON[era])}<span>${esc(eras[era] || '')} era</span>` }), sideAll.length ? el('span', { text: `${nMain} of ${mainAll.length} main arts`, 'data-tip': 'Main arts carry the realm from era to era' }) : el('span', { text: `${learned.length}${all.length ? ` of ${all.length}` : ''} learned` }), sideAll.length ? el('span', { text: `${nSide} of ${sideAll.length} side arts`, 'data-tip': 'Side arts (food, medicine, land, city and urban planning) are studied beside the main art and do not count toward eras' }) : null, k.knowledge != null ? el('span', { text: `${Math.floor(k.knowledge)} knowledge` }) : null),
       ),
     ),
   );
