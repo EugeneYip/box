@@ -675,6 +675,9 @@ Mat matCliff(NS s, float volc, out vec3 facetN) {
   float lens = smoothstep(0.30, 0.70, t.g * 0.75 + lh * 0.5 - 0.1);
   // high alpine rock (crystalline cores) shows little bedding: no fortress courses
   float bandK = bandFade * mix(0.30, 1.0, lens) * (1.0 - 0.8 * volc) * (1.0 - 0.65 * smoothstep(8.0, 13.0, p.y));
+  // no bedding under the sea: on a gently sloping seabed the beds' isolines
+  // showed through shallow water as fine contour lines at close zoom
+  bandK *= smoothstep(-0.9, -0.05, p.y);
   lr = mix(0.5, lr, bandK);
   vec3 cA = vec3(0.370, 0.345, 0.310);
   vec3 cB = vec3(0.275, 0.265, 0.252);
@@ -773,10 +776,12 @@ vec3 seabedColor(NS s, float depth, out float hgt) {
   sand *= 1.0 - 0.10 * rip * (1.0 - smoothstep(0.1, 0.4, s.fw));
   vec3 silt = vec3(0.24, 0.24, 0.20) * (0.8 + 0.3 * s.meso.r);
   vec3 rock = vec3(0.12, 0.13, 0.13) * (0.7 + 0.5 * s.cellL.b) * (0.6 + 0.4 * smoothstep(0.0, 0.1, s.cellL.g));
-  float k1 = smoothstep(1.8, 4.5, depth + (s.macro.r - 0.5) * 2.5);
+  // (broad and finer noise on the sand line: the shallow halo round an islet
+  // is wide on one side and narrow on another, never a uniform ring)
+  float k1 = smoothstep(1.8, 4.5, depth + (s.macro.r - 0.5) * 4.0 + (s.meso.b - 0.5) * 2.2);
   float k2 = smoothstep(4.0, 7.5, depth + (s.meso.g - 0.5) * 3.0);
   // patches of seagrass in sunny shallows
-  float grass = smoothstep(0.62, 0.78, s.meso.b * 0.5 + s.macro.g * 0.5) * smoothstep(0.4, 1.0, depth) * (1.0 - k1);
+  float grass = smoothstep(0.56, 0.74, s.meso.b * 0.5 + s.macro.g * 0.5) * smoothstep(0.4, 1.0, depth) * (1.0 - k1);
   vec3 c = mix(sand, vec3(0.07, 0.16, 0.05) * (0.8 + 0.4 * s.det.r), grass * 0.8);
   c = mix(c, silt, k1);
   c = mix(c, rock, k2);
@@ -1444,8 +1449,14 @@ export function patchTerrainMaterial(material, uniforms) {
         `// cloud shadows by day darken ALL light by the same factor (taking
          // only the warm sun away left the blue sky fill: purple bruises on
          // dry ground); at night they only dim the moonlight
-         float cloudN = 1.0 - (1.0 - tCloud) * 0.62 * uDay;
+         // (far zoom: cloud shadows are lighter, and the blue sky fill on
+         // shaded slopes is turned toward a neutral warm grey - on warm
+         // ground it read as mauve bruises over every hill)
+         float farL = smoothstep(55.0, 120.0, uCamDist);
+         float cloudN = 1.0 - (1.0 - tCloud) * 0.62 * uDay * (1.0 - 0.45 * farL);
          float cloudD = mix(tCloud, 1.0, uDay);
+         vec3 ind0 = reflectedLight.indirectDiffuse;
+         reflectedLight.indirectDiffuse = mix(ind0, vec3(dot(ind0, vec3(0.2126, 0.7152, 0.0722))) * vec3(1.04, 1.0, 0.93), 0.55 * farL * uDay);
          reflectedLight.indirectDiffuse *= tAO * cloudN;
          reflectedLight.indirectSpecular *= tAO * cloudN;
          reflectedLight.directDiffuse *= mix(1.0, tAO, 0.45) * cloudN * cloudD;
@@ -1453,5 +1464,5 @@ export function patchTerrainMaterial(material, uniforms) {
       )
       .replace('#include <opaque_fragment>', TERRAIN_FRAGMENT_POST + '\n#include <opaque_fragment>');
   };
-  material.customProgramCacheKey = () => 'worldseed-terrain-v9';
+  material.customProgramCacheKey = () => 'worldseed-terrain-v10';
 }

@@ -229,7 +229,8 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   // blotches read as dirt on the open sea up close
   float scatVis = sunSh * mix(1.0, cloud, 0.55);
   // a smooth depth gradient with gentle broad noise over the shelf
-  float depthN = depth * (0.86 + 0.28 * texture2D(uNoise, p * (1.0 / 47.0) + 0.23).g);
+  // (two scales: an islet's shallow halo varies in width round its shore)
+  float depthN = depth * (0.76 + 0.30 * texture2D(uNoise, p * (1.0 / 47.0) + 0.23).g + 0.22 * texture2D(uNoise, p * (1.0 / 15.0) + 0.61).b);
   vec3 scat = mix(waterShallowColorV(scatVis), waterDeepColorV(scatVis), waterDeepMix(depthN));
   // broad colour variation so open water is never a flat slab (kept low in
   // contrast: stronger reads as stains)
@@ -296,6 +297,11 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   foam *= 1.0 - gCold * 0.35;
   foam *= 1.0 - 0.85 * mzR;
   vec3 foamCol = vec3(0.90, 0.95, 1.0) * (waterIrradianceV(lightVis) * 0.78 + vec3(0.02));
+  // at night the surf line is a dim grey-blue thread, not a glowing white rim
+  // round every coast (the night exposure lifted it far above the dark sea)
+  float foamDay = smoothstep(0.08, 0.5, uDay);
+  foamCol *= mix(0.40, 1.0, foamDay);
+  foam *= mix(0.6, 1.0, foamDay);
 
   // ---- frozen water (ICE tiles under the surface) - opaque sheet, soft edges
   vec4 iw = texture2D(uNoise, p * (1.0 / 4.3) + 0.19);
