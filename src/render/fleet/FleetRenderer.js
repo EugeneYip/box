@@ -11,6 +11,7 @@ import './airModels.js';
 import { VEHICLE, BUILDING } from '../../core/scale.js';
 import { SEA_LEVEL } from '../../world/constants.js';
 import { geoWrapOn } from '../../world/geo.js';
+import { hwPoint } from '../../sim/civ/modern.js';
 
 // Draws game.fleet: every vessel, land vehicle, aircraft and rocket through
 // ONE batched multi-draw (a THREE.BatchedMesh holding each kind's full and
@@ -356,6 +357,7 @@ export class FleetRenderer {
     const viewR = dist * 1.7 + 24;
     const alpha = g.paused ? 1 : Math.min(1, Math.max(0, (g._acc || 0) / (g.simStep || TICK)));
     const list = F.list;
+    this._hwDecks();
     // ---- detailed vehicles (one batched multi-draw with the aircraft)
     this._cx = cx;
     this._cz = cz;
@@ -476,7 +478,7 @@ export class FleetRenderer {
     // land: sit on the ground (trains on their rails, a maglev on its
     // guideway), tilt with the slope
     const lift = def.rail ? (kind === 'maglev' ? MAGLEV_HOVER : RAIL_Y) : 0;
-    const y = (def.rail ? this._railY(kind, v.path, (v.pi ?? 2) - 2, x, z) : W.heightAt(x, z)) + lift;
+    const y = (def.rail ? this._railY(kind, v.path, (v.pi ?? 2) - 2, x, z) : def.road ? this._roadY(x, z, h) : W.heightAt(x, z)) + lift;
     v.y = y;
     const c = Math.cos(h),
       s = Math.sin(h);
@@ -488,7 +490,8 @@ export class FleetRenderer {
       roll = 0;
     if (!def.rail) {
       const bw = Math.max(0.1, (def.size || 0.5) * 0.35);
-      const wantP = Math.max(-0.3, Math.min(0.3, Math.atan2(W.heightAt(x + c * hl, z + s * hl) - W.heightAt(x - c * hl, z - s * hl), hl * 2)));
+      const hy = def.road ? (px, pz) => this._roadY(px, pz, h) : (px, pz) => W.heightAt(px, pz);
+      const wantP = Math.max(-0.3, Math.min(0.3, Math.atan2(hy(x + c * hl, z + s * hl) - hy(x - c * hl, z - s * hl), hl * 2)));
       const wantR = Math.max(-0.1, Math.min(0.1, -Math.atan2(W.heightAt(x - s * bw, z + c * bw) - W.heightAt(x + s * bw, z - c * bw), bw * 2) * 0.5));
       v._pitch = v._pitch == null ? wantP : v._pitch + (wantP - v._pitch) * 0.2;
       v._roll = v._roll == null ? wantR : v._roll + (wantR - v._roll) * 0.2;
@@ -596,8 +599,8 @@ export class FleetRenderer {
         si = Math.sin(h);
       const x = c.px + (c.x - c.px) * alpha - si * lane,
         z = c.pz + (c.z - c.pz) * alpha + co * lane;
-      const y = W.heightAt(x, z);
-      const pitch = Math.max(-0.3, Math.min(0.3, Math.atan2(W.heightAt(x + co * hl, z + si * hl) - W.heightAt(x - co * hl, z - si * hl), hl * 2)));
+      const y = this._roadY(x, z, h);
+      const pitch = Math.max(-0.3, Math.min(0.3, Math.atan2(this._roadY(x + co * hl, z + si * hl, h) - this._roadY(x - co * hl, z - si * hl, h), hl * 2)));
       this._e.set(0, -h, pitch, 'YZX');
       this._q.setFromEuler(this._e);
       this._m.compose(this._p.set(x, Math.max(y, 0), z), this._q, this._s.setScalar(sc));
@@ -607,6 +610,74 @@ export class FleetRenderer {
       n++;
     }
     return n;
+  }
+
+  // Where a road vehicle drives: on a highway's deck where the highway stands
+  // raised on piers (a bridge or a viaduct, as InfraRenderer lays it: the
+  // ground plus a little, held to a gentle grade), else on the ground. (A car
+  // on a highway's road below its viaduct drove along the ground under it,
+  // or seemed to hang in the air beside the cliff the deck runs past.)
+  _hwDecks() {
+    const civ = this.game.civ;
+    const ver = civ?.infraVersion ?? -1;
+    if (this._hwVer === ver && this._hwMap) return this._hwMap;
+    this._hwVer = ver;
+    const M = (this._hwMap = new Map());
+    const W = this.game.world;
+    for (const seg of civ?.railSegs?.() || []) {
+      const P = seg.pts,
+        hw = seg.hw;
+      if (!hw || !P || P.length < 4) continue;
+      const n = P.length / 2;
+      const C = [],
+        G = [],
+        Y = [];
+      for (let i = 0; i < n; i++) {
+        const c = hwPoint(P, i);
+        const g = W.heightAt(c[0], c[1]);
+        C.push(c);
+        G.push(g);
+        Y.push(hw[i] === 2 || g < SEA_LEVEL ? SEA_LEVEL + 0.3 * BUILDING.scale : g + 0.03);
+      }
+      for (let i = 1; i < n; i++) Y[i] = Math.max(Y[i], Y[i - 1] - 0.08);
+      for (let i = n - 2; i >= 0; i--) Y[i] = Math.max(Y[i], Y[i + 1] - 0.08);
+      for (let i = 0; i < n; i++) {
+        // (a point of a drawn stretch: InfraRenderer draws between two marked points)
+        if (!hw[i] || !(hw[i - 1] || hw[i + 1])) continue;
+        const t = Math.floor(C[i][1]) * W.w + Math.floor(C[i][0]);
+        let L = M.get(t);
+        if (!L) M.set(t, (L = []));
+        // (with the deck's direction: a street crossing under it stays below)
+        const j = Math.min(n - 1, i + 1),
+          k = Math.max(0, i - 1);
+        const dx = C[j][0] - C[k][0],
+          dz = C[j][1] - C[k][1],
+          dl = Math.hypot(dx, dz) || 1;
+        L.push(C[i][0], C[i][1], Y[i] + 0.004, dx / dl, dz / dl);
+      }
+    }
+    return M;
+  }
+  _roadY(x, z, h = null) {
+    const W = this.game.world;
+    const g = W.heightAt(x, z);
+    const M = this._hwMap;
+    if (!M || !M.size) return g;
+    const L = M.get(Math.floor(z) * W.w + Math.floor(x));
+    if (!L) return g;
+    // the deck's level here: its points in this tile, nearer ones counting
+    // more (only for a vehicle heading along the deck, not across it)
+    const hc = h == null ? 0 : Math.cos(h),
+      hs = h == null ? 0 : Math.sin(h);
+    let s = 0,
+      ws = 0;
+    for (let i = 0; i < L.length; i += 5) {
+      if (h != null && Math.abs(hc * L[i + 3] + hs * L[i + 4]) < 0.6) continue;
+      const wt = 1 / (0.02 + (L[i] - x) ** 2 + (L[i + 1] - z) ** 2);
+      s += L[i + 2] * wt;
+      ws += wt;
+    }
+    return ws > 0 ? Math.max(g, s / ws) : g;
   }
 
   // The level a train runs at near point k of its route: the ground (a

@@ -87,7 +87,7 @@ export const traffic = {
       if (use[i] !== USE.ROAD) continue;
       const x = i % w.w,
         z = (i / w.w) | 0;
-      const c = { x: x + 0.5, z: z + 0.5, px: 0, pz: 0, h: 0, ph: 0, tx: 0, tz: 0, fx: -1, fz: -1, vid: v.id, kingdom: k.id, v: (this.rng() * 4) | 0, s: SPEED * (0.92 + this.rng() * 0.16), r2: ((v.radius || 6) * 1.25 + 2) ** 2, cx: v.cx, cz: v.cz };
+      const c = { x: x + 0.5, z: z + 0.5, px: 0, pz: 0, h: 0, ph: 0, tx: 0, tz: 0, fx: -1, fz: -1, vid: v.id, kingdom: k.id, v: (this.rng() * 4) | 0, s: SPEED * (0.92 + this.rng() * 0.16), r2: ((v.radius || 6) * 1.25 + 2) ** 2, cx: v.cx, cz: v.cz, k: (this.rng() * 4) | 0, acc: 0 };
       if (!this._trafficNext(c, x, z)) continue;
       c.h = c.ph = Math.atan2(c.tz - c.z, c.tx - c.x);
       c.px = c.x;
@@ -163,22 +163,38 @@ export const traffic = {
     if (!use) return;
     const w = this.world;
     let drop = false;
+    // A car parked at the curb, or out of the drawn radius (FleetRenderer
+    // draws the street cars within the camera's distance x 1.7 + 24, at most
+    // 80 tiles, and none in the overview), drives on every fourth tick with
+    // the time it missed: nothing that can be seen changes.
+    const g = this.game;
+    const cam = g.cameraRig?.cur;
+    const R = !cam || g.view?.far || cam.dist > 175 ? -1 : Math.min(cam.dist * 1.7 + 24, 80) + 4;
+    const lod = !this._noLod;
+    const gwt = this._gwTick || 0;
     for (let i = 0; i < T.length; i++) {
       const c = T[i];
       c.px = c.x;
       c.pz = c.z;
       c.ph = c.h;
+      let st = step;
+      if (lod && (c.park > 0 || R < 0 || Math.abs(c.x - cam.x) > R || Math.abs(c.z - cam.z) > R)) {
+        c.acc = (c.acc || 0) + step;
+        if (((gwt + (c.k | 0)) & 3) !== 0) continue;
+        st = c.acc;
+      }
+      c.acc = 0;
       // parked at the curb: waits, then drives on (or leaves if the street went)
       if (c.park > 0) {
-        c.park -= step;
+        c.park -= st;
         if (use[Math.floor(c.z) * w.w + Math.floor(c.x)] !== USE.ROAD) {
           c.gone = true;
           drop = true;
         }
         continue;
       }
-      let mv = c.s * step;
-      for (let guard = 0; guard < 3 && mv > 0; guard++) {
+      let mv = c.s * st;
+      for (let guard = 0; guard < 8 && mv > 0; guard++) {
         const dx = c.tx - c.x,
           dz = c.tz - c.z;
         const d = Math.hypot(dx, dz);
@@ -211,7 +227,7 @@ export const traffic = {
       let dh = Math.atan2(c.tz - c.z, c.tx - c.x) - c.h;
       while (dh > Math.PI) dh -= Math.PI * 2;
       while (dh < -Math.PI) dh += Math.PI * 2;
-      const mx = TURN * step;
+      const mx = TURN * st;
       c.h += dh > mx ? mx : dh < -mx ? -mx : dh;
     }
     if (drop) this.traffic = T.filter((c) => !c.gone);
