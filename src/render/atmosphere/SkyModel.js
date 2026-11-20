@@ -281,14 +281,15 @@ export class SkyModel {
     // ---- grade ----------------------------------------------------------
     const g = this.golden;
     const nt = this.night;
-    this.shadowTint.set(-0.012, -0.002, 0.03).multiplyScalar(1 - 0.4 * oc);
+    // (a light blue lift only: a stronger one turned shaded dry ground purple)
+    this.shadowTint.set(-0.006, -0.001, 0.016).multiplyScalar(1 - 0.4 * oc);
     this.shadowTint.z += nt * 0.012;
     this.highTint.set(0.022 + 0.03 * g, 0.012 + 0.008 * g, -0.012 - 0.03 * g).multiplyScalar((1 - nt * 0.8) * (1 - 0.6 * oc));
     // warm midtone lift through golden hour (not only highlights)
     this.midTint.set(0.018, 0.008, -0.012).multiplyScalar(g * (1 - 0.6 * oc));
     // golden hour: the shadow side cools (sky-lit) instead of everything warming
     this.shadowTint.x -= 0.008 * g;
-    this.shadowTint.z += 0.022 * g * (1 - 0.6 * oc);
+    this.shadowTint.z += 0.015 * g * (1 - 0.6 * oc);
     if (this._wint) this.shadowTint.multiplyScalar(1 - 0.6 * this._wint); // winter whites stay neutral
     this.saturation = (1.06 + 0.06 * g) * (1 - 0.3 * nt) * (1 - 0.16 * oc - 0.08 * storm) * (1 - 0.1 * w.fog);
     this.vibrance = 0.16 * (1 - 0.5 * oc);

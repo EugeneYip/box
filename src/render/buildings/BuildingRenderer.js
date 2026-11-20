@@ -1005,7 +1005,7 @@ export class BuildingRenderer {
     }
     fb.end();
     this._fenceN = fb.k;
-    if (fb.mesh) fb.mesh.visible = !!this._props && fb.k > 0; // (shown as a whole with the props)
+    if (fb.mesh) fb.mesh.visible = !!this._props && this._fencesOn !== false && fb.k > 0; // (shown as a whole with the props)
     // scarecrows join the sails and boats (written every frame)
     const sl = (this._scareList = []);
     for (const [st, list] of scare)
@@ -1132,8 +1132,11 @@ export class BuildingRenderer {
     // past about 90 tiles houses and small buildings are hidden (the town
     // reads as its urban patch and its landmarks, not salt and pepper)
     const mid = this._mid ? D > this.minorDist - 6 : D > this.minorDist;
-    if (!force && far === this._far && props === this._props && this._lampsOn === props && mid === this._mid) return;
+    // field fences go at far zoom (past ~88), where the terrain fills each plot
+    const fences = props && D <= 88;
+    if (!force && far === this._far && props === this._props && this._lampsOn === props && mid === this._mid && fences === this._fencesOn) return;
     const midChanged = mid !== this._mid;
+    this._fencesOn = fences;
     this._far = far;
     this._props = props;
     this._mid = mid;
@@ -1154,7 +1157,7 @@ export class BuildingRenderer {
     // fences: shown or hidden as a whole (the sails, boats and scarecrows
     // read the same flags when they are written each frame)
     const fb = this.fenceBatch;
-    if (fb.mesh) fb.mesh.visible = props && (this._fenceN || 0) > 0;
+    if (fb.mesh) fb.mesh.visible = fences && (this._fenceN || 0) > 0;
     for (const m of this.bannerMeshes.values()) m.visible = !far && m.count > 0;
     if (this.decals) this.decals.visible = props && this.decalMat.opacity > 0.01;
   }

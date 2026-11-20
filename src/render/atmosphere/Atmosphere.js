@@ -8,6 +8,7 @@ import { Weather, WEATHER_TYPES } from './Weather.js';
 import { ShadowCache } from './ShadowCache.js';
 import { AgeLook } from './AgeLooks.js';
 import { noise1, smoothstep, mulberry32, approach } from './util.js';
+import { geoWrapOn } from '../../world/geo.js';
 
 // Atmosphere: sun / moon / sky lighting, camera-fitted stable shadows, the
 // procedural sky, clouds and cloud shadows, day-night cycle, weather visuals
@@ -642,7 +643,7 @@ export class Atmosphere {
     {
       const nk = M.night;
       const moon = M.keyIsMoon ? M.keyIntensity : 0.25 * nk;
-      P.moonSea.copy(M.keyIsMoon ? M.keyColor : M.hemiSky).multiplyScalar(0.012 + 0.03 * moon).add(this._c2 || (this._c2 = new THREE.Color()).copy(M.zenith).multiplyScalar(0.35)).multiplyScalar(nk);
+      P.moonSea.copy(M.keyIsMoon ? M.keyColor : M.hemiSky).multiplyScalar(0.008 + 0.022 * moon).add(this._c2 || (this._c2 = new THREE.Color()).copy(M.zenith).multiplyScalar(0.10)).multiplyScalar(nk); // (dim: rivers and sea glowed pale blue at night)
     }
     // wet sheen on rain-soaked surfaces
     P.wet = Math.min(1, this.weather.wetness * 1.1) * (0.4 + 0.6 * W.rain);
@@ -669,6 +670,7 @@ export class Atmosphere {
     P.heightTex = game.terrain?.heightTexture || null;
     P.worldW = game.world.w;
     P.worldH = game.world.h;
+    P.worldWrap = geoWrapOn(game.world); // (the round world's sides are no edge)
     // regional World Map windows: a sea mist over the border so land running
     // off the window fades out (strongest at the overview, where the box shows)
     {

@@ -166,6 +166,8 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   vec3 Nr = normalize(vec3(-sl.x * calmN, 1.0, -sl.y * calmN));
   vec3 R = reflect(-V, Nr);
   vec3 sky = mix(horizonE, uZenCol, pow(clamp(R.y, 0.0, 1.0), 0.55));
+  // night: the dark sky mirrors dimly (rivers glowed pale blue like ice)
+  sky *= 1.0 - 0.6 * (1.0 - smoothstep(0.08, 0.5, uDay));
   // ~3.5% straight down, rising towards grazing angles (Schlick)
   float F = clamp(0.035 + 0.965 * pow(1.0 - max(dot(Nr, V), 0.0), 5.0), 0.0, 1.0);
 
@@ -226,7 +228,9 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   // cloud shadows dim the body of the water only gently: full-strength cloud
   // blotches read as dirt on the open sea up close
   float scatVis = sunSh * mix(1.0, cloud, 0.55);
-  vec3 scat = mix(waterShallowColorV(scatVis), waterDeepColorV(scatVis), waterDeepMix(depth));
+  // a smooth depth gradient with gentle broad noise over the shelf
+  float depthN = depth * (0.86 + 0.28 * texture2D(uNoise, p * (1.0 / 47.0) + 0.23).g);
+  vec3 scat = mix(waterShallowColorV(scatVis), waterDeepColorV(scatVis), waterDeepMix(depthN));
   // broad colour variation so open water is never a flat slab (kept low in
   // contrast: stronger reads as stains)
   float mac = texture2D(uNoise, p * (1.0 / 190.0) + vec2(t * 0.0015, 0.0)).r;
@@ -277,11 +281,10 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   float contact = 1.0 - smoothstep(contactW * 0.25, contactW * 1.15, shoreD);
   contact *= (0.45 + 0.55 * breakup) * mix(0.08, 1.0, open) * (1.0 - 0.5 * uMapZoom);
   float wash = (1.0 - smoothstep(0.0, 1.6 + 0.6 * breath, shoreD)) * 0.30 * open * smoothstep(0.08, 0.40, uKeyDir.y) * (1.0 - gCold * 0.7);
-  float ph = shoreD * 0.95 - t * 0.32 + (fn.r - 0.5) * 1.3;
-  float bandWave = fract(ph);
-  float band = smoothstep(0.0, 0.10, bandWave) * (1.0 - smoothstep(0.10, 0.34, bandWave));
-  float bandMask = exp(-shoreD * 0.55) * smoothstep(0.15, 0.6, shoreD) * open * 0.8;
-  float bands = band * bandMask * smoothstep(0.30, 0.75, breakup + 0.1);
+  // (no repeating surf lines offshore: on wide shallow shelves and lagoons
+  // they read as pale contour stripes parallel to every coast; the one foam
+  // band is the contact line at the shore)
+  float bands = 0.0;
   float lace = smoothstep(0.90, 0.98, 1.0 - fcl.g) * smoothstep(0.66, 0.84, fn.g) * open * 0.06 * (1.0 - smoothstep(0.4, 1.6, fw)) * (1.0 - gCold * 0.7);
   // river foam: flecks at bends and riffles, carried downstream
   float rivFoam = narrow * clamp(bend * 0.8 * smoothstep(0.55, 0.85, st1.b) + riffle * 0.55 + (1.0 - smoothstep(0.05, 0.45, shoreD)) * 0.25 * st1.a, 0.0, 1.0);
@@ -365,6 +368,9 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   float openLead = lead * smoothstep(0.3, 0.8, edgeZone) * 0.6;
   float thinLead = lead * (1.0 - smoothstep(0.3, 0.8, edgeZone));
   ice = max(ice * (1.0 - openLead * smoothstep(0.05, 0.4, ice)), floeDrift);
+  // a pocket of open water ringed by sheet ice is skimmed with thin new ice
+  // (a dark navy hole in a pale sheet read as a stain)
+  ice = max(ice, smoothstep(0.82, 0.98, margin) * 0.75 * (1.0 - outK) * step(0.001, depth));
   float iceRim = (1.0 - smoothstep(gapW, gapW * 2.4, fl.g)) * (1.0 - lead);
   iceRim = max(iceRim, floeDrift * smoothstep(floeR - 0.07, floeR - 0.01, floeE));
   // icebergs: rare faceted bergs in cold open water
@@ -403,7 +409,8 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   col *= 1.0 - 0.45 * bergShadow * (1.0 - ice);
   if (ice > 0.0) {
     float cracks = 1.0 - smoothstep(0.0, 0.06, fc.g);
-    vec3 iceAlb = mix(vec3(0.27, 0.33, 0.40), vec3(0.38, 0.44, 0.50), smoothstep(0.3, 0.8, fn.r));
+    // (a light cool ice: the old mid grey took the warm light as a beige-grey sheet)
+    vec3 iceAlb = mix(vec3(0.31, 0.38, 0.45), vec3(0.42, 0.49, 0.55), smoothstep(0.3, 0.8, fn.r));
     iceAlb = mix(iceAlb, vec3(0.20, 0.24, 0.33), smoothstep(0.55, 0.85, fn.b) * 0.5); // blue-violet hollows
     float cracks2 = 1.0 - smoothstep(0.0, 0.05, fc2.g);
     iceAlb *= (1.0 - cracks * 0.30) * (1.0 - cracks2 * 0.14);

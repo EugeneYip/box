@@ -51,6 +51,7 @@ uniform sampler2D uHeightTex;
 uniform float uHeightLin;
 uniform sampler2D uShoreTex;
 uniform sampler2D uSettleTex;
+uniform float uEdgeFade;
 ${WATER_PARS_GLSL}
 
 // global surface outputs (set in terrainSurface)
@@ -567,6 +568,18 @@ Mat matFarm(NS s) {
   vec2 fb = fract((s.p.xz + (s.macro.rg - 0.5) * 1.5) / 6.0);
   float edge = min(min(fb.x, 1.0 - fb.x), min(fb.y, 1.0 - fb.y)) * 6.0;
   float hedge = 1.0 - smoothstep(0.06, 0.18, edge);
+  // far zoom: each plot is a filled field of one soft tone (crop green or
+  // gold, or light tilled earth), without the dark soil and the hedge lines
+  // that drew outlined squares
+  float farF = smoothstep(70.0, 95.0, uCamDist);
+  if (farF > 0.0) {
+    float crop = max(max(green, gold), stubble) * sown;
+    vec3 tilled = vec3(0.36, 0.31, 0.23) * (0.92 + 0.16 * hash12(blk + 1.9));
+    vec3 cropC = gold > max(green, stubble) ? ripe : (green > stubble ? young * 1.15 : straw);
+    vec3 fill = mix(tilled, cropC, crop * 0.9);
+    c = mix(c, fill, farF);
+    hedge *= 1.0 - farF;
+  }
   c = mix(c, vec3(0.08, 0.15, 0.04), hedge * 0.85);
   return mk(c, 0.94, 0.30 + 0.25 * fur + hedge * 0.4, 0.06 * near * (1.0 - hedge) + hedge * 0.05);
 }
@@ -952,8 +965,11 @@ void terrainSurface() {
   float rockT = dot(vec4(equal(vec4(t0, t1, t2, t3), vec4(8.0))) * live, b);
   cliff = max(cliff, rockT * smoothstep(0.98, 0.78, slopeN + (s.meso.g - 0.5) * 0.08) * (1.0 - lavaRaw) * (1.0 - iceB));
   // a darker, lusher lip of turf along the top of every rock face
-  float lip = smoothstep(0.83, 0.75, slopeN) * (1.0 - cliff) * (1.0 - snowB) * (1.0 - dot(vec4(equal(vec4(t0, t1, t2, t3), vec4(0.0))) * live, b));
-  albedo = mix(albedo, albedo * vec3(0.72, 0.84, 0.70), lip * 0.8);
+  // (green turf only, and a broad soft fade: on dry red ground the narrow
+  // band traced every slope break of the mesh as a red-pink stroke)
+  float lip = smoothstep(0.90, 0.72, slopeN) * (1.0 - cliff) * (1.0 - snowB) * (1.0 - dot(vec4(equal(vec4(t0, t1, t2, t3), vec4(0.0))) * live, b));
+  lip *= smoothstep(0.0, 0.06, albedo.g - albedo.r);
+  albedo = mix(albedo, albedo * vec3(0.78, 0.86, 0.76), lip * 0.6);
   // rock tiles bleed into their surroundings as scree and bare soil (smooth
   // bilinear weight, noise-broken), and the ground darkens at the rock's foot
   float rockW = dot(vec4(equal(vec4(t0, t1, t2, t3), vec4(8.0))) * vec4(1.0), w);
@@ -981,7 +997,7 @@ void terrainSurface() {
   albedo = mix(albedo, mix(soilC, screeC * 0.8, smoothstep(0.55, 0.8, screeN)), soilP * 0.72);
   // the cliff ramp itself: a band of broken scree between turf and face
   float cBand = cliff * (1.0 - cliff) * 4.0 * (1.0 - snowB);
-  albedo = mix(albedo, screeC * 0.9, cBand * smoothstep(0.35, 0.65, screeN) * 0.35);
+  albedo = mix(albedo, screeC * 0.9, cBand * smoothstep(0.35, 0.65, screeN) * 0.22);
   // loose stones: densest at the foot of steep rock and on the ramp itself
   float screeAmt = clamp(max(max(foot * mix(0.45, 1.0, smoothstep(0.4, 1.0, steepC)), scree * 0.85), cBand * 0.6), 0.0, 1.0);
   vec3 facetN = nrm;
@@ -1031,7 +1047,8 @@ void terrainSurface() {
     // (the steep banks of a river channel take no slope shading at map zoom:
     // it outlined every river with a dark rim)
     float wideL = texture2D(uShoreTex, p / uWorldSize).g * 16.0;
-    float rivBank = tRivBank = uMapZoom * smoothstep(0.1, 0.5, wideL) * (1.0 - smoothstep(3.0, 6.0, wideL)) * (1.0 - smoothstep(1.0, 3.0, s.p.y));
+    // (gorges cut from a plateau count too: their walls drew thick dark tubes)
+    float rivBank = tRivBank = uMapZoom * smoothstep(0.1, 0.5, wideL) * (1.0 - smoothstep(3.0, 6.0, wideL)) * (1.0 - smoothstep(7.0, 11.0, s.p.y));
     albedo *= mix(1.0, (0.76 + 0.44 * hs) * mix(0.68, 1.0, smoothstep(0.55, 0.98, nrm.y)), farR * 0.85 * (1.0 - rivBank));
     albedo = mix(albedo, albedo * vec3(0.96, 1.0, 1.08) * 1.14, smoothstep(6.0, 16.0, s.p.y) * 0.5 * farR);
     albedo *= mix(1.0, mix(0.90, 1.08, smoothstep(0.6, 5.5, s.p.y)), farR * (1.0 - snowB));
@@ -1043,7 +1060,7 @@ void terrainSurface() {
     // grassland in autumn (kept as it was): drier toward orange, wetter darker
     float gv = s.macro.b * 0.6 + s.macro.r * 0.4;
     float dryA = clamp(smoothstep(0.62, 0.30, s.moist) * 0.8 + smoothstep(0.42, 0.72, gv) * 0.45 + smoothstep(1.8, 5.0, s.p.y) * 0.6, 0.0, 1.0);
-    vec3 gTint = mix(vec3(0.72, 0.88, 0.78), vec3(1.32, 1.08, 0.60), dryA);
+    vec3 gTint = mix(vec3(0.72, 0.88, 0.78), vec3(1.22, 1.06, 0.72), dryA);
     vec3 gAut = mix(albedo * gTint, vec3(lum(albedo)) * vec3(1.02, 1.0, 0.9), 0.15);
     // grassland in the green seasons: regional hue targets at the ground's own
     // luminance - ochre steppe on dry and higher ground, sage meadow, deep green
@@ -1053,7 +1070,7 @@ void terrainSurface() {
     float dryv = clamp(smoothstep(0.38, 0.24, s.moist + (rg.g - 0.5) * 0.20) * 0.85 + smoothstep(0.48, 0.74, reg) * 0.60 + smoothstep(3.2, 6.5, s.p.y) * 0.50, 0.0, 1.0);
     float wetv = smoothstep(0.38, 0.52, s.moist + (rg.b - 0.5) * 0.25) * (1.0 - smoothstep(2.8, 5.0, s.p.y)) * (1.0 - dryv);
     float highv = smoothstep(4.5, 9.0, s.p.y + (s.macro.g - 0.5) * 3.0);
-    vec3 hue = mix(vec3(0.30, 0.60, 0.17), vec3(0.84, 0.64, 0.27), smoothstep(0.15, 0.85, dryv));
+    vec3 hue = mix(vec3(0.30, 0.60, 0.17), vec3(0.78, 0.64, 0.36), smoothstep(0.15, 0.85, dryv));
     hue = mix(hue, vec3(0.12, 0.52, 0.20), wetv);
     // land-use patchwork at island scale (~15-60 units, soft-edged): sunny open
     // meadow, deep green pasture, wet hollows and dry exposed ridges, so the
@@ -1077,6 +1094,14 @@ void terrainSurface() {
     albedo = mix(albedo, gFar, grassB * farR * (1.0 - snowB));
     // cooler, greyer high ground (grass, heath, forest floor)
     albedo = mix(albedo, vec3(lum(albedo)) * vec3(0.93, 1.0, 1.08), highv * 0.40 * farR * (1.0 - snowB) * (1.0 - cliff));
+  }
+
+  // ---- dry ground: about 20% less saturated (desert, red soil, bare
+  // earth, warm rock read as a saturated rust-orange): only warm hues,
+  // greens and blues keep their colour
+  {
+    float warmK = smoothstep(0.015, 0.10, albedo.r - albedo.g) * smoothstep(-0.02, 0.06, albedo.g - albedo.b);
+    albedo = mix(albedo, vec3(lum(albedo)) * vec3(1.03, 1.0, 0.95), 0.22 * warmK);
   }
 
   // ---- settlement: farmed plots around towns, and towns as urban patches
@@ -1248,17 +1273,21 @@ void terrainSurface() {
     // patch of roofs and streets, so a town reads as a town once its houses
     // are a pixel or two (trees inside it are hidden there too)
     float urbK = smoothstep(68.0, 92.0, uCamDist) * (1.0 - snowB * 0.5);
-    if (st.r > 0.02 && urbK > 0.0) {
-      float core = smoothstep(0.35, 0.85, st.r);
-      float ring = smoothstep(0.08, 0.40, st.r);
-      // a solid warm patch of roofs: soft tonal variation, no street grid
-      // (a grid read as graph paper over the continent at far zoom)
+    if (st.r > 0.01 && urbK > 0.0) {
+      // (a noise-broken soft edge: the patch fades out over the outer ring)
+      float sr = st.r + (s.meso.b - 0.5) * 0.16 + (s.det.g - 0.5) * 0.06;
+      float core = smoothstep(0.30, 0.85, sr);
+      float ring = smoothstep(0.08, 0.45, sr);
+      // a solid light patch of roofs and pavement, clearly lighter in value
+      // than any ground around it (the warm patch vanished on dry land):
+      // soft tonal variation, no street grid (graph paper at far zoom)
       float rv = s.macro.g * 0.6 + s.meso.r * 0.4;
-      vec3 urb = mix(vec3(0.50, 0.42, 0.34), vec3(0.56, 0.38, 0.27), smoothstep(0.35, 0.7, rv));
-      urb = mix(urb, vec3(0.44, 0.41, 0.38), core * 0.35);
-      urb *= 0.94 + 0.08 * s.det.r;
+      // (a touch warm: a neutral grey took the blue sky fill as lilac)
+      vec3 urb = mix(vec3(0.57, 0.53, 0.47), vec3(0.60, 0.54, 0.46), smoothstep(0.35, 0.7, rv));
+      urb = mix(urb, vec3(0.64, 0.60, 0.54), core * 0.6);
+      urb *= 0.95 + 0.07 * s.det.r;
       float uk = (ring * 0.45 + core * 0.55) * urbK;
-      albedo = mix(albedo, urb, uk * 0.78);
+      albedo = mix(albedo, urb, uk * 0.75);
       rough = mix(rough, 0.8, uk);
     }
   }
@@ -1330,6 +1359,25 @@ void terrainSurface() {
     emit += uKeyCol * KEYN * spark * 1.2 * snowAll;
   }
 
+  // ---- regional windows: the land itself fades toward the shelf over its
+  // outer ~30 tiles where it meets the frame (desaturated, lowered toward
+  // the shallow sea's tone), so the map ends in sea haze, not a box of land
+  if (uEdgeFade > 0.5 && s.p.y > -0.3) {
+    vec2 ex = min(p, uWorldSize - p);
+    float en = (textureLod(uNoise, p * (1.0 / 140.0) + 0.37, 0.0).r - 0.5) * 22.0 + (s.macro.b - 0.5) * 8.0;
+    // (measured from the inner side of the edge mist, which widens with the
+    // view like Atmosphere's: under the mist alone the fade did not show)
+    float mw = clamp(uCamDist * 0.075, 16.0, max(uWorldSize.x, uWorldSize.y) * 0.08);
+    float ek = 1.0 - smoothstep(mw * 0.5, mw + 32.0, min(ex.x, ex.y) + en);
+    if (ek > 0.0) {
+      vec3 shelfC = vec3(0.105, 0.175, 0.185);
+      vec3 grey = vec3(lum(albedo)) * vec3(0.90, 0.98, 1.04);
+      albedo = mix(albedo, grey, ek * 0.85);
+      albedo = mix(albedo, shelfC, ek * ek * 0.70);
+      emit *= 1.0 - ek;
+    }
+  }
+
   // ---- territory overlay
   applyOverlay(p, albedo, emit, clamp(snowB, 0.0, 1.0));
 
@@ -1381,12 +1429,17 @@ export function patchTerrainMaterial(material, uniforms) {
       .replace('#include <emissivemap_fragment>', 'totalEmissiveRadiance += tEmissive;')
       .replace(
         '#include <aomap_fragment>',
-        `reflectedLight.indirectDiffuse *= tAO;
-         reflectedLight.indirectSpecular *= tAO;
-         reflectedLight.directDiffuse *= mix(1.0, tAO, 0.45) * tCloud;
-         reflectedLight.directSpecular *= tAO * tCloud;`,
+        `// cloud shadows by day darken ALL light by the same factor (taking
+         // only the warm sun away left the blue sky fill: purple bruises on
+         // dry ground); at night they only dim the moonlight
+         float cloudN = 1.0 - (1.0 - tCloud) * 0.62 * uDay;
+         float cloudD = mix(tCloud, 1.0, uDay);
+         reflectedLight.indirectDiffuse *= tAO * cloudN;
+         reflectedLight.indirectSpecular *= tAO * cloudN;
+         reflectedLight.directDiffuse *= mix(1.0, tAO, 0.45) * cloudN * cloudD;
+         reflectedLight.directSpecular *= tAO * cloudN * cloudD;`,
       )
       .replace('#include <opaque_fragment>', TERRAIN_FRAGMENT_POST + '\n#include <opaque_fragment>');
   };
-  material.customProgramCacheKey = () => 'worldseed-terrain-v8';
+  material.customProgramCacheKey = () => 'worldseed-terrain-v9';
 }
