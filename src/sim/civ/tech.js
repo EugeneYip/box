@@ -663,11 +663,11 @@ export const tech = {
       k.era++;
       if (!silent) {
         const icon = ['🏛', '🏛', '🏛', '🏛', '🏭', '💡', '⚛', '🌌'][k.era] || '🏛';
-        this._note(`${icon} ${this._kn(k)} enters the ${ERAS[k.era].name} Era`, 'good', this._kingdomPos(k), 'era' + k.id + k.era, 1);
+        this._note(`${icon} ${this._kn(k)} enters the ${ERAS[k.era].name} era`, 'good', this._kingdomPos(k), 'era' + k.id + k.era, 1);
         // the first realm into a modern era: what its towns now look like
         if (k.era >= 4 && !this._techFirst.has('era' + k.era)) {
           this._techFirst.add('era' + k.era);
-          this._history(`${icon} The ${ERAS[k.era].name} Era dawns: ${ERAS[k.era].description.toLowerCase()}`, 'good', this._kingdomPos(k));
+          this._history(`${icon} The ${ERAS[k.era].name} era dawns: ${ERAS[k.era].description.toLowerCase()}`, 'good', this._kingdomPos(k));
         }
       }
       this.version++;

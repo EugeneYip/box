@@ -654,7 +654,7 @@ export class Inspector {
     return store ? store.has(t.kind, t.ref) : !!t.ref?.data?.favorite;
   }
   starHtml(t, on, r) {
-    const noun = t.kind === 'unit' ? 'creature' : t.kind === 'realm' ? 'realm' : t.kind === 'village' ? ['village', 'town', 'city'][t.ref?.tier] || 'village' : t.ref?.cls === 'sea' ? 'ship' : t.ref?.cls === 'air' || t.ref?.cls === 'space' ? 'aircraft' : 'vehicle';
+    const noun = t.kind === 'unit' ? ((t.ref?.def || t.ref?.unit?.def)?.kind === 'humanoid' ? 'person' : 'creature') : t.kind === 'realm' ? 'realm' : t.kind === 'village' ? ['village', 'town', 'city'][t.ref?.tier] || 'village' : t.ref?.cls === 'sea' ? 'ship' : t.ref?.cls === 'air' || t.ref?.cls === 'space' ? 'aircraft' : 'vehicle';
     const name = this.titleOf(r) || `this ${noun}`;
     const label = on ? `Unstar ${name} (remove from Favorites)` : `Star this ${noun} (add to Favorites)`;
     const tip = on ? 'In your Favorites · click to unstar' : 'Star: add to Favorites';
@@ -880,7 +880,7 @@ export class Inspector {
     if (isKingdom && k.motto && !(r.stats || []).some((s) => /motto/i.test(String(s[0])))) html += `<p class="ws-motto">“${esc(String(k.motto))}”</p>`;
     if (k && !isKingdom) {
       const era = eraOf(g, k);
-      html += `<section class="ws-dsec"><h5>Realm</h5><div class="ws-realm__line"><span class="ws-era is-era${era}">${uiIcon(ERA_ICON[era] || 'chronicle')}<span>Realm · ${esc(eraNames()[era] || '')} era</span></span>${this._chipNames?.has(String(k.name || '').toLowerCase()) ? '' : `<span class="ws-realm__of">${esc(String(k.name || ''))}</span>`}</div></section>`;
+      html += `<section class="ws-dsec"><h5>Realm</h5><div class="ws-realm__line"><span class="ws-era is-era${era}">${uiIcon(ERA_ICON[era] || 'chronicle')}<span>${esc(eraNames()[era] || '')} era</span></span>${this._chipNames?.has(String(k.name || '').toLowerCase()) ? '' : `<span class="ws-realm__of">${esc(String(k.name || ''))}</span>`}</div></section>`;
     }
     if (k && isKingdom) {
       const era = eraOf(g, k);

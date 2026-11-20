@@ -1031,7 +1031,12 @@ const U = {
   liner: '<path class="f" d="M3 18.5h26L26 25H6z"/><path d="M3 18.5h26L26 25H6zM6.5 18.5v-3.5h18v3.5M9 15v-3.5h12V15M15 11.5V7.5h3.5v4"/><path class="s" d="M8.5 20.5h2v1.8h-2zM13 20.5h2v1.8h-2zM17.5 20.5h2v1.8h-2zM22 20.5h2v1.8h-2z"/>',
   warship: '<path class="f" d="M2.5 19.5h27L25 25H7z"/><path d="M2.5 19.5h27L25 25H7zM11 19.5v-4h8v4M19 16.5l6.5-2M13 15.5V8M10 10.5h6M7 19.5v-2h3"/>',
   carrier: '<path class="f" d="M2 17h28l-3.5 8h-21z"/><path d="M2 17h28l-3.5 8h-21zM21 17v-6h4v6M23 11V7.5M6 14.5l6-1.5M6 21h20"/>',
-  submarine: '<path class="f" d="M4 20c0-2.5 2.5-4 6-4h13c3.3 0 5.5 1.8 5.5 4s-2.2 4-5.5 4H10c-3.5 0-6-1.5-6-4z"/><path d="M4 20c0-2.5 2.5-4 6-4h13c3.3 0 5.5 1.8 5.5 4s-2.2 4-5.5 4H10c-3.5 0-6-1.5-6-4zM13 16v-4h5v4M16 12V7.5h2.5M2 27.5c2.5 0 2.5-1.2 5-1.2s2.5 1.2 5 1.2 2.5-1.2 5-1.2 2.5 1.2 5 1.2 2.5-1.2 5-1.2"/>',
+  // mostly under the waterline: only the sail and periscope break the surface
+  submarine: `<path class="f" d="M4 21.2c0-2.3 2.4-3.8 5.8-3.8h13.4c3.2 0 5.3 1.6 5.3 3.8S26.4 25 23.2 25H9.8C6.4 25 4 23.5 4 21.2z"/><path d="M4 21.2c0-2.3 2.4-3.8 5.8-3.8h13.4c3.2 0 5.3 1.6 5.3 3.8S26.4 25 23.2 25H9.8C6.4 25 4 23.5 4 21.2zM12.5 17.4V10.5h5.5v6.9M15.2 10.5V5h3.3"/><path class="t" d="${wave(13.6, 2, 30, 6, 1.1)}"/>`,
+  // a raked bow shouldering through ice floes
+  icebreaker: '<path class="f" d="M8 18h21l-2.5 6.5H12.5z"/><path d="M8 18h21l-2.5 6.5H12.5zM14 18v-5h8.5v5M16.5 13V9.5H20V13M24.5 18v-3h2.5v3"/><path class="ts" d="M1.8 24.2l2.8-2.1 2.6 1.4-.9 2.9H2.6zM4.3 19.6l1.9-1.5 1.4 1.1-.7 1.7z"/>',
+  // side view: a long cabin with a row of windows and a tall tail (a fighter is drawn from above)
+  airliner: '<path class="f" d="M2.5 17.2c0-1.4 1.6-2.5 3.6-2.5H22l4.4-5.6h2.6l-1.5 6.8c1 .4 1.5 1 1.5 1.6 0 1.2-1.3 1.8-3.1 1.8H6.1c-2 0-3.6-.7-3.6-2.1z"/><path d="M2.5 17.2c0-1.4 1.6-2.5 3.6-2.5H22l4.4-5.6h2.6l-1.5 6.8c1 .4 1.5 1 1.5 1.6 0 1.2-1.3 1.8-3.1 1.8H6.1c-2 0-3.6-.7-3.6-2.1zM12 19.3l5.2 6.4h3L18 19.3"/><path class="s" d="M7.5 15.9h1.6v1.4H7.5zM10.7 15.9h1.6v1.4h-1.6zM13.9 15.9h1.6v1.4h-1.6zM17.1 15.9h1.6v1.4h-1.6zM20.3 15.9h1.6v1.4h-1.6z"/>',
   jet: '<path class="f" d="M16 2.5c1.2 1.4 1.8 3.4 1.8 6v5.5l10.2 9.5v2.5l-10.2-4v4l3.2 2.8v1.7L16 29l-5 1.5v-1.7l3.2-2.8v-4L4 26v-2.5l10.2-9.5V8.5c0-2.6.6-4.6 1.8-6z"/><path d="M16 2.5c1.2 1.4 1.8 3.4 1.8 6v5.5l10.2 9.5v2.5l-10.2-4v4l3.2 2.8v1.7L16 29l-5 1.5v-1.7l3.2-2.8v-4L4 26v-2.5l10.2-9.5V8.5c0-2.6.6-4.6 1.8-6z"/>',
   biplane: '<path class="f" d="M7 16h15c2.5 0 4 1.4 4 3s-1.5 3-4 3H9z"/><path d="M7 16h15c2.5 0 4 1.4 4 3s-1.5 3-4 3H9L7 16zM3 11h20M5 25h18M10 11v14M19 11v14M7 16 3.5 12M26.5 15.5v7"/>',
   drone: '<rect class="f" x="12" y="12" width="8" height="8" rx="2"/><rect x="12" y="12" width="8" height="8" rx="2"/><path d="M12.5 12.5 8.5 8.5M19.5 12.5l4-4M12.5 19.5l-4 4M19.5 19.5l4 4"/><circle cx="7.5" cy="7.5" r="3.8"/><circle cx="24.5" cy="7.5" r="3.8"/><circle cx="7.5" cy="24.5" r="3.8"/><circle cx="24.5" cy="24.5" r="3.8"/>',
@@ -1063,6 +1068,7 @@ export function vehicleIconName(def) {
     if (k === 'submarine') return 'submarine';
     if (k === 'carrier') return 'carrier';
     if (k === 'liner') return 'liner';
+    if (k === 'icebreaker') return 'icebreaker';
     if ((def?.war && !def?.sail) || k === 'patrol' || k === 'ironclad' || k === 'battleship') return 'warship';
     if (k === 'freighter' || k === 'container' || k === 'tanker' || k === 'autocargo') return 'cargoship';
     if (k === 'steamer' || k === 'icebreaker' || k === 'research' || k === 'hydrofoil' || k === 'hovercraft') return 'motorship';
@@ -1072,6 +1078,7 @@ export function vehicleIconName(def) {
   if (cls === 'air') {
     if (k === 'drone') return 'drone';
     if (k === 'jet') return 'jet';
+    if (k === 'airliner') return 'airliner';
     if (k === 'biplane') return 'biplane';
     return def?.vtol || k === 'helicopter' ? 'helicopter' : 'plane';
   }

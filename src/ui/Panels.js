@@ -719,6 +719,21 @@ export class Modals {
       ),
       el('p', { class: 'ws-note', html: `${uiIcon('info')}<span>The current world will be replaced. Seeds are shareable — the same seed always grows the same world.</span>` }),
     );
+    // the World Map's regional maps can sit below the fold: a pill at the bottom
+    // edge says so and scrolls to them
+    const below = el('button', { class: 'ws-nw__below', type: 'button', hidden: true, html: `<span>Regional maps below</span>${uiIcon('chev-down')}`, onclick: () => regionLabel.scrollIntoView({ block: 'start', behavior: 'smooth' }) });
+    body.append(below);
+    setTimeout(() => {
+      const sc = body.closest('.ws-modal__body');
+      if (!sc) return;
+      const sync = () => {
+        if (!body.isConnected) return sc.removeEventListener('scroll', sync);
+        below.hidden = regionLabel.hidden || regionLabel.getBoundingClientRect().top < sc.getBoundingClientRect().bottom - 24;
+      };
+      sc.addEventListener('scroll', sync, { passive: true });
+      body.addEventListener('click', () => setTimeout(sync, 60));
+      sync();
+    }, 120);
     const foot = [
       el('button', { class: 'ws-btn ws-btn--ghost', type: 'button', text: 'Cancel', onclick: () => this.close() }),
       el('button', { class: 'ws-btn ws-btn--gold', type: 'button', onclick: create }, el('span', { html: uiIcon('new-world') }), el('span', { text: 'Seed this world' })),
@@ -832,7 +847,8 @@ export class Modals {
           control,
         );
         // a long description opens in place (mouse and touch alike), never only in a tooltip
-        if (String(def.description || '').length > 64) {
+        // (shown wherever the two-line clamp actually cuts the text)
+        if (String(def.description || '').length > 40) {
           const more = el('button', { class: 'ws-lawcard__more', type: 'button', 'aria-expanded': 'false', text: 'More' });
           more.addEventListener('click', (ev) => {
             ev.preventDefault();
@@ -842,6 +858,13 @@ export class Modals {
             more.setAttribute('aria-expanded', open ? 'true' : 'false');
           });
           row.querySelector('.ws-law__txt').append(more);
+          const desc = row.querySelector('.ws-row__desc');
+          const fit = () => {
+            if (!row.isConnected || row.classList.contains('is-expanded')) return;
+            more.hidden = desc.scrollHeight <= desc.clientHeight + 1;
+          };
+          requestAnimationFrame(fit);
+          setTimeout(fit, 350);
         }
         // searched by word starts ("war" finds "Wars" and "warships", not "toward");
         // the key's camelCase parts count as words too
@@ -865,7 +888,19 @@ export class Modals {
     );
     const search = el('input', { class: 'ws-input ws-lawsx__search', type: 'search', placeholder: 'Search laws…', 'aria-label': 'Search laws', spellcheck: 'false' });
     search.addEventListener('input', () => {
-      const q = search.value.trim().toLowerCase();
+      // British spellings find the American wording ("colour" finds "color")
+      const q = search.value
+        .trim()
+        .toLowerCase()
+        .replace(/(colo|favo|harbo|armo|behavio|hono|labo|neighbo|vapo|humo)ur/g, '$1r')
+        .replace(/defence/g, 'defense')
+        .replace(/offence/g, 'offense')
+        .replace(/centre/g, 'center')
+        .replace(/metre/g, 'meter')
+        .replace(/theatre/g, 'theater')
+        .replace(/plough/g, 'plow')
+        .replace(/grey/g, 'gray')
+        .replace(/\b(organ|civil|real|colon|special|fertil|modern|industrial|urban)is(e|ed|es|ing|ation|ations)\b/g, '$1iz$2');
       this._lawSearch = q;
       const terms = q.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
       for (const r of rows) r.row.hidden = !!terms.length && !terms.every((t) => r.words.some((w) => w.startsWith(t)));
@@ -878,6 +913,9 @@ export class Modals {
       }
       none.hidden = any;
       list.scrollTop = 0;
+      // the rail follows the results: the first section with a match is lit
+      const first = [...sections].find(([, sec]) => !sec.hidden)?.[0];
+      if (q && first) setActive(first);
     });
     setActive(this.lawCat && sections.has(this.lawCat) ? this.lawCat : LAW_CATEGORIES[0].id);
     syncCounts();
@@ -936,7 +974,9 @@ export class Modals {
         [k('Click'), 'Cast / hold to paint'],
         [k(SLOT_LABELS[0], SLOT_LABELS[1], SLOT_LABELS[2], '…'), 'Powers in the open tab'],
         [k('Shift') + '+' + k(SLOT_LABELS[0], '…'), 'More powers in the tab'],
-        [k('Tab'), 'Next power category'],
+        [k('Tab'), 'Move to the power tabs, then the controls'],
+        [k('←', '→'), 'Switch category (on the power tabs)'],
+        [k('T') + ' ' + k('Shift') + '+' + k('T'), 'Next / previous power category'],
         [k('[', ']'), 'Brush size'],
         [k('I'), 'Inspect tool'],
         [k('Esc'), 'Put power away / close'],

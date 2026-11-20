@@ -63,6 +63,9 @@ export function techPanel(ui, kingdomId) {
   const capRaw = g.laws?.civEraCap;
   const cap = Number.isFinite(+capRaw) ? Math.round(+capRaw) : eras.length - 1;
   body.style.setProperty('--k', color);
+  // the realm line, what it studies now and the folded eras stay in view as the
+  // eras scroll under them (a compact sticky header)
+  const top = el('div', { class: 'ws-tech__top' });
   body.append(
     el(
       'header',
@@ -72,24 +75,25 @@ export function techPanel(ui, kingdomId) {
         'div',
         { class: 'ws-tech__titles' },
         el('div', { class: 'ws-tech__name', text: k.name || 'Realm' }),
-        el('div', { class: 'ws-tech__meta' }, el('span', { class: `ws-era is-era${era}`, html: `${uiIcon(ERA_ICON[era])}<span>${esc(eras[era] || '')} Era</span>` }), sideAll.length ? el('span', { text: `${nMain} of ${mainAll.length} main arts`, 'data-tip': 'Main arts carry the realm from era to era' }) : el('span', { text: `${learned.length}${all.length ? ` of ${all.length}` : ''} learned` }), sideAll.length ? el('span', { text: `${nSide} of ${sideAll.length} side arts`, 'data-tip': 'Side arts (food, medicine, land, city and urban planning) are studied beside the main art and do not count toward eras' }) : null, k.knowledge != null ? el('span', { text: `${Math.floor(k.knowledge)} knowledge` }) : null),
+        el('div', { class: 'ws-tech__meta' }, el('span', { class: `ws-era is-era${era}`, html: `${uiIcon(ERA_ICON[era])}<span>${esc(eras[era] || '')} era</span>` }), sideAll.length ? el('span', { text: `${nMain} of ${mainAll.length} main arts`, 'data-tip': 'Main arts carry the realm from era to era' }) : el('span', { text: `${learned.length}${all.length ? ` of ${all.length}` : ''} learned` }), sideAll.length ? el('span', { text: `${nSide} of ${sideAll.length} side arts`, 'data-tip': 'Side arts (food, medicine, land, city and urban planning) are studied beside the main art and do not count toward eras' }) : null, k.knowledge != null ? el('span', { text: `${Math.floor(k.knowledge)} knowledge` }) : null),
       ),
     ),
   );
-  body.append(
+  // (the realm line scrolls away; what it studies and the folded eras stay)
+  body.append(top);
+  top.append(
     el(
       'div',
-      { class: 'ws-tech__now' + (res ? '' : ' is-idle') },
+      { class: 'ws-tech__now' + (res ? '' : ' is-idle'), 'data-tip': res ? [res.def?.description, Array.isArray(res.def?.unlocks) && res.def.unlocks.length ? `Brings: ${res.def.unlocks.join('; ')}` : ''].filter(Boolean).join(' · ') || null : null },
       el('span', { class: 'ws-tech__nowico', html: uiIcon('sparkle') }),
       el(
         'div',
         { class: 'ws-tech__nowbody' },
         el('small', { text: g.laws?.civTechnology === false ? 'Research is halted by World Law' : res ? 'Now studying' : era >= cap && cap < eras.length - 1 ? `World Law holds the realms at the ${eras[cap] || ''} era` : 'Not studying anything' }),
         el('b', { text: res ? res.name : '—' }),
-        res?.def?.description ? el('p', { text: res.def.description }) : null,
-        // what it will add to the world, in plain words (tech.js `unlocks`)
-        Array.isArray(res?.def?.unlocks) && res.def.unlocks.length ? el('ul', { class: 'ws-tech__unlocks' }, ...res.def.unlocks.slice(0, 4).map((u) => el('li', { text: u }))) : null,
-        res && res.pct != null ? el('span', { class: 'ws-meter' }, el('i', { style: `width:${(res.pct * 100).toFixed(1)}%` })) : null,
+        // one line of what it is and brings; the full text is the box's tooltip
+        res ? ((d, u) => (d || u.length ? el('p', { class: 'ws-tech__nowdesc', text: [d, u.length ? `Brings: ${u.join('; ')}` : ''].filter(Boolean).join(' · ') }) : null))(res.def?.description || '', Array.isArray(res.def?.unlocks) ? res.def.unlocks : []) : null,
+        res && res.pct != null ? el('span', { class: 'ws-tech__nowmeter' }, el('span', { class: 'ws-meter' }, el('i', { style: `width:${(res.pct * 100).toFixed(1)}%` })), el('b', { class: 'ws-tech__nowpct', text: `${Math.round(res.pct * 100)}%` })) : null,
         // the second line of study: a side art, learned beside the main one
         side
           ? el(
@@ -102,7 +106,6 @@ export function techPanel(ui, kingdomId) {
             )
           : null,
       ),
-      res && res.pct != null ? el('span', { class: 'ws-tech__pct', text: `${Math.round(res.pct * 100)}%` }) : null,
     ),
   );
   if (all.length) {
@@ -162,9 +165,10 @@ export function techPanel(ui, kingdomId) {
           const open = grid.classList.toggle('show-done');
           btn.textContent = open ? 'Fold them' : 'Show them';
           btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+          spread();
         },
       });
-      body.append(
+      top.append(
         el(
           'div',
           { class: 'ws-tech__done' },
@@ -174,15 +178,27 @@ export function techPanel(ui, kingdomId) {
         ),
       );
     }
+    // the eras in view share the full width: three eras make three wide columns,
+    // never three of four with an empty track; more than four wrap in two rows
+    const spread = () => {
+      const n = grid.querySelectorAll(grid.classList.contains('show-done') ? '.ws-tech__col' : '.ws-tech__col:not(.is-done)').length;
+      grid.style.setProperty('--cols', String(Math.max(1, n <= 4 ? n : Math.ceil(n / 2))));
+    };
+    spread();
     body.append(grid);
+    // the era headers stick just under the sticky header
+    const measure = () => body.style.setProperty('--tt', `${Math.round(top.getBoundingClientRect().height)}px`);
+    if (typeof ResizeObserver === 'function') new ResizeObserver(measure).observe(top);
     // open at the realm's own era, not at the Hearth era
     setTimeout(() => {
       if (!body.isConnected) return;
+      measure();
       const cur = grid.querySelector('.ws-tech__col.is-cur');
       const sc = body.closest('.ws-modal__body');
       if (!cur || !sc || era <= 0) return;
-      const top = cur.getBoundingClientRect().top - sc.getBoundingClientRect().top;
-      if (top > sc.clientHeight * 0.45 || top < 0) sc.scrollTop = top + sc.scrollTop - 8;
+      const stuck = getComputedStyle(top).position === 'sticky' ? top.getBoundingClientRect().height : 0;
+      const y = cur.getBoundingClientRect().top - sc.getBoundingClientRect().top - stuck;
+      if (y > (sc.clientHeight - stuck) * 0.45 || y < 0) sc.scrollTop = y + sc.scrollTop - 10;
     }, 80);
   } else if (learned.length) {
     body.append(el('div', { class: 'ws-tech__plain' }, ...learned.map((id) => el('span', { class: 'ws-techchip', html: `${uiIcon('good')}<span>${esc(prettyId(id))}</span>` }))));
