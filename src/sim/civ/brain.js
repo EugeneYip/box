@@ -14,6 +14,7 @@ const ARRIVED = 1,
   WAIT = 4;
 
 const CARRY_MAX = { wood: 32, stone: 18, food: 40, gold: 3 };
+const FAR_PATHS = 10; // of a tick's 16 searches, most a far walker takes at coarse steps on a big map
 const CHILD_AGE_RATE = 1.7; // extra years per year while a child (childhood ~6 game years)
 
 export const brain = {
@@ -288,6 +289,12 @@ export const brain = {
       return false;
     }
     if (long ? this._longBudget <= 0 : this._pathBudget <= 0) return WAIT;
+    // (big maps at coarse steps: a walker far from the camera leaves the
+    // last searches of the tick to those near it, and asks again shortly)
+    if (!long && u._far && this._coarseBig && this._pathBudget <= 16 - FAR_PATHS) {
+      if (u.thinkT > 0.6) u.thinkT = 0.3 + this.rng.next() * 0.5;
+      return WAIT;
+    }
     if (long) this._longBudget--;
     else this._pathBudget--;
     const p = civPath(w, w.clampTx(sx), w.clampTy(sy), gx, gy, this._walkCost(), long ? 32000 : 3200, 0.5);

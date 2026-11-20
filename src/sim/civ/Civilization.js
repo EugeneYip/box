@@ -687,6 +687,11 @@ export class Civilization {
     const g = this.game;
     this._pathBudget = 16;
     this._longBudget = 2;
+    // big maps at coarse steps (8x and above): see the village passes below
+    // (and brain._pathTo: walkers far from the camera take at most
+    // FAR_PATHS of a tick's searches)
+    const coarseBig = step > 0.1 && this.world.size > 65536 * 2 && !globalThis.__lod8Off;
+    this._coarseBig = coarseBig;
     if (g.frame !== this._seenFrame) {
       this._seenFrame = g.frame;
       this._ticksSinceFrame = 0;
@@ -699,7 +704,12 @@ export class Civilization {
     // work; each village keeps its own phase, so the work stays spread.
     let nv = 0;
     for (const v of this.villages) if (v.alive) nv++;
-    const rate = clamp(nv / 32, 1, 2);
+    // big maps at coarse steps (8x and above): the village passes run a
+    // further half as often, each covering the longer interval as above, and
+    // the realm-wide passes below (buildings, research, unlocks, territory)
+    // run less often or on ticks of their own, so the coarse tick holds its
+    // budget
+    const rate = clamp(nv / 32, 1, 2) * (coarseBig ? 1.5 : 1);
     this._planMul = rate;
     for (const v of this.villages) {
       if (!v.alive) continue;
@@ -722,7 +732,7 @@ export class Civilization {
       }
     }
     const T = this._timers;
-    if ((T.b += step) >= 0.5) {
+    if ((T.b += step) >= (coarseBig ? 1 : 0.5)) {
       this._buildingsTick(T.b);
       T.b = 0;
     }
@@ -731,7 +741,7 @@ export class Civilization {
     if ((T.terr += step) >= 2 * Math.min(6, Math.max(1, this.world.size / 65536))) {
       T.terr = 0;
       // the full flood fill is costly on big maps: only when the realms changed
-      this._territoryIfChanged();
+      this._territoryIfChanged(coarseBig ? 60 : 30);
     }
     if ((T.dip += step) >= 4) {
       T.dip = 0;
@@ -754,13 +764,19 @@ export class Civilization {
       T.tower = 0;
       this._towerTick();
     }
-    if ((T.tech = (T.tech || 0) + step) >= 2) {
+    // (research and the realm's stores on one tick, its unlocks and works
+    // half an interval later, so the two passes never share a tick)
+    const techEvery = coarseBig ? 3 : 2;
+    if ((T.tech = (T.tech || 0) + step) >= techEvery) {
       this._researchTick(T.tech);
       this._inventoryTick(T.tech);
-      this._wonderFx();
-      this._unlockTick(T.tech);
-      this._worksTick();
       T.tech = 0;
+    }
+    if ((T.unl = (T.unl ?? 1) + step) >= techEvery) {
+      this._wonderFx();
+      this._unlockTick(T.unl);
+      this._worksTick();
+      T.unl = 0;
     }
     if ((T.cult = (T.cult || 0) + step) >= 5) {
       T.cult = 0;
@@ -2451,13 +2467,13 @@ export class Civilization {
   // Territory changes only when settlements grow, shrink, change hands or the
   // land itself is reshaped; otherwise skip the map-wide flood fill (a refresh
   // still runs every 30 s for the slow incumbency drift).
-  _territoryIfChanged() {
+  _territoryIfChanged(every = 30) {
     let sig = this.villages.length * 7919;
     // (radius in two-tile steps: a birth or a death no longer redraws the map)
     for (const v of this.villages) if (v.alive) sig = (Math.imul(sig, 31) + v.id * 131 + v.kingdom * 977 + Math.round(v.radius / 2) * 17 + v.tier * 5) | 0;
     for (const b of this.buildings) if (b.alive && !b.constructing && (b.type === 'watchtower' || b.type === 'tower')) sig = (Math.imul(sig, 31) + b.id) | 0;
     const now = this.game.time.total;
-    if (sig === this._terrSig && !this._terrDirty && now - (this._terrT ?? -1e9) < 30) return;
+    if (sig === this._terrSig && !this._terrDirty && now - (this._terrT ?? -1e9) < every) return;
     this._terrSig = sig;
     this._terrDirty = false;
     this._terrT = now;
