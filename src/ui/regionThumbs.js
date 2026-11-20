@@ -97,6 +97,13 @@ export function regionThumb(id, maxW = 56, maxH = 36) {
     const ctx = cv.getContext('2d');
     const img = ctx.createImageData(W, H);
     const at = (x, y) => (x < 0 || y < 0 || x >= W || y >= H ? 0 : cov[y * W + x]);
+    // a region that is mostly land (Asia Mainland) would be a green box: its land
+    // fades into the blue toward the cut edges, so it too reads as a coastline
+    // on blue like the other maps
+    let landShare = 0;
+    for (let j = 0; j < cov.length; j++) landShare += cov[j];
+    landShare /= cov.length;
+    const inland = landShare > 0.6;
     for (let y = 0; y < H; y++) {
       for (let x = 0; x < W; x++) {
         const c = cov[y * W + x];
@@ -106,7 +113,12 @@ export function regionThumb(id, maxW = 56, maxH = 36) {
         // a pixel beside the sea is shore (sand), the rest is green land
         const near = Math.min(at(x - 1, y), at(x + 1, y), at(x, y - 1), at(x, y + 1));
         const land = near > 0.5 ? mix(LAND, LAND_HI, (1 - y / H) * 0.5) : SAND;
-        const t = Math.max(0, Math.min(1, (c - 0.2) / 0.5));
+        let t = Math.max(0, Math.min(1, (c - 0.2) / 0.5));
+        if (inland) {
+          const e = Math.min(x / W, (W - 1 - x) / W, y / H, (H - 1 - y) / H) / 0.2;
+          const f = Math.max(0, Math.min(1, e));
+          t *= 0.25 + 0.75 * f * f * (3 - 2 * f);
+        }
         const col = mix(sea, land, t);
         const o = (y * W + x) * 4;
         img.data[o] = col[0];

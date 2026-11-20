@@ -151,7 +151,19 @@ export class Popover {
     let x = r.left + r.width / 2 - pw / 2;
     x = Math.max(8, Math.min(vw - pw - 8, x));
     let y = r.top - ph - 8;
-    if (y < 8) y = r.bottom + 8;
+    // inside a dialog with a sticky header (the tech panel), a tip never opens
+    // up over that header: it opens below the card, or beside it if there is
+    // no room below
+    let ceil = 8;
+    const sticky = t.closest('.ws-modal__body')?.querySelector('.ws-tech__top');
+    if (sticky && !sticky.contains(t)) ceil = Math.max(ceil, sticky.getBoundingClientRect().bottom + 4);
+    if (y < ceil) {
+      y = r.bottom + 8;
+      if (y + ph > innerHeight - 8 && sticky) {
+        y = Math.max(ceil, Math.min(innerHeight - ph - 8, r.top));
+        x = r.right + 8 + pw <= vw - 8 ? r.right + 8 : Math.max(8, r.left - pw - 8);
+      }
+    }
     this.el.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
     clearTimeout(this._hide);
     if (ms) this._hide = setTimeout(() => this.hide(), ms);
