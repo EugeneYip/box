@@ -290,8 +290,8 @@ export function installDaily(Units) {
     const L = Math.hypot(dx, dz) || 1;
     const ux = dx / L,
       uz = dz / L;
-    const W = 3.4,
-      D = 2.4;
+    // a full square on level ground first, then a smaller one on gentler
+    // ground (a dense town rarely has the full square free before its door)
     const rm = g.civ?.railMask?.length === w.size ? g.civ.railMask : null; // never across a railway or highway
     const free = (x, z) => {
       const tx = Math.floor(x),
@@ -300,8 +300,9 @@ export function installDaily(Units) {
       const i = tz * w.w + tx;
       return w.building[i] < 0 && w.height[i] > SEA_LEVEL + 0.05 && !rm?.[i];
     };
-    for (const [ax, az] of [[ux, uz], [-uz, ux], [uz, -ux]]) {
-      for (const dist of [1.9, 2.6, 3.4]) {
+    for (const [W, D, flat] of [[3.4, 2.4, 0.16], [2.8, 2.0, 0.3]])
+    for (const [ax, az] of [[ux, uz], [-uz, ux], [uz, -ux], [-ux, -uz]]) {
+      for (const dist of [1.7, 2.4, 3.2, 4.2]) {
         const cx = b.doorX + ax * dist,
           cz = b.doorZ + az * dist;
         let ok = true,
@@ -318,7 +319,7 @@ export function installDaily(Units) {
               hi = Math.max(hi, h);
             }
           }
-        if (ok && hi - lo < 0.16) {
+        if (ok && hi - lo < flat) {
           pd = v._parade = { b: b.id, ok: true, x: cx, z: cz, ax, az, W, D, y: hi, lo, slots: [], t: now, v: v.id };
           return pd;
         }
@@ -346,10 +347,10 @@ export function installDaily(Units) {
       } else pd.slots[i] = u.id;
     }
     const row = Math.floor(i / 6),
-      col = COLS[i % 6] - 2.5;
+      col = (COLS[i % 6] - 2.5) * (pd.W / 6.8);
     // rank 0 nearest the barracks; everyone faces it
-    const f = (row - 1) * 0.55;
-    return { x: pd.x - pd.az * col * 0.5 + pd.ax * f, z: pd.z + pd.ax * col * 0.5 + pd.az * f, fx: pd.x - pd.ax * 9, fz: pd.z - pd.az * 9 };
+    const f = (row - 1) * (pd.D / 4.4);
+    return { x: pd.x - pd.az * col + pd.ax * f, z: pd.z + pd.ax * col + pd.az * f, fx: pd.x - pd.ax * 9, fz: pd.z - pd.az * 9 };
   };
   // Drill hours: the morning parade and the afternoon one.
   P._drillHours = function () {
