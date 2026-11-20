@@ -168,10 +168,12 @@ void main() {
     this.tex.needsUpdate = true;
     return [px / ATLAS, 1 - (py + src.height) / ATLAS, src.width / ATLAS, src.height / ATLAS];
   }
-  // every visible label, in draw order
+  // every visible label, in draw order; lists are arrays or Maps (walked twice,
+  // so never pass one-shot iterators)
   draw(lists) {
+    const each = (L) => (L instanceof Map ? L.values() : L);
     let n = 0;
-    for (const L of lists) for (const sp of L) if (sp.visible && sp.userData.rect && sp.material.opacity > 0.01) n++;
+    for (const L of lists) for (const sp of each(L)) if (sp.visible && sp.userData.rect && sp.material.opacity > 0.01) n++;
     if (this.mesh.instanceMatrix.count < n) {
       const nm = this._make(Math.ceil(n * 1.5));
       this.parent.remove(this.mesh);
@@ -186,7 +188,7 @@ void main() {
     const M = m.instanceMatrix.array;
     let i = 0;
     for (const L of lists)
-      for (const sp of L) {
+      for (const sp of each(L)) {
         const r = sp.userData.rect;
         if (!sp.visible || !r || sp.material.opacity <= 0.01) continue;
         M.fill(0, i * 16, i * 16 + 16);
@@ -443,7 +445,7 @@ export class Labels {
       cand.push({ s: sp, a: sA, prio: 2.5 });
     }
     this._declutter(cand, dt);
-    this.batch.draw([this.vLabels.values(), this.kLabels.values(), this.swords]);
+    this.batch.draw([this.vLabels, this.kLabels, this.swords]);
   }
 
   // Hide labels that collide with a higher-priority label or with the HUD.
