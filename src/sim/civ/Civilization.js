@@ -1836,7 +1836,7 @@ export class Civilization {
     }
     // 2 fields (no cost); an Industrial town sows outer plots for the inner
     // ones it will give up (modern.js) before it gives them up
-    const targetFields = 8 + pop * 1.1 + (v.innerFields || 0);
+    const targetFields = 8 + pop * 1.1 + ((this.kingdoms[v.kingdom]?.era || 0) >= 4 ? v.innerFields || 0 : 0);
     for (let r = Math.round(this._planMul || 1); r > 0; r--) if (v.fieldCount < targetFields && v.plots.filter((p) => p.tiles.some((i) => this.world.type[i] !== TILE.FARMLAND)).length < 2) this._planPlot(v);
     // 3 civic buildings by size
     if (room() && pop >= 10 && count('granary') === 0) build('granary');
