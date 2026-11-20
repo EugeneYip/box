@@ -1343,7 +1343,10 @@ void terrainSurface() {
   if (uEdgeFade > 0.5 && s.p.y > -0.3) {
     vec2 ex = min(p, uWorldSize - p);
     float en = (textureLod(uNoise, p * (1.0 / 140.0) + 0.37, 0.0).r - 0.5) * 22.0 + (s.macro.b - 0.5) * 8.0;
-    float ek = 1.0 - smoothstep(14.0, 50.0, min(ex.x, ex.y) + en);
+    // (measured from the inner side of the edge mist, which widens with the
+    // view like Atmosphere's: under the mist alone the fade did not show)
+    float mw = clamp(uCamDist * 0.075, 16.0, max(uWorldSize.x, uWorldSize.y) * 0.08);
+    float ek = 1.0 - smoothstep(mw * 0.5, mw + 32.0, min(ex.x, ex.y) + en);
     if (ek > 0.0) {
       vec3 shelfC = vec3(0.105, 0.175, 0.185);
       vec3 grey = vec3(lum(albedo)) * vec3(0.90, 0.98, 1.04);
