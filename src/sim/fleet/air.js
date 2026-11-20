@@ -488,6 +488,12 @@ export const air = {
     const W = w.w;
     const wrap = this.nav.wrap;
     const now = this.game.time.total;
+    // an aircraft cruising a long straight leg far out of sight (beyond the
+    // drawn radius and a margin) steers every second tick and glides on its
+    // heading in between
+    const cam = this.game.cameraRig?.cur;
+    const airR = cam && !this._noLod ? cam.dist * 1.7 + 44 : -1;
+    const gwt = this._gwTick || 0;
     for (const f of this.air) {
       if (!f.alive) continue;
       f.px = f.x;
@@ -497,6 +503,16 @@ export const air = {
       f.t += step;
       if (f.cls === 'space') {
         this._rocketTick(f, step);
+        continue;
+      }
+      if (f._glide && f.phase === 'cruise' && airR > 0 && ((gwt + f.id) & 1) !== 0 && (Math.abs(f.x - cam.x) > airR || Math.abs(f.z - cam.z) > airR)) {
+        f.x += Math.cos(f.heading) * f.speedNow * step;
+        f.z = Math.max(0, Math.min(w.h - 0.01, f.z + Math.sin(f.heading) * f.speedNow * step));
+        if (wrap && (f.x < 0 || f.x >= W)) {
+          const s = f.x < 0 ? W : -W;
+          f.x += s;
+          f.px += s;
+        }
         continue;
       }
       const def = f.def;
@@ -570,6 +586,7 @@ export const air = {
         case 'cruise': {
           f.speedNow = Math.min(def.speed, f.speedNow + def.speed * step * 0.6);
           speed = f.speedNow;
+          f._glide = f.phase === 'cruise' && !f.diverted && dist > Math.max(14, speed * 3);
           // the gentle curve: a heading drift that fades as the goal nears
           want = Math.atan2(d.dz, d.dx) + f.arc * Math.min(1, dist / 60) * Math.min(1, f.t / 6);
           const top = ground(f.x, f.z) + alt;

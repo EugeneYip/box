@@ -691,6 +691,13 @@ export class Fleet {
     const lodR = cam ? Math.min(140, Math.max(60, cam.dist * 0.9)) * (g.settings?.powerSaver ? 0.7 : 1) : 60;
     const lodR2 = lodR * lodR;
     const gwt = this._gwTick;
+    // Land vehicles think less often where it cannot be seen: one parked or
+    // resting every fourth tick, one on the road beyond the drawn radius
+    // (FleetRenderer: the camera's distance x 1.7 + 24, and a margin) every
+    // second tick, with the time it missed. Siege engines in the field run
+    // every tick. (fleet._noLod turns this off, for measuring.)
+    const landLod = cam && !this._noLod;
+    const landR = cam ? cam.dist * 1.7 + 36 : 0;
     for (let i = 0; i < this.list.length; i++) {
       const v = this.list[i];
       if (!v.alive) continue;
@@ -722,7 +729,22 @@ export class Fleet {
         }
         this._seaTick(v, step);
       } else {
-        this._landTick(v, step);
+        let st = step;
+        v._skip = false;
+        if (landLod && !(v.def.siege && v.state !== 'parked')) {
+          const idle = v.state === 'parked' || v.state === 'rest';
+          const mask = idle ? 3 : Math.abs(v.x - cam.x) > landR || Math.abs(v.z - cam.z) > landR ? 1 : 0;
+          if (mask) {
+            v._lodAcc = (v._lodAcc || 0) + step;
+            if (((gwt + v.id) & mask) !== 0) {
+              v._skip = true;
+              continue;
+            }
+            st = v._lodAcc;
+          }
+          v._lodAcc = 0;
+        }
+        this._landTick(v, st);
         v.y = this.world.heightAt(v.x, v.z);
       }
     }
