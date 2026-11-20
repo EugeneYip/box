@@ -11,7 +11,7 @@
 // otherwise. Keys are stable: never rename one, only add.
 export const LAW_CATEGORIES = [
   { id: 'harmony', name: 'Harmony', blurb: 'How content and loyal the peoples are.' },
-  { id: 'diplomacy', name: 'Diplomacy', blurb: 'War, peace and alliances between kingdoms.' },
+  { id: 'diplomacy', name: 'Diplomacy', blurb: 'War, peace and alliances between realms.' },
   { id: 'civilization', name: 'Civilization', blurb: 'Growth, knowledge and building.' },
   { id: 'creatures', name: 'Creatures', blurb: 'The lives of people and animals.' },
   { id: 'beasts', name: 'Beasts', blurb: 'Predators and monsters of the wilds.' },
@@ -38,20 +38,20 @@ export const LAWS = [
   B('harmonySecession', 'harmony', 'Breakaway villages', 'Distant, discontented villages may declare independence.', true, 'civ'),
   B('harmonyMigration', 'harmony', 'Migration', 'Hungry or unhappy villagers leave in search of better lands.', true, 'civ'),
   B('harmonyUnrest', 'harmony', 'Hardship breeds unrest', 'Famine, plague and heavy war losses stir discontent.', true, 'civ'),
-  N('harmonyLoyalty', 'harmony', 'Loyalty', 'Higher keeps villages loyal to their kingdom.', 1, 0.25, 3, 0.25, 'civ'),
+  N('harmonyLoyalty', 'harmony', 'Loyalty', 'Higher keeps villages loyal to their realm.', 1, 0.25, 3, 0.25, 'civ'),
   // ---- Diplomacy -------------------------------------------------------------
   B('civWars', 'diplomacy', 'Wars', 'Realms may declare war and march armies.', true, 'civ'),
-  B('civDiplomacy', 'diplomacy', 'Alliances', 'Friendly kingdoms forge alliances and fight side by side.', true, 'civ'),
-  B('diploPeace', 'diplomacy', 'Peace treaties', 'War-weary kingdoms sue for peace.', true, 'civ'),
+  B('civDiplomacy', 'diplomacy', 'Alliances', 'Friendly realms forge alliances and fight side by side.', true, 'civ'),
+  B('diploPeace', 'diplomacy', 'Peace treaties', 'War-weary realms sue for peace.', true, 'civ'),
   B('diploCultureFriction', 'diplomacy', 'Cultural rivalry', 'Realms of different cultures distrust one another.', true, 'civ'),
   N('diploWarlike', 'diplomacy', 'Warmongering', 'How eager rulers are to start wars.', 1, 0, 3, 0.25, 'civ'),
   B('fleetNaval', 'diplomacy', 'Naval war', 'War galleys of realms at war fight at sea, blockade harbors and sink transports.', true, 'fleet'),
   // ---- Civilization -------------------------------------------------------------
   B('civExpansion', 'civilization', 'Settlers', 'Villages send settlers to found new villages.', true, 'civ'),
-  B('civNewKingdoms', 'civilization', 'New kingdoms', 'Far-flung settlements may crown rulers of their own.', true, 'civ'),
+  B('civNewKingdoms', 'civilization', 'New realms', 'Far-flung settlements may crown rulers of their own.', true, 'civ'),
   N('civGrowth', 'civilization', 'Birth rate', 'How quickly villages grow.', 1, 0.25, 3, 0.25, 'civ'),
   B('civTechnology', 'civilization', 'Knowledge', 'Realms research and advance through eras.', true, 'civ'),
-  N('civTechSpeed', 'civilization', 'Research speed', 'How quickly kingdoms gain knowledge.', 1, 0.25, 4, 0.25, 'civ'),
+  N('civTechSpeed', 'civilization', 'Research speed', 'How quickly realms gain knowledge.', 1, 0.25, 4, 0.25, 'civ'),
   // (kept with this world only: a cap of Hearth chosen for one world froze
   // research on the next one, silently, through the saved laws)
   { ...S('civEraCap', 'civilization', 'Latest era', 'The latest era realms may reach, from Hearth to Future. Choose Enlightened for a world that never leaves the age of sail and steel. Kept for this world only: every new world starts at Future.', 7, ['Hearth', 'Bronze', 'Iron', 'Enlightened', 'Industrial', 'Modern', 'Atomic', 'Future'], 'civ'), perWorld: true },

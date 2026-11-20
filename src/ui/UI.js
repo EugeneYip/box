@@ -992,6 +992,60 @@ export class UI {
   }
 
   // ---------------------------------------------------------------- keyboard
+  // Keyboard order: top bar, then the dock (open tab, powers, the Vehicle
+  // chooser, then the Fold tray button), Overview and Favorites, then the side
+  // panels (the inspector card first). Returns true when it moved the focus.
+  tabWalk(e) {
+    const a = document.activeElement;
+    const fromWorld = !a || a === document.body || a === document.documentElement || a.tagName === 'CANVAS';
+    if (fromWorld && !e.shiftKey) {
+      if (this.inspector.open && this.focusFirstIn(this.inspector.el)) return true;
+      return !!this.toolbar.focusTab?.();
+    }
+    const list = this.tabOrder();
+    const i = list.indexOf(a);
+    if (i < 0) return false; // somewhere this order does not cover: the browser's own order
+    const next = list[(i + (e.shiftKey ? -1 : 1) + list.length) % list.length];
+    if (!next || next === a) return false;
+    next.focus({ preventScroll: true });
+    return document.activeElement === next;
+  }
+
+  focusables(root) {
+    if (!root) return [];
+    const ok = (n) => n.tabIndex >= 0 && !n.disabled && n.getClientRects().length > 0 && getComputedStyle(n).visibility !== 'hidden' && !n.closest('[hidden], [inert]');
+    return [...root.querySelectorAll('button, [href], input, select, textarea, [tabindex]')].filter(ok);
+  }
+
+  focusFirstIn(root) {
+    const n = this.focusables(root)[0];
+    if (!n) return false;
+    n.focus({ preventScroll: true });
+    return document.activeElement === n;
+  }
+
+  tabOrder() {
+    const tb = this.toolbar;
+    const dock = this.focusables(tb.el);
+    const fold = tb.minBtn;
+    const powers = dock.filter((n) => n !== fold);
+    const chooser = this.focusables(this.layer.querySelector('.ws-vehpick'));
+    return [
+      ...this.focusables(this.topbar.el),
+      ...powers,
+      ...chooser,
+      ...(dock.includes(fold) ? [fold] : []),
+      ...this.focusables(this.overviewBtn.parentElement === this.hud ? this.hud : null).filter((n) => n === this.overviewBtn || n === this.favBtn),
+      ...this.focusables(this.inspector.el),
+      ...this.focusables(this.favPanel.el),
+      ...this.focusables(this.kingdoms.el),
+      ...this.focusables(this.chronicle.el),
+      ...this.focusables(this.feed.el),
+      ...this.focusables(this.minimap.wrap),
+      ...this.focusables(this.campad?.el),
+    ];
+  }
+
   isTyping(e) {
     const t = e.target;
     return t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
@@ -1059,12 +1113,11 @@ export class UI {
     if (e.key === '?') return this.modals.toggle('help');
     switch (code) {
       case 'Tab': {
-        // From the world (nothing has focus) the first Tab lands on the power
-        // dock's open tab; from there Tab walks the controls as usual and the
-        // arrow keys switch categories inside the tab list.
-        const a = document.activeElement;
-        if (a && a !== document.body && a !== document.documentElement && a.tagName !== 'CANVAS') break;
-        if (this.toolbar.focusTab?.()) e.preventDefault();
+        // From the world (nothing has focus) the first Tab lands on the card of
+        // a creature or building just clicked, else on the power dock's open
+        // tab; from there Tab walks top bar -> dock -> side panels (the arrow
+        // keys switch categories inside the tab list).
+        if (this.tabWalk(e)) e.preventDefault();
         break;
       }
       case 'KeyT':

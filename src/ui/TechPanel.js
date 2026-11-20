@@ -113,15 +113,20 @@ export function techPanel(ui, kingdomId) {
     // eras the realm has wholly learned fold into one strip above the grid, so
     // the panel opens with the realm's own era in view
     const done = [];
+    // the era being researched is the current one (a realm in the Modern era
+    // studying an Atomic art is working in the Atomic column)
+    const eraOf = (t) => (Number.isFinite(t?.era) ? t.era : eras.indexOf(t?.era));
+    const resDef = res ? all.find((t) => t.id === res.id) : null;
+    const curE = resDef && eraOf(resDef) > era ? eraOf(resDef) : era;
     for (let e = 0; e < Math.max(4, eras.length); e++) {
       // main arts first, then the side arts under their own label
       const inEra = all.filter((t) => (Number.isFinite(t.era) ? t.era : eras.indexOf(t.era)) === e);
       const techs = [...inEra.filter((t) => !t.side), ...inEra.filter((t) => t.side)];
       if (!techs.length) continue;
       const beyond = e > cap;
-      const whole = e < era && techs.every((t) => has(k, t.id));
+      const whole = e < curE && techs.every((t) => has(k, t.id));
       if (whole) done.push([e, techs.length]);
-      const col = el('div', { class: 'ws-tech__col' + (e <= era ? ' is-reached' : '') + (e === era ? ' is-cur' : '') + (beyond ? ' is-capped' : '') + (whole ? ' is-done' : ''), 'data-tip': beyond ? `Beyond the latest era the World Laws allow (${eras[cap] || ''})` : null }, el('div', { class: `ws-tech__era is-era${e}`, html: `${uiIcon(ERA_ICON[e] || 'chronicle')}<span>${esc(eras[e] || `Era ${e + 1}`)}</span>${e === era ? '<em class="ws-tech__curtag">Current era</em>' : ''}` }));
+      const col = el('div', { class: 'ws-tech__col' + (e <= era ? ' is-reached' : '') + (e === curE ? ' is-cur' : '') + (beyond ? ' is-capped' : '') + (whole ? ' is-done' : ''), 'data-tip': beyond ? `Beyond the latest era the World Laws allow (${eras[cap] || ''})` : null }, el('div', { class: `ws-tech__era is-era${e}`, html: `${uiIcon(ERA_ICON[e] || 'chronicle')}<span>${esc(eras[e] || `Era ${e + 1}`)}</span>${e === curE ? '<em class="ws-tech__curtag">Current era</em>' : ''}` }));
       let sideHead = false;
       for (const t of techs) {
         if (t.side && !sideHead) {
@@ -147,7 +152,34 @@ export function techPanel(ui, kingdomId) {
               // name, and for a locked card what is still missing, on one line
               el('span', { class: 'ws-techcard__head' }, el('b', { text: t.name || prettyId(t.id) }), t.side ? el('i', { class: `ws-techcard__branch is-${t.branch || 'x'}`, text: BRANCH_NAME[t.branch] || prettyId(t.branch || '') }) : null, !got && !ready && missing.length ? el('em', { class: 'ws-techcard__needs', text: `needs ${missing.join(', ')}` }) : null),
               // what it brought (learned) or brings: the item may be cut short, "and N more" never is
-              ul.length ? el('small', { class: 'ws-techcard__brings' }, el('span', { class: 'ws-techcard__item', text: `${got ? 'Brought' : 'Brings'}: ${ul[0]}` }), more ? el('span', { class: 'ws-techcard__more', text: more }) : null) : t.description ? el('small', { text: t.description }) : null,
+              // ("and N more" opens the whole list in place)
+              ul.length
+                ? el(
+                    'small',
+                    { class: 'ws-techcard__brings' },
+                    el('span', { class: 'ws-techcard__item', text: `${got ? 'Brought' : 'Brings'}: ${ul[0]}` }),
+                    more
+                      ? el('button', {
+                          class: 'ws-techcard__more',
+                          type: 'button',
+                          'aria-expanded': 'false',
+                          text: more,
+                          onclick: (ev) => {
+                            ev.stopPropagation();
+                            const b = ev.currentTarget;
+                            const box = b.parentElement;
+                            const open = !box.classList.contains('is-open');
+                            box.classList.toggle('is-open', open);
+                            box.querySelector('.ws-techcard__item').textContent = `${got ? 'Brought' : 'Brings'}: ${open ? ul.join('; ') : ul[0]}`;
+                            b.textContent = open ? ' less' : more;
+                            b.setAttribute('aria-expanded', open ? 'true' : 'false');
+                          },
+                        })
+                      : null,
+                  )
+                : t.description
+                  ? el('small', { text: t.description })
+                  : null,
             ),
             now && nowPct != null ? el('span', { class: 'ws-meter' }, el('i', { style: `width:${(nowPct * 100).toFixed(1)}%` })) : null,
           ),

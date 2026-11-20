@@ -412,9 +412,12 @@ const P = {
   flood: `<path class="f" d="M3 26.5C3 16.6 9 7.5 18 7.5c5 0 9 3 9 7 0 3-2.5 4.5-4.5 4.5-2.5 0-3.5-2-2-4-4 0-6.5 4-6.5 8 0 1.6.4 2.6 1 3.5z"/><path d="M3 26.5C3 16.6 9 7.5 18 7.5c5 0 9 3 9 7 0 3-2.5 4.5-4.5 4.5-2.5 0-3.5-2-2-4-4 0-6.5 4-6.5 8 0 1.6.4 2.6 1 3.5"/><path d="${wave(27, 3, 29, 4, 1.5)}"/>`,
   'acid-rain': cloud(-4) + '<path class="t" d="M11 21.5 9.5 25M16.5 21.5 15 25M22 21.5 20.5 25"/><circle class="ts" cx="12.6" cy="27.8" r="1.3"/><circle class="ts" cx="18.4" cy="27.8" r="1.3"/>',
   blizzard: cloud(-4) + '<path d="M3 23.5h8M6 27.5h9"/>' + g('translate(0 0)', SNOWFLAKE(22, 24.5, 4.2)),
+  // a wilted sprout over cracked ground, and a struck-out raindrop (no sun, so
+  // it never reads as Solar Storm)
   drought:
-    SUN(16, 9.5, 4, 6.6, 9) +
-    '<path class="f" d="M3 21h26v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M3 21h26"/><path class="th" d="M9 21l1.6 3-2 2.2.6 2.8M18 21l-1.6 2.6 2.4 1.6-.8 3.8M24 21.5l1 2.6"/>',
+    '<path class="f" d="M3 20h26v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M3 20h26v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path class="th" d="M8 20l1.8 3.2-2.2 2.4.6 3.4M17.5 20l-1.6 2.8 2.6 1.8-.9 4.4M24.5 20l1.2 3-1.5 2"/>' +
+    '<path d="M12.5 20c0-4.6.8-7.6 3.6-10"/><path class="f" d="M16.1 10c-3.2-.4-5.6.8-6.8 3.6 2.9.4 5.3-.8 6.8-3.6zM16.1 10c1.2 2.4 1.3 4.8.3 7.2-1.8-2.1-2-4.6-.3-7.2z"/><path d="M16.1 10c-3.2-.4-5.6.8-6.8 3.6 2.9.4 5.3-.8 6.8-3.6zM16.1 10c1.2 2.4 1.3 4.8.3 7.2-1.8-2.1-2-4.6-.3-7.2z"/>' +
+    '<path d="M24.5 3.5c1.7 2.3 2.7 4 2.7 5.4a2.7 2.7 0 0 1-5.4 0c0-1.4 1-3.1 2.7-5.4z"/><path class="t" d="M20.5 12.5 28.5 4.5"/>',
   bomb: '<circle class="f" cx="14" cy="19" r="9"/><circle cx="14" cy="19" r="9"/><path d="M19.6 11.8l2.4-2.4M21 8.4l1.6 1.6"/><path d="M22.4 8.6c1-2.6 3-3.6 5-3"/><path class="ts" d="' + sparkle(27.5, 5.5, 3) + '"/><path class="th" d="M9.4 16a5.6 5.6 0 0 1 3.8-3.6"/>',
   explosion: `<path class="f" d="${star(16, 16, 13, 6.2, 9)}"/><path d="${star(16, 16, 13, 6.2, 9)}"/><path class="s" d="${star(16, 16, 5.6, 2.8, 6)}"/>`,
   lava: '<path class="f" d="M3 23c3-2 5.2-2 7 0s4.4 2 6.6 0 4.6-2 6.4 0 4 2 6 0v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M3 23c3-2 5.2-2 7 0s4.4 2 6.6 0 4.6-2 6.4 0 4 2 6 0"/><path class="ts" d="M16 4c2.8 4 4.6 7 4.6 9.4a4.6 4.6 0 0 1-9.2 0C11.4 11 13.2 8 16 4z" opacity=".6"/><path d="M16 4c2.8 4 4.6 7 4.6 9.4a4.6 4.6 0 0 1-9.2 0C11.4 11 13.2 8 16 4z"/><circle class="s" cx="24.5" cy="10" r="1.3"/><circle class="s" cx="7.4" cy="13" r="1.1"/>',
@@ -1059,6 +1062,16 @@ const U = {
   train: '<path class="f" d="M12 3.5h8a4.5 4.5 0 0 1 4.5 4.5v11.5a3.5 3.5 0 0 1-3.5 3.5H11a3.5 3.5 0 0 1-3.5-3.5V8A4.5 4.5 0 0 1 12 3.5z"/><path d="M12 3.5h8a4.5 4.5 0 0 1 4.5 4.5v11.5a3.5 3.5 0 0 1-3.5 3.5H11a3.5 3.5 0 0 1-3.5-3.5V8A4.5 4.5 0 0 1 12 3.5zM11 8h10v5.5H11zM11 23l-3.5 5.5M21 23l3.5 5.5M9 26.2h14"/><circle class="s" cx="12" cy="18.3" r="1.5"/><circle class="s" cx="20" cy="18.3" r="1.5"/>',
   tank: '<path class="f" d="M6 19.5h20a3.6 3.6 0 0 1 0 7.2H6a3.6 3.6 0 0 1 0-7.2z"/><path d="M6 19.5h20a3.6 3.6 0 0 1 0 7.2H6a3.6 3.6 0 0 1 0-7.2zM9.5 19.5v-3.6c0-1.5 1.2-2.7 2.7-2.7h7c1.5 0 2.7 1.2 2.7 2.7v3.6M21.5 15.2h8M4.5 16.5h3"/><circle class="s" cx="7.6" cy="23.1" r="1.3"/><circle class="s" cx="12.5" cy="23.1" r="1.3"/><circle class="s" cx="17.5" cy="23.1" r="1.3"/><circle class="s" cx="22.4" cy="23.1" r="1.3"/>',
   satellite: '<rect class="f" x="12.5" y="12.5" width="7" height="7" rx="1.4" transform="rotate(45 16 16)"/><rect x="12.5" y="12.5" width="7" height="7" rx="1.4" transform="rotate(45 16 16)"/><path class="f" d="M3.5 10.5 8 6l5 5-4.5 4.5zM23.5 17l4.5 4.5-4.5 4.5-5-5z"/><path d="M3.5 10.5 8 6l5 5-4.5 4.5zM23.5 17l4.5 4.5-4.5 4.5-5-5zM5.8 8.3l4.9 4.9M21.3 19.4l4.9 4.9M19.5 9.5l3-3"/><circle class="s" cx="23.4" cy="5.6" r="1.6"/>',
+  // round 21: silhouettes for the most common kinds that shared one icon
+  fishboat: '<path class="f" d="M4 20h24l-4 6H8z"/><path d="M4 20h24l-4 6H8zM9 20v-5.5h6.5V20M19.5 20 26 6.5M26 6.5v10"/><path class="th" d="M24.5 18.5c1 0 1.5.6 1.5 1.5"/>',
+  galley: '<path class="f" d="M3 16.5h26l-3.5 5H6.5z"/><path d="M3 16.5h26l-3.5 5H6.5zM16 16.5V4.5M16 5.5l7 8h-7M8.5 21.5l-3 6M13 21.5l-1.5 6M19 21.5l1.5 6M23.5 21.5l3 6"/>',
+  trimaran: '<path class="f" d="M15.5 4v15H8.5zM12.5 22h7l-1 4h-5z"/><path d="M15.5 4v15H8.5zM17 6.5l6.5 12.5H17zM16 3v19M12.5 22h7l-1 4h-5zM3 23h7l-1 2.8H4zM22 23h7l-1 2.8h-5zM10 23.5h2.5M19.5 23.5H22"/>',
+  hovercraft: '<path class="f" d="M4 21.5c0-2.8 2.7-4.5 5.5-4.5h13c2.8 0 5.5 1.7 5.5 4.5v1.5H4z"/><path d="M4 21.5c0-2.8 2.7-4.5 5.5-4.5h13c2.8 0 5.5 1.7 5.5 4.5v1.5H4zM9 17v-4.5h9l3.5 4.5M23 15V8.5M20 8.5h6"/><path class="th" d="M3 26.5h26"/>',
+  truck: '<path class="f" d="M3 8.5h15V21H3zM18 12.5h6l4 4.5v4H18z"/><path d="M3 8.5h15V21H3zM18 12.5h6l4 4.5v4H18zM20.5 15h3"/><circle cx="8" cy="22.5" r="2.7"/><circle cx="23" cy="22.5" r="2.7"/>',
+  bus: '<rect class="f" x="3" y="7.5" width="26" height="14.5" rx="2.5"/><rect x="3" y="7.5" width="26" height="14.5" rx="2.5"/><path d="M6 10.5h5v4.5H6zM13.5 10.5h5v4.5h-5zM21 10.5h5v4.5h-5zM3 18.5h26"/><circle cx="9" cy="23" r="2.4"/><circle cx="23" cy="23" r="2.4"/>',
+  tractor: '<path class="f" d="M7 9.5h7.5l2 7.5H26v5H7z"/><path d="M7 9.5h7.5l2 7.5H26v5M8 9.5V17M22.5 17v-5"/><circle cx="10.5" cy="22" r="5.2"/><circle cx="24.5" cy="24" r="3"/><circle class="s" cx="10.5" cy="22" r="1.4"/>',
+  ambulance: '<path class="f" d="M3 9.5h16V22H3zM19 13h5l4 4.5V22h-9z"/><path d="M3 9.5h16V22H3zM19 13h5l4 4.5V22h-9zM11 12v7M7.5 15.5h7"/><circle cx="8" cy="23" r="2.5"/><circle cx="23" cy="23" r="2.5"/>',
+  fireengine: '<path class="f" d="M3 14h18v8H3zM21 14h4l3 4v4h-7z"/><path d="M3 14h18v8H3zM21 14h4l3 4v4h-7zM4.5 11 20 7M5.5 13.5 21 9.5M8.5 10.2l.6 2.3M12.5 9.2l.6 2.3M16.5 8.2l.6 2.3"/><circle cx="8" cy="23" r="2.5"/><circle cx="23" cy="23" r="2.5"/>',
 };
 // The icon (uiIcon name) for a vessel or vehicle kind, from its def.
 export function vehicleIconName(def) {
@@ -1066,6 +1079,10 @@ export function vehicleIconName(def) {
   const cls = def?.cls;
   if (cls === 'sea') {
     if (k === 'submarine') return 'submarine';
+    if (k === 'fishing') return 'fishboat';
+    if (k === 'galley') return 'galley';
+    if (k === 'trimaran') return 'trimaran';
+    if (k === 'hovercraft') return 'hovercraft';
     if (k === 'carrier') return 'carrier';
     if (k === 'liner') return 'liner';
     if (k === 'icebreaker') return 'icebreaker';
@@ -1086,6 +1103,7 @@ export function vehicleIconName(def) {
   if (k === 'tank' || k === 'artillery') return 'tank';
   if (def?.siege) return 'catapult';
   if (k === 'oxcart' || k === 'caravan') return 'cart';
+  if (k === 'truck' || k === 'bus' || k === 'tractor' || k === 'ambulance' || k === 'fireengine') return k;
   return 'car';
 }
 export function uiIcon(name, cls = '') {

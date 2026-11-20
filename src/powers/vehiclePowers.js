@@ -102,7 +102,9 @@ function render() {
     };
     return;
   }
-  // in era order (stable within an era), filled row by row
+  // in era order (stable within an era); on desktops the two-row strip fills
+  // column by column with a divider at each new era, so scrolling right always
+  // means later eras (phones in portrait list them down, under era headings)
   const list = GROUPS.find(([id]) => id === tab)[2]
     .map((k, i) => [k, i])
     .sort((a, b) => eraOfKind(a[0]) - eraOfKind(b[0]) || a[1] - b[1])
@@ -113,12 +115,13 @@ function render() {
       <span class="ws-vehpick__hint">${touch() ? 'Pick one, then tap the map.' : 'Pick one, then click the map.'} It joins the nearest realm.</span>
     </div>
     <div class="ws-vehpick__row" role="listbox" aria-label="Vehicle to spawn" aria-orientation="horizontal">${list
-      .map((k) => {
+      .map((k, i) => {
         const d = defOf(k);
         const era = eraOfKind(k);
         const on = k === chosen;
         const need = techById[d.tech]?.name;
-        return `<button class="ws-vehpick__opt${on ? ' is-on' : ''}" type="button" role="option" aria-selected="${on}" tabindex="${on || (!list.includes(chosen) && k === list[0]) ? 0 : -1}" data-kind="${k}" title="${d.name}: ${eras[era] || ''} era${need ? ' · realms build it once they know ' + need : ''}"><span class="ws-vehpick__ico">${uiIcon(vehicleIconName(d))}</span><span class="ws-vehpick__txt"><b>${d.name}</b><small>${eras[era] || ''}${need ? ' · ' + need : ''}</small></span></button>`;
+        const div = i === 0 || eraOfKind(list[i - 1]) !== era ? `<span class="ws-vehpick__era${i === 0 ? ' is-first' : ''}" aria-hidden="true"><i>${eras[era] || ''}</i></span>` : '';
+        return `${div}<button class="ws-vehpick__opt${on ? ' is-on' : ''}" type="button" role="option" aria-selected="${on}" tabindex="${on || (!list.includes(chosen) && k === list[0]) ? 0 : -1}" data-kind="${k}" title="${d.name}: ${eras[era] || ''} era${need ? ' · realms build it once they know ' + need : ''}"><span class="ws-vehpick__ico">${uiIcon(vehicleIconName(d))}</span><span class="ws-vehpick__txt"><b>${d.name}</b><small><span class="ws-vehpick__sera">${eras[era] || ''}${need ? ' · ' : ''}</span>${need || ''}</small></span></button>`;
       })
       .join('')}</div>`;
   for (const b of panel.querySelectorAll('.ws-vehpick__tab')) {
@@ -143,9 +146,29 @@ function render() {
   row.style.setProperty('--half', String(Math.ceil(list.length / 2)));
   // the mouse wheel scrolls the kinds sideways; the edge fades show there is more
   // (phones in portrait scroll a two-column list up and down instead)
+  // (phones in portrait: a pill says how many kinds lie above the list's top
+  // and scrolls back up to them)
+  const more = document.createElement('button');
+  more.type = 'button';
+  more.className = 'ws-vehpick__more';
+  more.hidden = true;
+  more.onclick = (e) => {
+    e.stopPropagation();
+    row.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+  row.before(more);
+  const opts = [...row.querySelectorAll('.ws-vehpick__opt')];
   const edges = () => {
     row.classList.toggle('at-start', row.scrollLeft <= 2 && row.scrollTop <= 2);
     row.classList.toggle('at-end', row.scrollLeft + row.clientWidth >= row.scrollWidth - 2 && row.scrollTop + row.clientHeight >= row.scrollHeight - 2);
+    const vertical = row.scrollHeight > row.clientHeight + 2 && row.scrollWidth <= row.clientWidth + 2;
+    let above = 0;
+    if (vertical && row.scrollTop > 2) {
+      const top = row.getBoundingClientRect().top + 8;
+      for (const o of opts) if (o.getBoundingClientRect().bottom <= top) above++;
+    }
+    more.hidden = !above;
+    if (above) more.innerHTML = `${uiIcon('chev-up')}<span>${above} more above</span>`;
   };
   row.addEventListener('scroll', edges, { passive: true });
   row.addEventListener(
@@ -186,7 +209,7 @@ function onKey(e) {
   const isTab = t.classList?.contains('ws-vehpick__tab');
   const isOpt = t.classList?.contains('ws-vehpick__opt');
   if (!isTab && !isOpt) return;
-  const sib = [...t.parentElement.children];
+  const sib = isOpt ? [...t.parentElement.querySelectorAll('.ws-vehpick__opt')] : [...t.parentElement.children];
   const i = sib.indexOf(t);
   let j = null;
   if (e.key === 'ArrowRight') j = Math.min(sib.length - 1, i + 1);
@@ -239,6 +262,8 @@ registerPower({
   brush: null,
   icon: icon('<path class="f" d="M4 21h24l-3 5H8z"/><path d="M4 21h24l-3 5H8zM9 21v-6h9l3 6M12 15v-4h4"/><path class="s" d="M22 8l3-3M24 11h4M20 6V2"/>'),
   label: () => `Spawn Vehicle: ${defOf(chosen)?.name || 'Vehicle'}`,
+  // phones: the handle names the vehicle first ("Steamship" over "Spawn Vehicle · Technology")
+  pick: () => defOf(chosen)?.name || null,
   onSelect: (g) => openChooser(g),
   onDeselect: () => closeChooser(),
   apply: (g, c) => {
@@ -256,7 +281,11 @@ registerPower({
     if (!v) return g.notify?.(cap(F.lastRefusal || 'it cannot go there') + '.', 'bad', { x: c.x, z: c.z });
     g.fx?.emit?.('spawn', { x: c.x, z: c.z }, { scale: 0.8 });
     g.audio?.play?.('spawn', { pos: { x: c.x, z: c.z }, volume: 0.5 });
-    g.notify?.(`${cap(withArticle(def.name.toLowerCase()))} joins ${theK(g.civ, k.id)}.`, 'good', { x: c.x, z: c.z });
+    const line = `${cap(withArticle(def.name.toLowerCase()))} joins ${theK(g.civ, k.id)}.`;
+    g.notify?.(line, 'good', { x: c.x, z: c.z });
+    // a short toast and a brief gold ring where it lands
+    g.ui?.toast?.(line.replace(/\.$/, ''), 2200);
+    g.fx?.shockwave?.(Number.isFinite(v.x) ? v.x : c.x, Number.isFinite(v.z) ? v.z : c.z, 3.2, { color: 0xf3d488, life: 1.1 });
   },
 });
 

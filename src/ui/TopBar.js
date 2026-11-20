@@ -335,15 +335,15 @@ export class TopBar {
         this._dayKey = key;
         const fixed = this.game.laws?.weatherSeasons === false;
         const epoch = !fixed && len >= 1.5;
-        // the longest wording that fits the bar: "Spring · 6 yrs to Summer",
-        // then "Spring · Summer in 6y", then the season's glyph (its name kept
-        // for screen readers) with "6 yrs to Summer"; the tip says it in full
+        // one phrasing at every width, "Spring · 6 yrs to Summer"; a narrow bar
+        // shortens only the unit ("6y to Summer"), then shows the season's glyph
+        // (its name kept for screen readers); the tip says it in full
         const paint = (txt, iconOnly, s = season) => {
           this.dayEl.innerHTML = `<i class="ws-season" style="--season:${SEASON_TINT[s]}">${uiIcon(SEASON_GLYPH[s] || 'sun')}</i><span class="ws-season__name${iconOnly ? ' ws-sr' : ''}">${s}</span><span class="ws-clock__sep"${iconOnly ? ' hidden' : ''}>·</span><span class="ws-clock__epoch">${txt}</span>`;
           const ep = this.dayEl.lastElementChild;
           return ep.scrollWidth <= ep.clientWidth + 1;
         };
-        const word = (tier, n, nx) => (tier % 2 === 0 ? (n === '1' ? `1 yr to ${nx}` : `${n} yrs to ${nx}`) : `${nx} in ${n}y`);
+        const word = (tier, n, nx) => (tier % 2 === 0 ? (n === '1' ? `1 yr to ${nx}` : `${n} yrs to ${nx}`) : `${n}y to ${nx}`);
         if (!epoch) paint(time, false);
         else {
           // one wording per window width: the tier is chosen once, against the
@@ -388,7 +388,11 @@ export class TopBar {
       if (slow) {
         const v = E.ema < 0.1 ? null : E.ema < 9.95 ? E.ema.toFixed(1).replace(/\.0$/, '') : Math.round(E.ema);
         this.effEl.textContent = v == null ? 'Actual speed under 0.1×' : `Actual speed ${v}×`;
-        this.effEl.dataset.tip = `Running at about ${v ?? 'under 0.1'}× — the machine can't keep up with ${g.speed}×`;
+        const lower = SPEEDS.filter((x) => x < g.speed && x <= Math.max(1, E.ema * 1.2)).pop() || SPEEDS[0];
+        this.effEl.dataset.tip = `Your device can't keep up with ${g.speed}×, so the world runs at about ${v ?? 'under 0.1'}×. Try ${lower}×, or Power saver in Settings.`;
+        this.cycleBtn.dataset.tip = `Running slower than chosen · try ${lower}×`;
+      } else if (this.cycleBtn.dataset.tip !== 'Change speed · 1–5') {
+        this.cycleBtn.dataset.tip = 'Change speed · 1–5';
       }
     }
     this._statT -= dt;
