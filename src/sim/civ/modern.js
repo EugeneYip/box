@@ -1126,12 +1126,15 @@ export const modern = {
       if (!b.alive) continue;
       const air = b.type === 'airport' || b.type === 'airfield';
       if (!air && b.type !== 'plaza' && b.type !== 'park' && b.type !== 'forum') continue;
-      const m = b.type === 'airport' ? AIR_CLEAR : air ? 2 : 1;
+      // (an airport's zone a tile wider for the track: its highway runs
+      // beside it, and keeps the clear zone too)
+      const m = b.type === 'airport' ? AIR_CLEAR + 1 : air ? 2 : 1;
       for (let y = b.ty - m; y < b.ty + b.h + m; y++)
         for (let x = b.tx - m; x < b.tx + b.w + m; x++) {
           if (!w.inBounds(x, y)) continue;
           const i = y * W + x;
-          if (air) B[i] = Math.max(B[i], 254);
+          const inside = x >= b.tx && x < b.tx + b.w && y >= b.ty && y < b.ty + b.h;
+          if (air && !inside) B[i] = Math.max(B[i], 254);
           else B[i] = 255;
         }
     }
@@ -1147,8 +1150,26 @@ export const modern = {
     if (!this._railCor || this._railCor.length !== N) this._railCor = new Uint8Array(N);
     const C = this._railCor;
     C.fill(0);
+    // (only near this realm's towns: a World Map holds many networks)
+    let x0 = Infinity,
+      x1 = -Infinity,
+      z0 = Infinity,
+      z1 = -Infinity;
+    for (const vid of k.villages) {
+      const v = this.villages[vid];
+      if (!v?.alive) continue;
+      x0 = Math.min(x0, v.cx);
+      x1 = Math.max(x1, v.cx);
+      z0 = Math.min(z0, v.cz);
+      z1 = Math.max(z1, v.cz);
+    }
+    x0 -= 40;
+    x1 += 40;
+    z0 -= 40;
+    z1 += 40;
     let last = -1;
     const mark = (x, z) => {
+      if (x < x0 || x > x1 || z < z0 || z > z1) return;
       const tx = Math.floor(x),
         tz = Math.floor(z);
       const t0 = tz * W + tx;
