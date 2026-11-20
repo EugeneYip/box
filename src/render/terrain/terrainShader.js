@@ -1261,8 +1261,9 @@ void terrainSurface() {
       // than any ground around it (the warm patch vanished on dry land):
       // soft tonal variation, no street grid (graph paper at far zoom)
       float rv = s.macro.g * 0.6 + s.meso.r * 0.4;
-      vec3 urb = mix(vec3(0.55, 0.53, 0.50), vec3(0.58, 0.54, 0.49), smoothstep(0.35, 0.7, rv));
-      urb = mix(urb, vec3(0.62, 0.61, 0.58), core * 0.6);
+      // (a touch warm: a neutral grey took the blue sky fill as lilac)
+      vec3 urb = mix(vec3(0.57, 0.53, 0.47), vec3(0.60, 0.54, 0.46), smoothstep(0.35, 0.7, rv));
+      urb = mix(urb, vec3(0.64, 0.60, 0.54), core * 0.6);
       urb *= 0.95 + 0.07 * s.det.r;
       float uk = (ring * 0.45 + core * 0.55) * urbK;
       albedo = mix(albedo, urb, uk * 0.75);
