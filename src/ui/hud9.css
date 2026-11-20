@@ -1172,3 +1172,137 @@
 .ws-nw__below .ico {
   font-size: 15px;
 }
+
+/* ---- round 21: "Age of Dawn" in one sentence-case style, like the speed pill beside it */
+.ws-agechip__txt small {
+  letter-spacing: 0.01em;
+}
+.ws-agechip__txt b {
+  font: 700 12px var(--ws-font);
+  letter-spacing: 0.01em;
+}
+
+/* ---- round 21, Spawn Vehicle: the two-row strip fills column by column in
+   era order, with a divider naming each new era, so scrolling right always
+   means later eras; the era shows on the divider, not on every card */
+.ws-vehpick__row,
+.ws-vehpick__row.is-short {
+  grid-auto-flow: column;
+  grid-template-columns: none;
+  grid-template-rows: repeat(2, 44px);
+  grid-auto-rows: 44px;
+  grid-auto-columns: max-content;
+}
+.ws-vehpick__row.is-short {
+  grid-template-rows: 44px;
+}
+.ws-vehpick__era {
+  grid-row: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  margin: 0 -1px 0 3px;
+  border-left: 1px solid rgba(235, 201, 119, 0.28);
+}
+.ws-vehpick__era.is-first {
+  margin-left: 0;
+  border-left: 0;
+}
+.ws-vehpick__era i {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  color: var(--ws-gold);
+  font: 700 9.5px/1 var(--ws-font);
+  font-style: normal;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.ws-vehpick__sera {
+  display: none;
+}
+@media (max-height: 500px) {
+  .ws-vehpick__row,
+  .ws-vehpick__row.is-short {
+    grid-auto-flow: column;
+    grid-template-columns: none;
+    grid-template-rows: 44px;
+  }
+  .ws-vehpick__era i {
+    font-size: 8.5px;
+  }
+}
+.ws-vehpick__more {
+  display: none;
+}
+/* phones in portrait: a list in two columns under a heading per era; the
+   subtitle (the knowledge that unlocks it) keeps two lines; a pill says how
+   many kinds lie above; the Favorites star does not show through the chooser */
+@media (max-width: 720px) and (min-height: 501px) {
+  .ws-vehpick__row,
+  .ws-vehpick__row.is-short {
+    grid-auto-flow: row;
+    grid-template-rows: none;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-auto-rows: auto;
+    max-height: calc(52px * 3 + 6px * 2 + 26px);
+  }
+  .ws-vehpick__era {
+    grid-row: auto;
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+    width: auto;
+    height: 18px;
+    margin: 2px 0 -2px 2px;
+    border-left: 0;
+  }
+  .ws-vehpick__era i {
+    writing-mode: horizontal-tb;
+    transform: none;
+    font-size: 10px;
+  }
+  .ws-vehpick__opt {
+    height: auto;
+    min-height: 52px;
+    padding-top: 5px;
+    padding-bottom: 5px;
+  }
+  .ws-vehpick__txt small {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    white-space: normal;
+    line-height: 1.25;
+  }
+  .ws-vehpick {
+    position: absolute;
+  }
+  .ws-vehpick__more {
+    position: absolute;
+    left: 50%;
+    top: 52px;
+    z-index: 2;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 24px;
+    padding: 0 10px 0 6px;
+    border-radius: 12px;
+    transform: translateX(-50%);
+    color: var(--ws-gold-hi);
+    font: 600 11px var(--ws-font);
+    background: rgb(24, 27, 39);
+    box-shadow:
+      inset 0 0 0 1px rgba(235, 201, 119, 0.5),
+      0 4px 12px rgba(0, 0, 0, 0.5);
+    cursor: pointer;
+  }
+  .ws-vehpick__more[hidden] {
+    display: none;
+  }
+  .ws-root:has(.ws-vehpick:not(.is-folded)) .ws-favbtn {
+    visibility: hidden;
+  }
+}

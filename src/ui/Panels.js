@@ -723,17 +723,54 @@ export class Modals {
     // edge says so and scrolls to them
     const below = el('button', { class: 'ws-nw__below', type: 'button', hidden: true, html: `<span>Regional maps below</span>${uiIcon('chev-down')}`, onclick: () => regionLabel.scrollIntoView({ block: 'start', behavior: 'smooth' }) });
     body.append(below);
-    setTimeout(() => {
+    // shown while the first row of regional maps is not in view. Watched, not
+    // checked once: an IntersectionObserver on the label and the first row, and
+    // a re-check after the dialog's open animation, on scroll and on resize
+    // (a single check during the animation measured a scaled, moving card)
+    let tries = 0;
+    const watchBelow = () => {
       const sc = body.closest('.ws-modal__body');
-      if (!sc) return;
+      if (!sc) return void (tries++ < 30 && requestAnimationFrame(watchBelow));
+      const card = sc.closest('.ws-modal');
       const sync = () => {
-        if (!body.isConnected) return sc.removeEventListener('scroll', sync);
-        below.hidden = regionLabel.hidden || regionLabel.getBoundingClientRect().top < sc.getBoundingClientRect().bottom - 24;
+        if (!body.isConnected) return stop();
+        const first = regionCards.firstElementChild;
+        if (regionLabel.hidden || regionCards.hidden || !first) return (below.hidden = true);
+        const bottom = sc.getBoundingClientRect().bottom;
+        // the label and the first row of maps clear of the pill's strip
+        below.hidden = first.getBoundingClientRect().bottom <= bottom - 6;
       };
+      const io = typeof IntersectionObserver === 'function' ? new IntersectionObserver(sync, { root: sc, threshold: [0, 0.5, 1] }) : null;
+      const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(sync) : null;
+      const observe = () => {
+        if (!io) return;
+        io.disconnect();
+        io.observe(regionLabel);
+        if (regionCards.firstElementChild) io.observe(regionCards.firstElementChild);
+      };
+      const mo = new MutationObserver(() => {
+        observe();
+        sync();
+      });
+      mo.observe(regionCards, { childList: true, attributes: true, attributeFilter: ['hidden'] });
+      observe();
+      ro?.observe(sc);
+      ro?.observe(body);
       sc.addEventListener('scroll', sync, { passive: true });
+      addEventListener('resize', sync);
+      card?.addEventListener('transitionend', sync);
       body.addEventListener('click', () => setTimeout(sync, 60));
+      function stop() {
+        io?.disconnect();
+        ro?.disconnect();
+        mo.disconnect();
+        removeEventListener('resize', sync);
+      }
       sync();
-    }, 120);
+      // after the open animation (0.32 s) has settled
+      setTimeout(sync, 420);
+    };
+    requestAnimationFrame(watchBelow);
     const foot = [
       el('button', { class: 'ws-btn ws-btn--ghost', type: 'button', text: 'Cancel', onclick: () => this.close() }),
       el('button', { class: 'ws-btn ws-btn--gold', type: 'button', onclick: create }, el('span', { html: uiIcon('new-world') }), el('span', { text: 'Seed this world' })),
