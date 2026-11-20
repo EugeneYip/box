@@ -823,6 +823,10 @@ export class Units {
     if (w.height[i] < SEA_LEVEL) c += 3;
     if (w.fire[i] > 0) c += 6;
     if (w.type[i] === TILE.ROAD) c -= 0.25;
+    // (round 19) people cross a railway or a highway strip but do not walk
+    // along it (civ/modern.js railMask: 1 rail, 2 guideway, 4 highway)
+    const rm = this.game.civ?.railMask;
+    if (rm && rm.length === w.size && rm[i] & 5) c += 2.5;
     return c;
   }
   _groundY(u) {
