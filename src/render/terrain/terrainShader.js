@@ -65,6 +65,7 @@ float tSpecK;
 float tCold;
 float tRivBed;
 float tUrb; // far-zoom urban patch weight (the realm tint stays light over towns)
+vec3 tUrbCol; // far-zoom urban patch colour (laid again over the realm tint)
 float tRivBank; // map zoom: land beside a river channel (no crease shading there)
 
 const mat2 ROT1 = mat2(0.80, -0.60, 0.60, 0.80);
@@ -865,6 +866,14 @@ void applyOverlay(vec2 p, inout vec3 albedo, inout vec3 emissive, float snowK) {
   float onSnow = 1.0 - 0.85 * snowK;
   // (a town's grey patch keeps most of its grey under the realm's tint)
   albedo = mix(albedo, tintC, min(1.0, aFill * fillAmt * 1.3) * onSnow * (1.0 - 0.7 * tUrb));
+  // far zoom: a town's grey patch is laid again over the realm's tint, with
+  // at most a tenth of the realm's colour left in it, so the town reads as a
+  // grey urban patch against the tinted countryside (round 22: the patch
+  // took the realm's orange and its edge vanished into the fields)
+  if (tUrb > 0.001) {
+    vec3 urbTint = min(col * (lum(tUrbCol) / max(lum(col), 0.03)), vec3(1.0));
+    albedo = mix(albedo, mix(tUrbCol, urbTint, 0.10 * aFill * onSnow), tUrb * 0.95);
+  }
   vec3 lineCol = col * 1.05 + 0.015;
   albedo = mix(albedo, albedo * (1.0 - 0.35 * a) + col * 0.35 * a, glow * mix(0.3, 0.6, fillK) * onSnow);
   // far zoom (past ~90): the border softens - a fainter coloured band and
@@ -880,6 +889,7 @@ void applyOverlay(vec2 p, inout vec3 albedo, inout vec3 emissive, float snowK) {
 
 void terrainSurface() {
   tUrb = 0.0;
+  tUrbCol = vec3(0.34, 0.33, 0.31);
   NS s;
   s.p = vWPos;
   s.n = normalize(vWNormal);
@@ -1314,12 +1324,12 @@ void terrainSurface() {
     // towns at far zoom (past ~80 units): the build area is a pale urban
     // patch of roofs and streets, so a town reads as a town once its houses
     // are a pixel or two (trees inside it are hidden there too)
-    float urbK = smoothstep(68.0, 92.0, uCamDist) * (1.0 - snowB * 0.5);
+    float urbK = smoothstep(68.0, 92.0, uCamDist) * (1.0 - snowB * 0.2);
     if (st.r > 0.01 && urbK > 0.0) {
       // (a noise-broken soft edge: the patch fades out over the outer ring)
       float sr = st.r + (s.meso.b - 0.5) * 0.16 + (s.det.g - 0.5) * 0.06;
       float core = smoothstep(0.30, 0.85, sr);
-      float ring = smoothstep(0.08, 0.45, sr);
+      float ring = smoothstep(0.10, 0.36, sr);
       // a mid grey patch of roofs and pavement (about #b5b0a8 on screen),
       // darker and far less saturated than beach sand or dry ground, so a
       // town no longer reads as a sand flat (round 21: the pale warm beige
@@ -1331,16 +1341,24 @@ void terrainSurface() {
       vec3 urb = mix(vec3(0.335, 0.322, 0.300), vec3(0.355, 0.338, 0.312), smoothstep(0.35, 0.7, rv));
       urb = mix(urb, vec3(0.375, 0.362, 0.340), core * 0.5);
       urb *= 0.95 + 0.07 * s.det.r;
+      // snow-covered towns: a paler grey (roofs and yards under snow), still
+      // a patch apart from the white fields round it
+      urb = mix(urb, vec3(0.50, 0.505, 0.51), clamp(snowB, 0.0, 1.0) * 0.6);
+      // streets: soft LIGHT lines along the town's road tiles (concrete and
+      // asphalt seen from afar), and a faint light block grid in the core
       float rdU = dot(vec4(equal(vec4(t0, t1, t2, t3), vec4(13.0))) * live, b);
-      urb *= 1.0 - 0.22 * rdU;
+      urb = mix(urb, urb * 1.22 + 0.025, rdU * 0.7);
       vec2 bq = (0.5 - abs(fract(p / 2.5 + vec2(hash12(floor(p / 40.0)) * 0.5)) - 0.5)) * 2.5; // (units to the block's edge)
       float bw = max(s.fw, 0.05);
       float grid = (1.0 - smoothstep(0.16, 0.16 + bw * 1.5, min(bq.x, bq.y))) * (1.0 - smoothstep(0.35, 0.8, bw));
-      urb *= 1.0 - 0.10 * grid * core;
-      float uk = (ring * 0.45 + core * 0.55) * urbK;
-      albedo = mix(albedo, urb, uk * 0.85);
+      urb *= 1.0 + 0.08 * grid * core;
+      // (a firm, noise-broken edge: the ring of the build area is as grey as
+      // the core, so the patch has an edge instead of fading into the fields)
+      float uk = (ring * 0.85 + core * 0.15) * urbK;
+      albedo = mix(albedo, urb, uk * 0.95);
       rough = mix(rough, 0.82, uk);
       tUrb = uk;
+      tUrbCol = urb;
     }
   }
 

@@ -754,12 +754,16 @@ export class BuildingRenderer {
       let L = proxies.get(key);
       if (!L) proxies.set(key, (L = { m: [], col: [], bs: [] }));
       const a = this._arch(def.wall ? `wpost|${b.style}` : archKey(b, def, Math.min(b.level || 1, def.levels), civ.kingdoms[b.kingdom]?.era ?? 0));
-      const hgt = (def.wall ? 1.1 : Math.max(0.5, Math.min(def.monument ? 12 : b.type === 'arcology' ? 19 : def.modern ? 7.5 : 3, a.maxY)) * (b.constructing ? Math.max(0.2, b.progress) : 1)) * BS;
+      // (towers stand in as stockier light glass blocks: a tall thin shaft
+      // cast a long shadow and read as a bollard from the whole map)
+      const tower = key === 'proxy|tower';
+      const hgt = (def.wall ? 1.1 : Math.max(0.5, Math.min(def.monument ? 12 : b.type === 'arcology' ? 14 : def.modern ? (tower ? 5.2 : 7.5) : 3, a.maxY)) * (b.constructing ? Math.max(0.2, b.progress) : 1)) * BS;
       const pw = def.wall || b.type === 'bridge' ? def.w : (def.dw ?? def.w) * BS,
         ph = def.wall || b.type === 'bridge' ? def.h : (def.dh ?? def.h) * BS;
-      const pm = this._m2.makeRotationY(b.rotation || 0).setPosition(b.x, b.y, b.z).multiply(this._m3.makeScale(pw * 0.82, hgt, ph * 0.82));
+      const fs = tower ? 0.95 : 0.82;
+      const pm = this._m2.makeRotationY(b.rotation || 0).setPosition(b.x, b.y, b.z).multiply(this._m3.makeScale(pw * fs, hgt, ph * fs));
       for (let i = 0; i < 16; i++) L.m.push(pm.elements[i]);
-      col.setHex(civ.kingdomColor(b.kingdom));
+      col.setHex(tower ? 0x9fb2c2 : civ.kingdomColor(b.kingdom));
       L.col.push(col.r, col.g, col.b);
       L.bs.push(b);
     }
@@ -1173,7 +1177,9 @@ export class BuildingRenderer {
       this._lampsOn = null;
     }
     for (const b of (this.proxyBatches || new Map()).values()) if (b.mesh) b.mesh.visible = far && b.mesh.count > 0;
-    if (this.footing) this.footing.visible = !far;
+    // (footings go with the small buildings: past ~90 tiles they were a
+    // field of brown and orange squares on the town's grey patch)
+    if (this.footing) this.footing.visible = !far && !mid;
     if (this._lampsOn !== props) {
       this._lampsOn = props;
       this.dSmall.showKey('lamppost', props);
@@ -1231,6 +1237,7 @@ export class BuildingRenderer {
     const fx = g.fx;
     let budget = 10;
     const close = rig.cur.dist < 140;
+    const camD = rig.cur.dist;
     if (close) {
       // the stacks of factories, foundries and power stations: a thick,
       // steady plume (they had the same wisp as a cottage, lost in the
@@ -1250,8 +1257,12 @@ export class BuildingRenderer {
         if (real) fx.emit?.('smoke', { x: c.x, y: c.y, z: c.z }, { scale: 1.05 * BS });
         else this.puffs.emit(c.x, c.y, c.z, 'smoke', 1.3 * BS);
       }
+      // home and forge chimneys: only while the houses themselves are drawn
+      // (past ~90 tiles their brown wisps were left lying over the town and
+      // its ridges as smudges, with no house under them)
+      const homes = rig.cur.dist < this.minorDist;
       for (const c of this.chimneys) {
-        if (c.stack) continue;
+        if (c.stack || !homes) continue;
         c.t -= dt;
         if (c.t > 0) continue;
         c.t = ((c.forge ? 0.55 : 2.4 + Math.random() * 2.6) / (c.rate || 1)) * (g.settings?.powerSaver ? 2 : 1);
@@ -1278,11 +1289,15 @@ export class BuildingRenderer {
         if ((b.x - cx) ** 2 + (b.z - cz) ** 2 > R2) continue;
         if (n++ > 18) break;
         if (!(b.burning > 0.05)) {
-          // battered but not burning: a steady plume of smoke from the wreckage
-          if (Math.random() < 0.35) {
+          // battered but not burning: a thin wisp of pale smoke from the
+          // wreckage, only up close and only from a badly damaged building
+          // (round 22: a steady dark plume from every battered wall tower
+          // drifted along the slopes as black soot on cliffs and brown
+          // bruises on ridges at far zoom)
+          if (camD < 70 && b.hp < b.maxHp * 0.45 && Math.random() < 0.2) {
             const sx = b.x + (Math.random() - 0.5) * b.w * 0.5,
               sz = b.z + (Math.random() - 0.5) * b.h * 0.5;
-            if (real) fx.emit?.('smoke', { x: sx, y: b.y + 0.8 * BS, z: sz }, { scale: (0.5 + (1 - b.hp / b.maxHp)) * BS });
+            if (real) fx.emit?.('smoke', { x: sx, y: b.y + 1.6 * BS, z: sz }, { scale: (0.4 + 0.6 * (1 - b.hp / b.maxHp)) * BS, dark: false, count: 2 });
             else this.puffs.emit(sx, b.y + 0.8 * BS, sz, 'soot', 0.7 * BS);
           }
           continue;
@@ -1387,8 +1402,11 @@ export class BuildingRenderer {
     this.glow.uniforms.uTime.value = this.t;
     this.glow.update(this.uniforms.uNight.value, !this._far);
     // (null over water: no haze puffs over the sea, lakes or rivers)
-    this.plumes.update(this.t, env.wind, day, !this._far && (g.cameraRig?.cur?.dist ?? 60) < 175);
+    this.plumes.update(this.t, env.wind, day, !this._far && (g.cameraRig?.cur?.dist ?? 60) < 175, g.cameraRig?.cur?.dist ?? 60);
     this.haze.update(dt, civ.haze?.(), (x, z) => (g.world.isWater(Math.floor(x), Math.floor(z)) ? null : Math.max(g.world.heightAt(x, z), SEA_LEVEL)), day, this.t);
+    // (the low factory haze is a mid-zoom touch: seen from far above its
+    // soft discs lay on the slopes as brown bruises)
+    if ((g.cameraRig?.cur?.dist ?? 60) > 85) this.haze.mesh.visible = false;
     this._updateBanners();
     this._updateBoatsAndBlades(dt);
     this._smoke(dt);
