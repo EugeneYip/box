@@ -151,6 +151,8 @@ export const traffic = {
     const ew = r(1, 0) && r(-1, 0),
       ns = r(0, 1) && r(0, -1);
     if (ew === ns) return false;
+    // never on a town's square or a barracks' parade pad
+    if (this._onSquare(x + 0.5, z + 0.5)) return false;
     // heading along the street (the way the car is going, else east / south)
     const along = ew ? Math.abs(Math.cos(c.h)) > 0.7 : Math.abs(Math.sin(c.h)) > 0.7;
     if (!along) return false;

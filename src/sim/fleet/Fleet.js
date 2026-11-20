@@ -644,6 +644,8 @@ export class Fleet {
         nav.unwrap(path);
       }
     }
+    // (a road vehicle stops short of a town's square or parade pad)
+    if (path && v.cls === 'land' && this._trimSquare) path = this._trimSquare(v, path);
     v.path = path;
     v.pi = path ? Math.min(2, path.length - 2) : 0;
     v.stuck = 0;

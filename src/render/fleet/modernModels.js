@@ -781,7 +781,7 @@ function tractor(lo) {
     for (const s of [-1, 1]) wheelR(g, 0.22, 0.08, s * 0.12, -1, 0.08);
     g.setAnim(0);
     g.box(-0.45, 0.04, 0, 0.18, 0.06, 0.42, 0x6a6a64); // the harrow behind
-    figure(g, -0.12, 0.16, 0, 5, 0.7); // (the driver at a person's size: the tractor is drawn at VEHICLE.road)
+    figure(g, -0.12, 0.16, 0, 5, 0.95); // (the driver at a person's size: the tractor is drawn at VEHICLE.road)
   }
   return done(g, 0.7, [], [{ x: 0.2, y: 0.42, z: 0 }]);
 }

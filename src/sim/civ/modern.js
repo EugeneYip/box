@@ -1030,7 +1030,14 @@ export const modern = {
     }
   },
   _railSig(k) {
+    // (and the size of the realm's towns: a town that grows out over a
+    // line has it re-routed round its new edge)
     let s = '';
+    for (const vid of k.villages) {
+      const v = this.villages[vid];
+      if (v?.alive) s += Math.round(Math.max(v.radius || 6, (v.buildRadius || 0) + 1) / 2) + '.';
+    }
+    s += '|';
     for (const l of this.rails) {
       if (l.kingdom !== k.id) continue;
       s += l.id + l.kind[0] + (l.highway ? 'h' : '');
@@ -1139,6 +1146,20 @@ export const modern = {
         const far = l.b === root ? l.a : l.b;
         if (l.highway && at.has(far)) for (let si = at.get(far); si >= 0; si = tree[si].parent) tree[si].hwOn = true;
       }
+      // a second line out of the root's station runs on through its
+      // platform past the first line's end: no buffer stop across the rails
+      const roots = tree.filter((s) => s.parent < 0 && s.start);
+      if (roots.length > 1)
+        for (const s of roots)
+          for (const o of roots) {
+            if (o === s) continue;
+            const P = o.pts;
+            for (let i = 0; i + 1 < Math.min(P.length, 60); i += 2)
+              if (Math.hypot(P[i] - s.start.x, P[i + 1] - s.start.z) < 0.4) {
+                s.start.through = true;
+                break;
+              }
+          }
       for (const s of tree) {
         s.up = s.parent >= 0 ? tree[s.parent] : null;
         if (kind === 'rail') s.core = this._railCoreRuns(s);
@@ -1346,23 +1367,48 @@ export const modern = {
       parent = -1,
       at = 0,
       lead;
-    if (!tree.length) {
-      const o = this._railOrient(this._railTerm(kind, root), T.x, T.z, C.lead);
+    // The nearest point of the network where a branch may leave it: out in
+    // the country (never inside a town, where a second track would braid
+    // through its blocks) and with the town ahead, so the branch runs on
+    // away from the root instead of doubling back in a hairpin beside the
+    // trunk (round 22). A town with no such point is reached by a line of
+    // its own out of the root's station (the far end of its platform when
+    // the town lies the other way: a through station).
+    let bs = -1,
+      bj = 0,
+      bd = Infinity;
+    const Bk = this._railBlk;
+    for (let si = 0; si < tree.length; si++) {
+      const p = tree[si].pts;
+      const n = p.length / 2;
+      for (let j = tree[si].lock0; j <= tree[si].lock1; j++) {
+        const tx = Math.floor(p[j * 2]),
+          tz = Math.floor(p[j * 2 + 1]);
+        if (Bk && w.inBounds(tx, tz)) {
+          const b = Bk[tz * W + tx];
+          if (b === 1 || b === 2 || b >= 254) continue;
+        }
+        const a = Math.max(0, j - 2),
+          c = Math.min(n - 1, j + 2);
+        const ux = p[c * 2] - p[a * 2],
+          uz = p[c * 2 + 1] - p[a * 2 + 1];
+        const vx = T.x - p[j * 2],
+          vz = T.z - p[j * 2 + 1];
+        const L = Math.hypot(vx, vz) || 1;
+        if ((ux * vx + uz * vz) / ((Math.hypot(ux, uz) || 1) * L) < 0.15) continue;
+        const d = vx * vx + vz * vz;
+        if (d < bd) (bd = d), (bs = si), (bj = j);
+      }
+    }
+    // (a line of its own from the root when that is much the shorter way)
+    const RT = this._railTerm(kind, root);
+    const dRoot = Math.hypot(RT.x - T.x, RT.z - T.z);
+    if (bs >= 0 && Math.sqrt(bd) > dRoot * 0.8 + 6) bs = -1;
+    if (bs < 0) {
+      const o = this._railOrient(RT, T.x, T.z, C.lead);
       head = o.pts;
       lead = o.lead;
     } else {
-      // the nearest point of the network
-      let bs = -1,
-        bj = 0,
-        bd = Infinity;
-      for (let si = 0; si < tree.length; si++) {
-        const p = tree[si].pts;
-        for (let j = tree[si].lock0; j <= tree[si].lock1; j++) {
-          const d = (p[j * 2] - T.x) ** 2 + (p[j * 2 + 1] - T.z) ** 2;
-          if (d < bd) (bd = d), (bs = si), (bj = j);
-        }
-      }
-      if (bs < 0) return null;
       const s = tree[bs],
         p = s.pts;
       const n = p.length / 2;
@@ -1397,8 +1443,12 @@ export const modern = {
     if (sx !== gx || sy !== gy) {
       const near = (q) => q?.length && Math.hypot((q[q.length - 1] % W) - gx, ((q[q.length - 1] / W) | 0) - gy) <= 2;
       const mc = kind === 'rail' ? 0.75 : 0.8;
-      let cost = this._railCost(kind, mask, false);
+      // (strict first: no track over a town's blocks at all, only along
+      // its streets or round its edge; then the old dear-but-open price)
+      const ends = [sx, sy, gx, gy];
+      let cost = this._railCost(kind, mask, false, ends);
       let q = civPath(w, sx, sy, gx, gy, cost, 14000, mc);
+      if (!near(q)) q = civPath(w, sx, sy, gx, gy, (cost = this._railCost(kind, mask, false)), 14000, mc);
       if (!near(q)) q = civPath(w, sx, sy, gx, gy, (cost = this._railCost(kind, mask, true)), 16000, mc);
       if (!near(q)) return null;
       mid = this._railPull(q, cost)
@@ -1521,10 +1571,21 @@ export const modern = {
     }
     return true;
   },
-  _railCost(kind, mask, relaxed) {
+  _railCost(kind, mask, relaxed, ends = null) {
     const w = this.world;
+    const W = w.w;
     const use = this.use;
     const B = this._railBlk;
+    // strict (ends given): inside a town a line runs only along a street or
+    // within a few tiles of its own terminus (round 22: tracks braided and
+    // looped through a Modern town's blocks and a trestle crossed an
+    // Industrial centre); the ring round the edge is the way past it
+    const nearEnd = (i) => {
+      if (!ends) return true;
+      const x = i % W,
+        y = (i / W) | 0;
+      return (Math.abs(x - ends[0]) <= 3 && Math.abs(y - ends[1]) <= 3) || (Math.abs(x - ends[2]) <= 3 && Math.abs(y - ends[3]) <= 3);
+    };
     const Cr = this._railCor;
     const Nr = kind === 'rail' ? this._railNear : null;
     // a town, an airport's clear zone and the other lines nearby (see
@@ -1536,7 +1597,10 @@ export const modern = {
       // (inside a town a line keeps out of the blocks: crossing a street
       // costs a little less than a lawn, and the ring round its edge is
       // the cheap way past it)
-      if (b === 2) c += kind === 'rail' ? 16 : 6;
+      if ((b === 1 || b === 2) && ends && !nearEnd(i)) {
+        if (b === 2 || use[i] !== USE.ROAD) return Infinity;
+        c += 4;
+      } else if (b === 2) c += kind === 'rail' ? 16 : 6;
       else if (b === 1) c += kind === 'rail' ? (use[i] === USE.ROAD ? 5 : 7) : 2.5;
       else if (b === 3) c *= 0.9;
       // another line: right beside it (one shared corridor) is cheap, two or

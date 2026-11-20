@@ -38,10 +38,12 @@ export const VEHICLE = {
   land: S,
   // road vehicles (cars, vans, trucks, buses, trams, ambulances, fire
   // engines, tractors): their designs were drawn small beside a person (a car
-  // about as long as a person is tall), so they take 1.6x the land factor and
-  // a car is about two and a half people long. Trains (a house per car),
-  // carts and engines of war keep `land`.
-  road: S * 1.6,
+  // about as long as a person is tall), so they take a larger factor than
+  // `land`: 1.15x, a car a little over two people long and about two thirds
+  // of a cottage's width (round 22: at 1.6x a car read 1.6 times too big
+  // beside the people and an Industrial sedan was nearly as long as a
+  // cottage). Trains (a house per car), carts and engines of war keep `land`.
+  road: S * 1.15,
   air: S,
   of(cls, road = false) {
     return cls === 'land' ? (road ? this.road : this.land) : cls === 'air' ? this.air : this.sea;

@@ -404,11 +404,9 @@ export const modern = {
     const use = civ?.use;
     if (!use || !civ.villageAt) return null;
     const t = civ.villageAt(x, z, 16);
-    const h = t?.hall;
-    if (!h || h.alive === false || h.doorX == null) return null;
-    const hx = Math.floor(h.doorX),
-      hz = Math.floor(h.doorZ);
-    const sq = (tx, tz) => Math.max(Math.abs(tx - hx), Math.abs(tz - hz)) <= 2;
+    if (!t) return null;
+    const sq = this._squareTest(t);
+    if (!sq) return null;
     const x0 = Math.floor(x),
       z0 = Math.floor(z);
     if (!sq(x0, z0)) return null;
@@ -429,6 +427,48 @@ export const modern = {
         }
       }
     return best;
+  },
+  // The paved ground of a town where no vehicle stops or parks (round 22: a
+  // taxi parked on the parade pad, box trucks and a car on main squares):
+  // the square before the hall (two tiles round its door) and the parade
+  // pad before the barracks. Returns a test (tx, tz) -> bool, or null when
+  // the town has neither.
+  _squareTest(t) {
+    const h = t?.hall;
+    const hall = h && h.alive !== false && h.doorX != null ? [Math.floor(h.doorX), Math.floor(h.doorZ)] : null;
+    const pd = t?._parade?.ok ? t._parade : null;
+    if (!hall && !pd) return null;
+    return (tx, tz) => {
+      if (hall && Math.max(Math.abs(tx - hall[0]), Math.abs(tz - hall[1])) <= 2) return true;
+      if (pd) {
+        const dx = tx + 0.5 - pd.x,
+          dz = tz + 0.5 - pd.z;
+        // across the pad (its width) and out from the door (its depth)
+        if (Math.abs(-pd.az * dx + pd.ax * dz) <= pd.W / 2 + 0.7 && Math.abs(pd.ax * dx + pd.az * dz) <= pd.D / 2 + 0.7) return true;
+      }
+      return false;
+    };
+  },
+  // (x, z) on a town's square or parade pad
+  _onSquare(x, z) {
+    const civ = this.game.civ;
+    const t = civ?.villageAt?.(x, z, 16);
+    const sq = t && this._squareTest(t);
+    return !!sq && sq(Math.floor(x), Math.floor(z));
+  },
+  // A road vehicle's way that ends on a square stops at its edge instead
+  // (a truck at the end of its run, a bus at its stop, a car doing its rounds)
+  _trimSquare(v, path) {
+    if (!path || path.length < 6 || v.cls !== 'land' || v.def.rail || v.def.siege) return path;
+    if (!(v.def.road || v.model === 'truck' || v.role === 'caravan' || v.role === 'oxcart')) return path;
+    const civ = this.game.civ;
+    const n = path.length;
+    const t = civ?.villageAt?.(path[n - 2], path[n - 1], 16);
+    const sq = t && this._squareTest(t);
+    if (!sq) return path;
+    let e = n;
+    while (e > 4 && sq(Math.floor(path[e - 2]), Math.floor(path[e - 1]))) e -= 2;
+    return e === n ? path : path.slice(0, e);
   },
   _service(kind, k, v, from, path, mission) {
     // a station on the square (or the hall, with none): its vehicles stand by

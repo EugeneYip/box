@@ -55,8 +55,8 @@ const COL = {
   pier: 0x9a948a,
   viaduct: 0xb0aca4,
   viaduct2: 0x948f86,
-  guide: 0xe8ecee,
-  guide2: 0xb4bcc2,
+  guide: 0xd6dade,
+  guide2: 0xaab2b8,
   glow: 0x9ff0ff,
   asphalt: 0x3e4044,
   mark: 0xe8e6dc,
@@ -171,7 +171,10 @@ function infraMaterial(uniforms) {
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aGlow;\nvarying float vGlow;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvGlow = aGlow;');
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', '#include <common>\nuniform float uNight;\nvarying float vGlow;')
-      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vGlow * vec3(0.4, 0.95, 1.0) * (0.06 + uNight * 0.5);');
+      // (round 22: the white guideways glowed bright at night: the guide
+      // strip now only a faint line, and the pale concrete dims after dark)
+      .replace('#include <color_fragment>', '#include <color_fragment>\n{ float lum = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114)); diffuseColor.rgb *= 1.0 - uNight * 0.45 * smoothstep(0.25, 0.7, lum); }')
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vGlow * vec3(0.4, 0.95, 1.0) * (0.05 + uNight * 0.14);');
   };
   m.customProgramCacheKey = () => 'wsInfra';
   return m;
@@ -373,6 +376,7 @@ export class InfraRenderer {
       pz = tx;
     const g = Math.max(this._h(x, z), SEA_LEVEL);
     const info = atStart ? seg.start : seg.end;
+    if (info?.through) return; // (the line runs on through the platform)
     if (seg.kind === 'maglev') {
       const y = (seg._deck ? seg._deck[atStart ? 0 : 1] : g + MAG_Y) + (seg.lift ? seg.lift[i] : 0);
       const cx = x - tx * 0.8,

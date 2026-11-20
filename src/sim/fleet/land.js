@@ -361,6 +361,8 @@ export const land = {
       v.state = 'parked';
       v.speed = 0;
       if (v.parkHeading != null) v.heading = v.ph = v.parkHeading;
+      // armour at its barracks: garaged inside (FleetRenderer skips it)
+      if (v.def.siege && v.parkAt != null) v.garaged = true;
       return;
     }
     if (m.type === 'rounds') {
@@ -456,9 +458,12 @@ export const land = {
     const L = Math.hypot(ux, uz) || 1;
     ux /= L;
     uz /= L;
-    const off = (slot - 1.5) * 0.85;
-    const px = door.x + ux * 0.9 - uz * off,
-      pz = door.z + uz * 0.9 + ux * off;
+    // (round 22: a tank and a gun stood out on a lawn in a Future block in
+    // peacetime; now they drive up to the barracks door and are garaged
+    // inside it, out of sight, until an army calls them out)
+    const off = (slot - 1.5) * 0.12;
+    const px = door.x + ux * 0.3 - uz * off,
+      pz = door.z + uz * 0.3 + ux * off;
     const path = this._streetPath?.(v.x, v.z, px, pz, 4000) || [v.x, v.z, px, pz];
     v.parkAt = b.id;
     v.army = null;
@@ -496,6 +501,7 @@ export const land = {
           v.state = 'siege';
           v.path = null;
           v.parkAt = null;
+          v.garaged = false;
         } else v = this.spawn(kind, army.kingdom, c.x - 1 - list.length, c.z - 1, { state: 'siege', home: army.home, model });
         if (!v) continue;
         v.army = army.id;
