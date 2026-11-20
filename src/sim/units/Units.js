@@ -2061,8 +2061,14 @@ export class Units {
     // fights still decide at once: see the skip below)
     // (round 21: from the 8x step, 2/15, up; it was 3/15 and up, so 8x on a
     // big map ran every distant walker at the fourth-tick rate)
-    const far8 = stepK >= 2 && w.w * w.h > 65536 * 2 && !globalThis.__lod8Off;
-    const far8d2 = Math.max(lr2 * 16, FAR8_DIST * FAR8_DIST);
+    // (round 23) a Medium map takes it too at the coarsest step (4/15, 16x
+    // and above), beyond FAR8_DIST or twice the full-rate radius: the camera's
+    // neighbourhood keeps the full and every-other-tick schedule as before
+    const area = w.w * w.h;
+    const far8Big = stepK >= 2 && area > 65536 * 2;
+    const far8Med = !far8Big && stepK >= 4 && area >= 65536 && !globalThis.__far8MedOff;
+    const far8 = (far8Big || far8Med) && !globalThis.__lod8Off;
+    const far8d2 = far8Med ? Math.max(lr2 * 4, FAR8_DIST * FAR8_DIST) : Math.max(lr2 * 16, FAR8_DIST * FAR8_DIST);
     const yearDt = dt / YEAR;
     const list = this.list;
     const lifeLaw = typeof g.laws?.lifeLifespan === 'number' ? g.laws.lifeLifespan : 1;

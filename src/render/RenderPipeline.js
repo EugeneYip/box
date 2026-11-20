@@ -255,6 +255,43 @@ export class RenderPipeline {
     }
   }
 
+  // Once, in idle time shortly after boot (round 23): compile the shader
+  // programs of every material in the scene, hidden ones included (the
+  // levels of detail, dots and markers first seen at mid zoom or in the
+  // overview), so the first zoom out does not stall for many seconds on
+  // shader compiles. compileAsync hands the work to the GPU side and polls
+  // for completion, so the main thread keeps rendering meanwhile. Programs
+  // are compiled for the render target the scene is drawn into (the
+  // composer's input buffer: linear output, no tone mapping), as in a frame.
+  // (?warm=0 turns it off, for measuring)
+  warmPrograms() {
+    if (this._progWarm || (this.game.frame || 0) < 24) return;
+    this._progWarm = true;
+    if (typeof location !== 'undefined' && /[?&]warm=0\b/.test(location.search)) return;
+    const r = this.renderer;
+    if (!r.compileAsync) return;
+    const run = () => {
+      if (this.game.disposed) return;
+      const prev = r.getRenderTarget();
+      const t0 = performance.now();
+      try {
+        r.setRenderTarget(this.composer?.inputBuffer ?? null);
+        const p = r.compileAsync(this.game.scene, this.game.cameraRig.camera);
+        this.warmInfo = { programs0: r.info.programs?.length ?? 0, issueMs: Math.round(performance.now() - t0) };
+        p.then(() => {
+          this.warmInfo.programs1 = r.info.programs?.length ?? 0;
+          this.warmInfo.doneS = +((performance.now() - t0) / 1000).toFixed(1);
+        }).catch(() => {});
+      } catch (err) {
+        console.warn('[pipeline] program warm-up skipped', err);
+      } finally {
+        r.setRenderTarget(prev);
+      }
+    };
+    if (typeof requestIdleCallback === 'function') requestIdleCallback(run, { timeout: 4000 });
+    else setTimeout(run, 500);
+  }
+
   passInfo() {
     const c = this.composer;
     if (!c) return { composer: false, enabled: [] };
@@ -480,6 +517,7 @@ export class RenderPipeline {
       try {
         this.syncPost(dt);
         this.warmVariants();
+        this.warmPrograms();
         this.composer.render(dt);
         return;
       } catch (err) {
@@ -491,6 +529,7 @@ export class RenderPipeline {
     this.syncFallback();
     renderer.setRenderTarget(null);
     renderer.autoClear = true;
+    this.warmPrograms();
     renderer.render(game.scene, game.cameraRig.camera);
   }
 }
