@@ -64,6 +64,7 @@ float tCloud;
 float tSpecK;
 float tCold;
 float tRivBed;
+float tUrb; // far-zoom urban patch weight (the realm tint stays light over towns)
 float tRivBank; // map zoom: land beside a river channel (no crease shading there)
 
 const mat2 ROT1 = mat2(0.80, -0.60, 0.60, 0.80);
@@ -862,7 +863,8 @@ void applyOverlay(vec2 p, inout vec3 albedo, inout vec3 emissive, float snowK) {
   tintC = mix(tintC, col * 0.6, 0.2);
   // snow composites above the territory tint (borders still read)
   float onSnow = 1.0 - 0.85 * snowK;
-  albedo = mix(albedo, tintC, min(1.0, aFill * fillAmt * 1.3) * onSnow);
+  // (a town's grey patch keeps most of its grey under the realm's tint)
+  albedo = mix(albedo, tintC, min(1.0, aFill * fillAmt * 1.3) * onSnow * (1.0 - 0.7 * tUrb));
   vec3 lineCol = col * 1.05 + 0.015;
   albedo = mix(albedo, albedo * (1.0 - 0.35 * a) + col * 0.35 * a, glow * mix(0.3, 0.6, fillK) * onSnow);
   // far zoom (past ~90): the border softens - a fainter coloured band and
@@ -877,6 +879,7 @@ void applyOverlay(vec2 p, inout vec3 albedo, inout vec3 emissive, float snowK) {
 }
 
 void terrainSurface() {
+  tUrb = 0.0;
   NS s;
   s.p = vWPos;
   s.n = normalize(vWNormal);
@@ -1307,6 +1310,7 @@ void terrainSurface() {
       float uk = (ring * 0.45 + core * 0.55) * urbK;
       albedo = mix(albedo, urb, uk * 0.85);
       rough = mix(rough, 0.82, uk);
+      tUrb = uk;
     }
   }
 
