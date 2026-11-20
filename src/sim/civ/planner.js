@@ -49,6 +49,8 @@ export const planner = {
     if (this.railMask?.[i]) return false;
     // nor in an airport's clear zone (modern.js airZone)
     if (this.airZone?.[i]) return false;
+    // nor on a town's square or its parade pad (_keepClear)
+    if (this.keepClear?.[i]) return false;
     const f = w.flora[i];
     if (f === FLORA.BOULDER) return false;
     if (!allowTrees && FLORA_INFO[f]?.isTree) return false;
@@ -331,6 +333,93 @@ export const planner = {
     return Math.max(5, (v.buildRadius || v.radius || 6) * 1.15 + 2);
   },
 
+  // The open ground of a town that no building may take (round 23: two
+  // houses stood on a main square and a building on the parade pad):
+  // keepClear bit 1 the square before the hall (the 5 x 5 round its door
+  // that Masonry paves and the terrain draws as a plaza), bit 2 the parade
+  // pad before the barracks (units/daily.js _parade). The pad's ground is
+  // levelled when it is first laid out, so the pad lies flush with the
+  // street round it instead of standing on a plinth with a lip.
+  _keepClear(v) {
+    const w = this.world;
+    const N = w.size;
+    if (!this.keepClear || this.keepClear.length !== N) this.keepClear = new Uint8Array(N);
+    const m = this.keepClear;
+    const h = v.hall;
+    if (h && h.alive !== false && v._sqHall !== h.id) {
+      if (v._sqTiles) for (const i of v._sqTiles) m[i] &= ~1;
+      const cx = Math.floor(h.doorX),
+        cz = Math.floor(h.doorZ);
+      const t = [];
+      for (let dz = -2; dz <= 2; dz++)
+        for (let dx = -2; dx <= 2; dx++) {
+          const x = cx + dx,
+            y = cz + dz;
+          if (!w.inBounds(x, y)) continue;
+          const i = y * w.w + x;
+          if (w.building[i] === h.id) continue;
+          m[i] |= 1;
+          t.push(i);
+        }
+      v._sqTiles = t;
+      v._sqHall = h.id;
+    }
+    const pd = v._parade?.ok ? v._parade : null;
+    if (pd === (v._padRef || null)) return;
+    if (v._padTiles) for (const i of v._padTiles) m[i] &= ~2;
+    v._padTiles = null;
+    v._padRef = pd;
+    if (!pd) return;
+    // the drawn pad (units/SquareProps: W + 0.3 by D + 0.3 and a kerb) in
+    // world extents: W runs along (-az, ax), D along (ax, az)
+    const Wd = pd.W + 0.5,
+      Dd = pd.D + 0.5;
+    const ex = (Math.abs(pd.az) * Wd + Math.abs(pd.ax) * Dd) / 2,
+      ez = (Math.abs(pd.ax) * Wd + Math.abs(pd.az) * Dd) / 2;
+    const t = [];
+    for (let y = Math.floor(pd.z - ez); y <= Math.floor(pd.z + ez - 1e-4); y++)
+      for (let x = Math.floor(pd.x - ex); x <= Math.floor(pd.x + ex - 1e-4); x++) {
+        if (!w.inBounds(x, y)) continue;
+        const i = y * w.w + x;
+        m[i] |= 2;
+        t.push(i);
+      }
+    v._padTiles = t;
+    // level it: every tile centre the ground under the pad is drawn from
+    // (heightAt interpolates between centres) to their mean height
+    const x0 = Math.floor(pd.x - ex - 0.5),
+      x1 = Math.floor(pd.x + ex - 0.5) + 1,
+      y0 = Math.floor(pd.z - ez - 0.5),
+      y1 = Math.floor(pd.z + ez - 0.5) + 1;
+    const lv = [];
+    let sum = 0;
+    for (let y = y0; y <= y1; y++)
+      for (let x = x0; x <= x1; x++) {
+        if (!w.inBounds(x, y)) continue;
+        const i = y * w.w + x;
+        if (this.use[i] === USE.BUILDING || this.railMask?.[i] || w.height[i] < SEA_LEVEL + 0.05) continue;
+        lv.push(i);
+        sum += w.height[i];
+      }
+    if (!lv.length) return;
+    const L = sum / lv.length;
+    for (const i of lv) w.height[i] = L;
+    // ease the ring round it so the street meets it without a step
+    for (let y = y0 - 1; y <= y1 + 1; y++)
+      for (let x = x0 - 1; x <= x1 + 1; x++) {
+        if ((x > x0 - 1 && x < x1 + 1 && y > y0 - 1 && y < y1 + 1) || !w.inBounds(x, y)) continue;
+        const i = y * w.w + x;
+        if (this.use[i] === USE.BUILDING || this.railMask?.[i] || w.height[i] < SEA_LEVEL + 0.05) continue;
+        w.height[i] = lerp(w.height[i], L, 0.5);
+      }
+    w.markDirty('height', x0 - 1, y0 - 1, x1 + 1, y1 + 1);
+    this._heightTouched(x0 - 2, y0 - 2, x1 + 2, y1 + 2);
+    // the pad is drawn a hair over the levelled ground (its kerb's top just
+    // above it, so the two never flicker)
+    pd.y = L + 0.006;
+    pd.lo = L + 0.006;
+  },
+
   _hallSpotNear(tx, ty, maxR = 7) {
     const n = spiralCount(maxR);
     for (let k = 0; k < n; k++) {
@@ -439,7 +528,16 @@ export const planner = {
     const maxR = v.buildRadius + FOOTPRINT.dist(2);
     // a modern city's homes stand shoulder to shoulder along its streets
     // (they were a thin sprinkle with a gap all round each one)
-    const dense = v.tier >= 2 && (this.kingdoms[v.kingdom]?.era || 0) >= 5 && (type === 'house' || type === 'apartment' || type === 'rowhouse');
+    // (round 23: an Industrial town too, its brick terraces in rows along
+    // the streets, and a Modern town of any size, two to four blocks to a
+    // block at the street line: they stood alone on big lots)
+    const era = this.kingdoms[v.kingdom]?.era || 0;
+    const home = type === 'house' || type === 'apartment' || type === 'rowhouse';
+    const dense = home && era >= 4 && (v.tier >= 1 || v.pop >= 18);
+    // an Industrial town lines its main street with its terraces and its
+    // brick works and stores (row houses, workshops, granaries, markets)
+    const ms = v.mainSt;
+    const mainK = ms && era >= 4 && (type === 'rowhouse' || type === 'workshop' || type === 'granary' || type === 'market' || type === 'cannery' || (type === 'house' && era === 4)) ? (type === 'house' ? 0.6 : 1.6) : 0;
     for (let k = 0; k < Math.min(roads.length, limit); k++) {
       const r = roads.length <= limit ? roads[k] : roads[(rng.next() * roads.length) | 0];
       if (this.use[r] !== USE.ROAD) continue;
@@ -473,6 +571,7 @@ export const planner = {
         // keep road tips open so streets can keep growing
         if (this._blocksTip(tx0, ty0, fw, fh)) score += 6;
         if (scoreBias) score += scoreBias(cx, cz, tx0, ty0, fw, fh);
+        if (mainK) score += mainK * Math.max(0, Math.abs((cx - ms.x - 0.5) * ms.pz - (cz - ms.y - 0.5) * ms.px) - 1);
         if (score < bestS) {
           bestS = score;
           best = { tx: tx0, ty: ty0, rot };
@@ -672,6 +771,7 @@ export const planner = {
     const px = dz,
       pz = dx;
     const R = Math.max(cells(9, 5), Math.round((v.buildRadius || 6) * (want >= 2 ? 0.95 : 0.7)));
+    v.mainSt = { x: fx, y: fy, px, pz };
     const mainA = this._street(v, fx, fy, px, pz, R + 1);
     const mainB = this._street(v, fx - px, fy - pz, -px, -pz, R);
     // cross streets every SPACE tiles along it, both ways from the main street

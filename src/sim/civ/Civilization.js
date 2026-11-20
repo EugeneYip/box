@@ -1746,6 +1746,7 @@ export class Civilization {
       }
       return;
     }
+    this._keepClear(v); // the square and the parade pad stay open (planner.js)
     const frozen = v.policy?.buildings === false; // the gods forbid new building here
     if (frozen && v.frozenHousing == null) {
       v.frozenHousing = v.housing;

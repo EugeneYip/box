@@ -517,7 +517,9 @@ export const modern = {
         maxR = v.buildRadius + (zoned ? 9 : 5);
       tryBuild('factory', () => this._placeOutskirts(v, 'factory', minR, maxR, null, null) || this.placeAlongRoad(v, 'factory', this._bias(v, 'workshop')) || this._placeWide(v, 'factory', v.buildRadius * 0.6, v.buildRadius + 10));
     }
-    if (room() && industry && count('factory') > 0 && count('rowhouse') < 1 + v.tier && (v.housing - v.pop < 6 || count('rowhouse') === 0)) tryBuild('rowhouse');
+    // (a terrace row for each block of the main street: one or two row
+    // houses left a 42-building Industrial town reading as a village)
+    if (room() && industry && count('factory') > 0 && count('rowhouse') < 2 + 2 * v.tier && (v.housing - v.pop < 6 || count('rowhouse') < 2)) tryBuild('rowhouse');
     if (room() && has('railways') && v.railEnds > 0 && count('station') === 0) {
       // at the edge of town where the line comes in (never in the core)
       tryBuild('station', () => this._placeStation(v));

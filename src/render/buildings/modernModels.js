@@ -1,4 +1,4 @@
-import { shade } from './geom.js';
+import { shade, mix } from './geom.js';
 
 // Models for the buildings of the modern and future eras (docs/MODERN-ERAS.md):
 // original low-poly designs drawn at their design size (one tile = one unit,
@@ -443,7 +443,10 @@ const BUILD = {
       d = av === 1 ? 1.2 : 1.25,
       bz = -0.12;
     const h = floors * fh;
-    const wallC = av === 1 ? (e >= 7 ? 0xdfe9dc : e >= 6 ? 0xb9a58a : P.brick) : av === 2 ? (e >= 7 ? 0xf0ebe0 : e >= 6 ? 0xd2c8b8 : P.trim) : e >= 7 ? P.white : e >= 6 ? 0xe2e0d8 : 0xc9c2b4;
+    // (round 23: Modern blocks read as small brown boxes in a frost town:
+    // the brick block is a pale render with a brick base, and the others
+    // light render; the roofs pale gravel, not dark slate, from above)
+    const wallC = av === 1 ? (e >= 7 ? 0xdfe9dc : e >= 6 ? 0xb9a58a : mix(P.brick, 0xf2ebe0, 0.62)) : av === 2 ? (e >= 7 ? 0xf0ebe0 : e >= 6 ? 0xd2c8b8 : 0xeee6d8) : e >= 7 ? P.white : e >= 6 ? 0xe2e0d8 : 0xe6e0d4;
     g.box(0, -0.06, bz, w + 0.08, 0.1, d + 0.08, P.concrete2);
     g.box(0, 0, bz, w, h, d, wallC);
     bands(g, P, 0, 0.05, bz, w, d, floors, fh, { k: e >= 6 ? 0.62 : 0.45 });
@@ -460,7 +463,8 @@ const BUILD = {
     // the entrance with a canopy
     door(g, P, 0, bz + d / 2, 0.28, 0.3, P.glass, { canopy: P.accent, lamp: true });
     // the roof: lift and stair housing, water tank or garden
-    flatRoof(g, 0, h, bz, w, d, P.concrete2, e >= 7 ? P.green : P.slate);
+    if (e === 5 && av === 1) g.box(0, 0, bz, w + 0.02, fh * 0.9, d + 0.02, P.brick, { noTop: true });
+    flatRoof(g, 0, h, bz, w, d, P.concrete2, e >= 7 ? P.green : e >= 6 ? P.slate : 0xb4b0a6);
     g.box(-0.4, h + 0.04, bz - 0.15, 0.4, 0.28, 0.32, wallC);
     if (e >= 7) for (const [x, z] of [[0.3, bz + 0.2], [0.55, bz - 0.3], [0.1, bz - 0.35]]) tree(g, x, z, h + 0.04, 1.1);
     else if (e >= 6) for (let i = 0; i < 4; i++) g.box(0.25 + (i % 2) * 0.25, h + 0.05, bz - 0.25 + (i >> 1) * 0.3, 0.2, 0.06, 0.24, 0x2a3a5a, { top: 0x3a5a8a });

@@ -536,7 +536,8 @@ export class BuildingRenderer {
     // row house): as wide as the footprint allows, and taller
     const works = t === 'factory' || t === 'foundry' || t === 'powerstation';
     if (!works && t !== 'house' && t !== 'apartment' && t !== 'rowhouse') return null;
-    if (!works && lookEra(b, civ.kingdoms[b.kingdom]?.era ?? 0) < 5) return null;
+    const le = lookEra(b, civ.kingdoms[b.kingdom]?.era ?? 0);
+    if (!works && le < 4) return null;
     // as wide as the plot allows (footprints stay as they are)
     if (a._fitK == null) {
       const g = a.geo;
@@ -551,6 +552,12 @@ export class BuildingRenderer {
     if (works) {
       const k = Math.max(1.15, Math.min(1.6, a._fitK));
       return [k, Math.max(1.3, k * 0.95)];
+    }
+    // (Industrial terraces: as wide as the plot, so a street of them stands
+    // shoulder to shoulder in a row instead of as cottages on big lots)
+    if (le === 4) {
+      const k4 = Math.max(1, Math.min(1.1, a._fitK));
+      return [k4, 1.08];
     }
     const k = Math.max(1, Math.min(1.28, a._fitK));
     return [k, Math.max(k, 1.25)];
