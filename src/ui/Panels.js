@@ -719,6 +719,21 @@ export class Modals {
       ),
       el('p', { class: 'ws-note', html: `${uiIcon('info')}<span>The current world will be replaced. Seeds are shareable — the same seed always grows the same world.</span>` }),
     );
+    // the World Map's regional maps can sit below the fold: a pill at the bottom
+    // edge says so and scrolls to them
+    const below = el('button', { class: 'ws-nw__below', type: 'button', hidden: true, html: `<span>Regional maps below</span>${uiIcon('chev-down')}`, onclick: () => regionLabel.scrollIntoView({ block: 'start', behavior: 'smooth' }) });
+    body.append(below);
+    setTimeout(() => {
+      const sc = body.closest('.ws-modal__body');
+      if (!sc) return;
+      const sync = () => {
+        if (!body.isConnected) return sc.removeEventListener('scroll', sync);
+        below.hidden = regionLabel.hidden || regionLabel.getBoundingClientRect().top < sc.getBoundingClientRect().bottom - 24;
+      };
+      sc.addEventListener('scroll', sync, { passive: true });
+      body.addEventListener('click', () => setTimeout(sync, 60));
+      sync();
+    }, 120);
     const foot = [
       el('button', { class: 'ws-btn ws-btn--ghost', type: 'button', text: 'Cancel', onclick: () => this.close() }),
       el('button', { class: 'ws-btn ws-btn--gold', type: 'button', onclick: create }, el('span', { html: uiIcon('new-world') }), el('span', { text: 'Seed this world' })),
