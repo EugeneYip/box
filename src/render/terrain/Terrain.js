@@ -133,6 +133,7 @@ export class Terrain {
       uHeightLin: { value: floatLinear ? 1 : 0 },
       // regional World Map windows (not the whole Earth): the land itself
       // fades toward the shelf over its outer tiles where it meets the frame
+      uGradeMid: { value: new THREE.Vector3() }, // the post grade's midtone tint (the far urban patch is counter-tinted)
       uEdgeFade: { value: 0 }, // (set each frame: the world's meta arrives after construction)
     };
     // make sure the cloud sampler always has a texture bound
@@ -193,6 +194,8 @@ export class Terrain {
     refreshLandscapeUniforms(g, dt);
     const geo = g.world.meta?.geo;
     this.uniforms.uEdgeFade.value = geo && geo.region && geo.region !== 'world' && !geo.wrap ? 1 : 0;
+    const mt = g.atmosphere?.post?.midTint;
+    if (mt) this.uniforms.uGradeMid.value.copy(mt);
     this._updateDetail();
     this._updateLods();
     this._updateSeam();

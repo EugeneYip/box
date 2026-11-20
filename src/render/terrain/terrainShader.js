@@ -52,6 +52,7 @@ uniform float uHeightLin;
 uniform sampler2D uShoreTex;
 uniform sampler2D uSettleTex;
 uniform float uEdgeFade;
+uniform vec3 uGradeMid;
 ${WATER_PARS_GLSL}
 
 // global surface outputs (set in terrainSurface)
@@ -1352,6 +1353,12 @@ void terrainSurface() {
       float bw = max(s.fw, 0.05);
       float grid = (1.0 - smoothstep(0.16, 0.16 + bw * 1.5, min(bq.x, bq.y))) * (1.0 - smoothstep(0.35, 0.8, bw));
       urb *= 1.0 + 0.08 * grid * core;
+      // neutral on screen under a warm or cool age: the key light's chroma and
+      // the post grade's midtone tint are taken back out of the patch (an
+      // Embers age turned the grey patch the same orange as the fields)
+      vec3 kcU = uKeyCol / max(dot(uKeyCol, vec3(0.2126, 0.7152, 0.0722)), 1e-3);
+      urb /= mix(vec3(1.0), clamp(kcU, vec3(0.5), vec3(1.6)), 0.75);
+      urb = pow(max(pow(urb, vec3(1.0 / 2.2)) - uGradeMid * 1.3, vec3(0.02)), vec3(2.2));
       // (a firm, noise-broken edge: the ring of the build area is as grey as
       // the core, so the patch has an edge instead of fading into the fields)
       float uk = (ring * 0.85 + core * 0.15) * urbK;
