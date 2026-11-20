@@ -4,6 +4,13 @@ import { USE, YEAR, ADULT_AGE, clamp } from './util.js';
 import { FOOTPRINT } from '../../core/scale.js';
 import { baseCulture } from './cultures.js';
 
+// tinned food relief (_tinnedFood): the wait after want begins, the time
+// between shipments (game seconds; a year is 30) and the most one shipment
+// carries, in meals per head
+const RELIEF_WAIT = 30,
+  RELIEF_EVERY = 15,
+  RELIEF_SHARE = 1.2;
+
 // Technology breadth (docs/TECH-BREADTH.md, the parts owned by Civ): the
 // buildings of the food, medicine, biome, city-development and urban-planning
 // branches and of Planetary Defense, where the planner puts them, and the
@@ -533,13 +540,25 @@ export const breadth = {
       const v = this.villages[vid];
       if (v?.alive) vs.push(v);
     }
-    const hungry = vs.filter((v) => v.starving || v.food < v.pop * 0.8);
+    const now = this.game.time.total;
+    const hungry = [];
+    for (const v of vs) {
+      if (v.starving || v.food < v.pop * 0.8) hungry.push(v);
+      else v._wantT = null;
+    }
     if (!hungry.length) return;
     for (const to of hungry) {
+      // (round 21) relief takes time to gather and ship: the first tins reach
+      // a town after about a year of want, then a shipment every half year,
+      // each at most a few months' meals (in the Future era a Drought used to
+      // be answered within 5 s and nobody went hungry)
+      if (to._wantT == null) to._wantT = now;
+      if (now - to._wantT < RELIEF_WAIT || now - (to._tinT ?? -1e9) < RELIEF_EVERY) continue;
       let from = null;
       for (const o of vs) if (o !== to && o.food > o.pop * 3 + 20 && (!from || o.food > from.food)) from = o;
       // the cannery's own stores: a little even when no town has plenty
-      const amt = from ? Math.min(from.food - (from.pop * 3 + 10), to.pop * 3 + 10) : to.pop * 0.05;
+      const amt = from ? Math.min(from.food - (from.pop * 3 + 10), to.pop * RELIEF_SHARE) : to.pop * 0.05;
+      to._tinT = now;
       if (amt <= 2) continue;
       if (from) from.food -= amt;
       to.food += amt * 0.95;
