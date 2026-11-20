@@ -1,4 +1,4 @@
-import { TILE, SEA_LEVEL, FLORA } from '../../world/constants.js';
+import { TILE, SEA_LEVEL, FLORA, FLORA_INFO } from '../../world/constants.js';
 import { BUILDING_TYPES } from './catalog.js';
 import { USE, YEAR, clamp } from './util.js';
 import { civPath } from './pathing.js';
@@ -78,7 +78,7 @@ const REACH = { musket: 2.6, rifle: 3.4, fatigues: 3.8, suit: 4.4 };
 // (tolerance in tiles), and the lead a branch runs along its trunk or out of
 // a platform before it curves away
 const NET = {
-  rail: { R: 2.6, eps: 0.7, lead: 1.6 },
+  rail: { R: 3.2, eps: 0.7, lead: 1.6 },
   maglev: { R: 5, eps: 1.3, lead: 2.6 },
 };
 const SPACING = 0.4;
@@ -95,6 +95,12 @@ export const HW_OFF = 1.15;
 const GRADE = { rail: 0.2, maglev: 0.14 };
 export const MAG_CLEAR = 0.95 * BUILDING.scale; // a guideway's deck over the ground
 export const RAIL_BRIDGE_Y = SEA_LEVEL + 0.3 * BUILDING.scale; // a rail bridge's deck over water
+// a line that must cross a town's core rides over it on a viaduct this high
+// (the bed's top over the street: people and cars pass under its girders)
+export const CORE_LIFT = 0.9 * BUILDING.scale;
+// the clear zone round an airport's plot (tiles): no track, guideway or
+// highway is routed through it
+const AIR_CLEAR = 3;
 const yKey = (x, z) => Math.round(x * 50) * 131072 + Math.round(z * 50);
 // seg.ys: the level of each point (rail: the top of the bed; maglev: the
 // deck), the upper envelope of the ground under a maximum grade, eased by a
@@ -109,6 +115,8 @@ function trackLevels(w, seg, up) {
   for (let i = 0; i < n; i++) {
     const h = w.heightAt(P[i * 2], P[i * 2 + 1]);
     y[i] = mag ? (h < SEA_LEVEL ? SEA_LEVEL + MAG_CLEAR * 0.8 : h + MAG_CLEAR) : h < SEA_LEVEL + 0.02 ? RAIL_BRIDGE_Y : h + 0.02;
+    // (a rail across a town's core: on a viaduct over its streets)
+    if (!mag && seg.core?.[i]) y[i] = Math.max(y[i], Math.max(h, SEA_LEVEL) + CORE_LIFT);
     if (i) {
       const d = Math.hypot(P[i * 2] - P[i * 2 - 2], P[i * 2 + 1] - P[i * 2 - 1]);
       ds[i] = d > 40 ? 1e3 : d; // (the seam of a round world)
@@ -448,7 +456,7 @@ export const modern = {
       }
     }
     // Railways: a station in each town a line reaches
-    if (room() && has('railways') && v.railEnds > 0 && count('station') === 0) tryBuild('station');
+    if (room() && has('railways') && v.railEnds > 0 && count('station') === 0) tryBuild('station', () => this._placeStation(v));
     // Computing: a research campus in the capital and the cities
     if (room() && has('computing') && (city || isCap) && count('campus') === 0) tryBuild('campus', out('campus', 3, 4));
     // Skyscrapers rise at city centres (one office tower in a big town)
@@ -457,7 +465,7 @@ export const modern = {
     if (room() && has('arcology') && (isCap || city) && count('arcology') === 0 && rc('arcology') < 2) tryBuild('arcology', out('arcology', 4, 7));
     // Flight: airfields; Jets: airports
     if (room() && has('flight') && (isCap || city) && count('airfield') + count('airport') === 0 && rc('airfield') + rc('airport') < Math.max(1, Math.ceil(towns / 3))) tryBuild('airfield', out('airfield', 5, 8));
-    if (room() && has('jets') && (isCap || city) && count('airport') === 0 && rc('airport') < (towns >= 6 ? 2 : 1)) tryBuild('airport', out('airport', 5, 10));
+    if (room() && has('jets') && (isCap || city) && count('airport') === 0 && rc('airport') < (towns >= 6 ? 2 : 1)) tryBuild('airport', () => this._placeAirport(v));
     // Container Shipping: a port with cranes in a harbour town
     if (room() && has('containers') && v.coastal && town && count('docks') > 0 && count('containerport') === 0) tryBuild('containerport', () => this._placeDocks(v, 'containerport'));
     // Rocketry: a launch pad; Orbital Industry: a spaceport (far out of town)
@@ -494,8 +502,8 @@ export const modern = {
     }
     if (room() && industry && count('factory') > 0 && count('rowhouse') < 1 + v.tier && (v.housing - v.pop < 6 || count('rowhouse') === 0)) tryBuild('rowhouse');
     if (room() && has('railways') && v.railEnds > 0 && count('station') === 0) {
-      // beside the street where the line comes in (the hall door end)
-      tryBuild('station', () => this.placeAlongRoad(v, 'station', this._bias(v, 'market')) || this._placeOutskirts(v, 'station', 1, v.buildRadius + 2, null, null));
+      // at the edge of town where the line comes in (never in the core)
+      tryBuild('station', () => this._placeStation(v));
     }
     // short of the gold or stone for them: save up (true skips the newer works)
     return v.need === 'factory' || v.need === 'station';
@@ -526,6 +534,146 @@ export const modern = {
     const dx = Math.floor(b.doorX),
       dz = Math.floor(b.doorZ);
     if (this.world.inBounds(dx, dz)) this._connectToRoads(v, dx, dz);
+    return b;
+  },
+  // A town's railway station: at the edge of town where its line comes in
+  // (the line's buffer stop out there, until the station stands), its
+  // platform turned along the way the line runs in; never in the core.
+  _placeStation(v) {
+    const def = BUILDING_TYPES.station;
+    const w = this.world;
+    // where the line ends in this town now
+    let ex = null,
+      ez = null,
+      bd = Infinity;
+    for (const s of this.railNet || []) {
+      if (s.kind !== 'rail' || s.kingdom !== v.kingdom) continue;
+      const n = s.pts.length / 2;
+      const ends = [];
+      if (s.town === v.id) ends.push(n - 1);
+      if (s.parent < 0) ends.push(0);
+      for (const i of ends) {
+        const x = s.pts[i * 2],
+          z = s.pts[i * 2 + 1];
+        const d = Math.hypot(x - v.cx, z - v.cz);
+        if (d < bd && d < (v.buildRadius || 8) * 1.8 + 6) (bd = d), (ex = x), (ez = z);
+      }
+    }
+    const R0 = Math.max(4, (v.buildRadius || v.radius || 6) * 0.8);
+    if (ex == null) return this._placeOutskirts(v, 'station', R0, (v.buildRadius || 6) + 3, null, null);
+    // the way out of town at that end (the platform runs along it)
+    const ox = ex - v.cx,
+      oz = ez - v.cz;
+    const oL = Math.hypot(ox, oz) || 1;
+    const ux = ox / oL,
+      uz = oz / oL;
+    const rc = Math.max(3, (v.radius || 6) * 0.55);
+    let best = null,
+      bs = Infinity;
+    for (let dz = -5; dz <= 5; dz++)
+      for (let dx = -5; dx <= 5; dx++)
+        for (const rot of [0, 1]) {
+          const fw = rot & 1 ? def.h : def.w,
+            fh = rot & 1 ? def.w : def.h;
+          const x = Math.floor(ex + dx - fw / 2 + 0.5),
+            y = Math.floor(ez + dz - fh / 2 + 0.5);
+          const cx = x + fw / 2,
+            cz = y + fh / 2;
+          const dc = Math.hypot(cx - v.cx, cz - v.cz);
+          if (dc < rc + 1.5) continue;
+          if (!this._footprintOK(x, y, fw, fh, 0.9)) continue;
+          // the long side along the way out (rot 0: along x)
+          const ax = rot & 1 ? 0 : 1,
+            az = rot & 1 ? 1 : 0;
+          const across = Math.abs(ax * uz - az * ux);
+          const st = this._footprintStats(x, y, fw, fh);
+          const sc = Math.hypot(cx - ex, cz - ez) + across * 2.5 + st.slope * 3 + st.trees * 0.3 + this.rng.next() * 0.5;
+          if (sc < bs) (bs = sc), (best = { x, y, rot, ax, az });
+        }
+    if (!best) return this._placeOutskirts(v, 'station', R0, (v.buildRadius || 6) + 3, ex, ez);
+    // the door (+Z of the model) faces the town; the track runs behind it
+    let rot = best.rot;
+    const [fx, fz] = rot === 0 ? [0, 1] : [1, 0];
+    if (fx * (v.cx - (best.x + 0.5)) + fz * (v.cz - (best.y + 0.5)) < 0) rot += 2;
+    const b = this.addBuilding(v, 'station', best.x, best.y, rot);
+    const dx = Math.floor(b.doorX),
+      dz = Math.floor(b.doorZ);
+    if (w.inBounds(dx, dz)) this._connectToRoads(v, dx, dz);
+    return b;
+  },
+  // An airport on flat, open ground beyond the town: its whole plot and a
+  // ring round it level, dry and clear of buildings, no track or highway
+  // within its clear zone, and no hill rising off either end of the runway
+  // (round 18: a short strip squeezed into a canyon floor under cliffs,
+  // wrapped by a rail loop).
+  _placeAirport(v, type = 'airport') {
+    const def = BUILDING_TYPES[type];
+    const w = this.world;
+    const W = w.w;
+    const rng = this.rng;
+    const minR = Math.max(6, (v.buildRadius || 8) * 0.8),
+      maxR = (v.buildRadius || 8) + 24;
+    const M = AIR_CLEAR;
+    let best = null,
+      bs = Infinity;
+    // (flat ground first; a little rougher if a realm has none near)
+    for (let k = 0; k < 480 && !(k === 320 && best); k++) {
+      const L = k < 320 ? { fp: 0.5, ring: 1.1, rise: 1.4 } : { fp: 0.9, ring: 1.9, rise: 2.4 };
+      const a = rng.float(0, Math.PI * 2);
+      const r = rng.float(minR, maxR);
+      const rot = rng.int(0, 3);
+      const fw = rot & 1 ? def.h : def.w,
+        fh = rot & 1 ? def.w : def.h;
+      const x = Math.floor(v.cx + Math.cos(a) * r - fw / 2),
+        y = Math.floor(v.cz + Math.sin(a) * r - fh / 2);
+      if (x < M + 2 || y < M + 2 || x + fw + M + 2 > w.w || y + fh + M + 2 > w.h) continue;
+      if (this.landId[y * W + x] !== v.landId) continue;
+      if (!this._footprintOK(x, y, fw, fh, L.fp)) continue;
+      // the plot and its clear zone: level, open, no line, no building
+      let hmin = Infinity,
+        hmax = -Infinity,
+        trees = 0,
+        bad = false;
+      for (let yy = y - M; yy < y + fh + M && !bad; yy++)
+        for (let xx = x - M; xx < x + fw + M; xx++) {
+          const i = yy * W + xx;
+          if (this.railMask?.[i]) {
+            bad = true;
+            break;
+          }
+          const inner = xx >= x - 1 && xx <= x + fw && yy >= y - 1 && yy <= y + fh;
+          if (inner && this.use[i] === USE.BUILDING) {
+            bad = true;
+            break;
+          }
+          const h = w.height[i];
+          if (h < SEA_LEVEL) continue;
+          if (h < hmin) hmin = h;
+          if (h > hmax) hmax = h;
+          if (FLORA_INFO[w.flora[i]]?.isTree) trees++;
+        }
+      if (bad || hmax - hmin > L.ring) continue;
+      // the runway's approaches: four tiles off each end, no rise over it
+      const base = w.height[(y + (fh >> 1)) * W + x + (fw >> 1)];
+      const along = fw >= fh;
+      let rise = 0;
+      for (let e = 1; e <= 5 && !bad; e++)
+        for (const sd of [-1, 1]) {
+          const px = along ? (sd < 0 ? x - M - e : x + fw + M + e - 1) : x + (fw >> 1),
+            py = along ? y + (fh >> 1) : sd < 0 ? y - M - e : y + fh + M + e - 1;
+          if (!w.inBounds(px, py)) continue;
+          rise = Math.max(rise, w.height[py * W + px] - base);
+        }
+      if (rise > L.rise) continue;
+      const st = this._footprintStats(x, y, fw, fh);
+      const sc = st.slope * 4 + (hmax - hmin) * 2 + rise * 1.5 + trees * 0.05 + r * 0.06 + rng.next();
+      if (sc < bs) (bs = sc), (best = { x, y, rot });
+    }
+    if (!best) return null;
+    const b = this.addBuilding(v, type, best.x, best.y, best.rot);
+    const dx = Math.floor(b.doorX),
+      dz = Math.floor(b.doorZ);
+    if (w.inBounds(dx, dz)) this._connectToRoads(v, dx, dz);
     return b;
   },
   // buildings of each modern type a realm has (cached for a moment)
@@ -812,9 +960,9 @@ export const modern = {
     }
     const x = v.hall?.alive ? v.hall.doorX : v.cx,
       z = v.hall?.alive ? v.hall.doorZ : v.cz;
-    // (no station yet: the line stops short of the square, where the
-    // station will stand, instead of running into it)
-    return { x, z, dx: 0, dz: 0, half: 0, station: false, stop: clamp((v.radius || 6) * 0.35, 2.5, 5) };
+    // (no station yet: the line stops at the edge of town, where the
+    // station will stand, instead of running in to the square)
+    return { x, z, dx: 0, dz: 0, half: 0, station: false, stop: clamp((v.buildRadius || v.radius || 6) * 0.95, 4, 14) };
   },
   // a terminus turned toward (qx, qz): [buffer, platform entry], the unit
   // vector out of it and the lead point the line curves in from
@@ -829,7 +977,18 @@ export const modern = {
     const L = Math.hypot(qx - T.x, qz - T.z) || 1;
     const ex = (qx - T.x) / L,
       ez = (qz - T.z) / L;
-    const st = Math.min(T.stop || 0, L * 0.3);
+    let st = Math.min(T.stop || 0, L * 0.6);
+    // the buffer stop never stands in a street or on a plot: on along the
+    // way out to the first open ground
+    const w = this.world;
+    for (let k = 0; k < 10; k++) {
+      const tx = Math.floor(T.x + ex * st),
+        tz = Math.floor(T.z + ez * st);
+      if (!w.inBounds(tx, tz)) break;
+      const u = this.use[tz * w.w + tx];
+      if (u !== USE.ROAD && u !== USE.BUILDING && !(this._railBlk?.[tz * w.w + tx] >= 254)) break;
+      st += 0.6;
+    }
     const x = T.x + ex * st,
       z = T.z + ez * st;
     return { pts: [[x, z]], lead: [x + ex * lead * 0.6, z + ez * lead * 0.6] };
@@ -842,9 +1001,11 @@ export const modern = {
     mask.fill(0);
     (this._netSig || (this._netSig = {}))[k.id] = this._railSig(k);
     const out = (this.railNet || []).filter((s) => s.kingdom !== k.id);
+    this._railBlocks();
     for (const kind of ['rail', 'maglev']) {
       const lines = this.rails.filter((l) => l.kingdom === k.id && l.kind === kind);
       if (!lines.length) continue;
+      this._railCorridor(k, kind, out);
       const cnt = new Map();
       for (const l of lines) cnt.set(l.a, (cnt.get(l.a) || 0) + 1);
       let root = lines[0].a;
@@ -882,6 +1043,7 @@ export const modern = {
       }
       for (const s of tree) {
         s.up = s.parent >= 0 ? tree[s.parent] : null;
+        if (kind === 'rail') s.core = this._railCoreRuns(s);
         trackLevels(w, s, s.up);
         if (s.hwOn) s.hw = this._hwMask(s);
         out.push(s);
@@ -892,11 +1054,20 @@ export const modern = {
     // the tiles under the tracks (trams and buses keep to other streets)
     if (!this.railMask || this.railMask.length !== N) this.railMask = new Uint8Array(N);
     this.railMask.fill(0);
+    // (8: the rail rides over this tile on a bridge or a viaduct: people
+    // and cars pass under it)
     for (const s of out)
       for (let i = 0; i + 1 < s.pts.length; i += 2) {
         const tx = Math.floor(s.pts[i]),
           tz = Math.floor(s.pts[i + 1]);
-        if (w.inBounds(tx, tz)) this.railMask[tz * w.w + tx] |= s.kind === 'rail' ? 1 : 2;
+        if (!w.inBounds(tx, tz)) continue;
+        const t = tz * w.w + tx;
+        if (s.kind !== 'rail') {
+          this.railMask[t] |= 2;
+          continue;
+        }
+        const raised = s.ys && s.ys[i >> 1] - Math.max(w.height[t], SEA_LEVEL) > 0.3;
+        this.railMask[t] |= raised ? 8 : 1;
       }
     // and the highway's whole width beside them (4): no building stands on
     // its strip (planner._tileFree reads the mask)
@@ -913,6 +1084,133 @@ export const modern = {
         }
       }
     }
+  },
+  // Where a track may not run, or runs at a price (rebuilt with each
+  // network): 255 a town's square (never: a line never crosses the paving
+  // before a hall), 254 an airport's clear zone (never; dear when nothing
+  // else is found), 2 a town's core (a line keeps round it, or crosses it
+  // on a viaduct), 1 the rest of a town (it keeps off the streets)
+  _railBlocks() {
+    const w = this.world;
+    const W = w.w,
+      H = w.h,
+      N = W * H;
+    if (!this._railBlk || this._railBlk.length !== N) this._railBlk = new Uint8Array(N);
+    const B = this._railBlk;
+    B.fill(0);
+    for (const v of this.villages) {
+      if (!v?.alive || !Number.isFinite(v.cx)) continue;
+      const R = Math.max(v.radius || 6, (v.buildRadius || 0) + 1);
+      const rc = Math.max(3, (v.radius || 6) * 0.55);
+      const x0 = Math.max(0, Math.floor(v.cx - R)),
+        x1 = Math.min(W - 1, Math.ceil(v.cx + R)),
+        y0 = Math.max(0, Math.floor(v.cz - R)),
+        y1 = Math.min(H - 1, Math.ceil(v.cz + R));
+      for (let y = y0; y <= y1; y++)
+        for (let x = x0; x <= x1; x++) {
+          const d = Math.hypot(x + 0.5 - v.cx, y + 0.5 - v.cz);
+          const i = y * W + x;
+          if (d < rc) B[i] = Math.max(B[i], 2);
+          else if (d < R) B[i] = Math.max(B[i], 1);
+        }
+      // the square before the hall and a tile round it
+      const h = v.hall;
+      if (h?.alive) {
+        const cx = Math.floor(h.doorX),
+          cz = Math.floor(h.doorZ);
+        for (let dz = -3; dz <= 3; dz++)
+          for (let dx = -3; dx <= 3; dx++) if (w.inBounds(cx + dx, cz + dz)) B[(cz + dz) * W + cx + dx] = 255;
+      }
+    }
+    for (const b of this.buildings) {
+      if (!b.alive) continue;
+      const air = b.type === 'airport' || b.type === 'airfield';
+      if (!air && b.type !== 'plaza' && b.type !== 'park' && b.type !== 'forum') continue;
+      const m = b.type === 'airport' ? AIR_CLEAR : air ? 2 : 1;
+      for (let y = b.ty - m; y < b.ty + b.h + m; y++)
+        for (let x = b.tx - m; x < b.tx + b.w + m; x++) {
+          if (!w.inBounds(x, y)) continue;
+          const i = y * W + x;
+          if (air) B[i] = Math.max(B[i], 254);
+          else B[i] = 255;
+        }
+    }
+  },
+  // The other lines near a route (other realms' tracks and this realm's
+  // other kind, and the highways beside them): 1 on one, 2 right beside
+  // one, 3 two or three tiles off. A new line runs right beside an old one
+  // (one corridor) or keeps well away, never a few tiles off it in parallel.
+  _railCorridor(k, kind, segs) {
+    const w = this.world;
+    const W = w.w,
+      N = W * w.h;
+    if (!this._railCor || this._railCor.length !== N) this._railCor = new Uint8Array(N);
+    const C = this._railCor;
+    C.fill(0);
+    let last = -1;
+    const mark = (x, z) => {
+      const tx = Math.floor(x),
+        tz = Math.floor(z);
+      const t0 = tz * W + tx;
+      if (t0 === last || !w.inBounds(tx, tz)) return;
+      last = t0;
+      for (let dz = -3; dz <= 3; dz++)
+        for (let dx = -3; dx <= 3; dx++) {
+          if (!w.inBounds(tx + dx, tz + dz)) continue;
+          const d = Math.max(Math.abs(dx), Math.abs(dz));
+          const c = d === 0 ? 1 : d === 1 ? 2 : 3;
+          const t = (tz + dz) * W + tx + dx;
+          if (!C[t] || C[t] > c) C[t] = c;
+        }
+    };
+    for (const s of segs) {
+      if (s.kingdom === k.id && s.kind === kind) continue;
+      const P = s.pts;
+      last = -1;
+      for (let i = 0; i + 1 < P.length; i += 2) mark(P[i], P[i + 1]);
+      if (s.hw) {
+        last = -1;
+        for (let i = 0; i < s.hw.length; i++) if (s.hw[i]) mark(...hwPoint(P, i));
+      }
+    }
+  },
+  // the stretches of a rail segment across a town's core (its points get
+  // lifted onto a viaduct there): runs of three points or more, eased two
+  // points either side, never at a station's platform
+  _railCoreRuns(s) {
+    const w = this.world;
+    const B = this._railBlk;
+    const P = s.pts;
+    const n = P.length / 2;
+    if (!B) return null;
+    const f = new Uint8Array(n);
+    for (let i = 0; i < n; i++) {
+      const tx = Math.floor(P[i * 2]),
+        tz = Math.floor(P[i * 2 + 1]);
+      if (w.inBounds(tx, tz) && B[tz * w.w + tx] >= 2 && B[tz * w.w + tx] !== 254) f[i] = 1;
+    }
+    const arc = new Float32Array(n);
+    for (let i = 1; i < n; i++) arc[i] = arc[i - 1] + Math.min(3, Math.hypot(P[i * 2] - P[i * 2 - 2], P[i * 2 + 1] - P[i * 2 - 1]));
+    const keepS = s.start?.station ? 4 : s.junction ? 1.5 : 0,
+      keepE = s.end?.station ? 4 : 0;
+    const out = new Uint8Array(n);
+    let any = false;
+    for (let i = 0; i < n; ) {
+      if (!f[i]) {
+        i++;
+        continue;
+      }
+      let j = i;
+      while (j < n && f[j]) j++;
+      if (j - i >= 3)
+        for (let m = Math.max(0, i - 2); m < Math.min(n, j + 2); m++)
+          if (arc[m] >= keepS && arc[n - 1] - arc[m] >= keepE) {
+            out[m] = 1;
+            any = true;
+          }
+      i = j;
+    }
+    return any ? out : null;
   },
   // one branch of a network: from the nearest point of the tree (or the
   // root's station) to the town's station
@@ -975,11 +1273,14 @@ export const modern = {
     if (!w.inBounds(sx, sy) || !w.inBounds(gx, gy)) return null;
     if (sx !== gx || sy !== gy) {
       const near = (q) => q?.length && Math.hypot((q[q.length - 1] % W) - gx, ((q[q.length - 1] / W) | 0) - gy) <= 2;
-      const mc = kind === 'rail' ? 0.75 : 1;
-      let q = civPath(w, sx, sy, gx, gy, this._railCost(kind, mask, false), 14000, mc);
-      if (!near(q)) q = civPath(w, sx, sy, gx, gy, this._railCost(kind, mask, true), 16000, mc);
+      const mc = kind === 'rail' ? 0.75 : 0.8;
+      let cost = this._railCost(kind, mask, false);
+      let q = civPath(w, sx, sy, gx, gy, cost, 14000, mc);
+      if (!near(q)) q = civPath(w, sx, sy, gx, gy, (cost = this._railCost(kind, mask, true)), 16000, mc);
       if (!near(q)) return null;
-      mid = q.slice(0, -1).map((i) => [(i % W) + 0.5, ((i / W) | 0) + 0.5]);
+      mid = this._railPull(q, cost)
+        .slice(0, -1)
+        .map((i) => [(i % W) + 0.5, ((i / W) | 0) + 0.5]);
     }
     const way = rdp([lead, ...mid, o2.lead], C.eps);
     const pts = fillet([...head, ...way.slice(0, -1), ...tail], C.R);
@@ -1045,7 +1346,71 @@ export const modern = {
     }
     return seg;
   },
+  // A grid path pulled taut: each run goes straight on to the farthest
+  // point it can see over ground no dearer than the path's own (a line used
+  // to wind down a slope in a staircase of short zigzags); the curves are
+  // rounded after.
+  _railPull(q, cost) {
+    const n = q.length;
+    if (n < 3) return q;
+    const cs = q.map((i) => cost(i));
+    const out = [q[0]];
+    let i = 0;
+    while (i < n - 1) {
+      let best = i + 1,
+        mx = cs[i];
+      const lim = Math.min(n - 1, i + 48);
+      for (let j = i + 1; j <= lim; j++) {
+        mx = Math.max(mx, cs[j]);
+        if (j >= i + 2 && this._railSight(q[i], q[j], Math.min(mx, 4.5) + 0.6, cost)) best = j;
+      }
+      out.push(q[best]);
+      i = best;
+    }
+    return out;
+  },
+  _railSight(a, b, maxC, cost) {
+    const W = this.world.w;
+    const ax = (a % W) + 0.5,
+      az = ((a / W) | 0) + 0.5,
+      bx = (b % W) + 0.5,
+      bz = ((b / W) | 0) + 0.5;
+    const k = Math.ceil(Math.hypot(bx - ax, bz - az) / 0.3);
+    let last = -1;
+    for (let s = 0; s <= k; s++) {
+      const t = Math.floor(az + ((bz - az) * s) / k) * W + Math.floor(ax + ((bx - ax) * s) / k);
+      if (t === last) continue;
+      last = t;
+      if (!(cost(t) <= maxC)) return false;
+    }
+    return true;
+  },
   _railCost(kind, mask, relaxed) {
+    const w = this.world;
+    const use = this.use;
+    const B = this._railBlk;
+    const Cr = this._railCor;
+    // a town, an airport's clear zone and the other lines nearby (see
+    // _railBlocks and _railCorridor), on top of the ground's own price
+    const near = (i, c) => {
+      const b = B ? B[i] : 0;
+      if (b === 255) return Infinity;
+      if (b === 254) return relaxed ? c + 40 : Infinity;
+      if (b === 2) c += kind === 'rail' ? 9 : 4;
+      else if (b === 1) c += use[i] === USE.ROAD ? 2 : 0.5;
+      const k = Cr ? Cr[i] : 0;
+      if (k === 1) c += 1.5;
+      else if (k === 2) c *= 0.8;
+      else if (k === 3) c += 0.8;
+      return c;
+    };
+    const base0 = this._railCost0(kind, mask, relaxed);
+    return (i) => {
+      const c = base0(i);
+      return c === Infinity ? c : near(i, c);
+    };
+  },
+  _railCost0(kind, mask, relaxed) {
     const w = this.world;
     const use = this.use;
     // steep ground costs dear: a line keeps to a gentle grade and goes round

@@ -53,6 +53,8 @@ const COL = {
   deck: 0x5a5e64,
   girder: 0x7a3a2c,
   pier: 0x9a948a,
+  viaduct: 0xb0aca4,
+  viaduct2: 0x948f86,
   guide: 0xe8ecee,
   guide2: 0xb4bcc2,
   glow: 0x9ff0ff,
@@ -275,7 +277,19 @@ export class InfraRenderer {
         hb = yb - Y[i + 1].g;
       const bridge = Y[i].wet || Y[i + 1].wet || Math.max(ha, hb) > VIADUCT;
       const sw = a0 < swLen;
-      if (bridge) {
+      // (across a town's core: a concrete viaduct over the streets, its
+      // piers on T-heads, parapets either side)
+      const town = seg.core && (seg.core[i] || seg.core[i + 1]);
+      if (bridge && town) {
+        E.bar(ax, az, bx, bz, ya, yb, DECK_W * 1.3, GIRDER_H * 0.8, COL.viaduct);
+        E.bar(ax, az, bx, bz, ya + 0.002, yb + 0.002, DECK_W * 1.1, 0, COL.ballast, 0, false);
+        for (const sd of [1, -1]) E.bar(ax + px * DECK_W * 0.62 * sd, az + pz * DECK_W * 0.62 * sd, bx + px * DECK_W * 0.62 * sd, bz + pz * DECK_W * 0.62 * sd, ya + 0.05, yb + 0.05, 0.03, 0.05, COL.viaduct2);
+        if (a0 - lastPier >= PIER_GAP * 1.25 && ha > GIRDER_H + 0.04) {
+          lastPier = a0;
+          E.post(ax, az, Y[i].g - 0.2, ya - GIRDER_H * 0.8, PIER_W * 1.1, COL.viaduct2);
+          E.bar(ax + px * DECK_W * 0.6, az + pz * DECK_W * 0.6, ax - px * DECK_W * 0.6, az - pz * DECK_W * 0.6, ya - GIRDER_H * 0.8, ya - GIRDER_H * 0.8, PIER_W * 1.1, PIER_W * 0.5, COL.viaduct2);
+        }
+      } else if (bridge) {
         // a steel deck on red girders, on stone piers down to the ground or
         // the river bed
         E.bar(ax, az, bx, bz, ya, yb, DECK_W * 1.2, GIRDER_H, COL.girder);

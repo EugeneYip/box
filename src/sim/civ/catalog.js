@@ -87,7 +87,7 @@ export const BUILDING_TYPES = {
   arcology: { names: ['Arcology'], kind: 'arcology', w: 4, h: 4, levels: 1, hp: [1600], housing: [70], buildTime: [120], cost: [{ wood: 20, stone: 70, gold: 80 }], tech: ['arcology'], modern: true, banner: true },
   station: { names: ['Railway Station'], kind: 'station', w: 3, h: 1, levels: 1, hp: [260], buildTime: [30], cost: [{ wood: 10, stone: 16, gold: 6 }], tech: ['railways'], modern: true },
   airfield: { names: ['Airfield'], kind: 'airfield', w: 4, h: 2, levels: 1, hp: [200], buildTime: [30], cost: [{ wood: 6, stone: 14, gold: 12 }], tech: ['flight'], modern: true, air: 1 },
-  airport: { names: ['Airport'], kind: 'airport', w: 5, h: 3, levels: 1, hp: [500], buildTime: [60], cost: [{ stone: 40, gold: 50 }], tech: ['jets'], modern: true, air: 2 },
+  airport: { names: ['Airport'], kind: 'airport', w: 15, h: 5, levels: 1, hp: [500], buildTime: [60], cost: [{ stone: 40, gold: 50 }], tech: ['jets'], modern: true, air: 2 },
   containerport: { names: ['Container Port'], kind: 'containerport', w: 3, h: 2, levels: 1, hp: [420], buildTime: [50], cost: [{ stone: 30, gold: 30 }], coastal: true, tech: ['containers'], modern: true },
   launchpad: { names: ['Launch Pad'], kind: 'launchpad', w: 3, h: 3, levels: 1, hp: [500], buildTime: [60], cost: [{ stone: 40, gold: 50 }], tech: ['rocketry'], modern: true },
   spaceport: { names: ['Spaceport'], kind: 'spaceport', w: 4, h: 4, levels: 1, hp: [900], buildTime: [90], cost: [{ stone: 60, gold: 80 }], tech: ['orbital'], modern: true },

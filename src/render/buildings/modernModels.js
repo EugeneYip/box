@@ -786,63 +786,84 @@ const BUILD = {
   },
 
   airport(g, P) {
+    // A 15 x 5 field (catalog design size; 9 x 3 tiles): a runway along the
+    // whole length (14.4 design units: about nine airliner lengths, round
+    // 18's was about three), a parallel taxiway, the apron with three gates
+    // on a concourse, the terminal, the control tower, a cargo hangar and a
+    // fuel farm. The runway's used length is RUNWAYS.airport in
+    // src/sim/fleet/air.js (x0..x1 along local x, at z = -1.6).
     // The whole field stands on a raised apron: BuildingRenderer levels every
     // modern site on a stone platform whose top is 0.04 world units (0.07
-    // design units) above the plot, and a runway drawn at ground level lay
-    // under it (round 16: only the terminal and the tower showed, on a bare
-    // pad). G is the top of the grass, above that platform.
+    // design units) above the plot; G is the top of the grass, above it.
     const G = 0.09;
     const RY = G + 0.02; // the runway's surface
     const M = RY + 0.001; // its markings
-    g.box(0, -0.06, 0, 4.9, G + 0.06, 2.9, 0x7f966a);
+    g.box(0, -0.06, 0, 14.9, G + 0.06, 4.9, 0x7f966a);
     // the runway: dark tarmac with white edge lines, a dashed centre line,
-    // threshold bars and touchdown marks at both ends, edge lights
-    const rz = -0.98,
-      rw = 0.74;
-    g.box(0, G, rz, 4.8, 0.02, rw, 0x3c3e42);
-    for (const dz of [-1, 1]) g.box(0, M, rz + dz * (rw / 2 - 0.04), 4.62, 0.004, 0.022, P.stripe);
-    for (let i = 0; i < 10; i++) g.box(-1.58 + i * 0.35, M, rz, 0.19, 0.004, 0.032, P.stripe);
+    // threshold bars, touchdown marks and numbers at both ends, edge lights
+    const rz = -1.6,
+      rw = 0.9,
+      RL = 14.4;
+    g.box(0, G, rz, RL, 0.02, rw, 0x3c3e42);
+    for (const dz of [-1, 1]) g.box(0, M, rz + dz * (rw / 2 - 0.05), RL - 0.3, 0.004, 0.026, P.stripe);
+    for (let i = 0; i < 22; i++) g.box(-5.6 + i * 0.533, M, rz, 0.26, 0.004, 0.035, P.stripe);
     for (const sx of [-1, 1]) {
-      for (let k = 0; k < 8; k++) g.box(sx * 2.24, M, rz - 0.29 + k * 0.083, 0.24, 0.004, 0.046, P.stripe);
-      for (const dz of [-0.17, 0.17]) {
-        g.box(sx * 1.78, M, rz + dz, 0.32, 0.004, 0.075, P.stripe);
-        g.box(sx * 1.32, M, rz + dz, 0.2, 0.004, 0.05, P.stripe);
+      // threshold piano keys, the number, touchdown and aiming marks
+      for (let k = 0; k < 10; k++) g.box(sx * 6.88, M, rz - 0.36 + k * 0.08, 0.36, 0.004, 0.045, P.stripe);
+      g.box(sx * 6.32, M, rz - 0.08, 0.16, 0.004, 0.035, P.stripe);
+      g.box(sx * 6.32, M, rz + 0.08, 0.16, 0.004, 0.035, P.stripe);
+      g.box(sx * 6.32, M, rz, 0.035, 0.004, 0.2, P.stripe);
+      for (const dz of [-0.2, 0.2]) {
+        g.box(sx * 5.7, M, rz + dz, 0.5, 0.004, 0.1, P.stripe);
+        for (const x of [5.05, 4.55, 4.05]) g.box(sx * x, M, rz + dz, 0.28, 0.004, 0.06, P.stripe);
       }
-      // the runway's number: two bold bars and a cross bar by each threshold
-      g.box(sx * 1.98, M, rz - 0.06, 0.12, 0.004, 0.03, P.stripe);
-      g.box(sx * 1.98, M, rz + 0.06, 0.12, 0.004, 0.03, P.stripe);
-      g.box(sx * 1.98, M, rz, 0.03, 0.004, 0.15, P.stripe);
-      for (let k = 0; k < 8; k++) for (const dz of [-1, 1]) g.box(sx * (0.18 + k * 0.3), G, rz + dz * (rw / 2 + 0.05), 0.035, 0.035, 0.035, P.lamp, { glow: LAMP });
-      // approach lights off the ends and the green threshold lights
-      for (let k = 0; k < 5; k++) g.box(sx * 2.42, G, rz - 0.24 + k * 0.12, 0.03, 0.03, 0.03, 0x60ff80, { glow: LAMP });
+      for (let k = 0; k < 12; k++) for (const dz of [-1, 1]) g.box(sx * (0.3 + k * 0.6), G, rz + dz * (rw / 2 + 0.05), 0.035, 0.035, 0.035, P.lamp, { glow: LAMP });
+      // approach lights off the end and the green threshold bar
+      for (let k = 0; k < 6; k++) g.box(sx * 7.32, G, rz - 0.3 + k * 0.12, 0.03, 0.03, 0.03, 0x60ff80, { glow: LAMP });
     }
-    // the taxiway with its yellow centre line, linked to the runway at both ends
-    const tw = -0.45;
-    g.box(0, G, tw, 4.3, 0.016, 0.17, 0x55585d);
-    g.box(0, G + 0.017, tw, 4.3, 0.003, 0.016, P.yellow);
-    for (const sx of [-1, 1]) {
-      g.box(sx * 2.05, G, (tw + rz + rw / 2) / 2, 0.17, 0.016, tw - (rz + rw / 2) + 0.02, 0x55585d);
-      g.box(sx * 2.05, G + 0.017, (tw + rz + rw / 2) / 2, 0.016, 0.003, tw - (rz + rw / 2), P.yellow);
+    // the taxiway with its yellow centre line, joined to the runway at both
+    // ends and twice between
+    const tw = -0.78,
+      TW = 0.22,
+      TC = 0x55585d;
+    g.box(0, G, tw, 13.4, 0.016, TW, TC);
+    g.box(0, G + 0.017, tw, 13.4, 0.003, 0.018, P.yellow);
+    const gap = tw - TW / 2 - (rz + rw / 2);
+    for (const x of [-6.6, -2.4, 1.6, 6.6]) {
+      g.box(x, G, tw - TW / 2 - gap / 2, TW, 0.016, gap + 0.02, TC);
+      g.box(x, G + 0.017, tw - TW / 2 - gap / 2, 0.018, 0.003, gap + 0.02, P.yellow);
+      // the hold line where it meets the runway
+      g.box(x, G + 0.018, tw - TW / 2 - gap + 0.06, TW, 0.003, 0.02, P.yellow);
     }
-    // the apron: the stands in front of the concourse and the terminal
+    // the apron in front of the concourse and the terminal
     const AP = 0x8f8f8a;
-    g.box(-0.6, G, 0.08, 3.7, 0.016, 0.86, AP);
-    g.box(-1.12, G, 0.85, 2.66, 0.016, 0.7, AP);
+    g.box(-1.2, G, 0.34, 7.6, 0.016, 1.98, AP);
+    g.box(4.8, G, 0.1, 3.2, 0.016, 1.5, AP);
     const AY = G + 0.017;
-    // a concourse along the back of the stands, the main terminal at its end
-    const cz = 1.3;
-    g.box(-1.1, G, cz, 2.6, 0.26, 0.24, P.glass, { glow: 1, top: P.white });
-    g.box(-1.1, G + 0.26, cz, 2.66, 0.04, 0.3, P.white);
-    mullions(g, -1.1, G, cz, 2.6, 0.24, 0.26, 0.22, P.white, 0.02);
-    const tx = 0.83,
-      tz = 0.98;
-    g.box(tx, G, tz, 1.25, 0.44, 0.84, P.glass, { glow: 1, top: P.white });
-    mullions(g, tx, G, tz, 1.25, 0.84, 0.44, 0.2, P.white, 0.025);
-    vault(g, tx, G + 0.44, tz, 1.35, 0.4, P.white, { sy: 0.45 });
-    door(g, P, tx, tz + 0.42, 0.42, 0.28, P.glass, { canopy: P.accent });
-    sign(g, tx, G + 0.5, tz + 0.43, 0.9, 0.09);
-    // two airliners at their gates, noses to the concourse, on jet bridges;
-    // tugs and baggage carts beside them
+    // the concourse along the back of the stands, the terminal at its end
+    const cz = 1.72;
+    g.box(-2.2, G, cz, 5.0, 0.28, 0.36, P.glass, { glow: 1, top: P.white });
+    g.box(-2.2, G + 0.28, cz, 5.06, 0.04, 0.42, P.white);
+    mullions(g, -2.2, G, cz, 5.0, 0.36, 0.28, 0.25, P.white, 0.02);
+    const tx = 1.35,
+      tz = 1.55;
+    g.box(tx, G, tz, 2.1, 0.5, 1.2, P.glass, { glow: 1, top: P.white });
+    mullions(g, tx, G, tz, 2.1, 1.2, 0.5, 0.22, P.white, 0.025);
+    vault(g, tx, G + 0.5, tz, 2.2, 0.55, P.white, { sy: 0.5 });
+    door(g, P, tx, tz + 0.6, 0.5, 0.3, P.glass, { canopy: P.accent });
+    sign(g, tx, G + 0.56, tz + 0.61, 1.2, 0.1);
+    // the forecourt: a kerb road along the front with a few cars
+    g.box(-0.4, G, 2.3, 9.6, 0.012, 0.28, TC);
+    for (const [x, c] of [
+      [-3.4, 0xc0392b],
+      [-2.6, 0xeceae4],
+      [-0.9, 0x2e6fa8],
+      [0.4, 0xd68910],
+    ])
+      g.box(x, G + 0.012, 2.3, 0.22, 0.07, 0.11, c, { top: shade(c, 1.1) });
+    // three airliners at their gates, noses to the concourse, on jet
+    // bridges; tugs and baggage carts beside them (the size the flying
+    // airliners are drawn at)
     const jet = (x, z, ry, s) => {
       const W = 0xeceeee,
         WG = 0xd2d6da,
@@ -884,35 +905,49 @@ const BUILD = {
       for (const sd of [-1, 1]) g.box(-0.08, -0.135, sd * 0.1, 0.06, 0.06, 0.05, 0x2a2c30);
       g.pop();
     };
-    for (const [gx, pz] of [
-      [-1.75, 0.5],
-      [-0.55, 0.5],
-    ]) {
-      jet(gx, pz, -Math.PI / 2, 0.72);
+    for (const gx of [-4.1, -2.3, -0.5]) {
+      jet(gx, 0.62, -Math.PI / 2, 1);
       // the jet bridge from the concourse to the forward door
-      g.box(gx - 0.12, G + 0.1, 1.06, 0.08, 0.09, 0.26, 0xdcdcd6, { top: 0xc8c8c2 });
-      g.box(gx - 0.12, G, 0.96, 0.03, 0.1, 0.03, P.steel);
-      // stand markings: a lead-in line to the nose
-      g.box(gx, AY, 0.25, 0.016, 0.003, 1.4, P.yellow);
-      g.box(gx + 0.32, AY, 0.0, 0.12, 0.06, 0.08, P.yellow, { top: shade(P.yellow, 1.1) });
-      for (let k = 0; k < 3; k++) g.box(gx + 0.36 + k * 0.1, AY, 0.18, 0.08, 0.05, 0.06, 0x9aa0a6);
+      g.box(gx - 0.17, G + 0.12, 1.33, 0.09, 0.1, 0.42, 0xdcdcd6, { top: 0xc8c8c2 });
+      g.box(gx - 0.17, G, 1.17, 0.03, 0.12, 0.03, P.steel);
+      // stand markings: a lead-in line to the nose, the stand's edge
+      g.box(gx, AY, 0.3, 0.018, 0.003, 1.9, P.yellow);
+      g.box(gx + 0.88, AY, 0.4, 0.014, 0.003, 1.7, P.stripe);
+      g.box(gx + 0.42, AY, -0.08, 0.12, 0.06, 0.08, P.yellow, { top: shade(P.yellow, 1.1) });
+      for (let k = 0; k < 3; k++) g.box(gx + 0.46 + k * 0.1, AY, 0.12, 0.08, 0.05, 0.06, 0x9aa0a6);
     }
-    // the control tower
-    const ox = 2.0,
-      oz = 0.85;
-    g.box(ox, G, oz, 0.5, 0.3, 0.42, P.white);
-    g.cyl(ox, G + 0.3, oz, 0.12, 1.55, 10, P.white, { r2: 0.09 });
-    g.cyl(ox, G + 1.85, oz, 0.15, 0.08, 8, P.steel2, { r2: 0.24 });
-    g.cyl(ox, G + 1.93, oz, 0.24, 0.2, 8, P.glass, { glow: 1, r2: 0.27 });
-    g.cyl(ox, G + 2.13, oz, 0.29, 0.05, 8, P.dark, {});
-    g.cyl(ox, G + 2.18, oz, 0.015, 0.3, 4, P.steel, {});
-    g.box(ox, G + 2.48, oz, 0.05, 0.05, 0.05, P.red, { glow: BEACON });
-    // a windsock by the runway
-    g.box(1.6, G, -0.2, 0.02, 0.4, 0.02, P.white);
+    // the control tower between the terminal and the cargo side
+    const ox = 3.1,
+      oz = 1.55;
+    g.box(ox, G, oz, 0.6, 0.34, 0.5, P.white);
+    g.cyl(ox, G + 0.34, oz, 0.13, 1.7, 10, P.white, { r2: 0.1 });
+    g.cyl(ox, G + 2.04, oz, 0.16, 0.08, 8, P.steel2, { r2: 0.26 });
+    g.cyl(ox, G + 2.12, oz, 0.26, 0.22, 8, P.glass, { glow: 1, r2: 0.29 });
+    g.cyl(ox, G + 2.34, oz, 0.31, 0.05, 8, P.dark, {});
+    g.cyl(ox, G + 2.39, oz, 0.015, 0.3, 4, P.steel, {});
+    g.box(ox, G + 2.69, oz, 0.05, 0.05, 0.05, P.red, { glow: BEACON });
+    // the cargo hangar, doors open to its apron, a freighter's stand
     g.push();
-    g.translate(1.6, G + 0.38, -0.2);
+    g.translate(5.0, G, 1.45);
+    g.rotateY(Math.PI / 2);
+    vault(g, 0, 0, 0, 1.7, 0.75, P.era >= 6 ? 0xb8bec4 : 0x8a9096, { endA: 0x9a9a92, endB: P.steel2 });
+    g.pop();
+    sign(g, 5.0, G + 0.62, 0.6, 0.8, 0.08);
+    for (let k = 0; k < 4; k++) g.box(4.0 + k * 0.32, AY, 0.3, 0.26, 0.15, 0.2, [0xc0392b, 0x2e6fa8, 0xd68910, 0x7a8a96][k], { top: 0xd0d0cc });
+    // the fuel farm at the far end
+    for (const [x, z] of [
+      [-6.5, 1.2],
+      [-5.9, 1.2],
+      [-6.2, 1.85],
+    ])
+      g.cyl(x, G, z, 0.24, 0.32, 12, P.white, {});
+    g.box(-6.2, G, 0.55, 0.9, 0.012, 0.5, TC);
+    // a windsock by the runway, beacons at the runway's corners
+    g.box(3.6, G, -0.3, 0.02, 0.45, 0.02, P.white);
+    g.push();
+    g.translate(3.6, G + 0.43, -0.3);
     g.rotateZ(-Math.PI / 2 + 0.25);
-    g.cyl(0, 0, 0, 0.04, 0.22, 8, P.orange, { r2: 0.02, cap: false });
+    g.cyl(0, 0, 0, 0.045, 0.26, 8, P.orange, { r2: 0.02, cap: false });
     g.pop();
   },
 

@@ -205,8 +205,12 @@ export const brain = {
       const f = w.flora[i];
       if (f && FLORA_INFO[f].blocksMovement) return Infinity;
       const use = this.use[i];
-      if (use === USE.ROAD) return 0.5;
-      if (this.railMask?.[i] & 1) return 4; // beside a railway, crossing it on a street
+      // a railway at grade: crossed on a street (a level crossing), never
+      // walked along (people kept to the tracks where a line ran down a
+      // street or over a square); a viaduct overhead (8) is no matter
+      const rail = this.railMask?.[i] & 1;
+      if (use === USE.ROAD) return rail ? 2.5 : 0.5;
+      if (rail) return 6;
       const H = w.height;
       const sl = i + w.w < H.length && (i + 1) % w.w ? Math.abs(H[i + 1] - H[i]) + Math.abs(H[i + w.w] - H[i]) : 0;
       if (sl > 2.6) return Infinity;
