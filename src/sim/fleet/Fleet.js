@@ -412,11 +412,12 @@ export class Fleet {
     const t = (this._lt = c || {});
     t.ver = this.version;
     t.tick = this._gwTick;
-    t.all = t.rail = t.aid = t.transit = t.other = 0;
+    t.all = t.rail = t.aid = t.transit = t.other = t.tractor = 0;
     for (const v of this.list) {
       if (!v.alive || v.cls !== 'land' || v.parkAt != null) continue;
       t.all++;
       t[LAND_GROUP[v.kind] || 'other']++;
+      if (v.kind === 'tractor') t.tractor++;
     }
     return t;
   }
@@ -424,19 +425,28 @@ export class Fleet {
   // The limit is shared by quota, not first come first served (round 18: at
   // Year 600 the trains and caravans had taken every place and no realm sent
   // out an ambulance or a fire engine): trains and maglevs hold at most 30%
-  // of it, and a quarter is kept for the services (ambulances, fire engines,
-  // buses, trams, tractors), which the haulage, trade, cars and armour may
-  // not take. Emergencies (ambulances and fire engines) find a little room
-  // even over the limit; buses, trams and tractors leave the last few places
-  // to them and take at most 30% between them.
+  // of it, everything else (trucks, caravans, carts, cars, armour) at most
+  // 45%, the two together 75%; the last quarter is the services' own:
+  // ambulances and fire engines take up to 12% of the limit (with a little
+  // room even over it), and buses, trams and tractors the rest of the
+  // quarter, whatever the others hold (round 21: they had to wait for the
+  // whole limit to fall below 58 of 61, and at Year 600 one bus and no
+  // tractor ran in the world). A quarter of the transit room is kept for
+  // the tractors, which the buses and trams would otherwise always beat.
   landRoom(kind) {
     const L = this.budget.land;
     const t = this.landTally();
     const g = LAND_GROUP[kind] || 'other';
-    if (g === 'aid') return t.all < Math.ceil(L * 1.06) && t.aid < Math.max(4, Math.round(L * 0.15));
-    if (g === 'transit') return t.all < L - Math.max(2, Math.round(L * 0.05)) && t.transit < Math.max(3, Math.round(L * 0.3));
+    const over = t.all >= Math.ceil(L * 1.06);
+    if (g === 'aid') return !over && t.aid < Math.max(4, Math.round(L * 0.12));
+    if (g === 'transit') {
+      const room = Math.max(4, Math.round(L * 0.25) - t.aid);
+      if (over || t.transit >= room) return false;
+      return kind === 'tractor' || t.transit - t.tractor < Math.max(3, Math.round(room * 0.75));
+    }
     if (t.all >= L || t.rail + t.other >= Math.round(L * 0.75)) return false;
-    return g !== 'rail' || t.rail < Math.max(2, Math.round(L * 0.3));
+    if (g === 'rail') return t.rail < Math.max(2, Math.round(L * 0.3));
+    return t.other < Math.max(3, Math.round(L * 0.45));
   }
   // per-realm caps (a realm with many harbours keeps more ships)
   cap(kid, kind) {
