@@ -13,6 +13,7 @@ import { WaveMesh } from '../../render/fx/WaveMesh.js';
 // share of lowland). A town guarded by levees breaks the wave at its edge.
 
 const N = 44;
+const LEVEE_CROWN = 1.0; // wave crest (world units) a levee holds back in full
 
 function findDeep(w, x, z, dx, dz, max) {
   for (let d = 2; d < max; d += 1) {
@@ -95,8 +96,9 @@ export class Tsunami {
           if (c.hit <= 0) {
             c.hit = 0.25;
             const lev = this._flood(x, z, c.e);
-            // levees break the wave at the town's edge
-            if (lev > 0) c.e *= 1 - 0.55 * lev;
+            // levees break the wave at the town's edge (less of one that
+            // overtops them)
+            if (lev > 0) c.e *= 1 - 0.55 * lev * (1 - this._over(c.e));
           }
         }
       }
@@ -183,6 +185,14 @@ export class Tsunami {
     return { v, low, levee: v.guard?.flood || 0 };
   }
 
+  // How far a wave of strength e overtops a town's levees (0..0.5): its
+  // crest (A0 x e, 1.7 for a full Great Wave) against the levee's crown at
+  // LEVEE_CROWN. A full wave reaching a levee town pours a third of its
+  // low-ground harm over the wall; a spent or glancing one none.
+  _over(e) {
+    return Math.max(0, Math.min(0.5, (this.A0 * e - LEVEE_CROWN) / 2));
+  }
+
   _flood(x, z, e) {
     const g = this.game;
     const w = g.world;
@@ -190,7 +200,8 @@ export class Tsunami {
     const town = this._town(x, z);
     // an unguarded town on low ground takes the full force (up to about four
     // times the open shore's harm to its buildings); levees keep their guard
-    const low = town && !(town.levee > 0) ? town.low : 0;
+    // against all but a high wave, which partly overtops them (see _over)
+    const low = town ? (town.levee > 0 ? town.low * this._over(e) : town.low) : 0;
     w.forEachInRadius(x, z, 1.3, (tx, ty, d, i) => {
       if (w.height[i] < SEA_LEVEL) return;
       if (w.wetness) w.wetness[i] = 1;
