@@ -2191,7 +2191,7 @@ export class Civilization {
   }
 
   // A drought (the Drought power): the towns within radius of (x, z) see
-  // their unripe crops wither and most of their stores spoil, and for some
+  // their unripe crops wither and their stores spoil, and for some
   // years their fields bear next to nothing, so a famine follows unless kin
   // send grain. Returns the towns struck.
   drought(x, z, radius, years = 4) {
@@ -2201,7 +2201,9 @@ export class Civilization {
     for (const v of this.villages) {
       if (!v.alive || geoDist(w, v.cx, v.cz, x, z) > radius + (v.radius || 6) * 0.5) continue;
       v.droughtUntil = Math.max(v.droughtUntil || 0, now + YEAR * years);
-      v.food *= 0.2;
+      // the stores spoil: the famine is declared at the town's next tick
+      v.food = 0;
+      v.emptyT = Math.max(v.emptyT || 0, 12);
       for (const p of v.plots) {
         let dirty = false;
         for (const i of p.tiles)
