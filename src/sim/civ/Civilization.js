@@ -910,12 +910,14 @@ export class Civilization {
     // the village while the farmers thresh and mend)
     const seasonGrow = winter ? 0 : season < 1 ? 1.15 : season >= 2 ? 1.3 : 1;
     const fert = 1 + (this._easedMods().fertility - 1) * 0.5;
-    const growRate = (dt / 42) * (golden ? 1.3 : 1) * (rain ? 1.25 : 1) * seasonGrow * fert * this.techMod(v.kingdom, 'harvest');
-    if (winter) v.food += (v.jobCount.farmer || 0) * 0.6 * dt * fert;
+    // a drought (the Drought power) parches the fields: next to nothing grows
+    const dry = now < (v.droughtUntil || 0);
+    const growRate = (dt / 42) * (golden ? 1.3 : 1) * (rain ? 1.25 : 1) * seasonGrow * fert * this.techMod(v.kingdom, 'harvest') * (dry ? 0.04 : 1);
+    if (winter && !dry) v.food += (v.jobCount.farmer || 0) * 0.6 * dt * fert;
     // spring sowing: seed is broadcast on the bare tilled fields of the village
     // (a handful of farmers could never resow every field one by one after the
     // winter, and a small town with wide fields went hungry until summer)
-    const sow = season < 1.8 && !winter ? 0.05 * dt : 0;
+    const sow = season < 1.8 && !winter && !dry ? 0.05 * dt : 0;
     for (const p of v.plots) {
       let dirty = false;
       for (const i of p.tiles) {
@@ -2170,6 +2172,34 @@ export class Civilization {
       out.length = n;
     }
     return out.slice();
+  }
+
+  // A drought (the Drought power): the towns within radius of (x, z) see
+  // their unripe crops wither and most of their stores spoil, and for some
+  // years their fields bear next to nothing, so a famine follows unless kin
+  // send grain. Returns the towns struck.
+  drought(x, z, radius, years = 4) {
+    const w = this.world;
+    const now = this.game.time.total;
+    const hit = [];
+    for (const v of this.villages) {
+      if (!v.alive || geoDist(w, v.cx, v.cz, x, z) > radius + (v.radius || 6) * 0.5) continue;
+      v.droughtUntil = Math.max(v.droughtUntil || 0, now + YEAR * years);
+      v.food *= 0.2;
+      for (const p of v.plots) {
+        let dirty = false;
+        for (const i of p.tiles)
+          if (w.flora[i] === FLORA.WHEAT && w.floraGrowth[i] < 1) {
+            w.flora[i] = FLORA.NONE;
+            w.floraGrowth[i] = 0;
+            dirty = true;
+          }
+        if (dirty) w.markDirty('flora', p.x0, p.y0, p.x1, p.y1);
+      }
+      hit.push(v);
+    }
+    if (w.wetness) w.forEachInRadius(x, z, radius, (tx, ty, d, i) => (w.wetness[i] = 0));
+    return hit;
   }
 
   damageArea(x, z, radius, amount, cause = 'disaster') {

@@ -231,3 +231,23 @@ registerPower({
     herald(g, 'plague', c, 'A sickly miasma creeps through %.');
   },
 });
+
+registerPower({
+  id: 'drought',
+  name: 'Drought',
+  category: 'disaster',
+  description: 'Withhold the rain. Crops wither, the stores spoil, and the towns there go hungry for years.',
+  brush: { size: 14, min: 6, max: 30 },
+  mode: 'click',
+  cursorColor: '#d8a24a',
+  apply: (g, c) => {
+    const r = c.radius || 14;
+    const hit = g.civ?.drought?.(c.x, c.z, r, 4) || [];
+    for (let k = 0; k < 6; k++) {
+      const a = R() * Math.PI * 2,
+        d = Math.sqrt(R()) * r;
+      g.fx.emit?.('dust', { x: c.x + Math.cos(a) * d, z: c.z + Math.sin(a) * d }, { scale: 1.2, count: 3 });
+    }
+    herald(g, 'drought', c, hit.length ? `Drought parches ${hit.length === 1 ? hit[0].name : hit.length + ' towns'} in %: the harvest fails.` : 'Drought parches the land in %.');
+  },
+});
