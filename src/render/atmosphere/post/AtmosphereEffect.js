@@ -22,7 +22,7 @@ uniform vec4 uHaze;   // start, density, height falloff, max
 uniform vec4 uMist;   // density, falloff (1/H), base height, max
 uniform vec3 uMistColor;
 uniform sampler2D tHeight;  // world heights (game.terrain.heightTexture)
-uniform vec3 uWorld;       // world w, h, has-height-texture
+uniform vec3 uWorld;       // world w, h, has-height-texture (2 = and the sides wrap)
 uniform float uWet;
 uniform vec3 uLightDir;
 uniform vec3 uLightCol;
@@ -191,6 +191,15 @@ void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor)
   hz = max(hz, smoothstep(0.62, 0.95, lin / uFar) * (1.0 - smoothstep(0.08, 0.3, -dir.y)));
   if (hz > 0.002) col = mix(col, farColor(dir, water), hz);
   col += moonSheen(dir, water);
+  // beyond the map's edge (terrain skirt, outer sea) the ground melts into the
+  // far haze when seen low over the map, so the border never rules a straight
+  // horizon line under the sky (most visible at night)
+  {
+    vec2 od2 = max(max(-wp.xz, wp.xz - uWorld.xy), 0.0);
+    if (uWorld.z > 1.5) od2.x = 0.0;
+    float outK2 = smoothstep(1.0, 40.0, length(od2)) * (1.0 - smoothstep(0.10, 0.35, -dir.y));
+    if (outK2 > 0.001) col = mix(col, farColor(dir, 1.0) + moonSheen(dir, 1.0) * 0.5, outK2);
+  }
   // regional maps: the land that runs off the window fades into a sea mist
   // over its last tiles (ragged, two noise scales), and the sea beyond the
   // border lies under the same veil, so the map never reads as a cut box
@@ -260,7 +269,7 @@ export class AtmosphereEffect extends Effect {
       U.get('uMistColor').value.copy(params.mistColor);
       U.get('uWet').value = params.wet || 0;
       U.get('tHeight').value = params.heightTex || null;
-      U.get('uWorld').value.set(params.worldW || 256, params.worldH || 256, params.heightTex ? 1 : 0);
+      U.get('uWorld').value.set(params.worldW || 256, params.worldH || 256, params.heightTex ? (params.worldWrap ? 2 : 1) : 0);
       U.get('uLightDir').value.copy(params.lightDir);
       U.get('uLightCol').value.copy(params.lightColor);
       if (params.moonSea) U.get('uMoonSea').value.copy(params.moonSea);

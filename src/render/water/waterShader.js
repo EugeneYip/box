@@ -368,6 +368,9 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   float openLead = lead * smoothstep(0.3, 0.8, edgeZone) * 0.6;
   float thinLead = lead * (1.0 - smoothstep(0.3, 0.8, edgeZone));
   ice = max(ice * (1.0 - openLead * smoothstep(0.05, 0.4, ice)), floeDrift);
+  // a pocket of open water ringed by sheet ice is skimmed with thin new ice
+  // (a dark navy hole in a pale sheet read as a stain)
+  ice = max(ice, smoothstep(0.55, 0.9, margin) * 0.75 * (1.0 - outK) * step(0.001, depth));
   float iceRim = (1.0 - smoothstep(gapW, gapW * 2.4, fl.g)) * (1.0 - lead);
   iceRim = max(iceRim, floeDrift * smoothstep(floeR - 0.07, floeR - 0.01, floeE));
   // icebergs: rare faceted bergs in cold open water
@@ -406,7 +409,8 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   col *= 1.0 - 0.45 * bergShadow * (1.0 - ice);
   if (ice > 0.0) {
     float cracks = 1.0 - smoothstep(0.0, 0.06, fc.g);
-    vec3 iceAlb = mix(vec3(0.27, 0.33, 0.40), vec3(0.38, 0.44, 0.50), smoothstep(0.3, 0.8, fn.r));
+    // (a light cool ice: the old mid grey took the warm light as a beige-grey sheet)
+    vec3 iceAlb = mix(vec3(0.36, 0.43, 0.50), vec3(0.47, 0.54, 0.60), smoothstep(0.3, 0.8, fn.r));
     iceAlb = mix(iceAlb, vec3(0.20, 0.24, 0.33), smoothstep(0.55, 0.85, fn.b) * 0.5); // blue-violet hollows
     float cracks2 = 1.0 - smoothstep(0.0, 0.05, fc2.g);
     iceAlb *= (1.0 - cracks * 0.30) * (1.0 - cracks2 * 0.14);

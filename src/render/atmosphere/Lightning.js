@@ -303,8 +303,12 @@ export class Lightning {
     };
     let ii = 0;
     for (const b of this.bolts) {
-      const br = this.brightness(b);
-      flash = Math.max(flash, br);
+      const flashB = this.brightness(b);
+      flash = Math.max(flash, flashB);
+      // the ionised channel keeps a faint glow between the return strokes, so
+      // a bolt stays visible for about half a second (not only for the scene
+      // flash, which stays on the strobe curve)
+      const br = Math.max(flashB, 0.32 * b.intensity * (1 - THREE.MathUtils.smoothstep(b.age, b.life * 0.25, b.life * 0.7)));
       if (br >= 0.01) {
         write(b.main, core * 1.15, core * 0.7, br);
         for (const br2 of b.branches) write(br2.pts, core * br2.w * 1.3, core * br2.w * 0.25, br * 0.6);

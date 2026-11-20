@@ -8,6 +8,7 @@ import { Weather, WEATHER_TYPES } from './Weather.js';
 import { ShadowCache } from './ShadowCache.js';
 import { AgeLook } from './AgeLooks.js';
 import { noise1, smoothstep, mulberry32, approach } from './util.js';
+import { geoWrapOn } from '../../world/geo.js';
 
 // Atmosphere: sun / moon / sky lighting, camera-fitted stable shadows, the
 // procedural sky, clouds and cloud shadows, day-night cycle, weather visuals
@@ -669,6 +670,7 @@ export class Atmosphere {
     P.heightTex = game.terrain?.heightTexture || null;
     P.worldW = game.world.w;
     P.worldH = game.world.h;
+    P.worldWrap = geoWrapOn(game.world); // (the round world's sides are no edge)
     // regional World Map windows: a sea mist over the border so land running
     // off the window fades out (strongest at the overview, where the box shows)
     {
