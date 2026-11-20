@@ -445,10 +445,32 @@ export const modern = {
     // at a time and turns to grass (mown lawn from the Modern era, Terrain);
     // new plots go out beyond the paving (_planPlot). Fenced fields stood
     // between the apartments of Modern towns.
-    if ((K.era || 0) >= 4 && v.plots?.length && this.rng.chance((K.era || 0) >= 5 ? 1 : 0.5)) {
+    // The handover waits for the new fields (round 22: the inner plots went
+    // years before the outer ones were sown, and the Industrial century lost
+    // 14-17% of its people for fifty years): the town keeps sowing outer
+    // plots for the inner ones it holds (v.innerFields raises its field
+    // target, Civilization._planVillage), and an inner plot goes only once
+    // the rest would still meet the target with no outer plot still being
+    // tilled, or while the granary is near full.
+    if ((K.era || 0) >= 4 && v.plots?.length) {
       const core = this._pavedRadius(v);
-      const p = v.plots.find((q) => Math.hypot((q.x0 + q.x1 + 1) / 2 - v.cx, (q.y0 + q.y1 + 1) / 2 - v.cz) < core);
+      const w = this.world;
+      let p = null,
+        inner = 0,
+        sowing = 0;
+      for (const q of v.plots) {
+        if (Math.hypot((q.x0 + q.x1 + 1) / 2 - v.cx, (q.y0 + q.y1 + 1) / 2 - v.cz) < core) {
+          inner += q.tiles.length;
+          if (!p) p = q;
+        } else if (q.tiles.some((i) => w.type[i] !== TILE.FARMLAND)) sowing++;
+      }
+      v.innerFields = inner;
+      const target = 8 + v.pop * 1.1;
+      const rest = p ? v.fieldCount - p.tiles.length : 0;
+      const fed = (sowing === 0 && rest >= target) || (v.food >= (v.foodCap || 1e9) * 0.85 && !v.starving && rest >= target * 0.75);
+      if (!(p && fed && this.rng.chance((K.era || 0) >= 5 ? 1 : 0.5))) p = null;
       if (p) {
+        v.innerFields -= p.tiles.length;
         const w = this.world;
         for (const i of [...p.tiles]) {
           this._removePlotTile(i);

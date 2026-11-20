@@ -276,11 +276,24 @@ export const air = {
     // drone or sky taxi far out of sight lands early.
     const full = this._airFull(def, o);
     if (full && !(full === 'total' && !o.auto && from.rw && !def.vtol && this._airMakeRoom())) return refuse('the skies are crowded');
-    // a runway takes so many at a time: those on its own approach and climb-out
-    if (from.rw && from.building != null && this._approachBusy(from.building)) return refuse('the runway is busy');
+    // a runway takes so many at a time: those on its own approach and climb-out.
+    // An airliner kept waiting goes first: the field's planes and circuits
+    // hold back a while (round 22: 53 airliners were refused a busy runway)
+    if (from.rw && from.building != null) {
+      const lw = this._linerWait || (this._linerWait = new Map());
+      const now = this.game.time.total;
+      const liner = o.kind === 'airliner';
+      const waiting = !liner && now - (lw.get(from.building) ?? -1e9) < 8;
+      if (this._approachBusy(from.building, liner ? 4 : waiting ? 2 : 3)) {
+        if (liner) lw.set(from.building, now);
+        return refuse('the runway is busy');
+      }
+      if (liner) lw.delete(from.building);
+    }
     if (this.grounded(from.x, from.z)) return refuse(this.solarStormLevel() > 0.2 ? 'aircraft are grounded by the solar storm' : this.storm() > 0.5 ? 'aircraft are grounded by the storm' : 'the airfield has no power');
     if (this.dist(from.x, from.z, to.x, to.z) < 1) return refuse('nowhere to fly');
     const f = this._airRecord(o.kind, def, o.kingdom, from, to, o.cargo);
+    if (o.cargo?.strike) f.sortie = true; // (counted against the war share there and back)
     f.home = o.home ?? (o.cargo?.strike || o.cargo?.rescue ? from : null); // sorties and rescues fly home again
     f.arc = (this.rng() < 0.5 ? -1 : 1) * (0.25 + this.rng() * 0.5); // a gentle curve (heading drift)
     this._depart(f);
@@ -300,19 +313,36 @@ export const air = {
       all++;
       if (f.cls !== 'air') continue;
       if (f.def?.vtol) vt++;
-      if (f.cargo?.strike) war++;
+      if (f.sortie || f.cargo?.strike) war++;
       if (f.kind === 'airliner') liners++;
     }
-    const cap = this.budget.air;
+    const cap = this.airCap();
     if (all >= cap) return 'total';
     // two places are kept for airliners (round 21: with the sky full of
     // drones, sky taxis and circuits, 37% of the airports' airliner flights
     // were refused): the others see a full sky two short of the limit
     if (def.kind !== 'airliner' && all >= cap - Math.max(0, AIRLINER_KEEP - liners)) return 'total';
     if (def.vtol) return vt >= Math.ceil(cap * 0.4) ? 'share' : '';
-    if (o.cargo?.strike) return war >= Math.ceil(cap * 0.4) ? 'share' : '';
-    if (o.auto && all >= cap - Math.max(2, Math.round(cap * 0.15))) return 'share';
+    // (round 23) jets and other sorties hold at most 30% of the sky, counted
+    // for the whole flight out and home again (round 22: a sortie flying home
+    // no longer counted, and jets held 12 of 18 places)
+    if (o.cargo?.strike) return war >= Math.ceil(cap * 0.3) ? 'share' : '';
+    if (o.auto && def.kind !== 'airliner' && all >= cap - Math.max(2, Math.round(cap * 0.15))) return 'share';
     return '';
+  },
+  // The limit on aircraft aloft: the map's, and a little more for a world of
+  // many airfields, airports and spaceports (one place for every four, up to
+  // a third more), counted every ten seconds.
+  airCap() {
+    const base = this.budget.air;
+    const now = this.game.time.total;
+    if (this._acT == null || now - this._acT > 10) {
+      this._acT = now;
+      let n = 0;
+      for (const b of this.game.civ?.buildings || []) if (b && b.alive && !b.constructing && (RUNWAYS[b.type] || b.type === 'spaceport')) n++;
+      this._ac = base + Math.min(Math.round(base / 3), n >> 2);
+    }
+    return this._ac;
   },
   // Room in a full sky: the circuit, drone or sky taxi farthest out of sight
   // (cruising, with nothing aboard that matters) lands early. False if none.
@@ -335,14 +365,14 @@ export const air = {
   // Aircraft on a field's own runway, climb-out or approach: rolling or
   // climbing away from it, or bound for it and near (final approach, the
   // roll-out, parked on the apron). A runway takes three at a time.
-  _approachBusy(bid) {
+  _approachBusy(bid, max = 3) {
     let n = 0;
     for (const f of this.air) {
       if (!f.alive || f.cls !== 'air' || f.def.vtol) continue;
       const out = f.from?.building === bid && (f.phase === 'roll' || f.phase === 'climb');
       const tob = f.to?.building === bid || f.circuit?.building === bid;
       const inb = tob && (f.phase === 'final' || f.phase === 'rollout' || f.phase === 'parked' || (f.phase === 'cruise' && f._ap != null));
-      if ((out || inb) && ++n >= 3) return true;
+      if ((out || inb) && ++n >= max) return true;
     }
     return false;
   },
@@ -371,7 +401,7 @@ export const air = {
       const K = this.kingdom(b.kingdom);
       if (!K || K.alive === false || !this.hasTech(b.kingdom, 'flight')) continue;
       const kind = port && this.hasTech(b.kingdom, 'jets') ? 'airliner' : 'plane';
-      if (this._airFull(AIR_KINDS[kind], { auto: true }) || this.grounded(b.x, b.z) || this._approachBusy(b.id)) {
+      if (this._airFull(AIR_KINDS[kind], { auto: true }) || this.grounded(b.x, b.z) || this._approachBusy(b.id, kind === 'airliner' ? 4 : 3)) {
         b._airNext = now + 3 + this.rng() * 4; // (tries again soon)
         continue;
       }

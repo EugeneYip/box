@@ -493,7 +493,39 @@ export const politics = {
   },
 
   // ---------------------------------------------------------------- diplomacy
+  // A young crown (under REALM_GRACE years) whose towns have dwindled is
+  // refilled: young families come from the nearest big town on its land of a
+  // realm not at war with it (round 22: two realms fell within ten years of
+  // their founding, their last town emptied).
+  _keepYoungRealms() {
+    const now = this.game.time.total;
+    for (const k of this.kingdoms) {
+      if (!k.alive || !k.villages.length || now - k.founded >= YEAR * REALM_GRACE || k.player?.name) continue;
+      let pop = 0;
+      for (const vid of k.villages) pop += this.villages[vid]?.pop || 0;
+      const v = this.villages[k.capital];
+      if (pop >= 10 || !v?.alive) continue;
+      let src = null,
+        sd = Infinity;
+      for (const o of this.villages) {
+        if (!o.alive || o.kingdom === k.id || o.landId !== v.landId || o.pop < 30 || o.starving || this.atWar(o.kingdom, k.id)) continue;
+        const d = geoDist(this.world, o.cx, o.cz, v.cx, v.cz);
+        if (d < sd) (sd = d), (src = o);
+      }
+      if (!src) continue;
+      let moved = 0;
+      for (const u of [...src.members]) {
+        if (moved >= 3) break;
+        if (!u.alive || u.age < ADULT_AGE || u.age > 40 || u.job === 'king' || u.job === 'soldier' || u.data?.civ?.army) continue;
+        this._moveMember(u, v);
+        moved++;
+      }
+      if (moved) this._history(`Families from ${src.name} settle in ${v.name}`, 'info', { x: v.cx, z: v.cz });
+    }
+  },
+
   _diplomacy() {
+    this._keepYoungRealms();
     this._recolorClashes();
     this._abdications();
     this._overextension();
@@ -1239,7 +1271,9 @@ export const politics = {
     else v.unrest = Math.max(0, (v.unrest || 0) - 1);
     // (halved again: a rising was still the birth of most realms, and most
     // lived twenty-odd years; realms averaged 52 years by Year 300)
-    if (v.unrest >= 4 && now - k.founded >= YEAR * 15 && this._kLaw(k.id, 'civRebellions') && this.rng.chance(alive < 3 ? 0.2 : alive >= 12 ? 0.045 : 0.07)) this.rebel(v);
+    // (round 23: a world of sixteen or more realms rises less often still;
+    // the mid eras saw 51-53 risings a century against 41 in round 20)
+    if (v.unrest >= 4 && now - k.founded >= YEAR * 15 && this._kLaw(k.id, 'civRebellions') && this.rng.chance(alive < 3 ? 0.2 : alive >= 16 ? 0.03 : alive >= 12 ? 0.045 : 0.07)) this.rebel(v);
   },
 
   _aliveKingdoms() {
@@ -1315,8 +1349,9 @@ export const politics = {
     // rises to join it rather than to crown a realm named after itself
     const land = forced ? null : this._landRealm?.(v);
     if (land && land.id !== old.id && !land.player?.name) return this._riseHome(v, old, land, silent);
-    // a real country seeded at the start rides out one rising at a time
-    if (!forced && old.seeded && now - (old.rebelT ?? -1e9) < YEAR * 4) return null;
+    // a realm rides out one rising at a time (a real country seeded at the
+    // start four years, any other three: risings came in chains)
+    if (!forced && now - (old.rebelT ?? -1e9) < YEAR * (old.seeded ? 4 : 3)) return null;
     // the towns that would rise with it (decided now, so a lone small town
     // knows whether it can stand as a realm)
     const joiners = [];

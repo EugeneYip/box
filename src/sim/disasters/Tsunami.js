@@ -73,6 +73,7 @@ export class Tsunami {
     this.mesh = new WaveMesh(this.game.fx, N);
     this._sound = 0;
     this._low = new Map();
+    this._pop0 = new Map(); // town id -> its people when the wave first struck (_flood)
     play(this.game, 'splash', { x, z }, 1, 0.5);
   }
 
@@ -241,7 +242,15 @@ export class Tsunami {
       }
     });
     fx.emit('splash', { x, y: w.heightAt(x, z), z }, { scale: 0.7 + e, dir: { x: this.hx, y: 0.3, z: this.hz } });
-    hurt(g, x, z, 1.6 + low * 0.6, 18 * e * (1 + low * 1.5), 30 * e * (1 + low * 3.2), 'tsunami');
+    // one wave takes at most about three in five of a town's people: the
+    // rest cling to roofs and high ground (round 22: a town of 41 kept 1)
+    let uDmg = 18 * e * (1 + low * 1.5);
+    if (town) {
+      const n = town.v.members?.size ?? town.v.pop ?? 0;
+      const pop0 = this._pop0.get(town.v.id) ?? (this._pop0.set(town.v.id, n), n);
+      if (n <= Math.ceil(pop0 * 0.4)) uDmg = 0;
+    }
+    hurt(g, x, z, 1.6 + low * 0.6, uDmg, 30 * e * (1 + low * 3.2), 'tsunami');
     return town ? town.levee : 0;
   }
 
