@@ -780,6 +780,8 @@ export function installDaily(Units) {
     const hx = home ? home.doorX : pl.sq.x,
       hz = home ? home.doorZ : pl.sq.z;
     if (!c.live) {
+      // (round 23) a pinned evening hour is an evening: the square fills
+      if (h >= 17.5 && h < 21.5 && !working && !guard) return this._dlEvening(u, now, v, pl, child, 22, h);
       // a pinned hour: a gentle mix without the clock
       if (rng() < 0.08 && !working && !guard) return this._dlSocial(u, v, pl, 18 + rng() * 10, child);
       return false;
