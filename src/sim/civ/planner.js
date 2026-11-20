@@ -511,6 +511,9 @@ export const planner = {
     // the town's plan (a main street and its cross streets) is laid before
     // the houses fill in, and laid out further as it becomes a town
     this._layTownPlan(v);
+    // the square stays open from the first houses on (a starting village's
+    // three houses were placed before its first plan, on the square)
+    if (v.hall) this._keepClear(v);
     // from the Modern era the farm works (silos, granaries, barns, pens)
     // stand out beyond the paved town, never in its square or core
     if (FARM_OUT.has(type) && (this.kingdoms[v.kingdom]?.era || 0) >= (type === 'pasture' ? 4 : 5)) {
@@ -886,14 +889,27 @@ export const planner = {
   _thinRoads(v, doors, isR) {
     const w = this.world;
     const W = w.w;
+    // (once a pass finds nothing, the town is left alone until its streets
+    // change: the scan cost 0.7 ms a tick over a granted world)
+    const sig = v.roadTiles.length * 7 + v.buildings.length;
+    if (v.thinSig === sig) return 0;
     const RING = [[-1, -1], [0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0]];
+    const r = [false, false, false, false, false, false, false, false];
+    const use = this.use;
     let n = 0;
     for (const i of v.roadTiles) {
-      if (n >= 24) break;
-      if (this.use[i] !== USE.ROAD || doors.has(i) || w.building[i] >= 0 || this.keepClear?.[i]) continue;
+      if (n >= 16) break;
+      if (use[i] !== USE.ROAD || doors.has(i) || w.building[i] >= 0 || this.keepClear?.[i]) continue;
       const x = i % W,
         y = (i / W) | 0;
-      const r = RING.map(([ox, oy]) => isR(x + ox, y + oy));
+      if (x < 1 || y < 1 || x >= W - 1 || y >= w.h - 1) continue;
+      // quick reject: a 2 x 2 block needs two road neighbours at a corner
+      const rl = use[i - 1] === USE.ROAD,
+        rr = use[i + 1] === USE.ROAD,
+        ru = use[i - W] === USE.ROAD,
+        rd = use[i + W] === USE.ROAD;
+      if (!((rl || rr) && (ru || rd))) continue;
+      for (let k = 0; k < 8; k++) r[k] = use[(y + RING[k][1]) * W + x + RING[k][0]] === USE.ROAD;
       // in a 2 x 2 block of road
       let blob = false;
       for (let k = 0; k < 8; k += 2) if (r[k] && r[(k + 1) & 7] && r[(k + 7) & 7]) blob = true;
@@ -930,6 +946,7 @@ export const planner = {
       this._unlayRoad(i);
       n++;
     }
+    if (!n) v.thinSig = sig;
     return n;
   },
 
