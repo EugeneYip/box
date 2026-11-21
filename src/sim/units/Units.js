@@ -2258,6 +2258,7 @@ export class Units {
     const far8Big = stepK >= 2 && area > 65536 * 2;
     const far8Med = !far8Big && stepK >= 4 && area >= 65536 && !globalThis.__far8MedOff;
     const far8 = (far8Big || far8Med || far8Ov) && !globalThis.__lod8Off;
+    const far4Med = far8Med && !globalThis.__lod8Off && !globalThis.__far4MedOff;
     const far8d2 = far8Ov || far8Med ? Math.max(far8Ov ? 0 : lr2 * 4, FAR8_DIST * FAR8_DIST) : Math.max(lr2 * 16, FAR8_DIST * FAR8_DIST);
     // (only the big-map schedule also halves the timer re-thinks: on the
     // smaller maps a worker who finished a task would stand idle twice as
@@ -2316,7 +2317,11 @@ export class Units {
         fdz0 = u.z - focus.z;
       const fd2 = fdx0 * fdx0 + fdz0 * fdz0;
       let lod = 0;
-      if (!u.combat && (overview || fd2 > lr2) && def.habitat !== 'air' && !BRAIN_TICKS[def.brain]) lod = far8 && fd2 > far8d2 ? 3 : overview || fd2 > lr2 * 4 ? 2 : 1;
+      // (round 27) at the coarsest step on a Medium map (16x and above) a
+      // walker beyond the full-rate radius updates every fourth tick rather
+      // than every other one; the camera's neighbourhood keeps the full
+      // schedule
+      if (!u.combat && (overview || fd2 > lr2) && def.habitat !== 'air' && !BRAIN_TICKS[def.brain]) lod = far8 && fd2 > far8d2 ? 3 : overview || fd2 > lr2 * 4 || far4Med ? 2 : 1;
       if (lod && (slot & ((1 << lod) - 1)) !== 0 && u.thinkT > 0.05) {
         u.anim += dt * (u.moving ? 1 : 0.35);
         // its last stride is shown in even steps, one a tick, so a distant
