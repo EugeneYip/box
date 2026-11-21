@@ -60,6 +60,35 @@ emptier and roomier.
   select. Creature LOD is by on-screen pixel height, so half-size people turn
   to the cheaper models and to dots sooner; dots keep a 6 px minimum.
 
+## Round 25: the world fitted round the half-size units
+
+The units stay halved (no size floor for any craft); what stood beside them
+was refitted instead.
+
+- Small plants halve with the people: `PROP.shrub` 0.8 → 0.4 (bushes,
+  flowers, reeds, cacti, stumps), `PROP.grass` 0.5 → 0.25, and the new
+  `PROP.plant` (0.5) for GroundCover's ferns, broad-leaf clumps, meadow
+  flowers and tumbleweed. Trees, crops, fences and buildings keep theirs.
+- Person-height props take the people's factor: `PROP.kit` (= `UNIT.scale`)
+  for scarecrows, benches and the food stall; `PROP.kitRel` (`UNIT.rel`)
+  inside building models (the well, the market's stalls).
+- Mid zoom (about 18 to 80 tiles): each person on land wears a small bright
+  camera-facing mark at least 3.6 px across (one more decal in the existing
+  overlay layer), and road vehicles keep at least about 5.5 px of length on
+  screen (`FleetRenderer` `MIN_CAR_PX`); up close both keep their true size.
+- Ships: a hull with a clearance need needs a channel its beam plus two
+  tiles wide; the great hulls (`DEEP_WATER` in `src/sim/fleet/hull.js`:
+  carrier, liner, battleship, tanker, container ships) are moved out of
+  rivers to open water and berth only in such water. A harbour's berths
+  start past its long pier's real end (`pierEnd`), and a hull alongside lies
+  off the pier by half its width plus half its beam (`pierHalf`).
+- No tree stands on an airport's plot or within two tiles of it.
+- Camera, closest zooms: under distance 20 the target sits on the ground
+  itself (easing to 60% of the ground height by 40), the pitch rises until
+  the line of sight clears the terrain, and buildings between the eye and
+  the target open in a dithered cutaway round the middle of the frame
+  (`CAM_CUT` in `src/core/CameraRig.js`, read by the building material).
+
 ## Keeping it fast
 
 - GPU: instancing for every repeated mesh (people, animals, vehicles, props,
