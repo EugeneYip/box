@@ -73,7 +73,7 @@ was refitted instead.
   for scarecrows, benches and the food stall; `PROP.kitRel` (`UNIT.rel`)
   inside building models (the well, the market's stalls).
 - Mid zoom (about 18 to 80 tiles): each person on land wears a small bright
-  camera-facing mark at least 3.6 px across (one more decal in the existing
+  camera-facing mark 4.2 px across (one more decal in the existing
   overlay layer), and road vehicles keep at least about 5.5 px of length on
   screen (`FleetRenderer` `MIN_CAR_PX`); up close both keep their true size.
 - Ships: a hull with a clearance need needs a channel its beam plus two
@@ -83,6 +83,8 @@ was refitted instead.
   start past its long pier's real end (`pierEnd`), and a hull alongside lies
   off the pier by half its width plus half its beam (`pierHalf`).
 - No tree stands on an airport's plot or within two tiles of it.
+- Far zoom: trees are hidden only on and beside a town's built and street
+  tiles (the urban patch's footprint), not across its whole build radius.
 - Camera, closest zooms: under distance 20 the target sits on the ground
   itself (easing to 60% of the ground height by 40), the pitch rises until
   the line of sight clears the terrain, and buildings between the eye and

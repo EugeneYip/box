@@ -49,7 +49,7 @@ const PEOPLE_CUT = 90;
 // a small bright camera-facing mark at least MARK_PX across, so half-size
 // people still read as people in the streets and squares (one more decal in
 // the overlay layer: no extra draw call)
-const MARK_PX = 3.6;
+const MARK_PX = 4.2;
 const SHADOW_ZOOM = 70; // creatures cast shadow-map shadows only when the camera is closer than this // camera distance beyond which creatures are dots on any map size
 
 // Creature renderer (Life module). Every species is one instanced, shader-rigged
@@ -1067,7 +1067,7 @@ export class UnitRenderer {
       }
       if (markA > 0.01 && def.kind === 'humanoid' && hab === 'land' && !u.swimming && !u.onDeck) {
         const c = rs.dot || [0.8, 0.8, 0.8];
-        const msz = Math.max(MARK_PX / ppu, md.height * scale * 0.42);
+        const msz = MARK_PX / ppu;
         const my = y + lift + md.height * scale * 0.55;
         // (stood just in front of the body, toward the eye, so the model does not hide it)
         const ex = camPos.x - ix,
