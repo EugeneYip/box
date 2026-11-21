@@ -163,6 +163,9 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   // the full chop mirrored the pale horizon and the sun into cloud-like
   // blotches over the deep sea
   float calmN = 1.0 - 0.7 * smoothstep(0.01, 0.07, fw);
+  // (deep open water too, at every zoom: the chop mirrored the warm horizon
+  // as a mottled brown haze over the deep sea, round 22)
+  calmN *= mix(1.0, 0.45, smoothstep(2.0, 5.0, depth) * (1.0 - smoothstep(0.0, 0.6, narrow)));
   vec3 Nr = normalize(vec3(-sl.x * calmN, 1.0, -sl.y * calmN));
   vec3 R = reflect(-V, Nr);
   vec3 sky = mix(horizonE, uZenCol, pow(clamp(R.y, 0.0, 1.0), 0.55));
@@ -230,8 +233,17 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   float scatVis = sunSh * mix(1.0, cloud, 0.55);
   // a smooth depth gradient with gentle broad noise over the shelf
   // (two scales: an islet's shallow halo varies in width round its shore)
-  float depthN = depth * (0.76 + 0.30 * texture2D(uNoise, p * (1.0 / 47.0) + 0.23).g + 0.22 * texture2D(uNoise, p * (1.0 / 15.0) + 0.61).b);
+  // (round 23: a wider spread and a warped third scale, so an islet's
+  // shallows are no longer one even turquoise oval)
+  vec2 wq = p + (texture2D(uNoise, p * (1.0 / 31.0) + 0.47).rg - 0.5) * 9.0;
+  float n47 = texture2D(uNoise, wq * (1.0 / 47.0) + 0.23).g, n15 = texture2D(uNoise, wq * (1.0 / 15.0) + 0.61).b;
+  float depthN = depth * (0.62 + 0.48 * n47 + 0.34 * n15);
   vec3 scat = mix(waterShallowColorV(scatVis), waterDeepColorV(scatVis), waterDeepMix(depthN));
+  // shallow flats: patches of pale sand and darker weed and rock beds under
+  // the water, broken at two scales
+  float flatK = (1.0 - smoothstep(0.3, 2.2, depth)) * (1.0 - outK);
+  float bedN = texture2D(uNoise, wq * (1.0 / 9.0) + 0.83).r * 0.6 + n15 * 0.4;
+  scat *= mix(vec3(1.0), mix(vec3(0.80, 0.86, 0.84), vec3(1.10, 1.07, 0.96), smoothstep(0.35, 0.65, bedN)), flatK * 0.8);
   // broad colour variation so open water is never a flat slab (kept low in
   // contrast: stronger reads as stains)
   float mac = texture2D(uNoise, p * (1.0 / 190.0) + vec2(t * 0.0015, 0.0)).r;

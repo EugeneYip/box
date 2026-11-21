@@ -205,6 +205,7 @@ attribute float aTone;
 attribute float aSeed;
 uniform float uTime;
 uniform vec2 uWind;
+uniform float uFar;
 varying vec2 vUv;
 varying float vA;
 varying float vTone;
@@ -212,6 +213,9 @@ varying float vSeed;
 void main() {
   vUv = uv;
   vTone = aTone;
+  // far zoom (past ~100 tiles): most puffs of each column drop out and the
+  // rest thin to a faint wisp (a town's plumes read as cotton balls there)
+  if (fract(aSeed * 7.31 + 0.13) < uFar * 0.7) { gl_Position = vec4(0.0, 0.0, 2.0, 1.0); return; }
   vSeed = aSeed;
   vec3 c = vec3(instanceMatrix[3][0], instanceMatrix[3][1], instanceMatrix[3][2]);
   float s = length(vec3(instanceMatrix[0][0], instanceMatrix[0][1], instanceMatrix[0][2]));
@@ -222,7 +226,8 @@ void main() {
   c.x += w.x + sin(uTime * 0.6 + aSeed * 23.0) * 0.18 * s * t;
   c.z += w.y + cos(uTime * 0.5 + aSeed * 17.0) * 0.18 * s * t;
   float size = s * (0.42 + 1.55 * t);
-  vA = smoothstep(0.0, 0.07, t) * (1.0 - smoothstep(0.5, 1.0, t));
+  vA = smoothstep(0.0, 0.07, t) * (1.0 - smoothstep(0.5, 1.0, t)) * (1.0 - 0.55 * uFar);
+  size *= 1.0 - 0.3 * uFar;
   vec4 mv = modelViewMatrix * vec4(c, 1.0);
   mv.xy += position.xy * size;
   gl_Position = projectionMatrix * mv;
@@ -251,7 +256,7 @@ void main() {
 export class StackPlumes {
   constructor(parent, puffs = 9) {
     this.puffs = puffs;
-    this.uniforms = { uTime: { value: 0 }, uWind: { value: new THREE.Vector2(0.6, 0.2) }, uLight: { value: 1 }, uOpacity: { value: 0.72 } };
+    this.uniforms = { uTime: { value: 0 }, uWind: { value: new THREE.Vector2(0.6, 0.2) }, uLight: { value: 1 }, uOpacity: { value: 0.72 }, uFar: { value: 0 } };
     this.parent = parent;
     this.mesh = this._make(64);
     parent.add(this.mesh);
@@ -299,8 +304,10 @@ export class StackPlumes {
     tone.needsUpdate = true;
     seed.needsUpdate = true;
   }
-  update(t, wind, daylight, show) {
+  update(t, wind, daylight, show, dist = 60) {
     this.uniforms.uTime.value = t;
+    const fk = Math.min(1, Math.max(0, (dist - 95) / 45));
+    this.uniforms.uFar.value = fk * fk * (3 - 2 * fk);
     const st = Math.max(0.3, Math.min(1.2, wind?.strength ?? 0.35));
     const wx = wind?.x ?? 1,
       wz = wind?.z ?? 0;

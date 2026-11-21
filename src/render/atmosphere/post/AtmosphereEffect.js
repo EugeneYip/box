@@ -204,10 +204,16 @@ void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor)
   // over its last tiles (ragged, two noise scales), and the sea beyond the
   // border lies under the same veil, so the map never reads as a cut box
   if (uEdgeFog.x > 0.5) {
-    vec2 ex = min(wp.xz, uWorld.xy - wp.xz);
-    float ed = min(ex.x, ex.y);
+    // (round 23: measured outward from the map's center on a rounded
+    // superellipse, not straight in from the frame, so the veil thickens
+    // toward the rim and the corners without ruling a rectangle)
+    vec2 hw = 0.5 * uWorld.xy;
+    vec2 q = abs(wp.xz - hw) / hw;
+    float rr = pow(pow(q.x, 3.0) + pow(q.y, 3.0), 1.0 / 3.0);
+    float ed = (1.0 - rr) * min(hw.x, hw.y) * 1.15;
     float en = (hFbm(wp.xz * 0.03 + 3.1) - 0.5) * 1.1 + (hNoise(wp.xz * 0.15) - 0.5) * 0.25;
-    float ef = 1.0 - smoothstep(-2.0, uEdgeFog.y, ed + en * uEdgeFog.y);
+    float ef = 1.0 - smoothstep(-2.0, uEdgeFog.y * 2.0, ed + en * uEdgeFog.y);
+    ef *= ef * (1.6 - 0.6 * ef); // (a gradual veil that thickens outward, no band edge)
     vec3 fogC = mix(farColor(dir, 1.0), vec3(0.03, 0.10, 0.20) * (0.35 + 0.65 * lum3(uZenith + uHorizon)), uEdgeFog.w);
     col = mix(col, fogC, ef * uEdgeFog.z);
   }

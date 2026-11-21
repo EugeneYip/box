@@ -1722,9 +1722,11 @@ export function proxyGeometry(style) {
   if (style === 'tower') {
     // far-zoom tower: a blue-grey glass shaft with a pale stone base and
     // setback crown (towers read as plain tan cubes from the whole map)
-    g.box(0, -0.4, 0, 1, 0.22, 1, 0xb9b4aa);
-    g.box(0, -0.18, 0, 0.92, 0.86, 0.92, 0x587087, { top: 0x8a9aa8 });
-    g.box(0, 0.68, 0, 0.66, 0.2, 0.66, 0xc9ccd0, { top: 0x9aa6b0 });
+    // (round 23: light blue-grey glass, about #8fa6b8; the dark slate
+    // shafts read as bollards from the whole map)
+    g.box(0, -0.4, 0, 1, 0.22, 1, 0xc4c0b8);
+    g.box(0, -0.18, 0, 0.92, 0.86, 0.92, 0x8fa6b8, { top: 0xb8c4ce });
+    g.box(0, 0.68, 0, 0.7, 0.2, 0.7, 0xd4d8dc, { top: 0xc0c8d0 });
     return g.build();
   }
   if (style === 'dune') {

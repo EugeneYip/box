@@ -1206,8 +1206,19 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
   // into streaks beyond it).
   const edgeFade = new Uint8Array(REG ? N : 0);
   const SR = Math.max(W, H);
-  const coastBig = SR * 0.066, coastBase = SR * 0.011;
-  const fadeReach = coastBase + coastBig + 18 + 26;
+  // (round 23: the coast stays at least ~25 tiles in and its bays reach
+  // 60-90 tiles in on long land edges, so it never runs parallel to the
+  // frame; no fine wiggle out there, which flecked the shelf with islets)
+  const coastBig = SR * 0.072, coastBase = SR * 0.026;
+  const fadeReach = coastBase + coastBig + 20 + 26;
+  // distance to the frame with rounded corners (radius ~13% of the map), so
+  // the fading coast curves round a corner instead of squaring it off
+  const CR = SR * 0.13;
+  const edgeDistR = (x, y) => {
+    const dx = Math.min(x, W - 1 - x), dy = Math.min(y, H - 1 - y);
+    if (dx < CR && dy < CR) return Math.max(0, CR - Math.hypot(CR - dx, CR - dy));
+    return Math.min(dx, dy);
+  };
   // the cities of the region's realms within reach of the fading coast (the
   // seats and leading ones, seeded at the start, keep a broad cape)
   const keepPts = [];
@@ -1217,7 +1228,7 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
         if (!c) return;
         const cx = (c.lon - REG.lonMin) * W / (REG.lonMax - REG.lonMin), cy = (REG.latMax - c.lat) * H / (REG.latMax - REG.latMin);
         if (cx < 0 || cy < 0 || cx >= W || cy >= H) return;
-        const ce = edgeDist(Math.floor(cx), Math.floor(cy));
+        const ce = edgeDistR(Math.floor(cx), Math.floor(cy));
         // (other named places keep a small headland of their own)
         const lead = k < 8 || k === all.length - 1 || (rl.must && rl.must.includes(c.name));
         if (ce < fadeReach + 30) keepPts.push([cx, cy, ce, lead ? 1.4 : 2.2, lead ? 64 : 30]);
@@ -1225,15 +1236,17 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
   if (REG)
     for (let y = 0; y < H; y++)
       for (let x = 0; x < W; x++) {
-        const e = edgeDist(x, y);
+        const e = edgeDistR(x, y);
         if (e >= fadeReach) continue;
         const i = y * W + x;
         if (!land[i]) continue;
-        // broad bays and capes (~120-tile swells, warped), then ~45- and
-        // ~9-tile wiggles along the shore
+        // broad bays and capes (~120-tile swells, warped), then ~45-tile
+        // swells along the shore (the ~9-tile wiggle is gone: it drew lace
+        // and islets right along the frame)
         const wx = x + fbm(nWarp, x / 70 + 11.3, y / 70 - 4.7, 2) * 28, wy = y + fbm(nWarp, x / 70 - 7.9, y / 70 + 2.2, 2) * 28;
-        const big = Math.min(1, Math.max(0, 0.5 + fbm(nBorder, wx / (SR * 0.13) + 5.3, wy / (SR * 0.13) - 2.1, 3) * 1.8));
-        let coast = Math.max(7, coastBase + coastBig * big + fbm(nDetail, x / 46 + 31.7, y / 46 - 17.3, 3) * 16 + fbm(nBank, x / 9 + 3.1, y / 9 + 8.9, 2) * 3.5);
+        const bz = Math.min(1, Math.max(0, 0.5 + fbm(nBorder, wx / (SR * 0.13) + 5.3, wy / (SR * 0.13) - 2.1, 3) * 1.5));
+        const big = bz * bz * (3 - 2 * bz);
+        let coast = Math.max(14, coastBase + coastBig * big + fbm(nDetail, x / 46 + 31.7, y / 46 - 17.3, 3) * 24);
         // a known city keeps up to ~12 tiles of land toward the border,
         // widening into a cape around it
         for (const [cx, cy, ce, sl, rk] of keepPts) {
@@ -1258,6 +1271,61 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
           hgt[i] = Math.min(hgt[i], Math.max(f, -6.5));
         }
       }
+  // regional maps: specks of land left out on the faded shelf (a few tiles
+  // each, all within the fading band) sink to shelf, so the coast near the
+  // frame is not flecked with islets; a speck that holds a realm city stays
+  if (REG) {
+    const seen = new Uint8Array(N);
+    const stack = [], comp = [];
+    for (let s0 = 0; s0 < N; s0++) {
+      if (seen[s0] || hgt[s0] < SEA_LEVEL || !edgeFade[s0]) continue;
+      stack.length = 0;
+      comp.length = 0;
+      stack.push(s0);
+      seen[s0] = 1;
+      let inner = false;
+      while (stack.length && comp.length <= 60) {
+        const i = stack.pop();
+        comp.push(i);
+        const x = i % W, y = (i / W) | 0;
+        if (edgeDistR(x, y) >= fadeReach) inner = true;
+        for (let dy = -1; dy <= 1; dy++)
+          for (let dx = -1; dx <= 1; dx++) {
+            const nx = x + dx, ny = y + dy;
+            if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+            const j = ny * W + nx;
+            if (seen[j] || hgt[j] < SEA_LEVEL) continue;
+            seen[j] = 1;
+            stack.push(j);
+          }
+      }
+      if (inner || stack.length || comp.length > 60) {
+        // (a large piece: mark the rest seen without sinking it)
+        while (stack.length) {
+          const i = stack.pop();
+          const x = i % W, y = (i / W) | 0;
+          for (let dy = -1; dy <= 1; dy++)
+            for (let dx = -1; dx <= 1; dx++) {
+              const nx = x + dx, ny = y + dy;
+              if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+              const j = ny * W + nx;
+              if (seen[j] || hgt[j] < SEA_LEVEL) continue;
+              seen[j] = 1;
+              stack.push(j);
+            }
+        }
+        continue;
+      }
+      let city = false;
+      for (const [cx, cy] of keepPts)
+        for (const i of comp) if (Math.abs((i % W) - cx) < 2.5 && Math.abs(((i / W) | 0) - cy) < 2.5) city = true;
+      if (city) continue;
+      for (const i of comp) {
+        hgt[i] = Math.min(hgt[i], -0.45 + fbm(nBank, (i % W) / 9, ((i / W) | 0) / 9, 2) * 0.1);
+        edgeFade[i] = 1;
+      }
+    }
+  }
   // the border ring is deep open sea: the water shader and the terrain skirt
   // extend the edge tiles' depth outward, so shallows there would show as a
   // pale band beyond the map
