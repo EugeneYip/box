@@ -369,7 +369,9 @@ export function installDaily(Units) {
           const half = Math.abs(ax) > 0.5 ? hw : hh;
           const door = ax * ux + az * uz > 0.5;
           for (let k = 0; k < (W < 1.9 ? 13 : 9); k++) {
-            const dist = half + 0.35 + D / 2 + k * 0.55;
+            // (round 27: a clear margin from the building's face; the
+            // barracks wall overlapped the drawn pad)
+            const dist = half + 0.55 + D / 2 + k * 0.55;
             for (const lat of W < 1.9 ? [0, -1, 1, -2, 2, -3, 3, -4, 4] : [0, -1, 1, -2, 2, -3, 3]) {
               const cx = bx + ax * dist - az * lat,
                 cz = bz + az * dist + ax * lat;
@@ -393,6 +395,17 @@ export function installDaily(Units) {
                   }
                 }
               if (!ok || hi - lo >= flat) continue;
+              // and no building within PAD_CLEAR of its edges
+              for (let a = -1; a <= 1 && ok; a++)
+                for (let c = -1; c <= 1 && ok; c++) {
+                  if (!a && !c) continue;
+                  const x = cx - az * a * (W / 2 + PAD_CLEAR) + ax * c * (D / 2 + PAD_CLEAR),
+                    z = cz + ax * a * (W / 2 + PAD_CLEAR) + az * c * (D / 2 + PAD_CLEAR);
+                  const tx = Math.floor(x),
+                    tz = Math.floor(z);
+                  if (w.inBounds(tx, tz) && w.building[tz * w.w + tx] >= 0) ok = false;
+                }
+              if (!ok) continue;
               const s = (hi - lo) * 6 + k * 0.35 + Math.abs(lat) * 0.3 + paved * 0.05 + (door ? 0 : 0.6) + bi * 1.5 + (W < 2.2 ? 0.8 : 0) + (W < 1.9 ? 1.6 : 0);
               if (s < bs) {
                 bs = s;
@@ -414,6 +427,7 @@ export function installDaily(Units) {
   // This soldier's place in the ranks (null: the ranks are full). Six to a
   // rank, filled from the middle out; places of those no longer drilling free up.
   const COLS = [2, 3, 1, 4, 0, 5];
+  const PAD_CLEAR = 0.3;
   P._paradeSlot = function (pd, u) {
     const live = (id) => {
       const o = this.byId.get(id);
@@ -552,6 +566,15 @@ export function installDaily(Units) {
       dl.lab = (u.id + (this.game.time.day | 0)) % 3 === 0 ? 'Playing ball' : 'Playing tag';
     }
     this.stop(u);
+    // (round 27) a drilling soldier takes his exact place in the ranks: the
+    // walk ends within a tile of it, and four stood in a loose triangle on
+    // the lawn beside an empty pad
+    if (dl.k === 'drill' && dl.pd && (dl.x - u.x) ** 2 + (dl.z - u.z) ** 2 < 2.6) {
+      u.x = dl.x;
+      u.z = dl.z;
+      if (this._groundY) u.y = this._groundY(u);
+      if (u._cell >= 0) this._gridUpdate?.(u);
+    }
     u.state = dl.k === 'eat' ? 'eat' : 'idle';
     u.activity = dl.act;
     if (dl.fx != null) u.heading = Math.atan2(dl.fx - u.x, dl.fz - u.z);
@@ -834,7 +857,9 @@ export function installDaily(Units) {
         u._meal = key;
         const [meal, lab] = MEAL[mi];
         // lunch where the work is (or at the market); breakfast and supper at home
-        if (mi === 1 && (working || u.job || (child && u._schoolDay === c.day))) this._dlStart(u, 'eat', 7 + rng() * 5, { lab, act: 'eat' });
+        if (mi === 1 && (working || u.job) && !child && rng() < 0.3 && this._dlPlaza(u, v, pl, rng, true)) {
+          // (round 27) a worker's lunch on the main square now and then
+        } else if (mi === 1 && (working || u.job || (child && u._schoolDay === c.day))) this._dlStart(u, 'eat', 7 + rng() * 5, { lab, act: 'eat' });
         else if (mi === 1 && pl.market && rng() < 0.5) this._dlStart(u, 'eat', 8 + rng() * 5, { x: pl.market.doorX + (rng() - 0.5) * 2, z: pl.market.doorZ + (rng() - 0.5) * 2, lab: 'Eating at the market', go: 'Walking to the market', act: 'eat' });
         else this._dlStart(u, 'eat', 6 + rng() * 4, { x: hx + (rng() - 0.5) * 1.2, z: hz + (rng() - 0.5) * 1.2, lab, go: 'Walking home', act: 'eat' });
         u._dl.meal = meal;
@@ -947,6 +972,9 @@ export function installDaily(Units) {
         return true;
       }
     }
+    // (round 27) the main square by day: a stroll, a bench, the stalls (the
+    // plazas stood empty by day; PLAZA_DAY at most on each)
+    if (r < 0.72 && h >= 9 && h < 16.5 && this._dlPlaza(u, v, pl, rng, false)) return true;
     if (r < 0.8) {
       const m = this.nearest(u.x, u.z, 5, (o) => o !== u && o.species === 'human' && o.age >= ADULT && !o._dl && !o.combat && o.village === u.village && o.state !== 'work' && !o.carry);
       if (m) {
@@ -959,6 +987,43 @@ export function installDaily(Units) {
     // and in modern towns a working day at the office, the factory or the lab
     if (!soldier) return this._dlAway(u, v, pl, home, rng);
     return false;
+  };
+
+  // (round 27) People on the town's main square by day (strolling, on the
+  // benches, at the stalls, at lunch): at most PLAZA_DAY at once.
+  const PLAZA_DAY = 9;
+  P._plazaN = function (v) {
+    const set = v._plazaSet;
+    if (!set) return 0;
+    let n = 0;
+    for (const id of set) {
+      const o = this.byId.get(id);
+      if (o && o.alive && o._dl && o._dl.plaza === v.id) n++;
+      else set.delete(id);
+    }
+    return n;
+  };
+  const PLAZA_LAB = [
+    ['Strolling on the square', 'talk'],
+    ['Resting on a bench', 'wait'],
+    ['Browsing the stalls', 'shop'],
+    ['Watching the fountain', 'think'],
+    ['Chatting on the square', 'talk'],
+  ];
+  P._dlPlaza = function (u, v, pl, rng, lunch) {
+    const sq = pl.sq;
+    if (!sq || !(v.pop >= 8)) return false;
+    if (this._plazaN(v) >= PLAZA_DAY) return false;
+    const a = rng() * Math.PI * 2,
+      rr = 0.7 + rng() * 1.9;
+    const spot = this._dlSpot(u, sq.x + Math.sin(a) * rr, sq.z + Math.cos(a) * rr, 2);
+    if (!spot) return false;
+    const [lab, act] = lunch ? ['Having lunch on the square', 'eat'] : PLAZA_LAB[(u.id + ((rng() * 5) | 0)) % PLAZA_LAB.length];
+    this._dlStart(u, lunch ? 'eat' : 'shop', lunch ? 7 + rng() * 5 : 10 + rng() * 12, { x: spot.x, z: spot.z, fx: sq.x, fz: sq.z, lab, go: 'Walking to the square', act });
+    u._dl.plaza = v.id;
+    if (lunch) u._dl.meal = 'lunch';
+    (v._plazaSet || (v._plazaSet = new Set())).add(u.id);
+    return true;
   };
 
   // Not too many standing at one place already (a market crowd of a few dozen at most).
