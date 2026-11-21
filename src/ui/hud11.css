@@ -8,10 +8,19 @@
    grip for the half and full sheets */
 @media (max-width: 720px) {
   .ws-insp.is-peek {
-    height: 220px;
+    height: auto;
+    max-height: 250px;
   }
+  /* (the peek is the card's identity, its chips and its actions; the facts
+     come with the half sheet, one tap or drag away) */
   .ws-insp.is-peek .ws-insp__scroll {
-    min-height: 0;
+    display: none;
+  }
+  .ws-insp.is-peek .ws-insp__also {
+    margin-top: 6px;
+  }
+  .ws-insp.is-peek .ws-insp__actions {
+    margin-top: 8px;
   }
 }
 
@@ -25,13 +34,24 @@
     min-width: 46px;
     height: 52px;
   }
-  .is-touch .ws-nav .ws-iconbtn[data-cap]::after {
+  /* (the generic hover tooltip also lives in ::after and is hidden on touch:
+     the caption takes that pseudo-element over, in the flow, always shown) */
+  .ws-root.is-touch .ws-nav .ws-iconbtn[data-cap]::after,
+  .ws-root.is-touch .ws-nav .ws-iconbtn[data-cap]:hover::after {
     content: attr(data-cap);
+    display: block;
+    position: static;
+    transform: none;
+    padding: 0;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
     font: 600 9px/1 var(--ws-font);
     letter-spacing: 0;
     white-space: nowrap;
     color: var(--ws-ink-2);
-    opacity: 0.9;
+    opacity: 1;
+    transition: none;
   }
 }
 
