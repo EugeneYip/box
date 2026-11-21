@@ -15,6 +15,11 @@ import { VEHICLE, PICK_PX } from '../../core/scale.js';
 const _SD = { x: 0, z: 0 };
 
 const YEAR = 30; // == YEAR_SECONDS
+const FAR_ROAD = 90; // overview at the coarsest step: ships beyond this update every fourth tick (Life's FAR8_DIST)
+// overview: road vehicles beyond this update at the far rate, as every person
+// in the overview does (Life's OVERVIEW_DIST schedule); round 25 measured 90
+// here, which on a Medium map held nearly every vehicle on the move
+const OV_ROAD = 24;
 // land vehicle groups for the shares of the world's land limit (landRoom)
 const LAND_GROUP = { train: 'rail', maglev: 'rail', ambulance: 'aid', fireengine: 'aid', bus: 'transit', tram: 'transit', tractor: 'transit' };
 const ROT_DIR = [
@@ -719,6 +724,13 @@ export class Fleet {
     const A = this._astro || (this._astro = []);
     A.length = ks.length;
     for (let i = 0; i < ks.length; i++) A[i] = !!ks[i]?.techs?.has?.('astronomy');
+    // (round 25) which realms are at war with anyone: a cart or a bus of a
+    // realm at peace has no raiders to look out for (land.js)
+    const WA = this._warAny || (this._warAny = []);
+    WA.length = ks.length;
+    WA.fill(0);
+    const rel = g.civ.relations;
+    if (rel) for (const r of rel.values()) if (r.war) (WA[r.a] = 1), (WA[r.b] = 1);
     this._buildHash();
     // movement and per-vehicle logic. Update rate by distance from the camera
     // (as Life does for people): a ship far off steers, gives way and runs
@@ -744,6 +756,22 @@ export class Fleet {
     // it or lying in port. On a Medium map the radius (capped at 140) held
     // nearly every ship, so all of them ran every tick.
     const seaOv = cam && cam.dist > 110 && !this._noLod && !globalThis.__lod8Off;
+    // (round 25) at the coarsest step (4/15, 16x and above) a vehicle on the
+    // road far from the camera's target (beyond the drawn radius; in the
+    // overview, where a vehicle is a few pixels long, beyond OV_ROAD of the
+    // target, as Life's distant walkers) updates every fourth tick with the
+    // time it missed, and glides along its last stride in even steps between
+    // updates, so it moves smoothly at its full pace. Trains and siege
+    // engines keep their schedule; near the camera everything runs as before.
+    // (globalThis.__fleetQ25Off turns it off, for measuring)
+    // At the finer steps in the overview the same holds at half rate.
+    const q25 = landLod && !globalThis.__lod8Off && !globalThis.__fleetQ25Off;
+    const quarter = q25 && step > 0.2;
+    const farR = q25 && cam.dist > 110 ? OV_ROAD : quarter ? landR : Infinity;
+    const farMask = quarter ? 3 : 1;
+    // (and ships in the overview, gliding on their heading between updates,
+    // every fourth tick beyond FAR_ROAD of the target instead of the radius)
+    const seaQ2 = Math.min(lodR2, FAR_ROAD * FAR_ROAD);
     for (let i = 0; i < this.list.length; i++) {
       const v = this.list[i];
       if (!v.alive) continue;
@@ -756,7 +784,7 @@ export class Fleet {
         if (cam && v.state !== 'sinking' && v.state !== 'break' && !v.chase && v.target == null && v.role !== 'hover' && !(v.burning > 0)) {
           const d2 = (v.x - cam.x) ** 2 + (v.z - cam.z) ** 2;
           if (d2 > lodR2 || seaOv) {
-            const mask = d2 > lodR2 * 4 || v.state === 'moored' || (seaOv && d2 > lodR2) ? 3 : 1;
+            const mask = d2 > lodR2 * 4 || v.state === 'moored' || (seaOv && d2 > (quarter ? seaQ2 : lodR2)) ? 3 : 1;
             if (((gwt + v.id) & mask) !== 0) {
               v._skip = true;
               v._lodAcc = (v._lodAcc || 0) + step;
@@ -776,22 +804,50 @@ export class Fleet {
         this._seaTick(v, step);
       } else {
         let st = step;
+        let glide = 0;
         v._skip = false;
         if (landLod && !(v.def.siege && v.state !== 'parked')) {
           const idle = (v.state === 'parked' && v.settleH == null) || v.state === 'rest'; // (still squaring up: every tick)
-          const mask = idle ? 3 : Math.abs(v.x - cam.x) > landR || Math.abs(v.z - cam.z) > landR ? 1 : 0;
+          const dx = Math.abs(v.x - cam.x),
+            dz = Math.abs(v.z - cam.z);
+          let mask = idle ? 3 : dx > landR || dz > landR ? 1 : 0;
+          if (!idle && (dx > farR || dz > farR) && !v.def.rail && v.state === 'move') mask = glide = Math.max(mask, farMask);
           if (mask) {
             v._lodAcc = (v._lodAcc || 0) + step;
             if (((gwt + v.id) & mask) !== 0) {
               v._skip = true;
+              if (v._mvn > 0) {
+                v.x += v._mvx;
+                v.z += v._mvz;
+                v.y += v._mvy;
+                v._mvn--;
+              }
               continue;
             }
             st = v._lodAcc;
           }
           v._lodAcc = 0;
         }
+        if (v._mvn > 0) {
+          // (the rest of a glide cut short: caught up before the update)
+          v.x += v._mvx * v._mvn;
+          v.z += v._mvz * v._mvn;
+          v._mvn = 0;
+        }
+        const y0 = v.y;
         this._landTick(v, st);
         v.y = this.world.heightAt(v.x, v.z);
+        if (glide && v.alive && (v.x !== v.px || v.z !== v.pz) && Math.abs(v.x - v.px) + Math.abs(v.z - v.pz) < 12) {
+          // shown over the ticks until its next update (see the skip above)
+          const n = glide + 1;
+          v._mvx = (v.x - v.px) / n;
+          v._mvz = (v.z - v.pz) / n;
+          v._mvy = (v.y - y0) / n;
+          v._mvn = n - 1;
+          v.x = v.px + v._mvx;
+          v.z = v.pz + v._mvz;
+          v.y = y0 + v._mvy;
+        }
       }
     }
     if (this.air.length || this.orbit.length) this._airTick(step);

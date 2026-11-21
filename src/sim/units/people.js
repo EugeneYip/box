@@ -288,11 +288,36 @@ export function installPeople(Units) {
     if (!pad) return false;
     const sx = pad.doorX + ((u.id % 3) - 1) * 0.4,
       sz = pad.doorZ + 0.6;
-    if ((sx - u.x) ** 2 + (sz - u.z) ** 2 > 0.6) {
-      if (!u.target) this.moveTo(u, sx, sz);
-      u.state = 'walk';
-      return true;
+    // (round 25) one who walked there and stopped short (the spot out of
+    // reach on the pad's edge) waits where it stands, and one with no way
+    // there goes about its life a while: each fresh walk was a full path
+    // search at every thought, over a millisecond a tick at Year 600
+    const d2 = (sx - u.x) ** 2 + (sz - u.z) ** 2;
+    if (d2 > 0.6 && !(d2 < 6.25 && u._padNear === pad.id)) {
+      if (u.target) {
+        u.state = 'walk';
+        return true;
+      }
+      if (now < (u._padWait || 0)) return false;
+      if (u._padTry === pad.id) {
+        u._padTry = -1;
+        if (d2 < 6.25) u._padNear = pad.id;
+        else {
+          u._padWait = now + 30;
+          return false;
+        }
+      } else {
+        u._padTry = pad.id;
+        if (!this.moveTo(u, sx, sz)) {
+          u._padTry = -1;
+          u._padWait = now + 30;
+          return false;
+        }
+        u.state = 'walk';
+        return true;
+      }
     }
+    u._padTry = -1;
     u.target = null;
     u.path = null;
     u.state = 'idle';
