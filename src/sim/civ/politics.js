@@ -1384,7 +1384,9 @@ export const politics = {
     // (round 25: the 200s still saw 58 risings a century; a world that has
     // seen many risings in the last decade is slower to see the next)
     if (v.unrest >= 4 && now - k.founded >= YEAR * 15 && this._kLaw(k.id, 'civRebellions') && this.rng.chance((alive < 3 ? 0.2 : alive >= 16 ? 0.03 : alive >= 12 ? 0.045 : 0.07) * this._riseDamp())) {
-      if (this.rebel(v)) this._noteRise();
+      // (round 27: every rising counts, a charter won or a town gone over too)
+      this.rebel(v);
+      this._noteRise();
     }
   },
 
@@ -1394,7 +1396,8 @@ export const politics = {
     const now = this.game.time.total;
     const log = this._riseLog || (this._riseLog = []);
     while (log.length && now - log[0] > YEAR * RISE_YEARS) log.shift();
-    return log.length <= RISE_EASY ? 1 : RISE_EASY / log.length;
+    // (round 27: in the square of the proportion; 48 a century in the 200s)
+    return log.length <= RISE_EASY ? 1 : (RISE_EASY / log.length) ** 2;
   },
   _noteRise() {
     (this._riseLog || (this._riseLog = [])).push(this.game.time.total);
