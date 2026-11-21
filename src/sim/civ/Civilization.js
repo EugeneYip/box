@@ -46,6 +46,9 @@ const VILLAGE_MAX_POP = 64; // legacy reference size (a town)
 const TERR_DX = [1, -1, 0, 0, 1, 1, -1, -1];
 const TERR_DY = [0, 0, 1, -1, 1, -1, 1, -1];
 const TIER_POP = [40, 70, 115]; // village, town, city (capitals and ports grow larger)
+// A town under this many people is small: births and newcomers favor it in a
+// full world (_villageTick).
+const SMALL_TOWN = 20;
 // What each finished monument gives its realm (techMod / techAdd keys).
 const MONUMENT_FX = {
   vale: { mods: { 'loyalty+': 6, build: 1.15 }, text: 'its provinces hold fast to the crown' },
@@ -981,7 +984,11 @@ export class Civilization {
     const crowd = this._crowd();
     const popCrowd = this._popCrowd || 0;
     const fullWorld = humans > this._humanCap() * 0.85;
-    if (pop < v.housing && pop < this._popCap(v) && !(fullWorld && pop > this._fullWorldRoom(v)) && v.food > pop * 1.2 + 8 && !v.starving && humans < this._humanCap() && this.rng.chance(Math.min(1, (1 - popCrowd * 0.85) * this._kLaw(v.kingdom, 'civGrowth', 1) * (v.policy?.growth ?? 1)))) {
+    // the last places under the people limit are kept for the small towns:
+    // in a full world every death was refilled by a birth in a big town, and
+    // a lone hamlet of a dozen dwindled away (round 23)
+    const tiny = pop < SMALL_TOWN;
+    if (pop < v.housing && pop < this._popCap(v) && !(fullWorld && pop > this._fullWorldRoom(v)) && v.food > pop * 1.2 + (tiny ? 4 : 8) && !v.starving && humans < this._humanCap() * (tiny ? 1 : 0.97) && this.rng.chance(Math.min(1, (1 - popCrowd * 0.85) * this._kLaw(v.kingdom, 'civGrowth', 1) * (v.policy?.growth ?? 1)))) {
       let father = false;
       for (const u of v.members) if (u.sex === 'm' && u.age >= 18 && u.age < 60) father = true;
       if (father) {
@@ -989,7 +996,7 @@ export class Civilization {
           if (u.sex !== 'f' || u.age < 18 || u.age > 45) continue;
           const d = u.data.civ;
           if (now - (d.lastBirth ?? -999) < YEAR * 2.5) continue;
-          if (!this.rng.chance(0.022 * dt * (golden ? 1.8 : 1) * this._kLaw(v.kingdom, 'civGrowth', 1) * (v.policy?.growth ?? 1) * (mods.birth ?? 1) * this.techMod(v.kingdom, 'birth'))) continue;
+          if (!this.rng.chance(0.022 * dt * (golden ? 1.8 : 1) * (tiny ? 1.5 : 1) * this._kLaw(v.kingdom, 'civGrowth', 1) * (v.policy?.growth ?? 1) * (mods.birth ?? 1) * this.techMod(v.kingdom, 'birth'))) continue;
           d.lastBirth = now;
           if (!d.spouse) {
             let mate = null;
@@ -1065,7 +1072,7 @@ export class Civilization {
     // newcomers drawn to prosperous settlements
     // (a camp short of hands or of a partner calls kin in sooner)
     const small = pop < 10;
-    if ((v.housing - pop >= 3 || (small && v.housing - pop >= 1)) && v.food > pop * 2 + (small ? 6 : 20) && pop < 40 && now - v.lastImmigrant > (small ? 7 : 18) && humans < this._humanCap() * (small ? 0.95 : 0.8) && this.rng.chance((small ? 0.08 : 0.035) * dt * (1 - popCrowd * (small ? 0.5 : 1)) * this._kLaw(v.kingdom, 'civGrowth', 1) * (v.policy?.growth ?? 1))) {
+    if ((v.housing - pop >= 3 || (small && v.housing - pop >= 1)) && v.food > pop * 2 + (small ? 6 : 20) && pop < 40 && now - v.lastImmigrant > (small ? 7 : 18) && humans < this._humanCap() * (small ? 0.99 : 0.8) && this.rng.chance((small ? 0.08 : 0.035) * dt * (1 - popCrowd * (small ? 0.5 : 1)) * this._kLaw(v.kingdom, 'civGrowth', 1) * (v.policy?.growth ?? 1))) {
       v.lastImmigrant = now;
       const a = this.rng.float(0, Math.PI * 2);
       const r = v.radius + 3;
