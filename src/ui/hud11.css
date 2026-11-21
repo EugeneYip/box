@@ -1,0 +1,87 @@
+/* ==========================================================================
+   Worldseed UI, round 25: phone sheet peek, rail captions, opaque chooser,
+   the cleared-plot card. Loaded last.
+   ========================================================================== */
+
+/* ---- phones: the inspector opens as a short peek (header, chips, a row of
+   facts and the actions), leaving most of the map in view; drag or tap the
+   grip for the half and full sheets */
+@media (max-width: 720px) {
+  .ws-insp.is-peek {
+    height: 220px;
+  }
+  .ws-insp.is-peek .ws-insp__scroll {
+    min-height: 0;
+  }
+}
+
+/* ---- phones in portrait: a caption under each rail icon */
+@media (max-width: 720px) and (min-height: 501px) {
+  .is-touch .ws-nav .ws-iconbtn[data-cap] {
+    grid-template-rows: auto auto;
+    align-content: center;
+    row-gap: 2px;
+    width: 46px;
+    min-width: 46px;
+    height: 52px;
+  }
+  .is-touch .ws-nav .ws-iconbtn[data-cap]::after {
+    content: attr(data-cap);
+    font: 600 9px/1 var(--ws-font);
+    letter-spacing: 0;
+    white-space: nowrap;
+    color: var(--ws-ink-2);
+    opacity: 0.9;
+  }
+}
+
+/* ---- the Spawn Vehicle chooser is opaque (with blur off, .no-blur .ws-glass
+   made it 0.9 and the rail and camera pad showed through on phones) */
+.ws-root .ws-vehpick.ws-glass:not(.is-folded) {
+  background: linear-gradient(180deg, rgb(30, 34, 49), rgb(15, 17, 26));
+}
+@media (max-width: 720px), (max-height: 500px) {
+  .ws-root:has(.ws-vehpick:not(.is-folded)) .ws-campad {
+    opacity: 0;
+    pointer-events: none !important;
+  }
+  .ws-root:has(.ws-vehpick:not(.is-folded)) .ws-campad * {
+    pointer-events: none !important;
+  }
+}
+
+/* ---- Tech panel header: "Also studying" and its art's name read in full
+   (the meter sits under the name instead of beside it) */
+@media (min-width: 721px) {
+  .ws-tech__top .ws-tech__nowbody .ws-tech__also {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-rows: auto auto;
+    align-items: center;
+    column-gap: 8px;
+    row-gap: 3px;
+  }
+  .ws-tech__top .ws-tech__also .ws-tech__alsoico {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+  }
+  .ws-tech__top .ws-tech__also .ws-tech__alsotxt {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .ws-tech__top .ws-tech__also .ws-tech__alsotxt small {
+    white-space: nowrap;
+  }
+  .ws-tech__top .ws-tech__also .ws-tech__alsometer {
+    grid-column: 2;
+    grid-row: 2;
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    margin: 0;
+  }
+  .ws-tech__top .ws-tech__also .ws-tech__alsopct {
+    grid-column: 3;
+    grid-row: 1 / span 2;
+  }
+}

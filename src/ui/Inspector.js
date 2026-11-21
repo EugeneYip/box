@@ -299,7 +299,8 @@ export class Inspector {
     this.applySelection();
     this.queuePortrait();
     if (isPhone()) {
-      this.setExpanded(false);
+      // (round 25) a short peek first (about 220 px), not half the screen
+      this.setExpanded('peek');
       this.frameAboveSheet();
     }
     this.game.audio?.play?.('ui-open', { volume: 0.35 });
@@ -1145,7 +1146,7 @@ export class Inspector {
     const o = r?.unit || r?.building;
     const rig = this.game.cameraRig;
     if (!o || o.x == null || rig.follow) return;
-    const d = rig.goal.dist * 0.24;
+    const d = rig.goal.dist * (this.expanded === "peek" ? 0.13 : 0.24);
     this.game.focus(o.x + Math.sin(rig.goal.yaw) * d, o.z + Math.cos(rig.goal.yaw) * d);
   }
 

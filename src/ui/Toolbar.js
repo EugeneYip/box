@@ -439,7 +439,9 @@ export class Toolbar {
     const grp = groupPowers(p.category).find((gr) => gr.list.includes(p))?.name;
     const cat = CATEGORIES.find((c) => c.id === p.category);
     const brush = p.brush ? `Radius ${p.brush.min ?? 1}–${p.brush.max ?? 30}` : 'Single target';
-    const how = p.mode === 'click' ? 'Click to cast' : 'Hold & drag to paint';
+    // (round 25) touch screens: touch wording and no hotkey row
+    const touch = !!this.ui.root?.classList.contains('is-touch');
+    const how = p.mode === 'click' ? (touch ? 'Tap to cast' : 'Click to cast') : touch ? 'Touch and drag to paint' : 'Hold & drag to paint';
     this.tip.style.setProperty('--tint', tint);
     this.tip.innerHTML = `
       <div class="ws-tip__head">
@@ -451,7 +453,7 @@ export class Toolbar {
       </div>
       ${p.description ? `<p class="ws-tip__desc">${esc(p.description)}</p>` : ''}
       <div class="ws-tip__foot">
-        <span class="ws-tip__hot">${key ? `${key.startsWith('⇧') ? '<kbd class="ws-key">Shift</kbd>' : ''}<kbd class="ws-key">${esc(key.replace('⇧', ''))}</kbd> Hotkey` : '<span class="ws-tip__muted">No hotkey</span>'}</span>
+        ${touch ? '<span></span>' : `<span class="ws-tip__hot">${key ? `${key.startsWith('⇧') ? '<kbd class="ws-key">Shift</kbd>' : ''}<kbd class="ws-key">${esc(key.replace('⇧', ''))}</kbd> Hotkey` : '<span class="ws-tip__muted">No hotkey</span>'}</span>`}
         <span class="ws-tip__muted">${esc(brush)}</span>
       </div>`;
     this.tip.classList.add('is-shown');
