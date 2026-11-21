@@ -417,7 +417,9 @@ export class Labels {
       const y = w.surfaceAt(v.cx, v.cz) + 1.6 * BUILDING.scale + D * 0.02;
       s.position.set(v.cx, y, v.cz);
       const dist = cam.distanceTo(s.position);
-      const h = Math.max(0.6, dist * 0.02);
+      // (about 12 px capitals on screen: at 0.02 a town's name was ~8 px
+      // capitals at 30 tiles, hard to read)
+      const h = Math.max(0.8, dist * 0.029);
       s.scale.set(h * s.userData.aspect, h, 1);
       cand.push({ s, a, prio: (isCap ? 2 : 1) + (v.pop || 0) * 0.001 });
     }
@@ -596,7 +598,13 @@ export class Labels {
         if (rect.t < mTop || rect.b > H - mBot || rect.r > W - mRight || rect.l < mLeft) target = 0;
         if (hits(rect)) target = 0;
       }
-      if (target > 0.02) taken.push(rect);
+      // (each placed name keeps a margin round it, so two realm ribbons never
+      // sit edge to edge: round 24 had two nearly touching on the overview)
+      if (target > 0.02) {
+        const gx = c.prio >= 3 ? 14 : 5,
+          gy = c.prio >= 3 ? 6 : 2;
+        taken.push({ l: rect.l - gx, r: rect.r + gx, t: rect.t - gy, b: rect.b + gy });
+      }
       const f = sp.userData.fade ?? target;
       const nf = f + (target - f) * Math.min(1, dt * 6);
       sp.userData.fade = nf;

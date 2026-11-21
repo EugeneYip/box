@@ -452,6 +452,45 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
   if (!REG)
     for (let y = 0; y < H; y++)
       for (let x = 0; x < W; x++) if (inRing(x, y)) land[y * W + x] = 0;
+  // the whole Earth: the small islands off Antarctica's coast (south of 60°S)
+  // are left to the pack ice. On a plate carree they are stretched two to
+  // eight times east-west and drew rows of parallel capsule islands with ice
+  // cliffs (round 24); the ice sheet itself and larger islands stay.
+  if (!REG) {
+    const seenA = new Uint8Array(N);
+    const st = [],
+      comp = [];
+    const lim = Math.round(260 * scale768 * scale768);
+    for (let s0 = 0; s0 < N; s0++) {
+      if (seenA[s0] || !land[s0] || latY[(s0 / W) | 0] > -60) continue;
+      st.length = comp.length = 0;
+      st.push(s0);
+      seenA[s0] = 1;
+      let south = true;
+      while (st.length) {
+        const i = st.pop();
+        comp.push(i);
+        const x = i % W,
+          y = (i / W) | 0;
+        if (latY[y] > -60) south = false;
+        for (let dy = -1; dy <= 1; dy++)
+          for (let dx = -1; dx <= 1; dx++) {
+            const ny = y + dy;
+            if (ny < 0 || ny >= H) continue;
+            let nx = x + dx;
+            if (nx < 0 || nx >= W) {
+              if (!SEAM) continue;
+              nx = (nx + W) % W;
+            }
+            const j = ny * W + nx;
+            if (seenA[j] || !land[j]) continue;
+            seenA[j] = 1;
+            st.push(j);
+          }
+      }
+      if (south && comp.length < lim) for (const i of comp) land[i] = 0;
+    }
+  }
   _t('land');
 
   // ------------------------------------------------------------- 2. distances
@@ -1189,6 +1228,19 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
     }
   }
   limitSlopes();
+  // the whole Earth: narrow islands (Iceland, the Faroes, Svalbard) slope down
+  // to the sea over their last three tiles instead of standing in tall walls
+  // round the tile grid (round 24: Iceland's south coast read as a cliff cut
+  // in square notches)
+  if (!REG) {
+    const nW = 7 * scale768;
+    for (let i = 0; i < N; i++) {
+      if (!land[i] || landW[i] > nW || hgt[i] <= 0.4) continue;
+      const dl = dLand[i];
+      const c = dl <= 1.01 ? 0.4 : dl <= 2.01 ? 0.95 : dl <= 3.01 ? 1.7 : 1e9;
+      if (hgt[i] > c) hgt[i] = c;
+    }
+  }
   fillCraters(hgt, W, H, sea, marsh, !REG);
   _t('rivers');
 

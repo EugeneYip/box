@@ -1354,7 +1354,7 @@ void terrainSurface() {
       bool rdT = tileTypeAt(pci) == 13.0;
       float modU = step(1.5, plvl), futU = step(2.5, plvl);
       // yards between the buildings: a dull grey-green, darker than the roofs
-      vec3 urb = mix(vec3(0.20, 0.215, 0.17), vec3(0.24, 0.245, 0.22), modU);
+      vec3 urb = mix(vec3(0.175, 0.19, 0.15), vec3(0.20, 0.205, 0.185), modU);
       urb *= 0.92 + 0.12 * s.det.r;
       // roofs: one colour per tile from a town palette (terracotta, brown
       // shingle, slate, weathered grey; flat grey and white concrete from
@@ -1363,12 +1363,12 @@ void terrainSurface() {
       float rh = hash12(vec2(pci) * 0.5 + floor(vec2(pci) * 0.5) * 3.1);
       float rh2 = hash12(vec2(pci) + 7.7);
       vec3 roof;
-      if (rh < 0.30 - 0.18 * modU) roof = vec3(0.42, 0.20, 0.13);
-      else if (rh < 0.48 - 0.20 * modU) roof = vec3(0.30, 0.22, 0.16);
-      else if (rh < 0.70 - 0.10 * modU) roof = vec3(0.21, 0.22, 0.25);
-      else if (rh < 0.88) roof = vec3(0.38, 0.37, 0.35);
-      else roof = vec3(0.55, 0.55, 0.53);
-      roof = mix(roof, vec3(0.50, 0.51, 0.52), futU * 0.45);
+      if (rh < 0.30 - 0.18 * modU) roof = vec3(0.36, 0.16, 0.10);
+      else if (rh < 0.48 - 0.20 * modU) roof = vec3(0.26, 0.18, 0.13);
+      else if (rh < 0.70 - 0.10 * modU) roof = vec3(0.16, 0.17, 0.20);
+      else if (rh < 0.88) roof = vec3(0.31, 0.30, 0.285);
+      else roof = vec3(0.44, 0.44, 0.43);
+      roof = mix(roof, vec3(0.40, 0.41, 0.42), futU * 0.4);
       roof *= 0.85 + 0.3 * rh2;
       vec2 pcfU = p - floor(p);
       float awU = max(s.fw, 0.02);
@@ -1377,7 +1377,7 @@ void terrainSurface() {
       roof = mix(roof, roof * 0.55, gapU * 0.8);
       urb = mix(urb, roof, bldT);
       // streets: pale concrete lines along the road tiles (the real grid)
-      if (rdT) urb = mix(vec3(0.40, 0.39, 0.37), vec3(0.47, 0.47, 0.46), modU) * (0.94 + 0.08 * s.det.g);
+      if (rdT) urb = mix(vec3(0.29, 0.28, 0.265), vec3(0.32, 0.32, 0.31), modU) * (0.94 + 0.08 * s.det.g);
       // snow-covered towns: roofs and yards under snow, still a patch apart
       urb = mix(urb, vec3(0.50, 0.505, 0.51) * (0.9 + 0.15 * bldT), clamp(snowB, 0.0, 1.0) * 0.6);
       // the ground's own light and shade carry through (hill shading and
