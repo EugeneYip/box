@@ -431,6 +431,14 @@ export const planner = {
         t.push(i);
       }
     v._padTiles = t;
+    // (round 25: flowers grew on the pad and trees overhung the ranks)
+    // clear the plants off the pad and a tile round it
+    for (let y = Math.floor(pd.z - ez) - 1; y <= Math.floor(pd.z + ez - 1e-4) + 1; y++)
+      for (let x = Math.floor(pd.x - ex) - 1; x <= Math.floor(pd.x + ex - 1e-4) + 1; x++) {
+        if (!w.inBounds(x, y)) continue;
+        const f = w.flora[y * w.w + x];
+        if (f && f !== FLORA.BOULDER && this.use[y * w.w + x] !== USE.BUILDING) w.setFlora(x, y, FLORA.NONE);
+      }
     // level it: every tile centre the ground under the pad is drawn from
     // (heightAt interpolates between centres) to their mean height
     const x0 = Math.floor(pd.x - ex - 0.5),
