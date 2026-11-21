@@ -931,6 +931,9 @@ export function installDaily(Units) {
       return false;
     }
     if (u.job && u.job !== 'soldier') {
+      // (round 27) a worker with nothing to do this hour takes a turn on the
+      // main square now and then instead of a chore (plazas stood empty by day)
+      if (h >= 9 && h < 16.5 && u.state === 'idle' && !u.moving && !d.civ?.task && rng() < 0.35 && this._dlPlaza(u, v, pl, rng, false)) return true;
       if (h >= wake + 1.4 && h < 16.6 && u.state === 'idle' && !u.moving && !d.civ?.task) return this._dlChore(u, v, pl, rng);
       return false;
     }
