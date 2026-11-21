@@ -2,27 +2,31 @@
 // that rise later inside a country's land when no free country name is left:
 // a rebel around Rockhampton is the "State of Queensland", one around
 // Pekanbaru the "Republic of Sumatra", not a realm named after one city.
-// Each entry: [name, longitude, latitude, style]; the style gives the realm's
-// form ("State of", "Republic of"). Coordinates are rough region centers.
+// Each entry: [name, longitude, latitude, style, boxes?]; the style gives the
+// realm's form ("State of", "Republic of"). Coordinates are rough region
+// centers. Boxes, where given, are [west, south, east, north] in degrees: a
+// rebel seat takes the region's name only inside one of them (round 26 seated
+// a "State of Michigan" at Milwaukee and a "Republic of the Maritimes" at
+// Quebec City, the nearest region centers).
 
 const S = 'State of',
   R = 'Republic of';
 
 export const REGIONS = [
   // United States
-  ['New England', -71.5, 43.5, S], ['New York', -75.5, 42.8, S], ['Pennsylvania', -77.6, 40.9, S], ['Virginia', -78.7, 37.5, S],
-  ['the Carolinas', -80.5, 35.0, S], ['Georgia', -83.4, 32.7, S], ['Florida', -81.7, 28.3, S], ['Ohio', -82.8, 40.3, S],
-  ['Michigan', -84.7, 43.8, S], ['Illinois', -89.2, 40.0, S], ['Tennessee', -86.3, 35.8, S], ['Louisiana', -91.9, 31.0, S],
-  ['Texas', -99.3, 31.3, S], ['Oklahoma', -97.5, 35.6, S], ['Kansas', -98.4, 38.5, S], ['Nebraska', -99.8, 41.5, S],
-  ['the Dakotas', -100.3, 46.0, S], ['Minnesota', -94.3, 46.3, S], ['Missouri', -92.5, 38.4, S], ['Colorado', -105.5, 39.0, S],
-  ['New Mexico', -106.1, 34.4, S], ['Arizona', -111.7, 34.3, S], ['Utah', -111.7, 39.3, S], ['Nevada', -116.6, 39.3, S],
-  ['Montana', -109.6, 47.0, S], ['Wyoming', -107.5, 43.0, S], ['Idaho', -114.6, 44.4, S], ['Oregon', -120.5, 43.9, S],
-  ['Washington', -120.4, 47.4, S], ['California', -119.5, 37.2, S], ['Alaska', -150.0, 63.5, S], ['Hawaii', -157.5, 20.8, S],
-  ['Puerto Rico', -66.5, 18.2, S],
+  ['New England', -71.5, 43.5, S, [[-73.7, 41.0, -66.9, 47.5]]], ['New York', -75.5, 42.8, S, [[-79.8, 40.5, -71.8, 45.0]]], ['Pennsylvania', -77.6, 40.9, S, [[-80.5, 39.7, -74.7, 42.3]]], ['Virginia', -78.7, 37.5, S, [[-83.7, 36.5, -75.2, 39.5]]],
+  ['the Carolinas', -80.5, 35.0, S, [[-84.3, 32.0, -75.4, 36.6]]], ['Georgia', -83.4, 32.7, S, [[-85.6, 30.4, -80.8, 35.0]]], ['Florida', -81.7, 28.3, S, [[-87.6, 24.5, -80.0, 31.0]]], ['Ohio', -82.8, 40.3, S, [[-84.8, 38.4, -80.5, 42.0]]],
+  ['Michigan', -84.7, 43.8, S, [[-86.6, 41.7, -82.4, 45.9], [-90.4, 45.5, -83.6, 47.5]]], ['Wisconsin', -89.8, 44.6, S, [[-92.9, 42.5, -86.8, 47.1]]], ['Illinois', -89.2, 40.0, S, [[-91.5, 37.0, -87.5, 42.5]]], ['Tennessee', -86.3, 35.8, S, [[-90.3, 35.0, -81.6, 36.7]]], ['Louisiana', -91.9, 31.0, S, [[-94.0, 29.0, -89.0, 33.0]]],
+  ['Texas', -99.3, 31.3, S, [[-106.6, 25.8, -93.5, 36.5]]], ['Oklahoma', -97.5, 35.6, S, [[-103.0, 33.6, -94.4, 37.0]]], ['Kansas', -98.4, 38.5, S, [[-102.05, 37.0, -94.6, 40.0]]], ['Nebraska', -99.8, 41.5, S, [[-104.05, 40.0, -95.3, 43.0]]],
+  ['the Dakotas', -100.3, 46.0, S, [[-104.05, 42.5, -96.4, 49.0]]], ['Minnesota', -94.3, 46.3, S, [[-97.2, 43.5, -89.5, 49.4]]], ['Missouri', -92.5, 38.4, S, [[-95.8, 36.0, -89.1, 40.6]]], ['Colorado', -105.5, 39.0, S, [[-109.05, 37.0, -102.05, 41.0]]],
+  ['New Mexico', -106.1, 34.4, S, [[-109.05, 31.3, -103.0, 37.0]]], ['Arizona', -111.7, 34.3, S, [[-114.8, 31.3, -109.05, 37.0]]], ['Utah', -111.7, 39.3, S, [[-114.05, 37.0, -109.05, 42.0]]], ['Nevada', -116.6, 39.3, S, [[-120.0, 35.0, -114.05, 42.0]]],
+  ['Montana', -109.6, 47.0, S, [[-116.05, 44.4, -104.05, 49.0]]], ['Wyoming', -107.5, 43.0, S, [[-111.05, 41.0, -104.05, 45.0]]], ['Idaho', -114.6, 44.4, S, [[-117.2, 42.0, -111.05, 49.0]]], ['Oregon', -120.5, 43.9, S, [[-124.6, 42.0, -116.5, 46.3]]],
+  ['Washington', -120.4, 47.4, S, [[-124.8, 45.5, -116.9, 49.0]]], ['California', -119.5, 37.2, S, [[-124.5, 32.5, -114.1, 42.0]]], ['Alaska', -150.0, 63.5, S, [[-180, 51, -129.9, 71.5]]], ['Hawaii', -157.5, 20.8, S, [[-160.5, 18.8, -154.7, 22.3]]],
+  ['Puerto Rico', -66.5, 18.2, S, [[-67.3, 17.9, -65.2, 18.6]]],
   // Canada
-  ['British Columbia', -124.5, 53.7, R], ['Alberta', -114.5, 54.5, R], ['Saskatchewan', -105.9, 54.0, R], ['Manitoba', -97.4, 54.9, R],
-  ['Ontario', -85.3, 50.0, R], ['Quebec', -71.8, 52.5, R], ['the Maritimes', -64.5, 46.0, R], ['Newfoundland', -57.5, 50.5, R],
-  ['the Yukon', -135.5, 63.6, R], ['the Northwest', -118.0, 64.8, R], ['Nunavut', -90.0, 66.0, R],
+  ['British Columbia', -124.5, 53.7, R, [[-139.1, 48.3, -114.0, 60.0]]], ['Alberta', -114.5, 54.5, R, [[-120.0, 49.0, -110.0, 60.0]]], ['Saskatchewan', -105.9, 54.0, R, [[-110.0, 49.0, -101.4, 60.0]]], ['Manitoba', -97.4, 54.9, R, [[-102.0, 49.0, -88.9, 60.0]]],
+  ['Ontario', -85.3, 50.0, R, [[-95.2, 41.7, -74.3, 56.9]]], ['Quebec', -71.8, 52.5, R, [[-74.5, 45.0, -57.1, 62.6], [-79.6, 46.5, -74.5, 62.6]]], ['the Maritimes', -64.5, 46.0, R, [[-69.1, 43.4, -59.7, 48.1]]], ['Newfoundland', -57.5, 50.5, R, [[-67.8, 46.6, -52.6, 60.4]]],
+  ['the Yukon', -135.5, 63.6, R, [[-141, 60, -124, 69.6]]], ['the Northwest', -118.0, 64.8, R, [[-136, 60, -102, 78]]], ['Nunavut', -90.0, 66.0, R, [[-120, 51.5, -61, 83]]],
   // Mexico, Central America and the Caribbean
   ['Sonora', -110.7, 29.6, S], ['Chihuahua', -106.1, 28.6, S], ['Baja California', -114.5, 28.5, S], ['Jalisco', -103.6, 20.6, S],
   ['Yucatan', -89.0, 20.0, S], ['Oaxaca', -96.7, 17.0, S], ['Nuevo Leon', -99.8, 25.6, S], ['Veracruz', -96.7, 19.6, S],

@@ -352,9 +352,12 @@ export function installDaily(Units) {
         hh = (b.h || 1) / 2;
       // (round 25: sized to two ranks of six half-size soldiers with room
       // round them; the 3.4 x 2.4 pad was some forty soldiers across)
+      // (round 27: and a smaller pad on rougher ground, further out: drill
+      // fell from 23% of a soldier's day to 8% once the pad kept off streets)
       for (const [W, D, flat] of [
         [2.4, 1.6, 0.2],
         [2.0, 1.4, 0.3],
+        [1.7, 1.2, 0.42],
       ])
         for (const [ax, az] of [
           [ux, uz],
@@ -365,9 +368,9 @@ export function installDaily(Units) {
           // out from the building's side, the ranks facing it
           const half = Math.abs(ax) > 0.5 ? hw : hh;
           const door = ax * ux + az * uz > 0.5;
-          for (let k = 0; k < 9; k++) {
+          for (let k = 0; k < (W < 1.9 ? 13 : 9); k++) {
             const dist = half + 0.35 + D / 2 + k * 0.55;
-            for (const lat of [0, -1, 1, -2, 2, -3, 3]) {
+            for (const lat of W < 1.9 ? [0, -1, 1, -2, 2, -3, 3, -4, 4] : [0, -1, 1, -2, 2, -3, 3]) {
               const cx = bx + ax * dist - az * lat,
                 cz = bz + az * dist + ax * lat;
               // not on the evening square's gathering
@@ -390,7 +393,7 @@ export function installDaily(Units) {
                   }
                 }
               if (!ok || hi - lo >= flat) continue;
-              const s = (hi - lo) * 6 + k * 0.35 + Math.abs(lat) * 0.3 + paved * 0.05 + (door ? 0 : 0.6) + bi * 1.5 + (W < 2.2 ? 0.8 : 0);
+              const s = (hi - lo) * 6 + k * 0.35 + Math.abs(lat) * 0.3 + paved * 0.05 + (door ? 0 : 0.6) + bi * 1.5 + (W < 2.2 ? 0.8 : 0) + (W < 1.9 ? 1.6 : 0);
               if (s < bs) {
                 bs = s;
                 best = { b: b.id, key, ok: true, x: cx, z: cz, ax, az, W, D, y: hi, lo, slots: [], t: now, v: v.id, type: b.type };
@@ -858,8 +861,12 @@ export function installDaily(Units) {
       const school = pl.library || pl.era >= 3 ? pl.library || pl.hallB : null;
       // (round 23) a longer school day, more of it spent in class than on the
       // walk there (7% of the children were at school by day, 5% walking)
-      if (u.age >= 6 && school && h >= 7.6 && h < 14.8 && rng() < 0.65) {
-        const dur = Math.max(12, Math.min(30 + rng() * 25, (15.6 - h) * H));
+      // (round 27) the class lasts to the end of the school day: children
+      // used to leave after an hour or two and walk back (school fell to
+      // 9.7% of a child's day plus 6.2% walking; resting was their top
+      // activity)
+      if (u.age >= 6 && school && h >= 7.5 && h < 14.8 && rng() < 0.8) {
+        const dur = Math.max(12, (15.2 - h) * H + rng() * 0.3 * H);
         this._dlStart(u, 'school', dur, { x: school.doorX, z: school.doorZ, lab: 'At school', go: 'Walking to school', free: true });
         return true;
       }

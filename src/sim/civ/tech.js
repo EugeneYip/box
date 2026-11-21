@@ -535,15 +535,36 @@ export const tech = {
     // knowledge in hand. Every realm tied for the top era used to count as a
     // leader, so a whole crowd of era-3 realms was hurried at once.
     let leader = null,
-      ls = -1;
+      ls = -1,
+      top = 0;
     for (const k of this.kingdoms) {
       if (!k.alive || !k.villages.length || !k.techs) continue;
       let main = 0;
       for (const id of k.techs) if (!techById[id]?.side) main++;
       const s = (k.era || 0) * 1e9 + main * 1e5 + Math.min(99999, k.knowledge || 0);
-      if (s > ls) (ls = s), (leader = k);
+      if (s > ls) (ls = s), (leader = k), (top = k.era || 0);
     }
     const year = g.time.total / YEAR;
+    const tsp = Math.max(0.25, this.law('civTechSpeed', 1));
+    // (round 27) From the Modern era on, and for any era whose year has
+    // passed with no realm in it, the pacing's leader is the top-era realm
+    // nearest to finishing the next era (its unhurried years to go, kept
+    // from the last tick), not the one with the most arts: that realm could
+    // not finish the Modern arts by Year 325 even hurried, and Modern came at
+    // 372 (round 24: 323). Once the year has passed, every realm's hold on
+    // that era is lifted until one enters, and the leader is hurried the
+    // harder the later it is.
+    const nextE = top + 1;
+    const overdue = ERA_YEAR[nextE] != null && nextE <= this.eraCap() && year > ERA_YEAR[nextE] / tsp ? year - ERA_YEAR[nextE] / tsp : 0;
+    if (ERA_YEAR[nextE] != null && (nextE >= 5 || overdue > 0)) {
+      let best = null,
+        be = Infinity;
+      for (const k of this.kingdoms) {
+        if (!k.alive || !k.villages.length || !k.techs || (k.era || 0) !== top) continue;
+        if (k.eraEta < be) (be = k.eraEta), (best = k);
+      }
+      if (best) leader = best;
+    }
     for (const k of this.kingdoms) {
       if (!k.alive || !k.villages.length) continue;
       if (!this._kLaw(k.id, 'civTechnology')) continue;
@@ -640,18 +661,23 @@ export const tech = {
       // into an era before its year: they only lift those behind it.
       const next = (k.era || 0) + 1;
       k.eraHold = 0;
+      k.eraEta = Infinity;
       if (rt && ERA_YEAR[next] != null && next <= this.eraCap() && gain > 0) {
-        const ts = Math.max(0.25, this.law('civTechSpeed', 1));
+        const ts = tsp;
         const lead = k === leader;
-        const target = (ERA_YEAR[next] + (lead ? 0 : FOLLOW_YEARS * followShare(k.id, next))) / ts;
+        // an overdue era no realm has entered: no follower's delay (no hold)
+        const open = overdue > 0 && next === nextE;
+        const target = (ERA_YEAR[next] + (lead || open ? 0 : FOLLOW_YEARS * followShare(k.id, next))) / ts;
         const eta = this._eraNeed(k) / ((gain / dt) * YEAR);
+        k.eraEta = eta;
         const left = target - year;
         // (round 25) the leader may be hurried the harder at a higher research
         // speed (its towns have had half the years to grow at 2x: no realm
         // was Industrial by Year 130, against 112.5), and a follower past its
         // own year up to FOLLOW_HURRY (eleven of sixteen realms were still
         // Industrial 77 years after the first Modern one)
-        const hurry = lead ? PACE_LEAD * Math.max(1, ts) : left > 1 ? 1 : FOLLOW_HURRY;
+        const late = lead && open ? Math.min(3, 1 + overdue / 8) : 1;
+        const hurry = lead ? PACE_LEAD * Math.max(1, ts) * late : left > 1 ? 1 : FOLLOW_HURRY;
         let f = left > 1 ? eta / left : hurry;
         f = Math.max(PACE_MIN, Math.min(hurry, f));
         k.pace = k.pace == null ? f : k.pace + (f - k.pace) * 0.25;
