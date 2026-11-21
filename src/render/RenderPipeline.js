@@ -284,10 +284,22 @@ export class RenderPipeline {
     this._warmQ = [];
     this._warmed = new WeakMap();
     this._warmPar = !!r.extensions?.has?.('KHR_parallel_shader_compile');
-    this._warmFull = true; // the first look compiles every object's program
+    this._warmFull = false; // (round 27) the first look: what is shown now
+    this._warmKey = this._warmBandKey();
     this._warmScanAt = 0;
     this.warmInfo = { programs0: r.info.programs?.length ?? 0, batches: 0, compiled: 0, scans: 0, parallel: this._warmPar, t0: performance.now() };
     this._warmLater(0, true);
+  }
+
+  // The camera band (close, mid, overview) and the newest era: the warm-up
+  // looks over hidden objects (other bands' levels of detail, dots and
+  // markers, other eras' models) only when one of these changes.
+  _warmBandKey() {
+    const d = this.game.cameraRig?.cur?.dist ?? 0;
+    const band = d < 40 ? 0 : d < 110 ? 1 : 2;
+    let era = 0;
+    for (const k of this.game.civ?.kingdoms || []) if (k.alive && k.era > era) era = k.era;
+    return band * 100 + era;
   }
 
   _warmLater(ms, idle = false) {
@@ -333,16 +345,30 @@ export class RenderPipeline {
     if (!Q.length) {
       if (now < this._warmScanAt) return this._warmLater(this._warmScanAt - now);
       this._warmScanAt = now + 3000;
+      // (round 27) the first look and the regular ones cover what is shown
+      // (the current camera band and era); hidden objects are looked over
+      // only once the camera moves to a new band or a new era arrives (the
+      // round-25 first look compiled everything, hidden or not, and ran for
+      // 142 s after boot under software GL)
+      const key = this._warmBandKey();
+      if (key !== this._warmKey) {
+        this._warmKey = key;
+        this._warmFull = true;
+      }
       info.scans++;
       const full = this._warmFull;
       const props = r.properties;
-      g.scene.traverse((o) => {
+      const look = (o) => {
         if (!(o.isMesh || o.isPoints || o.isLine || o.isSprite) || !o.material || Array.isArray(o.material)) return;
         if (W.get(o) === o.material) return;
-        // (after the first look, only materials that have no program yet)
+        // (a full look compiles every object's program, as a material can
+        // need a variant per object; the others only materials with none yet)
         if (!full && props.get(o.material).currentProgram) return W.set(o, o.material);
         Q.push(o);
-      });
+      };
+      if (full) g.scene.traverse(look);
+      else g.scene.traverseVisible(look);
+      if (full) info.fullLooks = (info.fullLooks || 0) + 1;
       this._warmFull = false;
       if (!Q.length) {
         if (info.doneS == null) info.doneS = +((now - info.t0) / 1000).toFixed(1);
