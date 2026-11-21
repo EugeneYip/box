@@ -612,7 +612,7 @@ export class FleetRenderer {
       this._e.set(0, -h, pitch, 'YZX');
       this._q.setFromEuler(this._e);
       this._m.compose(this._p.set(x, Math.max(y, 0), z), this._q, this._s.setScalar(sc));
-      const wheel = -((this.t * c.s) / (0.08 * sc)) - i;
+      const wheel = -((c.wd || 0) / (0.08 * sc)) - i; // (round 23: turns with the distance driven, still when parked)
       vb.push(this._key('car', x, z), this._m, this._kingdomColor(c.kingdom), 0, wheel, 0, 0, 0, 0, 0, c.v);
       C.blobList.push(x, z, def.length * (C.roadBoost || 1), h);
       n++;

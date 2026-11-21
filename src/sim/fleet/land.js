@@ -323,7 +323,11 @@ export const land = {
     let tx = P[v.pi],
       tz = P[v.pi + 1];
     let d = Math.hypot(tx - v.x, tz - v.z);
-    while (d < 0.35 && v.pi < P.length - 2) {
+    // (round 23: a waypoint already left behind the vehicle's nose is passed
+    // too, so it never loops back round a corner it cut)
+    const hc = Math.cos(v.heading),
+      hs = Math.sin(v.heading);
+    while ((d < 0.35 || (!v.def.rail && d < 0.9 && (tx - v.x) * hc + (tz - v.z) * hs < 0 && v.speed > 0.2)) && v.pi < P.length - 2) {
       v.pi += 2;
       tx = P[v.pi];
       tz = P[v.pi + 1];
@@ -343,11 +347,20 @@ export const land = {
     const ti = w.idx(w.clampTx(Math.floor(v.x)), w.clampTy(Math.floor(v.z)));
     const road = w.type[ti] === TILE.ROAD ? 1.35 : 1;
     const slope = Math.min(0.5, w.slopeAt(Math.floor(v.x), Math.floor(v.z)) * 0.35);
-    const target = speed * road * (1 - slope) * (Math.abs(diff) > 1.2 ? 0.4 : 1);
-    v.speed += (target - v.speed) * Math.min(1, step * 3);
+    // (round 23) the vehicle goes where its nose points, give or take a
+    // little: it slows right down to swing round a sharp corner instead of
+    // sliding sideways round it with its body still facing the old way
+    let left = want - v.heading;
+    while (left > Math.PI) left -= Math.PI * 2;
+    while (left < -Math.PI) left += Math.PI * 2;
+    const al = Math.cos(left);
+    const target = speed * road * (1 - slope) * (v.def.rail ? (Math.abs(diff) > 1.2 ? 0.4 : 1) : al > 0.94 ? 1 : Math.max(0.1, al * al * al));
+    v.speed += (target - v.speed) * Math.min(1, step * (target < v.speed ? 6 : 3));
     const s = Math.min(d, v.speed * step);
-    v.x += Math.cos(want) * s;
-    v.z += Math.sin(want) * s;
+    // (a train keeps exactly to its rails)
+    const md = v.def.rail ? want : v.heading + Math.max(-0.3, Math.min(0.3, left));
+    v.x += Math.cos(md) * s;
+    v.z += Math.sin(md) * s;
     return false;
   },
 

@@ -22,6 +22,9 @@ import { USE } from '../civ/util.js';
 
 const SPEED = 1.45; // tiles per second in town
 const TURN = 7; // radians per second
+const LOOK = 0.28; // the way on is chosen this far before a tile's middle
+const GAP0 = 0.34; // a car stops this close behind the car ahead (tiles)...
+const GAP1 = 0.62; // ...and drives at full speed from this far
 
 export const traffic = {
   trafficCount(kid = null) {
@@ -174,6 +177,18 @@ export const traffic = {
     const R = !cam || g.view?.far || cam.dist > 175 ? -1 : Math.min(cam.dist * 1.7 + 24, 80) + 4;
     const lod = !this._noLod;
     const gwt = this._gwTick || 0;
+    // the cars in sight, by tile (for keeping a gap to the car ahead)
+    const cell = this._tCell || (this._tCell = new Map());
+    cell.clear();
+    if (R > 0)
+      for (let i = 0; i < T.length; i++) {
+        const c = T[i];
+        c._tn = null;
+        if (Math.abs(c.x - cam.x) > R || Math.abs(c.z - cam.z) > R) continue;
+        const ti = Math.floor(c.z) * w.w + Math.floor(c.x);
+        c._tn = cell.get(ti) || null;
+        cell.set(ti, c);
+      }
     for (let i = 0; i < T.length; i++) {
       const c = T[i];
       c.px = c.x;
@@ -195,43 +210,88 @@ export const traffic = {
         }
         continue;
       }
-      let mv = c.s * st;
-      for (let guard = 0; guard < 8 && mv > 0; guard++) {
-        const dx = c.tx - c.x,
+      // (round 23) a car drives where its nose points, steering toward the
+      // tile ahead, and picks its way on a little before the tile's middle,
+      // so it rounds corners on an arc instead of sliding sideways round a
+      // right angle (and a dead end is a tight loop, not a spin on the spot);
+      // it slows behind a car ahead in its lane instead of driving through it
+      const gv = st === step && R > 0 ? this._trafficGap(c, cell, st) : 1;
+      const v = Math.max(1e-3, c.s * gv);
+      let rest = v * st;
+      for (let guard = 0; guard < 16 && rest > 1e-4; guard++) {
+        let dx = c.tx - c.x,
           dz = c.tz - c.z;
-        const d = Math.hypot(dx, dz);
-        if (d > mv) {
-          c.x += (dx / d) * mv;
-          c.z += (dz / d) * mv;
-          mv = 0;
-          break;
+        let d = Math.hypot(dx, dz);
+        if (d < LOOK) {
+          const tx = Math.floor(c.tx),
+            tz = Math.floor(c.tz);
+          // the street was built over: the car leaves
+          if (use[tz * w.w + tx] !== USE.ROAD || !this._trafficNext(c, tx, tz)) {
+            c.gone = true;
+            drop = true;
+            break;
+          }
+          // now and then pull in at the curb (only once squared up to the street)
+          const a = Math.atan2(c.tz - c.z, c.tx - c.x);
+          if (this.rng() < 0.07 && Math.abs(Math.sin(a - c.h)) < 0.12 && Math.cos(a - c.h) > 0 && this._trafficKerb(tx, tz, c)) {
+            c.park = 6 + this.rng() * 26;
+            // square the car up with the street, on the tile's middle line
+            c.h = Math.round(c.h / (Math.PI / 2)) * (Math.PI / 2);
+            if (Math.abs(Math.cos(c.h)) > 0.5) c.z = tz + 0.5;
+            else c.x = tx + 0.5;
+            break;
+          }
+          dx = c.tx - c.x;
+          dz = c.tz - c.z;
+          d = Math.hypot(dx, dz);
+          if (d < 1e-4) continue;
         }
-        c.x = c.tx;
-        c.z = c.tz;
-        mv -= d;
-        const tx = Math.floor(c.tx),
-          tz = Math.floor(c.tz);
-        // the street was built over: the car leaves
-        if (use[tz * w.w + tx] !== USE.ROAD || !this._trafficNext(c, tx, tz)) {
-          c.gone = true;
-          drop = true;
-          break;
-        }
-        // now and then pull in at the curb (only once squared up to the street)
-        if (this.rng() < 0.07 && Math.abs(Math.sin(Math.atan2(c.tz - c.z, c.tx - c.x) - c.h)) < 0.05 && Math.cos(Math.atan2(c.tz - c.z, c.tx - c.x) - c.h) > 0 && this._trafficKerb(tx, tz, c)) {
-          c.park = 6 + this.rng() * 26;
-          // square the car up exactly with the street
-          c.h = Math.round(c.h / (Math.PI / 2)) * (Math.PI / 2);
-          break;
-        }
+        let dh = Math.atan2(dz, dx) - c.h;
+        while (dh > Math.PI) dh -= Math.PI * 2;
+        while (dh < -Math.PI) dh += Math.PI * 2;
+        // a turn round (the street ends) goes left, across the street
+        if (dh > 3.0) dh -= Math.PI * 2;
+        // slower through a sharp turn (a tighter arc)
+        const slow = Math.cos(dh) > 0.35 ? 1 : 0.55;
+        const sub = Math.min(rest, 0.12);
+        const mx = (TURN * sub) / v;
+        c.h += dh > mx ? mx : dh < -mx ? -mx : dh;
+        const ln = Math.min(sub * slow, d);
+        c.x += Math.cos(c.h) * ln;
+        c.z += Math.sin(c.h) * ln;
+        c.wd = (c.wd || 0) + ln;
+        rest -= sub;
       }
-      // turn smoothly toward the way ahead
-      let dh = Math.atan2(c.tz - c.z, c.tx - c.x) - c.h;
-      while (dh > Math.PI) dh -= Math.PI * 2;
-      while (dh < -Math.PI) dh += Math.PI * 2;
-      const mx = TURN * st;
-      c.h += dh > mx ? mx : dh < -mx ? -mx : dh;
     }
     if (drop) this.traffic = T.filter((c) => !c.gone);
+  },
+  // How fast a car may go (0..1 of its speed) for the car ahead of it in its
+  // lane (the same tile or the next, heading the same way). A car held up for
+  // a few seconds edges on regardless, so a crossing never locks up.
+  _trafficGap(c, cell, st) {
+    const W = this.world.w;
+    const co = Math.cos(c.h),
+      si = Math.sin(c.h);
+    let near = Infinity;
+    for (let k = 0; k < 2; k++) {
+      const i = k === 0 ? Math.floor(c.z) * W + Math.floor(c.x) : Math.floor(c.tz) * W + Math.floor(c.tx);
+      for (let o = cell.get(i); o; o = o._tn) {
+        if (o === c || o.park > 0 || o.gone) continue;
+        if (co * Math.cos(o.h) + si * Math.sin(o.h) < 0.5) continue;
+        const ox = o.x - c.x,
+          oz = o.z - c.z;
+        const ahead = ox * co + oz * si;
+        if (ahead <= 0.02 || ahead >= near) continue;
+        if (Math.abs(ox * si - oz * co) > 0.22) continue;
+        near = ahead;
+      }
+    }
+    let want = near === Infinity ? 1 : Math.max(0, Math.min(1, (near - GAP0) / (GAP1 - GAP0)));
+    if (want < 0.15) {
+      c.hold = (c.hold || 0) + st;
+      if (c.hold > 3) want = 0.35;
+    } else c.hold = 0;
+    c.gv = (c.gv ?? 1) + (want - (c.gv ?? 1)) * Math.min(1, st * 8);
+    return c.gv;
   },
 };

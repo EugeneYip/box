@@ -78,6 +78,7 @@ function wadeDepth(def) {
 }
 const PATH_BUDGET = 40; // near units; distant ones share PATH_BUDGET_FAR
 const PATH_BUDGET_FAR = 8;
+const SEP_FADE = 5; // (round 23) per second: how fast a separation nudge fades
 const FCELL = 8;
 const FORAGE_REGROW = 0.008; // fraction of a cell's capacity regrown per second
 const FORAGE_COST = 7; // forage per unit of hunger per unit of body mass
@@ -965,6 +966,10 @@ export class Units {
       if (Math.abs(u.kbx) + Math.abs(u.kbz) < 0.02) u.kbx = u.kbz = 0;
     }
     // separation (computed in a staggered pass)
+    // (round 23: a nudge that fades over the next few updates instead of a
+    // push held at full strength until the next pass, 4 to 32 ticks later:
+    // the held push carried people well past the spacing they wanted, so a
+    // standing group swayed back and forth and walkers jittered sideways)
     if (u.sepx !== 0 || u.sepz !== 0) {
       const nx = u.x + u.sepx * dt,
         nz = u.z + u.sepz * dt;
@@ -974,6 +979,10 @@ export class Units {
         u.x = nx;
         u.z = nz;
       }
+      const f = Math.exp(-dt * SEP_FADE);
+      u.sepx *= f;
+      u.sepz *= f;
+      if (Math.abs(u.sepx) + Math.abs(u.sepz) < 0.03) u.sepx = u.sepz = 0;
     }
     if (!u.target && !u.path) {
       u.spd *= Math.exp(-dt * 10);
@@ -2387,7 +2396,9 @@ export class Units {
       // (a step across the Round world's seam counts the short way round)
       const mvx = wrapX ? geoDx(w, u.px, u.x) : u.x - u.px;
       const moved = Math.hypot(mvx, u.z - u.pz) / udt;
-      u.speedNow += (moved - u.speedNow) * Math.min(1, udt * 8);
+      // (round 23: the legs stop with the body, not a third of a second later
+      // walking on the spot)
+      u.speedNow += (moved - u.speedNow) * Math.min(1, udt * (moved < u.speedNow * 0.5 ? 22 : 8));
       if (lod && moved > 0) {
         // the stride of a distant walker (updated every 2nd or 4th tick) is
         // shown over the ticks until its next update (see the skip above)
