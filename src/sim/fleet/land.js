@@ -268,6 +268,7 @@ export const land = {
   _landTick(v, step) {
     const a = v.anim;
     const mt = v.mission?.type;
+    if (mt === 'train' && v._lineP !== undefined) this._trainResnap(v);
     if (v.def.siege && mt !== 'drive' && mt !== 'park' && mt !== 'rounds' && v.state !== 'parked') this._siegeMove(v, step);
     else if (v.state === 'move' && v.path) {
       v.settleH = null;

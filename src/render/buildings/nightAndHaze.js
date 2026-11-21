@@ -242,8 +242,12 @@ varying float vSeed;
 void main() {
   vec2 p = vUv - 0.5;
   float d = length(p) * 2.0;
-  float wob = 0.82 + 0.18 * sin(atan(p.y, p.x) * 4.0 + vSeed * 31.0);
-  float a = 1.0 - smoothstep(0.35, 1.0, d / wob);
+  // (round 27: a four-lobed wobble turned faint puffs into four-point
+  // stars) a slight lumpiness of two odd frequencies, each puff turned its
+  // own way, so the outline stays a soft round blob
+  float th = atan(p.y, p.x);
+  float wob = 0.93 + 0.035 * sin(th * 3.0 + vSeed * 31.0) + 0.025 * sin(th * 5.0 + vSeed * 57.0 + 1.7);
+  float a = 1.0 - smoothstep(0.25, 0.95, d / wob);
   if (a <= 0.003) discard;
   // pale grey smoke (works), dark soot (foundries), white steam (cooling towers)
   vec3 col = vTone > 1.5 ? vec3(0.93, 0.94, 0.95) : mix(vec3(0.74, 0.73, 0.71), vec3(0.34, 0.32, 0.30), vTone);

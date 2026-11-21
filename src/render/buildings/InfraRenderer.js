@@ -202,7 +202,10 @@ export class InfraRenderer {
     game.scene.add(this.group);
     this.mat = infraMaterial(uniforms);
     this.wireMat = new THREE.LineBasicMaterial({ color: 0x4a4e54, transparent: true, opacity: 0.55 });
-    this.farMat = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.85 });
+    // (round 27: the scene's haze washed these toward its pale colour at the
+    // overview, so the rail read as grey-white scribbles; thin dark lines at
+    // about 60% instead, unfogged)
+    this.farMat = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.6, fog: false, depthWrite: false });
     this.mesh = null;
     this.wires = null;
     this.far = null;
@@ -420,11 +423,32 @@ export class InfraRenderer {
     // at a gentle grade either side
     const G = C.map(([x, z]) => this._h(x, z));
     const Yh = G.map((g, i) => (hw[i] === 2 || g < SEA_LEVEL ? SEA_LEVEL + 0.3 * BS : g + 0.03));
-    for (let i = 1; i < n; i++) Yh[i] = Math.max(Yh[i], Yh[i - 1] - 0.08);
-    for (let i = n - 2; i >= 0; i--) Yh[i] = Math.max(Yh[i], Yh[i + 1] - 0.08);
+    // (round 27) the ramps run only out from a bridge and along the drawn
+    // road: a deck carried on at the grade from the top of a slope stood on
+    // tall pillars over a canyon edge, and one ended in mid-air at a bank
+    const up = (i) => Yh[i] - G[i] > 0.05;
+    for (let i = 1; i < n; i++) if (hw[i] && hw[i - 1] && up(i - 1)) Yh[i] = Math.max(Yh[i], Yh[i - 1] - 0.08);
+    for (let i = n - 2; i >= 0; i--) if (hw[i] && hw[i + 1] && up(i + 1)) Yh[i] = Math.max(Yh[i], Yh[i + 1] - 0.08);
+    // every run starts and ends on the ground: a raised end is cut back to
+    // its last point at grade (a run with none is not drawn)
+    const draw = new Uint8Array(n);
+    for (let i = 0; i < n; ) {
+      if (!hw[i]) {
+        i++;
+        continue;
+      }
+      let j = i;
+      while (j < n && hw[j]) j++;
+      let a = i,
+        b = j - 1;
+      while (a <= b && Yh[a] - G[a] > 0.1) a++;
+      while (b >= a && Yh[b] - G[b] > 0.1) b--;
+      for (let m = a; m <= b; m++) draw[m] = 1;
+      i = j;
+    }
     let lastPier = -9;
     for (let i = 0; i + 1 < n; i++) {
-      if (!hw[i] || !hw[i + 1]) continue;
+      if (!draw[i] || !draw[i + 1]) continue;
       const [ax, az] = C[i],
         [bx, bz] = C[i + 1];
       const L = Math.hypot(bx - ax, bz - az);
@@ -487,13 +511,13 @@ export class InfraRenderer {
       seg.len = len;
       const n0 = far.length / 3;
       this._track(E, seg, far);
-      farCol(n0, seg.kind === 'maglev' ? 0x5c646c : 0x4a4640);
+      farCol(n0, seg.kind === 'maglev' ? 0x3a4148 : 0x2e2a26);
       if (seg.start) this._terminus(E, seg, true);
       if (seg.end) this._terminus(E, seg, false);
       if (seg.hw) {
         const n1 = far.length / 3;
         this._highway(E, seg, far);
-        farCol(n1, 0x5a5d62);
+        farCol(n1, 0x34373c);
       }
     }
     // power lines: pylons and sagging wires
@@ -533,7 +557,7 @@ export class InfraRenderer {
         if (Math.abs(A[0][0] - B[0][0]) > W / 2) continue;
         const n0 = far.length / 3;
         far.push(A[0][0], A[0][1], A[0][2], B[0][0], B[0][1], B[0][2]);
-        farCol(n0, 0x5e5e5a);
+        farCol(n0, 0x3c3c3a);
         for (let w = 0; w < A.length; w++) {
           const a = A[w],
             b = B[w];

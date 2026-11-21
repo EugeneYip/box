@@ -646,11 +646,12 @@ export const modern = {
         const x = s.pts[i * 2],
           z = s.pts[i * 2 + 1];
         const d = Math.hypot(x - v.cx, z - v.cz);
-        if (d < bd && d < (v.buildRadius || 8) * 1.8 + 6) (bd = d), (ex = x), (ez = z);
+        if (d < bd && d < ((this._conurbs().get(v.id)?.n || 1) > 1 ? 45 : (v.buildRadius || 8) * 1.8 + 6)) (bd = d), (ex = x), (ez = z);
       }
     }
     const R0 = Math.max(4, (v.buildRadius || v.radius || 6) * 0.8);
-    if (ex == null) return this._placeOutskirts(v, 'station', R0, (v.buildRadius || 6) + 3, null, null);
+    const inConurb = (this._conurbs().get(v.id)?.n || 1) > 1;
+    if (ex == null) return inConurb ? null : this._placeOutskirts(v, 'station', R0, (v.buildRadius || 6) + 3, null, null);
     // the way out of town at that end (the platform runs along it)
     const ox = ex - v.cx,
       oz = ez - v.cz;
@@ -658,6 +659,8 @@ export const modern = {
     const ux = ox / oL,
       uz = oz / oL;
     const rc = Math.max(3, (v.radius || 6) * 0.55);
+    const conurb = (this._conurbs().get(v.id)?.n || 1) > 1;
+    if (conurb) this._railBlocks();
     let best = null,
       bs = Infinity;
     for (let dz = -5; dz <= 5; dz++)
@@ -673,6 +676,8 @@ export const modern = {
           // (round 25: at the edge of town, not in among its blocks, so the
           // line never has to wind in through them)
           if (dc < Math.max(rc + 1.5, (v.buildRadius || v.radius || 6) * 0.8)) continue;
+          // (round 27: in a conurbation, on its outer edge only)
+          if (conurb && this._deepInConurb(cx, cz, 2.5)) continue;
           if (!this._footprintOK(x, y, fw, fh, 0.9)) continue;
           // the long side along the way out (rot 0: along x)
           const ax = rot & 1 ? 0 : 1,
@@ -682,7 +687,7 @@ export const modern = {
           const sc = Math.hypot(cx - ex, cz - ez) + across * 2.5 + st.slope * 3 + st.trees * 0.3 + this.rng.next() * 0.5;
           if (sc < bs) (bs = sc), (best = { x, y, rot, ax, az });
         }
-    if (!best) return this._placeOutskirts(v, 'station', R0, (v.buildRadius || 6) + 3, ex, ez);
+    if (!best) return conurb ? null : this._placeOutskirts(v, 'station', R0, (v.buildRadius || 6) + 3, ex, ez);
     // the door (+Z of the model) faces the town; the track runs behind it
     let rot = best.rot;
     const [fx, fz] = rot === 0 ? [0, 1] : [1, 0];
@@ -1023,7 +1028,7 @@ export const modern = {
       bd = Infinity;
     for (const vid of k.villages) {
       const v = this.villages[vid];
-      if (!v?.alive || v === cap || v.landId !== cap.landId || this.railBetween(cap.id, v.id)) continue;
+      if (!v?.alive || v === cap || v.landId !== cap.landId || this.railBetween(cap.id, v.id) || this._sameConurb(cap.id, v.id)) continue;
       if (v.pop < 14 && !k.roadLinks?.has(vid)) continue;
       const d = Math.hypot(v.cx - cap.cx, v.cz - cap.cz) - (k.roadLinks?.has(vid) ? 20 : 0);
       if (d < bd && d < reach) (bd = d), (best = v);
@@ -1107,6 +1112,7 @@ export const modern = {
   },
   // rebuild a realm's network when its lines or their stations change
   _railNetCheck(k) {
+    if (this._conurbTidy(k)) this.infraVersion++;
     if ((this._netSig || {})[k.id] !== this._railSig(k)) {
       this._railNetBuild(k);
       this.infraVersion++;
@@ -1137,7 +1143,8 @@ export const modern = {
   // where a line ends in a town: along the back of its station's platform,
   // or (no station yet) at the hall door
   _railTerm(kind, v) {
-    const s = this._stationOf(v);
+    let s = this._stationOf(v);
+    if (s && this._deepInConurb(s.x, s.z, 3)) s = null;
     if (s) {
       const r = s.rotation || 0,
         S = BUILDING.scale;
@@ -1147,7 +1154,7 @@ export const modern = {
       z = v.hall?.alive ? v.hall.doorZ : v.cz;
     // (no station yet: the line stops at the edge of town, where the
     // station will stand, instead of running in to the square)
-    return { x, z, dx: 0, dz: 0, half: 0, station: false, stop: clamp((v.buildRadius || v.radius || 6) * 0.95, 4, 14) };
+    return { x, z, dx: 0, dz: 0, half: 0, station: false, stop: clamp((v.buildRadius || v.radius || 6) * 0.95, 4, 14), conurb: (this._conurbs().get(v.id)?.n || 1) > 1 };
   },
   // a terminus turned toward (qx, qz): [buffer, platform entry], the unit
   // vector out of it and the lead point the line curves in from
@@ -1162,16 +1169,22 @@ export const modern = {
     const L = Math.hypot(qx - T.x, qz - T.z) || 1;
     const ex = (qx - T.x) / L,
       ez = (qz - T.z) / L;
-    let st = Math.min(T.stop || 0, L * 0.6);
+    let st = Math.min(T.stop || 0, T.conurb ? L - 2 : L * 0.6);
     // the buffer stop never stands in a street or on a plot: on along the
     // way out to the first open ground
     const w = this.world;
-    for (let k = 0; k < 10; k++) {
+    // (round 27: in a conurbation, on out to its outer edge)
+    for (let k = 0; k < 50; k++) {
       const tx = Math.floor(T.x + ex * st),
         tz = Math.floor(T.z + ez * st);
       if (!w.inBounds(tx, tz)) break;
       const u = this.use[tz * w.w + tx];
-      if (u !== USE.ROAD && u !== USE.BUILDING && !(this._railBlk?.[tz * w.w + tx] >= 254)) break;
+      const b = this._railBlk?.[tz * w.w + tx];
+      if (b === 253 && st < L - 1) {
+        st += 0.6;
+        continue;
+      }
+      if (k >= 10 || (u !== USE.ROAD && u !== USE.BUILDING && !(b >= 254))) break;
       st += 0.6;
     }
     const x = T.x + ex * st,
@@ -1287,6 +1300,103 @@ export const modern = {
       }
     }
   },
+  // Round 27: towns whose built footprints touch form one conurbation:
+  // vid -> {g (the group's first town), n (towns in it)}; cached per tick
+  _conurbs() {
+    const now = this.game.time.total;
+    if (this._conurbM && this._conurbT === now && this._conurbN === this.villages.length) return this._conurbM;
+    const V = this.villages.filter((v) => v?.alive && Number.isFinite(v.cx));
+    const par = new Map(V.map((v) => [v.id, v.id]));
+    const find = (a) => {
+      while (par.get(a) !== a) a = par.get(a);
+      return a;
+    };
+    const R = (v) => Math.max(v.radius || 6, (v.buildRadius || 0) + 1);
+    for (let i = 0; i < V.length; i++)
+      for (let j = i + 1; j < V.length; j++) {
+        const a = V[i],
+          b = V[j];
+        const lim = R(a) + R(b) + 1;
+        if (Math.abs(a.cx - b.cx) > lim || Math.abs(a.cz - b.cz) > lim) continue;
+        if (Math.hypot(a.cx - b.cx, a.cz - b.cz) < lim) {
+          const ra = find(a.id),
+            rb = find(b.id);
+          if (ra !== rb) par.set(ra, rb);
+        }
+      }
+    const cnt = new Map();
+    for (const v of V) {
+      const g = find(v.id);
+      cnt.set(g, (cnt.get(g) || 0) + 1);
+    }
+    const M = new Map();
+    for (const v of V) {
+      const g = find(v.id);
+      M.set(v.id, { g, n: cnt.get(g) });
+    }
+    this._conurbM = M;
+    this._conurbT = now;
+    this._conurbN = this.villages.length;
+    return M;
+  },
+  _sameConurb(a, b) {
+    const M = this._conurbs();
+    const A = M.get(a),
+      B = M.get(b);
+    return !!(A && B && A.n > 1 && A.g === B.g);
+  },
+  // (x, z) deep inside a conurbation's closed area: no open ground outside
+  // it within r tiles (B: _railBlk)
+  _deepInConurb(x, z, r = 3) {
+    const w = this.world;
+    const B = this._railBlk;
+    if (!B) return false;
+    const at = (px, pz) => {
+      const tx = Math.floor(px),
+        tz = Math.floor(pz);
+      return w.inBounds(tx, tz) ? B[tz * w.w + tx] : 0;
+    };
+    const b0 = at(x, z);
+    if (b0 !== 253 && b0 !== 255) return false;
+    for (let a = 0; a < 16; a++) {
+      const c = Math.cos((a / 16) * Math.PI * 2),
+        s = Math.sin((a / 16) * Math.PI * 2);
+      for (let d = 0.5; d <= r; d += 0.5) {
+        const b = at(x + c * d, z + s * d);
+        if (b !== 253 && b !== 255 && b !== 2 && b !== 1) return false;
+      }
+    }
+    return true;
+  },
+  // a conurbation's lines between its own towns are dropped (it is one
+  // place), and a station left deep inside it by the merger is cleared (the
+  // line's new end on the outer edge gets a station of its own)
+  _conurbTidy(k) {
+    let changed = false;
+    const keep = this.rails.filter((l) => !(l.kingdom === k.id && this._sameConurb(l.a, l.b)));
+    if (keep.length !== this.rails.length) {
+      this.rails = keep;
+      this._railEnds();
+      changed = true;
+    }
+    const CB = this._conurbs();
+    let blk = false;
+    for (const vid of k.villages) {
+      const v = this.villages[vid];
+      if (!v?.alive || (CB.get(vid)?.n || 1) < 2) continue;
+      const st = this._stationOf(v);
+      if (!st || st.constructing) continue;
+      if (!blk) {
+        this._railBlocks();
+        blk = true;
+      }
+      if (!this._deepInConurb(st.x, st.z, 3)) continue;
+      this._fx?.('dust', st.x, st.z, 1.2, true);
+      this._unbuild(st, USE.FREE);
+      changed = true;
+    }
+    return changed;
+  },
   // Where a track may not run, or runs at a price (rebuilt with each
   // network): 255 a town's square (never: a line never crosses the paving
   // before a hall), 254 an airport's clear zone (never; dear when nothing
@@ -1303,10 +1413,29 @@ export const modern = {
     const B = this._railBlk;
     B.fill(0);
     this._airZoneBuild();
+    const CB = this._conurbs();
     for (const v of this.villages) {
       if (!v?.alive || !Number.isFinite(v.cx)) continue;
       const R = Math.max(v.radius || 6, (v.buildRadius || 0) + 1);
       const rc = Math.max(3, (v.radius || 6) * 0.55);
+      // (round 27) a town grown into its neighbours: the merged footprint
+      // is one closed area (253): a line keeps round its outside, and its
+      // stations stand on its outer edge (one town's edge was the next
+      // town's downtown, and trestles braided its main streets)
+      if ((CB.get(v.id)?.n || 1) > 1) {
+        const x0 = Math.max(0, Math.floor(v.cx - R - 2)),
+          x1 = Math.min(W - 1, Math.ceil(v.cx + R + 2)),
+          y0 = Math.max(0, Math.floor(v.cz - R - 2)),
+          y1 = Math.min(H - 1, Math.ceil(v.cz + R + 2));
+        for (let y = y0; y <= y1; y++)
+          for (let x = x0; x <= x1; x++) {
+            const d = Math.hypot(x + 0.5 - v.cx, y + 0.5 - v.cz);
+            const i = y * W + x;
+            if (d < R) B[i] = B[i] >= 254 ? B[i] : 253;
+            else if (d < R + 2 && B[i] === 0) B[i] = 3;
+          }
+        continue;
+      }
       const x0 = Math.max(0, Math.floor(v.cx - R - 2)),
         x1 = Math.min(W - 1, Math.ceil(v.cx + R + 2)),
         y0 = Math.max(0, Math.floor(v.cz - R - 2)),
@@ -1315,6 +1444,7 @@ export const modern = {
         for (let x = x0; x <= x1; x++) {
           const d = Math.hypot(x + 0.5 - v.cx, y + 0.5 - v.cz);
           const i = y * W + x;
+          if (B[i] === 253) continue;
           if (d < rc) B[i] = B[i] === 3 ? 2 : Math.max(B[i], 2);
           else if (d < R) B[i] = B[i] === 3 ? 1 : Math.max(B[i], 1);
           else if (d < R + 2 && B[i] === 0) B[i] = 3;
@@ -1418,8 +1548,12 @@ export const modern = {
     }
     const arc = new Float32Array(n);
     for (let i = 1; i < n; i++) arc[i] = arc[i - 1] + Math.min(3, Math.hypot(P[i * 2] - P[i * 2 - 2], P[i * 2 + 1] - P[i * 2 - 1]));
-    const keepS = s.start?.station ? 4 : s.junction ? 1.5 : 0,
-      keepE = s.end?.station ? 4 : 0;
+    // (round 27: the platform, then the ramp at the bed's grade, stays at
+    // ground level: a deck met a station's canopy at deck height over
+    // tracks at grade)
+    const ramp = ST_HALF * 2 * BUILDING.scale + CORE_LIFT / GRADE.rail + 1.2;
+    const keepS = s.start?.station ? ramp : s.junction ? 1.5 : 0,
+      keepE = s.end?.station ? ramp : 0;
     const out = new Uint8Array(n);
     let any = false;
     for (let i = 0; i < n; ) {
@@ -1469,7 +1603,7 @@ export const modern = {
           tz = Math.floor(p[j * 2 + 1]);
         if (Bk && w.inBounds(tx, tz)) {
           const b = Bk[tz * W + tx];
-          if (b === 1 || b === 2 || b >= 254) continue;
+          if (b === 1 || b === 2 || b >= 253) continue;
         }
         const a = Math.max(0, j - 2),
           c = Math.min(n - 1, j + 2);
@@ -1531,8 +1665,8 @@ export const modern = {
       const ends = [sx, sy, gx, gy];
       let cost = this._railCost(kind, mask, false, ends);
       let q = civPath(w, sx, sy, gx, gy, cost, 14000, mc);
-      if (!near(q)) q = civPath(w, sx, sy, gx, gy, (cost = this._railCost(kind, mask, false)), 14000, mc);
-      if (!near(q)) q = civPath(w, sx, sy, gx, gy, (cost = this._railCost(kind, mask, true)), 16000, mc);
+      if (!near(q)) q = civPath(w, sx, sy, gx, gy, (cost = this._railCost(kind, mask, false, null, ends)), 14000, mc);
+      if (!near(q)) q = civPath(w, sx, sy, gx, gy, (cost = this._railCost(kind, mask, true, null, ends)), 16000, mc);
       if (!near(q)) return null;
       mid = this._railPull(q, cost)
         .slice(0, -1)
@@ -1654,7 +1788,7 @@ export const modern = {
     }
     return true;
   },
-  _railCost(kind, mask, relaxed, ends = null) {
+  _railCost(kind, mask, relaxed, ends = null, endsC = ends) {
     const w = this.world;
     const W = w.w;
     const use = this.use;
@@ -1673,9 +1807,21 @@ export const modern = {
     const Nr = kind === 'rail' ? this._railNear : null;
     // a town, an airport's clear zone and the other lines nearby (see
     // _railBlocks and _railCorridor), on top of the ground's own price
+    const nearC = (i) => {
+      if (!endsC) return false;
+      const x = i % W,
+        y = (i / W) | 0;
+      return (Math.abs(x - endsC[0]) <= 3 && Math.abs(y - endsC[1]) <= 3) || (Math.abs(x - endsC[2]) <= 3 && Math.abs(y - endsC[3]) <= 3);
+    };
     const near = (i, c) => {
       const b = B ? B[i] : 0;
       if (b === 255) return Infinity;
+      // (round 27) a conurbation's closed area, in every pass: only within
+      // a few tiles of the line's own ends (its station on the outer edge)
+      if (b === 253) {
+        if (use[i] === USE.BUILDING || !nearC(i)) return Infinity;
+        return c + (use[i] === USE.ROAD ? 8 : 16);
+      }
       if (b === 254) return relaxed ? c + 40 : Infinity;
       // (inside a town a line keeps out of the blocks: crossing a street
       // costs a little less than a lawn, and the ring round its edge is
@@ -1700,7 +1846,7 @@ export const modern = {
       const k = Cr ? Cr[i] : 0;
       if (k === 1) c += 1.5;
       else if (k === 2) c *= 0.7;
-      else if (k === 3) c += 2.5;
+      else if (k === 3) c += 4.5;
       // this network's own track: a branch leaves it at its switch and
       // keeps away, never running along it a tile or three off
       // (Nr: 1 on it, 2 right beside it, 3 and 4 two and three tiles off)

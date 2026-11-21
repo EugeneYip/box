@@ -132,6 +132,9 @@ export const air = {
   // a train's length along from the start (its cars behind it to the buffer).
   _trainOnto(v, P) {
     this.setPath(v, P);
+    // (the line's track as it stands: _trainResnap moves the train onto the
+    // new track when the line is re-routed under it)
+    v._lineP = this.game.civ?.railLine?.(v.mission?.rail)?.pts ?? null;
     let back = Math.max(0, (v.def.cars || 1) - 1) * v.def.length + 0.1;
     for (let k = 0; k + 3 < P.length; k += 2) {
       const L = Math.hypot(P[k + 2] - P[k], P[k + 3] - P[k + 1]);
@@ -148,6 +151,57 @@ export const air = {
     // (a line shorter than the train: it starts at the beginning)
     v.x = v.px = P[0];
     v.z = v.pz = P[1];
+  },
+  // Round 27: a line re-routed round a town that grew (or a new station)
+  // left its train running on along the old way, on the grass under the new
+  // viaduct with no rails beneath it. The train is set on the new track at
+  // the point nearest to it, still heading for the same town; a line that is
+  // gone sends it to find other work.
+  _trainResnap(v) {
+    const m = v.mission;
+    if (!m || m.type !== 'train' || v._lineP === undefined) return;
+    const line = this.game.civ?.railLine?.(m.rail);
+    const LP = line?.pts || null;
+    if (LP === v._lineP) return;
+    if (!LP || LP.length < 8) {
+      v._lineP = undefined;
+      v.path = null;
+      v.donePath = null;
+      if (v.state === 'move' || v.state === 'rest') this._findWork(v);
+      return;
+    }
+    // (on toward the end its old route was heading for)
+    const O = v.path || v.donePath;
+    const n2 = LP.length - 2;
+    let toB = line.b === m.to;
+    if (O && O.length >= 2) {
+      const ex = O[O.length - 2],
+        ez = O[O.length - 1];
+      toB = Math.hypot(ex - LP[n2], ez - LP[n2 + 1]) < Math.hypot(ex - LP[0], ez - LP[1]);
+    }
+    const P = toB ? LP : reversePts(LP);
+    let bi = 0,
+      bt = 0,
+      bd = Infinity;
+    for (let k = 0; k + 3 < P.length; k += 2) {
+      const ax = P[k],
+        az = P[k + 1],
+        dx = P[k + 2] - ax,
+        dz = P[k + 3] - az;
+      const L2 = dx * dx + dz * dz;
+      const t = L2 > 1e-9 ? Math.max(0, Math.min(1, ((v.x - ax) * dx + (v.z - az) * dz) / L2)) : 0;
+      const d = (ax + dx * t - v.x) ** 2 + (az + dz * t - v.z) ** 2;
+      if (d < bd) (bd = d), (bi = k), (bt = t);
+    }
+    v._lineP = LP;
+    const hadPath = !!v.path;
+    v.path = P;
+    v.donePath = hadPath ? null : P;
+    v.x = v.px = P[bi] + (P[bi + 2] - P[bi]) * bt;
+    v.z = v.pz = P[bi + 1] + (P[bi + 3] - P[bi + 1]) * bt;
+    v.heading = v.ph = Math.atan2(P[bi + 3] - P[bi + 1], P[bi + 2] - P[bi]);
+    v.pi = Math.min(P.length - 2, bi + 2);
+    if (!hadPath) v.path = v.state === 'rest' && m.phase === 'home' ? P : null;
   },
   _trainArrive(v, m, to) {
     const civ = this.game.civ;
