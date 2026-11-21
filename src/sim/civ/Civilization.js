@@ -717,6 +717,7 @@ export class Civilization {
     // work; each village keeps its own phase, so the work stays spread.
     let nv = 0;
     for (const v of this.villages) if (v.alive) nv++;
+    this._aliveN = nv;
     // big maps at coarse steps (8x and above): the village passes run a
     // further half as often, each covering the longer interval as above, and
     // the realm-wide passes below (buildings, research, unlocks, territory)
@@ -758,7 +759,10 @@ export class Civilization {
     if ((T.terr += step) >= 2 * Math.min(6, Math.max(coarse ? 2 : 1, this.world.size / 65536))) {
       T.terr = 0;
       // the full flood fill is costly on big maps: only when the realms changed
-      this._territoryIfChanged(coarse ? 60 : 30);
+      // (round 25: at the coarse steps a change redraws at most every 8 s, a
+      // half second of real time at 16x; a new or lost village still redraws
+      // on the next look)
+      this._territoryIfChanged(coarse ? 60 : 30, coarse ? 8 : 0);
     }
     if ((T.dip += step) >= 4) {
       T.dip = 0;
@@ -786,8 +790,15 @@ export class Civilization {
     const techEvery = coarse ? 3 : 2;
     if ((T.tech = (T.tech || 0) + step) >= techEvery) {
       this._researchTick(T.tech);
-      this._inventoryTick(T.tech);
       T.tech = 0;
+    }
+    // (round 25) the realm's stores and gear on a timer of their own: at the
+    // coarse steps every 6 s (a few tenths of a second of real time at 16x),
+    // covering the interval (the smiths' work accrues by it), on a phase
+    // apart from research and the unlocks
+    if ((T.inv = (T.inv ?? 1.5) + step) >= (coarse ? 6 : techEvery)) {
+      this._inventoryTick(T.inv);
+      T.inv = 0;
     }
     if ((T.unl = (T.unl ?? 1) + step) >= techEvery) {
       this._wonderFx();
@@ -2499,13 +2510,15 @@ export class Civilization {
   // Territory changes only when settlements grow, shrink, change hands or the
   // land itself is reshaped; otherwise skip the map-wide flood fill (a refresh
   // still runs every 30 s for the slow incumbency drift).
-  _territoryIfChanged(every = 30) {
+  _territoryIfChanged(every = 30, gap = 0) {
     let sig = this.villages.length * 7919;
     // (radius in two-tile steps: a birth or a death no longer redraws the map)
     for (const v of this.villages) if (v.alive) sig = (Math.imul(sig, 31) + v.id * 131 + v.kingdom * 977 + Math.round(v.radius / 2) * 17 + v.tier * 5) | 0;
     for (const b of this.buildings) if (b.alive && !b.constructing && (b.type === 'watchtower' || b.type === 'tower')) sig = (Math.imul(sig, 31) + b.id) | 0;
     const now = this.game.time.total;
     if (sig === this._terrSig && !this._terrDirty && now - (this._terrT ?? -1e9) < every) return;
+    if (gap && !this._terrDirty && this._aliveN === this._terrAliveN && now - (this._terrT ?? -1e9) < gap) return;
+    this._terrAliveN = this._aliveN;
     this._terrSig = sig;
     this._terrDirty = false;
     this._terrT = now;

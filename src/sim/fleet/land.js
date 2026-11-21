@@ -271,7 +271,12 @@ export const land = {
     if (v.def.siege && mt !== 'drive' && mt !== 'park' && mt !== 'rounds' && v.state !== 'parked') this._siegeMove(v, step);
     else if (v.state === 'move' && v.path) {
       v.settleH = null;
-      this._follow(v, step, v.def.speed);
+      // (round 25) a vehicle updated every second or fourth tick (far from
+      // the camera, see Fleet.tick) covers the time in tick-sized strides, so
+      // it keeps its pace along a winding road instead of stopping at each
+      // waypoint
+      const n = step > 0.3 ? Math.min(8, Math.ceil(step / 0.27)) : 1;
+      for (let k = 0; k < n && v.path; k++) this._follow(v, step / n, v.def.speed);
       if (v.path == null) this._landArrive(v);
     } else if (v.state === 'work') {
       this._serviceWork(v, step);
