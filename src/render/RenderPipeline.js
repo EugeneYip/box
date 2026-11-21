@@ -380,6 +380,53 @@ export class RenderPipeline {
     this._warmLater(made > 0 ? 50 : 16, !Q.length);
   }
 
+  // (round 27) At most one frame of GPU work in flight. Each frame ends with
+  // a GPU fence; while the previous frame's fence has not signalled, the game
+  // loop skips drawing (a non-blocking query, updated between tasks). On a
+  // fast GPU the fence has long signalled by the next animation frame, so
+  // nothing changes there; on a slow one (software GL, a heavy frame) the GPU
+  // side never holds a queue of frames, so a page that is leaving, a frame
+  // that needs a new program or the next page waits for one frame at most.
+  gpuBusy() {
+    const f = this._frameFence;
+    if (!f) return false;
+    const gl = this.renderer.getContext();
+    if (gl.isContextLost?.()) {
+      this._frameFence = null;
+      return false;
+    }
+    if (gl.getSyncParameter(f, gl.SYNC_STATUS) !== gl.SIGNALED) {
+      this.framesHeld = (this.framesHeld || 0) + 1;
+      return true;
+    }
+    gl.deleteSync(f);
+    this._frameFence = null;
+    return false;
+  }
+
+  _fenceFrame() {
+    if (this._frameFence) return;
+    const gl = this.renderer.getContext();
+    if (!gl.fenceSync || gl.isContextLost?.()) return;
+    this._frameFence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+  }
+
+  // Page hidden (another tab, minimised, leaving): stop issuing GPU work that
+  // is not a frame (the shader warm-up); resume() picks it up again.
+  suspend() {
+    this.suspended = true;
+    this._warmCancel?.();
+  }
+
+  resume() {
+    if (!this.suspended) return;
+    this.suspended = false;
+    if (this._progWarm && this.warmInfo && !this._warmQ) {
+      this._warmQ = [];
+      this._warmLater(500, true);
+    }
+  }
+
   passInfo() {
     const c = this.composer;
     if (!c) return { composer: false, enabled: [] };
@@ -607,6 +654,7 @@ export class RenderPipeline {
         this.warmVariants();
         this.warmPrograms();
         this.composer.render(dt);
+        this._fenceFrame();
         return;
       } catch (err) {
         console.error('[pipeline] post-processing failed; falling back', err);
@@ -619,5 +667,6 @@ export class RenderPipeline {
     renderer.autoClear = true;
     this.warmPrograms();
     renderer.render(game.scene, game.cameraRig.camera);
+    this._fenceFrame();
   }
 }

@@ -399,6 +399,26 @@ export class Game {
     };
     addEventListener('pagehide', this._onPageHide);
     addEventListener('pageshow', this._onPageShow);
+    // (round 27) the earliest signs of leaving or hiding: a navigation sends
+    // beforeunload before the next page is even fetched, and a hidden tab
+    // draws nothing. Both stop the GPU work that is not a frame (the shader
+    // warm-up) at once; beforeunload also stops drawing for a moment, so the
+    // GPU side is idle by the time the next page needs it (if the page stays,
+    // after a download or a cancelled navigation, the loop picks up again).
+    this._onHidden = () => {
+      if (document.visibilityState === 'hidden') this.pipeline?.suspend?.();
+      else if (!this._leavingT) this.pipeline?.resume?.();
+    };
+    this._onLeaving = () => {
+      this.pipeline?.suspend?.();
+      clearTimeout(this._leavingT);
+      this._leavingT = setTimeout(() => {
+        this._leavingT = 0;
+        if (!this.disposed && document.visibilityState !== 'hidden') this.pipeline?.resume?.();
+      }, 3000);
+    };
+    addEventListener('visibilitychange', this._onHidden);
+    addEventListener('beforeunload', this._onLeaving);
     const loop = (now) => {
       if (this.disposed) return;
       // Tooling hook: window.__hold = true freezes rendering so headless
@@ -411,6 +431,14 @@ export class Game {
       // Frame cap: power saver renders at 30 fps; fpsCap overrides.
       const cap = this.settings.fpsCap || (this.settings.powerSaver ? 30 : 0);
       if (cap > 0 && now - last < 1000 / cap - 2) {
+        this._raf = requestAnimationFrame(loop);
+        return;
+      }
+      // leaving (beforeunload, see above), or the GPU still drawing the last
+      // frame (software GL, a heavy frame): draw nothing this time, so the
+      // GPU side never holds more than one frame (the time is not lost: the
+      // next frame's step covers it, as after any long frame)
+      if (this._leavingT || this.pipeline.gpuBusy?.()) {
         this._raf = requestAnimationFrame(loop);
         return;
       }
@@ -441,6 +469,9 @@ export class Game {
     if (this._raf) cancelAnimationFrame(this._raf);
     this._raf = 0;
     removeEventListener('pagehide', this._onPageHide);
+    removeEventListener('visibilitychange', this._onHidden);
+    removeEventListener('beforeunload', this._onLeaving);
+    clearTimeout(this._leavingT);
     const P = this.pipeline;
     try {
       P?._warmCancel?.();
