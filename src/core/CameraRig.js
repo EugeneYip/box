@@ -326,8 +326,9 @@ export class CameraRig {
         const x = c.x + s * horiz * t,
           z = c.z + co * horiz * t;
         if (x < 0 || z < 0 || x > W.w - 1 || z > W.h - 1) continue;
-        // (a small margin that grows toward the eye: grass and low walls)
-        if (Math.max(0, W.heightAt(x, z)) + 0.25 + 0.06 * c.dist * t > ty + up * t) clear = false;
+        // (a margin that grows from nothing at the target toward the eye, so
+        // flat ground never lifts the view: grass and low walls)
+        if (Math.max(0, W.heightAt(x, z)) + (0.3 + 0.05 * c.dist) * t > ty + up * t) clear = false;
       }
       if (clear) return p - pitch;
     }
