@@ -1019,7 +1019,18 @@ export class Units {
     const dx = geoDx(w, u.x, tx), // (the short way round on the Round world)
       dz = tz - u.z;
     const d = Math.hypot(dx, dz);
-    if (d < (final ? 0.08 : 0.4)) {
+    // (round 23) close to the goal but no longer getting closer (another
+    // person stands on the spot, or a wall corner is in the way): that is
+    // close enough, rather than treading on the spot pushed to and fro
+    let near = false;
+    if (final && d < 0.5) {
+      if (u._adFor !== u.target || d < u._ad - 0.03) {
+        u._adFor = u.target;
+        u._ad = d;
+        u._adT = 0;
+      } else if ((u._adT += dt) > 0.6) near = true;
+    }
+    if (near || d < (final ? 0.08 : 0.4)) {
       if (u.path && u.pathIdx < u.path.length - 1) u.pathIdx++;
       else {
         u.path = null;

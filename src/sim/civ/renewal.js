@@ -95,7 +95,7 @@ export const renewal = {
     }
     pay(v, cost);
     const old = c.b;
-    v.renewPend = { tx: old.tx, ty: old.ty, rot: old.rot, type: c.type, level: c.level, at: now + 4, home: old.id };
+    v.renewPend = { tx: old.tx, ty: old.ty, rot: old.rot, type: c.type, level: c.level, at: now + 4, home: old.id, was: { id: old.id, type: old.type, level: old.level, style: old.style, era: old.builtEra ?? old.era ?? 0 } };
     // demolition: dust, and a cleared plot held for the builders
     this._fx('dust', old.x, old.z, 1.4, true);
     this._fx('debris', old.x, old.z, 0.8, true);
@@ -159,6 +159,7 @@ export const renewal = {
     if (!this._footprintOK(P.tx, P.ty, fw, fh, 9, false)) return;
     const b = this.addBuilding(v, P.type, P.tx, P.ty, P.rot, { level: P.level, noFlatten: true });
     b.renewed = true;
+    b.replaces = P.was || null; // (round 23: the inspector names what it replaces)
     v.renewSite = b.id;
     v.renewed = (v.renewed || 0) + 1;
     k.renewed = (k.renewed || 0) + 1;

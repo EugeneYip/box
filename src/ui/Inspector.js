@@ -6,6 +6,7 @@ import { el, esc, safe, hexCss, fmtNum, realmColourText } from './dom.js';
 import { traitDef, statusDef, modLines, prettyId, eraNames, techDef, techList, ERA_ICON } from './depth.js';
 import { kingdomOf, eraOf, researchOf } from './TechPanel.js';
 import { CULTURES } from '../sim/civ/cultures.js';
+import { buildingLabel } from '../sim/civ/catalog.js';
 import { Editor } from './Editor.js';
 import { bannerURL } from './banner.js';
 import { YEAR } from '../core/time.js';
@@ -187,7 +188,34 @@ export class Inspector {
       }
     }
     if (!list.some((r) => kindOf(r) === 'tile')) list.push(this.tileResult(hit));
+    for (const r of list) if (kindOf(r) === 'building' && r.building && !isCraft(r)) safe(() => this.siteRows(r), null);
     return list;
+  }
+  // (round 23) A building site says who is at work on it and, when urban
+  // renewal raises it, what it replaces.
+  siteRows(r) {
+    const b = r.building;
+    if (!b.alive || !(b.constructing || b.upgrading) || !Array.isArray(r.stats)) return;
+    const v = this.game.civ?.villages?.[b.village];
+    let n = 0;
+    for (const u of v?.members || []) {
+      const t = u?.alive !== false ? u.data?.civ?.task : null;
+      if (t && t.kind === 'build' && t.b === b.id) n++;
+    }
+    const at = Math.max(0, r.stats.findIndex((s) => s?.[0] === 'Status')) + 1;
+    const rows = [['Builders', n ? `${n} at work` : 'Waiting for builders']];
+    const was = b.replaces;
+    if (was) {
+      const era = eraNames()[was.era];
+      rows.push(['Replaces', `${buildingLabel({ type: was.type, level: was.level, style: was.style })}${era ? ` (${era} era)` : ''}`]);
+    }
+    r.stats.splice(at, 0, ...rows);
+  }
+  // The building urban renewal raised in place of building b (or null).
+  successorOf(b) {
+    if (!b?.gone) return null;
+    for (const o of this.game.civ?.buildings || []) if (o?.alive && o.replaces?.id === b.id) return o;
+    return null;
   }
 
   show(hit, keepIndex = false) {
@@ -1175,6 +1203,33 @@ export class Inspector {
     else if (b && b.x != null) at = { x: b.x, z: b.z, tx: Math.floor(b.x), ty: Math.floor(b.z) };
     const list = this.collect(at);
     let idx = list.findIndex((o) => (u && o.unit === u) || (b && o.building === b) || (!u && !b && kindOf(o) === kindOf(r) && o.title === r.title));
+    // (round 23) a house pulled down by urban renewal: the card stays on its
+    // cleared plot and moves on to the new building when its site is laid out,
+    // instead of jumping to whatever else is there
+    if (idx < 0 && b?.gone && !isCraft(r)) {
+      const nb = this.successorOf(b);
+      if (nb) {
+        const l2 = this.collect({ x: nb.x, z: nb.z, tx: Math.floor(nb.x), ty: Math.floor(nb.z) });
+        const i2 = l2.findIndex((o) => o.building === nb);
+        if (i2 >= 0) {
+          this.hit = { x: nb.x, z: nb.z, tx: Math.floor(nb.x), ty: Math.floor(nb.z) };
+          this.results = l2;
+          this.index = i2;
+          this.track = l2[i2];
+          this.render();
+          return;
+        }
+      }
+      const vv = this.game.civ?.villages?.[b.village];
+      if (vv?.renewPend?.home === b.id) {
+        const st = (r.stats || []).find((s) => s?.[0] === 'Status');
+        if (st && st[1] !== 'Pulled down for renewal: a new building rises here') {
+          st[1] = 'Pulled down for renewal: a new building rises here';
+          this.patchValues();
+        }
+        return;
+      }
+    }
     if (idx < 0 && u && u.alive !== false) {
       const own = this.unitResult(u);
       if (own) {
