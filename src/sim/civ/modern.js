@@ -1311,12 +1311,14 @@ export const modern = {
       while (par.get(a) !== a) a = par.get(a);
       return a;
     };
-    const R = (v) => Math.max(v.radius || 6, (v.buildRadius || 0) + 1);
+    // (the built ground only: blocks and streets that actually meet; the
+    // wider town radius chained fifteen towns into one)
+    const R = (v) => (v.buildRadius || (v.radius || 6) * 0.7) + 0.5;
     for (let i = 0; i < V.length; i++)
       for (let j = i + 1; j < V.length; j++) {
         const a = V[i],
           b = V[j];
-        const lim = R(a) + R(b) + 1;
+        const lim = R(a) + R(b);
         if (Math.abs(a.cx - b.cx) > lim || Math.abs(a.cz - b.cz) > lim) continue;
         if (Math.hypot(a.cx - b.cx, a.cz - b.cz) < lim) {
           const ra = find(a.id),
