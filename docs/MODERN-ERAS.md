@@ -34,10 +34,13 @@ Eras 0–3 (Hearth, Bronze, Iron, Enlightened) are unchanged. Four eras follow:
   | Future | after Year 500 (515) |
 
   A realm whose study would carry it into its next era before its year is
-  slowed toward it; the world's leading realm, if late, is hurried a little.
+  slowed toward it, and the art that would complete the era (its second)
+  waits in hand until the realm's own year; the world's leading realm, if
+  late, is hurried (up to 2.2 times, times the research speed above 1).
   The other realms follow the leader over the next decades: each realm's own
   year for an era lies up to 55 years after the era's year (a fixed share per
-  realm and era), so most realms enter an era 30–60 years after the first.
+  realm and era), so most realms enter an era 30–60 years after the first;
+  a follower past its own year is hurried up to 1.5 times.
   Catch-up from neighbors and the laggard floors only lift realms that are
   behind their own year; they never carry a realm into an era early. Big
   maps' extra research (`BIG_RESEARCH`) is held to the same schedule. A
