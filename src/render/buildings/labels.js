@@ -378,7 +378,11 @@ export class Labels {
     const D = rig.cur.dist;
     const cam = rig.camera.position;
     const w = g.world;
-    const kA = smooth(34, 70, D);
+    // (round 27) realm names take over from town names in a narrow band
+    // (50-56 tiles) instead of a half tone from 34 to 70, so between 40 and 80
+    // every name on screen is drawn solid: the town names below the band, the
+    // realm's name above it (its capital's name stays if the realm is not named)
+    const kA = smooth(50, 56, D);
     // far zoom keeps only kingdom names
     const z01 = this.game.view?.zoom01 ?? 0;
     const vA = smooth(18, 30, D) * (1 - smooth(120, 190, D)) * (1 - smooth(0.4, 0.55, z01)) * (this.game.view?.far ? 0 : 1);
