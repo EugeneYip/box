@@ -16,9 +16,17 @@ const KIN_POP = 14;
 const KIN_YEARS = 5;
 // The odds a soldier struck down in war lives, wounded (spareFallen): any
 // realm's, and a small realm's (two towns or fewer, or under 60 people).
-const SPARE = 0.3;
-const SPARE_SMALL = 0.55;
+const SPARE = 0.4;
+const SPARE_SMALL = 0.6;
 const REALM_MIN_POP = 30;
+// Union of a small allied crown (square maps): the age it may begin and the
+// age its chance is full, and that full chance each two-yearly look.
+// Risings: past RISE_EASY in the last RISE_YEARS, the next is slower to come.
+const RISE_YEARS = 10,
+  RISE_EASY = 3;
+const UNION_FROM = 45,
+  UNION_TO = 90,
+  UNION_P = 0.16;
 
 export const politics = {
   // ---------------------------------------------------------------- kingdoms
@@ -362,7 +370,7 @@ export const politics = {
       const share = k.villages.length / Math.max(1, this.villages.filter((v) => v.alive).length);
       if (!this._kLaw(k.id, 'civRebellions') && share < 0.35) continue;
       if (now - (k.crackT ?? k.founded) < YEAR * 25) continue;
-      if (!this.rng.chance(0.004 * (k.villages.length - big + 1) * (0.5 + (this._crowd?.() || 0)) * (1 + Math.max(0, now - k.founded) / (YEAR * 150)))) continue;
+      if (!this.rng.chance(0.004 * (k.villages.length - big + 1) * (0.5 + (this._crowd?.() || 0)) * (1 + Math.max(0, now - k.founded) / (YEAR * 150)) * this._riseDamp())) continue;
       const cap = this.villages[k.capital];
       if (!cap) continue;
       let far = null,
@@ -380,6 +388,7 @@ export const politics = {
       const R = this.rebel(far, true, true);
       this._autoRise = false;
       this._civilWar = false;
+      if (R) this._noteRise();
       if (R) this._note(`✊ Overstretched, ${this._kn(k)} cracks: ${far.name} leads its far provinces away as ${this._theK(R)}`, 'war', { x: far.cx, z: far.cz });
     }
   },
@@ -399,19 +408,27 @@ export const politics = {
       const A = this.kingdoms[r.a],
         B = this.kingdoms[r.b];
       if (!A?.alive || !B?.alive || !A.villages.length || !B.villages.length) continue;
-      let small, big;
+      let small, big,
+        chance = 0.4;
       if (realMap) {
         const u = this._realUnion(A, B, r, now);
         if (!u) continue;
         [small, big] = u;
+        // (a generated crown joins over the ten years after its bar, not the
+        // moment it lifts)
+        if (small.realm < 0) chance = 0.4 * clamp((now - small.founded - YEAR * 30) / (YEAR * 15), 0.25, 1);
       } else {
         if (!r.ally || r.opinion < 30 || baseCulture(A.culture) !== baseCulture(B.culture)) continue;
         [small, big] = A.villages.length <= B.villages.length ? [A, B] : [B, A];
         if (small.villages.length > 2 || big.villages.length < small.villages.length + 1) continue;
         // a young crown keeps its freedom a while (unions were half of all
         // fallen realms, most of them at 25-30 years; round 23: still two
-        // thirds of them, at 40-60 years)
-        if (now - small.founded < YEAR * 60) continue;
+        // thirds of them, at 40-60 years; round 24: three quarters of all
+        // falls, a quarter of them in the years just after a bar at 60).
+        // Union is now a chance that rises from 45 to 90 years of age, the
+        // more so the warmer the alliance and the greater the partner
+        chance = this._unionChance(small, big, r, now);
+        if (chance <= 0) continue;
       }
       if (small.player?.name) continue;
       // a seat or must-exist city in the map's first 150 years changes hands
@@ -420,7 +437,7 @@ export const politics = {
       // a union is made over land: an island or a far continent keeps its own
       // crown (the World Map's Australia lost its last realms to unions abroad)
       if (this.villages[small.capital]?.landId !== this.villages[big.capital]?.landId) continue;
-      if (!this.rng.chance(0.4)) continue;
+      if (!this.rng.chance(chance)) continue;
       const name = this._kn(small);
       const home = small.parent === big.id || (big.realm >= 0 && small.placesFrom === big.realm);
       for (const vid of [...small.villages]) {
@@ -430,6 +447,21 @@ export const politics = {
       this._note(`🤝 ${name} ${home ? 'rejoins' : 'joins'} ${this._kn(big)} in union`, 'good', this._kingdomPos(big), 'union' + small.id, 1);
       if (--left <= 0) return;
     }
+  },
+
+  // The chance (each two-yearly look) that a small allied crown joins a
+  // greater one: nothing before UNION_FROM years, rising to its full by
+  // UNION_TO, times the warmth of the alliance (opinion 30 counts a fifth,
+  // 100 in full) and the partner's weight (three times the people or more in
+  // full, a near equal a quarter).
+  _unionChance(small, big, r, now) {
+    const age = (now - small.founded) / YEAR;
+    if (age < UNION_FROM) return 0;
+    const ramp = Math.min(1, (age - UNION_FROM) / (UNION_TO - UNION_FROM));
+    const warm = clamp((r.opinion - 20) / 80, 0.1, 1);
+    const ratio = Math.max(big.population || 0, 1) / Math.max(small.population || 0, 1);
+    const weight = clamp((ratio - 1) / 2, 0.25, 1);
+    return UNION_P * ramp * ramp * warm * weight;
   },
 
   // Unions on a World Map world, as [small, big] or null. A real country is
@@ -829,17 +861,21 @@ export const politics = {
     const killedB = B.warLosses - (r.lossBase?.[B.id] ?? B.warLosses);
     const wearyA = killedA / Math.max(8, r.startPop[r.a === A.id ? 0 : 1]);
     const wearyB = killedB / Math.max(8, r.startPop[r.a === A.id ? 1 : 0]);
+    // (the wounded count among the losses as the slain do: spareFallen. Round
+    // 25: the war toll outran old age on seed 3, Years 100-199, so a crown
+    // tires of war at a quarter of its people lost, not three tenths, and
+    // the weariness weighs more in the yearly talks)
     const weary = Math.max(wearyA, wearyB);
     // a war runs its campaign: no talks until an army has laid siege, or years pass
     const campaign = r.sieged || dur > YEAR * 7;
-    if (weary > 0.3 && dur > YEAR * 3 && campaign) return this.makePeace(A.id, B.id);
+    if (weary > 0.24 && dur > YEAR * 3 && campaign) return this.makePeace(A.id, B.id);
     if (dur < YEAR * 4 || !campaign) return;
     // without diplomacy, wars end only in exhaustion
     if (!this.law('civDiplomacy')) return;
     const lossA = r.startPop[r.a === A.id ? 0 : 1] - A.population;
     const lossB = r.startPop[r.a === A.id ? 1 : 0] - B.population;
     const popWeary = Math.max(lossA / Math.max(1, r.startPop[0]), lossB / Math.max(1, r.startPop[1]));
-    let p = 0.007 + Math.max(0, popWeary) * 0.2 + weary * 0.4 + Math.max(0, dur - YEAR * 10) / (YEAR * 120) + (r.conquests || 0) * 0.03; // a victor with new towns is sated
+    let p = 0.007 + Math.max(0, popWeary) * 0.2 + weary * 0.6 + Math.max(0, dur - YEAR * 10) / (YEAR * 120) + (r.conquests || 0) * 0.03; // a victor with new towns is sated
     if (!this._reachable(A, B)) p += 0.08;
     if (this._rulerTrait(A, 'gentle', 'silver-tongued', 'silvertongued') || this._rulerTrait(B, 'gentle', 'silver-tongued', 'silvertongued')) p *= 1.8;
     if (this._rulerTrait(A, 'cruel') || this._rulerTrait(B, 'cruel')) p *= 0.6;
@@ -1167,6 +1203,12 @@ export const politics = {
     const U = this.game.units;
     U.disengage?.(u);
     if (src.combat?.target === u.id) U.disengage?.(src);
+    // (round 25) and every other foe on him leaves him too: a wounded man
+    // walking home was cut down by the next soldier, counted a villager slain
+    U.forEachNear?.(u.x, u.z, 5, (o) => {
+      if (o.combat?.target === u.id) U.disengage(o);
+    });
+    k.warWounded = (k.warWounded || 0) + 1;
     return true;
   },
 
@@ -1326,7 +1368,23 @@ export const politics = {
     // lived twenty-odd years; realms averaged 52 years by Year 300)
     // (round 23: a world of sixteen or more realms rises less often still;
     // the mid eras saw 51-53 risings a century against 41 in round 20)
-    if (v.unrest >= 4 && now - k.founded >= YEAR * 15 && this._kLaw(k.id, 'civRebellions') && this.rng.chance(alive < 3 ? 0.2 : alive >= 16 ? 0.03 : alive >= 12 ? 0.045 : 0.07)) this.rebel(v);
+    // (round 25: the 200s still saw 58 risings a century; a world that has
+    // seen many risings in the last decade is slower to see the next)
+    if (v.unrest >= 4 && now - k.founded >= YEAR * 15 && this._kLaw(k.id, 'civRebellions') && this.rng.chance((alive < 3 ? 0.2 : alive >= 16 ? 0.03 : alive >= 12 ? 0.045 : 0.07) * this._riseDamp())) {
+      if (this.rebel(v)) this._noteRise();
+    }
+  },
+
+  // Risings of the last RISE_YEARS (rebellions and cracks): beyond RISE_EASY
+  // of them, each new one is the less likely in proportion.
+  _riseDamp() {
+    const now = this.game.time.total;
+    const log = this._riseLog || (this._riseLog = []);
+    while (log.length && now - log[0] > YEAR * RISE_YEARS) log.shift();
+    return log.length <= RISE_EASY ? 1 : RISE_EASY / log.length;
+  },
+  _noteRise() {
+    (this._riseLog || (this._riseLog = [])).push(this.game.time.total);
   },
 
   _aliveKingdoms() {

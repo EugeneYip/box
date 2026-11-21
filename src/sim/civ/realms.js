@@ -85,13 +85,22 @@ export const realms = {
       if (r.seed === false) continue; // listed for its place names only
       const full = regular >= maxRealms || regular >= maxVillages;
       if (full && !(forceMust && r.must?.length)) continue;
-      const seats = r.edge ? [r.capital, ...r.cities] : [r.capital];
+      // (round 25) a realm whose capital finds no site tries its next few
+      // cities, as an edge realm always has: Australia, Mexico and Iran were
+      // never seated on the whole Earth, nor Mexico and Central America on
+      // the North America map, their highland capitals all failing
+      // (a realm whose capital lies outside the window is seated only when
+      // listed as an edge realm, as before; a realm with cities that must
+      // exist keeps its capital, forced below if need be: North Korea sat at
+      // Chongjin while Pyongyang stood beside it)
+      const inside = !!geoTile(w, r.capital.lon, r.capital.lat);
+      const seats = r.edge ? [r.capital, ...r.cities] : !inside ? [] : forceMust && r.must?.length ? [r.capital] : [r.capital, ...r.cities];
       let site = null,
         seat = null,
         tries = 0;
       for (const c of seats) {
         if (!geoTile(w, c.lon, c.lat)) continue; // outside the window
-        site = this._realSite(c.lon, c.lat, reach, -1);
+        site = this._realSite(c.lon, c.lat, reach, -1, true);
         if (site) {
           seat = c;
           break;
@@ -351,7 +360,7 @@ export const realms = {
   // not pushed elsewhere). Rugged or narrow land (Taiwan or Japan on the
   // whole Earth) gets a small levelled pad when nothing gentler is near.
   // Null when there is no land nearby at this size.
-  _realSite(lon, lat, reach, kingdom) {
+  _realSite(lon, lat, reach, kingdom, seat = false) {
     const w = this.world;
     const p = geoTile(w, lon, lat);
     if (!p) return null;
@@ -362,9 +371,32 @@ export const realms = {
     if (!site) return null;
     if (site.mode > 0) {
       this._levelSite(site.x, site.y);
-      if (!this._footprintOK(site.x - 1, site.y - 1, 3, 3, 1.3)) return null;
+      if (!this._footprintOK(site.x - 1, site.y - 1, 3, 3, 1.3)) {
+        if (!seat) return null;
+        // (round 25) a capital on a highland plateau: the pad is levelled
+        // once more, and its own nine tiles, flat and free, are enough for
+        // the hall (the ring round it, still a step up or down, failed
+        // Canberra, Mexico City and Tehran)
+        this._levelSite(site.x, site.y);
+        if (!this._footprintOK(site.x - 1, site.y - 1, 3, 3, 1.3) && !this._padFlat(site.x, site.y)) return null;
+      }
     }
     return site;
+  },
+
+  // The 3x3 pad round a hall site is free to build on and flat.
+  _padFlat(x, y) {
+    const w = this.world;
+    let lo = Infinity,
+      hi = -Infinity;
+    for (let yy = y - 1; yy <= y + 1; yy++)
+      for (let xx = x - 1; xx <= x + 1; xx++) {
+        const i = yy * w.w + xx;
+        if (!this._tileFree(i)) return false;
+        lo = Math.min(lo, w.height[i]);
+        hi = Math.max(hi, w.height[i]);
+      }
+    return hi - lo <= 1.3;
   },
 
   // The nearest site, preferring (by a tile or two) gentle buildable ground
@@ -653,8 +685,10 @@ export const realms = {
     // a real country whose towns lie near on the same land, and that no
     // living realm carries, before a realm named after one city (a rebel
     // "Anchorage" read oddly on the World Map)
+    // (only on no country's land or its own: round 24 seated a "Sudan" at
+    // Kharga, an Egyptian oasis town, while Egypt stood)
     const near = this._freeCountryNear(opts.x, opts.z, living);
-    if (near >= 0) return real(near);
+    if (near >= 0 && (d < 0 || near === d)) return real(near);
     // the region of the country it rises in ("State of Queensland",
     // "Republic of Sumatra") before the name of one city
     const reg = this._regionNear(opts.x, opts.z, living, d);

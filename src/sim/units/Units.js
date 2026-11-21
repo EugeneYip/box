@@ -1408,6 +1408,13 @@ export class Units {
       this.disengage(u);
       return;
     }
+    // (round 25) a soldier fights soldiers (and the buildings of a siege),
+    // not the townsfolk: one drawn into a fight with a villager who is not
+    // striking at him lets him go
+    if (u.job === 'soldier' && t.species === 'human' && t.kingdom >= 0 && t.job !== 'soldier' && t.job !== 'king' && t.combat?.target !== u.id && !(t.mad > now)) {
+      this.disengage(u);
+      return;
+    }
     // air targets can only be reached while they fly low (or by air units / archers)
     const ranged = !!u.data.ranged;
     const tAir = t.def.habitat === 'air' && t.alt > 2.6;
@@ -1749,6 +1756,14 @@ export class Units {
       this.flee(u, src.x, src.z, 6);
       return;
     }
+    // a villager struck by a soldier of a realm at war runs for home (or
+    // away), and does not stand and fight a man in arms
+    if (u.species === 'human' && src.species === 'human' && u.kingdom >= 0 && u.job !== 'soldier' && src.job === 'soldier' && !(u.mad > now)) {
+      this.disengage(u);
+      this.flee(u, src.x, src.z, 7);
+      this.emote(u, 'alert', 1.2);
+      return;
+    }
     const canFight = this.attackDamage(u) > 0;
     let outmatched = def.flees && !(u.mad > now) && (src.def.mass > def.mass * 0.6 || !canFight);
     const aggr = u._mAggr || 1;
@@ -2086,7 +2101,11 @@ export class Units {
     const aggr = u._mAggr || 1;
     if (!u.combat && u.data.hostile && (u.data.autoAggro ?? (u.job === 'soldier' || aggr >= 1.4))) {
       const range = u.def.sight * (u._mSight || 1) * (u.job === 'soldier' ? Math.min(1.5, Math.max(0.7, aggr)) : 0.4);
-      const foe = u._riding && u.job === 'soldier' ? this._cavalryFoe(u, range) : this.nearest(u.x, u.z, range, (o) => o !== u && this.isHostile(u, o));
+      // (a townsman at war leaves the enemy's soldiers to his own: round 24
+      // found soldiers killing 200-550 villagers a century, most of them
+      // bold folk who had gone at a passing soldier first)
+      const civ = u.job !== 'soldier' && u.species === 'human' && u.kingdom >= 0;
+      const foe = u._riding && u.job === 'soldier' ? this._cavalryFoe(u, range) : this.nearest(u.x, u.z, range, (o) => o !== u && !(civ && o.species === 'human') && this.isHostile(u, o));
       if (foe) {
         this.engage(u, foe);
         return;

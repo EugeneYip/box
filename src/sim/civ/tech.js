@@ -172,7 +172,8 @@ export const SIDE_TECHS = TECHS.filter((t) => t.side);
 // Medium world's in the Iron era by Year 70.
 export const ERA_YEAR = { 1: 45, 2: 100, 3: 160, 4: 225, 5: 325, 6: 425, 7: 515 };
 const PACE_MIN = 0.08;
-const PACE_LEAD = 2.2; // most the leading realm is hurried when late
+const PACE_LEAD = 2.2; // most the leading realm is hurried when late (x research speed)
+const FOLLOW_HURRY = 1.5; // most a follower past its own year is hurried
 // The other realms follow the leader into an era over the next decades, not
 // all in the same year: each realm's own year for an era lies up to
 // FOLLOW_YEARS after the era's year (a fixed share per realm and era, so the
@@ -638,16 +639,26 @@ export const tech = {
       // after the catch-up and the laggard floor, so neither carries a realm
       // into an era before its year: they only lift those behind it.
       const next = (k.era || 0) + 1;
+      k.eraHold = 0;
       if (rt && ERA_YEAR[next] != null && next <= this.eraCap() && gain > 0) {
         const ts = Math.max(0.25, this.law('civTechSpeed', 1));
         const lead = k === leader;
         const target = (ERA_YEAR[next] + (lead ? 0 : FOLLOW_YEARS * followShare(k.id, next))) / ts;
         const eta = this._eraNeed(k) / ((gain / dt) * YEAR);
         const left = target - year;
-        let f = left > 1 ? eta / left : PACE_LEAD;
-        f = Math.max(PACE_MIN, Math.min(lead ? PACE_LEAD : 1, f));
+        // (round 25) the leader may be hurried the harder at a higher research
+        // speed (its towns have had half the years to grow at 2x: no realm
+        // was Industrial by Year 130, against 112.5), and a follower past its
+        // own year up to FOLLOW_HURRY (eleven of sixteen realms were still
+        // Industrial 77 years after the first Modern one)
+        const hurry = lead ? PACE_LEAD * Math.max(1, ts) : left > 1 ? 1 : FOLLOW_HURRY;
+        let f = left > 1 ? eta / left : hurry;
+        f = Math.max(PACE_MIN, Math.min(hurry, f));
         k.pace = k.pace == null ? f : k.pace + (f - k.pace) * 0.25;
         gain *= k.pace;
+        // the art that would carry the realm into the era waits for its year
+        // (a strong court still came in 9-18 years early at the floor pace)
+        if (left > 0) k.eraHold = target;
       } else k.pace = 1;
       // knowledge a second, before the modern momentum (the tech panel, the
       // pacing census and a satellite's year of research read it)
@@ -684,10 +695,26 @@ export const tech = {
       }
       const t = techById[k.researching];
       if (t && k.knowledge >= t.cost) {
+        if (k.eraHold > year && this._entersEra(k, t)) {
+          // held: the knowledge waits in hand (no more than the art's price)
+          k.knowledge = t.cost;
+          continue;
+        }
         k.knowledge -= t.cost;
         this.learnTech(k, t.id);
       }
     }
+  },
+
+  // Would learning this art carry the realm into its next era (two arts of
+  // that era known, its key art among them)?
+  _entersEra(k, t) {
+    const next = (k.era || 0) + 1;
+    if (t.side || t.era !== next) return false;
+    let n = 1;
+    for (const x of TECHS) if (x.era === next && !x.side && x.id !== t.id && k.techs.has(x.id)) n++;
+    const key = ERA_KEY[next];
+    return n >= 2 && (!key || key === t.id || k.techs.has(key));
   },
 
   _gainMastery(k) {
