@@ -68,13 +68,27 @@ export const PROP = {
   // trees a little larger than the buildings (a grown oak about two houses
   // tall), so woods still read as woods at mid and far zoom
   tree: 0.68,
-  // bushes, flowers, reeds, cacti, stumps
-  shrub: 0.8,
+  // bushes, flowers, reeds, cacti, stumps: round 25 halved them with the
+  // people (0.8 -> 0.4), so a bush is about a person tall and cattails stand
+  // a little over head height instead of twice it
+  shrub: 0.8 * (M / S),
+  // ground-cover ferns, broad-leaf clumps, meadow flowers and tumbleweed
+  // (GroundCover; designs at round-13 size): halved with the people, so a
+  // fern is about a person wide and flowers come to the knee
+  plant: M / S,
   // crop rows on farm plots (stalk height; the plot itself is a tile)
   crop: S,
   // grass, sedge and meadow tufts (height; they spread by its square root):
   // a tuft about ankle to knee high beside a person, not as tall as one
-  grass: 0.5,
+  // (round 25: 0.5 -> 0.25 with the half-size people)
+  grass: 0.5 * (M / S),
+  // person-height village props (wells, market stalls, scarecrows, benches,
+  // the food stall): furniture for the people, so they take the people's
+  // factor (round 25: a well stood three people tall)
+  kit: M,
+  // the same relative to the land, for such props drawn inside a building
+  // model that BUILDING.scale brings to the world (the well, market stalls)
+  kitRel: M / S,
 };
 
 export const FOOTPRINT = {

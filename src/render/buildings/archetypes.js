@@ -3,6 +3,7 @@ import { modernModel, modernFallback, modernPalette } from './modernModels.js';
 import { eraHouse, eraHall } from './eraArch.js';
 import { industrialHouse, eraCivic, ERA_CIVIC } from './eraTown.js';
 import { BUILDING_TYPES } from '../../sim/civ/catalog.js';
+import { PROP } from '../../core/scale.js';
 
 // Procedural architecture for every building type x culture style x level.
 // Local space: footprint centred on the origin, ground (levelled) at y = 0,
@@ -1093,6 +1094,16 @@ function workshop(g, K, style, lv) {
 }
 
 function well(g, K, style) {
+  // furniture for the people (PROP.kitRel): about a head taller than a person
+  // with its roof, not three people tall (round 25)
+  g.push();
+  g.scale(PROP.kitRel, PROP.kitRel, PROP.kitRel);
+  wellBody(g, K, style);
+  g.pop();
+  return { base: null };
+}
+
+function wellBody(g, K, style) {
   const stone = style === 'dune' ? K.wall : K.stone;
   g.cyl(0, -0.06, 0, 0.27, 0.3, 10, stone, { capCol: 0x2a3a48, jit: 0.1 });
   g.cyl(0, 0.24, 0, 0.29, 0.04, 10, K.stone2, { capCol: 0x24323e });
@@ -1112,7 +1123,6 @@ function well(g, K, style) {
   g.cyl(0.05, 0.4, 0, 0.05, 0.08, 7, K.timber2, {});
   g.box(0.05, 0.48, 0, 0.005, 0.18, 0.005, 0x3a3028);
   g.anchor('lamps', 0, 0, 0, { r: 0.8 });
-  return { base: null };
 }
 
 function windmill(g, K, style) {
@@ -1200,6 +1210,8 @@ function market(g, K, style) {
     g.push();
     g.translate(x, 0, z);
     g.rotateY(ry);
+    // the stalls are furniture for the people (PROP.kitRel, round 25)
+    g.scale(PROP.kitRel * 1.3, PROP.kitRel * 1.3, PROP.kitRel * 1.3);
     for (const sx of [-1, 1]) for (const sz of [-1, 1]) g.box(sx * 0.32, 0, sz * 0.25, 0.04, sz > 0 ? 0.56 : 0.7, 0.04, K.timber);
     g.box(0, 0, 0.12, 0.62, 0.26, 0.24, K.plank);
     for (let i = 0; i < 4; i++) g.box(-0.22 + i * 0.15, 0.26, 0.12, 0.11, 0.06, 0.16, goods[gi++ % goods.length], { jit: 0.15 });

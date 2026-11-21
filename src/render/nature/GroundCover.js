@@ -10,6 +10,8 @@ import { PROP } from '../../core/scale.js';
 const GRASSY = new Set(['grass', 'grassTall', 'grassShort', 'meadow', 'sedge']);
 const GRASS_H = PROP.grass ?? 1,
   GRASS_W = Math.sqrt(GRASS_H);
+// ferns, broad-leaf clumps, meadow flowers and tumbleweed take PROP.plant
+const PLANT = PROP.plant ?? 1;
 
 // Ground cover: instanced grass tufts, ferns, broad-leaf jungle plants,
 // meadow flowers and pebbles. Built per chunk only near the camera, faded out
@@ -401,6 +403,7 @@ export class GroundCover {
     let minY = Infinity,
       maxY = -Infinity,
       total = 0;
+    const K = this.kindIndex;
     const push = (kindIdx, v, x, z, scale, tint, tiltK, yOff = 0, grassy = false) => {
       const key = kindIdx * 8 + v;
       let s = scratch.get(key);
@@ -420,6 +423,7 @@ export class GroundCover {
       q.premultiply(q2);
       p.set(x, y, z);
       if (grassy) sc.set(scale * GRASS_W, scale * GRASS_H, scale * GRASS_W);
+      else if (kindIdx !== K.pebble) sc.set(scale * PLANT, scale * PLANT, scale * PLANT);
       else sc.set(scale, scale, scale);
       m.compose(p, q, sc);
       m.toArray(s.mats, s.n * 16);
@@ -431,7 +435,6 @@ export class GroundCover {
       if (y < minY) minY = y;
       if (y > maxY) maxY = y;
     };
-    const K = this.kindIndex;
     for (let ty = c.y0; ty <= c.y1; ty++) {
       for (let tx = c.x0; tx <= c.x1; tx++) {
         const i = ty * world.w + tx;

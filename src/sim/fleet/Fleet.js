@@ -8,7 +8,7 @@ import { war } from './war.js';
 import { air } from './air.js';
 import { modern } from './modern.js';
 import { traffic } from './traffic.js';
-import { hullR, hullHalf, segDist, HULL_GAP, PIER_END, PIER, BERTH } from './hull.js';
+import { hullR, hullHalf, segDist, HULL_GAP, PIER, BERTH, pierEnd, DEEP_WATER } from './hull.js';
 import { geoDist, geoWrapOn } from '../../world/geo.js';
 import { VEHICLE, PICK_PX } from '../../core/scale.js';
 
@@ -687,10 +687,20 @@ export class Fleet {
   // Water route for a vessel from where it is to (gx, gz).
   seaPath(v, gx, gz, maxLen = Infinity) {
     const big = !!(v.def.big || v.role === 'galley' || v.role === 'carrack');
-    const minClear = v.def.clear || 0;
+    // a channel at least the hull's beam plus two tiles wide (round 25: a
+    // carrier sailed up a river and lay with her stern on the bank)
+    const chan = (v.def.beam || 0) * 0.5 + 1;
+    const minClear = v.def.clear ? Math.max(v.def.clear, chan) : 0;
+    // the great hulls (carrier, liner, battleship, tanker, container ships)
+    // keep to deep water: a goal in a river or a narrow inlet is moved out to
+    // the nearest open water they may lie in
+    if (DEEP_WATER.has(v.kind) && this.nav.clearAt(gx, gz) < minClear) {
+      const o = this.nav.waterNear(gx, gz, 14, minClear);
+      if (o && this.nav.comp(o.x, o.z) === this.nav.comp(gx, gz)) (gx = o.x), (gz = o.z);
+    }
     let p = this.nav.findPath(v.x, v.z, gx, gz, { big, maxLen, minClear });
     // cogs and transports may thread a channel to get home; great ships may not
-    if (!p && minClear > 0 && minClear < 2.5) p = this.nav.findPath(v.x, v.z, gx, gz, { big: false, maxLen, minClear: 1 });
+    if (!p && minClear > 0 && minClear < 2.5 && !DEEP_WATER.has(v.kind)) p = this.nav.findPath(v.x, v.z, gx, gz, { big: false, maxLen, minClear: Math.max(1, chan) });
     return p;
   }
 
@@ -1575,8 +1585,8 @@ export class Fleet {
   // drift to: beyond the pier head, on the side she lay.
   _wreckSpot(v, h) {
     const nav = this.nav;
-    const ex = h.x + h.dirX * PIER_END,
-      ez = h.z + h.dirZ * PIER_END;
+    const ex = h.x + h.dirX * pierEnd(h),
+      ez = h.z + h.dirZ * pierEnd(h);
     const px = -h.dirZ,
       pz = h.dirX;
     const ac = (v.x - ex) * px + (v.z - ez) * pz;
@@ -1604,7 +1614,7 @@ export class Fleet {
     // nothing floats in a berth: a ram's splinters there are carried out past the pier head
     const h = this._inBerth(x, z);
     if (h) {
-      const al = (x - h.x - h.dirX * PIER_END) * h.dirX + (z - h.z - h.dirZ * PIER_END) * h.dirZ;
+      const al = (x - h.x - h.dirX * pierEnd(h)) * h.dirX + (z - h.z - h.dirZ * pierEnd(h)) * h.dirZ;
       const nx = x + h.dirX * (5.6 * BERTH - al),
         nz = z + h.dirZ * (5.6 * BERTH - al);
       if (!this.nav.isWater(nx, nz)) return;

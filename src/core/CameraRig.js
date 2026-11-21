@@ -2,6 +2,15 @@ import * as THREE from 'three';
 import { geoWrapOn } from '../world/geo.js';
 import { SEA_LEVEL } from '../world/constants.js';
 
+// The close-zoom cutaway (round 25): buildings between the eye and the target
+// open up in a dithered screen-door near the middle of the frame, so a roof
+// never fills the view at the closest zoom. The building material reads these
+// uniforms (src/render/buildings/material.js); apply() writes them.
+//   uCut     strength 0..1 (1 under distance 14, none past 24)
+//   uCutD    the eye's distance to the target (world units)
+//   uCutTan  tan(fov / 2), so the radius scales with depth like the frame
+export const CAM_CUT = { uCut: { value: 0 }, uCutD: { value: 10 }, uCutTan: { value: 0.34 } };
+
 // Smooth god-view camera: orbits a ground target. Zooming out tilts the view
 // toward top-down; zooming in lowers it for a diorama perspective.
 //   target (x,z) on the ground, distance, yaw (radians), pitch (radians).
@@ -119,7 +128,11 @@ export class CameraRig {
     this.goal.dist = THREE.MathUtils.clamp(dist, this.minDist, this.zoomMax());
     this.goal.yaw = THREE.MathUtils.degToRad(yawDeg);
     this.manualPitch = pitchDeg == null || isNaN(pitchDeg) ? null : THREE.MathUtils.degToRad(pitchDeg);
-    if (instant) Object.assign(this.cur, this.goal);
+    if (instant) {
+      Object.assign(this.cur, this.goal);
+      this._groundY = null; // no easing from the old spot's ground
+      this._lift = null; // nor from its line-of-sight pitch
+    }
     this.apply();
   }
 
@@ -295,13 +308,51 @@ export class CameraRig {
     this.apply();
   }
 
+  // The extra pitch (radians) that lets the eye see the target over the
+  // terrain between them: the line of sight is sampled at a dozen points and
+  // the pitch raised in steps until every sample clears the ground (round 25:
+  // on high ground the closest zoom sat inside the hillside).
+  _clearLift(pitch, c, ty) {
+    const W = this.game.world;
+    const s = Math.sin(c.yaw),
+      co = Math.cos(c.yaw);
+    const maxP = THREE.MathUtils.degToRad(80);
+    for (let p = pitch; p < maxP; p += 0.035) {
+      const horiz = Math.cos(p) * c.dist,
+        up = Math.sin(p) * c.dist;
+      let clear = true;
+      for (let i = 1; i <= 12 && clear; i++) {
+        const t = i / 12;
+        const x = c.x + s * horiz * t,
+          z = c.z + co * horiz * t;
+        if (x < 0 || z < 0 || x > W.w - 1 || z > W.h - 1) continue;
+        // (a margin that grows from nothing at the target toward the eye, so
+        // flat ground never lifts the view: grass and low walls)
+        if (Math.max(0, W.heightAt(x, z)) + (0.3 + 0.05 * c.dist) * t > ty + up * t) clear = false;
+      }
+      if (clear) return p - pitch;
+    }
+    return maxP - pitch;
+  }
   apply() {
     const c = this.cur;
     const ground = Math.max(0, this.game.world.heightAt(c.x, c.z));
     // ease ground height so the camera doesn't jitter over terrain
     this._groundY = this._groundY == null ? ground : this._groundY + (ground - this._groundY) * 0.08;
-    this.target.set(c.x, this._groundY * 0.6, c.z);
-    const pitch = this.pitchFor(c.dist);
+    // close in, the target sits on the ground itself (round 25: at 60% of the
+    // ground height the closest zoom looked at a point inside a hill); farther
+    // out it eases back to 60%, which keeps the far views steady
+    const kG = c.dist <= 20 ? 1 : c.dist >= 40 ? 0.6 : 1 - (0.4 * (c.dist - 20)) / 20;
+    this.target.set(c.x, this._groundY * kG, c.z);
+    let pitch = this.pitchFor(c.dist);
+    // close in, raise the pitch until the line of sight clears the terrain
+    // (rises quickly, settles back slowly)
+    if (c.dist < 30) {
+      const need = this._clearLift(pitch, c, this.target.y);
+      if (this._lift == null) this._lift = need;
+      else this._lift += (need - this._lift) * (need > this._lift ? 0.3 : 0.04);
+      pitch = Math.min(THREE.MathUtils.degToRad(80), pitch + this._lift);
+    } else this._lift = 0;
     const horiz = Math.cos(pitch) * c.dist;
     const cam = this.camera;
     cam.position.set(
@@ -329,8 +380,11 @@ export class CameraRig {
     cam.near = Math.max(0.3, c.dist * 0.02);
     cam.far = c.dist * 6 + 600;
     cam.updateProjectionMatrix();
+    // the close-zoom cutaway through buildings (see CAM_CUT)
+    CAM_CUT.uCut.value = 1 - THREE.MathUtils.smoothstep(c.dist, 14, 24);
+    CAM_CUT.uCutD.value = cam.position.distanceTo(this.target);
+    CAM_CUT.uCutTan.value = Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2);
   }
-
   resize(w, h) {
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();

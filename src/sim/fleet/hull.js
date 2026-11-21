@@ -13,6 +13,20 @@ export const HULL_GAP = 0.1 * VS; // and between two hulls
 export const PIER_END = 3.4 * BUILDING.scale;
 export const PIER = BUILDING.scale;
 export const BERTH = VS;
+// Round 25: a harbour (docks at level 2 and up) runs its pier on past a stone
+// quay to 4.85 design units out, so its berths begin there (half-size hulls
+// lay moored under the extension, the quay block through them); and a hull
+// moored alongside lies off the pier by half the pier's width (the planks sit
+// a little to one side of the docks' centre line, and the quay block is
+// wider) plus half its own beam.
+// the great hulls that keep to deep water, off rivers and narrow inlets
+export const DEEP_WATER = new Set(['carrier', 'liner', 'battleship', 'tanker', 'container', 'autocargo']);
+export function pierEnd(h) {
+  return (h && h.level >= 2 ? 4.95 : 3.4) * BUILDING.scale;
+}
+export function pierHalf(h) {
+  return (h && h.level >= 2 ? 0.78 : 0.52) * BUILDING.scale;
+}
 export function hullR(v) {
   return (v.def.beam || 0.5 * VEHICLE.of(v.cls)) * 0.5 + HULL_PAD;
 }

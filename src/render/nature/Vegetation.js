@@ -82,11 +82,28 @@ const CANOPY_MAX = new Float32Array(32).fill(99);
   for (const f of [FLORA.FLOWERS, FLORA.REEDS, FLORA.MUSHROOM]) SIZE_K[f] = S * 1.06;
   SIZE_K[FLORA.ROCK_SMALL] = 0.85;
 }
-// past this camera distance trees inside a town's build radius are not drawn,
+// past this camera distance trees on and beside a town's built and street
+// tiles (inside its build radius) are not drawn,
 // so towns read as towns at far zoom (FloraSim.town marks the tiles)
 const TOWN_HIDE_DIST = 78;
 
 export class Vegetation {
+  // Is this tile, or one beside it, built on or a street (the far-zoom urban
+  // patch's footprint)?
+  _urbanNear(tx, ty) {
+    const world = this.world;
+    const use = this.game.civ?.use;
+    const W = world.w;
+    for (let dy = -1; dy <= 1; dy++)
+      for (let dx = -1; dx <= 1; dx++) {
+        const x = tx + dx,
+          y = ty + dy;
+        if (x < 0 || y < 0 || x >= W || y >= world.h) continue;
+        const j = y * W + x;
+        if (world.building[j] >= 0 || (use && (use[j] === 1 || use[j] === 2))) return true;
+      }
+    return false;
+  }
   constructor(game) {
     this.game = game;
     const world = (this.world = game.world);
@@ -396,7 +413,10 @@ export class Vegetation {
         if (h0 < SEA_LEVEL - (f === FLORA.REEDS ? 0.7 : f === FLORA.BOULDER || f === FLORA.ROCK_SMALL ? 1.2 : 0.15)) continue;
         const cfg = model.cfg;
         const v = this.variantOf(tx, ty, f);
-        const town = townMask && townMask[i] && isTreeId(f) ? 1 : 0;
+        // (round 25: only trees on or beside built and street tiles, the
+        // footprint the far-zoom urban patch now hugs; hiding them across the
+        // whole build radius left a ring of bare ground round each town)
+        const town = townMask && townMask[i] && isTreeId(f) && this._urbanNear(tx, ty) ? 1 : 0;
         const key = (f * 8 + v) * 2 + town;
         let s = scratch.get(key);
         if (!s) scratch.set(key, (s = { f, v, town, n: 0, mats: new Float32Array(64 * 16), cols: new Float32Array(64 * 3) }));
