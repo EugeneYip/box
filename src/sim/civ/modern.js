@@ -354,7 +354,9 @@ export const modern = {
       // Fusion: the realm's haze fades over fifteen years
       let s = def.smoke;
       if (k?.fusionAt != null) s *= Math.max(0, 1 - (now - k.fusionAt) / (YEAR * 15));
-      if (s > 0.02) list.push({ x: b.x, z: b.z, r: 3 + def.smoke * 4, s, kingdom: b.kingdom });
+      // (round 25: a tighter haze round the works themselves; it drifted
+      // out over the town's ordinary blocks as puffs)
+      if (s > 0.02) list.push({ x: b.x, z: b.z, r: 1.6 + def.smoke * 2, s, kingdom: b.kingdom });
     }
     this._hazeC = { t: now, list };
     return list;
@@ -436,7 +438,7 @@ export const modern = {
     // a town fed by a power line raises a pylon where the line comes in
     if (room() && has('electricity') && v.powerFrom != null && count('pylon') === 0) {
       const src = this._bById.get(v.powerFrom);
-      if (src && src.village !== v.id) tryBuild('pylon', () => this._placeOutskirts(v, 'pylon', v.radius * 0.6, v.radius + 1, src.x, src.z));
+      if (src && src.village !== v.id) tryBuild('pylon', () => this._placeOutskirts(v, 'pylon', this._townEdge(v) - 1.5, this._townEdge(v) + 2, src.x, src.z));
     }
     // Radio
     if (room() && has('radio') && town && count('radiomast') === 0) tryBuild('radiomast', out('radiomast', 3, 2));
@@ -667,7 +669,9 @@ export const modern = {
           const cx = x + fw / 2,
             cz = y + fh / 2;
           const dc = Math.hypot(cx - v.cx, cz - v.cz);
-          if (dc < rc + 1.5) continue;
+          // (round 25: at the edge of town, not in among its blocks, so the
+          // line never has to wind in through them)
+          if (dc < Math.max(rc + 1.5, (v.buildRadius || v.radius || 6) * 0.8)) continue;
           if (!this._footprintOK(x, y, fw, fh, 0.9)) continue;
           // the long side along the way out (rot 0: along x)
           const ax = rot & 1 ? 0 : 1,
@@ -1667,12 +1671,21 @@ export const modern = {
       // (inside a town a line keeps out of the blocks: crossing a street
       // costs a little less than a lawn, and the ring round its edge is
       // the cheap way past it)
-      if ((b === 1 || b === 2) && ends && !nearEnd(i)) {
-        if (b === 2 || use[i] !== USE.ROAD) return Infinity;
-        c += 4;
-      } else if (b === 2) c += kind === 'rail' ? 16 : 6;
-      else if (b === 1) c += kind === 'rail' ? (use[i] === USE.ROAD ? 5 : 7) : 2.5;
-      else if (b === 3) c *= 0.9;
+      // (round 25: the blocks of a Modern or Future town are closed to every
+      // kind of line in every pass: tracks, viaducts and guideways wound
+      // across blocks and lawns, and viaducts crossed downtown and passed
+      // through a factory. A line keeps round a town's core and over its
+      // blocks only along a street, at grade; near its own station only it
+      // may cross the town's open ground. 'relaxed' is the last resort of a
+      // town hemmed in on every side.)
+      if (b === 1 || b === 2) {
+        const ne = nearEnd(i);
+        if (use[i] === USE.BUILDING) return Infinity;
+        if (b === 2 && !(ends ? ne : relaxed)) return Infinity;
+        if (use[i] === USE.ROAD) c += b === 2 ? 8 : 4;
+        else if (ends && !ne) return Infinity;
+        else c += b === 2 ? 16 : relaxed ? 9 : 12;
+      } else if (b === 3) c *= 0.9;
       // another line: right beside it (one shared corridor) is cheap, two or
       // three tiles off it (a second line braided along it) dear
       const k = Cr ? Cr[i] : 0;
@@ -1710,14 +1723,15 @@ export const modern = {
         // along a street only where it must (it crosses streets freely)
         if (use[i] === USE.ROAD) return w.height[i] < SEA_LEVEL + 0.03 ? 2 : 1 + steep(i, 0.3, 9);
         const c = base(i);
-        if (c === Infinity) return relaxed && use[i] === USE.BUILDING && w.height[i] >= SEA_LEVEL + 0.03 ? 14 : c;
+        if (c === Infinity) return c;
         return c + steep(i, 0.3, 9);
       };
     }
     return (i) => {
       if (mask[i] & 2) return 3;
       if (w.height[i] < SEA_LEVEL) return 1.5;
-      if (use[i] === USE.BUILDING) return relaxed ? 2 : 5;
+      // (a guideway S-looped over lawns and a dome block: never over a building)
+      if (use[i] === USE.BUILDING || this.airZone?.[i]) return Infinity;
       return 1 + w.slopeAt(i % w.w, (i / w.w) | 0) * 0.8 + steep(i, 0.45, 7);
     };
   },
@@ -1835,6 +1849,36 @@ export const modern = {
     return n;
   },
   // ------------------------------------------------------------ power lines
+  // the edge of a town's built ground (its blocks and streets end inside it)
+  _townEdge(v) {
+    return Math.max(v.radius || 6, (v.buildRadius || 0) + 1) + 1;
+  },
+  // a pylon near (x, z): never on a street, a square, a plot, a building
+  // or the water, and never inside a town; nudged along or across the line
+  // by up to two tiles, else none (the span runs on to the next)
+  _pylonSpot(x, z, ux, uz) {
+    const w = this.world;
+    const ok = (px, pz) => {
+      const tx = Math.floor(px),
+        tz = Math.floor(pz);
+      if (!w.inBounds(tx, tz)) return false;
+      const i = tz * w.w + tx;
+      if (w.height[i] < SEA_LEVEL + 0.08 || this.use[i] !== USE.FREE || this.keepClear?.[i] || this.railMask?.[i]) return false;
+      if (w.type[i] === TILE.ROAD) return false;
+      for (const v of this.villages) {
+        if (!v?.alive) continue;
+        const r = this._townEdge(v) - 0.5;
+        if (Math.abs(v.cx - px) < r && Math.abs(v.cz - pz) < r && Math.hypot(v.cx - px, v.cz - pz) < r) return false;
+      }
+      return true;
+    };
+    for (const [a, c] of [[0, 0], [0.8, 0], [-0.8, 0], [0, 1], [0, -1], [1.6, 0], [-1.6, 0], [0, 2], [0, -2]]) {
+      const px = x + ux * a - uz * c,
+        pz = z + uz * a + ux * c;
+      if (ok(px, pz)) return [px, pz];
+    }
+    return null;
+  },
   // Each town of the realm draws power from its nearest plant on the same
   // land: a straight line of pylons every five tiles.
   _powerGrid(k) {
@@ -1860,17 +1904,26 @@ export const modern = {
       v.powered = true;
       v.powerFrom = best.id;
       if (best.village === v.id) continue;
-      // from the plant to the edge of the town
+      // from the plant to the town's substation at the edge of town (round
+      // 25: the line ran on to within 0.7 of the town's radius, its wires
+      // over the blocks and a pylon stood on a main plaza): the town's
+      // 'pylon' building when it stands at the edge, else the edge itself
       const dx = v.cx - best.x,
         dz = v.cz - best.z;
       const L = Math.hypot(dx, dz) || 1;
-      const ex = v.cx - (dx / L) * v.radius * 0.7,
-        ez = v.cz - (dz / L) * v.radius * 0.7;
+      const Re = this._townEdge(v);
+      let ex = v.cx - (dx / L) * Re,
+        ez = v.cz - (dz / L) * Re;
+      const sub = v.buildings.find((b) => b.alive && b.type === 'pylon');
+      if (sub && Math.hypot(sub.x - v.cx, sub.z - v.cz) > Re - 2.5) (ex = sub.x), (ez = sub.z);
       const len = Math.hypot(ex - best.x, ez - best.z);
       const pylons = [];
       const n = Math.max(1, Math.round(len / 5));
-      for (let i = 1; i < n; i++) pylons.push(best.x + ((ex - best.x) * i) / n, best.z + ((ez - best.z) * i) / n);
-      lines.push({ id: best.id * 4096 + v.id, kingdom: k.id, from: best.id, to: v.id, pts: [best.x, best.z, ex, ez], pylons });
+      for (let i = 1; i < n; i++) {
+        const p = this._pylonSpot(best.x + ((ex - best.x) * i) / n, best.z + ((ez - best.z) * i) / n, (ex - best.x) / len, (ez - best.z) / len);
+        if (p) pylons.push(p[0], p[1]);
+      }
+      lines.push({ id: best.id * 4096 + v.id, kingdom: k.id, from: best.id, to: v.id, pts: [best.x, best.z, ex, ez], pylons, sub: !!sub && ex === sub.x });
     }
     const old = this.power.filter((l) => l.kingdom === k.id);
     const sig = (L) => L.map((l) => l.id).join(',');

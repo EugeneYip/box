@@ -123,7 +123,10 @@ if (vRoof.x > 0.5) {
   // so its lit cells (emissive, below) stand out against dark panes.
   float wsLum = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
   float wsGl = step(0.05, vGlow) * step(vGlow, 1.5);
-  diffuseColor.rgb *= 1.0 - uNight * mix(0.12 + 0.5 * smoothstep(0.3, 0.85, wsLum), 0.6, wsGl);
+  // (round 25: pale civic buildings and the white Future cylinders still
+  // read as lanterns at night: pale walls now keep under a fifth of their
+  // daylight colour, so only the lit windows carry them)
+  diffuseColor.rgb *= 1.0 - uNight * mix(0.2 + 0.64 * smoothstep(0.22, 0.75, wsLum), 0.6, wsGl);
   float dmg = vState.x;
   if (dmg > 0.0) {
     float n = wsHash(floor(vLocal * 6.0) + vState.z * 13.0);
@@ -181,7 +184,8 @@ if (vRoof.x > 0.5) {
     totalEmissiveRadiance += vec3(1.0, 0.86, 0.6) * (night * 2.3 + 0.03);
   }
   // heritage: soft floodlight washing up the walls at night
-  if (flood > 0.5) totalEmissiveRadiance += diffuseColor.rgb * vec3(1.0, 0.84, 0.62) * night * 0.5 * (1.0 - smoothstep(0.1, 3.2, vLocal.y));
+  // (a low wash at the foot of the walls only: it lit whole pale facades)
+  if (flood > 0.5) totalEmissiveRadiance += diffuseColor.rgb * vec3(1.0, 0.84, 0.62) * night * 0.6 * (1.0 - smoothstep(0.05, 0.9, vLocal.y));
   float burn = vState.y;
   if (burn > 0.001) {
     float t = uTime;

@@ -442,8 +442,14 @@ export const modern = {
     const hall = h && h.alive !== false && h.doorX != null ? [Math.floor(h.doorX), Math.floor(h.doorZ)] : null;
     const pd = t?._parade?.ok ? t._parade : null;
     if (!hall && !pd) return null;
+    // (round 25: a red car parked on the hall's paving and a tank at the edge
+    // of a Future plaza: the whole paving out to three tiles round the door,
+    // and every tile the planner keeps clear, square or pad)
+    const kc = this.game.civ?.keepClear;
+    const w = this.world;
     return (tx, tz) => {
-      if (hall && Math.max(Math.abs(tx - hall[0]), Math.abs(tz - hall[1])) <= 2) return true;
+      if (hall && Math.max(Math.abs(tx - hall[0]), Math.abs(tz - hall[1])) <= 3) return true;
+      if (kc && w.inBounds(tx, tz) && kc[tz * w.w + tx]) return true;
       if (pd) {
         const dx = tx + 0.5 - pd.x,
           dz = tz + 0.5 - pd.z;
