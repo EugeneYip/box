@@ -225,8 +225,21 @@ function onKey(e) {
   const sib = isOpt ? [...panel.querySelectorAll('.ws-vehpick__opt')] : [...t.parentElement.children];
   const i = sib.indexOf(t);
   let j = null;
-  if (e.key === 'ArrowRight') j = Math.min(sib.length - 1, i + 1);
-  else if (e.key === 'ArrowLeft') j = Math.max(0, i - 1);
+  // a kind's Left/Right neighbor is the nearest kind in the same row (the strip
+  // fills column by column, so the next kind in the list is the one below)
+  const rowStep = (dir) => {
+    const r0 = t.getBoundingClientRect();
+    let best = null;
+    sib.forEach((o, k) => {
+      const r = o.getBoundingClientRect();
+      const dx = (r.left - r0.left) * dir;
+      if (o === t || Math.abs(r.top - r0.top) > 4 || dx < 4) return;
+      if (!best || dx < best[0]) best = [dx, k];
+    });
+    return best ? best[1] : Math.max(0, Math.min(sib.length - 1, i + dir));
+  };
+  if (e.key === 'ArrowRight') j = isOpt ? rowStep(1) : Math.min(sib.length - 1, i + 1);
+  else if (e.key === 'ArrowLeft') j = isOpt ? rowStep(-1) : Math.max(0, i - 1);
   else if (e.key === 'Home') j = 0;
   else if (e.key === 'End') j = sib.length - 1;
   if (j != null) {
