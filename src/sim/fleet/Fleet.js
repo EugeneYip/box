@@ -753,8 +753,14 @@ export class Fleet {
     // updates, so it moves smoothly at its full pace. Trains and siege
     // engines keep their schedule; near the camera everything runs as before.
     // (globalThis.__fleetQ25Off turns it off, for measuring)
-    const quarter = landLod && step > 0.2 && !globalThis.__lod8Off && !globalThis.__fleetQ25Off;
-    const farR = quarter ? (cam.dist > 110 ? Math.min(landR, FAR_ROAD) : landR) : Infinity;
+    // At the finer steps in the overview the same holds at half rate.
+    const q25 = landLod && !globalThis.__lod8Off && !globalThis.__fleetQ25Off;
+    const quarter = q25 && step > 0.2;
+    const farR = q25 && cam.dist > 110 ? Math.min(landR, FAR_ROAD) : quarter ? landR : Infinity;
+    const farMask = quarter ? 3 : 1;
+    // (and ships in the overview, gliding on their heading between updates,
+    // every fourth tick beyond FAR_ROAD of the target instead of the radius)
+    const seaQ2 = Math.min(lodR2, FAR_ROAD * FAR_ROAD);
     for (let i = 0; i < this.list.length; i++) {
       const v = this.list[i];
       if (!v.alive) continue;
@@ -767,7 +773,7 @@ export class Fleet {
         if (cam && v.state !== 'sinking' && v.state !== 'break' && !v.chase && v.target == null && v.role !== 'hover' && !(v.burning > 0)) {
           const d2 = (v.x - cam.x) ** 2 + (v.z - cam.z) ** 2;
           if (d2 > lodR2 || seaOv) {
-            const mask = d2 > lodR2 * 4 || v.state === 'moored' || (seaOv && d2 > lodR2) ? 3 : 1;
+            const mask = d2 > lodR2 * 4 || v.state === 'moored' || (seaOv && d2 > (quarter ? seaQ2 : lodR2)) ? 3 : 1;
             if (((gwt + v.id) & mask) !== 0) {
               v._skip = true;
               v._lodAcc = (v._lodAcc || 0) + step;
@@ -794,7 +800,7 @@ export class Fleet {
           const dx = Math.abs(v.x - cam.x),
             dz = Math.abs(v.z - cam.z);
           let mask = idle ? 3 : dx > landR || dz > landR ? 1 : 0;
-          if (!idle && (dx > farR || dz > farR) && !v.def.rail && v.state === 'move') mask = glide = 3;
+          if (!idle && (dx > farR || dz > farR) && !v.def.rail && v.state === 'move') mask = glide = Math.max(mask, farMask);
           if (mask) {
             v._lodAcc = (v._lodAcc || 0) + step;
             if (((gwt + v.id) & mask) !== 0) {
