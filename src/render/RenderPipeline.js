@@ -437,7 +437,9 @@ export class RenderPipeline {
       this._frameFence = null;
       return false;
     }
-    if (gl.getSyncParameter(f, gl.SYNC_STATUS) !== gl.SIGNALED) {
+    // (a fence that never signals, on a driver that mishandles them, must
+    // not stop the game: after 30 s the loop draws again regardless)
+    if (gl.getSyncParameter(f, gl.SYNC_STATUS) !== gl.SIGNALED && performance.now() - this._frameFenceT < 30000) {
       this.framesHeld = (this.framesHeld || 0) + 1;
       return true;
     }
@@ -451,6 +453,10 @@ export class RenderPipeline {
     const gl = this.renderer.getContext();
     if (!gl.fenceSync || gl.isContextLost?.()) return;
     this._frameFence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+    this._frameFenceT = performance.now();
+    // (sent to the GPU side now: a held loop draws nothing that would flush
+    // it, and an unflushed fence would never signal)
+    gl.flush();
   }
 
   // Page hidden (another tab, minimised, leaving): stop issuing GPU work that
