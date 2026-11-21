@@ -98,9 +98,10 @@ export function techPanel(ui, kingdomId) {
         side
           ? el(
               'div',
-              { class: 'ws-tech__also', 'data-tip': side.def?.description ? `${side.def.description} · Side arts do not count toward eras` : 'Side arts do not count toward eras' },
+              { class: 'ws-tech__also', 'data-tip': [side.branch ? `${side.name} (${side.branch})` : '', side.def?.description, 'Side arts do not count toward eras'].filter(Boolean).join(' · ') },
               el('span', { class: 'ws-tech__alsoico', html: uiIcon(BRANCH_ICON[side.def?.branch] || 'leaf') }),
-              el('span', { class: 'ws-tech__alsotxt' }, el('small', { text: 'Also studying' }), el('span', { text: [side.name, side.branch].filter(Boolean).join(' · ') })),
+              // (round 25) the art's name alone fits the header; its branch is in the icon and the tip
+              el('span', { class: 'ws-tech__alsotxt' }, el('small', { text: 'Also studying' }), el('span', { text: side.name || side.branch || '', title: [side.name, side.branch].filter(Boolean).join(' · ') })),
               side.pct != null ? el('span', { class: 'ws-meter ws-tech__alsometer' }, el('i', { style: `width:${(side.pct * 100).toFixed(1)}%` })) : null,
               side.pct != null ? el('b', { class: 'ws-tech__alsopct', text: `${Math.round(side.pct * 100)}%` }) : null,
             )
