@@ -23,7 +23,12 @@ const KEY_YEARS = 150,
   KEY_MIN_POP = 8,
   // a seat (the capital of the country that must hold it) is kept fuller:
   // the ROC seat at Taipei and San Juan sat at 4-7 people
-  KEY_SEAT_POP = 15;
+  KEY_SEAT_POP = 15,
+  // (round 23) after the key years the refill floor tapers off over this many
+  // years, from KEY_SEAT_POP down to KEY_END_POP, instead of ending at once
+  // (three cities that must exist dropped to 14 people at Year 150.9)
+  KEY_TAPER = 50,
+  KEY_END_POP = 6;
 
 export const realms = {
   // The real realms for this world's region, or null (square presets).
@@ -670,10 +675,18 @@ export const realms = {
 
   // The name of the region (places/regions.js) nearest a tile, within a
   // country's reach, that no living realm carries, as "State of …" or
-  // "Republic of …"; regions of the land's own country (place-data index
-  // `own`) come first. Null when none is near.
+  // "Republic of …": only regions of the land's own country (place-data
+  // index `own`, else the country whose places lie nearest). Null when none
+  // is near, when the land is no country's, and always inside the Mainland
+  // Region and the ROC, which have no regions and take the city-name form
+  // (docs/REGIONS.md: never "China" or "PRC"; round 22 named a rebel at
+  // Xi'an the "State of Assam", a region of India).
   _regionNear(x, z, living, own = -1) {
     if (x == null) return null;
+    if (own < 0) own = this._placeRealmAt(x, z);
+    if (own < 0) return null;
+    const ownName = this._realmData()?.[own]?.name;
+    if (!ownName || ownName === 'Mainland Region' || ownName === 'ROC') return null;
     if (!this._regionPts) {
       this._regionPts = [];
       for (const [name, lon, lat, style] of REGIONS) {
@@ -693,7 +706,8 @@ export const realms = {
       if (living.has(p.name)) continue;
       const dx = geoDist(this.world, p.x, z, x, z),
         dz = p.z - z;
-      const d = Math.hypot(dx * cx, dz) * (own >= 0 && p.realm === own ? 0.6 : 1);
+      if (p.realm !== own) continue;
+      const d = Math.hypot(dx * cx, dz);
       if (d < R && d < bd) (bd = d), (best = p);
     }
     return best ? best.name : null;
@@ -734,13 +748,14 @@ export const realms = {
   // families move in from the holder's biggest town on the same land, else
   // from the nearest big town at peace with it. Run with the diplomacy pass.
   _keepKeyCities() {
-    if (this.game.time.total >= YEAR * KEY_YEARS || !this._realMapOn()) return;
+    const y = this.game.time.total / YEAR;
+    if (y >= KEY_YEARS + KEY_TAPER || !this._realMapOn()) return;
+    const f = y < KEY_YEARS ? 1 : 1 - (y - KEY_YEARS) / KEY_TAPER;
+    // (round 21) the seats' floor holds for the cities that must exist too
+    // (San Juan sat at 4-5 people under the old floor of 8)
+    const floor = Math.round(KEY_END_POP + (KEY_SEAT_POP - KEY_END_POP) * f);
     for (const v of this.villages) {
-      if (!this._keyCity(v) || this.expeditions.some((e) => e.village === v.id)) continue;
-      // (round 21) the seats' floor holds for the cities that must exist too
-      // (San Juan sat at 4-5 people under the old floor of 8)
-      const floor = KEY_SEAT_POP;
-      if (v.pop >= floor) continue;
+      if (!v.alive || v.keyCity == null || v.razed || v.pop >= floor || this.expeditions.some((e) => e.village === v.id)) continue;
       this._refillKey(v, floor + 2 - v.pop);
     }
   },
@@ -773,7 +788,7 @@ export const realms = {
     // nobody to come: a handful of newcomers arrive from beyond (so a
     // must-exist city never stands empty), while the world has room for them
     const room = v.pop < 3 || this.game.units.count('human') < this._humanCap();
-    if (!moved && room && !(this.game.time.total - (v._newT ?? -1e9) < 8)) {
+    if (!moved && room && this.game.time.total < YEAR * KEY_YEARS && !(this.game.time.total - (v._newT ?? -1e9) < 8)) {
       v._newT = this.game.time.total;
       const w = this.world;
       for (let i = 0; i < Math.min(4, n); i++) {

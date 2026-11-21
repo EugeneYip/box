@@ -544,7 +544,7 @@ export const breadth = {
     const hungry = [];
     for (const v of vs) {
       if (v.starving || v.food < v.pop * 0.8) hungry.push(v);
-      else v._wantT = null;
+      else if (v.food > v.pop * 1.5) v._wantT = null; // (a cart's few months' meals do not end the want)
     }
     if (!hungry.length) return;
     for (const to of hungry) {

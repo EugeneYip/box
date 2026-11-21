@@ -523,6 +523,11 @@ export class Civilization {
     if (!k || now - (k.lastExpand || -999) < YEAR * (2.5 + crowd * 6)) return false;
     const aliveVillages = this.villages.filter((o) => o.alive).length;
     if (aliveVillages >= this.budget.villages || k.villages.length >= 14 || (aliveVillages >= 12 && k.villages.length >= 5 && k.villages.length > 0.33 * aliveVillages)) return false; // a hegemon stops growing (only in a settled world)
+    // a full world founds no more hamlets: they would only dwindle and be
+    // merged away (round 22: 123 of 180 founded were; _villageTick)
+    // (founding stops, and the merging starts, at nine tenths of the village
+    // limit: at four fifths the world kept only 44 towns)
+    if (aliveVillages >= this.budget.villages * 0.9 && (this.game.units.count?.('human') ?? 0) > this._humanCap() * 0.85) return false;
     if (this.expeditions.some((e) => e.from === v.id)) return false;
     v.lastExpand = now;
     const site = this._findExpansionSite(v);
@@ -1036,7 +1041,7 @@ export class Civilization {
     // world is full, and a dozen such remnants held the World Map's village
     // places while its towns stayed small); a village the player has named or
     // given policies is left alone
-    if (fullWorld && pop <= 6 && now - v.founded > YEAR * 15 && !this._keyHeld?.(v) && this._aliveVillageCount() >= this.budget.villages * 0.8 && this.kingdoms[v.kingdom]?.capital !== v.id && !(v.colony && now - v.founded < YEAR * 30) && !v.player && !(v.policy && Object.keys(v.policy).length) && this.rng.chance(0.012 * dt)) {
+    if (fullWorld && pop <= 6 && now - v.founded > YEAR * 15 && !this._keyHeld?.(v) && this._aliveVillageCount() >= this.budget.villages * 0.9 && this.kingdoms[v.kingdom]?.capital !== v.id && !(v.colony && now - v.founded < YEAR * 30) && !v.player && !(v.policy && Object.keys(v.policy).length) && this.rng.chance(0.012 * dt)) {
       let to = null,
         td = 70 * Math.sqrt(this.budget.area);
       for (const vid of this.kingdoms[v.kingdom]?.villages || []) {
@@ -1476,8 +1481,15 @@ export class Civilization {
       for (const to of needy) {
         const from = rich.find((r) => r.landId === to.landId && geoDist(this.world, r.cx, r.cz, to.cx, to.cz) < 90 * Math.sqrt(Math.max(1, this.budget.area))); // (towns lie further apart on a big map)
         if (!from) continue;
-        const amt = Math.min(from.food - (from.pop * 5 + 20), to.pop * 4 + 20);
+        // (round 23) a town in a drought gets a cart every half year at most,
+        // each a few months' meals: the cart every 8 s, up to four meals a
+        // head, refilled a drought-struck town within 10 s of its stores
+        // spoiling, and no want was ever felt for the tinned food to answer
+        const dry = this.game.time.total < (to.droughtUntil || 0);
+        if (dry && this.game.time.total - (to._cartT ?? -1e9) < 15) continue;
+        const amt = Math.min(from.food - (from.pop * 5 + 20), dry ? to.pop * 1.2 : to.pop * 4 + 20);
         if (amt <= 4) continue;
+        if (dry) to._cartT = this.game.time.total;
         from.food -= amt;
         to.food += amt * 0.9; // a tenth is eaten on the road
         to.emptyT = 0;
@@ -1824,8 +1836,9 @@ export class Civilization {
       const cand = v.tier >= 1 || full ? v.buildings.find((b) => b.alive && b.type === 'house' && !b.constructing && !b.upgrading && b.level < Math.min(3, v.tier + 2)) : null;
       if (!(cand && (full || this.rng.chance(0.5)) && upgrade(cand)) && this._maySprawl(v, crowded)) build('house');
     }
-    // 2 fields (no cost)
-    const targetFields = 8 + pop * 1.1;
+    // 2 fields (no cost); an Industrial town sows outer plots for the inner
+    // ones it will give up (modern.js) before it gives them up
+    const targetFields = 8 + pop * 1.1 + ((this.kingdoms[v.kingdom]?.era || 0) >= 4 ? v.innerFields || 0 : 0);
     for (let r = Math.round(this._planMul || 1); r > 0; r--) if (v.fieldCount < targetFields && v.plots.filter((p) => p.tiles.some((i) => this.world.type[i] !== TILE.FARMLAND)).length < 2) this._planPlot(v);
     // 3 civic buildings by size
     if (room() && pop >= 10 && count('granary') === 0) build('granary');

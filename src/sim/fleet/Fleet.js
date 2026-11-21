@@ -415,11 +415,34 @@ export class Fleet {
     t.all = t.rail = t.aid = t.transit = t.other = t.tractor = 0;
     for (const v of this.list) {
       if (!v.alive || v.cls !== 'land' || v.parkAt != null) continue;
+      // tractors work their own town's fields and stay by them: they have a
+      // limit of their own, outside the world's land limit (round 22: one
+      // tractor served 378 farmers at Year 600)
+      if (v.kind === 'tractor') {
+        t.tractor++;
+        continue;
+      }
       t.all++;
       t[LAND_GROUP[v.kind] || 'other']++;
-      if (v.kind === 'tractor') t.tractor++;
     }
     return t;
+  }
+  // Towns (tier 1+) of realms in the Modern era or later, and the cities
+  // among them (tier 2+), counted every few seconds: the land limit and the
+  // buses' and trams' room grow with them.
+  _modernTowns() {
+    const now = this.game.time.total;
+    const c = this._mt || (this._mt = { t: -1e9, towns: 0, cities: 0 });
+    if (now - c.t < 5) return c;
+    c.t = now;
+    c.towns = c.cities = 0;
+    const civ = this.game.civ;
+    for (const v of civ?.villages || []) {
+      if (!v.alive || (v.tier || 0) < 1 || (civ.kingdoms[v.kingdom]?.era || 0) < 5) continue;
+      c.towns++;
+      if (v.tier >= 2) c.cities++;
+    }
+    return c;
   }
   // Room under the world's land limit for one more vehicle of this kind.
   // The limit is shared by quota, not first come first served (round 18: at
@@ -433,18 +456,22 @@ export class Fleet {
   // whole limit to fall below 58 of 61, and at Year 600 one bus and no
   // tractor ran in the world). A quarter of the transit room is kept for
   // the tractors, which the buses and trams would otherwise always beat.
+  // (round 23) Tractors are outside the limit, with a cap of their own (one
+  // to a town at most, Fleet modern.js), and the limit grows with the Modern
+  // towns and cities: each adds room for a bus or a tram (at Year 600 three
+  // buses served 43 towns), up to two fifths more than the map's limit.
   landRoom(kind) {
-    const L = this.budget.land;
+    const L0 = this.budget.land;
     const t = this.landTally();
+    if (kind === 'tractor') return t.tractor < Math.max(4, Math.round(L0 * 0.4));
+    const mt = this._modernTowns();
+    const extra = Math.min(Math.round(L0 * 0.4), mt.cities + Math.round(mt.towns * 0.5));
+    const L = L0 + extra;
     const g = LAND_GROUP[kind] || 'other';
     const over = t.all >= Math.ceil(L * 1.06);
-    if (g === 'aid') return !over && t.aid < Math.max(4, Math.round(L * 0.12));
-    if (g === 'transit') {
-      const room = Math.max(4, Math.round(L * 0.25) - t.aid);
-      if (over || t.transit >= room) return false;
-      return kind === 'tractor' || t.transit - t.tractor < Math.max(3, Math.round(room * 0.75));
-    }
-    if (t.all >= L || t.rail + t.other >= Math.round(L * 0.75)) return false;
+    if (g === 'aid') return !over && t.aid < Math.max(4, Math.round(L0 * 0.12));
+    if (g === 'transit') return !over && t.transit < Math.max(4, Math.round(L0 * 0.14)) + extra;
+    if (t.all >= L || t.rail + t.other >= Math.round(L0 * 0.75)) return false;
     if (g === 'rail') return t.rail < Math.max(2, Math.round(L * 0.3));
     return t.other < Math.max(3, Math.round(L * 0.45));
   }
