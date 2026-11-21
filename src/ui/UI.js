@@ -1256,7 +1256,7 @@ export class UI {
     for (const b of q('.ws-brand, .ws-clock, .ws-stats, .ws-agechip, .ws-top')) if (b.top < H * 0.2 && b.bottom < H * 0.35) r.top = Math.max(r.top, b.bottom);
     for (const b of q('.ws-dock__panel, .ws-insp.is-open, .ws-side.is-open')) {
       const wide = b.width > W * 0.6;
-      if (wide && b.top > H * 0.4) r.bottom = Math.min(r.bottom, b.top);
+      if (wide && b.top > H * 0.3) r.bottom = Math.min(r.bottom, b.top);
       else if (!wide && b.height > H * 0.4) {
         if (b.left > W * 0.5) r.right = Math.min(r.right, b.left);
         else if (b.right < W * 0.5) r.left = Math.max(r.left, b.right);
