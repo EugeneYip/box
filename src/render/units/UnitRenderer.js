@@ -802,6 +802,10 @@ export class UnitRenderer {
     const nrm = this._n;
     const peopleCut = camDist > PEOPLE_CUT;
     const markA = dotsOnly ? 0 : smoothstep(18, 30, camDist) * (1 - smoothstep(76, 88, camDist));
+    // (the marks are unlit: at night they dim with the walls and lawns, and
+    // turn fainter, instead of glowing like lilac fireflies along the streets)
+    const markL = 0.22 + 0.78 * smoothstep(0.05, 0.6, day),
+      markN = 0.55 + 0.45 * smoothstep(0.05, 0.6, day);
 
     for (let li = 0; li < U.list.length; li++) {
       const u = U.list[li];
@@ -1076,12 +1080,12 @@ export class UnitRenderer {
           ez = camPos.z - iz;
         const el = Math.hypot(ex, ey, ez) || 1,
           fwd = (md.radius * scale * 1.3 + msz * 0.5) / el;
-        ov.ground.add(ix + ex * fwd, my + ey * fwd, iz + ez * fwd, msz, ex, ey, ez, DECAL.dot, c[0], c[1], c[2], markA);
+        ov.ground.add(ix + ex * fwd, my + ey * fwd, iz + ez * fwd, msz, ex, ey, ez, DECAL.dot, c[0] * markL, c[1] * markL, c[2] * markL, markA * markN);
       }
       if (lod < 0.999) {
         const dsz = Math.max(0.3 * UNIT.rel, 6 / ppu) * (def.kind === 'humanoid' ? 1 : 0.8);
         const c = rs.dot || [0.8, 0.8, 0.8];
-        ov.ground.add(ix, Math.max(ground, SEA_LEVEL), iz, dsz, 0, 1, 0, DECAL.dot, c[0], c[1], c[2], 1 - lod);
+        ov.ground.add(ix, Math.max(ground, SEA_LEVEL), iz, dsz, 0, 1, 0, DECAL.dot, c[0] * markL, c[1] * markL, c[2] * markL, 1 - lod);
       }
       // ---- water ripples
       if ((u.swimming || (u.wading && u.moving) || hab === 'water') && dCam < 90) {

@@ -451,10 +451,13 @@ export class Terrain {
     }
     this.settleTexture.needsUpdate = true;
   }
-  // R: the far-zoom urban patch follows the town's real footprint, not its
-  // whole build area: a blurred mask of the tiles under buildings and the
-  // streets between them (round 24: the build radius drew grey fields ~40
-  // tiles across round two or three houses, and polka dots over the map).
+  // R: the far-zoom urban patch follows the town's real footprint and its
+  // building density: a blurred mask of the tiles under buildings, so a
+  // downtown block is a full patch while a suburb of one or two houses per
+  // lawn is only a light wash and its lawns show through (round 26: streets
+  // counted almost as much as buildings, and since every town lays a street
+  // grid far past its houses, the grid covered two thirds of the land).
+  // Streets add a little, so the blocks between a town's streets join up.
   // The texel's lowest bit says whether this very tile is under a building,
   // so the shader can lay roof colours on the built tiles and pale lines on
   // the streets (the bit is noise below 1/255 in the filtered density).
@@ -481,10 +484,11 @@ export class Terrain {
       if (!town[i]) continue;
       const u = use ? use[i] : 0;
       if (u === 1 || (bld && bld[i] >= 0)) (a[i] = 1), (any = true);
-      else if (u === 2 || typ[i] === 13) (a[i] = 0.75), (any = true);
+      else if (u === 2 || typ[i] === 13) a[i] = 0.12;
     }
     if (!any) return;
-    // two box passes (5 then 3 wide): a soft ~3-tile falloff round the blocks
+    // three box passes (7, 7 then 3 wide): building density over a ~4-tile
+    // neighbourhood, with a soft falloff round the blocks
     const pass = (src, dst, r, horiz) => {
       const inv = 1 / (2 * r + 1);
       if (horiz) {
@@ -508,16 +512,19 @@ export class Terrain {
         }
       }
     };
-    pass(a, bb, 2, true);
-    pass(bb, a, 2, false);
+    pass(a, bb, 3, true);
+    pass(bb, a, 3, false);
+    pass(a, bb, 3, true);
+    pass(bb, a, 3, false);
     pass(a, bb, 1, true);
     pass(bb, a, 1, false);
     for (let i = 0; i < n; i++) {
       const v = a[i];
       const built = town[i] && ((use && use[i] === 1) || (bld && bld[i] >= 0)) ? 1 : 0;
-      if (v < 0.004 && !built) continue;
-      // (density x1.6: a lawned Modern block of one or two houses still fills)
-      d[i * 4] = (Math.min(127, Math.round(v * 1.6 * 127)) << 1) | built;
+      if (v < 0.03 && !built) continue;
+      // (about 6% of the ground built is nothing, 40% and more a full patch)
+      const k = Math.max(0, Math.min(1, (v - 0.05) / 0.35));
+      d[i * 4] = (Math.min(127, Math.round(k * 127)) << 1) | built;
     }
   }
   // a town's streets or era changed: repaint its paving (checked every 2 s)
