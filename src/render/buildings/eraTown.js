@@ -133,7 +133,9 @@ export const ERA_CIVIC = new Set(['granary', 'workshop', 'market', 'barn', 'kiln
 // the era's wall, tinted a third of the way to the culture's own colour
 function walls(K, P, era) {
   if (era < 5) return K.wall;
-  return mix(era >= 7 ? 0xf0f2ec : era >= 6 ? 0xd4d9de : 0xc4beb2, K.wall, 0.32);
+  // (Modern: a light render with a trace of the culture's own wall colour;
+  // dark timber cultures turned it a dull brown-grey)
+  return mix(era >= 7 ? 0xf0f2ec : era >= 6 ? 0xd4d9de : 0xe2dccf, K.wall, era === 5 ? 0.2 : 0.32);
 }
 // The roof of a culture in eras 5-7, so a street of civic blocks is told
 // apart by culture at mid zoom: vale a flat roof with a plant room; frost a

@@ -49,6 +49,8 @@ export const planner = {
     if (this.railMask?.[i]) return false;
     // nor in an airport's clear zone (modern.js airZone)
     if (this.airZone?.[i]) return false;
+    // nor on a town's square or its parade pad (_keepClear)
+    if (this.keepClear?.[i]) return false;
     const f = w.flora[i];
     if (f === FLORA.BOULDER) return false;
     if (!allowTrees && FLORA_INFO[f]?.isTree) return false;
@@ -349,6 +351,93 @@ export const planner = {
     return Math.max(5, (v.buildRadius || v.radius || 6) * 1.15 + 2);
   },
 
+  // The open ground of a town that no building may take (round 23: two
+  // houses stood on a main square and a building on the parade pad):
+  // keepClear bit 1 the square before the hall (the 5 x 5 round its door
+  // that Masonry paves and the terrain draws as a plaza), bit 2 the parade
+  // pad before the barracks (units/daily.js _parade). The pad's ground is
+  // levelled when it is first laid out, so the pad lies flush with the
+  // street round it instead of standing on a plinth with a lip.
+  _keepClear(v) {
+    const w = this.world;
+    const N = w.size;
+    if (!this.keepClear || this.keepClear.length !== N) this.keepClear = new Uint8Array(N);
+    const m = this.keepClear;
+    const h = v.hall;
+    if (h && h.alive !== false && v._sqHall !== h.id) {
+      if (v._sqTiles) for (const i of v._sqTiles) m[i] &= ~1;
+      const cx = Math.floor(h.doorX),
+        cz = Math.floor(h.doorZ);
+      const t = [];
+      for (let dz = -2; dz <= 2; dz++)
+        for (let dx = -2; dx <= 2; dx++) {
+          const x = cx + dx,
+            y = cz + dz;
+          if (!w.inBounds(x, y)) continue;
+          const i = y * w.w + x;
+          if (w.building[i] === h.id) continue;
+          m[i] |= 1;
+          t.push(i);
+        }
+      v._sqTiles = t;
+      v._sqHall = h.id;
+    }
+    const pd = v._parade?.ok ? v._parade : null;
+    if (pd === (v._padRef || null)) return;
+    if (v._padTiles) for (const i of v._padTiles) m[i] &= ~2;
+    v._padTiles = null;
+    v._padRef = pd;
+    if (!pd) return;
+    // the drawn pad (units/SquareProps: W + 0.3 by D + 0.3 and a kerb) in
+    // world extents: W runs along (-az, ax), D along (ax, az)
+    const Wd = pd.W + 0.5,
+      Dd = pd.D + 0.5;
+    const ex = (Math.abs(pd.az) * Wd + Math.abs(pd.ax) * Dd) / 2,
+      ez = (Math.abs(pd.ax) * Wd + Math.abs(pd.az) * Dd) / 2;
+    const t = [];
+    for (let y = Math.floor(pd.z - ez); y <= Math.floor(pd.z + ez - 1e-4); y++)
+      for (let x = Math.floor(pd.x - ex); x <= Math.floor(pd.x + ex - 1e-4); x++) {
+        if (!w.inBounds(x, y)) continue;
+        const i = y * w.w + x;
+        m[i] |= 2;
+        t.push(i);
+      }
+    v._padTiles = t;
+    // level it: every tile centre the ground under the pad is drawn from
+    // (heightAt interpolates between centres) to their mean height
+    const x0 = Math.floor(pd.x - ex - 0.5),
+      x1 = Math.floor(pd.x + ex - 0.5) + 1,
+      y0 = Math.floor(pd.z - ez - 0.5),
+      y1 = Math.floor(pd.z + ez - 0.5) + 1;
+    const lv = [];
+    let sum = 0;
+    for (let y = y0; y <= y1; y++)
+      for (let x = x0; x <= x1; x++) {
+        if (!w.inBounds(x, y)) continue;
+        const i = y * w.w + x;
+        if (this.use[i] === USE.BUILDING || this.railMask?.[i] || w.height[i] < SEA_LEVEL + 0.05) continue;
+        lv.push(i);
+        sum += w.height[i];
+      }
+    if (!lv.length) return;
+    const L = sum / lv.length;
+    for (const i of lv) w.height[i] = L;
+    // ease the ring round it so the street meets it without a step
+    for (let y = y0 - 1; y <= y1 + 1; y++)
+      for (let x = x0 - 1; x <= x1 + 1; x++) {
+        if ((x > x0 - 1 && x < x1 + 1 && y > y0 - 1 && y < y1 + 1) || !w.inBounds(x, y)) continue;
+        const i = y * w.w + x;
+        if (this.use[i] === USE.BUILDING || this.railMask?.[i] || w.height[i] < SEA_LEVEL + 0.05) continue;
+        w.height[i] = lerp(w.height[i], L, 0.5);
+      }
+    w.markDirty('height', x0 - 1, y0 - 1, x1 + 1, y1 + 1);
+    this._heightTouched(x0 - 2, y0 - 2, x1 + 2, y1 + 2);
+    // the pad is drawn a hair over the levelled ground (its kerb's top just
+    // above it, so the two never flicker)
+    pd.y = L + 0.006;
+    pd.lo = L + 0.006;
+  },
+
   _hallSpotNear(tx, ty, maxR = 7) {
     const n = spiralCount(maxR);
     for (let k = 0; k < n; k++) {
@@ -440,6 +529,9 @@ export const planner = {
     // the town's plan (a main street and its cross streets) is laid before
     // the houses fill in, and laid out further as it becomes a town
     this._layTownPlan(v);
+    // the square stays open from the first houses on (a starting village's
+    // three houses were placed before its first plan, on the square)
+    if (v.hall) this._keepClear(v);
     // from the Modern era the farm works (silos, granaries, barns, pens)
     // stand out beyond the paved town, never in its square or core
     if (FARM_OUT.has(type) && (this.kingdoms[v.kingdom]?.era || 0) >= (type === 'pasture' ? 4 : 5)) {
@@ -457,7 +549,16 @@ export const planner = {
     const maxR = v.buildRadius + FOOTPRINT.dist(2);
     // a modern city's homes stand shoulder to shoulder along its streets
     // (they were a thin sprinkle with a gap all round each one)
-    const dense = v.tier >= 2 && (this.kingdoms[v.kingdom]?.era || 0) >= 5 && (type === 'house' || type === 'apartment' || type === 'rowhouse');
+    // (round 23: an Industrial town too, its brick terraces in rows along
+    // the streets, and a Modern town of any size, two to four blocks to a
+    // block at the street line: they stood alone on big lots)
+    const era = this.kingdoms[v.kingdom]?.era || 0;
+    const home = type === 'house' || type === 'apartment' || type === 'rowhouse';
+    const dense = home && era >= 4 && (v.tier >= 1 || v.pop >= 18);
+    // an Industrial town lines its main street with its terraces and its
+    // brick works and stores (row houses, workshops, granaries, markets)
+    const ms = v.mainSt;
+    const mainK = ms && era >= 4 && (type === 'rowhouse' || type === 'workshop' || type === 'granary' || type === 'market' || type === 'cannery' || (type === 'house' && era === 4)) ? (type === 'house' ? 0.6 : 1.6) : 0;
     for (let k = 0; k < Math.min(roads.length, limit); k++) {
       const r = roads.length <= limit ? roads[k] : roads[(rng.next() * roads.length) | 0];
       if (this.use[r] !== USE.ROAD) continue;
@@ -491,6 +592,7 @@ export const planner = {
         // keep road tips open so streets can keep growing
         if (this._blocksTip(tx0, ty0, fw, fh)) score += 6;
         if (scoreBias) score += scoreBias(cx, cz, tx0, ty0, fw, fh);
+        if (mainK) score += mainK * Math.max(0, Math.abs((cx - ms.x - 0.5) * ms.pz - (cz - ms.y - 0.5) * ms.px) - 1);
         if (score < bestS) {
           bestS = score;
           best = { tx: tx0, ty: ty0, rot };
@@ -690,6 +792,7 @@ export const planner = {
     const px = dz,
       pz = dx;
     const R = Math.max(cells(9, 5), Math.round((v.buildRadius || 6) * (want >= 2 ? 0.95 : 0.7)));
+    v.mainSt = { x: fx, y: fy, px, pz };
     const mainA = this._street(v, fx, fy, px, pz, R + 1);
     const mainB = this._street(v, fx - px, fy - pz, -px, -pz, R);
     // cross streets every SPACE tiles along it, both ways from the main street
@@ -786,11 +889,83 @@ export const planner = {
         removed++;
       }
     }
+    // Industrial and later: wide paved bands (streets, door paths and
+    // links laid side by side, three and four tiles deep) are thinned to
+    // single lanes, a tile at a time, never cutting a street in two
+    if ((this.kingdoms[v.kingdom]?.era || 0) >= 4) removed += this._thinRoads(v, doors, isR);
     if (removed) {
       v.roadTiles = v.roadTiles.filter((i) => this.use[i] === USE.ROAD);
       this.fieldVersion++;
     }
     return removed;
+  },
+
+  // A road tile in a 2 x 2 block of road whose removal leaves its road
+  // neighbours joined round it (the ring of eight about it holds them in one
+  // run) is taken up: not a door's tile, not beside a building (its
+  // frontage), not on the square or the parade pad, not under a bridge.
+  _thinRoads(v, doors, isR) {
+    const w = this.world;
+    const W = w.w;
+    // (once a pass finds nothing, the town is left alone until its streets
+    // change: the scan cost 0.7 ms a tick over a granted world)
+    const sig = v.roadTiles.length * 7 + v.buildings.length;
+    if (v.thinSig === sig) return 0;
+    const RING = [[-1, -1], [0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0]];
+    const r = [false, false, false, false, false, false, false, false];
+    const use = this.use;
+    let n = 0;
+    for (const i of v.roadTiles) {
+      if (n >= 16) break;
+      if (use[i] !== USE.ROAD || doors.has(i) || w.building[i] >= 0 || this.keepClear?.[i]) continue;
+      const x = i % W,
+        y = (i / W) | 0;
+      if (x < 1 || y < 1 || x >= W - 1 || y >= w.h - 1) continue;
+      // quick reject: a 2 x 2 block needs two road neighbours at a corner
+      const rl = use[i - 1] === USE.ROAD,
+        rr = use[i + 1] === USE.ROAD,
+        ru = use[i - W] === USE.ROAD,
+        rd = use[i + W] === USE.ROAD;
+      if (!((rl || rr) && (ru || rd))) continue;
+      for (let k = 0; k < 8; k++) r[k] = use[(y + RING[k][1]) * W + x + RING[k][0]] === USE.ROAD;
+      // in a 2 x 2 block of road
+      let blob = false;
+      for (let k = 0; k < 8; k += 2) if (r[k] && r[(k + 1) & 7] && r[(k + 7) & 7]) blob = true;
+      if (!blob) continue;
+      // frontage: no building beside it
+      let front = false;
+      for (let k = 1; k < 8; k += 2) {
+        const xx = x + RING[k][0],
+          yy = y + RING[k][1];
+        if (w.inBounds(xx, yy) && (this.use[yy * W + xx] === USE.BUILDING || doors.has(yy * W + xx))) front = true;
+      }
+      if (front) continue;
+      // its road neighbours stay one run round the ring
+      let edges = 0,
+        runs = 0;
+      for (let k = 1; k < 8; k += 2) if (r[k]) edges++;
+      if (edges < 2) continue;
+      let start = r.indexOf(false);
+      if (start < 0) continue; // inside a paved field: keep its edge tiles first
+      let inRun = false,
+        runHasEdge = false;
+      for (let s = 1; s <= 8; s++) {
+        const k = (start + s) & 7;
+        if (r[k]) {
+          if (!inRun) (inRun = true), (runHasEdge = false);
+          if (k & 1) runHasEdge = true;
+        } else if (inRun) {
+          inRun = false;
+          if (runHasEdge) runs++;
+        }
+      }
+      if (inRun && runHasEdge) runs++;
+      if (runs !== 1) continue;
+      this._unlayRoad(i);
+      n++;
+    }
+    if (!n) v.thinSig = sig;
+    return n;
   },
 
   _unlayRoad(i) {
@@ -1020,6 +1195,17 @@ export const planner = {
     if ((this.kingdoms[v.kingdom]?.era || 0) >= 4) minD = Math.max(minD, this._pavedRadius(v) + 1);
     const maxD = Math.max(v.buildRadius + 11 * F, minD + 6);
     const steep = this._terraceSlope(v); // Terracing (breadth.js)
+    // never inside a Modern or Future town's paving (this village's or a
+    // neighbour's), nor within three tiles of a wonder there (modern.js
+    // _clearTownFarms gives such plots up)
+    const keepOut = [];
+    for (const u of this.villages) {
+      if (!u?.alive || (this.kingdoms[u.kingdom]?.era || 0) < 5) continue;
+      const R = this._pavedRadius(u);
+      if (Math.abs(u.cx - v.cx) > R + maxD + 8 || Math.abs(u.cz - v.cz) > R + maxD + 8) continue;
+      keepOut.push([u.cx - 0.5, u.cz - 0.5, u.cx + 0.5, u.cz + 0.5, R]);
+      for (const b of u.buildings) if (b.alive && BUILDING_TYPES[b.type]?.monument) keepOut.push([b.tx, b.ty, b.tx + b.w, b.ty + b.h, 3]);
+    }
     let best = null,
       bs = Infinity;
     for (let k = 0; k < 90; k++) {
@@ -1056,6 +1242,9 @@ export const planner = {
         cy = y0 + sh / 2;
       const d = Math.hypot(cx - v.cx, cy - v.cz);
       if (d < minD || d > maxD + 3 * F) continue;
+      let out = false;
+      for (const [a0, b0, a1, b1, r] of keepOut) if (Math.hypot(Math.max(a0 - x0 - sw, 0, x0 - a1), Math.max(b0 - y0 - sh, 0, y0 - b1)) < r) out = true;
+      if (out) continue;
       let ok = true,
         trees = 0,
         fert = 0,

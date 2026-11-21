@@ -78,7 +78,7 @@ float wsHash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p
       .replace(
         '#include <color_fragment>',
         `#include <color_fragment>
-${clip ? 'if (vLocal.y > vState.w) discard; if (!gl_FrontFacing) diffuseColor.rgb = vec3(0.2, 0.135, 0.085);' : ''}
+${clip ? 'if (vLocal.y > vState.w) discard; if (!gl_FrontFacing) diffuseColor.rgb = vec3(0.5, 0.47, 0.42) * (0.75 + 0.25 * clamp(vLocal.y / max(vState.w, 0.1), 0.0, 1.0));' : ''}
 // roof surface detail: courses, tiles, slate, turf, eave shadow, weathering
 if (vRoof.x > 0.5) {
   float kind = vRoof.x;
@@ -117,6 +117,13 @@ if (vRoof.x > 0.5) {
   vec3 kc = vKCol;
   vec3 tinted = kc * (0.38 + 2.1 * lum);
   diffuseColor.rgb = mix(diffuseColor.rgb, tinted, vTint);
+  // night: unlit walls fall dark and only the windows glow (pale tower
+  // walls and the white Future drums read as lanterns under the moon and
+  // the night bloom). Pale surfaces darken most; window glass darkens too,
+  // so its lit cells (emissive, below) stand out against dark panes.
+  float wsLum = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
+  float wsGl = step(0.05, vGlow) * step(vGlow, 1.5);
+  diffuseColor.rgb *= 1.0 - uNight * mix(0.12 + 0.5 * smoothstep(0.3, 0.85, wsLum), 0.6, wsGl);
   float dmg = vState.x;
   if (dmg > 0.0) {
     float n = wsHash(floor(vLocal * 6.0) + vState.z * 13.0);

@@ -71,6 +71,7 @@ export const MODERN_FIRST = {
 };
 
 const MODERN_TECHS = TECHS.filter((t) => t.era >= 4).map((t) => t.id);
+const FARM_WORKS = new Set(['pasture', 'silo', 'barn', 'granary']);
 const REACH = { musket: 2.6, rifle: 3.4, fatigues: 3.8, suit: 4.4 };
 
 // ------------------------------------------------------------ rail geometry
@@ -384,6 +385,11 @@ export const modern = {
     // town had no factory and no station: the newer branches took every
     // builder): the factory with its stack, workers' rows, the station
     // (a village saving up for its factory or station spends on nothing newer)
+    // a Modern or Future town keeps its paving free of farming before any
+    // other plan (it ran after the Industrial core, which returns early
+    // while a town saves up for its factory or station: fenced fields and
+    // pens stayed among the apartments)
+    if ((K.era || 0) >= 5) this._clearTownFarms(v);
     if (this._anyModern(K) && this._planIndustry(v, K, room, build, count)) return;
     // the food, medicine, land, city and planning branches (breadth.js)
     this._planBreadth(v, K, room, build, upgrade, count);
@@ -511,6 +517,46 @@ export const modern = {
     if (room() && has('rocketry') && (isCap || city) && rc('launchpad') === 0) tryBuild('launchpad', out('launchpad', 6, 12));
     if (room() && has('orbital') && (isCap || city) && rc('spaceport') === 0) tryBuild('spaceport', out('spaceport', 6, 12));
   },
+  // Fields, pens and farm works inside a Modern or Future town's paving
+  // (planner _pavedRadius) are given up, a few at a time (its plots and any
+  // neighbour's: a hamlet's plots lay inside a grown town), and so are
+  // plots round a wonder (fenced fields stood by a Future wonder).
+  // A plot is judged by its nearest tile, not its centre (plots straddling
+  // the edge kept their inner half). New plots stay out (planner _planPlot).
+  _clearTownFarms(v) {
+    const w = this.world;
+    const core = this._pavedRadius(v);
+    const near = (q, x, z, r) => Math.hypot(Math.max(q.x0 - x, 0, x - q.x1 - 1), Math.max(q.y0 - z, 0, z - q.y1 - 1)) < r;
+    const mons = [];
+    for (const b of v.buildings) if (b.alive && BUILDING_TYPES[b.type]?.monument) mons.push(b);
+    let n = 0;
+    const nearV = [];
+    for (const u of this.villages) if (u?.alive && Math.abs(u.cx - v.cx) < core + 30 && Math.abs(u.cz - v.cz) < core + 30) nearV.push(u);
+    for (const u of nearV) {
+      if (!u.plots?.length) continue;
+      for (const p of [...u.plots]) {
+        let drop = near(p, v.cx, v.cz, core);
+        for (const m of mons) if (!drop && Math.max(p.x0 - (m.tx + m.w), m.tx - p.x1 - 1, p.y0 - (m.ty + m.h), m.ty - p.y1 - 1) < 3) drop = true;
+        if (!drop) continue;
+        for (const i of [...p.tiles]) {
+          this._removePlotTile(i);
+          const x = i % w.w,
+            y = (i / w.w) | 0;
+          if (w.flora[i] === FLORA.WHEAT) w.setFlora(x, y, FLORA.NONE);
+          if (w.type[i] === TILE.FARMLAND) w.setType(x, y, TILE.GRASS);
+        }
+        if (++n >= 2) return;
+      }
+    }
+    // its pens, silos, barns and granaries inside the paving, out to its
+    // edge (they were kept within a tile and a half of it, by the
+    // apartments); they are raised again beyond it (planner _placeOutskirts)
+    const p = v.buildings.find((b) => b.alive && FARM_WORKS.has(b.type) && !b.constructing && Math.hypot(b.x - v.cx, b.z - v.cz) < core);
+    if (p) {
+      this.destroyBuilding(p, 'cancelled');
+      p.ruinT -= YEAR * 10; // no ruin: cleared on the next sweep
+    }
+  },
   // The Industrial core of a busy village (about 20 people) of an era-4+
   // realm: a brick factory on the edge of town, a terrace of row houses for
   // its workers, and a station where a rail line ends in town. These come
@@ -539,7 +585,9 @@ export const modern = {
         maxR = v.buildRadius + (zoned ? 9 : 5);
       tryBuild('factory', () => this._placeOutskirts(v, 'factory', minR, maxR, null, null) || this.placeAlongRoad(v, 'factory', this._bias(v, 'workshop')) || this._placeWide(v, 'factory', v.buildRadius * 0.6, v.buildRadius + 10));
     }
-    if (room() && industry && count('factory') > 0 && count('rowhouse') < 1 + v.tier && (v.housing - v.pop < 6 || count('rowhouse') === 0)) tryBuild('rowhouse');
+    // (a terrace row for each block of the main street: one or two row
+    // houses left a 42-building Industrial town reading as a village)
+    if (room() && industry && count('factory') > 0 && count('rowhouse') < 2 + 2 * v.tier && (v.housing - v.pop < 6 || count('rowhouse') < 2)) tryBuild('rowhouse');
     if (room() && has('railways') && v.railEnds > 0 && count('station') === 0) {
       // at the edge of town where the line comes in (never in the core)
       tryBuild('station', () => this._placeStation(v));
