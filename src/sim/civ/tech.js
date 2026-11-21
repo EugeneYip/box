@@ -644,19 +644,29 @@ export const tech = {
       // the old arts all known and a modern one under study: Mastery goes on beside it
       const rt = k.researching !== 'mastery' ? techById[k.researching] : null;
       let m = 0;
+      // (round 27) the study rate toward the next era itself, for the
+      // pacing's years-to-go: a realm still finishing an art of its own era
+      // studies it with that era's full momentum, and read as nearest to
+      // the next era (Modern came 18 years late behind such a leader)
+      let eraGain = gain;
       if (rt && rt.era >= 4) {
         m = gain * MASTERY_SHARE;
         gain -= m;
         let n = 0,
+          nx = 0,
           all = 0;
+        const nxE = (k.era || 0) + 1;
         for (const t of TECHS) {
           if (t.era < 4 || t.side || !k.techs.has(t.id)) continue;
           all++;
           if (t.era === rt.era) n++;
+          if (t.era === nxE) nx++;
         }
+        eraGain = gain * (1 + MOMENTUM * nx + CARRY * all);
         gain *= 1 + MOMENTUM * n + CARRY * all;
-      }
+      } else eraGain = gain;
       if (floor > 0 && rt && gain < floor * speed * dt) gain = floor * speed * dt;
+      if (floor > 0 && rt && eraGain < floor * speed * dt) eraGain = floor * speed * dt;
       // pacing: toward the realm's own year for its next era (ERA_YEAR plus
       // its follower's delay; sooner at a higher research speed). It comes
       // after the catch-up and the laggard floor, so neither carries a realm
@@ -670,7 +680,7 @@ export const tech = {
         // an overdue era no realm has entered: no follower's delay (no hold)
         const open = overdue > 0 && next === nextE;
         const target = (ERA_YEAR[next] + (lead || open ? 0 : FOLLOW_YEARS * followShare(k.id, next))) / ts;
-        const eta = this._eraNeed(k) / ((gain / dt) * YEAR);
+        const eta = this._eraNeed(k) / ((Math.min(gain, eraGain) / dt) * YEAR);
         k.eraEta = eta;
         const left = target - year;
         // (round 25) the leader may be hurried the harder at a higher research
