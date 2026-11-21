@@ -11,7 +11,7 @@ const S = PROP.scale;
 // benches and the stall are furniture for the people: they take the people's
 // scale (round 24: half the round-14 size), the paved parade square the land's
 const SU = UNIT.scale;
-const MAX = 2400;
+const MAX = 4800;
 const NEAR = 95; // tiles from the camera target
 const FAR_CAM = 140; // camera distance beyond which nothing is drawn
 
@@ -30,6 +30,13 @@ const C = {
   stone: new THREE.Color(0xa49c8c),
   concrete: new THREE.Color(0x9a9a96),
   water: new THREE.Color(0x4f86a8),
+  paveDark: new THREE.Color(0x8c8273),
+  paveLight: new THREE.Color(0xd2c9b6),
+  lamp: new THREE.Color(0xf2e0a2),
+  soil: new THREE.Color(0x4a3628),
+  trunk: new THREE.Color(0x5a3e28),
+  crown: new THREE.Color(0x3d7434),
+  crown2: new THREE.Color(0x4f8a3c),
 };
 
 export class SquareProps {
@@ -148,49 +155,132 @@ export class SquareProps {
     const L = Math.hypot(dx, dz) || 1;
     dx /= L;
     dz /= L;
-    const cx = h.doorX + dx * 1.6,
-      cz = h.doorZ + dz * 1.6;
+    // Round 27: the square's furniture is sized to the square. One boxy
+    // fountain and four tiny benches stood lost on a plaza about 12 by 10
+    // tiles, and at 30 tiles the green planters read as parked green cars.
+    // The fountain stands in the middle of the paving before the hall and
+    // grows with the open ground round it; a ring of lamps, a pattern of
+    // darker setts, trees in round stone planters at the corners, and
+    // benches round the basin.
+    // (the square's own paving, not the streets off it)
+    const sq = (x, z) => {
+      if (!paved(x, z)) return false;
+      const i = Math.floor(z) * w.w + Math.floor(x);
+      return !!(kc && kc[i] & 1);
+    };
+    const run = (ox, oz, ux, uz, max) => {
+      let t = 0;
+      while (t < max && sq(ox + ux * (t + 0.5), oz + uz * (t + 0.5))) t += 0.5;
+      return t;
+    };
+    const depth = run(h.doorX + dx * 0.6, h.doorZ + dz * 0.6, dx, dz, 12);
+    let off = Math.max(1.6, Math.min(6, depth / 2 + 0.6));
+    if (!sq(h.doorX + dx * off, h.doorZ + dz * off)) off = 1.6;
+    const cx = h.doorX + dx * off,
+      cz = h.doorZ + dz * off;
     if (!paved(cx, cz)) return;
     const y = w.heightAt(cx, cz);
     const rot = Math.atan2(dx, dz);
-    // the fountain: a stone basin, its water, a column and a bowl (about
-    // four people across, the column twice a person's height)
-    const B = 0.62;
-    this._box(cx, y, cz, rot, 0, 0, 0, B, 0.1, B, C.stone, 1);
-    this._box(cx, y, cz, rot, 0, 0.1, 0, B - 0.08, 0.004, B - 0.08, C.water, 1);
-    this._box(cx, y, cz, rot, 0, 0, 0, 0.08, 0.34, 0.08, C.stone, 1);
-    this._box(cx, y, cz, rot, 0, 0.3, 0, 0.24, 0.04, 0.24, C.stone, 1);
-    this._box(cx, y, cz, rot, 0, 0.34, 0, 0.18, 0.003, 0.18, C.water, 1);
-    // benches round it, facing in
+    const Q = Math.PI / 4;
+    // the open ground round the centre
+    let rO = 6;
+    for (let a = 0; a < 8; a++) rO = Math.min(rO, run(cx, cz, Math.cos(a * Q), Math.sin(a * Q), 6));
+    const big = rO >= 2.5;
+    // basin side (world units): about four people across on a small square,
+    // up to two tiles on a big plaza
+    const B = Math.max(0.62, Math.min(2.2, rO * 0.42));
     const c = Math.cos(rot),
       s = Math.sin(rot);
     const at = (lx, lz) => [cx + lx * c + lz * s, cz - lx * s + lz * c];
-    for (const [lx, lz, a] of [
-      [0, 0.62, Math.PI],
-      [0, -0.62, 0],
-      [0.62, 0, -Math.PI / 2],
-      [-0.62, 0, Math.PI / 2],
-    ]) {
-      const [x, z] = at(lx, lz);
-      if (paved(x, z)) this._bench({ x, z, rot: rot + a }, w.heightAt(x, z));
+    // the setts: a darker ring round the basin and, on a big plaza, an
+    // outer ring with bands out to it on the diagonals (flush with the paving)
+    const ring = (r, wdt, col) => {
+      for (const [lx, lz, sx, sz] of [
+        [0, r, 2 * r + wdt, wdt],
+        [0, -r, 2 * r + wdt, wdt],
+        [r, 0, wdt, 2 * r - wdt],
+        [-r, 0, wdt, 2 * r - wdt],
+      ])
+        this._box(cx, y + 0.002, cz, rot, lx, 0, lz, sx, 0.006, sz, col, 1);
+    };
+    this._box(cx, y + 0.001, cz, rot, 0, 0, 0, B + 0.7, 0.006, B + 0.7, C.paveDark, 1);
+    this._box(cx, y + 0.001, cz, rot + Q, 0, 0, 0, B + 0.7, 0.006, B + 0.7, C.paveDark, 1);
+    if (big) {
+      const r2 = Math.min(rO - 0.4, B * 0.5 + 2.2);
+      ring(r2, 0.14, C.paveDark);
+      ring(r2 - 0.32, 0.07, C.paveLight);
+      for (let k = 0; k < 4; k++) {
+        const a = rot + Q + k * 2 * Q;
+        const r1 = (B + 0.7) * 0.5;
+        const len = r2 * Math.SQRT2 - r1;
+        const mx = cx + Math.sin(a) * (r1 + len / 2),
+          mz = cz + Math.cos(a) * (r1 + len / 2);
+        if (paved(mx, mz)) this._box(mx, y + 0.002, mz, a, 0, 0, 0, 0.12, 0.006, len, C.paveDark, 1);
+      }
     }
-    // planters with a shrub at the square's four corners
-    for (const [lx, lz] of [
-      [1.25, 1.1],
-      [-1.25, 1.1],
-      [1.25, -0.9],
-      [-1.25, -0.9],
-    ]) {
-      const [x, z] = at(lx, lz);
+    // the fountain: an eight-sided stone basin with a rim, its water, a
+    // pedestal, a column with a wide bowl and a small top bowl
+    const rimH = 0.1 + B * 0.04;
+    for (const r0 of [rot, rot + Q]) {
+      this._box(cx, y, cz, r0, 0, 0, 0, B, rimH, B, C.stone, 1);
+      this._box(cx, y, cz, r0, 0, rimH, 0, B - 0.1, 0.004, B - 0.1, C.water, 1);
+    }
+    const colH = 0.3 + B * 0.25;
+    this._box(cx, y, cz, rot + Q, 0, 0, 0, B * 0.22, rimH + 0.06, B * 0.22, C.stone, 1);
+    this._box(cx, y, cz, rot, 0, 0, 0, 0.06 + B * 0.05, colH, 0.06 + B * 0.05, C.stone, 1);
+    const bw = 0.2 + B * 0.22;
+    for (const r0 of [rot, rot + Q]) {
+      this._box(cx, y, cz, r0, 0, colH * 0.72, 0, bw, 0.05, bw, C.stone, 1);
+      this._box(cx, y, cz, r0, 0, colH * 0.72 + 0.05, 0, bw - 0.05, 0.003, bw - 0.05, C.water, 1);
+    }
+    this._box(cx, y, cz, rot + Q, 0, colH, 0, bw * 0.45, 0.04, bw * 0.45, C.stone, 1);
+    this._box(cx, y, cz, rot, 0, colH + 0.04, 0, bw * 0.12, 0.08, bw * 0.12, C.stone, 1);
+    // benches round it, facing in (8 on a big plaza, 4 on a small square)
+    const rB = B * 0.5 + (big ? 0.55 : 0.32);
+    const nB = big ? 8 : 4;
+    for (let k = 0; k < nB; k++) {
+      const a = (k / nB) * Math.PI * 2;
+      const [x, z] = at(Math.sin(a) * rB, Math.cos(a) * rB);
+      if (paved(x, z)) this._bench({ x, z, rot: rot + a + Math.PI }, w.heightAt(x, z));
+    }
+    // lamp posts in a ring between the benches and the outer setts
+    const rL = B * 0.5 + (big ? 1.25 : 0.75);
+    const nL = big ? 8 : 4;
+    for (let k = 0; k < nL; k++) {
+      const a = ((k + 0.5) / nL) * Math.PI * 2;
+      const [x, z] = at(Math.sin(a) * rL, Math.cos(a) * rL);
       if (!paved(x, z)) continue;
       const yy = w.heightAt(x, z);
-      this._box(x, yy, z, rot, 0, 0, 0, 0.26, 0.09, 0.26, modern ? C.concrete : C.stone, 1);
-      this._box(x, yy, z, rot, 0, 0.09, 0, 0.22, 0.08, 0.22, C.greens, 1);
+      this._box(x, yy, z, rot, 0, 0, 0, 0.07, 0.04, 0.07, C.iron, 1);
+      this._box(x, yy, z, rot, 0, 0, 0, 0.028, 0.5, 0.028, C.iron, 1);
+      this._box(x, yy, z, rot + a, 0, 0.5, 0, 0.09, 0.05, 0.09, C.lamp, 1);
+      this._box(x, yy, z, rot + a, 0, 0.55, 0, 0.11, 0.015, 0.11, C.iron, 1);
+    }
+    // trees in round stone planters at the square's four corners (a grey
+    // stone ring, dark soil, a trunk and a two-tier crown: no green slab)
+    const rT = big ? Math.min(rO - 0.5, B * 0.5 + 2.0) : 1.2;
+    for (const [sx, sz] of [
+      [1, 1],
+      [-1, 1],
+      [1, -1],
+      [-1, -1],
+    ]) {
+      const [x, z] = at(sx * rT * 0.92, sz * rT * 0.85);
+      if (!paved(x, z)) continue;
+      const yy = w.heightAt(x, z);
+      const P = big ? 0.46 : 0.32;
+      for (const r0 of [rot, rot + Q]) this._box(x, yy, z, r0, 0, 0, 0, P, 0.12, P, modern ? C.concrete : C.stone, 1);
+      this._box(x, yy, z, rot + Q / 2, 0, 0.12, 0, P - 0.08, 0.005, P - 0.08, C.soil, 1);
+      const T = big ? 1 : 0.75;
+      this._box(x, yy, z, rot, 0, 0.12, 0, 0.05 * T, 0.32 * T, 0.05 * T, C.trunk, 1);
+      this._box(x, yy, z, rot + 0.3, 0, 0.12 + 0.26 * T, 0, 0.4 * T, 0.2 * T, 0.4 * T, C.crown, 1);
+      this._box(x, yy, z, rot + 0.3 + Q, 0, 0.12 + 0.3 * T, 0, 0.34 * T, 0.2 * T, 0.34 * T, C.crown2, 1);
+      this._box(x, yy, z, rot + 0.3 + Q / 2, 0, 0.12 + 0.48 * T, 0, 0.22 * T, 0.14 * T, 0.22 * T, C.crown, 1);
     }
     // and by day two stalls along the side away from the hall
     if (day)
       for (const lx of [-0.75, 0.75]) {
-        const [x, z] = at(lx, 1.6);
+        const [x, z] = at(lx, rB + 1.0);
         if (paved(x, z)) this._stall({ x, z, rot: rot + Math.PI }, w.heightAt(x, z), modern);
       }
   }
