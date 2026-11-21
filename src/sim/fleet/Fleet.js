@@ -15,7 +15,11 @@ import { VEHICLE, PICK_PX } from '../../core/scale.js';
 const _SD = { x: 0, z: 0 };
 
 const YEAR = 30; // == YEAR_SECONDS
-const FAR_ROAD = 90; // overview at the coarsest step: road vehicles beyond this update every fourth tick (Life's FAR8_DIST)
+const FAR_ROAD = 90; // overview at the coarsest step: ships beyond this update every fourth tick (Life's FAR8_DIST)
+// overview: road vehicles beyond this update at the far rate, as every person
+// in the overview does (Life's OVERVIEW_DIST schedule); round 25 measured 90
+// here, which on a Medium map held nearly every vehicle on the move
+const OV_ROAD = 24;
 // land vehicle groups for the shares of the world's land limit (landRoom)
 const LAND_GROUP = { train: 'rail', maglev: 'rail', ambulance: 'aid', fireengine: 'aid', bus: 'transit', tram: 'transit', tractor: 'transit' };
 const ROT_DIR = [
@@ -754,7 +758,7 @@ export class Fleet {
     const seaOv = cam && cam.dist > 110 && !this._noLod && !globalThis.__lod8Off;
     // (round 25) at the coarsest step (4/15, 16x and above) a vehicle on the
     // road far from the camera's target (beyond the drawn radius; in the
-    // overview, where a vehicle is a few pixels long, beyond FAR_ROAD of the
+    // overview, where a vehicle is a few pixels long, beyond OV_ROAD of the
     // target, as Life's distant walkers) updates every fourth tick with the
     // time it missed, and glides along its last stride in even steps between
     // updates, so it moves smoothly at its full pace. Trains and siege
@@ -763,7 +767,7 @@ export class Fleet {
     // At the finer steps in the overview the same holds at half rate.
     const q25 = landLod && !globalThis.__lod8Off && !globalThis.__fleetQ25Off;
     const quarter = q25 && step > 0.2;
-    const farR = q25 && cam.dist > 110 ? Math.min(landR, FAR_ROAD) : quarter ? landR : Infinity;
+    const farR = q25 && cam.dist > 110 ? OV_ROAD : quarter ? landR : Infinity;
     const farMask = quarter ? 3 : 1;
     // (and ships in the overview, gliding on their heading between updates,
     // every fourth tick beyond FAR_ROAD of the target instead of the radius)
