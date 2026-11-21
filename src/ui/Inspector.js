@@ -11,6 +11,7 @@ import { Editor } from './Editor.js';
 import { bannerURL } from './banner.js';
 import { YEAR } from '../core/time.js';
 import { favOf } from './favorites.js';
+import { MOVER_PX } from '../core/Picker.js';
 
 const TRAIT_ICON = { body: 'heart', mind: 'sparkle', spirit: 'fire', gift: 'good', scar: 'shield', trait: 'sparkle' };
 const STATUS_ICON = {
@@ -57,7 +58,7 @@ const TILE_POWER = {
   [TILE.ROAD]: 'paint-road',
   [TILE.ICE]: 'paint-ice',
 };
-const KIND_LABEL = { unit: 'Creature', building: 'Building', village: 'Village', kingdom: 'Realm', flora: 'Flora', tile: 'Land', info: 'Detail', vessel: 'Vessel', vehicle: 'Vehicle' };
+const KIND_LABEL = { unit: 'Creature', building: 'Building', plot: 'Building plot', village: 'Village', kingdom: 'Realm', flora: 'Flora', tile: 'Land', info: 'Detail', vessel: 'Vessel', vehicle: 'Vehicle' };
 // Fleets (game.fleet.inspect): cargo lines with an icon each
 const CARGO_ICON = { settlers: 'found-village', army: 'job-soldier', fish: 'spawn-fish', food: 'plant-wheat', wood: 'plant-tree', stone: 'mountain', ore: 'job-miner', gold: 'gold', goods: 'trade' };
 const isCraft = (r) => !!r?.vessel || r?.kind === 'vessel' || r?.kind === 'vehicle';
@@ -189,7 +190,29 @@ export class Inspector {
     }
     if (!list.some((r) => kindOf(r) === 'tile')) list.push(this.tileResult(hit));
     for (const r of list) if (kindOf(r) === 'building' && r.building && !isCraft(r)) safe(() => this.siteRows(r), null);
+    safe(() => this.preferBuilding(list, hit), null);
     return list;
+  }
+  // (round 25) Inside a building's footprint the building takes the click: a
+  // creature or vehicle nearby wins only when its body is within MOVER_PX of
+  // the cursor on screen (it stays one tap away among the "Also here" chips).
+  preferBuilding(list, hit) {
+    const pk = this.game.picker;
+    if (hit?.sx == null || !pk?.moverPx || list.length < 2) return;
+    const bi = list.findIndex((r) => kindOf(r) === 'building' && r.building && !isCraft(r));
+    if (bi <= 0) return;
+    const b = list[bi].building;
+    if (b.alive === false || !(hit.x >= b.tx && hit.x <= b.tx + (b.w || 1) && hit.z >= b.ty && hit.z <= b.ty + (b.h || 1))) return;
+    for (let i = 0; i < bi; i++) {
+      const o = list[i];
+      const m = o.unit || (isCraft(o) ? o.vessel || o.building : null);
+      if (!m) continue;
+      if (pk.moverPx(m, hit.sx, hit.sy) <= MOVER_PX) {
+        if (i > 0) list.unshift(list.splice(i, 1)[0]);
+        return;
+      }
+    }
+    list.unshift(list.splice(bi, 1)[0]);
   }
   // (round 23) A building site says who is at work on it and, when urban
   // renewal raises it, what it replaces.
@@ -202,14 +225,53 @@ export class Inspector {
       const t = u?.alive !== false ? u.data?.civ?.task : null;
       if (t && t.kind === 'build' && t.b === b.id) n++;
     }
+    // (round 25) progress reads as one "Built N%" bar, not as health plus a
+    // status meter; what it will house is a promise, not a fact yet
+    const site = !!b.constructing;
+    const pct = Math.round(Math.max(0, Math.min(1, site ? b.progress ?? 0 : b.upgradeProgress ?? 0)) * 100);
+    const si = r.stats.findIndex((s) => s?.[0] === 'Status');
+    if (si >= 0 && /^(under construction|being upgraded)/i.test(String(r.stats[si][1]))) r.stats[si] = ['Status', site ? 'Under construction' : 'Being upgraded'];
+    if (site) {
+      const hi = r.stats.findIndex((s) => /^health$/i.test(String(s?.[0])));
+      if (hi >= 0 && !(b.burning > 0.05)) r.stats.splice(hi, 1);
+      const ho = r.stats.findIndex((s) => s?.[0] === 'Houses');
+      if (ho >= 0) r.stats[ho] = ['Will house', String(r.stats[ho][1])];
+    }
     const at = Math.max(0, r.stats.findIndex((s) => s?.[0] === 'Status')) + 1;
-    const rows = [['Builders', n ? `${n} at work` : 'Waiting for builders']];
+    const rows = [[site ? 'Built' : 'Upgraded', `${pct}%`], ['Builders', n ? `${n} at work` : 'None yet']];
     const was = b.replaces;
     if (was) {
       const era = eraNames()[was.era];
       rows.push(['Replaces', `${buildingLabel({ type: was.type, level: was.level, style: was.style })}${era ? ` (${era} era)` : ''}`]);
     }
     r.stats.splice(at, 0, ...rows);
+  }
+  // (round 25) The card of a plot cleared by urban renewal: what stood here and
+  // what rises next, without the old building's stats.
+  plotResult(b, v) {
+    const P = v?.renewPend?.home === b.id ? v.renewPend : null;
+    const was = buildingLabel(b);
+    const era = eraNames()[b.builtEra ?? b.era ?? 0];
+    const next = P ? buildingLabel({ type: P.type, level: P.level, style: P.was?.style ?? b.style }) : null;
+    const k = v ? kingdomOf(this.game, v.kingdom) : null;
+    const stats = [
+      ['Status', P ? 'Cleared for a new building' : 'Cleared'],
+      ['Was', `${was}${era ? ` (${era} era)` : ''}`],
+    ];
+    if (next) stats.push(['Next', next], ['Builders', 'Laying out the site']);
+    return {
+      priority: 20,
+      kind: 'plot',
+      plotOf: b,
+      pendFor: P ? b.id : null,
+      village: v || null,
+      kingdom: k || null,
+      title: 'Cleared plot',
+      subtitle: `Was ${was}${next ? ` · Next: ${next}` : ''}`,
+      stats,
+      x: b.x,
+      z: b.z,
+    };
   }
   // The building urban renewal raised in place of building b (or null).
   successorOf(b) {
@@ -220,7 +282,10 @@ export class Inspector {
 
   show(hit, keepIndex = false) {
     if (!hit) return this.close();
-    this.hit = { x: hit.x, z: hit.z, tx: hit.tx ?? Math.floor(hit.x), ty: hit.ty ?? Math.floor(hit.z) };
+    // (round 25) px (world units per screen pixel) and the cursor (sx, sy) travel
+    // with the hit: Units.inspect / Fleet.inspect keep a minimum click radius in
+    // pixels, and the building-versus-creature tie-break is measured on screen
+    this.hit = { x: hit.x, z: hit.z, tx: hit.tx ?? Math.floor(hit.x), ty: hit.ty ?? Math.floor(hit.z), px: hit.px, sx: hit.sx, sy: hit.sy };
     this.results = this.collect(this.hit);
     if (!keepIndex) this.index = 0;
     this.track = this.results[this.index];
@@ -234,7 +299,8 @@ export class Inspector {
     this.applySelection();
     this.queuePortrait();
     if (isPhone()) {
-      this.setExpanded(false);
+      // (round 25) a short peek first (about 220 px), not half the screen
+      this.setExpanded('peek');
       this.frameAboveSheet();
     }
     this.game.audio?.play?.('ui-open', { volume: 0.35 });
@@ -389,6 +455,7 @@ export class Inspector {
       const air = def.cls === 'air' || def.cls === 'space';
       return { svg: uiIcon(vehicleIconName(sea ? { ...def, cls: 'sea' } : def)), tint: def.war || def.siege ? '#ff8a7a' : sea ? '#7fc8ff' : air ? '#b9d4ff' : '#d9a466' };
     }
+    if (k === 'plot') return { svg: uiIcon('build'), tint: '#e0b47a' };
     if (k === 'village') return { svg: uiIcon('found-village'), tint: this.kingdomTint(r) || '#9fbcff' };
     if (k === 'kingdom') return { svg: uiIcon('banner'), tint: this.kingdomTint(r) || '#ffd36a' };
     return { svg: uiIcon('info'), tint: '#7fdcec' };
@@ -503,7 +570,9 @@ export class Inspector {
       .map(({ o, i }) => {
         const c = this.iconFor(o);
         const shared = o.title && kindsByName.get(nameKey(o))?.size > 1;
-        const label = o.title ? (shared ? `${o.title} (${kindWord(o)})` : o.title) : KIND_LABEL[kindOf(o)];
+        // a building site says so ("Granary (site)")
+        const site = kindOf(o) === 'building' && o.building?.alive && !isCraft(o) && (o.building.constructing || o.building.upgrading) ? (o.building.constructing ? 'site' : 'upgrading') : null;
+        const label = o.title ? (site ? `${o.title} (${site})` : shared ? `${o.title} (${kindWord(o)})` : o.title) : KIND_LABEL[kindOf(o)];
         // a realm's chip carries its banner
         const ko = kindOf(o) === 'kingdom' && typeof o.kingdom === 'object' ? o.kingdom : null;
         const ico = ko?.banner ? `<img class="ws-chip2__banner" alt="" src="${bannerURL(ko.banner, ko.color, 28)}">` : c.svg;
@@ -531,7 +600,8 @@ export class Inspector {
     const editable = !!(u ? u.alive !== false : k === 'kingdom' || k === 'village' || (k === 'building' && (r.village || this.game.civ?.villages?.[r.building?.village])));
     const editing = !!this.editing && editable && this.editTarget(r) === this.editing;
     const depth = safe(() => (u ? this.unitDepth(u) : craft ? this.craftDepth(craft, r) : k === 'village' || k === 'kingdom' || k === 'building' ? this.realmDepth(r) : ''), '', 'inspector depth') || '';
-    const level = u && Number.isFinite(u.level) ? u.level : null;
+    // (round 25) the level badge only once a creature has risen above level 1
+    const level = u && Number.isFinite(u.level) && u.level > 1 ? u.level : null;
     const ownerK = craft ? kingdomOf(this.game, craft.kingdom) : null;
     // the epithet ("the Fierce") only when the title does not carry it already
     const ep0 = u ? u.title || u.data?.title || null : null;
@@ -1023,7 +1093,7 @@ export class Inspector {
 
   focusCamera() {
     const r = this.track;
-    const o = r?.unit || r?.building || r?.village;
+    const o = r?.unit || r?.building || r?.plotOf || r?.village;
     const x = o?.x ?? o?.cx ?? r?.x ?? this.hit?.x,
       z = o?.z ?? o?.cz ?? r?.z ?? this.hit?.z;
     if (x != null) this.game.focus(x, z, Math.min(this.game.cameraRig.goal.dist, 40));
@@ -1076,7 +1146,7 @@ export class Inspector {
     const o = r?.unit || r?.building;
     const rig = this.game.cameraRig;
     if (!o || o.x == null || rig.follow) return;
-    const d = rig.goal.dist * 0.24;
+    const d = rig.goal.dist * (this.expanded === "peek" ? 0.13 : 0.24);
     this.game.focus(o.x + Math.sin(rig.goal.yaw) * d, o.z + Math.cos(rig.goal.yaw) * d);
   }
 
@@ -1197,7 +1267,7 @@ export class Inspector {
       return;
     }
     const u = r.unit,
-      b = r.building;
+      b = r.building || r.plotOf;
     let at = this.hit;
     if (u) at = { x: u.x, z: u.z, tx: Math.floor(u.x), ty: Math.floor(u.z) };
     else if (b && b.x != null) at = { x: b.x, z: b.z, tx: Math.floor(b.x), ty: Math.floor(b.z) };
@@ -1220,15 +1290,19 @@ export class Inspector {
           return;
         }
       }
+      // (round 25) until then the card is the cleared plot itself, never the
+      // pulled-down house with its old health and housing
       const vv = this.game.civ?.villages?.[b.village];
-      if (vv?.renewPend?.home === b.id) {
-        const st = (r.stats || []).find((s) => s?.[0] === 'Status');
-        if (st && st[1] !== 'Pulled down for renewal: a new building rises here') {
-          st[1] = 'Pulled down for renewal: a new building rises here';
-          this.patchValues();
-        }
-        return;
+      if (!r.plotOf || (vv?.renewPend?.home === b.id ? b.id : null) !== r.pendFor) {
+        const plot = this.plotResult(b, vv);
+        this.results = [plot, ...list.filter((o) => kindOf(o) !== 'building' || o.building !== b)];
+        this.index = 0;
+        this.track = plot;
+        this._scrollTop = 0;
+        this.applySelection();
+        this.render();
       }
+      return;
     }
     if (idx < 0 && u && u.alive !== false) {
       const own = this.unitResult(u);
@@ -1314,6 +1388,10 @@ export class Inspector {
   update(dt) {
     if (!this.open) return;
     this.updatePin();
+    // (round 25) a building pulled down under the card is answered on the next
+    // frame, not at the next timed refresh
+    const tb = this.track?.building;
+    if (tb && tb.gone && !isCraft(this.track) && !this.editing) this._t = 0;
     this._t -= dt;
     if (this._t <= 0) {
       this._t = 0.35;

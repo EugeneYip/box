@@ -158,14 +158,25 @@ export class Popover {
     let ceil = 8;
     const sticky = t.closest('.ws-modal__body')?.querySelector('.ws-tech__top');
     if (sticky && !sticky.contains(t)) ceil = Math.max(ceil, sticky.getBoundingClientRect().bottom + 4);
-    // a tech card's tip opens beside the card (never over the next cards),
-    // when there is room on either side
+    // (round 25) a tech card's tip stays in the card's own column: just below
+    // the card, as wide as it (or just above when there is no room below), so it
+    // never covers the next column's cards; beside the card only as a last resort
     const side = sticky && t.closest('.ws-tech__grid');
     const roomR = r.right + 8 + pw <= vw - 8,
       roomL = r.left - pw - 8 >= 8;
-    if (side && (roomR || roomL)) {
-      x = roomR ? r.right + 8 : r.left - pw - 8;
-      y = Math.max(ceil, Math.min(innerHeight - ph - 8, r.top));
+    if (side) {
+      this.el.style.maxWidth = Math.max(200, Math.round(r.width)) + 'px';
+      const pw2 = this.el.offsetWidth,
+        ph2 = this.el.offsetHeight;
+      const floor = Math.min(innerHeight, t.closest('.ws-modal__body')?.getBoundingClientRect().bottom ?? innerHeight) - 6;
+      x = Math.max(8, Math.min(vw - pw2 - 8, r.left));
+      if (r.bottom + 6 + ph2 <= floor) y = r.bottom + 6;
+      else if (r.top - 6 - ph2 >= ceil) y = r.top - 6 - ph2;
+      else if (roomR || roomL) {
+        this.el.style.maxWidth = w + 'px';
+        x = roomR ? r.right + 8 : r.left - this.el.offsetWidth - 8;
+        y = Math.max(ceil, Math.min(innerHeight - this.el.offsetHeight - 8, r.top));
+      } else y = Math.max(ceil, Math.min(innerHeight - ph2 - 8, r.bottom + 6));
     } else if (y < ceil) {
       y = r.bottom + 8;
       if (y + ph > innerHeight - 8 && sticky) {

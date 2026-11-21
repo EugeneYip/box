@@ -1076,6 +1076,8 @@ const U = {
   // vehicles (inspector cards, Favorites rows and the Spawn Vehicle chooser)
   plane: '<path class="f" d="M16 3c1.3 0 2.1 1.4 2.1 3.4v6.2l9.9 5.8v2.7l-9.9-2.9v5.9l3.3 2.5v2l-5.4-1.4-5.4 1.4v-2l3.3-2.5v-5.9L4 21.1v-2.7l9.9-5.8V6.4C13.9 4.4 14.7 3 16 3z"/><path d="M16 3c1.3 0 2.1 1.4 2.1 3.4v6.2l9.9 5.8v2.7l-9.9-2.9v5.9l3.3 2.5v2l-5.4-1.4-5.4 1.4v-2l3.3-2.5v-5.9L4 21.1v-2.7l9.9-5.8V6.4C13.9 4.4 14.7 3 16 3z"/>',
   helicopter: '<path class="f" d="M5 18.4c0-3.5 2.9-6.4 6.6-6.4h5.6c2.1 0 3.8 1.6 3.8 3.6v3.4c0 2-1.7 3.5-3.8 3.5H9.2C6.8 22.5 5 20.7 5 18.4z"/><path d="M5 18.4c0-3.5 2.9-6.4 6.6-6.4h5.6c2.1 0 3.8 1.6 3.8 3.6v3.4c0 2-1.7 3.5-3.8 3.5H9.2C6.8 22.5 5 20.7 5 18.4zM21 16h7.5M28 12.8v6.4M14 12V8.4M3.5 8.4h21M8 26h13M10.5 22.5V26M17.5 22.5V26"/><path class="th" d="M6 16.5h6.5v-4"/>',
+  // (round 25) the Sky taxi: a cab pod under two rotors (no longer the Rescue helicopter's icon)
+  skytaxi: '<path class="f" d="M6.5 17.2c0-3 2.5-5.2 5.6-5.2h7.8c3.1 0 5.6 2.2 5.6 5.2v2.3c0 1.4-1.1 2.5-2.5 2.5H9c-1.4 0-2.5-1.1-2.5-2.5z"/><path d="M6.5 17.2c0-3 2.5-5.2 5.6-5.2h7.8c3.1 0 5.6 2.2 5.6 5.2v2.3c0 1.4-1.1 2.5-2.5 2.5H9c-1.4 0-2.5-1.1-2.5-2.5zM10 12V8.6M22 12V8.6M4 8.6h12M16.5 8.6H28M9 26h14M11.5 22v4M20.5 22v4"/><path class="th" d="M10 16.6c.6-1.7 2-2.6 3.8-2.6h4.4c1.8 0 3.2.9 3.8 2.6z"/>',
   rocket: '<path class="f" d="M16 2.8c3.6 3.4 5 7.6 5 12.6v6.6H11v-6.6c0-5 1.4-9.2 5-12.6z"/><path d="M16 2.8c3.6 3.4 5 7.6 5 12.6v6.6H11v-6.6c0-5 1.4-9.2 5-12.6zM11 16.5l-4 4.5V25l4-1.6M21 16.5l4 4.5V25l-4-1.6"/><circle cx="16" cy="11.8" r="2.2"/><path class="ts" d="M13.4 24.5 16 29.8l2.6-5.3z"/>',
   car: '<path class="f" d="M3.5 21.5v-3.6c0-1 .7-1.8 1.7-2l4.6-1 3.4-4c.7-.8 1.6-1.2 2.6-1.2h5c1.1 0 2.1.5 2.7 1.4l2.7 3.8 2.3.6c1 .3 1.7 1.2 1.7 2.2v3.8z"/><path d="M3.5 21.5v-3.6c0-1 .7-1.8 1.7-2l4.6-1 3.4-4c.7-.8 1.6-1.2 2.6-1.2h5c1.1 0 2.1.5 2.7 1.4l2.7 3.8 2.3.6c1 .3 1.7 1.2 1.7 2.2v3.8h-3M12.2 21.5h7.6M5.8 21.5H3.5M9.8 14.9h16.4M17.6 10v4.9"/><circle cx="9" cy="22" r="3.2"/><circle cx="23" cy="22" r="3.2"/>',
   train: '<path class="f" d="M12 3.5h8a4.5 4.5 0 0 1 4.5 4.5v11.5a3.5 3.5 0 0 1-3.5 3.5H11a3.5 3.5 0 0 1-3.5-3.5V8A4.5 4.5 0 0 1 12 3.5z"/><path d="M12 3.5h8a4.5 4.5 0 0 1 4.5 4.5v11.5a3.5 3.5 0 0 1-3.5 3.5H11a3.5 3.5 0 0 1-3.5-3.5V8A4.5 4.5 0 0 1 12 3.5zM11 8h10v5.5H11zM11 23l-3.5 5.5M21 23l3.5 5.5M9 26.2h14"/><circle class="s" cx="12" cy="18.3" r="1.5"/><circle class="s" cx="20" cy="18.3" r="1.5"/>',
@@ -1118,6 +1120,7 @@ export function vehicleIconName(def) {
     if (k === 'jet') return 'jet';
     if (k === 'airliner') return 'airliner';
     if (k === 'biplane') return 'biplane';
+    if (k === 'skytaxi') return 'skytaxi';
     return def?.vtol || k === 'helicopter' ? 'helicopter' : 'plane';
   }
   if (def?.rail || k === 'tram') return 'train';
