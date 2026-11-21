@@ -12,7 +12,7 @@ import { BUILDING_TYPES } from '../../sim/civ/catalog.js';
 import { CULTURES, baseCulture } from '../../sim/civ/cultures.js';
 import { SEA_LEVEL, TILE } from '../../world/constants.js';
 import { hash2 } from '../../core/Random.js';
-import { BUILDING, PROP, UNIT, FOOTPRINT } from '../../core/scale.js';
+import { BUILDING, PROP, UNIT, FOOTPRINT, VEHICLE } from '../../core/scale.js';
 
 // Models are drawn at their design size (archetypes.js: a cottage for a 2 x 2
 // plot) and brought to the world by BUILDING.scale in each instance matrix,
@@ -868,7 +868,7 @@ export class BuildingRenderer {
       const tx = Math.floor(p.x),
         tz = Math.floor(p.z);
       if (!world.inBounds(tx, tz) || world.height[tz * world.w + tx] >= SEA_LEVEL) continue;
-      this.boats.push({ x: p.x, z: p.z, ry: (b.rotation || 0) + (c.ry || 0), style: c.ship ? (b.style === 'frost' || b.style === 'vale' ? 'frost' : 'dune') : b.style, phase: b.seed * 20 + this.boats.length, s: (c.ship ? 1.75 : 1) * BS });
+      this.boats.push({ x: p.x, z: p.z, ry: (b.rotation || 0) + (c.ry || 0), style: c.ship ? (b.style === 'frost' || b.style === 'vale' ? 'frost' : 'dune') : b.style, phase: b.seed * 20 + this.boats.length, s: (c.ship ? 1.75 : 1) * VEHICLE.sea }); // (boats are craft: half size since round 24)
     }
     for (const c of an.lamps) {
       if (c.water) continue;
