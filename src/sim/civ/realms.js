@@ -433,11 +433,13 @@ export const realms = {
       if (!w.inBounds(xx, yy)) continue;
       const i = yy * w.w + xx;
       if (w.height[i] < SEA_LEVEL + 0.05 || this.use[i] !== USE.FREE) continue;
+      const shore = w.isCoastal(xx, yy); // the waterline keeps its curve (planner._flatten)
       const t = w.type[i];
       if (t === TILE.ROCK || t === TILE.SNOW) w.setType(xx, yy, w.temperature[i] < 0.3 ? TILE.TUNDRA : TILE.GRASS);
       const f = w.flora[i];
       if (f === FLORA.BOULDER || f === FLORA.ROCK_SMALL) w.setFlora(xx, yy, FLORA.NONE);
       const kk = d <= 1.5 ? 1 : 0.85 * Math.max(0, 1 - (d - 1.5) / (R - 0.5));
+      if (shore && target > w.height[i]) continue;
       w.height[i] = Math.max(SEA_LEVEL + 0.06, w.height[i] + (target - w.height[i]) * kk);
     }
     const r = Math.ceil(R);

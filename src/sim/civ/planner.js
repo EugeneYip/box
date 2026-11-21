@@ -127,7 +127,23 @@ export const planner = {
         n++;
       }
     const target = Math.max(minH, sum / Math.max(1, n));
-    for (let y = ty; y < ty + fh; y++) for (let x = tx; x < tx + fw; x++) w.height[y * w.w + x] = target;
+    // The waterline runs between a water tile and its first land neighbor, so
+    // raising those shore tiles snapped river banks and coasts to the tile
+    // grid: straight banks with right-angle corners round every town. Shore
+    // tiles are never raised (a building there stands on its foundation) and
+    // never filled; the ground one tile further in eases only half as much.
+    const shore = (x, y) => w.isCoastal(x, y);
+    const nearShore = (x, y) => {
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if ((dx || dy) && w.inBounds(x + dx, y + dy) && shore(x + dx, y + dy)) return true;
+      return false;
+    };
+    for (let y = ty; y < ty + fh; y++)
+      for (let x = tx; x < tx + fw; x++) {
+        const i = y * w.w + x;
+        if (w.height[i] < SEA_LEVEL && minH < SEA_LEVEL + 0.2) continue; // no building fills water (docks excepted)
+        if (target > w.height[i] && shore(x, y)) continue;
+        w.height[i] = target;
+      }
     for (let ring = 1; ring <= 2; ring++) {
       const k = ring === 1 ? 0.7 : 0.3;
       for (let y = ty - ring; y < ty + fh + ring; y++)
@@ -137,7 +153,9 @@ export const planner = {
           const i = y * w.w + x;
           if (w.height[i] < SEA_LEVEL + 0.02) continue;
           if (this.use[i] === USE.BUILDING) continue;
-          w.height[i] = Math.max(SEA_LEVEL + 0.03, lerp(w.height[i], target, k));
+          if (shore(x, y)) continue;
+          const kk = nearShore(x, y) ? k * 0.5 : k;
+          w.height[i] = Math.max(SEA_LEVEL + 0.03, lerp(w.height[i], target, kk));
         }
     }
     w.markDirty('height', tx - 2, ty - 2, tx + fw + 1, ty + fh + 1);
