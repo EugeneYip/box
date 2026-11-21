@@ -10,7 +10,9 @@ export class CameraRig {
     this.game = game;
     const world = game.world;
     this.camera = new THREE.PerspectiveCamera(38, innerWidth / innerHeight, 0.5, 2000);
-    this.minDist = 7;
+    // round 24: people and vehicles are half size, so the camera may come a
+    // little closer (a person stays readable at the closest zoom)
+    this.minDist = 5;
     // a wide (2:1) map is framed by its width on a landscape screen; squares
     // are unchanged (the height wins). This is the reference distance: the
     // pitch tops out here, and the renderers' zoom level reads 1 from here on.
@@ -307,6 +309,15 @@ export class CameraRig {
       this.target.y + Math.sin(pitch) * c.dist,
       c.z + Math.cos(c.yaw) * horiz,
     );
+    // close to the ground on a slope, keep the camera above the hillside
+    // behind it
+    if (c.dist < 30) {
+      const W = this.game.world;
+      const hx = Math.min(W.w - 1, Math.max(0, cam.position.x)),
+        hz = Math.min(W.h - 1, Math.max(0, cam.position.z));
+      const floor = Math.max(0, W.heightAt(hx, hz)) + 0.8;
+      if (cam.position.y < floor) cam.position.y = floor;
+    }
     if (this.shake > 0) {
       const s = this.shake * 0.35 * Math.min(1, c.dist / 40);
       const t = this._shakeT * 40;
