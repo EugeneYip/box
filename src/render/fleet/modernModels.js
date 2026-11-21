@@ -376,8 +376,8 @@ function deckJet(g, x, y, z, ry, s = 1) {
   g.translate(x, y, z);
   g.rotateY(ry);
   g.scale(s, s, s);
-  const C = 0xb4bac0,
-    C2 = 0x8e959c;
+  const C = 0xb2c0ce,
+    C2 = 0x8a98a8;
   g.box(0, 0.004, 0, 0.3, 0.045, 0.05, C, { top: shade(C, 1.08) });
   g.push();
   g.translate(0.15, 0.026, 0);
@@ -401,9 +401,15 @@ function carrier(lo) {
   // grey: a lighter one went tan under the warm sun and the color grade, and
   // the flight deck read as copper, rounds 16 and 18; a neutral mid grey
   // deck, round 20, when the soot of her damage gave it a warm brown cast.)
-  const HULL = 0x6f767e,
-    FDECK = 0x5f656b,
-    ISL = 0x7a828b;
+  // (round 22: still read copper. The mesh is not to blame: its vertex
+  // colours are neutral and a realm-colour test leaves it grey, but the
+  // warm day light and the grade turn every neutral grey warm (asphalt
+  // #3e4044 comes out 57,27,9), and against the blue sea a neutral deck
+  // reads as copper. So the steel is a cool blue-grey that lands near
+  // neutral under the day light.)
+  const HULL = 0x687684,
+    FDECK = 0x58687a,
+    ISL = 0x748492;
   const st = steelHull(g, { L: 4.6, W: 0.8, H: 0.36, D: 0.3, col: HULL, low: 0x6a2c26, deck: FDECK, band: 0.025, bowRise: 0.05, rake: 0.2, n: 12, fullB: 0.7 });
   // the flight deck overhangs the hull to port; the island stands to starboard
   const dy = st[6].gy + 0.06;
@@ -781,7 +787,7 @@ function tractor(lo) {
     for (const s of [-1, 1]) wheelR(g, 0.22, 0.08, s * 0.12, -1, 0.08);
     g.setAnim(0);
     g.box(-0.45, 0.04, 0, 0.18, 0.06, 0.42, 0x6a6a64); // the harrow behind
-    figure(g, -0.12, 0.16, 0, 5, 0.7); // (the driver at a person's size: the tractor is drawn at VEHICLE.road)
+    figure(g, -0.12, 0.16, 0, 5, 0.95); // (the driver at a person's size: the tractor is drawn at VEHICLE.road)
   }
   return done(g, 0.7, [], [{ x: 0.2, y: 0.42, z: 0 }]);
 }

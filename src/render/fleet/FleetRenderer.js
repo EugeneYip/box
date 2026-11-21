@@ -399,6 +399,7 @@ export class FleetRenderer {
         }
         if (Math.abs(v.x - cx) > viewR || Math.abs(v.z - cz) > viewR) continue;
         if (farCut && farHidden(v)) continue;
+        if (v.garaged && v.state === 'parked') continue; // armour garaged in its barracks
         this._drawVehicle(v, C);
         visible++;
       }
