@@ -378,12 +378,16 @@ export const modern = {
       gx = Math.floor(x1),
       gz = Math.floor(z1);
     if (!w.inBounds(sx, sz) || !w.inBounds(gx, gz)) return null;
+    // (round 23: the open ground dearer, fenced fields dearer still, so a
+    // vehicle keeps to the streets round a block instead of cutting across
+    // lawns and plots, leaving them only for the last stretch to a fire)
     const cost = (i) => {
       if (use && use[i] === USE.ROAD) return 1;
       if (use && use[i] === USE.BUILDING) return Infinity;
       const x = i % w.w,
         y = (i / w.w) | 0;
-      return w.isWalkable(x, y) ? 3 : Infinity;
+      if (!w.isWalkable(x, y)) return Infinity;
+      return use && use[i] === USE.PLOT ? 24 : 6;
     };
     const p = civPath(w, sx, sz, gx, gz, cost, maxNodes, 1);
     if (!p || !p.length) return null;
