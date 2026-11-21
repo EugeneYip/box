@@ -554,10 +554,12 @@ export const tech = {
     // 372 (round 24: 323). Once the year has passed, every realm's hold on
     // that era is lifted until one enters, and the leader is hurried the
     // harder the later it is.
-    // (two years' grace, so an era its leader enters on time keeps its
-    // followers' own years: a burst of held realms would enter with it)
     const nextE = top + 1;
-    const overdue = ERA_YEAR[nextE] != null && nextE <= this.eraCap() && year > (ERA_YEAR[nextE] + 2) / tsp ? year - ERA_YEAR[nextE] / tsp : 0;
+    const overdue = ERA_YEAR[nextE] != null && nextE <= this.eraCap() && year > ERA_YEAR[nextE] / tsp ? year - ERA_YEAR[nextE] / tsp : 0;
+    // (the holds lift after two years' grace, so an era its leader enters
+    // on time keeps its followers' own years: a burst of held realms would
+    // enter with it)
+    const release = overdue > 2 / tsp;
     if (ERA_YEAR[nextE] != null && (nextE >= 5 || overdue > 0)) {
       let best = null,
         be = Infinity;
@@ -678,7 +680,7 @@ export const tech = {
         const ts = tsp;
         const lead = k === leader;
         // an overdue era no realm has entered: no follower's delay (no hold)
-        const open = overdue > 0 && next === nextE;
+        const open = release && next === nextE;
         const target = (ERA_YEAR[next] + (lead || open ? 0 : FOLLOW_YEARS * followShare(k.id, next))) / ts;
         const eta = this._eraNeed(k) / ((Math.min(gain, eraGain) / dt) * YEAR);
         k.eraEta = eta;
@@ -688,7 +690,7 @@ export const tech = {
         // was Industrial by Year 130, against 112.5), and a follower past its
         // own year up to FOLLOW_HURRY (eleven of sixteen realms were still
         // Industrial 77 years after the first Modern one)
-        const late = lead && open ? Math.min(3, 1 + overdue / 8) : 1;
+        const late = lead && overdue > 0 && next === nextE ? Math.min(3, 1 + overdue / 8) : 1;
         const hurry = lead ? PACE_LEAD * Math.max(1, ts) * late : left > 1 ? 1 : FOLLOW_HURRY;
         let f = left > 1 ? eta / left : hurry;
         f = Math.max(PACE_MIN, Math.min(hurry, f));
