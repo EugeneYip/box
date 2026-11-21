@@ -11,6 +11,13 @@ const relKey = (a, b) => (a < b ? a * 4096 + b : b * 4096 + a);
 // rising needs to crown a realm of its own: a lone town of a dozen families
 // goes over to a neighbour or wins concessions and stays.
 const REALM_GRACE = 15;
+// (and an older realm under KIN_POP people, every KIN_YEARS: _keepYoungRealms)
+const KIN_POP = 14;
+const KIN_YEARS = 5;
+// The odds a soldier struck down in war lives, wounded (spareFallen): any
+// realm's, and a small realm's (two towns or fewer, or under 60 people).
+const SPARE = 0.3;
+const SPARE_SMALL = 0.55;
 const REALM_MIN_POP = 30;
 
 export const politics = {
@@ -402,8 +409,9 @@ export const politics = {
         [small, big] = A.villages.length <= B.villages.length ? [A, B] : [B, A];
         if (small.villages.length > 2 || big.villages.length < small.villages.length + 1) continue;
         // a young crown keeps its freedom a while (unions were half of all
-        // fallen realms, most of them at 25-30 years)
-        if (now - small.founded < YEAR * 40) continue;
+        // fallen realms, most of them at 25-30 years; round 23: still two
+        // thirds of them, at 40-60 years)
+        if (now - small.founded < YEAR * 60) continue;
       }
       if (small.player?.name) continue;
       // a seat or must-exist city in the map's first 150 years changes hands
@@ -488,7 +496,9 @@ export const politics = {
     }
     for (const a of this.armies) if (a.kingdom === k.id) this._disbandArmy(a);
     const cap = this.villages[k.capital];
-    this._note(`${k.name} has fallen`, 'bad', cap ? { x: cap.cx, z: cap.cz } : null);
+    // (a crown joined to another in union has not fallen: the union is announced)
+    if (cause !== 'union') this._note(`${k.name} has fallen`, 'bad', cap ? { x: cap.cx, z: cap.cz } : null);
+    else this._history(`${k.name} is joined to another crown in union`, 'info', cap ? { x: cap.cx, z: cap.cz } : null);
     this.colorVersion++;
   },
 
@@ -497,14 +507,21 @@ export const politics = {
   // refilled: young families come from the nearest big town on its land of a
   // realm not at war with it (round 22: two realms fell within ten years of
   // their founding, their last town emptied).
+  // An older crown down to its last dozen people is helped too, less often
+  // (every KIN_YEARS at most): kin, refugees and drifters from the realms
+  // around come to its seat (round 23: lone one-town realms dwindled and
+  // fell once the world was full, as no newcomer came to a full world).
   _keepYoungRealms() {
     const now = this.game.time.total;
     for (const k of this.kingdoms) {
-      if (!k.alive || !k.villages.length || now - k.founded >= YEAR * REALM_GRACE || k.player?.name) continue;
+      if (!k.alive || !k.villages.length || k.player?.name) continue;
+      const young = now - k.founded < YEAR * REALM_GRACE;
+      if (!young && now - (k.kinT ?? -1e9) < YEAR * KIN_YEARS) continue;
       let pop = 0;
       for (const vid of k.villages) pop += this.villages[vid]?.pop || 0;
       const v = this.villages[k.capital];
-      if (pop >= 10 || !v?.alive) continue;
+      if (pop >= (young ? 10 : KIN_POP) || !v?.alive) continue;
+      if (!young) k.kinT = now;
       let src = null,
         sd = Infinity;
       for (const o of this.villages) {
@@ -1115,6 +1132,42 @@ export const politics = {
     }
     a.state = 'march';
     a.t = this.game.time.total;
+  },
+
+  // A soldier struck down in battle is not always slain: often he is left
+  // wounded on the field and carried home, out of this war's fighting (he
+  // counts among his realm's war losses all the same, so wars weary as
+  // before). A small realm's men are spared more often: round 23 found war
+  // took twice as many people from realms of one or two towns as old age,
+  // and these realms dwindled while their births could not keep up.
+  // Called by Units.damage before a death; true when the soldier lives.
+  spareFallen(u, src) {
+    if (u.species !== 'human' || src?.species !== 'human' || u.job !== 'soldier') return false;
+    if (!(u.kingdom >= 0 && src.kingdom >= 0) || u.kingdom === src.kingdom || !this.atWar(u.kingdom, src.kingdom)) return false;
+    const k = this.kingdoms[u.kingdom];
+    if (!k?.alive || k.ruler === u.id) return false;
+    const small = k.villages.length <= 2 || (k.population || 0) < 60;
+    if (!this.rng.chance(small ? SPARE_SMALL : SPARE)) return false;
+    u.hp = Math.max(1, u.maxHp * 0.2);
+    this.game.units.addStatus?.(u, 'wounded');
+    k.warLosses++;
+    // out of the fight: his army lets him go and he walks home a villager
+    // (the jobs are dealt again at home); the foe looks for another
+    const a = this.armies.find((x) => x.id === u.data.civ?.army);
+    if (a) {
+      a.units.delete(u);
+      if (a.bearer === u.id) a.bearer = a.units.values().next().value?.id ?? -1;
+    }
+    u.job = null;
+    if (u.data.civ) {
+      u.data.civ.army = null;
+      u.data.civ.task = null;
+    }
+    u.data.speedMul = 1;
+    const U = this.game.units;
+    U.disengage?.(u);
+    if (src.combat?.target === u.id) U.disengage?.(src);
+    return true;
   },
 
   _makeRefugee(u, kingdom) {
