@@ -979,10 +979,12 @@ export class Units {
         u.x = nx;
         u.z = nz;
       }
-      const f = Math.exp(-dt * SEP_FADE);
-      u.sepx *= f;
-      u.sepz *= f;
-      if (Math.abs(u.sepx) + Math.abs(u.sepz) < 0.03) u.sepx = u.sepz = 0;
+      if (!globalThis.__mv23Off) {
+        const f = Math.exp(-dt * SEP_FADE);
+        u.sepx *= f;
+        u.sepz *= f;
+        if (Math.abs(u.sepx) + Math.abs(u.sepz) < 0.03) u.sepx = u.sepz = 0;
+      }
     }
     if (!u.target && !u.path) {
       u.spd *= Math.exp(-dt * 10);
@@ -1023,7 +1025,7 @@ export class Units {
     // person stands on the spot, or a wall corner is in the way): that is
     // close enough, rather than treading on the spot pushed to and fro
     let near = false;
-    if (final && d < 0.5) {
+    if (final && d < 0.5 && !globalThis.__mv23Off) {
       if (u._adFor !== u.target || d < u._ad - 0.03) {
         u._adFor = u.target;
         u._ad = d;
@@ -1070,12 +1072,13 @@ export class Units {
     let da = want - u.heading;
     while (da > Math.PI) da -= Math.PI * 2;
     while (da < -Math.PI) da += Math.PI * 2;
-    u.heading += da * Math.min(1, dt * def.turnRate * (da > 1.2 || da < -1.2 ? 2 : 1)); // (round 23: turning about is quicker)
+    const mv23 = !globalThis.__mv23Off; // (round 23 switch, for A/B measurement)
+    u.heading += da * Math.min(1, dt * def.turnRate * (mv23 && (da > 1.2 || da < -1.2) ? 2 : 1)); // (round 23: turning about is quicker)
     // (round 23: facing more than a right angle away, a walker turns about
     // first instead of drifting backwards or sideways at a sixth of its pace
     // with its feet walking the other way)
     const ca = Math.cos(da);
-    const facing = ca >= 0.5 ? 0.35 + 0.65 * ca : Math.max(0.03, ca * 1.36);
+    const facing = !mv23 ? Math.max(0.15, 0.35 + 0.65 * ca) : ca >= 0.5 ? 0.35 + 0.65 * ca : Math.max(0.03, ca * 1.36);
     const stepLen = Math.min(d, u.spd * facing * dt);
     let nx = u.x + (dx / d) * stepLen,
       nz = u.z + (dz / d) * stepLen;
@@ -1181,7 +1184,7 @@ export class Units {
     // (a third of its pace at most)
     const cap = (u.def.speed || 1) * 0.3;
     const sl = Math.hypot(sx, sz) * 1.6;
-    if (sl > cap) {
+    if (sl > cap && !globalThis.__mv23Off) {
       sx *= cap / sl;
       sz *= cap / sl;
     }
@@ -2423,7 +2426,7 @@ export class Units {
       const moved = Math.hypot(mvx, u.z - u.pz) / udt;
       // (round 23: the legs stop with the body, not a third of a second later
       // walking on the spot)
-      u.speedNow += (moved - u.speedNow) * Math.min(1, udt * (moved < u.speedNow * 0.5 ? 22 : 8));
+      u.speedNow += (moved - u.speedNow) * Math.min(1, udt * (moved < u.speedNow * 0.5 && !globalThis.__mv23Off ? 22 : 8));
       if (lod && moved > 0) {
         // the stride of a distant walker (updated every 2nd or 4th tick) is
         // shown over the ticks until its next update (see the skip above)
