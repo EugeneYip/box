@@ -20,9 +20,30 @@ Eras 0–3 (Hearth, Bronze, Iron, Enlightened) are unchanged. Four eras follow:
 | 7 | Future | Arcologies, green towers and clean light |
 
 - Two technologies of an era carry a realm into it (as today).
-- Pacing on a square Medium map at default research speed: Industrial around
-  Year 200–260, Modern around 300–360, Atomic around 400–460, Future after 500.
-  Big maps reach each era on a similar schedule (as round 13 tuned for eras 0–3).
+- Pacing at default research speed, on every map (Medium, Large, the World Map
+  and the regional maps), for the first realm into each era:
+
+  | Era | First realm (target year, `ERA_YEAR` in `src/sim/civ/tech.js`) |
+  |---|---|
+  | Bronze | around Year 45 |
+  | Iron | around Year 100 |
+  | Enlightened | around Year 160 |
+  | Industrial | Year 200–260 (225) |
+  | Modern | Year 300–360 (325) |
+  | Atomic | Year 400–460 (425) |
+  | Future | after Year 500 (515) |
+
+  A realm whose study would carry it into its next era before its year is
+  slowed toward it; the world's leading realm, if late, is hurried a little.
+  The other realms follow the leader over the next decades: each realm's own
+  year for an era lies up to 55 years after the era's year (a fixed share per
+  realm and era), so most realms enter an era 30–60 years after the first.
+  Catch-up from neighbors and the laggard floors only lift realms that are
+  behind their own year; they never carry a realm into an era early. Big
+  maps' extra research (`BIG_RESEARCH`) is held to the same schedule. A
+  faster `civTechSpeed` divides every target year by the speed (round 23:
+  eras 1–3 were unpaced before, and the World Map's realms stood in the
+  Enlightened era by Year 40–70).
 - New World Law `civEraCap` (civilization group): the latest era realms may
   reach, Hearth…Future, default Future. A player who wants a medieval world sets
   Enlightened.

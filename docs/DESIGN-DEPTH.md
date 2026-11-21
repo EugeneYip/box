@@ -140,8 +140,9 @@ Each kingdom has:
   scholars, temples, libraries and wise kings, scaled by `civTechSpeed` and the age's
   `techRate`. Research only happens while the `civTechnology` law is on. On big maps
   (the World Map and its regions, `planner._bigMap()`) research runs up to 1.6x faster
-  and a tech a realm in contact already knows comes sooner, so the Enlightened era
-  arrives within the first century there too; Medium keeps its pace. In an age with
+  and a tech a realm in contact already knows comes sooner; every map is then
+  held to the same era schedule (first realm into Bronze around Year 45, Iron
+  around 100, Enlightened around 160: `docs/MODERN-ERAS.md`). In an age with
   `techRate` above 1 (Lore), realms in contact with others also gain a little from each.
 - `k.techs`, a `Set` of the technologies it has learned.
 - `k.era`, an index from 0 to 3.

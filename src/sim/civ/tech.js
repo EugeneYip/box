@@ -93,7 +93,7 @@ export const TECHS = [
   // city development, urban planning and defense against the sky. These are
   // SIDE ARTS (`side: true`): a share of each realm's learning goes to them
   // beside its main study (SIDE_SHARE), they never count toward an era (so
-  // eras 0-3 keep their round-13 pacing) and a side art of an era opens once
+  // the era pacing counts main arts only) and a side art of an era opens once
   // the realm has entered that era. Each answers a danger of the world.
   // Food (famine, hard winters, sieges)
   { id: 'husbandry', side: true, branch: 'food', name: 'Animal Husbandry', era: 1, cost: 70, requires: ['agriculture'], description: 'Herds of sheep, goats and cattle beside the farms.', effects: { harvest: 1.04 }, unlocks: ['Pens and pastures with sheep, goats and cattle beside the farms', 'Food from the herds; less famine on poor soil'], builds: ['pasture'] },
@@ -494,7 +494,7 @@ export const tech = {
     let opts = this._availableTechs(k);
     if (!opts.length) return null;
     // the old arts first: no modern art while one up to the Enlightened era
-    // is still to learn (round 13's pacing of eras 0-3 stays as it was)
+    // is still to learn (the pacing's _eraNeed counts them)
     if (opts.some((t) => t.era <= 3)) opts = opts.filter((t) => t.era <= 3);
     const traits = this.cultureDef(k.culture)?.traits || [];
     // a realm of harbours and islands takes to the sea first (an island
