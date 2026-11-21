@@ -162,15 +162,27 @@ const SIDE_SHARE = 0.25;
 const SIDE_ALONE = 0.6;
 export const SIDE_TECHS = TECHS.filter((t) => t.side);
 // Era pacing (docs/MODERN-ERAS.md): the year the world's first realm should
-// enter each modern era on a Medium map at the default research speed. A
-// realm whose study would carry it into the next era well before its year is
-// slowed toward it, and the world's leading realm, if late, is hurried a
-// little: the realms' research rates differed twenty-fold between worlds
-// (300 to 8,000 a year) and the modern momentum amplified it, so one world
-// reached the Future by Year 360 and another not by 600.
-export const ERA_YEAR = { 4: 225, 5: 325, 6: 425, 7: 515 };
-const PACE_MIN = 0.12;
+// enter each era on any map at the default research speed. A realm whose
+// study would carry it into the next era before its year is slowed toward
+// it, and the world's leading realm, if late, is hurried a little: the
+// realms' research rates differed twenty-fold between worlds (300 to 8,000 a
+// year) and the modern momentum amplified it, so one world reached the Future
+// by Year 360 and another not by 600. Eras 1-3 were unpaced until round 23:
+// the World Map's realms stood in the Enlightened era by Year 40-70 and a
+// Medium world's in the Iron era by Year 70.
+export const ERA_YEAR = { 1: 45, 2: 100, 3: 160, 4: 225, 5: 325, 6: 425, 7: 515 };
+const PACE_MIN = 0.08;
 const PACE_LEAD = 2.2; // most the leading realm is hurried when late
+// The other realms follow the leader into an era over the next decades, not
+// all in the same year: each realm's own year for an era lies up to
+// FOLLOW_YEARS after the era's year (a fixed share per realm and era, so the
+// last into one age is not always the last into the next).
+const FOLLOW_YEARS = 55;
+function followShare(kid, era) {
+  let h = (Math.imul((kid | 0) + 1, 0x9e3779b1) ^ Math.imul(era + 7, 0x85ebca77)) >>> 0;
+  h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d) >>> 0;
+  return ((h ^ (h >>> 13)) >>> 0) / 4294967296;
+}
 // Catch-up: an art that a neighbour, ally or trade partner already knows is
 // learned far sooner than it was first invented, the more so the further
 // behind the realm stands (x2.4 one era behind, x5.7 two, x13 three, x32
@@ -353,13 +365,50 @@ export const tech = {
     add(key);
     let n = 0;
     for (const t of TECHS) if (t.era === next && !t.side && (known.has(t.id) || seen.has(t.id))) n++;
-    if (n < 2) {
-      // the cheapest other art of that era open after the key's chain
-      let c = Infinity;
-      for (const t of TECHS) if (t.era === next && !t.side && !known.has(t.id) && !seen.has(t.id) && t.requires.every((r) => known.has(r) || seen.has(r))) c = Math.min(c, t.cost);
-      if (c < Infinity) cost += c * (2 - n);
+    // the cheapest other arts of that era after the key's chain, each with
+    // the arts it requires (the Enlightened era has no key art)
+    const chain = (id, acc) => {
+      if (known.has(id) || seen.has(id) || acc.has(id)) return 0;
+      acc.add(id);
+      const t = techById[id];
+      let c = t ? t.cost : 0;
+      if (t) for (const r of t.requires) c += chain(r, acc);
+      return c;
+    };
+    for (; n < 2; n++) {
+      let c = Infinity,
+        pick = null;
+      for (const t of TECHS) {
+        if (t.era !== next || t.side || known.has(t.id) || seen.has(t.id)) continue;
+        const acc = new Set();
+        const x = chain(t.id, acc);
+        if (x < c) (c = x), (pick = acc);
+      }
+      if (!pick) break;
+      for (const id of pick) seen.add(id);
+      cost += c;
     }
-    if (k.researching && seen.has(k.researching)) cost -= Math.min(k.knowledge || 0, techById[k.researching]?.cost || 0);
+    if (next >= 4) {
+      // the old arts come first (_chooseResearch): every one still unknown
+      for (const t of TECHS) if (t.era <= 3 && !t.side && !known.has(t.id) && !seen.has(t.id)) cost += t.cost;
+    } else {
+      // the next era's arts open only once enough of this era's are known
+      // (_availableTechs): three of the Hearth, two of a later era
+      const cur = next - 1;
+      let have = 0;
+      const left = [];
+      for (const t of TECHS) {
+        if (t.era !== cur || t.side) continue;
+        if (known.has(t.id) || seen.has(t.id)) have++;
+        else left.push(t.cost);
+      }
+      left.sort((a, b) => a - b);
+      for (let i = 0; i < (cur === 0 ? 3 : 2) - have && i < left.length; i++) cost += left[i];
+    }
+    // (an art under study off that path is finished first)
+    const rt = k.researching && k.researching !== 'mastery' ? techById[k.researching] : null;
+    if (rt && !known.has(rt.id) && !seen.has(rt.id)) cost += rt.cost;
+    if (rt) cost -= Math.min(k.knowledge || 0, rt.cost);
     return Math.max(0, cost);
   },
 
@@ -567,12 +616,12 @@ export const tech = {
         }
       }
       let gain = rate * speed * dt;
-      k.knowRate = rate * speed * (k.pace ?? 1); // knowledge a second (the tech panel and the pacing census read it)
       if (!k.researching || k.techs.has(k.researching)) k.researching = this._chooseResearch(k) || 'mastery';
       // the old arts all known and a modern one under study: Mastery goes on beside it
       const rt = k.researching !== 'mastery' ? techById[k.researching] : null;
+      let m = 0;
       if (rt && rt.era >= 4) {
-        const m = gain * MASTERY_SHARE;
+        m = gain * MASTERY_SHARE;
         gain -= m;
         let n = 0,
           all = 0;
@@ -582,28 +631,33 @@ export const tech = {
           if (t.era === rt.era) n++;
         }
         gain *= 1 + MOMENTUM * n + CARRY * all;
-        // pacing: toward the year of the next era (ERA_YEAR, sooner at a
-        // higher research speed)
-        const next = (k.era || 0) + 1;
-        if (ERA_YEAR[next] != null && next <= this.eraCap() && gain > 0) {
-          const target = ERA_YEAR[next] / Math.max(0.25, this.law('civTechSpeed', 1));
-          const eta = this._eraNeed(k) / ((gain / dt) * YEAR);
-          const left = target - year;
-          const lead = k === leader;
-          let f = left > 1 ? eta / left : PACE_LEAD;
-          f = Math.max(PACE_MIN, Math.min(lead ? PACE_LEAD : 1, f));
-          k.pace = k.pace == null ? f : k.pace + (f - k.pace) * 0.25;
-          gain *= k.pace;
-        } else k.pace = 1;
+      }
+      if (floor > 0 && rt && gain < floor * speed * dt) gain = floor * speed * dt;
+      // pacing: toward the realm's own year for its next era (ERA_YEAR plus
+      // its follower's delay; sooner at a higher research speed). It comes
+      // after the catch-up and the laggard floor, so neither carries a realm
+      // into an era before its year: they only lift those behind it.
+      const next = (k.era || 0) + 1;
+      if (rt && ERA_YEAR[next] != null && next <= this.eraCap() && gain > 0) {
+        const ts = Math.max(0.25, this.law('civTechSpeed', 1));
+        const lead = k === leader;
+        const target = (ERA_YEAR[next] + (lead ? 0 : FOLLOW_YEARS * followShare(k.id, next))) / ts;
+        const eta = this._eraNeed(k) / ((gain / dt) * YEAR);
+        const left = target - year;
+        let f = left > 1 ? eta / left : PACE_LEAD;
+        f = Math.max(PACE_MIN, Math.min(lead ? PACE_LEAD : 1, f));
+        k.pace = k.pace == null ? f : k.pace + (f - k.pace) * 0.25;
+        gain *= k.pace;
+      } else k.pace = 1;
+      // knowledge a second, before the modern momentum (the tech panel, the
+      // pacing census and a satellite's year of research read it)
+      k.knowRate = Math.max(rate, rt ? floor : 0) * speed * (k.pace ?? 1);
+      if (m) {
         k.masteryKnowledge = (k.masteryKnowledge || 0) + m;
         if (k.masteryKnowledge >= this.masteryCost(k)) {
           k.masteryKnowledge -= this.masteryCost(k);
           this._gainMastery(k);
         }
-      }
-      if (floor > 0 && k.researching !== 'mastery' && gain < floor * speed * dt) {
-        gain = floor * speed * dt;
-        k.knowRate = Math.max(k.knowRate, floor * speed);
       }
       k.knowledge += gain;
       // the side arts (breadth branches) beside the main study
