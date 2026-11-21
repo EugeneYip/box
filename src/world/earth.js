@@ -1349,7 +1349,7 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
         // a known city keeps up to ~12 tiles of land toward the border,
         // widening into a cape around it
         for (const [cx, cy, ce, sl, rk] of keepPts) {
-          const dk = Math.hypot(x - cx, y - cy) * (1 + fbm(nBank, x / 13 - 4.4, y / 13 + 6.1, 2) * 0.6); // (a ragged headland, not a disc)
+          const dk = Math.hypot(x - cx, y - cy) * (1 + fbm(nBank, x / 34 - 4.4, y / 34 + 6.1, 2) * 0.45); // (an uneven headland, not a disc, and not frayed)
           if (dk < rk) coast = Math.min(coast, Math.max(6, ce - 12 + Math.max(0, dk - 9) * sl));
         }
         fadeDc[i] = e - coast; // tiles inland of the fading coast
