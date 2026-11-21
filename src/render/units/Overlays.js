@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { UNIT } from '../../core/scale.js';
 
 // Cheap per-creature overlays, each a single instanced draw call:
 //   - ground decals: soft contact shadows, far-zoom LOD dots, selection ring
@@ -732,7 +733,8 @@ export class Overlays {
     this._m = new THREE.Matrix4();
     this._q = new THREE.Quaternion();
     this._v = new THREE.Vector3();
-    this._s = new THREE.Vector3(1, 1, 1);
+    // arrows were drawn beside a 0.6x person; they shrink with the archers
+    this._s = new THREE.Vector3(1, 1, 1).multiplyScalar(UNIT.rel);
   }
   begin() {
     this.ground.begin();

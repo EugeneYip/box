@@ -18,14 +18,23 @@
 //             radius, territory, streets, field plots, walls, harbours, berths
 //
 // Modern-era builders: model at the design size and multiply by these.
+//
+// Round 24 (docs/WORLD-SCALE.md): everything that moves (people, animals,
+// cars, trains, ships, aircraft) is half its round-14 size, so streets and
+// squares have room to spare; buildings, trees and footprints keep theirs.
 
-const S = 0.6;
+const S = 0.6; // the land: buildings, props, footprints (round 14)
+const M = 0.3; // what moves: creatures and vehicles (round 24, half of S)
 
 export const UNIT = {
-  scale: S,
+  scale: M,
+  // the creature factor relative to the round-14 world (0.6): gaps and
+  // overlays that were tuned in world units beside a 0.6x person (talking
+  // circles, ranks, icons over heads) multiply by it
+  rel: M / S,
   // melee reach shrinks with the bodies (ranged reach is about the world)
   reach(r) {
-    return r <= 1.5 ? r * S : r;
+    return r <= 1.5 ? r * M : r;
   },
 };
 
@@ -34,17 +43,21 @@ export const BUILDING = {
 };
 
 export const VEHICLE = {
-  sea: S,
-  land: S,
+  sea: M,
+  land: M,
   // road vehicles (cars, vans, trucks, buses, trams, ambulances, fire
   // engines, tractors): their designs were drawn small beside a person (a car
   // about as long as a person is tall), so they take a larger factor than
   // `land`: 1.15x, a car a little over two people long and about two thirds
   // of a cottage's width (round 22: at 1.6x a car read 1.6 times too big
   // beside the people and an Industrial sedan was nearly as long as a
-  // cottage). Trains (a house per car), carts and engines of war keep `land`.
-  road: S * 1.15,
-  air: S,
+  // cottage); round 24 halved them with the people, so a car is now about a
+  // third of a cottage's width. Trains (half a house per car), carts and
+  // engines of war keep `land`.
+  road: M * 1.15,
+  air: M,
+  // the craft factor relative to the round-14 world (0.6), as UNIT.rel
+  rel: M / S,
   of(cls, road = false) {
     return cls === 'land' ? (road ? this.road : this.land) : cls === 'air' ? this.air : this.sea;
   },
@@ -83,3 +96,8 @@ export const FOOTPRINT = {
 
 // Design height of a person (world units at scale 1); labels and picking use it.
 export const PERSON_H = 0.6;
+
+// Smallest on-screen size (CSS pixels) a creature or craft keeps for picking:
+// at half size a person at mid zoom is only a few pixels tall, so a click
+// within this many pixels of one still selects it.
+export const PICK_PX = 14;

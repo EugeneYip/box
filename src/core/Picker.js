@@ -14,8 +14,17 @@ export class Picker {
     const el = this.game.pipeline.renderer.domElement;
     const rect = el.getBoundingClientRect();
     this.ndc.set(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
-    this.ray.setFromCamera(this.ndc, this.game.cameraRig.camera);
-    return this.intersect(this.ray.ray, includeWater);
+    const cam = this.game.cameraRig.camera;
+    this.ray.setFromCamera(this.ndc, cam);
+    const hit = this.intersect(this.ray.ray, includeWater);
+    // world units per CSS pixel at the hit (pickers keep a minimum radius in
+    // pixels, so half-size people and cars stay easy to click at any zoom)
+    if (hit) {
+      const o = this.ray.ray.origin;
+      const d = Math.hypot(hit.x - o.x, hit.y - o.y, hit.z - o.z);
+      hit.px = (2 * d * Math.tan(((cam.fov || 38) * Math.PI) / 360)) / Math.max(1, rect.height);
+    }
+    return hit;
   }
   intersect(ray, includeWater = true) {
     const world = this.game.world;

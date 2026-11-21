@@ -11,6 +11,7 @@ import { installRoles, ROLE_NAMES } from './roles.js';
 import { installNeeds } from './needs.js';
 import { installDaily, animalLabel } from './daily.js';
 import { installPeople } from './people.js';
+import { UNIT, PICK_PX } from '../../core/scale.js';
 
 // Core creature simulation (owned by the Life module; the Civilization module
 // programs humanoid behaviour through registerBrain / unit.job).
@@ -1170,7 +1171,7 @@ export class Units {
           let f;
           if (o.species === u.species) f = animal ? (o.herd === u.herd ? 1.65 : 2.1) : u.moving || u.target ? 1.15 : 1.9;
           else f = animal && o.def.kind === 'animal' ? 2.6 : 1.5;
-          const minD = (r + o.def.radius) * f + (f > 2 ? 0.15 : 0);
+          const minD = (r + o.def.radius) * f + (f > 2 ? 0.15 * UNIT.rel : 0);
           if (d2 >= minD * minD) continue;
           const d = Math.sqrt(d2) || 0.001;
           const push = (minD - d) / minD;
@@ -1207,7 +1208,7 @@ export class Units {
           let ex = x - qx,
             ez = z - qz;
           let d = Math.hypot(ex, ez);
-          const pad = r + 0.12;
+          const pad = r + 0.12 * UNIT.rel;
           if (d >= pad) continue;
           if (d < 1e-4) {
             ex = x - (bx + 0.5);
@@ -2723,12 +2724,15 @@ export class Units {
     // prefer the unit closest to the picked point, weighting big creatures
     let u = null,
       bd = Infinity;
+    // (round 24: half-size bodies) a world floor for close views and at least
+    // PICK_PX screen pixels at mid zoom, so a few-pixel person is still caught
+    const pxR = Math.min(2.5, (hit.px || 0) * PICK_PX);
     this.forEachNear(hit.x, hit.z, 2.5, (o, d2) => {
       // people inside a building or aboard a ship are not drawn: picking them
       // from the map would steal the tap from the building (reach them through
       // the building card's "Inside" chips instead)
       if (o._hid || (o.data && (o.data.inside || o.data.aboard != null))) return;
-      const r = 0.6 + o.def.radius * 1.5;
+      const r = Math.max(0.6 * UNIT.rel + o.def.radius * 1.5, pxR);
       if (d2 > r * r) return;
       const s = d2 / (r * r) - (KIND_ORDER[o.def.kind] === 2 ? 0.2 : 0);
       if (s < bd) {

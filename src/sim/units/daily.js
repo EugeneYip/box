@@ -1,5 +1,6 @@
 import { simWeather } from '../disasters/util.js';
 import { SEA_LEVEL } from '../../world/constants.js';
+import { UNIT } from '../../core/scale.js';
 
 // Daily life (Life module, docs/DAILY-LIFE.md): the everyday round of village
 // people on top of their work. A daily rhythm (sleep at night, three meals,
@@ -418,10 +419,10 @@ export function installDaily(Units) {
       } else pd.slots[i] = u.id;
     }
     const row = Math.floor(i / 6),
-      col = (COLS[i % 6] - 2.5) * (pd.W / 6.8);
+      col = (COLS[i % 6] - 2.5) * Math.min(pd.W / 6.8, 0.75 * UNIT.scale);
     // two ranks of six (round 23: 6-12 to a square), rank 0 nearest the
     // barracks; everyone faces it
-    const f = (row - 0.5) * (pd.D / 2.9);
+    const f = (row - 0.5) * Math.min(pd.D / 2.9, 1.5 * UNIT.scale);
     return { x: pd.x - pd.az * col + pd.ax * f, z: pd.z + pd.ax * col + pd.az * f, fx: pd.x - pd.ax * 9, fz: pd.z - pd.az * 9 };
   };
   // Drill hours: the morning parade and the afternoon one.
@@ -1207,11 +1208,11 @@ export function installDaily(Units) {
     const home = !child && !others ? this._homeOf(u, v) : null;
     const sq = others ? pl.sqs[1 + (gi % others)] : home ? { x: home.doorX, z: home.doorZ } : sq0;
     const gq = Math.floor(gi / Math.max(1, others));
-    const gr = home ? 0.9 : ng <= pl.sqs.length ? 0 : 1.1 + (gq % 3) * 0.75;
+    const gr = (home ? 0.9 : ng <= pl.sqs.length ? 0 : 1.1 + (gq % 3) * 0.75) * UNIT.rel;
     const gx = sq.x + Math.sin(ga) * gr,
       gz = sq.z + Math.cos(ga) * gr;
     const a = hash(u.id, day + 17) * Math.PI * 2;
-    const rr = 0.3 + hash(u.id, 23) * 0.12;
+    const rr = (0.3 + hash(u.id, 23) * 0.12) * UNIT.rel;
     const dl = this._dlStart(u, 'social', Math.min(40, Math.max(8, dur)), { x: gx + Math.sin(a) * rr, z: gz + Math.cos(a) * rr, fx: gx, fz: gz, g: home ? -(home.id + 1) : v.id * 16 + gi + 1, go: home ? 'Walking home' : pl.market ? 'Walking to the market' : 'Walking to the square', act: 'talk' });
     if (home) dl.lab0 = 'Chatting with the neighbors';
     // one in eight plays music for the group; some bring their supper along
@@ -1254,30 +1255,30 @@ export function installDaily(Units) {
     if (!mus) {
       // the musician: at the middle of the square, facing the biggest group
       music = true;
-      x = sq.x + Math.sin(base) * 0.35;
-      z = sq.z + Math.cos(base) * 0.35;
+      x = sq.x + Math.sin(base) * 0.35 * UNIT.rel;
+      z = sq.z + Math.cos(base) * 0.35 * UNIT.rel;
       fx = sq.x + Math.sin(base) * 3;
       fz = sq.z + Math.cos(base) * 3;
     } else if (props?.stall && r < 0.3 && (this.game.time.hour ?? 19) < 20.2) {
       // supper from the food stall, standing before it
       supper = true;
       const st = props.stall;
-      const lat = (hash(u.id, 41) - 0.5) * 1.0;
+      const lat = (hash(u.id, 41) - 0.5) * 1.0 * UNIT.rel;
       const ox = Math.sin(st.rot),
         oz = Math.cos(st.rot);
-      x = st.x + ox * 0.6 + oz * lat;
-      z = st.z + oz * 0.6 - ox * lat;
+      x = st.x + ox * 0.6 * UNIT.rel + oz * lat;
+      z = st.z + oz * 0.6 * UNIT.rel - ox * lat;
       fx = st.x;
       fz = st.z;
       g = v.id * 16 + 14;
     } else if (props?.benches?.length && r >= 0.3 && r < 0.46) {
       // a seat on a bench, looking over the square
       const b = props.benches[k % props.benches.length];
-      const lat = (hash(u.id, 43) < 0.5 ? -0.1 : 0.1) * 1.0;
+      const lat = (hash(u.id, 43) < 0.5 ? -0.1 : 0.1) * UNIT.rel;
       const ox = Math.sin(b.rot),
         oz = Math.cos(b.rot);
-      x = b.x + oz * lat - ox * 0.02;
-      z = b.z - ox * lat - oz * 0.02;
+      x = b.x + oz * lat - ox * 0.02 * UNIT.rel;
+      z = b.z - ox * lat - oz * 0.02 * UNIT.rel;
       fx = b.x + ox * 3;
       fz = b.z + oz * 3;
       g = v.id * 16 + 13;
@@ -1285,10 +1286,10 @@ export function installDaily(Units) {
       // three groups round the musician, four or five to a group
       const gi = k % 3;
       const ga = base + (gi / 3) * Math.PI * 2 + 0.5;
-      const gx = sq.x + Math.sin(ga) * 1.35,
-        gz = sq.z + Math.cos(ga) * 1.35;
+      const gx = sq.x + Math.sin(ga) * 1.35 * UNIT.rel,
+        gz = sq.z + Math.cos(ga) * 1.35 * UNIT.rel;
       const a = (Math.floor(k / 3) / 5) * Math.PI * 2 + hash(u.id, 17);
-      const rr = 0.32 + hash(u.id, 23) * 0.08;
+      const rr = (0.32 + hash(u.id, 23) * 0.08) * UNIT.rel;
       x = gx + Math.sin(a) * rr;
       z = gz + Math.cos(a) * rr;
       fx = gx;
