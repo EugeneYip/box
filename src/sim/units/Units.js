@@ -1070,7 +1070,7 @@ export class Units {
     let da = want - u.heading;
     while (da > Math.PI) da -= Math.PI * 2;
     while (da < -Math.PI) da += Math.PI * 2;
-    u.heading += da * Math.min(1, dt * def.turnRate);
+    u.heading += da * Math.min(1, dt * def.turnRate * (da > 1.2 || da < -1.2 ? 2 : 1)); // (round 23: turning about is quicker)
     // (round 23: facing more than a right angle away, a walker turns about
     // first instead of drifting backwards or sideways at a sixth of its pace
     // with its feet walking the other way)
