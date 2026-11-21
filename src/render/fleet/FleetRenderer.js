@@ -29,6 +29,7 @@ const DETAIL_DIST = 175; // beyond this camera distance vehicles draw as dots
 // carts, idling trucks) and the street traffic are not drawn: they only
 // peppered a town's grey patch with dots. Trains, ships and aircraft stay.
 const FAR_CUT = 90;
+const MIN_CAR_PX = 5.5; // smallest on-screen length (px) of a road vehicle at mid zoom
 const farHidden = (v) => v.cls !== 'sea' && !v.def.rail && !(v.speed > 0.5 * (v.def.speed || 1));
 const FLAG_DIST = 115;
 const WAKE_DIST = 165;
@@ -388,6 +389,15 @@ export class FleetRenderer {
     // the people do (UnitRenderer's readability boost), so a car stays about
     // two people long at play zoom as well as up close
     C.roadBoost = 1 + (Math.min(2.6, Math.max(1, 0.55 + dist / 28)) - 1) * 0.35;
+    // round 25: out to about 75 tiles a car keeps at least ~5.5 px of length
+    // on screen (half-size cars had shrunk to specks at 30 tiles and vanished
+    // at 55); up close it keeps its true half size
+    {
+      const cam = rig?.camera;
+      const H = g.pipeline?.size?.y || innerHeight;
+      const ppuT = cam ? H / (2 * Math.tan(THREE.MathUtils.degToRad(cam.fov / 2))) / Math.max(1, dist) : 20;
+      C.minRoadLen = dist < 82 ? (MIN_CAR_PX / ppuT) * (1 - smoothstep(72, 82, dist)) : 0;
+    }
     const wind = C.wind;
     if (!far) {
       for (const v of list) {
@@ -431,7 +441,8 @@ export class FleetRenderer {
     const kc = this._kingdomColor(v.kingdom);
     const dmg = Math.min(1, Math.max(0, 1 - v.hp / v.maxHp - 0.12) / 0.88);
     const a = v.anim;
-    const sc = (def.scale || 1) * (def.road ? C.roadBoost || 1 : 1);
+    let sc = (def.scale || 1) * (def.road ? C.roadBoost || 1 : 1);
+    if (def.road && C.minRoadLen > 0 && def.length > 0) sc *= Math.max(1, Math.min(3.2, C.minRoadLen / (def.length * (C.roadBoost || 1))));
     if (v.cls === 'sea') {
       const ph = this.t + v.seed * 20;
       const rough = (1 + C.st * 2.5) * (def.length > 2 * VEHICLE.sea ? 0.6 : 1);
@@ -594,8 +605,9 @@ export class FleetRenderer {
     const vb = this.vb;
     const alpha = C.alpha;
     const def = KINDS.car;
-    const sc = (def.scale || 1) * (C.roadBoost || 1);
-    const hl = def.length * 0.4;
+    const grow = C.minRoadLen > 0 && def.length > 0 ? Math.max(1, Math.min(3.2, C.minRoadLen / (def.length * (C.roadBoost || 1)))) : 1;
+    const sc = (def.scale || 1) * (C.roadBoost || 1) * grow;
+    const hl = def.length * 0.4 * grow;
     // (the right-hand lane: half a car's width and a little off the crown)
     // (round 24: half-size cars keep to the right half of the same street)
     const lane = 0.27 * (0.5 + 0.5 * VEHICLE.rel) * Math.min(1.2, C.roadBoost || 1);

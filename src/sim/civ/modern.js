@@ -5,6 +5,7 @@ import { civPath } from './pathing.js';
 import { TECHS } from './tech.js';
 import { BREADTH_FIRST } from './breadth.js';
 import { BUILDING } from '../../core/scale.js';
+import { isTreeId } from '../flora/species.js';
 
 // Modern and future eras (docs/MODERN-ERAS.md, the parts owned by Civ):
 // the buildings of eras 4-7 and where the planner puts them, taller towns,
@@ -838,6 +839,14 @@ export const modern = {
           const end = along ? ox > 0 && oy <= 1 : oy > 0 && ox <= 1;
           if (end && (along ? ox : oy) <= E) Z[y * W + x] = 2;
           else if (Math.max(ox, oy) <= M && Z[y * W + x] < 1) Z[y * W + x] = 1;
+        }
+      // round 25: no tree stands on the plot or within two tiles of it, so
+      // the half-size jets on the apron do not park under tree crowns
+      for (let y = b.ty - 2; y < b.ty + b.h + 2; y++)
+        for (let x = b.tx - 2; x < b.tx + b.w + 2; x++) {
+          if (!w.inBounds(x, y)) continue;
+          const f = w.flora[y * W + x];
+          if (f && (isTreeId(f) || f === FLORA.DEAD_TREE || f === FLORA.STUMP)) w.setFlora(x, y, FLORA.NONE);
         }
     }
   },

@@ -289,8 +289,11 @@ export function installDaily(Units) {
     const w = this.game.world;
     const tx = Math.floor(x),
       tz = Math.floor(z);
-    if (w.inBounds(tx, tz) && w.building[tz * w.w + tx] < 0 && this._pathable(u, tx, tz)) return { x, z };
-    const t = this.findNearestTile(x, z, r, (ax, ay, i) => w.building[i] < 0 && this._pathable(u, ax, ay));
+    // (round 25: on dry ground only: people stood about in the surf off sea
+    // fronts and by the jetties, the shallows being walkable)
+    const dry = (i) => w.height[i] > SEA_LEVEL + 0.03;
+    if (w.inBounds(tx, tz) && w.building[tz * w.w + tx] < 0 && dry(tz * w.w + tx) && w.heightAt(x, z) > SEA_LEVEL && this._pathable(u, tx, tz)) return { x, z };
+    const t = this.findNearestTile(x, z, r, (ax, ay, i) => w.building[i] < 0 && dry(i) && this._pathable(u, ax, ay));
     return t ? { x: t.x + (hash(u.id, 9) - 0.5) * 0.5, z: t.z + (hash(u.id, 10) - 0.5) * 0.5 } : null;
   };
 
@@ -418,8 +421,10 @@ export function installDaily(Units) {
         pd.slots.push(u.id);
       } else pd.slots[i] = u.id;
     }
-    const row = Math.floor(i / 6),
-      col = (COLS[i % 6] - 2.5) * Math.min(pd.W / 6.8, 0.75 * UNIT.scale);
+    // (round 25: the places fill both ranks in turn, so four soldiers stand
+    // two by two and twelve in two ranks of six, never four in one file)
+    const row = i % 2,
+      col = (COLS[Math.floor(i / 2) % 6] - 2.5) * Math.min(pd.W / 6.8, 0.75 * UNIT.scale);
     // two ranks of six (round 23: 6-12 to a square), rank 0 nearest the
     // barracks; everyone faces it
     const f = (row - 0.5) * Math.min(pd.D / 2.9, 1.5 * UNIT.scale);

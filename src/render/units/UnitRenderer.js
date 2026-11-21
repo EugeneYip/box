@@ -45,6 +45,11 @@ const DOTS_DIST = 190;
 // past this camera distance people are not drawn (fighters excepted): a town
 // is a grey urban patch there, and its folk only peppered it with specks
 const PEOPLE_CUT = 90;
+// round 25: at mid zoom (about 18 to 80 tiles) each person on land also wears
+// a small bright camera-facing mark at least MARK_PX across, so half-size
+// people still read as people in the streets and squares (one more decal in
+// the overlay layer: no extra draw call)
+const MARK_PX = 3.6;
 const SHADOW_ZOOM = 70; // creatures cast shadow-map shadows only when the camera is closer than this // camera distance beyond which creatures are dots on any map size
 
 // Creature renderer (Life module). Every species is one instanced, shader-rigged
@@ -796,6 +801,7 @@ export class UnitRenderer {
     const P = this._Pt;
     const nrm = this._n;
     const peopleCut = camDist > PEOPLE_CUT;
+    const markA = dotsOnly ? 0 : smoothstep(18, 30, camDist) * (1 - smoothstep(76, 88, camDist));
 
     for (let li = 0; li < U.list.length; li++) {
       const u = U.list[li];
@@ -1058,6 +1064,18 @@ export class UnitRenderer {
       if (u.combat && def.kind === 'humanoid' && u.kingdom >= 0 && hab === 'land' && (g.selected?.ref === u || g.cameraRig.follow === u)) {
         const kc = this._kingdomColor(u.kingdom);
         if (kc) ov.ground.add(ix, ground, iz, (md.radius * 1.5 + 0.2) * scale, 0, 1, 0, DECAL.ring, Math.min(1, kc[0] * 1.6 + 0.1), Math.min(1, kc[1] * 1.6 + 0.1), Math.min(1, kc[2] * 1.6 + 0.1), 0.85);
+      }
+      if (markA > 0.01 && def.kind === 'humanoid' && hab === 'land' && !u.swimming && !u.onDeck) {
+        const c = rs.dot || [0.8, 0.8, 0.8];
+        const msz = Math.max(MARK_PX / ppu, md.height * scale * 0.42);
+        const my = y + lift + md.height * scale * 0.55;
+        // (stood just in front of the body, toward the eye, so the model does not hide it)
+        const ex = camPos.x - ix,
+          ey = camPos.y - my,
+          ez = camPos.z - iz;
+        const el = Math.hypot(ex, ey, ez) || 1,
+          fwd = (md.radius * scale * 1.3 + msz * 0.5) / el;
+        ov.ground.add(ix + ex * fwd, my + ey * fwd, iz + ez * fwd, msz, ex, ey, ez, DECAL.dot, c[0], c[1], c[2], markA);
       }
       if (lod < 0.999) {
         const dsz = Math.max(0.3 * UNIT.rel, 6 / ppu) * (def.kind === 'humanoid' ? 1 : 0.8);

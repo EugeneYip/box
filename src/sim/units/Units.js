@@ -2344,6 +2344,9 @@ export class Units {
         const deep = !deck && w.height[ti] < SEA_LEVEL && h < SEA_LEVEL - Math.max(0.12, def.height * 0.55 * def.size);
         u.swimming = deep;
         u.wading = !deck && !deep && h < SEA_LEVEL - 0.02;
+        // round 25: idle people do not stand about in the surf: a person
+        // wading with nowhere to go walks back to the nearest dry ground
+        if (u.wading && !u.target && !u.path && !u.combat && def.kind === 'humanoid' && u.activity !== 'fish' && (u.id + this._tickN) % 8 === 0) this._swimToShore(u, 5);
         if (deep && Math.abs(u.x - u._ex) + Math.abs(u.z - u._ez) > 2 && this._ashore(u)) u.swimming = false;
         else if (deep) {
           if (u._ext && u._farSea) u.energy = Math.max(0, u.energy - udt * 0.012);

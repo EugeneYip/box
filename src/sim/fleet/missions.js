@@ -1,7 +1,7 @@
 import { SEA_LEVEL, TILE } from '../../world/constants.js';
 import { KINDS } from './kinds.js';
 import { pathLength } from './nav.js';
-import { hullR, hullHalf, segDist, PIER_END, PIER, BERTH } from './hull.js';
+import { hullR, hullHalf, segDist, PIER, BERTH, pierEnd, pierHalf, DEEP_WATER } from './hull.js';
 import { regionName } from '../disasters/util.js';
 
 const YEAR = 30;
@@ -183,8 +183,8 @@ export const missions = {
     return (h.level >= 2 ? 4 : 2) + (seafaring ? 1 : 0);
   },
   berthed(h, self = null) {
-    const ex = h.x + h.dirX * PIER_END,
-      ez = h.z + h.dirZ * PIER_END;
+    const ex = h.x + h.dirX * pierEnd(h),
+      ez = h.z + h.dirZ * pierEnd(h);
     let n = 0;
     for (const o of this.list) {
       if (!o.alive || o === self || o.cls !== 'sea' || o.state === 'sinking' || o.role === 'fishing' || o.roads) continue;
@@ -228,8 +228,8 @@ export const missions = {
     if (this.berthed(h, self) >= this.harbourCap(h)) return null;
     const px = -h.dirZ,
       pz = h.dirX;
-    const ex = h.x + h.dirX * PIER_END,
-      ez = h.z + h.dirZ * PIER_END; // the end of the pier
+    const ex = h.x + h.dirX * pierEnd(h),
+      ez = h.z + h.dirZ * pierEnd(h); // the end of the pier
     const taken = (x, z) => {
       for (const o of this.list) {
         if (!o.alive || o === self || o.cls !== 'sea' || o.state === 'sinking') continue;
@@ -249,20 +249,27 @@ export const missions = {
     };
     const k = BERTH;
     const B = (def.beam || 0.5 * k) + 0.45 * k;
+    // alongside the pier's last stretch, off it by half its width plus half
+    // the hull's beam (round 25: half-size hulls lay under the full-size deck)
+    const A = pierHalf(h) + (def.beam || 0.5 * k) * 0.5 + 0.12 * k;
     const slots = [
       [L / 2 + 0.45 * k, 0],
-      [L * 0.25, B + 0.1 * k],
-      [L * 0.25, -B - 0.1 * k],
+      [-L * 0.5 - 0.1 * k, A],
+      [-L * 0.5 - 0.1 * k, -A],
+      [L * 0.25, Math.max(B + 0.1 * k, A)],
+      [L * 0.25, -Math.max(B + 0.1 * k, A)],
       [L * 1.5 + 0.9 * k, 0],
       [L * 0.35 + 0.4 * k, B * 2 + 0.2 * k],
       [L * 0.35 + 0.4 * k, -B * 2 - 0.2 * k],
-      [L * 1.25 + 0.7 * k, B + 0.1 * k],
-      [L * 1.25 + 0.7 * k, -B - 0.1 * k],
+      [L * 1.25 + 0.7 * k, Math.max(B + 0.1 * k, A)],
+      [L * 1.25 + 0.7 * k, -Math.max(B + 0.1 * k, A)],
     ];
     for (const [f, sd] of slots) {
       const x = ex + h.dirX * f + px * sd,
         z = ez + h.dirZ * f + pz * sd;
       if (!this._hullFits(x, z, h.dirX, h.dirZ, def)) continue;
+      // (the great hulls lie only in water as wide as their beam plus two tiles)
+      if (DEEP_WATER.has(def.kind) && nav.clearAt(x, z) < (def.beam || 0) * 0.5 + 1) continue;
       if (taken(x, z)) continue;
       if (!nav.los(h.berth.x, h.berth.z, x, z, 0)) continue;
       return { x, z, berth: true };
@@ -421,14 +428,15 @@ export const missions = {
     let Z = this._bz;
     if (!Z || Z.t !== now) Z = this._bz = { t: now, L: this.harbours() };
     for (const h of Z.L) {
-      const ex = h.x + h.dirX * PIER_END,
-        ez = h.z + h.dirZ * PIER_END;
+      const PE = pierEnd(h);
+      const ex = h.x + h.dirX * PE,
+        ez = h.z + h.dirZ * PE;
       const dx = x - ex,
         dz = z - ez;
       if (Math.abs(dx) > 9 || Math.abs(dz) > 9) continue;
       const al = dx * h.dirX + dz * h.dirZ,
         ac = -dx * h.dirZ + dz * h.dirX;
-      if (al > -PIER_END - 0.2 * PIER - pad && al < 5 * BERTH + pad && Math.abs(ac) < 2.7 * BERTH + pad) return h;
+      if (al > -PE - 0.2 * PIER - pad && al < 5 * BERTH + pad && Math.abs(ac) < 2.7 * BERTH + pad) return h;
     }
     return null;
   },
