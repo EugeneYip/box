@@ -111,6 +111,21 @@ export class RenderPipeline {
     });
     this.linearDepthTexture = null;
     const gl = renderer.getContext();
+    // (round 27) software GL (SwiftShader, llvmpipe): every pixel is shaded
+    // on the CPU, and at the high tier's 1.5x pixel ratio one frame took
+    // seconds (the terrain shader alone 5-7 s under load, the post chain
+    // 3-4 s, at close and mid zoom alike). There the 3D view renders at one
+    // pixel per CSS pixel (the canvas and the DOM UI keep their size; the
+    // final pass upscales), which is 44% of the pixel work. A hardware GPU
+    // is unaffected. ?swfull=1 keeps the full resolution.
+    let rn = '';
+    try {
+      const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+      rn = String(gl.getParameter(dbg ? dbg.UNMASKED_RENDERER_WEBGL : gl.RENDERER) || '');
+    } catch (err) {
+      /* unknown renderer: treat as hardware */
+    }
+    this.softwareGL = /swiftshader|llvmpipe|softpipe|software/i.test(rn) && !(typeof location !== 'undefined' && /[?&]swfull=1\b/.test(location.search));
     this.floatTargets = renderer.capabilities.isWebGL2 && !!(renderer.extensions.has('EXT_color_buffer_float') || gl.getExtension('EXT_color_buffer_float'));
     if (!this.floatTargets && this.tier.post) {
       console.warn('[pipeline] float render targets unavailable: using the low tier');
@@ -145,7 +160,8 @@ export class RenderPipeline {
 
   // composer resolution factor (power saver x dynamic resolution)
   get renderScale() {
-    return this.saverScale * this.dynScale;
+    const soft = this.softwareGL ? Math.min(1, 1 / this.targetPixelRatio()) : 1;
+    return this.saverScale * this.dynScale * soft;
   }
 
   // Size the composer's targets to the drawing buffer times renderScale.
