@@ -62,6 +62,22 @@ export class Feed {
       dup.el.classList.add('is-ping');
       return;
     }
+    // (round 23) a growing realm's milestones ("✨ The X opens its first
+    // clinic", "... raises its first skyscraper") come in bursts while its
+    // towns grow: they gather on one card per realm instead of pushing every
+    // other line off the feed (each is still in the chronicle)
+    const ms = /^✨ (.+?) \S+(?: out| up| off| in)? its first (.+?)\.?$/.exec(e.text);
+    if (ms) {
+      const grp = this.items.find((it) => it.realm === ms[1] && now - it.born < 8 && !it.leaving);
+      if (grp) {
+        grp.things.push(ms[2]);
+        const t = grp.things;
+        grp.born = now;
+        grp.el.querySelector('.ws-feed__txt').textContent = `✨ ${ms[1]}: its first ${t[0]}, ${t[1]}${t.length > 2 ? ` and ${t.length - 2} more` : ''}`;
+        grp.el.setAttribute('aria-label', `${ms[1]}: new firsts. Show on map`);
+        return;
+      }
+    }
     const hasPos = n.x != null && n.z != null && !Number.isNaN(+n.x);
     const countEl = el('span', { class: 'ws-feed__count', hidden: true });
     const card = el(
@@ -76,7 +92,7 @@ export class Feed {
       el('span', { class: 'ws-feed__txt', html: esc(e.text) }),
       el('span', { class: 'ws-feed__meta' }, countEl, hasPos ? el('span', { class: 'ws-feed__go', html: uiIcon('locate') }) : null),
     );
-    const item = { el: card, text: e.text, born: now, count: 1, countEl, leaving: false };
+    const item = { el: card, text: e.text, born: now, count: 1, countEl, leaving: false, realm: ms ? ms[1] : null, things: ms ? [ms[2]] : null };
     if (hasPos) {
       card.addEventListener('click', () => {
         this.game.focus(+n.x, +n.z, Math.min(this.game.cameraRig.goal.dist, 46));
