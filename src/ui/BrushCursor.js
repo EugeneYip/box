@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { powerIcon } from './icons.js';
+import { UNIT } from '../core/scale.js';
 
 // Ground cursor for god powers, drawn as terrain-conforming meshes:
 //   * brush powers: a soft glowing rim, a falloff-shaded fill (denser at the
@@ -333,6 +334,29 @@ function xrayTexture(kind) {
   return t;
 }
 
+// (round 25) A small bright mark for a selected or followed creature or car
+// that is drawn smaller than a few pixels (half-size people at mid zoom).
+function dotTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 32;
+  const x = c.getContext('2d');
+  x.beginPath();
+  x.arc(16, 16, 13, 0, Math.PI * 2);
+  x.fillStyle = 'rgba(20,16,8,0.85)';
+  x.fill();
+  x.beginPath();
+  x.arc(16, 16, 10, 0, Math.PI * 2);
+  x.fillStyle = '#fff3d0';
+  x.fill();
+  x.beginPath();
+  x.arc(16, 16, 5.5, 0, Math.PI * 2);
+  x.fillStyle = '#f2c35a';
+  x.fill();
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
 export class BrushCursor {
   constructor(game) {
     this.game = game;
@@ -355,6 +379,15 @@ export class BrushCursor {
       game.scene.add(s);
       this.xray[k] = s;
     }
+    this.dot = new THREE.Sprite(new THREE.SpriteMaterial({ map: dotTexture(), transparent: true, depthWrite: false, depthTest: false, fog: false, toneMapped: false }));
+    this.dot.renderOrder = 997;
+    this.dot.visible = false;
+    this.dot.frustumCulled = false;
+    game.scene.add(this.dot);
+    this._tgt = null;
+    this._tgtKey = '';
+    this._tgtT = 0;
+    this._cursor = '';
     this.t = 0;
     this.press = 0;
     this.appear = 0;
@@ -372,6 +405,34 @@ export class BrushCursor {
       this.color.setStyle(powerIcon(p).tint || '#ffffff');
     }
     return this.color;
+  }
+
+  // World units per CSS pixel at a world point (from the main camera).
+  pxAt(x, y, z) {
+    const cam = this.game.cameraRig.camera;
+    const p = cam.position;
+    const d = Math.hypot(x - p.x, y - p.y, z - p.z);
+    return (2 * d * Math.tan(((cam.fov || 38) * Math.PI) / 360)) / Math.max(1, innerHeight);
+  }
+  // What a click at the hover point would open, re-resolved when the cursor
+  // moves or every 0.2 s (people walk under a still cursor).
+  hoverTarget(hit, dt) {
+    const pk = this.game.picker;
+    if (!pk?.target) return null;
+    this._tgtT -= dt;
+    const key = `${hit.sx | 0},${hit.sy | 0}`;
+    if (key !== this._tgtKey || this._tgtT <= 0) {
+      this._tgtKey = key;
+      this._tgtT = 0.2;
+      try {
+        this._tgt = pk.target(hit);
+      } catch {
+        this._tgt = null;
+      }
+    }
+    const o = this._tgt?.ref;
+    if (o && (o.alive === false || o.state === 'sinking')) this._tgt = null;
+    return this._tgt;
   }
 
   update(dt) {
@@ -441,25 +502,44 @@ export class BrushCursor {
     }
 
     // ---- hover highlight (inspect mode; never in ?ui=0 captures)
+    // (round 25) the ring sits on what a click here would open (the picker's
+    // own rule: a creature or car within its pick radius, else the building
+    // under the cursor), and the pointer turns into a hand over it
     let hovered = false;
+    let clickable = false;
     const uiOn = g.params.ui !== false;
     if (uiOn && hit && inspectMode && !g.input?.drag) {
       const sel = g.selected?.ref;
-      const u = g.units?.nearest?.(hit.x, hit.z, 0.9);
-      if (u && u !== sel) {
-        const r = 0.42 * (u.scale || 1) * (u.def?.size || 1) + 0.18;
-        this.hover.circle(u.x, u.z, r);
-        this.hover.build(Math.max(0.05, lineW * 0.7), lift, g.world.surfaceAt(u.x, u.z), 0.25);
-        this.hover.style(this.white, 0.85, this.t, 0, 0, 0.6, 0.35);
+      const tg = this.hoverTarget(hit, dt);
+      clickable = !!tg;
+      const o = tg?.ref;
+      if (o && o !== sel && tg.kind !== 'building') {
+        const sz = (o.scale || 1) * (o.def?.size || 1);
+        const rw = tg.kind === 'unit' ? 0.42 * sz * UNIT.rel + 0.09 : 0.3 + (o.def?.length || 1) * 0.4;
+        const r = Math.max(rw, 8 * this.pxAt(o.x, o.y ?? g.world.surfaceAt(o.x, o.z), o.z));
+        this.hover.circle(o.x, o.z, r);
+        this.hover.build(Math.max(0.03, lineW * 0.6), lift, g.world.surfaceAt(o.x, o.z), 0.25);
+        this.hover.style(this.white, 0.6, this.t, 0, 0, 0.6, 0.3);
         hovered = true;
-      } else if (!hit.water || g.world.isLand(hit.tx, hit.ty)) {
+      } else if (o && o !== sel && tg.kind === 'building') {
+        this.hover.square(o.tx - 0.06, o.ty - 0.06, o.tx + (o.w || 1) + 0.06, o.ty + (o.h || 1) + 0.06);
+        this.hover.build(Math.max(0.04, lineW * 0.6), lift, g.world.surfaceAt(o.x, o.z), 0.8);
+        this.hover.style(this.white, 0.5, this.t, 0, 0, 0.6, 0.25);
+        hovered = true;
+      } else if (!o && (!hit.water || g.world.isLand(hit.tx, hit.ty))) {
         this.hover.square(hit.tx, hit.ty, hit.tx + 1, hit.ty + 1);
         this.hover.build(Math.max(0.04, lineW * 0.55), lift, g.world.surfaceAt(hit.tx + 0.5, hit.ty + 0.5), 0.45);
-        this.hover.style(this.white, 0.55, this.t, 0, 0, 0.6, 0.25);
+        this.hover.style(this.white, 0.4, this.t, 0, 0, 0.6, 0.2);
         hovered = true;
       }
     }
     this.hover.visible = hovered;
+    const cur = uiOn && clickable ? 'pointer' : '';
+    if (cur !== this._cursor) {
+      this._cursor = cur;
+      const cv = g.pipeline?.renderer?.domElement;
+      if (cv) cv.style.cursor = cur;
+    }
 
     // ---- selection marker
     const s = g.selected;
@@ -468,7 +548,8 @@ export class BrushCursor {
       let r;
       if (s.kind === 'building') r = Math.max(1, Math.max(ref.w || 1, ref.h || 1) * 0.72);
       else if (s.kind === 'vessel') r = 0.45 + (ref.def?.length || 1) * 0.55;
-      else r = 0.5 * (ref.scale || 1) * (ref.def?.size || 1) + 0.25;
+      // (round 25) half-size creatures: a ring sized to the body, never under ~9 px
+      else r = Math.max(0.5 * (ref.scale || 1) * (ref.def?.size || 1) * UNIT.rel + 0.14, 9 * this.pxAt(ref.x, ref.y ?? g.world.surfaceAt(ref.x, ref.z), ref.z));
       r *= 1 + Math.sin(this.t * 3.2) * 0.04;
       this.sel.circle(ref.x, ref.z, r);
       this.sel.build(Math.max(0.06, lineW * 0.85), lift, g.world.surfaceAt(ref.x, ref.z), s.kind === 'building' ? 0.8 : 0.25);
@@ -476,6 +557,24 @@ export class BrushCursor {
       this.sel.style(this.gold, 1, this.t, 3, 0.18, 0.72, 0.75 + Math.sin(this.t * 4) * 0.2);
       this.sel.visible = true;
     } else this.sel.visible = false;
+    // (round 25) a selected or followed creature or car drawn under ~5 px
+    // gets a small bright mark of at least that size over its body
+    const fo = g.cameraRig?.follow;
+    const mk = s && (s.kind === 'unit' || s.kind === 'vessel') ? ref : fo && fo.x != null ? fo : null;
+    let dotOn = false;
+    if (uiOn && mk && mk.alive !== false && mk.state !== 'sinking' && mk.x != null && !g.ui?.root?.classList.contains('is-photo')) {
+      const y0 = mk.y ?? g.world.surfaceAt(mk.x, mk.z);
+      const bh = g.picker?.bodyHeight ? g.picker.bodyHeight(mk) : 0.18;
+      const ppx = this.pxAt(mk.x, y0 + bh * 0.5, mk.z);
+      const onScreen = bh / Math.max(1e-6, ppx);
+      if (onScreen < 6) {
+        const d = 6 * ppx;
+        this.dot.position.set(mk.x, y0 + Math.max(bh * 0.6, d * 0.5), mk.z);
+        this.dot.scale.set(d, d, 1);
+        dotOn = true;
+      }
+    }
+    this.dot.visible = dotOn;
     // x-ray figure (only rendered where something occludes the creature)
     const showX = uiOn && s?.kind === 'unit' && ref && ref.alive !== false && ref.x != null;
     const humanoid = ref?.def?.kind === 'humanoid';

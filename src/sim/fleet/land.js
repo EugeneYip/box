@@ -271,7 +271,12 @@ export const land = {
     if (v.def.siege && mt !== 'drive' && mt !== 'park' && mt !== 'rounds' && v.state !== 'parked') this._siegeMove(v, step);
     else if (v.state === 'move' && v.path) {
       v.settleH = null;
-      this._follow(v, step, v.def.speed);
+      // (round 25) a vehicle updated every second or fourth tick (far from
+      // the camera, see Fleet.tick) covers the time in tick-sized strides, so
+      // it keeps its pace along a winding road instead of stopping at each
+      // waypoint
+      const n = step > 0.3 ? Math.min(8, Math.ceil(step / 0.27)) : 1;
+      for (let k = 0; k < n && v.path; k++) this._follow(v, step / n, v.def.speed);
       if (v.path == null) this._landArrive(v);
     } else if (v.state === 'work') {
       this._serviceWork(v, step);
@@ -309,8 +314,9 @@ export const land = {
       }
     }
     // raiders fall on carts and caravans of an enemy realm
-    if (!v.def.siege && (v.raidT = (v.raidT || 0) - step) <= 0) {
-      v.raidT = 1;
+    // (round 25: only a vehicle of a realm at war looks for raiders; see
+    // Fleet.tick's _warAny)
+    if (!v.def.siege && (v.raidT = (v.raidT || 0) - step) <= 0 && (v.raidT = 1) && (!this._warAny || this._warAny[v.kingdom])) {
       const U = this.game.units;
       const foe = U?.nearest?.(v.x, v.z, 1.3, (o) => o.alive && o.species === 'human' && o.job === 'soldier' && this.atWar(o.kingdom, v.kingdom));
       if (foe) {
@@ -468,9 +474,12 @@ export const land = {
       const t = civ.villages[vid];
       if (!t?.alive) continue;
       const bk = (t.buildings || []).find((b) => b.alive && !b.constructing && b.type === 'barracks');
-      const base = bk || (t.hall?.alive ? t.hall : null);
+      // (garaged in a barracks only: parked at a hall door, a peacetime tank
+      // stood at the edge of the main plaza; a realm with no barracks lays
+      // its armour up)
+      const base = bk;
       if (!base) continue;
-      const d = this.dist(base.x, base.z, v.x, v.z) + (bk ? 0 : 50);
+      const d = this.dist(base.x, base.z, v.x, v.z);
       if (d < bd) (bd = d), (best = { t, b: base });
     }
     if (!best) return this.remove(v);

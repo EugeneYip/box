@@ -321,6 +321,7 @@ export function installDaily(Units) {
     const w = g.world;
     const rm = g.civ?.railMask?.length === w.size ? g.civ.railMask : null; // never across a railway or highway
     const use = g.civ?.use?.length === w.size ? g.civ.use : null;
+    const kc = g.civ?.keepClear?.length === w.size ? g.civ.keepClear : null;
     const free = (x, z) => {
       const tx = Math.floor(x),
         tz = Math.floor(z);
@@ -328,7 +329,9 @@ export function installDaily(Units) {
       const i = tz * w.w + tx;
       if (w.building[i] >= 0 || w.height[i] <= SEA_LEVEL + 0.05 || rm?.[i]) return -1;
       const us = use ? use[i] : 0;
-      return us === 0 ? 0 : us === 2 ? 1 : -1; // open ground, or a paved street (a little worse)
+      // open ground only (round 25: the pad lay over the cobbled streets on
+      // two sides and over a Future plaza): never a street or the square
+      return us === 0 && !(kc && kc[i] & 1) ? 0 : -1;
     };
     const sq = pl.sq;
     let best = null,
@@ -344,9 +347,11 @@ export function installDaily(Units) {
         uz = dz / L;
       const hw = (b.w || 1) / 2,
         hh = (b.h || 1) / 2;
+      // (round 25: sized to two ranks of six half-size soldiers with room
+      // round them; the 3.4 x 2.4 pad was some forty soldiers across)
       for (const [W, D, flat] of [
-        [3.4, 2.4, 0.22],
-        [2.8, 2.0, 0.34],
+        [2.4, 1.6, 0.2],
+        [2.0, 1.4, 0.3],
       ])
         for (const [ax, az] of [
           [ux, uz],
@@ -382,7 +387,7 @@ export function installDaily(Units) {
                   }
                 }
               if (!ok || hi - lo >= flat) continue;
-              const s = (hi - lo) * 6 + k * 0.35 + Math.abs(lat) * 0.3 + paved * 0.05 + (door ? 0 : 0.6) + bi * 1.5 + (W < 3 ? 0.8 : 0);
+              const s = (hi - lo) * 6 + k * 0.35 + Math.abs(lat) * 0.3 + paved * 0.05 + (door ? 0 : 0.6) + bi * 1.5 + (W < 2.2 ? 0.8 : 0);
               if (s < bs) {
                 bs = s;
                 best = { b: b.id, key, ok: true, x: cx, z: cz, ax, az, W, D, y: hi, lo, slots: [], t: now, v: v.id, type: b.type };

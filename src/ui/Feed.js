@@ -3,6 +3,12 @@ import { el, esc } from './dom.js';
 import { classify, isMinor } from './Chronicle.js';
 
 const LIFETIME = 7.5; // seconds before an entry fades
+// "trucks along the roads" -> "trucks", "fusion plant: the haze clears" -> "fusion plant"
+const shortThing = (t) =>
+  String(t)
+    .split(/[:;,]/)[0]
+    .replace(/\s+(?:along|in|on|at|across|over|through|into|to|for|from|with|by|beyond|under|among|around|between|against|beside)\b.*$/i, '')
+    .trim();
 const maxVisible = () => (innerHeight <= 760 ? 3 : 4);
 
 // Toast-style feed of the newest chronicle entries. Clicking a card with a
@@ -72,10 +78,8 @@ export class Feed {
       const grp = this.items.find((it) => it.realm === ms[1] && now - it.born < 8 && !it.leaving);
       if (grp) {
         grp.things.push(ms[2]);
-        const t = grp.things;
         grp.born = now;
-        grp.el.querySelector('.ws-feed__txt').textContent = `${ms[1]}: its first ${t[0]}, ${t[1]}${t.length > 2 ? ` and ${t.length - 2} more` : ''}`;
-        grp.el.setAttribute('aria-label', `${ms[1]}: new firsts. Show on map`);
+        this.groupText(grp);
         return;
       }
     }
@@ -94,6 +98,15 @@ export class Feed {
       el('span', { class: 'ws-feed__meta' }, countEl, hasPos ? el('span', { class: 'ws-feed__go', html: uiIcon('locate') }) : null),
     );
     const item = { el: card, text: e.text, born: now, count: 1, countEl, leaving: false, realm: ms ? ms[1] : null, things: ms ? [ms[2]] : null };
+    if (ms) {
+      // a grouped card opens to its full list on click (and still flies there)
+      card.addEventListener('click', () => {
+        if ((item.things?.length || 0) < 3) return;
+        item.open = !item.open;
+        item.born = performance.now() / 1000;
+        this.groupText(item);
+      });
+    }
     if (hasPos) {
       card.addEventListener('click', () => {
         this.game.focus(+n.x, +n.z, Math.min(this.game.cameraRig.goal.dist, 46));
@@ -108,6 +121,17 @@ export class Feed {
       const old = [...this.items].reverse().find((it) => !it.leaving);
       this.remove(old);
     }
+  }
+
+  // (round 25) a realm's grouped milestones: "The X: new firsts: trucks, cars
+  // and 1 more" (two read "trucks and cars"); open, the card lists them all
+  groupText(it) {
+    const t = it.things.map(shortThing);
+    const list = t.length === 2 ? `${t[0]} and ${t[1]}` : it.open ? `${t.slice(0, -1).join(', ')} and ${t[t.length - 1]}` : `${t[0]}, ${t[1]} and ${t.length - 2} more`;
+    it.el.querySelector('.ws-feed__txt').textContent = `${it.realm}: new firsts: ${list}`;
+    it.el.classList.toggle('is-open', !!it.open);
+    it.el.setAttribute('aria-label', `${it.realm}: new firsts: ${t.length === 2 ? list : `${t.slice(0, -1).join(', ')} and ${t[t.length - 1]}`}. Show on map`);
+    if (t.length > 2) it.el.dataset.tip = it.open ? 'Click to show fewer' : 'Click to list them all';
   }
 
   remove(it) {

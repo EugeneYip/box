@@ -77,6 +77,9 @@ export class RenderPipeline {
       stencil: false,
       alpha: false,
     });
+    // (looked up now, so the page teardown can drop the context without a
+    // round trip to the GPU side: see Game.dispose)
+    this._loseExt = renderer.getContext().getExtension('WEBGL_lose_context');
     this.dynScale = 1; // dynamic resolution factor (opt-in)
     this.saverScale = game.settings?.powerSaver ? SAVER_SCALE : 1; // applied power-saver resolution factor
     this._saverT = 0; // seconds since the saver was toggled
@@ -255,41 +258,126 @@ export class RenderPipeline {
     }
   }
 
-  // Once, in idle time shortly after boot (round 23): compile the shader
-  // programs of every material in the scene, hidden ones included (the
-  // levels of detail, dots and markers first seen at mid zoom or in the
-  // overview), so the first zoom out does not stall for many seconds on
-  // shader compiles. compileAsync hands the work to the GPU side and polls
-  // for completion, so the main thread keeps rendering meanwhile. Programs
-  // are compiled for the render target the scene is drawn into (the
-  // composer's input buffer: linear output, no tone mapping), as in a frame.
+  // Shader warm-up (round 23, reworked in round 25): from shortly after boot,
+  // in small batches in idle time, compile the shader programs of every
+  // material in the scene, hidden ones included (the levels of detail, dots
+  // and markers first seen at mid zoom or in the overview), so the first
+  // zoom out does not stall for many seconds on shader compiles. Programs are
+  // compiled for the render target the scene is drawn into (the composer's
+  // input buffer: linear output, no tone mapping), as in a frame.
+  // Each batch issues at most one new program (six with
+  // KHR_parallel_shader_compile) and waits on a GPU fence before the next, so
+  // the GPU side never holds a long queue of compiles: a frame that needs a
+  // program of its own (or a page that is leaving) waits for one compile at
+  // most, never for the whole set at once (round 24: without the extension
+  // the one-shot warm-up blocked the page for 26 s). Every few seconds the
+  // scene is looked over again and any material that has no program yet (a
+  // new era's buildings and vehicles, new effects) is warmed the same way.
   // (?warm=0 turns it off, for measuring)
   warmPrograms() {
     if (this._progWarm || (this.game.frame || 0) < 24) return;
     this._progWarm = true;
     if (typeof location !== 'undefined' && /[?&]warm=0\b/.test(location.search)) return;
     const r = this.renderer;
-    if (!r.compileAsync) return;
+    const gl = r.getContext();
+    if (!r.compile || !gl.fenceSync) return;
+    this._warmQ = [];
+    this._warmed = new WeakMap();
+    this._warmPar = !!r.extensions?.has?.('KHR_parallel_shader_compile');
+    this._warmFull = true; // the first look compiles every object's program
+    this._warmScanAt = 0;
+    this.warmInfo = { programs0: r.info.programs?.length ?? 0, batches: 0, compiled: 0, scans: 0, parallel: this._warmPar, t0: performance.now() };
+    this._warmLater(0, true);
+  }
+
+  _warmLater(ms, idle = false) {
+    if (this._warmTimer || this.game.disposed) return;
     const run = () => {
-      if (this.game.disposed) return;
-      const prev = r.getRenderTarget();
-      const t0 = performance.now();
+      this._warmTimer = 0;
       try {
-        r.setRenderTarget(this.composer?.inputBuffer ?? null);
-        const p = r.compileAsync(this.game.scene, this.game.cameraRig.camera);
-        this.warmInfo = { programs0: r.info.programs?.length ?? 0, issueMs: Math.round(performance.now() - t0) };
-        p.then(() => {
-          this.warmInfo.programs1 = r.info.programs?.length ?? 0;
-          this.warmInfo.doneS = +((performance.now() - t0) / 1000).toFixed(1);
-        }).catch(() => {});
+        this._warmSlice();
       } catch (err) {
-        console.warn('[pipeline] program warm-up skipped', err);
-      } finally {
-        r.setRenderTarget(prev);
+        console.warn('[pipeline] program warm-up stopped', err);
+        this._warmQ = null;
       }
     };
-    if (typeof requestIdleCallback === 'function') requestIdleCallback(run, { timeout: 4000 });
-    else setTimeout(run, 500);
+    this._warmIdle = idle && typeof requestIdleCallback === 'function';
+    this._warmTimer = this._warmIdle ? requestIdleCallback(run, { timeout: 2000 }) : setTimeout(run, ms);
+  }
+
+  _warmCancel() {
+    this._warmQ = null;
+    if (!this._warmTimer) return;
+    if (this._warmIdle) cancelIdleCallback(this._warmTimer);
+    else clearTimeout(this._warmTimer);
+    this._warmTimer = 0;
+  }
+
+  _warmSlice() {
+    const g = this.game;
+    if (g.disposed || !this._warmQ) return;
+    const r = this.renderer;
+    const gl = r.getContext();
+    if (gl.isContextLost?.()) return;
+    // the previous batch first: its fence signals once the GPU side has
+    // compiled it (a non-blocking query, updated between tasks)
+    if (this._warmFence) {
+      if (gl.getSyncParameter(this._warmFence, gl.SYNC_STATUS) !== gl.SIGNALED) return this._warmLater(50);
+      gl.deleteSync(this._warmFence);
+      this._warmFence = null;
+    }
+    const now = performance.now();
+    const Q = this._warmQ;
+    const W = this._warmed;
+    const info = this.warmInfo;
+    if (!Q.length) {
+      if (now < this._warmScanAt) return this._warmLater(this._warmScanAt - now);
+      this._warmScanAt = now + 3000;
+      info.scans++;
+      const full = this._warmFull;
+      const props = r.properties;
+      g.scene.traverse((o) => {
+        if (!(o.isMesh || o.isPoints || o.isLine || o.isSprite) || !o.material || Array.isArray(o.material)) return;
+        if (W.get(o) === o.material) return;
+        // (after the first look, only materials that have no program yet)
+        if (!full && props.get(o.material).currentProgram) return W.set(o, o.material);
+        Q.push(o);
+      });
+      this._warmFull = false;
+      if (!Q.length) {
+        if (info.doneS == null) info.doneS = +((now - info.t0) / 1000).toFixed(1);
+        return this._warmLater(3000);
+      }
+    }
+    const P = r.info.programs;
+    const p0 = P?.length ?? 0;
+    const maxNew = this._warmPar ? 6 : 1;
+    const cam = g.cameraRig.camera;
+    const prev = r.getRenderTarget();
+    try {
+      r.setRenderTarget(this.composer?.inputBuffer ?? null);
+      while (Q.length && performance.now() - now < 6) {
+        const o = Q.pop();
+        if (!o.parent || W.get(o) === o.material) continue; // gone, or seen through a parent
+        W.set(o, o.material);
+        try {
+          r.compile(o, cam, g.scene);
+        } catch (err) {
+          /* a material that cannot be compiled ahead is compiled when drawn */
+        }
+        if ((P?.length ?? 0) - p0 >= maxNew) break;
+      }
+    } finally {
+      r.setRenderTarget(prev);
+    }
+    const made = (P?.length ?? 0) - p0;
+    if (made > 0) {
+      info.batches++;
+      info.compiled += made;
+      this._warmFence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+      gl.flush();
+    }
+    this._warmLater(made > 0 ? 50 : 16, !Q.length);
   }
 
   passInfo() {

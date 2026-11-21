@@ -68,6 +68,9 @@ const STAT_DEFS = [
 ];
 export const PRESET_NAMES = { continent: 'Continent', pangaea: 'Pangaea', archipelago: 'Archipelago', islands: 'Islands', earth: 'World Map' };
 
+// short captions for the phone rail (the full name is the long-press tip)
+const NAV_CAPTION = { 'World laws': 'Laws', 'World ages': 'Ages', Controls: 'Help', 'New world': 'New' };
+
 export class TopBar {
   constructor(ui) {
     this.ui = ui;
@@ -142,7 +145,7 @@ export class TopBar {
         type: 'button',
         role: 'radio',
         'data-tip': `${s}× speed · ${i + 1}`,
-        'aria-label': `${s} times speed`,
+        'aria-label': `${s}× speed`,
         html: `${s}<small>×</small>`,
         onclick: () => {
           g.setSpeed(s);
@@ -259,11 +262,13 @@ export class TopBar {
   }
 
   navBtn(icon, label, key, fn) {
+    // (round 25) a caption under each rail icon (phones in portrait show it)
     return el('button', {
       class: 'ws-iconbtn',
       type: 'button',
       'aria-label': `${label} (${key})`,
       'data-tip': `${label} · ${key}`,
+      'data-cap': NAV_CAPTION[label] || label,
       html: uiIcon(icon),
       onclick: () => {
         fn();
@@ -427,9 +432,12 @@ export class TopBar {
       if (slow) {
         const v = E.ema < 0.1 ? null : E.ema < 9.95 ? E.ema.toFixed(1).replace(/\.0$/, '') : Math.round(E.ema);
         this.effEl.textContent = v == null ? 'Actual speed under 0.1×' : `Actual speed ${v}×`;
-        const lower = SPEEDS.filter((x) => x < g.speed && x <= Math.max(1, E.ema * 1.2)).pop() || SPEEDS[0];
-        this.effEl.dataset.tip = `Your device can't keep up with ${g.speed}×, so the world ${v == null ? 'barely moves (under 0.1×)' : `runs at about ${v}×`}. Try ${lower}×, or Power saver in Settings.`;
-        this.cycleBtn.dataset.tip = `Running slower than chosen · try ${lower}×`;
+        // (round 25) a slower speed is suggested only when there is one: at the
+        // lowest speed the tip points to Power saver alone
+        const lower = SPEEDS.filter((x) => x < g.speed && x <= Math.max(1, E.ema * 1.2)).pop() ?? SPEEDS.find((x) => x < g.speed) ?? null;
+        const runs = v == null ? 'barely moves (under 0.1×)' : `runs at about ${v}×`;
+        this.effEl.dataset.tip = lower != null ? `Your device can't keep up with ${g.speed}×, so the world ${runs}. Try ${lower}×, or Power saver in Settings.` : `Your device can't keep up with ${g.speed}×, so the world ${runs}. Try Power saver in Settings.`;
+        this.cycleBtn.dataset.tip = lower != null ? `Running slower than chosen · try ${lower}×` : 'Running slower than chosen · try Power saver';
       } else if (this.cycleBtn.dataset.tip !== 'Change speed · 1–5') {
         this.cycleBtn.dataset.tip = 'Change speed · 1–5';
       }

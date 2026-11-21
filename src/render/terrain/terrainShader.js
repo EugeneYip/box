@@ -67,6 +67,7 @@ float tCold;
 float tRivBed;
 float tUrb; // far-zoom urban patch weight (the realm tint stays light over towns)
 vec3 tUrbCol; // far-zoom urban patch colour (laid again over the realm tint)
+float tBuilt; // a town's built footprint at any zoom (the realm tint and borders stay light over it)
 float tRivBank; // map zoom: land beside a river channel (no crease shading there)
 
 const mat2 ROT1 = mat2(0.80, -0.60, 0.60, 0.80);
@@ -866,7 +867,10 @@ void applyOverlay(vec2 p, inout vec3 albedo, inout vec3 emissive, float snowK) {
   // snow composites above the territory tint (borders still read)
   float onSnow = 1.0 - 0.85 * snowK;
   // (a town's grey patch keeps most of its grey under the realm's tint)
-  albedo = mix(albedo, tintC, min(1.0, aFill * fillAmt * 1.3) * onSnow * (1.0 - 0.7 * tUrb));
+  // (and at mid zoom, 40-80, a town's built footprint keeps only a light
+  // wash of it: round 24 washed a Modern town salmon pink at 55 tiles)
+  float townK = max(0.7 * tUrb, 0.8 * tBuilt);
+  albedo = mix(albedo, tintC, min(1.0, aFill * fillAmt * 1.3) * onSnow * (1.0 - townK));
   // far zoom: a town's grey patch is laid again over the realm's tint, with
   // at most a tenth of the realm's colour left in it, so the town reads as a
   // grey urban patch against the tinted countryside (round 22: the patch
@@ -876,20 +880,23 @@ void applyOverlay(vec2 p, inout vec3 albedo, inout vec3 emissive, float snowK) {
     albedo = mix(albedo, mix(tUrbCol, urbTint, 0.10 * aFill * onSnow), tUrb * 0.95);
   }
   vec3 lineCol = col * 1.05 + 0.015;
-  albedo = mix(albedo, albedo * (1.0 - 0.35 * a) + col * 0.35 * a, glow * mix(0.3, 0.6, fillK) * onSnow);
+  albedo = mix(albedo, albedo * (1.0 - 0.35 * a) + col * 0.35 * a, glow * mix(0.3, 0.6, fillK) * onSnow * (1.0 - townK));
   // far zoom (past ~90): the border softens - a fainter coloured band and
   // almost no dark outer edge - so a small realm's border round its town no
   // longer draws a hard outlined box (round 21)
   float farSoft = smoothstep(80.0, 120.0, uCamDist) * (1.0 - smoothstep(260.0, 420.0, uCamDist));
-  float aLine = min(1.0, a * 1.3) * (1.0 - 0.45 * farSoft);
+  // (a border that runs through a town's blocks fades to a faint line, so it
+  // never cuts the town in two)
+  float aLine = min(1.0, a * 1.3) * (1.0 - 0.45 * farSoft) * (1.0 - 0.8 * tBuilt);
   albedo = mix(albedo, lineCol, line * aLine);
   albedo = mix(albedo, albedo * 0.3 + col * 0.06, edge * aLine * 0.85 * (1.0 - 0.75 * farSoft));
   // gentle self-glow by day, dim at night (lamps and fires must stay brighter)
-  emissive += (lineCol * line * 0.9 + col * glow * 0.3) * a * mix(0.05, 0.30, uDay);
+  emissive += (lineCol * line * 0.9 + col * glow * 0.3) * a * mix(0.05, 0.30, uDay) * (1.0 - 0.8 * tBuilt);
 }
 
 void terrainSurface() {
   tUrb = 0.0;
+  tBuilt = 0.0;
   tUrbCol = vec3(0.34, 0.33, 0.31);
   NS s;
   s.p = vWPos;
@@ -1328,46 +1335,63 @@ void terrainSurface() {
         H *= 1.0 - lk * 0.5;
       }
     }
-    // towns at far zoom (past ~80 units): the build area is a pale urban
-    // patch of roofs and streets, so a town reads as a town once its houses
-    // are a pixel or two (trees inside it are hidden there too)
+    // towns at far zoom (past ~80 units): the town's real footprint (R: a
+    // blurred mask of its built and street tiles, Terrain._writeUrban) is an
+    // urban patch of roofs and streets, so a town reads as a town once its
+    // houses are a pixel or two (trees inside it are hidden there too).
+    // Round 24: the patch followed the whole build area (grey fields ~40
+    // tiles across round three houses, draped over the hills like ash).
+    float dens = st.r;
+    tBuilt = smoothstep(0.10, 0.34, dens);
     float urbK = smoothstep(68.0, 92.0, uCamDist) * (1.0 - snowB * 0.2);
-    if (st.r > 0.01 && urbK > 0.0) {
-      // (a noise-broken soft edge: the patch fades out over the outer ring)
-      float sr = st.r + (s.meso.b - 0.5) * 0.16 + (s.det.g - 0.5) * 0.06;
-      float core = smoothstep(0.30, 0.85, sr);
-      float ring = smoothstep(0.10, 0.36, sr);
-      // a mid grey patch of roofs and pavement (about #b5b0a8 on screen),
-      // darker and far less saturated than beach sand or dry ground, so a
-      // town no longer reads as a sand flat (round 21: the pale warm beige
-      // matched the beaches). Soft tonal variation, a faint street texture:
-      // the town's own streets as soft darker lines, and a fine block grid
-      // that fades out before it could turn to graph paper.
-      float rv = s.macro.g * 0.6 + s.meso.r * 0.4;
-      // (a touch warm: a neutral grey took the blue sky fill as lilac)
-      vec3 urb = mix(vec3(0.335, 0.322, 0.300), vec3(0.355, 0.338, 0.312), smoothstep(0.35, 0.7, rv));
-      urb = mix(urb, vec3(0.375, 0.362, 0.340), core * 0.5);
-      urb *= 0.95 + 0.07 * s.det.r;
-      // snow-covered towns: a paler grey (roofs and yards under snow), still
-      // a patch apart from the white fields round it
-      urb = mix(urb, vec3(0.50, 0.505, 0.51), clamp(snowB, 0.0, 1.0) * 0.6);
-      // streets: soft LIGHT lines along the town's road tiles (concrete and
-      // asphalt seen from afar), and a faint light block grid in the core
-      float rdU = dot(vec4(equal(vec4(t0, t1, t2, t3), vec4(13.0))) * live, b);
-      urb = mix(urb, urb * 1.22 + 0.025, rdU * 0.7);
-      vec2 bq = (0.5 - abs(fract(p / 2.5 + vec2(hash12(floor(p / 40.0)) * 0.5)) - 0.5)) * 2.5; // (units to the block's edge)
-      float bw = max(s.fw, 0.05);
-      float grid = (1.0 - smoothstep(0.16, 0.16 + bw * 1.5, min(bq.x, bq.y))) * (1.0 - smoothstep(0.35, 0.8, bw));
-      urb *= 1.0 + 0.08 * grid * core;
+    if (dens > 0.02 && urbK > 0.0) {
+      // (a noise-broken edge that hugs the blocks: no soft cloud fringe)
+      float sr = dens + (s.meso.b - 0.5) * 0.10 + (s.det.g - 0.5) * 0.08;
+      float core = smoothstep(0.35, 0.70, sr);
+      float ring = smoothstep(0.13, 0.24, sr);
+      float pr = pvs.r * 255.0;
+      float bldT = pr - 2.0 * floor(pr * 0.5 + 0.25); // (low bit: a building on this tile)
+      bool rdT = tileTypeAt(pci) == 13.0;
+      float modU = step(1.5, plvl), futU = step(2.5, plvl);
+      // yards between the buildings: a dull grey-green, darker than the roofs
+      vec3 urb = mix(vec3(0.175, 0.19, 0.15), vec3(0.20, 0.205, 0.185), modU);
+      urb *= 0.92 + 0.12 * s.det.r;
+      // roofs: one colour per tile from a town palette (terracotta, brown
+      // shingle, slate, weathered grey; flat grey and white concrete from
+      // the Modern era), each roof edged by a thin dark line, so the
+      // patch carries a block grid and roof-coloured speckle
+      float rh = hash12(vec2(pci) * 0.5 + floor(vec2(pci) * 0.5) * 3.1);
+      float rh2 = hash12(vec2(pci) + 7.7);
+      vec3 roof;
+      if (rh < 0.30 - 0.18 * modU) roof = vec3(0.36, 0.16, 0.10);
+      else if (rh < 0.48 - 0.20 * modU) roof = vec3(0.26, 0.18, 0.13);
+      else if (rh < 0.70 - 0.10 * modU) roof = vec3(0.16, 0.17, 0.20);
+      else if (rh < 0.88) roof = vec3(0.31, 0.30, 0.285);
+      else roof = vec3(0.44, 0.44, 0.43);
+      roof = mix(roof, vec3(0.40, 0.41, 0.42), futU * 0.4);
+      roof *= 0.85 + 0.3 * rh2;
+      vec2 pcfU = p - floor(p);
+      float awU = max(s.fw, 0.02);
+      float edgeU = min(min(pcfU.x, 1.0 - pcfU.x), min(pcfU.y, 1.0 - pcfU.y));
+      float gapU = 1.0 - smoothstep(0.06, 0.06 + awU * 1.2, edgeU);
+      roof = mix(roof, roof * 0.55, gapU * 0.8);
+      urb = mix(urb, roof, bldT);
+      // streets: pale concrete lines along the road tiles (the real grid)
+      if (rdT) urb = mix(vec3(0.29, 0.28, 0.265), vec3(0.32, 0.32, 0.31), modU) * (0.94 + 0.08 * s.det.g);
+      // snow-covered towns: roofs and yards under snow, still a patch apart
+      urb = mix(urb, vec3(0.50, 0.505, 0.51) * (0.9 + 0.15 * bldT), clamp(snowB, 0.0, 1.0) * 0.6);
+      // the ground's own light and shade carry through (hill shading and
+      // crease shadows stay readable under the patch)
+      urb *= clamp(lum(albedo) / 0.11, 0.85, 1.15);
       // neutral on screen under a warm or cool age: the key light's chroma and
       // the post grade's midtone tint are taken back out of the patch (an
-      // Embers age turned the grey patch the same orange as the fields)
+      // Embers age turned the grey patch the same orange as the fields);
+      // the sky fill's tint is taken out in the lighting (patchTerrainMaterial)
       vec3 kcU = uKeyCol / max(dot(uKeyCol, vec3(0.2126, 0.7152, 0.0722)), 1e-3);
       urb /= mix(vec3(1.0), clamp(kcU, vec3(0.5), vec3(1.6)), 0.75);
       urb = pow(max(pow(urb, vec3(1.0 / 2.2)) - uGradeMid * 1.3, vec3(0.02)), vec3(2.2));
-      // (a firm, noise-broken edge: the ring of the build area is as grey as
-      // the core, so the patch has an edge instead of fading into the fields)
-      float uk = (ring * 0.85 + core * 0.15) * urbK;
+      // (not on cliffs: a steep face keeps its rock, so hills read as hills)
+      float uk = (ring * 0.8 + core * 0.2) * urbK * (1.0 - 0.75 * cliff);
       albedo = mix(albedo, urb, uk * 0.95);
       rough = mix(rough, 0.82, uk);
       tUrb = uk;
@@ -1522,6 +1546,9 @@ export function patchTerrainMaterial(material, uniforms) {
          float cloudD = mix(tCloud, 1.0, uDay);
          vec3 ind0 = reflectedLight.indirectDiffuse;
          reflectedLight.indirectDiffuse = mix(ind0, vec3(dot(ind0, vec3(0.2126, 0.7152, 0.0722))) * vec3(1.04, 1.0, 0.93), 0.55 * farL * uDay);
+         // a far town's patch takes no tint from the sky fill at any hour
+         // (round 24: at dusk the blue fill turned the grey patches lavender)
+         reflectedLight.indirectDiffuse = mix(reflectedLight.indirectDiffuse, vec3(dot(ind0, vec3(0.2126, 0.7152, 0.0722))) * vec3(1.03, 1.0, 0.95), tUrb);
          reflectedLight.indirectDiffuse *= tAO * cloudN;
          reflectedLight.indirectSpecular *= tAO * cloudN;
          reflectedLight.directDiffuse *= mix(1.0, tAO, 0.45) * cloudN * cloudD;
@@ -1529,5 +1556,5 @@ export function patchTerrainMaterial(material, uniforms) {
       )
       .replace('#include <opaque_fragment>', TERRAIN_FRAGMENT_POST + '\n#include <opaque_fragment>');
   };
-  material.customProgramCacheKey = () => 'worldseed-terrain-v10';
+  material.customProgramCacheKey = () => 'worldseed-terrain-v11';
 }
