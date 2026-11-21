@@ -404,7 +404,11 @@ const BUILD = {
   },
 
   pylon(g, P) {
-    pylonModel(g, P.era >= 6 ? 0x8a929a : P.steel);
+    // (round 25) the town's substation where its power line ends, at the
+    // edge of town: a gravel yard behind a low fence, two transformers and
+    // the gantry the line's wires come down to (a lattice pylon stood on a
+    // main plaza with its wires over the square)
+    substationModel(g, P.era >= 6 ? 0x8a929a : P.steel);
   },
 
   radiomast(g, P) {
@@ -1148,6 +1152,33 @@ export const PYLON_ARMS = [
   [0.4, 1.72],
   [-0.4, 1.72],
 ];
+// The substation at a power line's town end (and the town's 'pylon'
+// building): on a 1 x 1 plot, the gantry's arms at SUB_ARM_Y
+export const SUB_ARM_Y = 1.05;
+export function substationModel(g, col) {
+  g.box(0, 0, 0, 0.92, 0.03, 0.92, 0x8c8a84, {});
+  // the fence: posts and two rails
+  for (const s of [-1, 1]) {
+    g.box(0, 0.03, s * 0.44, 0.9, 0.025, 0.02, 0x6a6e72, {});
+    g.box(0, 0.2, s * 0.44, 0.9, 0.02, 0.02, 0x6a6e72, {});
+    g.box(s * 0.44, 0.03, 0, 0.02, 0.025, 0.9, 0x6a6e72, {});
+    g.box(s * 0.44, 0.2, 0, 0.02, 0.02, 0.9, 0x6a6e72, {});
+    for (const t of [-0.44, 0, 0.44]) {
+      g.box(t, 0.03, s * 0.44, 0.025, 0.2, 0.025, 0x5a5e62, {});
+      g.box(s * 0.44, 0.03, t, 0.025, 0.2, 0.025, 0x5a5e62, {});
+    }
+  }
+  // two transformers with their fins and bushings
+  for (const x of [-0.2, 0.2]) {
+    g.box(x, 0.03, 0.12, 0.22, 0.26, 0.18, 0x6e767c, {});
+    g.box(x, 0.03, 0.12, 0.26, 0.2, 0.06, 0x5c646a, {});
+    for (const bx of [-0.06, 0, 0.06]) g.cyl(x + bx, 0.29, 0.12, 0.012, 0.09, 4, 0x9aa6b0, {});
+  }
+  // the gantry: two lattice legs and a cross beam the wires end on
+  for (const s of [-1, 1]) lattice(g, s * 0.34, -0.22, SUB_ARM_Y, 0.08, 0.04, col, 3, 0.014);
+  g.beam(-0.4, SUB_ARM_Y, -0.22, 0.4, SUB_ARM_Y, -0.22, 0.03, col);
+  for (const s of [-1, 1]) insulator(g, s * 0.3, SUB_ARM_Y, -0.22);
+}
 export function pylonModel(g, col) {
   lattice(g, 0, 0, 2.55, 0.26, 0.05, col, 6, 0.022);
   g.cone(0, 2.55, 0, 0.07, 0.18, 4, col, {});

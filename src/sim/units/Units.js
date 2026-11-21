@@ -911,16 +911,48 @@ export class Units {
     u._wantPath = false;
     const [sx, sy] = w.tileOf(u.x, u.z);
     const [gx, gy] = w.tileOf(u.target.x, u.target.z);
-    const path = findPath(
-      w,
-      sx,
-      sy,
-      gx,
-      gy,
-      (tx, ty) => (tx === sx && ty === sy) || this._pathable(u, tx, ty),
-      2500,
-      u.def.habitat === 'land' ? (tx, ty, from) => this._pathCost(tx, ty, from) : null,
-    );
+    // (round 25) the tests of _pathable and _pathCost, with the world's
+    // tables looked up once per search instead of once per tile (the same
+    // answers; a search asks thousands of times)
+    const W = w.w,
+      H = w.h,
+      height = w.height,
+      bld = w.building,
+      type = w.type,
+      flora = w.flora,
+      fire = w.fire;
+    const def = u.def;
+    const allowB = u._allowB;
+    const land = def.habitat === 'land';
+    const water = def.habitat === 'water';
+    const swimMin = def.canSwim ? SEA_LEVEL - Math.min(SHALLOW_DEPTH * 0.85, wadeDepth(def)) : Infinity;
+    const passable = (tx, ty) => {
+      if (tx === sx && ty === sy) return true;
+      if (!(tx >= 0 && ty >= 0 && tx < W && ty < H)) return false;
+      const i = ty * W + tx;
+      const h = height[i];
+      if (water) return h < SEA_LEVEL - 0.3;
+      if (h < SEA_LEVEL) return !!def.canSwim && (bld[i] >= 0 || h > swimMin);
+      const b = bld[i];
+      if (b >= 0 && b !== allowB) return false;
+      return TILE_INFO[type[i]].walkable && !FLORA_INFO[flora[i]].blocksMovement;
+    };
+    const rm0 = this.game.civ?.railMask;
+    const rm = rm0 && rm0.length === w.size ? rm0 : null;
+    const lod8Off = !!globalThis.__lod8Off;
+    const ROAD = TILE.ROAD;
+    const cost = land
+      ? (tx, ty, from) => {
+          const i = ty * W + tx;
+          let c = 0;
+          if (height[i] < SEA_LEVEL) c += 3;
+          if (fire[i] > 0) c += 6;
+          if (type[i] === ROAD) c -= 0.25;
+          if (rm && rm[i] & 5 && (from < 0 || rm[from] & 5 || lod8Off)) c += 2.5;
+          return c;
+        }
+      : null;
+    const path = findPath(w, sx, sy, gx, gy, passable, 2500, cost);
     if (!path) {
       u.target = null;
       u.path = null;

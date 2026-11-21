@@ -430,21 +430,33 @@ export class Game {
 
   // Page teardown: stop the frame loop, free the renderer's GPU resources and
   // drop its context, and close the audio. Safe to call more than once.
+  // (round 25) The context is dropped first: losing it lets the GPU side
+  // discard whatever this page still had queued (shader compiles, a frame's
+  // draws) at once instead of working through it before the next page can
+  // draw, and every later release is then a no-op on the lost context that
+  // never waits on the GPU. The shader warm-up's timers stop with the loop.
   dispose() {
     if (this.disposed) return;
     this.disposed = true;
     if (this._raf) cancelAnimationFrame(this._raf);
     this._raf = 0;
+    removeEventListener('pagehide', this._onPageHide);
+    const P = this.pipeline;
     try {
-      this.pipeline?.destroyComposer?.();
-      const r = this.pipeline?.renderer;
+      P?._warmCancel?.();
+      const r = P?.renderer;
       if (r) {
         r.setAnimationLoop?.(null);
-        r.dispose();
-        r.forceContextLoss?.();
+        (P._loseExt || r.getContext()?.getExtension?.('WEBGL_lose_context'))?.loseContext();
       }
     } catch (err) {
       /* the page is going away: nothing to report to */
+    }
+    try {
+      P?.destroyComposer?.();
+      P?.renderer?.dispose();
+    } catch (err) {
+      /* as above */
     }
     try {
       const ctx = this.audio?.ctx;

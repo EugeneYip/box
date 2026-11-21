@@ -141,12 +141,15 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   bool fineW = uDetail > 0.001;
   vec4 st1 = fineW ? texture2D(uNoise, vec2(fu * 0.16 - t * 0.085, fv * 0.85)) : vec4(0.5);
   vec4 st2 = fineW ? texture2D(uNoise, vec2(fu * 0.42 - t * 0.21, fv * 1.9) + 0.37) : vec4(0.5);
-  float streak = smoothstep(0.56, 0.86, st1.r) * 0.7 + smoothstep(0.6, 0.9, st2.g) * 0.5 * (1.0 - smoothstep(0.08, 0.35, fw));
+  // (soft and sparse: round 24's river up close was marbled with strong
+  // swirl lines, worst where the flow turns and the streaks wheel round)
+  float streak = smoothstep(0.60, 0.90, st1.r) * 0.42 + smoothstep(0.66, 0.92, st2.g) * 0.18 * (1.0 - smoothstep(0.08, 0.35, fw));
   float riffle = smoothstep(0.62, 0.92, st2.r) * (1.0 - smoothstep(0.25, 0.7, depth)) * (1.0 - smoothstep(0.1, 0.4, fw));
   // bends: how fast the flow direction turns per world unit
   float bend = smoothstep(0.35, 0.95, length(fwidth(flow)) / max(fw, 1e-3));
-  // flow ripples tilt the surface along the current
-  sl += flow * (st1.g - 0.5) * 0.25 * narrow * (1.0 - smoothstep(0.1, 0.5, fw));
+  streak *= 1.0 - 0.75 * bend;
+  // flow ripples tilt the surface along the current (gently)
+  sl += flow * (st1.g - 0.5) * 0.12 * narrow * (1.0 - 0.7 * bend) * (1.0 - smoothstep(0.1, 0.5, fw));
 
   vec3 N = normalize(vec3(-sl.x, 1.0, -sl.y));
   float NdV = max(dot(N, V), 0.0);
@@ -498,5 +501,5 @@ export function patchWaterMaterial(material, uniforms) {
       .replace('#include <fog_fragment>', WATER_FOG)
       .replace('#include <premultiplied_alpha_fragment>', '');
   };
-  material.customProgramCacheKey = () => 'worldseed-water-v6';
+  material.customProgramCacheKey = () => 'worldseed-water-v7';
 }

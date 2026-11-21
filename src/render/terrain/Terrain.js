@@ -355,8 +355,7 @@ export class Terrain {
       H = this.h;
     const d = this.settleData;
     d.fill(0);
-    const town = g.flora?.town;
-    if (town) for (let i = 0; i < W * H; i++) if (town[i]) d[i * 4] = town[i] >= 2 ? 255 : 120;
+    this._writeUrban(d);
     // fields: a mosaic of farmed plots on low, flat grassland around every
     // town of a World Map world, fading out a couple of build radii away
     // (square maps farm their own FARMLAND tiles)
@@ -451,6 +450,75 @@ export class Terrain {
       }
     }
     this.settleTexture.needsUpdate = true;
+  }
+  // R: the far-zoom urban patch follows the town's real footprint, not its
+  // whole build area: a blurred mask of the tiles under buildings and the
+  // streets between them (round 24: the build radius drew grey fields ~40
+  // tiles across round two or three houses, and polka dots over the map).
+  // The texel's lowest bit says whether this very tile is under a building,
+  // so the shader can lay roof colours on the built tiles and pale lines on
+  // the streets (the bit is noise below 1/255 in the filtered density).
+  _writeUrban(d) {
+    const g = this.game,
+      world = g.world,
+      W = this.w,
+      H = this.h;
+    const town = g.flora?.town,
+      use = g.civ?.use,
+      bld = world.building;
+    if (!town) return;
+    const n = W * H;
+    if (!this._urbA || this._urbA.length !== n) {
+      this._urbA = new Float32Array(n);
+      this._urbB = new Float32Array(n);
+    }
+    const a = this._urbA,
+      bb = this._urbB;
+    a.fill(0);
+    const typ = world.type;
+    let any = false;
+    for (let i = 0; i < n; i++) {
+      if (!town[i]) continue;
+      const u = use ? use[i] : 0;
+      if (u === 1 || (bld && bld[i] >= 0)) (a[i] = 1), (any = true);
+      else if (u === 2 || typ[i] === 13) (a[i] = 0.75), (any = true);
+    }
+    if (!any) return;
+    // two box passes (5 then 3 wide): a soft ~3-tile falloff round the blocks
+    const pass = (src, dst, r, horiz) => {
+      const inv = 1 / (2 * r + 1);
+      if (horiz) {
+        for (let y = 0; y < H; y++) {
+          const o = y * W;
+          let s = 0;
+          for (let k = -r; k <= r; k++) s += src[o + Math.min(W - 1, Math.max(0, k))];
+          for (let x = 0; x < W; x++) {
+            dst[o + x] = s * inv;
+            s += src[o + Math.min(W - 1, x + r + 1)] - src[o + Math.max(0, x - r)];
+          }
+        }
+      } else {
+        for (let x = 0; x < W; x++) {
+          let s = 0;
+          for (let k = -r; k <= r; k++) s += src[Math.min(H - 1, Math.max(0, k)) * W + x];
+          for (let y = 0; y < H; y++) {
+            dst[y * W + x] = s * inv;
+            s += src[Math.min(H - 1, y + r + 1) * W + x] - src[Math.max(0, y - r) * W + x];
+          }
+        }
+      }
+    };
+    pass(a, bb, 2, true);
+    pass(bb, a, 2, false);
+    pass(a, bb, 1, true);
+    pass(bb, a, 1, false);
+    for (let i = 0; i < n; i++) {
+      const v = a[i];
+      const built = town[i] && ((use && use[i] === 1) || (bld && bld[i] >= 0)) ? 1 : 0;
+      if (v < 0.004 && !built) continue;
+      // (density x1.6: a lawned Modern block of one or two houses still fills)
+      d[i * 4] = (Math.min(127, Math.round(v * 1.6 * 127)) << 1) | built;
+    }
   }
   // a town's streets or era changed: repaint its paving (checked every 2 s)
   _settleSig() {

@@ -1276,6 +1276,10 @@ export class BuildingRenderer {
         c.t = ((c.forge ? 0.55 : 2.4 + Math.random() * 2.6) / (c.rate || 1)) * (g.settings?.powerSaver ? 2 : 1);
         const b = c.b;
         if (!b.alive || b.constructing) continue;
+        // (round 25: eight or more puffs hung over ordinary Modern blocks:
+        // a Modern or Future town's homes and shops are heated without a
+        // fire, so only its works, factories and power stacks smoke)
+        if (!c.steam && !c.forge && (g.civ?.kingdoms?.[b.kingdom]?.era || 0) >= 5) continue;
         if ((c.x - cx) ** 2 + (c.z - cz) ** 2 > R2) continue;
         if (budget-- <= 0) break;
         if (c.steam) {
