@@ -1209,7 +1209,9 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
   // (round 23: the coast stays at least ~25 tiles in and its bays reach
   // 60-90 tiles in on long land edges, so it never runs parallel to the
   // frame; no fine wiggle out there, which flecked the shelf with islets)
-  const coastBig = SR * 0.072, coastBase = SR * 0.026;
+  // (round 25: the base sits ~45 tiles in, not ~23, so no stretch of the
+  // fading coast runs as a near-straight line just under the frame)
+  const coastBig = SR * 0.072, coastBase = SR * 0.05;
   const fadeReach = coastBase + coastBig + 20 + 26;
   // distance to the frame with rounded corners (radius ~13% of the map), so
   // the fading coast curves round a corner instead of squaring it off
@@ -1233,27 +1235,102 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
         const lead = k < 8 || k === all.length - 1 || (rl.must && rl.must.includes(c.name));
         if (ce < fadeReach + 30) keepPts.push([cx, cy, ce, lead ? 1.4 : 2.2, lead ? 64 : 30]);
       });
-  if (REG)
+  // The fading coast's distance from the frame is a smooth field: its noise
+  // is blurred (~8-tile Gaussian) before the coast is drawn, so the coast
+  // swings in broad bays and capes but never frays into lace (round 24:
+  // the ~11-23 tile detail turned faster than one tile per tile, and the
+  // contour broke into fingers and speck islets along Europe's east edge)
+  const coastF = REG ? new Float32Array(N) : null;
+  if (REG) {
+    const reach2 = fadeReach + 24;
     for (let y = 0; y < H; y++)
       for (let x = 0; x < W; x++) {
-        const e = edgeDistR(x, y);
-        if (e >= fadeReach) continue;
         const i = y * W + x;
-        if (!land[i]) continue;
-        // broad bays and capes (~120-tile swells, warped), then ~45-tile
-        // swells along the shore (the ~9-tile wiggle is gone: it drew lace
-        // and islets right along the frame)
+        const e = edgeDistR(x, y);
+        if (e >= reach2) {
+          coastF[i] = coastBase + coastBig * 0.5;
+          continue;
+        }
+        // broad bays and capes (~120-tile swells, warped), then a gentle
+        // ~90-tile swell along the shore
         const wx = x + fbm(nWarp, x / 70 + 11.3, y / 70 - 4.7, 2) * 28, wy = y + fbm(nWarp, x / 70 - 7.9, y / 70 + 2.2, 2) * 28;
         const bz = Math.min(1, Math.max(0, 0.5 + fbm(nBorder, wx / (SR * 0.13) + 5.3, wy / (SR * 0.13) - 2.1, 3) * 1.5));
         const big = bz * bz * (3 - 2 * bz);
-        let coast = Math.max(14, coastBase + coastBig * big + fbm(nDetail, x / 46 + 31.7, y / 46 - 17.3, 3) * 24);
+        coastF[i] = coastBase + coastBig * big + fbm(nDetail, x / 110 + 31.7, y / 110 - 17.3, 2) * 36;
+      }
+    const tmp = new Float32Array(N);
+    const box = (src, dst, r, horiz) => {
+      const inv = 1 / (2 * r + 1);
+      const L = horiz ? W : H, M = horiz ? H : W;
+      for (let m = 0; m < M; m++) {
+        const at = horiz ? (k) => m * W + Math.min(L - 1, Math.max(0, k)) : (k) => Math.min(L - 1, Math.max(0, k)) * W + m;
+        let sum = 0;
+        for (let k = -r; k <= r; k++) sum += src[at(k)];
+        for (let k = 0; k < L; k++) {
+          dst[at(k)] = sum * inv;
+          sum += src[at(k + r + 1)] - src[at(k - r)];
+        }
+      }
+    };
+    for (let pass = 0; pass < 2; pass++) {
+      box(coastF, tmp, 7, true);
+      box(tmp, coastF, 7, false);
+    }
+  }
+  // land that the fading coast leaves standing: a smoothed mask (a lone tile
+  // of land in the shelf, or a one-tile inlet in the coast, takes the side
+  // of its neighbours), so the coast near the frame is clean
+  const fadeLand = REG ? new Uint8Array(N) : null;
+  const fadeDc = REG ? new Float32Array(N) : null;
+  if (REG) {
+    for (let y = 0; y < H; y++)
+      for (let x = 0; x < W; x++) {
+        const i = y * W + x;
+        if (!land[i]) continue;
+        const e = edgeDistR(x, y);
+        if (e >= fadeReach) {
+          fadeLand[i] = 1;
+          fadeDc[i] = 1e9;
+          continue;
+        }
+        let coast = Math.max(20, coastF[i]);
         // a known city keeps up to ~12 tiles of land toward the border,
         // widening into a cape around it
         for (const [cx, cy, ce, sl, rk] of keepPts) {
           const dk = Math.hypot(x - cx, y - cy) * (1 + fbm(nBank, x / 13 - 4.4, y / 13 + 6.1, 2) * 0.6); // (a ragged headland, not a disc)
           if (dk < rk) coast = Math.min(coast, Math.max(6, ce - 12 + Math.max(0, dk - 9) * sl));
         }
-        const dc = e - coast; // tiles inland of the fading coast
+        fadeDc[i] = e - coast; // tiles inland of the fading coast
+        if (fadeDc[i] > 0) fadeLand[i] = 1;
+      }
+    // two majority passes over the fading band (5 of the 8 neighbours); an
+    // islet that holds a realm city (Madeira, the Azores) is left alone
+    const nearCity = new Uint8Array(N);
+    for (const [cx, cy] of keepPts)
+      for (let dy = -5; dy <= 5; dy++)
+        for (let dx = -5; dx <= 5; dx++) {
+          const x = Math.floor(cx) + dx, y = Math.floor(cy) + dy;
+          if (x >= 0 && y >= 0 && x < W && y < H) nearCity[y * W + x] = 1;
+        }
+    for (let pass = 0; pass < 2; pass++) {
+      const nxt = fadeLand.slice();
+      for (let y = 1; y < H - 1; y++)
+        for (let x = 1; x < W - 1; x++) {
+          const i = y * W + x;
+          if (!land[i] || nearCity[i] || fadeDc[i] > 40 || fadeDc[i] < -40) continue;
+          let c = 0;
+          for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if ((dx || dy) && fadeLand[i + dy * W + dx]) c++;
+          if (c >= 5) nxt[i] = 1;
+          else if (c <= 3) nxt[i] = 0;
+        }
+      fadeLand.set(nxt);
+    }
+    for (let y = 0; y < H; y++)
+      for (let x = 0; x < W; x++) {
+        const i = y * W + x;
+        if (!land[i] || fadeDc[i] >= 1e8) continue;
+        // (a tile the smoothing kept or sank keeps to its side of the coast)
+        const dc = fadeLand[i] ? Math.max(0.5, fadeDc[i]) : Math.min(-0.5, fadeDc[i]);
         // (high ground eases down over a longer run, so ranges sink rather than drop)
         const run = 10 + Math.min(16, Math.max(0, hgt[i]) * 1.3);
         if (dc >= run) continue;
@@ -1264,13 +1341,17 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
           const low = 0.12 + 0.2 * k;
           const f = low + (Math.max(hgt[i], low) - low) * k;
           if (f < hgt[i]) hgt[i] = f;
+          if (fadeDc[i] <= 0 && hgt[i] < 0.1) hgt[i] = 0.1; // (an inlet the smoothing filled)
         } else {
           // a wide shallow shelf beyond it (turquoise over 10 to 20 tiles at
           // overview), deepening steadily toward the border
-          const f = -0.25 + dc * (0.1 + 0.004 * -dc) + fbm(nBank, x / 9, y / 9, 2) * 0.15;
+          // (broad, faint unevenness: fine noise here flecked the shelf with
+          // pale shoals that read as lace beside the coast)
+          const f = -0.3 + dc * (0.1 + 0.004 * -dc) + fbm(nBank, x / 30, y / 30, 2) * 0.08 * Math.min(1, -dc / 8);
           hgt[i] = Math.min(hgt[i], Math.max(f, -6.5));
         }
       }
+  }
   // regional maps: specks of land left out on the faded shelf (a few tiles
   // each, all within the fading band) sink to shelf, so the coast near the
   // frame is not flecked with islets; a speck that holds a realm city stays
@@ -1284,7 +1365,7 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
       stack.push(s0);
       seen[s0] = 1;
       let inner = false;
-      while (stack.length && comp.length <= 60) {
+      while (stack.length && comp.length <= 140) {
         const i = stack.pop();
         comp.push(i);
         const x = i % W, y = (i / W) | 0;
@@ -1299,7 +1380,7 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
             stack.push(j);
           }
       }
-      if (inner || stack.length || comp.length > 60) {
+      if (inner || stack.length || comp.length > 140) {
         // (a large piece: mark the rest seen without sinking it)
         while (stack.length) {
           const i = stack.pop();
