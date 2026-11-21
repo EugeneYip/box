@@ -1660,17 +1660,17 @@ export class Civilization {
     const lean = ctr('Martial') ? 2.1 : ctr('Pastoral') || ctr('Scholarly') ? 0.6 : 1;
     // (a lighter watch since round 15: soldiers were 26-30% of all people
     // from Year 100 to 300)
-    const peaceGuard = () => Math.max(1, n * 0.08 * lean) + (v.hasBarracks ? 1 : 0) + (ctr('Martial') && v.tier >= 1 ? 2 : 0);
-    const martialFirst = ctr('Martial') && !atWar && n >= 5;
-    if (martialFirst) give('soldier', peaceGuard());
-    give('fisher', v.docks ? Math.min(v.docks * (ctr('Seafaring') ? 3 : 2), 1 + n * (ctr('Seafaring') ? 0.25 : 0.15)) : foodLow && n >= 5 && v.coastal ? 1 : 0);
-    const drafting = this.game.time.total - (v.draft ?? -99) < 45;
-    // a people's ways show in its trades: martial folk keep many under arms
     // (round 27) the early eras keep smaller warbands: soldiers were 17% of
     // all people at Year 100 and combat outkilled old age; the ages of iron
     // and after may field more
     const kEra = this.kingdoms[v.kingdom]?.era || 0;
     const warShare = kEra <= 1 ? 0.2 : kEra === 2 ? 0.25 : kEra === 3 ? 0.32 : 0.45;
+    const peaceGuard = () => Math.min(n * (kEra <= 2 ? 0.13 : 0.2) + 1, Math.max(1, n * 0.08 * lean) + (v.hasBarracks ? 1 : 0) + (ctr('Martial') && v.tier >= 1 ? 2 : 0));
+    const martialFirst = ctr('Martial') && !atWar && n >= 5;
+    if (martialFirst) give('soldier', peaceGuard());
+    give('fisher', v.docks ? Math.min(v.docks * (ctr('Seafaring') ? 3 : 2), 1 + n * (ctr('Seafaring') ? 0.25 : 0.15)) : foodLow && n >= 5 && v.coastal ? 1 : 0);
+    const drafting = this.game.time.total - (v.draft ?? -99) < 45;
+    // a people's ways show in its trades: martial folk keep many under arms
     if (atWar) give('soldier', Math.min(n * warShare + 1, Math.max(kEra <= 2 ? 2 : 3, n * Math.min(warShare, (drafting ? 0.26 : 0.16) * lean)) + (v.hasBarracks ? 2 : 0)));
     give('builder', sites ? Math.min(Math.max(1, Math.ceil(sites * 1.1 * shift)), 1 + Math.floor((n * shift) / 6)) : repairs ? 1 : 0);
     // an empty woodshed stops all building: send more hands to the woods

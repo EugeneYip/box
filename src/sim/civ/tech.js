@@ -554,8 +554,10 @@ export const tech = {
     // 372 (round 24: 323). Once the year has passed, every realm's hold on
     // that era is lifted until one enters, and the leader is hurried the
     // harder the later it is.
+    // (two years' grace, so an era its leader enters on time keeps its
+    // followers' own years: a burst of held realms would enter with it)
     const nextE = top + 1;
-    const overdue = ERA_YEAR[nextE] != null && nextE <= this.eraCap() && year > ERA_YEAR[nextE] / tsp ? year - ERA_YEAR[nextE] / tsp : 0;
+    const overdue = ERA_YEAR[nextE] != null && nextE <= this.eraCap() && year > (ERA_YEAR[nextE] + 2) / tsp ? year - ERA_YEAR[nextE] / tsp : 0;
     if (ERA_YEAR[nextE] != null && (nextE >= 5 || overdue > 0)) {
       let best = null,
         be = Infinity;

@@ -834,7 +834,7 @@ export function installDaily(Units) {
         u._meal = key;
         const [meal, lab] = MEAL[mi];
         // lunch where the work is (or at the market); breakfast and supper at home
-        if (mi === 1 && (working || u.job)) this._dlStart(u, 'eat', 7 + rng() * 5, { lab, act: 'eat' });
+        if (mi === 1 && (working || u.job || (child && u._schoolDay === c.day))) this._dlStart(u, 'eat', 7 + rng() * 5, { lab, act: 'eat' });
         else if (mi === 1 && pl.market && rng() < 0.5) this._dlStart(u, 'eat', 8 + rng() * 5, { x: pl.market.doorX + (rng() - 0.5) * 2, z: pl.market.doorZ + (rng() - 0.5) * 2, lab: 'Eating at the market', go: 'Walking to the market', act: 'eat' });
         else this._dlStart(u, 'eat', 6 + rng() * 4, { x: hx + (rng() - 0.5) * 1.2, z: hz + (rng() - 0.5) * 1.2, lab, go: 'Walking home', act: 'eat' });
         u._dl.meal = meal;
@@ -866,7 +866,10 @@ export function installDaily(Units) {
       // 9.7% of a child's day plus 6.2% walking; resting was their top
       // activity)
       if (u.age >= 6 && school && h >= 7.5 && h < 14.8 && rng() < 0.8) {
-        const dur = Math.max(12, (15.2 - h) * H + rng() * 0.3 * H);
+        // (morning class to lunch, eaten at school; afternoon class to 15:12)
+        const end = h < 11.6 ? 11.8 : 15.2;
+        const dur = Math.max(12, (end - h) * H + rng() * 0.3 * H);
+        u._schoolDay = c.day;
         this._dlStart(u, 'school', dur, { x: school.doorX, z: school.doorZ, lab: 'At school', go: 'Walking to school', free: true });
         return true;
       }
