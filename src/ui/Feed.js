@@ -66,14 +66,15 @@ export class Feed {
     // clinic", "... raises its first skyscraper") come in bursts while its
     // towns grow: they gather on one card per realm instead of pushing every
     // other line off the feed (each is still in the chronicle)
-    const ms = /^✨ (.+?) \S+(?: out| up| off| in)? its first (.+?)\.?$/.exec(e.text);
+    // (the chronicle turns the leading sparkle into the card's icon)
+    const ms = /^\s*✨/.test(n.text) ? /^(.+?) \S+(?: out| up| off| in)? (?:its|their) first (.+?)\.?$/.exec(e.text) : null;
     if (ms) {
       const grp = this.items.find((it) => it.realm === ms[1] && now - it.born < 8 && !it.leaving);
       if (grp) {
         grp.things.push(ms[2]);
         const t = grp.things;
         grp.born = now;
-        grp.el.querySelector('.ws-feed__txt').textContent = `✨ ${ms[1]}: its first ${t[0]}, ${t[1]}${t.length > 2 ? ` and ${t.length - 2} more` : ''}`;
+        grp.el.querySelector('.ws-feed__txt').textContent = `${ms[1]}: its first ${t[0]}, ${t[1]}${t.length > 2 ? ` and ${t.length - 2} more` : ''}`;
         grp.el.setAttribute('aria-label', `${ms[1]}: new firsts. Show on map`);
         return;
       }
