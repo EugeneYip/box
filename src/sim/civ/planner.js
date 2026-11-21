@@ -381,6 +381,34 @@ export const planner = {
         }
       v._sqTiles = t;
       v._sqHall = h.id;
+      // (round 25: an Industrial square was a slab draped down a slope onto
+      // a cliff) level the square's open ground to the door's height where
+      // it lies within a gentle step of it; a cliff edge is left alone
+      if (w.inBounds(cx, cz) && t.length) {
+        const L = w.height[cz * w.w + cx];
+        let x0 = cx,
+          x1 = cx,
+          y0 = cz,
+          y1 = cz,
+          any = false;
+        if (L >= SEA_LEVEL + 0.05)
+          for (const i of t) {
+            const hh = w.height[i];
+            if (this.use[i] === USE.BUILDING || this.railMask?.[i] || Math.abs(hh - L) > 0.35 || Math.abs(hh - L) < 0.004) continue;
+            w.height[i] = L;
+            any = true;
+            const x = i % w.w,
+              y = (i / w.w) | 0;
+            x0 = Math.min(x0, x);
+            x1 = Math.max(x1, x);
+            y0 = Math.min(y0, y);
+            y1 = Math.max(y1, y);
+          }
+        if (any) {
+          w.markDirty('height', x0 - 1, y0 - 1, x1 + 1, y1 + 1);
+          this._heightTouched(x0 - 2, y0 - 2, x1 + 2, y1 + 2);
+        }
+      }
     }
     const pd = v._parade?.ok ? v._parade : null;
     if (pd === (v._padRef || null)) return;
