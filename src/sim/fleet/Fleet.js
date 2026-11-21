@@ -777,7 +777,7 @@ export class Fleet {
         let st = step;
         v._skip = false;
         if (landLod && !(v.def.siege && v.state !== 'parked')) {
-          const idle = v.state === 'parked' || v.state === 'rest';
+          const idle = (v.state === 'parked' && v.settleH == null) || v.state === 'rest'; // (still squaring up: every tick)
           const mask = idle ? 3 : Math.abs(v.x - cam.x) > landR || Math.abs(v.z - cam.z) > landR ? 1 : 0;
           if (mask) {
             v._lodAcc = (v._lodAcc || 0) + step;

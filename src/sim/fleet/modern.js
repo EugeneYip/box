@@ -700,7 +700,7 @@ export const modern = {
     v.speed = 0;
     v.mission = { type: 'standby', phase: 'standby', from: v.home, to: v.home, vid: v.home };
     v.standby = this.game.time.total + 60 + this.rng() * 90;
-    if (v.base?.heading != null) v.heading = v.ph = v.base.heading;
+    if (v.base?.heading != null) this._settleTo(v, v.base.heading);
   },
   // A civic vehicle has reached where it was going.
   _serviceArrive(v) {

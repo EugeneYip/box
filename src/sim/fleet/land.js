@@ -270,6 +270,7 @@ export const land = {
     const mt = v.mission?.type;
     if (v.def.siege && mt !== 'drive' && mt !== 'park' && mt !== 'rounds' && v.state !== 'parked') this._siegeMove(v, step);
     else if (v.state === 'move' && v.path) {
+      v.settleH = null;
       this._follow(v, step, v.def.speed);
       if (v.path == null) this._landArrive(v);
     } else if (v.state === 'work') {
@@ -282,6 +283,11 @@ export const land = {
       }
     } else if (v.state === 'parked') {
       v.speed = 0;
+      // (round 23) squaring up to its parking line (see _settleTo)
+      if (v.settleH != null) {
+        v.heading = turnTo(v.heading, v.settleH, step * 2.5);
+        if (Math.abs(Math.sin((v.heading - v.settleH) / 2)) < 0.01) v.settleH = null;
+      }
       // an ambulance or a fire engine on standby goes back in after a while
       if (v.standby != null && this.game.time.total > v.standby) return this.remove(v);
       // a train with no railway looks again for one now and then
@@ -314,6 +320,18 @@ export const land = {
         this.lose(v, 'raided', { id: foe.id, kind: 'soldier', kingdom: foe.kingdom });
       }
     }
+  },
+
+  // (round 23) A vehicle that has stopped squares up to its parking line
+  // (heading h, or the opposite way if that is nearer) over the next moment
+  // instead of snapping round in one frame.
+  _settleTo(v, h) {
+    let d = h - v.heading;
+    while (d > Math.PI) d -= Math.PI * 2;
+    while (d < -Math.PI) d += Math.PI * 2;
+    if (!v.def.siege && d > Math.PI / 2) h -= Math.PI;
+    else if (!v.def.siege && d < -Math.PI / 2) h += Math.PI;
+    v.settleH = h;
   },
 
   // Follow v.path at speed (faster on roads, slower uphill).
@@ -373,7 +391,7 @@ export const land = {
     if (m.type === 'park') {
       v.state = 'parked';
       v.speed = 0;
-      if (v.parkHeading != null) v.heading = v.ph = v.parkHeading;
+      if (v.parkHeading != null) this._settleTo(v, v.parkHeading);
       // armour at its barracks: garaged inside (FleetRenderer skips it)
       if (v.def.siege && v.parkAt != null) v.garaged = true;
       return;
