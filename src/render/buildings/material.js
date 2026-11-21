@@ -91,9 +91,12 @@ float wsHash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p
 if (uCut > 0.001) {
   float wsDep = vViewPosition.z;
   float wsR = length(vViewPosition.xy) / max(wsDep * uCutTan, 0.001);
-  float wsW = uCut * (1.0 - smoothstep(0.3, 0.62, wsR)) * (1.0 - smoothstep(uCutD - 1.1, uCutD - 0.45, wsDep));
-  float wsN = fract(sin(dot(floor(gl_FragCoord.xy), vec2(12.9898, 78.233))) * 43758.5453);
-  if (wsW > 0.02 && wsW * 1.08 > wsN) discard;
+  float wsW = uCut * (1.0 - smoothstep(0.38, 0.8, wsR)) * (1.0 - smoothstep(uCutD - 0.8, uCutD - 0.25, wsDep));
+  // a 4 x 4 ordered dither: an even screen-door at the rim, open in the middle
+  ivec2 wsP = ivec2(gl_FragCoord.xy) & 3;
+  int wsX = wsP.x ^ wsP.y;
+  float wsB = float(((wsX & 1) << 3) | ((wsP.y & 1) << 2) | (wsX & 2) | ((wsP.y & 2) >> 1)) / 16.0 + 0.03;
+  if (wsW > 0.85 || (wsW > 0.02 && wsW > wsB)) discard;
 }
 ${clip ? 'if (vLocal.y > vState.w) discard; if (!gl_FrontFacing) diffuseColor.rgb = vec3(0.5, 0.47, 0.42) * (0.75 + 0.25 * clamp(vLocal.y / max(vState.w, 0.1), 0.0, 1.0));' : ''}
 // roof surface detail: courses, tiles, slate, turf, eave shadow, weathering

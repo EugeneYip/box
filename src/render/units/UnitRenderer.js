@@ -1065,7 +1065,8 @@ export class UnitRenderer {
         const kc = this._kingdomColor(u.kingdom);
         if (kc) ov.ground.add(ix, ground, iz, (md.radius * 1.5 + 0.2) * scale, 0, 1, 0, DECAL.ring, Math.min(1, kc[0] * 1.6 + 0.1), Math.min(1, kc[1] * 1.6 + 0.1), Math.min(1, kc[2] * 1.6 + 0.1), 0.85);
       }
-      if (markA > 0.01 && def.kind === 'humanoid' && hab === 'land' && !u.swimming && !u.onDeck) {
+      // (not on the selected one: the UI's selection mark is drawn there)
+      if (markA > 0.01 && def.kind === 'humanoid' && hab === 'land' && !u.swimming && !u.onDeck && g.selected?.ref !== u) {
         const c = rs.dot || [0.8, 0.8, 0.8];
         const msz = MARK_PX / ppu;
         const my = y + lift + md.height * scale * 0.55;
