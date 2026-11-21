@@ -64,6 +64,9 @@ export function installRoles(Units) {
     }
     if (!u.data.mounted) return false;
     if (u.data.lifeRole && u.job !== 'soldier') return false;
+    // (round 23) soldiers of the Modern era and after fight on foot (horses
+    // ridden into an Atomic battle read as a mistake)
+    if (u.job === 'soldier' && (this.game.civ?.kingdoms?.[u.kingdom]?.era || 0) >= 5) return false;
     return u.state !== 'work';
   };
   P._updateRiding = function (u) {
@@ -301,14 +304,17 @@ export function installRoles(Units) {
     }
     if (o) this._offDutyEnd(u);
     if (u._dl) this._dlEnd(u);
+    // (round 23) the town's one parade square (before the barracks, else the
+    // hall, daily.js _parade); in the drill hours a spell in the ranks lasts
+    // until the drill ends
     const pd = this._parade(v, b);
-    if (dh && !pd && this._drillJoin(u, v, pl)) return false;
     const spot = pd && (dh || Math.random() < 0.15) ? this._paradeSlot(pd, u) : null;
     const yard = !!spot;
     const x = yard ? spot.x : b.doorX,
       z = yard ? spot.z : b.doorZ;
     const face = yard ? Math.atan2(spot.fx - x, spot.fz - z) : 0;
-    o = u._offd = { ph: 'go', until: now + (yard ? 30 : 30) + Math.random() * 20, x, z, b: b.id, yard, face, lab: '', pd: yard ? pd : null, dh };
+    const len = yard && dh ? Math.max(12, this._drillLeft() + Math.random() * 2) : 30 + Math.random() * 20;
+    o = u._offd = { ph: 'go', until: now + len, x, z, b: b.id, yard, face, lab: '', pd: yard ? pd : null, dh };
     this.stop(u);
     if ((x - u.x) ** 2 + (z - u.z) ** 2 < 0.5 || !this.moveTo(u, x, z)) this._offDutyArrive(u, o, b);
     else u.state = 'walk';
