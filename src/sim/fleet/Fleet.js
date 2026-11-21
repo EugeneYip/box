@@ -720,6 +720,13 @@ export class Fleet {
     const A = this._astro || (this._astro = []);
     A.length = ks.length;
     for (let i = 0; i < ks.length; i++) A[i] = !!ks[i]?.techs?.has?.('astronomy');
+    // (round 25) which realms are at war with anyone: a cart or a bus of a
+    // realm at peace has no raiders to look out for (land.js)
+    const WA = this._warAny || (this._warAny = []);
+    WA.length = ks.length;
+    WA.fill(0);
+    const rel = g.civ.relations;
+    if (rel) for (const r of rel.values()) if (r.war) (WA[r.a] = 1), (WA[r.b] = 1);
     this._buildHash();
     // movement and per-vehicle logic. Update rate by distance from the camera
     // (as Life does for people): a ship far off steers, gives way and runs
