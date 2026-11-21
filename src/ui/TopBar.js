@@ -123,6 +123,19 @@ export class TopBar {
       },
     });
     this.seg = el('div', { class: 'ws-seg', role: 'radiogroup', 'aria-label': 'Simulation speed' }, el('span', { class: 'ws-seg__thumb' }));
+    // a radio group: arrow keys (and Home/End) choose the speed and move the focus
+    this.seg.addEventListener('keydown', (e) => {
+      const i0 = this.segBtns.indexOf(document.activeElement);
+      if (i0 < 0) return;
+      const n = SPEEDS.length;
+      const k = e.key;
+      const i = k === 'ArrowRight' || k === 'ArrowDown' ? (i0 + 1) % n : k === 'ArrowLeft' || k === 'ArrowUp' ? (i0 + n - 1) % n : k === 'Home' ? 0 : k === 'End' ? n - 1 : -1;
+      if (i < 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      g.setSpeed(SPEEDS[i]);
+      this.segBtns[i].focus();
+    });
     this.segBtns = SPEEDS.map((s, i) => {
       const b = el('button', {
         class: 'ws-seg__btn',
@@ -187,6 +200,8 @@ export class TopBar {
         {
           class: 'ws-stat',
           type: 'button',
+          // (read at a glance, not a stop on the Tab walk: Realms is in the nav)
+          tabindex: '-1',
           style: `--tint:${d.tint}`,
           'data-tip': d.label,
           'aria-label': d.label,
@@ -211,7 +226,7 @@ export class TopBar {
     g.events.on('powersaver', leaf);
     leaf();
     g.events.on('world:regenerated', () => this.refreshWorld());
-    addEventListener('resize', () => this.syncSpeed());
+    addEventListener('resize', () => (this.syncSpeed(), this.brandTip()));
   }
 
   // Short landscape phones: the nav lives in a menu under the emblem.
@@ -263,8 +278,16 @@ export class TopBar {
     const preset = (p.preset === 'earth' && p.region && earthRegion(p.region)?.name) || PRESET_NAMES[p.preset] || titleCase(p.preset || 'world');
     this.placeEl.textContent = preset;
     this.seedEl.textContent = ` · Seed ${p.seed}`;
-    // the whole line in the tip, for when it is shortened
-    this.brandBtn.dataset.tip = `${preset} · Seed ${p.seed} — New world · G`;
+    this._place = `${preset} · Seed ${p.seed}`;
+    this.brandTip();
+  }
+
+  // the emblem's tip says what it does first (the nav has no New world button,
+  // and on short screens the emblem is the menu), then the whole world line
+  brandTip() {
+    const menu = this.menuMode();
+    this.brandBtn.dataset.tip = menu ? `Menu · New world, Realms, World laws, World ages… — ${this._place || ''}` : `Menu · New world (G) — ${this._place || ''}`;
+    this.brandBtn.setAttribute('aria-label', menu ? 'Worldseed menu' : 'New world (G)');
   }
 
   syncSpeed() {
@@ -277,6 +300,8 @@ export class TopBar {
     this.segBtns.forEach((b, i) => {
       b.classList.toggle('is-on', i === idx);
       b.setAttribute('aria-checked', i === idx ? 'true' : 'false');
+      // one Tab stop for the whole group (the chosen speed); arrows move within it
+      b.tabIndex = i === (idx < 0 ? 0 : idx) ? 0 : -1;
     });
     this.seg.classList.toggle('is-paused', !!g.paused);
     this.seg.style.setProperty('--idx', Math.max(0, idx));
@@ -339,11 +364,15 @@ export class TopBar {
         // shortens only the unit ("6y to Summer"), then shows the season's glyph
         // (its name kept for screen readers); the tip says it in full
         const paint = (txt, iconOnly, s = season) => {
-          this.dayEl.innerHTML = `<i class="ws-season" style="--season:${SEASON_TINT[s]}">${uiIcon(SEASON_GLYPH[s] || 'sun')}</i><span class="ws-season__name${iconOnly ? ' ws-sr' : ''}">${s}</span><span class="ws-clock__sep"${iconOnly ? ' hidden' : ''}>·</span><span class="ws-clock__epoch">${txt}</span>`;
+          this.dayEl.innerHTML = `<i class="ws-season" style="--season:${SEASON_TINT[s]}">${uiIcon(SEASON_GLYPH[s] || 'sun')}</i><span class="ws-season__name${iconOnly ? ' ws-sr' : ''}">${s}</span><span class="ws-clock__epoch">${txt}</span>`;
           const ep = this.dayEl.lastElementChild;
           return ep.scrollWidth <= ep.clientWidth + 1;
         };
-        const word = (tier, n, nx) => (tier % 2 === 0 ? (n === '1' ? `1 yr to ${nx}` : `${n} yrs to ${nx}`) : `${n}y to ${nx}`);
+        // tiers: 0 "Spring 6 yrs to Summer", 2 glyph + "6 yrs to Summer", 3 glyph +
+        // "6y to Summer"; a bar that shows the season's name always says "yrs"
+        // (the name, not the unit, gives way first), and the name's fixed slot
+        // is the gap before the years (no separator dot to strand in it)
+        const word = (tier, n, nx) => (tier !== 3 ? (n === '1' ? `1 yr to ${nx}` : `${n} yrs to ${nx}`) : `${n}y to ${nx}`);
         if (!epoch) paint(time, false);
         else {
           // one wording per window width: the tier is chosen once, against the
@@ -353,8 +382,18 @@ export class TopBar {
           const fitKey = `${innerWidth}x${innerHeight}|${digits}|${document.fonts?.status || ''}`;
           if (this._fitKey !== fitKey) {
             const SEASONS = ['Spring', 'Summer', 'Autumn', 'Winter'];
-            let pick = [0, 1, 2, 3].findIndex((tier) => SEASONS.every((s) => SEASONS.every((nx) => paint(word(tier, digits, nx), tier >= 2, s))));
-            this._fitPick = pick < 0 ? 3 : pick;
+            // the name's slot is as wide as the widest season name, so the years
+            // follow it at one place with no wide gap
+            this.dayEl.style.setProperty('--season-w', '0px');
+            const nameW = Math.max(
+              ...SEASONS.map((s) => {
+                paint('', false, s);
+                return this.dayEl.querySelector('.ws-season__name')?.scrollWidth || 0;
+              }),
+            );
+            if (nameW > 0) this.dayEl.style.setProperty('--season-w', `${Math.ceil(nameW)}px`);
+            const pick = [0, 2, 3].find((tier) => SEASONS.every((s) => SEASONS.every((nx) => paint(word(tier, digits, nx), tier >= 2, s))));
+            this._fitPick = pick ?? 3;
             // (measured only once the bar is laid out: a hidden bar fits anything)
             this._fitKey = this.dayEl.clientWidth > 0 ? fitKey : null;
           }
@@ -389,7 +428,7 @@ export class TopBar {
         const v = E.ema < 0.1 ? null : E.ema < 9.95 ? E.ema.toFixed(1).replace(/\.0$/, '') : Math.round(E.ema);
         this.effEl.textContent = v == null ? 'Actual speed under 0.1×' : `Actual speed ${v}×`;
         const lower = SPEEDS.filter((x) => x < g.speed && x <= Math.max(1, E.ema * 1.2)).pop() || SPEEDS[0];
-        this.effEl.dataset.tip = `Your device can't keep up with ${g.speed}×, so the world runs at about ${v ?? 'under 0.1'}×. Try ${lower}×, or Power saver in Settings.`;
+        this.effEl.dataset.tip = `Your device can't keep up with ${g.speed}×, so the world ${v == null ? 'barely moves (under 0.1×)' : `runs at about ${v}×`}. Try ${lower}×, or Power saver in Settings.`;
         this.cycleBtn.dataset.tip = `Running slower than chosen · try ${lower}×`;
       } else if (this.cycleBtn.dataset.tip !== 'Change speed · 1–5') {
         this.cycleBtn.dataset.tip = 'Change speed · 1–5';

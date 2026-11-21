@@ -140,7 +140,8 @@ export class Popover {
     const rr = t.getBoundingClientRect();
     if (!rr.width && !rr.height) return; // never pin to a detached or hidden element
     this.target = t;
-    this.el.textContent = text;
+    // on touch, a control's label without its keyboard key ("Realms", not "Realms · K")
+    this.el.textContent = this.ui.root?.classList.contains('is-touch') ? text.replace(/ · (?:[A-Z0-9]|Space|Esc|`|1–5)$/, '') : text;
     this.el.classList.add('is-shown');
     const r = t.getBoundingClientRect();
     const vw = innerWidth;
@@ -157,7 +158,15 @@ export class Popover {
     let ceil = 8;
     const sticky = t.closest('.ws-modal__body')?.querySelector('.ws-tech__top');
     if (sticky && !sticky.contains(t)) ceil = Math.max(ceil, sticky.getBoundingClientRect().bottom + 4);
-    if (y < ceil) {
+    // a tech card's tip opens beside the card (never over the next cards),
+    // when there is room on either side
+    const side = sticky && t.closest('.ws-tech__grid');
+    const roomR = r.right + 8 + pw <= vw - 8,
+      roomL = r.left - pw - 8 >= 8;
+    if (side && (roomR || roomL)) {
+      x = roomR ? r.right + 8 : r.left - pw - 8;
+      y = Math.max(ceil, Math.min(innerHeight - ph - 8, r.top));
+    } else if (y < ceil) {
       y = r.bottom + 8;
       if (y + ph > innerHeight - 8 && sticky) {
         y = Math.max(ceil, Math.min(innerHeight - ph - 8, r.top));

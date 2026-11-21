@@ -109,20 +109,31 @@ function render() {
     .map((k, i) => [k, i])
     .sort((a, b) => eraOfKind(a[0]) - eraOfKind(b[0]) || a[1] - b[1])
     .map(([k]) => k);
+  const byEra = [];
+  for (const k of list) {
+    const era = eraOfKind(k);
+    if (byEra.at(-1)?.era !== era) byEra.push({ era, kinds: [] });
+    byEra.at(-1).kinds.push(k);
+  }
   panel.innerHTML = `
     <div class="ws-vehpick__head">
       <div class="ws-vehpick__tabs" role="tablist" aria-label="Kind of vehicle">${GROUPS.map(([id, label]) => `<button class="ws-vehpick__tab${id === tab ? ' is-on' : ''}${id === groupOf(chosen) ? ' has-pick' : ''}" type="button" role="tab" aria-selected="${id === tab}" tabindex="${id === tab ? 0 : -1}" data-tab="${id}"${id === groupOf(chosen) ? ` aria-label="${label}, holds your pick: ${defOf(chosen).name}" data-tip="Your pick: ${defOf(chosen).name}"` : ''}>${label}${id === groupOf(chosen) ? '<i class="ws-vehpick__dot" aria-hidden="true"></i>' : ''}</button>`).join('')}</div>
       <span class="ws-vehpick__hint">${touch() ? 'Pick one, then tap the map.' : 'Pick one, then click the map.'} It joins the nearest realm.</span>
     </div>
-    <div class="ws-vehpick__row" role="listbox" aria-label="Vehicle to spawn" aria-orientation="horizontal">${list
-      .map((k, i) => {
-        const d = defOf(k);
-        const era = eraOfKind(k);
-        const on = k === chosen;
-        const need = techById[d.tech]?.name;
-        const div = i === 0 || eraOfKind(list[i - 1]) !== era ? `<span class="ws-vehpick__era${i === 0 ? ' is-first' : ''}" aria-hidden="true"><i>${eras[era] || ''}</i></span>` : '';
-        return `${div}<button class="ws-vehpick__opt${on ? ' is-on' : ''}" type="button" role="option" aria-selected="${on}" tabindex="${on || (!list.includes(chosen) && k === list[0]) ? 0 : -1}" data-kind="${k}" title="${d.name}: ${eras[era] || ''} era${need ? ' · realms build it once they know ' + need : ''}"><span class="ws-vehpick__ico">${uiIcon(vehicleIconName(d))}</span><span class="ws-vehpick__txt"><b>${d.name}</b><small><span class="ws-vehpick__sera">${eras[era] || ''}${need ? ' · ' : ''}</span>${need || ''}</small></span></button>`;
-      })
+    <div class="ws-vehpick__row is-grouped" role="listbox" aria-label="Vehicle to spawn" aria-orientation="horizontal">${byEra
+      .map(
+        ({ era, kinds }) =>
+          // one group per era, its name above it (pinned at the strip's left edge,
+          // or at the list's top on phones, while that era is in view)
+          `<div class="ws-vehpick__grp" role="group" aria-label="${eras[era] || ''} era"><span class="ws-vehpick__glbl" aria-hidden="true"><i>${eras[era] || ''}</i></span><div class="ws-vehpick__gopts">${kinds
+            .map((k) => {
+              const d = defOf(k);
+              const on = k === chosen;
+              const need = techById[d.tech]?.name;
+              return `<button class="ws-vehpick__opt${on ? ' is-on' : ''}" type="button" role="option" aria-selected="${on}" tabindex="${on || (!list.includes(chosen) && k === list[0]) ? 0 : -1}" data-kind="${k}" title="${d.name}: ${eras[era] || ''} era${need ? ' · realms build it once they know ' + need : ''}"><span class="ws-vehpick__ico">${uiIcon(vehicleIconName(d))}</span><span class="ws-vehpick__txt"><b>${d.name}</b><small><span class="ws-vehpick__sera">${eras[era] || ''}${need ? ' · ' : ''}</span>${need || ''}</small></span></button>`;
+            })
+            .join('')}</div></div>`,
+      )
       .join('')}</div>`;
   for (const b of panel.querySelectorAll('.ws-vehpick__tab')) {
     b.onclick = (e) => {
@@ -186,8 +197,10 @@ function render() {
   // the chosen kind scrolls into view
   const on = panel.querySelector('.ws-vehpick__opt.is-on');
   if (on) {
-    row.scrollLeft = Math.max(0, on.offsetLeft - row.offsetLeft - row.clientWidth / 2 + on.offsetWidth / 2);
-    if (row.scrollHeight > row.clientHeight + 2) row.scrollTop = Math.max(0, on.offsetTop - row.offsetTop - row.clientHeight / 2 + on.offsetHeight / 2);
+    const rr = row.getBoundingClientRect();
+    const or = on.getBoundingClientRect();
+    row.scrollLeft = Math.max(0, row.scrollLeft + or.left - rr.left - row.clientWidth / 2 + or.width / 2);
+    if (row.scrollHeight > row.clientHeight + 2) row.scrollTop = Math.max(0, row.scrollTop + or.top - rr.top - row.clientHeight / 2 + or.height / 2);
   }
   edges();
 }
@@ -202,18 +215,31 @@ function choose(k, fold) {
   gRef?.audio?.play?.('ui-click', { volume: 0.4 });
   if (fold) panel?.querySelector('.ws-vehpick__pill')?.focus({ preventScroll: true });
 }
-// arrow keys: left/right walk the kinds (or the tabs), up/down change the tab,
-// Enter or Space picks
+// arrow keys: left/right walk the kinds (or the tabs), up/down move between
+// the rows, Page Up/Down (or Ctrl+Up/Down) change the tab, Enter or Space picks
 function onKey(e) {
   const t = e.target;
   const isTab = t.classList?.contains('ws-vehpick__tab');
   const isOpt = t.classList?.contains('ws-vehpick__opt');
   if (!isTab && !isOpt) return;
-  const sib = isOpt ? [...t.parentElement.querySelectorAll('.ws-vehpick__opt')] : [...t.parentElement.children];
+  const sib = isOpt ? [...panel.querySelectorAll('.ws-vehpick__opt')] : [...t.parentElement.children];
   const i = sib.indexOf(t);
   let j = null;
-  if (e.key === 'ArrowRight') j = Math.min(sib.length - 1, i + 1);
-  else if (e.key === 'ArrowLeft') j = Math.max(0, i - 1);
+  // a kind's Left/Right neighbor is the nearest kind in the same row (the strip
+  // fills column by column, so the next kind in the list is the one below)
+  const rowStep = (dir) => {
+    const r0 = t.getBoundingClientRect();
+    let best = null;
+    sib.forEach((o, k) => {
+      const r = o.getBoundingClientRect();
+      const dx = (r.left - r0.left) * dir;
+      if (o === t || Math.abs(r.top - r0.top) > 4 || dx < 4) return;
+      if (!best || dx < best[0]) best = [dx, k];
+    });
+    return best ? best[1] : Math.max(0, Math.min(sib.length - 1, i + dir));
+  };
+  if (e.key === 'ArrowRight') j = isOpt ? rowStep(1) : Math.min(sib.length - 1, i + 1);
+  else if (e.key === 'ArrowLeft') j = isOpt ? rowStep(-1) : Math.max(0, i - 1);
   else if (e.key === 'Home') j = 0;
   else if (e.key === 'End') j = sib.length - 1;
   if (j != null) {
@@ -231,13 +257,38 @@ function onKey(e) {
     }
     return;
   }
-  if (isOpt && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+  // Page Up / Page Down (or Ctrl with an arrow) change the tab
+  const tabKey = e.key === 'PageDown' || e.key === 'PageUp' || ((e.ctrlKey || e.metaKey) && (e.key === 'ArrowUp' || e.key === 'ArrowDown'));
+  if (isOpt && tabKey) {
     e.preventDefault();
     e.stopPropagation();
     const gi = GROUPS.findIndex(([id]) => id === tab);
-    tab = GROUPS[(gi + (e.key === 'ArrowDown' ? 1 : GROUPS.length - 1)) % GROUPS.length][0];
+    tab = GROUPS[(gi + (e.key === 'ArrowDown' || e.key === 'PageDown' ? 1 : GROUPS.length - 1)) % GROUPS.length][0];
     render();
     (panel.querySelector('.ws-vehpick__opt.is-on') || panel.querySelector('.ws-vehpick__opt'))?.focus();
+    return;
+  }
+  // Up / Down move between the rows: to the nearest kind in the row above or below
+  if (isOpt && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+    e.preventDefault();
+    e.stopPropagation();
+    const down = e.key === 'ArrowDown';
+    const r0 = t.getBoundingClientRect();
+    let best = null;
+    for (const o of sib) {
+      if (o === t) continue;
+      const r = o.getBoundingClientRect();
+      const dy = down ? r.top - r0.top : r0.top - r.top;
+      if (dy < 4) continue;
+      const score = dy * 1000 + Math.abs(r.left - r0.left);
+      if (!best || score < best[0]) best = [score, o];
+    }
+    if (best) {
+      chosen = best[1].dataset.kind;
+      render();
+      syncStrip();
+      panel.querySelector('.ws-vehpick__opt.is-on')?.focus();
+    }
     return;
   }
   if (isOpt && (e.key === 'Enter' || e.key === ' ')) {

@@ -2,13 +2,13 @@ import { el } from './dom.js';
 import { uiIcon } from './icons.js';
 
 const STEPS = [
-  { icon: 'grid', title: 'Choose a power', text: 'Open a tab in the tray below and pick a god power. Raise Land is a fine first gift.', done: 'power' },
-  { icon: 'brush', title: 'Shape the world', text: 'Hold and drag across the land to paint with it. [ and ] change the brush size.', touch: 'Touch and drag across the land to paint with it. The − and + on the power bar change the brush size.', done: 'apply' },
-  { icon: 'inspect', title: 'Look closer', text: 'Press Esc to put the power away, then click any creature, house or field to inspect it.', touch: 'Tap ✕ on the power bar to put it away, then tap any creature, house or field.', done: 'inspect' },
-  { icon: 'hourglass', title: 'Time', text: 'Space pauses the world and 1 to 5 set its speed. The bar at the top shows the year and how long until the next season.', touch: 'Tap the pause button at the top to stop time, and the speed button beside it to go faster.', done: 'speed' },
-  { icon: 'expand', title: 'See it all', text: 'Press M, or Overview at the bottom left, to see the whole world. Click a place to fly back down to it.', touch: 'Tap Overview to see the whole world, then tap a place to fly back down to it.', done: 'overview' },
-  { icon: 'star-on', title: 'Favorites', text: 'Star a creature, town or realm on its card. Press P, or Favorites, to find and follow it again.', touch: 'Star a creature, town or realm on its card. Tap Favorites to find and follow it again.', done: 'favorites' },
-  { icon: 'kingdoms', title: 'Realms', text: 'The Realms panel (the flag on the left) lists every realm with its towns, wars and alliances.', touch: 'The Realms panel (the flag on the left) lists every realm with its towns, wars and alliances.', done: 'realms' },
+  { icon: 'grid', title: 'Choose a power', text: 'Open a tab in the tray below and pick a god power. Raise Land is a fine first gift.', done: 'power', at: ['.ws-dock__handle', '.ws-tabs'] },
+  { icon: 'brush', title: 'Shape the world', text: 'Hold and drag across the land to paint with it. [ and ] change the brush size.', touch: 'Touch and drag across the land to paint with it. The − and + on the power bar change the brush size.', done: 'apply', at: ['.ws-brush.is-shown .ws-brush__size', '.ws-brush.is-shown'] },
+  { icon: 'inspect', title: 'Look closer', text: 'Press Esc to put the power away, then click any creature, house or field to inspect it.', touch: 'Tap ✕ on the power bar to put it away, then tap any creature, house or field.', done: 'inspect', at: ['.ws-dock__cancel', '.ws-brush.is-shown .ws-brush__close'] },
+  { icon: 'hourglass', title: 'Time', text: 'Space pauses the world and 1 to 5 set its speed. The bar at the top shows the year and how long until the next season.', touch: 'Tap the pause button at the top to stop time, and the speed button beside it to go faster.', done: 'speed', at: ['.ws-clock'] },
+  { icon: 'overview', title: 'See it all', text: 'Press M, or Overview at the bottom right, to see the whole world. Click a place to fly back down to it.', touch: 'Tap Overview (the folded map at the right) to see the whole world, then tap a place to fly back down to it.', done: 'overview', at: ['.ws-overview', '.ws-campad__btn[aria-label="Overview"]'] },
+  { icon: 'star-on', title: 'Favorites', text: 'Star a creature, town or realm on its card. Press P, or Favorites, to find and follow it again.', touch: 'Star a creature, town or realm on its card. Tap Favorites to find and follow it again.', done: 'favorites', at: ['.ws-favbtn'] },
+  { icon: 'kingdoms', title: 'Realms', text: 'The Realms panel (the flag at the top left) lists every realm with its towns, wars and alliances.', touch: 'The Realms panel (the flag at the left) lists every realm with its towns, wars and alliances.', menu: 'The Realms panel (in the menu under the emblem at the top left) lists every realm with its towns, wars and alliances.', done: 'realms', at: ['.ws-nav .ws-iconbtn[aria-label^="Realms"]', '.ws-brand__id'] },
 ];
 
 // Seven gentle hints after the title screen. Each step completes itself when
@@ -21,6 +21,9 @@ export class Onboarding {
     this.step = -1;
     this.el = el('div', { class: 'ws-coach ws-glass ws-orn', role: 'status' });
     ui.hud.append(this.el);
+    // a pulsing ring on the control the step names
+    this.ring = el('div', { class: 'ws-coach__ring', 'aria-hidden': 'true' });
+    (ui.root || ui.hud).append(this.ring);
     const ev = this.game.events;
     ev.on('power:select', ({ power } = {}) => power && this.complete('power'));
     ev.on('power:apply', () => this.complete('apply'));
@@ -61,12 +64,13 @@ export class Onboarding {
         { class: 'ws-coach__body' },
         el('div', { class: 'ws-coach__step', html: STEPS.map((_, k) => `<i class="${k < i ? 'is-done' : k === i ? 'is-on' : ''}"></i>`).join('') + `<span>Step ${i + 1} of ${STEPS.length}</span>` }),
         el('div', { class: 'ws-coach__title', text: s.title }),
-        el('p', { class: 'ws-coach__text', text: (this.ui.root.classList.contains('is-touch') && s.touch) || s.text }),
+        el('p', { class: 'ws-coach__text', text: (s.menu && this.ui.topbar?.menuMode?.() && s.menu) || (this.ui.root.classList.contains('is-touch') && s.touch) || s.text }),
       ),
       el(
         'div',
         { class: 'ws-coach__acts' },
-        el('button', { class: 'ws-link', type: 'button', text: 'Skip tips', onclick: () => this.finish() }),
+        // (the last step has nothing left to skip)
+        i < STEPS.length - 1 ? el('button', { class: 'ws-link', type: 'button', text: 'Skip tips', onclick: () => this.finish() }) : null,
         el('button', { class: 'ws-btn ws-btn--sm ws-btn--ghost', type: 'button', text: i === STEPS.length - 1 ? 'Done' : 'Next', onclick: () => this.show(i + 1) }),
       ),
     );
@@ -89,7 +93,29 @@ export class Onboarding {
   finish() {
     this.step = STEPS.length;
     this.el.classList.remove('is-shown');
+    this.ring.classList.remove('is-shown');
     this.ui.savePrefs({ onboarded: true });
+  }
+
+  // the ring sits on the first of the step's controls that is on screen
+  pointAt() {
+    const s = STEPS[this.step];
+    let r = null;
+    for (const sel of s?.at || []) {
+      for (const e of document.querySelectorAll(sel)) {
+        const b = e.getBoundingClientRect();
+        if (b.width < 4 || b.height < 4 || b.bottom < 0 || b.top > innerHeight) continue;
+        const cs = getComputedStyle(e);
+        if (cs.visibility === 'hidden' || +cs.opacity < 0.1 || e.closest('[hidden], [inert]')) continue;
+        r = b;
+        break;
+      }
+      if (r) break;
+    }
+    this.ring.classList.toggle('is-shown', !!r);
+    if (!r) return;
+    const pad = 5;
+    Object.assign(this.ring.style, { left: `${Math.round(r.left - pad)}px`, top: `${Math.round(r.top - pad)}px`, width: `${Math.round(r.width + pad * 2)}px`, height: `${Math.round(r.height + pad * 2)}px` });
   }
 
   place() {
@@ -97,6 +123,7 @@ export class Onboarding {
     const top = Math.min(dock.panel.getBoundingClientRect().top, dock.brush.el.classList.contains('is-shown') ? dock.brush.el.getBoundingClientRect().top : 1e9);
     const h = this.el.offsetHeight || 110;
     this.el.style.top = Math.max(80, Math.round(top - h - 16)) + 'px';
+    this.pointAt();
   }
 
   update(dt) {

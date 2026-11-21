@@ -33,7 +33,7 @@ export class CameraPad {
       el('span', { class: 'ws-campad__sep' }),
       mk('rot-left', 'Rotate left', () => rig().rotate(-Math.PI / 24)),
       mk('rot-right', 'Rotate right', () => rig().rotate(Math.PI / 24)),
-      mk('expand', 'Overview', () => this.ui.overview?.()),
+      mk('overview', 'Overview', () => this.ui.overview?.()),
       mk('compass', 'Face north', () => {
         const r = rig();
         r.goal.yaw = Math.round(r.goal.yaw / (Math.PI * 2)) * Math.PI * 2;

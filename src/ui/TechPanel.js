@@ -126,7 +126,7 @@ export function techPanel(ui, kingdomId) {
       const beyond = e > cap;
       const whole = e < curE && techs.every((t) => has(k, t.id));
       if (whole) done.push([e, techs.length]);
-      const col = el('div', { class: 'ws-tech__col' + (e <= era ? ' is-reached' : '') + (e === curE ? ' is-cur' : '') + (beyond ? ' is-capped' : '') + (whole ? ' is-done' : ''), 'data-tip': beyond ? `Beyond the latest era the World Laws allow (${eras[cap] || ''})` : null }, el('div', { class: `ws-tech__era is-era${e}`, html: `${uiIcon(ERA_ICON[e] || 'chronicle')}<span>${esc(eras[e] || `Era ${e + 1}`)}</span>${e === curE ? '<em class="ws-tech__curtag">Current era</em>' : ''}` }));
+      const col = el('div', { class: 'ws-tech__col' + (e <= era ? ' is-reached' : '') + (e === curE ? ' is-cur' : '') + (beyond ? ' is-capped' : '') + (whole ? ' is-done' : ''), 'data-tip': beyond ? `Beyond the latest era the World Laws allow (${eras[cap] || ''})` : null }, el('div', { class: `ws-tech__era is-era${e}`, html: `${uiIcon(ERA_ICON[e] || 'chronicle')}<span>${esc(eras[e] || `Era ${e + 1}`)}</span>${e === era ? '<em class="ws-tech__curtag">Current era</em>' : e === curE ? '<em class="ws-tech__curtag is-next" data-tip="The realm is in the ' + esc(eras[era] || '') + ' era and studies this era\'s arts">Studying</em>' : ''}` }));
       let sideHead = false;
       for (const t of techs) {
         if (t.side && !sideHead) {
@@ -205,7 +205,14 @@ export function techPanel(ui, kingdomId) {
           'div',
           { class: 'ws-tech__done' },
           el('span', { class: 'ws-tech__donelbl', text: done.length > 1 ? 'Eras fully learned' : 'Era fully learned' }),
-          el('span', { class: 'ws-tech__doneeras' }, ...done.map(([e, n]) => el('span', { class: `ws-era is-era${e}`, 'data-tip': `${eras[e] || ''} era: all ${n} arts learned`, html: `${uiIcon('good')}<span>${esc(eras[e] || '')} · ${n}</span>` }))),
+          // three or more learned eras read as one range chip, so the header stays one line
+          el(
+            'span',
+            { class: 'ws-tech__doneeras' },
+            ...(done.length >= 3
+              ? [el('span', { class: `ws-era is-era${done.at(-1)[0]}`, 'data-tip': done.map(([e, n]) => `${eras[e] || ''} era: all ${n} arts learned${e === era ? ' (the current era)' : ''}`).join(' · '), html: `${uiIcon('good')}<span>${esc(eras[done[0][0]] || '')} to ${esc(eras[done.at(-1)[0]] || '')} · ${done.reduce((a, d) => a + d[1], 0)} arts</span>` })]
+              : done.map(([e, n]) => el('span', { class: `ws-era is-era${e}`, 'data-tip': `${eras[e] || ''} era: all ${n} arts learned${e === era ? ' (the current era)' : ''}`, html: `${uiIcon('good')}<span>${esc(eras[e] || '')} · ${n}</span>` }))),
+          ),
           btn,
         ),
       );
