@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { CAM_CUT } from '../../core/CameraRig.js';
 
 // Shared building material. Per-vertex: color, aTint (kingdom colour mask),
 // aGlow (window / lamp mask). Per-instance: iColor (kingdom colour, linear),
@@ -20,6 +21,10 @@ export function createBuildingMaterial(uniforms, { clip = false, inst = null } =
     sh.uniforms.uTime = uniforms.uTime;
     sh.uniforms.uNight = uniforms.uNight;
     sh.uniforms.uSnow = uniforms.uSnow || { value: 0 };
+    // the close-zoom cutaway (CameraRig CAM_CUT, round 25)
+    sh.uniforms.uCut = CAM_CUT.uCut;
+    sh.uniforms.uCutD = CAM_CUT.uCutD;
+    sh.uniforms.uCutTan = CAM_CUT.uCutTan;
     if (inst) sh.uniforms.uBInst = inst;
     sh.vertexShader = sh.vertexShader
       .replace(
@@ -66,6 +71,9 @@ vTint = aTint; vGlow = aGlow; vLocal = position; vRoof = aRoof;`,
 uniform float uTime;
 uniform float uNight;
 uniform float uSnow;
+uniform float uCut;
+uniform float uCutD;
+uniform float uCutTan;
 varying float vTint;
 varying float vGlow;
 varying vec3 vKCol;
@@ -78,6 +86,15 @@ float wsHash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p
       .replace(
         '#include <color_fragment>',
         `#include <color_fragment>
+// close-zoom cutaway: walls and roofs between the eye and the target open in
+// a dithered screen-door round the middle of the frame (round 25)
+if (uCut > 0.001) {
+  float wsDep = vViewPosition.z;
+  float wsR = length(vViewPosition.xy) / max(wsDep * uCutTan, 0.001);
+  float wsW = uCut * (1.0 - smoothstep(0.3, 0.62, wsR)) * (1.0 - smoothstep(uCutD - 1.1, uCutD - 0.45, wsDep));
+  float wsN = fract(sin(dot(floor(gl_FragCoord.xy), vec2(12.9898, 78.233))) * 43758.5453);
+  if (wsW > 0.02 && wsW * 1.08 > wsN) discard;
+}
 ${clip ? 'if (vLocal.y > vState.w) discard; if (!gl_FrontFacing) diffuseColor.rgb = vec3(0.5, 0.47, 0.42) * (0.75 + 0.25 * clamp(vLocal.y / max(vState.w, 0.1), 0.0, 1.0));' : ''}
 // roof surface detail: courses, tiles, slate, turf, eave shadow, weathering
 if (vRoof.x > 0.5) {

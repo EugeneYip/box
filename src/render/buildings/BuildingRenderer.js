@@ -1038,7 +1038,8 @@ export class BuildingRenderer {
     for (const [st, list] of scare)
       for (let i = 0; i < list.length; i++) {
         const [x, y, z, r] = list[i];
-        sl.push(st, new THREE.Matrix4().compose(this._p.set(x, y, z), q.setFromAxisAngle(this._up, r), this._s.set(PS, PS, PS)));
+        // (a person-height prop: the people's factor, PROP.kit, round 25)
+        sl.push(st, new THREE.Matrix4().compose(this._p.set(x, y, z), q.setFromAxisAngle(this._up, r), this._s.set(PROP.kit, PROP.kit, PROP.kit)));
       }
   }
 
