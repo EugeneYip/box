@@ -123,7 +123,10 @@ export const realms = {
         realmIdx: i,
         color: r.color != null ? this._nearestTincture(r.color, at.x, at.z ?? at.y) : null,
       };
-      const v = site ? this.foundVillage(site.x, site.y, opts) : this._seedMustCity(null, r.capital, opts);
+      // (a hall that will not stand on the levelled pad is laid out as a
+      // must-exist city is, nudged and levelled: Mexico City on the North
+      // America map)
+      const v = (site && this.foundVillage(site.x, site.y, opts)) || this._seedMustCity(null, seat || r.capital, opts);
       if (v) {
         const k = this.kingdoms[v.kingdom];
         k.seeded = true; // a real country of the start (sturdier: politics.js)
