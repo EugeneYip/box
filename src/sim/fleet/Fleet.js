@@ -10,6 +10,7 @@ import { modern } from './modern.js';
 import { traffic } from './traffic.js';
 import { hullR, hullHalf, segDist, HULL_GAP, PIER_END, PIER, BERTH } from './hull.js';
 import { geoDist, geoWrapOn } from '../../world/geo.js';
+import { VEHICLE, PICK_PX } from '../../core/scale.js';
 
 const _SD = { x: 0, z: 0 };
 
@@ -1031,7 +1032,7 @@ export class Fleet {
         const wx = Math.cos(o.heading),
           wz = Math.sin(o.heading),
           hb = hullHalf(o);
-        const min = ra + hullR(o) + HULL_GAP + 0.06;
+        const min = ra + hullR(o) + HULL_GAP + 0.06 * VEHICLE.rel;
         const d0 = segDist(v.x, v.z, ux, uz, ha, oxx, o.z, wx, wz, hb, _SD);
         if (d0 > min + look) continue;
         const d1 = segDist(v.x + ux * look, v.z + uz * look, ux, uz, ha, oxx, o.z, wx, wz, hb, _SD);
@@ -1609,7 +1610,9 @@ export class Fleet {
     for (const v of this.list) {
       if (!v.alive || v.state === 'sinking') continue;
       const d = Math.hypot(v.x - hit.x, v.z - hit.z);
-      const r = Math.max(0.9, v.def.size * (v.cls === 'sea' ? 1.1 : 0.9));
+      // (round 24: half-size craft) a world floor at close zoom, PICK_PX
+      // screen pixels further out
+      const r = Math.max(0.9 * VEHICLE.rel, v.def.size * (v.cls === 'sea' ? 1.1 : 0.9), Math.min(2.5, (hit.px || 0) * PICK_PX));
       if (d < r && d < bd) {
         bd = d;
         best = v;

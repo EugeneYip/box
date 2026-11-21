@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { PROP } from '../../core/scale.js';
+import { PROP, UNIT } from '../../core/scale.js';
 
 // Square props (Life module, round 19): benches and a food stall about each
 // town's main square, and the paved parade square before a barracks where the
@@ -8,6 +8,9 @@ import { PROP } from '../../core/scale.js';
 // instanced mesh (one draw call in all, no shadow pass), rebuilt a few times a
 // second for the towns near the camera only.
 const S = PROP.scale;
+// benches and the stall are furniture for the people: they take the people's
+// scale (round 24: half the round-14 size), the paved parade square the land's
+const SU = UNIT.scale;
 const MAX = 1200;
 const NEAR = 95; // tiles from the camera target
 const FAR_CAM = 140; // camera distance beyond which nothing is drawn
@@ -51,7 +54,7 @@ export class SquareProps {
 
   // One box: centre-bottom at local (lx, ly, lz) of a frame at (x, y, z)
   // turned by rot about Y, size (sx, sy, sz) in design units.
-  _box(x, y, z, rot, lx, ly, lz, sx, sy, sz, col) {
+  _box(x, y, z, rot, lx, ly, lz, sx, sy, sz, col, S = SU) {
     if (this.n >= MAX) return;
     const c = Math.cos(rot),
       s = Math.sin(rot);
@@ -93,8 +96,8 @@ export class SquareProps {
     // stood on a plinth down to the lowest ground, a raised platform)
     const lo = Math.max((pd.lo ?? pd.y) - 0.04, pd.y - 0.05);
     const h = (pd.y + 0.012 - lo) / S;
-    this._box(pd.x, lo, pd.z, r, 0, 0, 0, W + 0.14, h - 0.012 / S, D + 0.14, C.paveEdge);
-    this._box(pd.x, lo, pd.z, r, 0, 0, 0, W, h, D, C.pave);
+    this._box(pd.x, lo, pd.z, r, 0, 0, 0, W + 0.14, h - 0.012 / S, D + 0.14, C.paveEdge, S);
+    this._box(pd.x, lo, pd.z, r, 0, 0, 0, W, h, D, C.pave, S);
   }
 
   update() {

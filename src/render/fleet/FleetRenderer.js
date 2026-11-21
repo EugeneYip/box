@@ -36,7 +36,7 @@ const LO_ZOOM = 120; // beyond this camera distance every kind with a distant mo
 const PLUME_TINT = 0xeceff3; // a cool near-white: smoke over the sea reads grey, not brown
 const STONE_SCALE = 0.62 * VEHICLE.land; // catapult stone: a third of the arm (~0.38 tiles across at design size)
 // rails and the maglev guideway (InfraRenderer draws them at these heights)
-const RAIL_Y = 0.07;
+const RAIL_Y = 0.02 + 0.083 * VEHICLE.land; // the bed (0.02) plus sleeper and rail, sized with the trains
 const MAGLEV_Y = 0.95 * BUILDING.scale; // the guideway's clearance (InfraRenderer MAG_Y)
 const MAGLEV_HOVER = 0.03;
 const BRIDGE_Y = SEA_LEVEL + 0.3 * BUILDING.scale; // a rail bridge's deck over water
@@ -597,7 +597,8 @@ export class FleetRenderer {
     const sc = (def.scale || 1) * (C.roadBoost || 1);
     const hl = def.length * 0.4;
     // (the right-hand lane: half a car's width and a little off the crown)
-    const lane = 0.27 * Math.min(1.2, C.roadBoost || 1);
+    // (round 24: half-size cars keep to the right half of the same street)
+    const lane = 0.27 * (0.5 + 0.5 * VEHICLE.rel) * Math.min(1.2, C.roadBoost || 1);
     let n = 0;
     for (let i = 0; i < T.length; i++) {
       const c = T[i];

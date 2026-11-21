@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { SEA_LEVEL } from '../../world/constants.js';
-import { BUILDING } from '../../core/scale.js';
+import { BUILDING, VEHICLE } from '../../core/scale.js';
 import { hwPoint } from '../../sim/civ/modern.js';
 import { GeoBuilder } from './geom.js';
 import { pylonModel, PYLON_ARMS } from './modernModels.js';
@@ -21,21 +21,25 @@ import { pylonModel, PYLON_ARMS } from './modernModels.js';
 // edges join, no segment is drawn across the seam.
 
 const BS = BUILDING.scale;
-// sizes at the design scale (one tile = one unit, a person 0.6 tall), times BS
-const GAUGE = 0.26 * BS; // rail to rail
-const RAIL_W = 0.045 * BS,
-  RAIL_H = 0.034 * BS;
-const SLEEPER_L = 0.24 * BS, // half length
-  SLEEPER_W = 0.07 * BS,
-  SLEEPER_H = 0.025 * BS;
-const BAL_T = 0.27 * BS, // ballast bed: half width at the top, at the toe, height
-  BAL_B = 0.4 * BS,
+// the track itself (gauge, rails, sleepers, the ballast's width, the buffer
+// stop) is sized to the trains that run on it, which take VEHICLE.land
+// (round 24: half the round-14 size, so the gauge narrowed with them)
+const TS = VEHICLE.land;
+// sizes at the design scale (one tile = one unit, a person 0.6 tall), times BS or TS
+const GAUGE = 0.26 * TS; // rail to rail
+const RAIL_W = 0.045 * TS,
+  RAIL_H = 0.034 * TS;
+const SLEEPER_L = 0.24 * TS, // half length
+  SLEEPER_W = 0.07 * TS,
+  SLEEPER_H = 0.025 * TS;
+const BAL_T = 0.27 * TS, // ballast bed: half width at the top, at the toe, height
+  BAL_B = 0.4 * TS,
   BAL_H = 0.07 * BS;
 const DECK_W = 0.5 * BS,
   GIRDER_H = 0.22 * BS,
   PIER_W = 0.22 * BS;
 const MAG_Y = 0.95 * BS; // the guideway's deck above the ground
-const GUIDE_W = 0.36 * BS,
+const GUIDE_W = 0.36 * TS, // (the maglev's beam, as wide as its trains)
   GUIDE_H = 0.15 * BS,
   PILLAR_W = 0.15 * BS,
   PILLAR_GAP = 2.2; // tiles between pillars
@@ -336,8 +340,8 @@ export class InfraRenderer {
     for (const [x, z, a1, a2] of seg.xing || []) {
       const y = Math.max(this._h(x, z), SEA_LEVEL) + 0.02 + SLEEPER_H + 0.002;
       for (const a of [a1, a2]) {
-        const cx = Math.cos(a) * 0.32,
-          cz = Math.sin(a) * 0.32;
+        const cx = Math.cos(a) * BAL_T * 2,
+          cz = Math.sin(a) * BAL_T * 2;
         E.bar(x - cx, z - cz, x + cx, z + cz, y, y, BAL_T * 2.2, SLEEPER_H, COL.deck);
       }
     }
@@ -393,15 +397,15 @@ export class InfraRenderer {
     }
     const y = seg.ys ? seg.ys[i] : g + 0.02;
     if (!info?.station) {
-      const po = 0.26;
+      const po = BAL_T + 0.1; // (beside the ballast)
       const cx = x - tx * 0.6 + px * po,
         cz = z - tz * 0.6 + pz * po;
       E.bar(cx - tx * 0.5, cz - tz * 0.5, cx + tx * 0.5, cz + tz * 0.5, y + 0.07, y + 0.07, 0.2, 0.09, COL.platform);
       E.bar(cx - tx * 0.5 - px * 0.09, cz - tz * 0.5 - pz * 0.09, cx + tx * 0.5 - px * 0.09, cz + tz * 0.5 - pz * 0.09, y + 0.072, y + 0.072, 0.015, 0, COL.edge, 0, false);
     }
     // the buffer stop: a red beam on two posts across the end of the rails
-    E.bar(x - px * GAUGE * 0.75, z - pz * GAUGE * 0.75, x + px * GAUGE * 0.75, z + pz * GAUGE * 0.75, y + 0.1 * BS, y + 0.1 * BS, 0.05 * BS, 0.07 * BS, COL.buffer);
-    for (const s of [1, -1]) E.post(x + px * GAUGE * 0.5 * s + tx * 0.04, z + pz * GAUGE * 0.5 * s + tz * 0.04, y, y + 0.06 * BS, 0.05 * BS, COL.sleeper);
+    E.bar(x - px * GAUGE * 0.75, z - pz * GAUGE * 0.75, x + px * GAUGE * 0.75, z + pz * GAUGE * 0.75, y + 0.1 * TS, y + 0.1 * TS, 0.05 * TS, 0.07 * TS, COL.buffer);
+    for (const s of [1, -1]) E.post(x + px * GAUGE * 0.5 * s + tx * 0.04 * VEHICLE.rel, z + pz * GAUGE * 0.5 * s + tz * 0.04 * VEHICLE.rel, y, y + 0.06 * TS, 0.05 * TS, COL.sleeper);
   }
 
   // a highway beside a track, a tile off its bed (where the sim laid its

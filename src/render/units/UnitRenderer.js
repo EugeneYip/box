@@ -823,7 +823,7 @@ export class UnitRenderer {
       else if (hab === 'water') y = SEA_LEVEL;
       else if (u.swimming) y = SEA_LEVEL - (md.id === 'human' ? 0.34 : md.height * 0.5) * scale;
       else if (u.onDeck) y = Math.max(ground, SEA_LEVEL + 0.1);
-      else if (u.wading) y = Math.max(ground, SEA_LEVEL - 0.18); // knee-deep at most
+      else if (u.wading) y = Math.max(ground, SEA_LEVEL - 0.3 * md.height * scale); // knee-deep at most
       else y = ground;
       this._sph.center.set(ix, y + md.height * 0.5 * scale, iz);
       this._sph.radius = md.radius * scale + 0.3;
@@ -837,7 +837,7 @@ export class UnitRenderer {
       const lod = dotsOnly ? (def.kind === 'monster' ? 1 : 0) : def.kind === 'monster' ? 1 : smoothstep(2.4, 4.6, pxH);
       if (dotsOnly && lod === 0) {
         const c = rs.dot || (this._appearance(u, rs), rs.dot) || [0.8, 0.8, 0.8];
-        const dsz = Math.max(0.3, 6 / ppu) * (def.kind === 'humanoid' ? 1 : 0.8);
+        const dsz = Math.max(0.3 * UNIT.rel, 6 / ppu) * (def.kind === 'humanoid' ? 1 : 0.8);
         ov.ground.add(ix, Math.max(ground, SEA_LEVEL), iz, dsz, 0, 1, 0, DECAL.dot, c[0], c[1], c[2], 1);
         continue;
       }
@@ -1060,7 +1060,7 @@ export class UnitRenderer {
         if (kc) ov.ground.add(ix, ground, iz, (md.radius * 1.5 + 0.2) * scale, 0, 1, 0, DECAL.ring, Math.min(1, kc[0] * 1.6 + 0.1), Math.min(1, kc[1] * 1.6 + 0.1), Math.min(1, kc[2] * 1.6 + 0.1), 0.85);
       }
       if (lod < 0.999) {
-        const dsz = Math.max(0.3, 6 / ppu) * (def.kind === 'humanoid' ? 1 : 0.8);
+        const dsz = Math.max(0.3 * UNIT.rel, 6 / ppu) * (def.kind === 'humanoid' ? 1 : 0.8);
         const c = rs.dot || [0.8, 0.8, 0.8];
         ov.ground.add(ix, Math.max(ground, SEA_LEVEL), iz, dsz, 0, 1, 0, DECAL.dot, c[0], c[1], c[2], 1 - lod);
       }
@@ -1084,7 +1084,7 @@ export class UnitRenderer {
         for (const id of u.statuses.keys()) if (STATUS_ICON[id] != null) ids.push(id);
         ids.sort((a, b) => (STATUS_BY_ID[b]?.priority ?? 0) - (STATUS_BY_ID[a]?.priority ?? 0));
         const esz2 = Math.max(md.height * scale * 0.3, 16 / ppu);
-        const top2 = y + lift + rs.sY * scale + md.height * scale + 0.15;
+        const top2 = y + lift + rs.sY * scale + md.height * scale + 0.15 * UNIT.rel;
         for (let k = 0; k < Math.min(3, ids.length); k++) {
           const off = (k - (Math.min(3, ids.length) - 1) / 2) * esz2 * 1.1;
           ov.emotes.add(ix + this._camRight.x * off, top2 + esz2 * 0.6, iz + this._camRight.z * off, esz2, STATUS_ICON[ids[k]], 1, 0);
@@ -1093,20 +1093,22 @@ export class UnitRenderer {
       // ---- emotes (only when close enough to read)
       if (dCam < 55 && lod > 0.3) {
         const ea = 1 - smoothstep(38, 55, dCam);
-        const top = y + lift + rs.sY * scale + md.height * scale * (u.sleeping ? 0.6 : 1.05) + 0.12;
-        const esz = 0.24 * Math.max(1, dCam / 22) * (def.kind === 'monster' ? 1.6 : 1);
+        const top = y + lift + rs.sY * scale + md.height * scale * (u.sleeping ? 0.6 : 1.05) + 0.12 * UNIT.rel;
+        // icons over heads keep to the bodies' size, but never below ~11 px
+        const esz = Math.max(0.24 * UNIT.rel * Math.max(1, dCam / 22), 11 / ppu) * (def.kind === 'monster' ? 1.6 : 1);
+        const er = esz / 0.24; // offsets and rises in proportion
         const em = u.emote;
         if (em && simNow < em.until) {
           const t = simNow - em.start;
           const k = Math.min(1, t / 0.25);
           const popS = easeOutBack(k);
           const fade = Math.min(1, (em.until - simNow) / 0.35);
-          ov.emotes.add(ix, top + 0.08 + t * 0.05, iz, esz * popS, EMOTE_KIND[em.kind] ?? EMOTE.alert, ea * fade, Math.sin(now * 3) * 0.08);
+          ov.emotes.add(ix, top + (0.08 + t * 0.05) * er, iz, esz * popS, EMOTE_KIND[em.kind] ?? EMOTE.alert, ea * fade, Math.sin(now * 3) * 0.08);
         } else if (u.sleeping && u.state === 'sleep' && !u.moving && !(u.speedNow > 0.05)) {
           const t = (now * 0.5 + rs.seed) % 1;
-          ov.emotes.add(ix + t * 0.1, top + t * 0.25, iz, esz * (0.7 + t * 0.4), EMOTE.zzz, ea * Math.sin(t * Math.PI) * 0.95, 0);
+          ov.emotes.add(ix + t * 0.1 * er, top + t * 0.25 * er, iz, esz * (0.7 + t * 0.4), EMOTE.zzz, ea * Math.sin(t * Math.PI) * 0.95, 0);
         } else if (u.mad > simNow) {
-          ov.emotes.add(ix, top + 0.05, iz, esz * (0.9 + 0.12 * Math.sin(now * 8)), EMOTE.anger, ea, 0);
+          ov.emotes.add(ix, top + 0.05 * er, iz, esz * (0.9 + 0.12 * Math.sin(now * 8)), EMOTE.anger, ea, 0);
         } else if ((u.activity || u._singUntil > simNow) && md.id === 'human') {
           // daily life: small icons in pulses, so a crowd is not all icons
           const act = u._singUntil > simNow && u.state === 'work' ? 'sing' : u.state === 'eat' ? 'eat' : u.activity;
@@ -1115,9 +1117,9 @@ export class UnitRenderer {
             const t = (now * ic[2] + rs.seed * 7.3) % 1;
             if (t < ic[1]) {
               const k = t / ic[1];
-              const rise = ic[3] ? k * 0.22 : 0;
-              const side = ic[3] ? Math.sin(k * 6 + rs.seed * 9) * 0.06 : 0;
-              ov.emotes.add(ix + this._camRight.x * side, top + 0.04 + rise, iz + this._camRight.z * side, esz * (ic[4] || 0.85) * Math.min(1, k * 5), ic[0], ea * Math.sin(k * Math.PI) * 0.95, ic[3] ? Math.sin(now * 4 + rs.seed) * 0.15 : 0);
+              const rise = ic[3] ? k * 0.22 * er : 0;
+              const side = ic[3] ? Math.sin(k * 6 + rs.seed * 9) * 0.06 * er : 0;
+              ov.emotes.add(ix + this._camRight.x * side, top + 0.04 * er + rise, iz + this._camRight.z * side, esz * (ic[4] || 0.85) * Math.min(1, k * 5), ic[0], ea * Math.sin(k * Math.PI) * 0.95, ic[3] ? Math.sin(now * 4 + rs.seed) * 0.15 : 0);
             }
           }
         }
@@ -1184,7 +1186,7 @@ export class UnitRenderer {
       const t = (realNow - f.t0) / 2.4;
       if (t >= 1 || dotsOnly) continue;
       this.puffs[pj++] = f;
-      ov.emotes.add(f.x, f.y + t * 0.35, f.z, (0.35 + t * 0.9) * f.s * 1.4, EMOTE.puff, 0.7 * (1 - t) * (1 - t), f.t0);
+      ov.emotes.add(f.x, f.y + t * 0.35 * UNIT.rel, f.z, (0.35 + t * 0.9) * f.s * 1.4, EMOTE.puff, 0.7 * (1 - t) * (1 - t), f.t0);
     }
     this.puffs.length = pj;
     // ---- ambient birds & fish
