@@ -426,13 +426,17 @@ export class FireVisuals {
         const h = 2.5 + Hmax * (1 - Math.exp(-3.2 * u));
         const sz = (1.7 + u * 4.2 + sq * 0.1) * Math.pow(lod, 0.75);
         const j = spread * (0.5 + u * 1.5);
-        const light = u > 0.3;
+        // far zoom (past ~90 tiles): the column is pale and thinner, and its
+        // dark base is left out; seen from far above the dark puffs lay flat
+        // on the slopes as brown bruises (round 22)
+        const farS = lod > 1.9;
+        const light = u > 0.3 || farS;
         smokePuff(fx, bx + dirX * D + (rnd() - 0.5) * j, B.gy + h + (rnd() - 0.5) * u * 2, bz + dirZ * D + (rnd() - 0.5) * j, {
           size: sz,
           grow: 1.6,
           ramp: raining && rnd() < 0.6 ? RAMP.STEAM : light ? RAMP.SMOKE_LIGHT : RAMP.PLUME,
-          color: light ? 0x9c968e : undefined,
-          alpha: light ? 1.35 : undefined,
+          color: farS ? 0xd2cec8 : light ? 0x9c968e : undefined,
+          alpha: farS ? 0.6 : light ? 1.35 : undefined,
           glow: u < 0.12 ? 0.5 : 0,
           rise: 0.25 + rnd() * 0.35,
           drift: 1.8,
