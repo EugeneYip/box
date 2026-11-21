@@ -389,18 +389,29 @@ export class Game {
   start() {
     if (this.params.ff > 0) this.fastForward(this.params.ff);
     let last = performance.now();
+    // leaving the page (navigation, reload, closing the tab): stop the loop
+    // and let go of the GPU context and the audio at once, so the next page
+    // does not wait on this one (a page kept for the back button reloads
+    // when it is shown again)
+    this._onPageHide = () => this.dispose();
+    this._onPageShow = (e) => {
+      if (e.persisted && this.disposed) location.reload();
+    };
+    addEventListener('pagehide', this._onPageHide);
+    addEventListener('pageshow', this._onPageShow);
     const loop = (now) => {
+      if (this.disposed) return;
       // Tooling hook: window.__hold = true freezes rendering so headless
       // screenshots can capture the last presented frame without starving.
       if (window.__hold) {
         last = now;
-        requestAnimationFrame(loop);
+        this._raf = requestAnimationFrame(loop);
         return;
       }
       // Frame cap: power saver renders at 30 fps; fpsCap overrides.
       const cap = this.settings.fpsCap || (this.settings.powerSaver ? 30 : 0);
       if (cap > 0 && now - last < 1000 / cap - 2) {
-        requestAnimationFrame(loop);
+        this._raf = requestAnimationFrame(loop);
         return;
       }
       const dt = Math.min(0.1, Math.max(0, (now - last) / 1000));
@@ -412,9 +423,35 @@ export class Game {
         window.__error = String(err && err.stack ? err.stack : err);
       }
       window.__frames = this.frame;
-      requestAnimationFrame(loop);
+      this._raf = requestAnimationFrame(loop);
     };
-    requestAnimationFrame(loop);
+    this._raf = requestAnimationFrame(loop);
+  }
+
+  // Page teardown: stop the frame loop, free the renderer's GPU resources and
+  // drop its context, and close the audio. Safe to call more than once.
+  dispose() {
+    if (this.disposed) return;
+    this.disposed = true;
+    if (this._raf) cancelAnimationFrame(this._raf);
+    this._raf = 0;
+    try {
+      this.pipeline?.destroyComposer?.();
+      const r = this.pipeline?.renderer;
+      if (r) {
+        r.setAnimationLoop?.(null);
+        r.dispose();
+        r.forceContextLoss?.();
+      }
+    } catch (err) {
+      /* the page is going away: nothing to report to */
+    }
+    try {
+      const ctx = this.audio?.ctx;
+      if (ctx && ctx.state !== 'closed') ctx.close().catch(() => {});
+    } catch (err) {
+      /* as above */
+    }
   }
 
   // Aggregate inspector information under a picked point. Each system may

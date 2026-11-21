@@ -2061,8 +2061,22 @@ export class Units {
     // fights still decide at once: see the skip below)
     // (round 21: from the 8x step, 2/15, up; it was 3/15 and up, so 8x on a
     // big map ran every distant walker at the fourth-tick rate)
-    const far8 = stepK >= 2 && w.w * w.h > 65536 * 2 && !globalThis.__lod8Off;
-    const far8d2 = Math.max(lr2 * 16, FAR8_DIST * FAR8_DIST);
+    // (round 23) a Medium map takes it too at the coarsest step (4/15, 16x
+    // and above), beyond FAR8_DIST or twice the full-rate radius: the camera's
+    // neighbourhood keeps the full and every-other-tick schedule as before
+    // In the overview (camera beyond OVERVIEW_DIST, where a person is a dot or
+    // less) the same holds at any step on Medium and bigger maps, beyond
+    // FAR8_DIST of the camera's target.
+    const area = w.w * w.h;
+    const far8Ov = overview && area >= 65536 && !globalThis.__far8OvOff;
+    const far8Big = stepK >= 2 && area > 65536 * 2;
+    const far8Med = !far8Big && stepK >= 4 && area >= 65536 && !globalThis.__far8MedOff;
+    const far8 = (far8Big || far8Med || far8Ov) && !globalThis.__lod8Off;
+    const far8d2 = far8Ov || far8Med ? Math.max(far8Ov ? 0 : lr2 * 4, FAR8_DIST * FAR8_DIST) : Math.max(lr2 * 16, FAR8_DIST * FAR8_DIST);
+    // (only the big-map schedule also halves the timer re-thinks: on the
+    // smaller maps a worker who finished a task would stand idle twice as
+    // long, and towns grew more slowly)
+    const far8Think = far8Big || globalThis.__far8Think2 ? 2 : 1;
     const yearDt = dt / YEAR;
     const list = this.list;
     const lifeLaw = typeof g.laws?.lifeLifespan === 'number' ? g.laws.lifeLifespan : 1;
@@ -2241,7 +2255,7 @@ export class Units {
         if (budgetOn && this._frameThinkMs > THINK_BUDGET_MS && !u.combat) {
           u.thinkT = 0.05 + g.rng.next() * 0.15; // over budget: think a little later
         } else {
-          let mul = u._far ? (FAR_THINK[def.kind] || 2) * (def.kind === 'humanoid' ? fastFarPeople : fastFar) * (lod === 3 ? 2 : 1) : u.combat ? 1 : fastNear;
+          let mul = u._far ? (FAR_THINK[def.kind] || 2) * (def.kind === 'humanoid' ? fastFarPeople : fastFar) * (lod === 3 ? far8Think : 1) : u.combat ? 1 : fastNear;
           // calm grazers with no danger about re-decide less often
           if (def.kind === 'animal' && def.diet === 'herbivore' && !u.combat && u.hunger < 0.4 && !u.alarm && u.fleeUntil < now && !this.dangerNear(u.x, u.z, def.sight)) mul *= 1.6;
           u.thinkT = THINK_INTERVAL * (0.8 + g.rng.next() * 0.4) * mul;
