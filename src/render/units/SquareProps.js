@@ -11,7 +11,7 @@ const S = PROP.scale;
 // benches and the stall are furniture for the people: they take the people's
 // scale (round 24: half the round-14 size), the paved parade square the land's
 const SU = UNIT.scale;
-const MAX = 1200;
+const MAX = 2400;
 const NEAR = 95; // tiles from the camera target
 const FAR_CAM = 140; // camera distance beyond which nothing is drawn
 
@@ -26,6 +26,10 @@ const C = {
   goods: new THREE.Color(0xe0a040),
   greens: new THREE.Color(0x6aae46),
   metal: new THREE.Color(0xa8b0b8),
+  paint: new THREE.Color(0xeeeae0),
+  stone: new THREE.Color(0xa49c8c),
+  concrete: new THREE.Color(0x9a9a96),
+  water: new THREE.Color(0x4f86a8),
 };
 
 export class SquareProps {
@@ -50,6 +54,7 @@ export class SquareProps {
     this._s = new THREE.Vector3();
     this._t = -9;
     this.n = 0;
+    this._flag = new THREE.Color();
   }
 
   // One box: centre-bottom at local (lx, ly, lz) of a frame at (x, y, z)
@@ -85,19 +90,109 @@ export class SquareProps {
     for (let i = 0; i < 4; i++) this._box(p.x, y, p.z, r, -0.33 + i * 0.22, 0.62, 0.04, 0.22, 0.04, 0.56, i % 2 ? C.awningB : C.awningA);
   }
 
-  _pad(pd, w) {
-    // the paved parade square: a slab of setts with a darker kerb, laid level
-    // (from the lowest ground under it to just above the highest: the site is
-    // chosen nearly level, so the drilling ranks stand on it)
+  _pad(pd, w, flagCol) {
+    // the parade square (round 25): flush with the levelled ground (the site
+    // is levelled when it is laid out, planner._keepClear), a thin wash of
+    // setts with white painted lines (a border and the two rank lines the
+    // soldiers stand on) and a flagpole at the corner before the ranks.
+    // Sizes in world units (scale 1): it is part of the ground, not a model.
     const r = Math.atan2(pd.ax, pd.az);
-    const W = (pd.W + 0.3) / S,
-      D = (pd.D + 0.3) / S;
-    // laid flush: a thin slab just proud of the highest ground under it (it
-    // stood on a plinth down to the lowest ground, a raised platform)
-    const lo = Math.max((pd.lo ?? pd.y) - 0.04, pd.y - 0.05);
-    const h = (pd.y + 0.012 - lo) / S;
-    this._box(pd.x, lo, pd.z, r, 0, 0, 0, W + 0.14, h - 0.012 / S, D + 0.14, C.paveEdge, S);
-    this._box(pd.x, lo, pd.z, r, 0, 0, 0, W, h, D, C.pave, S);
+    const W = pd.W + 0.2,
+      D = pd.D + 0.2;
+    const y = pd.y ?? w.heightAt(pd.x, pd.z);
+    this._box(pd.x, y - 0.03, pd.z, r, 0, 0, 0, W, 0.036, D, C.pave, 1);
+    const lw = 0.035,
+      ly = y + 0.006,
+      th = 0.003,
+      e = 0.08;
+    // the border
+    this._box(pd.x, ly, pd.z, r, 0, 0, D / 2 - e, W - 2 * e, th, lw, C.paint, 1);
+    this._box(pd.x, ly, pd.z, r, 0, 0, -D / 2 + e, W - 2 * e, th, lw, C.paint, 1);
+    this._box(pd.x, ly, pd.z, r, W / 2 - e, 0, 0, lw, th, D - 2 * e, C.paint, 1);
+    this._box(pd.x, ly, pd.z, r, -W / 2 + e, 0, 0, lw, th, D - 2 * e, C.paint, 1);
+    // the two rank lines (units/daily.js _paradeSlot: ranks half a rank
+    // gap either side of the centre) and the centre mark
+    const f = 0.5 * Math.min(pd.D / 2.9, 1.5 * SU);
+    for (const s of [-1, 1]) this._box(pd.x, ly, pd.z, r, 0, 0, s * f, Math.min(W - 0.5, 6 * 0.75 * SU + 0.2), th, lw * 0.7, C.paint, 1);
+    // the flagpole at the corner on the barracks side, its flag in the realm's colour
+    const fx = -W / 2 + 0.16,
+      fz = -D / 2 + 0.16;
+    this._box(pd.x, y, pd.z, r, fx, 0, fz, 0.1, 0.05, 0.1, C.paveEdge, 1);
+    this._box(pd.x, y, pd.z, r, fx, 0, fz, 0.022, 0.95, 0.022, C.metal, 1);
+    this._box(pd.x, y, pd.z, r, fx + 0.13, 0.78, fz, 0.24, 0.15, 0.01, flagCol || C.awningA, 1);
+  }
+
+  // The main square by day (round 25: the squares and plazas read vast and
+  // empty): a fountain in the open middle of the square before the hall,
+  // planters at its corners, benches about the fountain and a pair of
+  // stalls along one side, all at the people's scale. Placed on the paved
+  // square only (keepClear bit 1, or a street tile), never on the parade
+  // square or a building.
+  _square(v, civ, w, pd, modern, day) {
+    const h = v.hall;
+    if (!h || h.alive === false || h.doorX == null) return;
+    const kc = civ.keepClear,
+      use = civ.use;
+    const paved = (x, z) => {
+      const tx = Math.floor(x),
+        tz = Math.floor(z);
+      if (!w.inBounds(tx, tz)) return false;
+      const i = tz * w.w + tx;
+      if (w.building[i] >= 0 || w.height[i] < 0) return false;
+      if (!((kc && kc[i] & 1) || (use && use[i] === 2))) return false;
+      if (pd && pd.ok && Math.abs((x - pd.x) * pd.ax + (z - pd.z) * pd.az) < pd.D / 2 + 0.3 && Math.abs(-(x - pd.x) * pd.az + (z - pd.z) * pd.ax) < pd.W / 2 + 0.3) return false;
+      return true;
+    };
+    let dx = h.doorX - (h.x ?? h.doorX),
+      dz = h.doorZ - (h.z ?? h.doorZ);
+    const L = Math.hypot(dx, dz) || 1;
+    dx /= L;
+    dz /= L;
+    const cx = h.doorX + dx * 1.6,
+      cz = h.doorZ + dz * 1.6;
+    if (!paved(cx, cz)) return;
+    const y = w.heightAt(cx, cz);
+    const rot = Math.atan2(dx, dz);
+    // the fountain: a stone basin, its water, a column and a bowl (about
+    // four people across, the column twice a person's height)
+    const B = 0.62;
+    this._box(cx, y, cz, rot, 0, 0, 0, B, 0.1, B, C.stone, 1);
+    this._box(cx, y, cz, rot, 0, 0.1, 0, B - 0.08, 0.004, B - 0.08, C.water, 1);
+    this._box(cx, y, cz, rot, 0, 0, 0, 0.08, 0.34, 0.08, C.stone, 1);
+    this._box(cx, y, cz, rot, 0, 0.3, 0, 0.24, 0.04, 0.24, C.stone, 1);
+    this._box(cx, y, cz, rot, 0, 0.34, 0, 0.18, 0.003, 0.18, C.water, 1);
+    // benches round it, facing in
+    const c = Math.cos(rot),
+      s = Math.sin(rot);
+    const at = (lx, lz) => [cx + lx * c + lz * s, cz - lx * s + lz * c];
+    for (const [lx, lz, a] of [
+      [0, 0.62, Math.PI],
+      [0, -0.62, 0],
+      [0.62, 0, -Math.PI / 2],
+      [-0.62, 0, Math.PI / 2],
+    ]) {
+      const [x, z] = at(lx, lz);
+      if (paved(x, z)) this._bench({ x, z, rot: rot + a }, w.heightAt(x, z));
+    }
+    // planters with a shrub at the square's four corners
+    for (const [lx, lz] of [
+      [1.25, 1.1],
+      [-1.25, 1.1],
+      [1.25, -0.9],
+      [-1.25, -0.9],
+    ]) {
+      const [x, z] = at(lx, lz);
+      if (!paved(x, z)) continue;
+      const yy = w.heightAt(x, z);
+      this._box(x, yy, z, rot, 0, 0, 0, 0.26, 0.09, 0.26, modern ? C.concrete : C.stone, 1);
+      this._box(x, yy, z, rot, 0, 0.09, 0, 0.22, 0.08, 0.22, C.greens, 1);
+    }
+    // and by day two stalls along the side away from the hall
+    if (day)
+      for (const lx of [-0.75, 0.75]) {
+        const [x, z] = at(lx, 1.6);
+        if (paved(x, z)) this._stall({ x, z, rot: rot + Math.PI }, w.heightAt(x, z), modern);
+      }
   }
 
   update() {
@@ -113,15 +208,22 @@ export class SquareProps {
       const tx = cam.x ?? cam.tx ?? 0,
         tz = cam.z ?? cam.tz ?? 0;
       const bById = civ._bById;
+      const hr = g.time?.hour ?? 12;
+      const day = hr >= 7 && hr < 19.5;
       for (const v of civ.villages || []) {
         if (!v || !v.alive) continue;
         if (Math.abs(v.cx - tx) > NEAR || Math.abs(v.cz - tz) > NEAR) continue;
         const pd = v._parade;
+        const era = civ.kingdoms?.[v.kingdom]?.era || 0;
         if (pd && pd.ok) {
           const b = bById?.get(pd.b);
           if (!b || b.alive === false) v._parade = null;
-          else this._pad(pd, w);
+          else {
+            const kc = civ.kingdoms?.[v.kingdom]?.color;
+            this._pad(pd, w, kc != null ? this._flag.set(kc) : null);
+          }
         }
+        if (era >= 2 && (v.pop || 0) >= 10) this._square(v, civ, w, pd && pd.ok ? pd : null, era >= 5, day);
         const pr = v._props;
         if (pr) {
           const modern = (pr.era || 0) >= 5;

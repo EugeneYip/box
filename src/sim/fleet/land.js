@@ -468,9 +468,12 @@ export const land = {
       const t = civ.villages[vid];
       if (!t?.alive) continue;
       const bk = (t.buildings || []).find((b) => b.alive && !b.constructing && b.type === 'barracks');
-      const base = bk || (t.hall?.alive ? t.hall : null);
+      // (garaged in a barracks only: parked at a hall door, a peacetime tank
+      // stood at the edge of the main plaza; a realm with no barracks lays
+      // its armour up)
+      const base = bk;
       if (!base) continue;
-      const d = this.dist(base.x, base.z, v.x, v.z) + (bk ? 0 : 50);
+      const d = this.dist(base.x, base.z, v.x, v.z);
       if (d < bd) (bd = d), (best = { t, b: base });
     }
     if (!best) return this.remove(v);

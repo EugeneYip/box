@@ -3,7 +3,7 @@ import { SEA_LEVEL } from '../../world/constants.js';
 import { BUILDING, VEHICLE } from '../../core/scale.js';
 import { hwPoint } from '../../sim/civ/modern.js';
 import { GeoBuilder } from './geom.js';
-import { pylonModel, PYLON_ARMS } from './modernModels.js';
+import { pylonModel, PYLON_ARMS, substationModel, SUB_ARM_Y } from './modernModels.js';
 
 // The modern infrastructure (docs/MODERN-ERAS.md), drawn from civ data:
 //   railSegs()   each stretch of a realm's network once: steel rails on
@@ -454,6 +454,13 @@ export class InfraRenderer {
       if (i % 2 === 0) E.bar(ax, az, ax + (bx - ax) * 0.55, az + (bz - az) * 0.55, ya + 0.003, ya + (yb - ya) * 0.55 + 0.003, 0.016, 0, COL.mark, 0, false);
     }
   }
+  _subGeo() {
+    if (this._sub) return this._sub;
+    const g = new GeoBuilder(7);
+    substationModel(g, COL.pylon);
+    this._sub = g.build();
+    return this._sub;
+  }
   _pylonGeo() {
     if (this._pylon) return this._pylon;
     const g = new GeoBuilder(91, { jitter: 0.04 });
@@ -480,13 +487,13 @@ export class InfraRenderer {
       seg.len = len;
       const n0 = far.length / 3;
       this._track(E, seg, far);
-      farCol(n0, seg.kind === 'maglev' ? 0xe8f4f8 : 0x5a5650);
+      farCol(n0, seg.kind === 'maglev' ? 0x5c646c : 0x4a4640);
       if (seg.start) this._terminus(E, seg, true);
       if (seg.end) this._terminus(E, seg, false);
       if (seg.hw) {
         const n1 = far.length / 3;
         this._highway(E, seg, far);
-        farCol(n1, 0x70747a);
+        farCol(n1, 0x5a5d62);
       }
     }
     // power lines: pylons and sagging wires
@@ -508,7 +515,15 @@ export class InfraRenderer {
         const yaw = Math.atan2(-dz, dx) + Math.PI / 2;
         const y = Math.max(this._h(x, z), SEA_LEVEL);
         m.makeRotationY(yaw).setPosition(x, y, z).multiply(sm);
-        // the plant end hangs its wires on the plant; every other point gets a pylon
+        // the plant end hangs its wires on the plant; the town end on its
+        // substation at the edge of town (the town's own when it has one);
+        // every other point gets a pylon
+        const last = i + 2 >= P.length;
+        if (last) {
+          if (!l.sub) E.geo(this._subGeo(), m);
+          tips.push(PYLON_ARMS.map(([ax]) => arm.set(Math.sign(ax) * 0.3, SUB_ARM_Y, -0.22).applyMatrix4(m).toArray()));
+          continue;
+        }
         if (i > 0) E.geo(pg, m);
         tips.push(PYLON_ARMS.map(([ax, ay]) => arm.set(ax, i > 0 ? ay : 1.4, 0).applyMatrix4(m).toArray()));
       }
@@ -518,7 +533,7 @@ export class InfraRenderer {
         if (Math.abs(A[0][0] - B[0][0]) > W / 2) continue;
         const n0 = far.length / 3;
         far.push(A[0][0], A[0][1], A[0][2], B[0][0], B[0][1], B[0][2]);
-        farCol(n0, 0xa8a69e);
+        farCol(n0, 0x5e5e5a);
         for (let w = 0; w < A.length; w++) {
           const a = A[w],
             b = B[w];
