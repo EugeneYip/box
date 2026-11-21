@@ -167,7 +167,10 @@ export const air = {
       v._lineP = undefined;
       v.path = null;
       v.donePath = null;
-      if (v.state === 'move' || v.state === 'rest') this._findWork(v);
+      // (a train of the gods finds another line; a realm's own is retired
+      // and the realm runs a new one on the lines it has)
+      if (v.keep) this._findWork(v);
+      else this.remove(v);
       return;
     }
     // (on toward the end its old route was heading for)
