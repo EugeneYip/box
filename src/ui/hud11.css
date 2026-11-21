@@ -126,3 +126,26 @@
     font-variant-numeric: tabular-nums;
   }
 }
+
+/* ---- round 27: the age chip's empty tail holds a faint "years left" note,
+   absolutely placed inside the fixed-width box (nothing in the top bar moves) */
+.ws-agechip {
+  position: relative;
+}
+.ws-agechip__left {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  font: 600 10.5px var(--ws-font);
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  color: currentColor;
+  opacity: 0;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.ws-agechip__left.is-on {
+  opacity: 0.5;
+}

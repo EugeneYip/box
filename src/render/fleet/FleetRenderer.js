@@ -29,7 +29,10 @@ const DETAIL_DIST = 175; // beyond this camera distance vehicles draw as dots
 // carts, idling trucks) and the street traffic are not drawn: they only
 // peppered a town's grey patch with dots. Trains, ships and aircraft stay.
 const FAR_CUT = 90;
-const MIN_CAR_PX = 5.5; // smallest on-screen length (px) of a road vehicle at mid zoom
+// smallest on-screen length (px) of a road vehicle at mid zoom (round 27:
+// 8, up from 5.5, so traffic reads as cars in a growing town at 30-75 tiles;
+// up close every car keeps its true half size)
+const MIN_CAR_PX = 8;
 const farHidden = (v) => v.cls !== 'sea' && !v.def.rail && !(v.speed > 0.5 * (v.def.speed || 1));
 const FLAG_DIST = 115;
 const WAKE_DIST = 165;

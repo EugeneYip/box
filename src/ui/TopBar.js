@@ -263,11 +263,13 @@ export class TopBar {
 
   navBtn(icon, label, key, fn) {
     // (round 25) a caption under each rail icon (phones in portrait show it)
+    // (round 27) touch screens have no keys to name: "Controls", not "Controls · H"
+    const touch = this.ui.root?.classList.contains('is-touch') || matchMedia('(pointer: coarse)').matches;
     return el('button', {
       class: 'ws-iconbtn',
       type: 'button',
-      'aria-label': `${label} (${key})`,
-      'data-tip': `${label} · ${key}`,
+      'aria-label': touch ? label : `${label} (${key})`,
+      'data-tip': touch ? label : `${label} · ${key}`,
       'data-cap': NAV_CAPTION[label] || label,
       html: uiIcon(icon),
       onclick: () => {

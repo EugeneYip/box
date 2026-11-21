@@ -13,10 +13,15 @@ export class AgeChip {
     this.ui = ui;
     this.game = ui.game;
     this.el = el('button', { class: 'ws-agechip', type: 'button', 'aria-label': 'World age', onclick: () => ui.modals.toggle('ages') });
-    this.el.innerHTML = `<svg class="ws-agechip__ring" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.5" class="bg"/><circle cx="12" cy="12" r="9.5" class="fg" pathLength="100" stroke-dasharray="0 100"/></svg><span class="ws-agechip__ico"></span><span class="ws-agechip__txt"><small>Age of</small><b></b></span>`;
+    this.el.innerHTML = `<svg class="ws-agechip__ring" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.5" class="bg"/><circle cx="12" cy="12" r="9.5" class="fg" pathLength="100" stroke-dasharray="0 100"/></svg><span class="ws-agechip__ico"></span><span class="ws-agechip__txt"><small>Age of</small><b></b></span><i class="ws-agechip__left" aria-hidden="true"></i>`;
     this.fg = this.el.querySelector('.fg');
     this.ico = this.el.querySelector('.ws-agechip__ico');
     this.title = this.el.querySelector('b');
+    this.txt = this.el.querySelector('.ws-agechip__txt');
+    // (round 27) a faint years-left note in the chip's empty tail: absolutely
+    // placed inside the fixed-width box, so nothing moves; shown only where
+    // the title leaves room for it
+    this.left = this.el.querySelector('.ws-agechip__left');
     this._t = 0;
     this._id = null;
     this.game.events.on('age', () => this.sync(true));
@@ -34,7 +39,14 @@ export class AgeChip {
     const p = Math.max(0, Math.min(1, a.progress || 0));
     this.fg.setAttribute('stroke-dasharray', `${(p * 100).toFixed(1)} 100`);
     const left = Math.max(0, Math.round(((1 - p) * (a.duration || 0)) / YEAR));
-    this.el.dataset.tip = `${a.name} — ${this.game.laws?.ageCycle === false ? 'lasts until you call another' : `about ${left} years remain`}`;
+    const lasting = this.game.laws?.ageCycle === false;
+    this.el.dataset.tip = `${a.name} — ${lasting ? 'lasts until you call another' : `about ${left} years remain`}`;
+    const note = lasting || !(a.duration > 0) ? '' : `${left}y`;
+    if (this.left.textContent !== note) this.left.textContent = note;
+    // room for it: the words end before the note begins (measured in the box)
+    const cw = this.el.clientWidth;
+    const room = note && cw > 0 ? cw - (this.txt.offsetLeft + this.txt.scrollWidth) - (this.left.offsetWidth || 0) - 14 : -1;
+    this.left.classList.toggle('is-on', room >= 0);
   }
   update(dt) {
     this._t -= dt;
