@@ -1,4 +1,4 @@
-# World scale and performance — contract (round 14)
+# World scale and performance — contract (round 14, units and vehicles halved in round 24)
 
 User request: units should all be smaller, so that maps of every size (Small
 to Vast) have room for more variety and more going on, with ways to lower
@@ -24,6 +24,41 @@ CPU and GPU load while everything keeps running.
   per map area as round 13 (village budget in Civ `budgets()`, unit caps in
   Life, vessel caps in Fleets), tuned so that the sim cost stays within the
   budgets below.
+
+## Round 24: what moves is half size
+
+User request: "if possible all units needs to be at least 50% smaller to
+free up more space." Asked which things, the user chose: **people, animals,
+cars, trains, ships and aircraft all halve, so they stay in proportion with
+each other; buildings and trees keep their size**, so streets and squares look
+emptier and roomier.
+
+- `UNIT.scale` 0.6 → **0.3** (melee reach with it); `VEHICLE.sea`, `land`,
+  `air` 0.6 → **0.3**; `VEHICLE.road` 0.69 → **0.345** (1.15 × `land`, so a
+  car stays a little over two people long). `BUILDING`, `PROP` and
+  `FOOTPRINT` are unchanged (0.6; trees 0.68, shrubs 0.8, grass 0.5).
+- `UNIT.rel` and `VEHICLE.rel` (0.5) are the factors relative to round 14:
+  gaps and overlays that had been tuned in world units beside a 0.6× person
+  multiply by them (icons over heads and their rise, far-zoom dots, arrows,
+  talking circles, crowd rings on the square, the bench and stall places,
+  the separation pads, the give-way gap between hulls).
+- What follows the bodies: the sim's body radius, separation, melee reach,
+  conversation circles and square crowds, drill ranks (closed up to at most
+  0.75 × `UNIT.scale` between files), vehicle lengths, following and parking
+  distances, hull capsules and berths (`hull.js`), the rail gauge, rails,
+  sleepers, ballast width, buffer stops and the maglev beam (track sized by
+  `VEHICLE.land`, so a train sits on its rails), the height trains ride at
+  (`RAIL_Y`), the right-hand lane cars keep (now the right half of the same
+  street), benches and the food stall (furniture for the people takes
+  `UNIT.scale`; the paved parade square stays with the land).
+- What keeps its size: buildings, trees, plots, streets, walls, harbours and
+  piers, the parade square, aircraft cruise heights (they must still clear
+  roofs and towers), the camera's zoom range.
+- Picking: a click keeps a minimum radius of `PICK_PX` (14) screen pixels
+  (`Picker.pick` reports world units per pixel at the hit as `hit.px`), with
+  a small world floor up close, so a few-pixel person or car is still easy to
+  select. Creature LOD is by on-screen pixel height, so half-size people turn
+  to the cheaper models and to dots sooner; dots keep a 6 px minimum.
 
 ## Keeping it fast
 

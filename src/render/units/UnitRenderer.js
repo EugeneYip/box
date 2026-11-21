@@ -22,7 +22,7 @@ const RIFLE_KHAKI = 0xb3a070,
   SUIT_PLATE = 0x9eb0c6;
 import { MATERIALS, WEAPON_TOOL } from '../../sim/units/items.js';
 import { STATUS_BY_ID } from '../../sim/units/statuses.js';
-import { UNIT } from '../../core/scale.js';
+import { UNIT, VEHICLE } from '../../core/scale.js';
 const HAT_TINT = [null, 0xe6c870, 0xc4ccd6, 0xf2c14e, 0x5d5a3a, 0x5b3a26, null, 0xf0c030, 0x26232a, 0x5c6468, 0x59633e, 0xd4dade, 0xc0302a, 0x24324e, 0xf2f2ee, 0x4a3a2a];
 // civilian dress by era (4 Industrial, 5 Modern, 6 Atomic, 7 Future)
 const ERA_CLOTH = {
@@ -822,7 +822,7 @@ export class UnitRenderer {
       if (hab === 'air') y = u.py + (u.y - u.py) * alpha;
       else if (hab === 'water') y = SEA_LEVEL;
       else if (u.swimming) y = SEA_LEVEL - (md.id === 'human' ? 0.34 : md.height * 0.5) * scale;
-      else if (u.onDeck) y = Math.max(ground, SEA_LEVEL + 0.1);
+      else if (u.onDeck) y = Math.max(ground, SEA_LEVEL + 0.1 * VEHICLE.rel); // (decks sit lower on half-size hulls)
       else if (u.wading) y = Math.max(ground, SEA_LEVEL - 0.3 * md.height * scale); // knee-deep at most
       else y = ground;
       this._sph.center.set(ix, y + md.height * 0.5 * scale, iz);
