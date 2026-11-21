@@ -556,6 +556,15 @@ export class BrushCursor {
       // the hidden part of the ring stays bright so it reads through foliage
       this.sel.style(this.gold, 1, this.t, 3, 0.18, 0.72, 0.75 + Math.sin(this.t * 4) * 0.2);
       this.sel.visible = true;
+    } else if (uiOn && !ref && g.ui?.inspector?.open && g.ui.inspector.track?.plotOf?.tx != null) {
+      // (round 27) a cleared plot has no selection of its own (nothing stands
+      // there): the gold mark is a square on its footprint
+      const pb = g.ui.inspector.track.plotOf;
+      const e = 0.08 + Math.sin(this.t * 3.2) * 0.03;
+      this.sel.square(pb.tx - e, pb.ty - e, pb.tx + (pb.w || 1) + e, pb.ty + (pb.h || 1) + e);
+      this.sel.build(Math.max(0.06, lineW * 0.85), lift, g.world.surfaceAt(pb.x ?? pb.tx + 0.5, pb.z ?? pb.ty + 0.5), 0.8);
+      this.sel.style(this.gold, 1, this.t, 3, 0.18, 0.72, 0.75 + Math.sin(this.t * 4) * 0.2);
+      this.sel.visible = true;
     } else this.sel.visible = false;
     // (round 25) a selected or followed creature or car drawn under ~5 px
     // gets a small bright mark of at least that size over its body

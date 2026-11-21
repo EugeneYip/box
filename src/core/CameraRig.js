@@ -1,15 +1,32 @@
 import * as THREE from 'three';
 import { geoWrapOn } from '../world/geo.js';
 import { SEA_LEVEL } from '../world/constants.js';
+import { BUILDING_TYPES } from '../sim/civ/catalog.js';
+import { BUILDING } from './scale.js';
 
-// The close-zoom cutaway (round 25): buildings between the eye and the target
-// open up in a dithered screen-door near the middle of the frame, so a roof
-// never fills the view at the closest zoom. The building material reads these
-// uniforms (src/render/buildings/material.js); apply() writes them.
-//   uCut     strength 0..1 (1 under distance 14, none past 24)
-//   uCutD    the eye's distance to the target (world units)
-//   uCutTan  tan(fov / 2), so the radius scales with depth like the frame
-export const CAM_CUT = { uCut: { value: 0 }, uCutD: { value: 10 }, uCutTan: { value: 0.34 } };
+// The close-zoom cutaway (round 25, reworked round 27): at distance 10 or
+// closer (fading out by 14) a building whose box stands on the line from the
+// eye to the target fades, whole, to a sparse screen-door ghost, so a roof
+// never hides the followed person and no floating slab is left. The camera
+// works out on the CPU which buildings cross that line (never the one that
+// holds the target) and hands their footprints to the building material
+// (src/render/buildings/material.js), which reads these uniforms:
+//   uCut     overall strength 0..1 (1 under distance 10, none past 14)
+//   uCutBox  up to CUT_N footprints (minX, minZ, maxX, maxZ) in world units
+//   uCutA    each footprint's own strength 0..1 (eased, so it fades in and out)
+//   uCamW    the camera's world matrix (view space -> world space)
+export const CUT_N = 6;
+export const CAM_CUT = {
+  uCut: { value: 0 },
+  uCutD: { value: 10 },
+  uCutTan: { value: 0.34 },
+  uCutBox: { value: Array.from({ length: CUT_N }, () => new THREE.Vector4(0, 0, -1, -1)) },
+  uCutA: { value: new Array(CUT_N).fill(0) },
+  uCamW: { value: new THREE.Matrix4() },
+};
+// cut range: full at CUT_NEAR, gone by CUT_FAR
+const CUT_NEAR = 10,
+  CUT_FAR = 14;
 
 // Smooth god-view camera: orbits a ground target. Zooming out tilts the view
 // toward top-down; zooming in lowers it for a diorama perspective.
@@ -22,6 +39,16 @@ export class CameraRig {
     // round 24: people and vehicles are half size, so the camera may come a
     // little closer (a person stays readable at the closest zoom)
     this.minDist = 5;
+    // (round 27) following a creature or car, or with one selected, the camera
+    // may come closer still, so a half-size person stands about 60 px tall;
+    // zooming out or letting go returns to minDist smoothly
+    this.closeMin = 2.5;
+    // the screen area the HUD leaves visible, in CSS px (the UI keeps it up
+    // to date): a followed unit is framed at its middle, not behind the tray
+    this.viewRect = null;
+    this._vOff = { x: 0, y: 0 };
+    this._cutA = new Map(); // building id -> eased cut strength
+    this._dt = 1 / 60;
     // a wide (2:1) map is framed by its width on a landscape screen; squares
     // are unchanged (the height wins). This is the reference distance: the
     // pitch tops out here, and the renderers' zoom level reads 1 from here on.
@@ -45,6 +72,17 @@ export class CameraRig {
     this.fitLimit();
   }
 
+  // Is the closer follow zoom allowed now? (a followed or selected creature or car)
+  closeOK() {
+    const f = this.follow;
+    if (f && f.alive !== false && f.x != null) return true;
+    const s = this.game.selected;
+    return !!(s && (s.kind === 'unit' || s.kind === 'vessel') && s.ref && s.ref.alive !== false);
+  }
+  // The nearest the camera may come.
+  zoomMin() {
+    return this.closeOK() ? this.closeMin : this.minDist;
+  }
   // The farthest the camera may pull back.
   zoomMax() {
     return Math.max(this.maxDist, this.limitDist);
@@ -125,15 +163,18 @@ export class CameraRig {
   set(x, z, dist, yawDeg = 0, pitchDeg = null, instant = true) {
     this.goal.x = x;
     this.goal.z = z;
-    this.goal.dist = THREE.MathUtils.clamp(dist, this.minDist, this.zoomMax());
+    this.goal.dist = THREE.MathUtils.clamp(dist, this.zoomMin(), this.zoomMax());
     this.goal.yaw = THREE.MathUtils.degToRad(yawDeg);
     this.manualPitch = pitchDeg == null || isNaN(pitchDeg) ? null : THREE.MathUtils.degToRad(pitchDeg);
     if (instant) {
       Object.assign(this.cur, this.goal);
       this._groundY = null; // no easing from the old spot's ground
       this._lift = null; // nor from its line-of-sight pitch
+      this._cutA.clear();
+      this._dt = 1; // (settle everything eased at once)
     }
     this.apply();
+    this._dt = 1 / 60;
   }
 
   // Pan by screen-space delta in pixels.
@@ -163,7 +204,7 @@ export class CameraRig {
   // Zoom with wheel, keeping the point under the cursor fixed when given.
   zoom(factor, anchor = null) {
     const before = this.goal.dist;
-    this.goal.dist = THREE.MathUtils.clamp(this.goal.dist * factor, this.minDist, this.zoomMax());
+    this.goal.dist = THREE.MathUtils.clamp(this.goal.dist * factor, this.zoomMin(), this.zoomMax());
     if (anchor) {
       const px = this.goal.x,
         pz = this.goal.z;
@@ -284,6 +325,9 @@ export class CameraRig {
     if (this.keys.has('Equal') || this.keys.has('NumpadAdd')) this.zoom(Math.pow(0.35, dt));
     if (this.keys.has('Minus') || this.keys.has('NumpadSubtract')) this.zoom(Math.pow(1 / 0.35, dt));
 
+    // the closer follow zoom ends when the unit is let go: back out to minDist
+    if (this.goal.dist < this.minDist && !this.closeOK()) this.goal.dist = this.minDist;
+
     const wrapW = geoWrapOn(this.game.world) ? this.game.world.w : 0;
     if (this.follow && this.follow.alive !== false) {
       this.goal.x = this.follow.x;
@@ -305,6 +349,7 @@ export class CameraRig {
     }
     this.shake = Math.max(0, this.shake - dt * 2.2);
     this._shakeT += dt;
+    this._dt = dt;
     this.apply();
   }
 
@@ -334,23 +379,45 @@ export class CameraRig {
     }
     return maxP - pitch;
   }
+  // The followed creature or craft, when there is one to aim at.
+  _followed() {
+    const f = this.follow;
+    return f && f.alive !== false && f.x != null ? f : null;
+  }
   apply() {
     const c = this.cur;
-    const ground = Math.max(0, this.game.world.heightAt(c.x, c.z));
-    // ease ground height so the camera doesn't jitter over terrain
-    this._groundY = this._groundY == null ? ground : this._groundY + (ground - this._groundY) * 0.08;
-    // close in, the target sits on the ground itself (round 25: at 60% of the
-    // ground height the closest zoom looked at a point inside a hill); farther
-    // out it eases back to 60%, which keeps the far views steady
-    const kG = c.dist <= 20 ? 1 : c.dist >= 40 ? 0.6 : 1 - (0.4 * (c.dist - 20)) / 20;
-    this.target.set(c.x, this._groundY * kG, c.z);
+    const W = this.game.world;
+    const dt = Math.max(0, Math.min(1, this._dt || 0));
+    const f = this._followed();
+    // the height to aim at: following, the unit's own height (its surface, or
+    // its altitude for craft) plus its chest, so it sits at the middle of the
+    // view at every zoom; otherwise the ground under the target
+    let aim;
+    if (f) {
+      const y0 = f.y ?? W.surfaceAt(f.x, f.z);
+      const bh = this.game.picker?.bodyHeight ? this.game.picker.bodyHeight(f) : 0.18;
+      aim = y0 + bh * 0.6;
+    } else {
+      const ground = Math.max(0, W.heightAt(c.x, c.z));
+      // close in, the target sits on the ground itself (round 25: at 60% of the
+      // ground height the closest zoom looked at a point inside a hill); farther
+      // out it eases back to 60%, which keeps the far views steady
+      const kG = c.dist <= 20 ? 1 : c.dist >= 40 ? 0.6 : 1 - (0.4 * (c.dist - 20)) / 20;
+      aim = ground * kG;
+    }
+    // ease the height by elapsed time, not per frame (round 27: at a low frame
+    // rate the old 8%-per-frame ease lagged far behind the followed unit, who
+    // drifted to the bottom of the screen behind the tray); following eases faster
+    const kY = 1 - Math.exp(-dt * (f ? 10 : 5));
+    this._groundY = this._groundY == null ? aim : this._groundY + (aim - this._groundY) * kY;
+    this.target.set(c.x, this._groundY, c.z);
     let pitch = this.pitchFor(c.dist);
     // close in, raise the pitch until the line of sight clears the terrain
     // (rises quickly, settles back slowly)
     if (c.dist < 30) {
       const need = this._clearLift(pitch, c, this.target.y);
       if (this._lift == null) this._lift = need;
-      else this._lift += (need - this._lift) * (need > this._lift ? 0.3 : 0.04);
+      else this._lift += (need - this._lift) * (1 - Math.exp(-dt * (need > this._lift ? 20 : 2.5)));
       pitch = Math.min(THREE.MathUtils.degToRad(80), pitch + this._lift);
     } else this._lift = 0;
     const horiz = Math.cos(pitch) * c.dist;
@@ -377,13 +444,137 @@ export class CameraRig {
       cam.position.z += Math.sin(t * 1.1 + 2) * s;
     }
     cam.lookAt(this.target);
-    cam.near = Math.max(0.3, c.dist * 0.02);
+    cam.near = Math.max(c.dist < 5 ? 0.06 * c.dist : 0.3, c.dist * 0.02);
     cam.far = c.dist * 6 + 600;
+    this._frame(cam, dt, f);
     cam.updateProjectionMatrix();
+    cam.updateMatrixWorld();
     // the close-zoom cutaway through buildings (see CAM_CUT)
-    CAM_CUT.uCut.value = 1 - THREE.MathUtils.smoothstep(c.dist, 14, 24);
+    CAM_CUT.uCut.value = 1 - THREE.MathUtils.smoothstep(c.dist, CUT_NEAR, CUT_FAR);
     CAM_CUT.uCutD.value = cam.position.distanceTo(this.target);
     CAM_CUT.uCutTan.value = Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2);
+    CAM_CUT.uCamW.value.copy(cam.matrixWorld);
+    this._cutaway(cam, dt, f);
+  }
+
+  // Frame a followed unit at the middle of the screen area the HUD leaves
+  // visible (below the top bar, above the tray or the phone's sheet, beside
+  // the inspector), by sliding the projection window: the camera still looks
+  // straight at the unit, only the picture shifts. Eased; none when not following.
+  _frame(cam, dt, f) {
+    let tx = 0,
+      ty = 0;
+    const r = this.viewRect;
+    const W = innerWidth,
+      H = innerHeight;
+    if (f && r && W > 0 && H > 0) {
+      // the visible area's middle against the screen's, in px (capped, so a
+      // big panel never pushes the view far off)
+      tx = THREE.MathUtils.clamp(W / 2 - (r.left + r.right) / 2, -W * 0.25, W * 0.25);
+      ty = THREE.MathUtils.clamp(H / 2 - (r.top + r.bottom) / 2, -H * 0.3, H * 0.3);
+    }
+    const o = this._vOff;
+    const k = 1 - Math.exp(-dt * 6);
+    o.x += (tx - o.x) * k;
+    o.y += (ty - o.y) * k;
+    if (Math.abs(o.x) < 0.5 && Math.abs(o.y) < 0.5 && !tx && !ty) {
+      o.x = o.y = 0;
+      if (cam.view && cam.view.enabled) cam.clearViewOffset();
+      return;
+    }
+    if (W > 0 && H > 0) cam.setViewOffset(W, H, o.x, o.y, W, H);
+  }
+
+  // Which buildings stand between the eye and the target (CAM_CUT). A few
+  // sight lines (to the target, to points round it a quarter of the
+  // half-frame away, and to the followed unit's head and feet) are stepped
+  // through the building grid; a building whose box (footprint by an
+  // estimated height) holds a step is cut, unless it holds the target itself.
+  _cutaway(cam, dt, f) {
+    const A = this._cutA;
+    const on = CAM_CUT.uCut.value > 0.001;
+    const hitNow = new Set();
+    const g = this.game;
+    const W = g.world;
+    const civ = g.civ;
+    if (on && civ?._bById && W.building) {
+      const T = this.target;
+      const E = cam.position;
+      const tb = this._bAt(T.x, T.z);
+      const rr = 0.25 * CAM_CUT.uCutD.value * CAM_CUT.uCutTan.value;
+      const ex = new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld, 0).multiplyScalar(rr);
+      const ey = new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld, 1).multiplyScalar(rr);
+      const ends = [
+        [T.x, T.y, T.z],
+        [T.x + ex.x, T.y + ex.y, T.z + ex.z],
+        [T.x - ex.x, T.y - ex.y, T.z - ex.z],
+        [T.x + ey.x, T.y + ey.y, T.z + ey.z],
+        [T.x - ey.x * 0.6, T.y - ey.y * 0.6, T.z - ey.z * 0.6],
+      ];
+      if (f) {
+        const fy = f.y ?? W.surfaceAt(f.x, f.z);
+        const bh = g.picker?.bodyHeight ? g.picker.bodyHeight(f) : 0.18;
+        ends.push([f.x, fy + bh, f.z], [f.x, fy, f.z]);
+      }
+      for (const [x1, y1, z1] of ends) {
+        const L = Math.hypot(x1 - E.x, y1 - E.y, z1 - E.z);
+        const n = Math.min(160, Math.ceil(L / 0.2));
+        // (stops short of the end, so what stands right at the target is kept)
+        for (let i = 1; i < n - 1; i++) {
+          const t = i / n;
+          const x = E.x + (x1 - E.x) * t,
+            y = E.y + (y1 - E.y) * t,
+            z = E.z + (z1 - E.z) * t;
+          const b = this._bAt(x, z);
+          if (!b || b === tb || hitNow.has(b.id)) continue;
+          if (y < b.y + this._bHeight(b)) hitNow.add(b.id);
+        }
+      }
+    }
+    const kin = 1 - Math.exp(-dt * 7),
+      kout = 1 - Math.exp(-dt * 4);
+    for (const id of hitNow) if (!A.has(id)) A.set(id, 0);
+    for (const [id, a] of A) {
+      const goal = hitNow.has(id) ? 1 : 0;
+      const na = a + (goal - a) * (goal > a ? kin : kout);
+      if (na < 0.01 && !goal) A.delete(id);
+      else A.set(id, na);
+    }
+    // the strongest CUT_N go to the material
+    const list = A.size ? [...A.entries()].sort((p, q) => q[1] - p[1]) : [];
+    const boxes = CAM_CUT.uCutBox.value,
+      als = CAM_CUT.uCutA.value;
+    for (let i = 0; i < CUT_N; i++) {
+      const e = list[i];
+      const b = e && civ?._bById?.get(e[0]);
+      if (!b || b.alive === false) {
+        als[i] = 0;
+        boxes[i].set(0, 0, -1, -1);
+        continue;
+      }
+      const m = 0.35; // eaves and porches reach a little past the plot
+      boxes[i].set(b.tx - m, b.ty - m, b.tx + (b.w || 1) + m, b.ty + (b.h || 1) + m);
+      als[i] = e[1];
+    }
+  }
+  _bAt(x, z) {
+    const W = this.game.world;
+    const tx = Math.floor(x),
+      tz = Math.floor(z);
+    if (tx < 0 || tz < 0 || tx >= W.w || tz >= W.h) return null;
+    const id = W.building[tz * W.w + tx];
+    if (!id) return null;
+    const b = this.game.civ._bById.get(id);
+    return b && b.alive !== false && !b.gone ? b : null;
+  }
+  // A building's height in world units, roughly (generous: a little too tall
+  // only cuts a building the sight line passes just over).
+  _bHeight(b) {
+    const def = BUILDING_TYPES[b.type] || {};
+    if (def.wall) return 1.2 * BUILDING.scale;
+    const t = b.type;
+    const h = t === 'skyscraper' || t === 'arcology' ? 14 : def.monument ? 9 : def.modern ? 7 : 3.4;
+    return h * BUILDING.scale * (b.constructing ? Math.max(0.3, b.progress || 0) : 1);
   }
   resize(w, h) {
     this.camera.aspect = w / h;

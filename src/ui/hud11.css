@@ -105,3 +105,24 @@
     grid-row: 1 / span 2;
   }
 }
+
+/* ---- round 27: one line of facts under the title, shown only in the phone
+   peek ("Resting · Ruler · 150/150", "Built 72% · 1 builder") */
+.ws-insp__fact {
+  display: none;
+}
+@media (max-width: 720px) {
+  .ws-insp.is-peek .ws-insp__fact:not(:empty) {
+    display: block;
+    grid-column: 1 / -1;
+    grid-row: 4;
+    margin-top: 4px;
+    font-size: 12.5px;
+    line-height: 16px;
+    color: rgba(232, 226, 210, 0.86);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-variant-numeric: tabular-nums;
+  }
+}
