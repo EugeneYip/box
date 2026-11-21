@@ -1071,7 +1071,11 @@ export class Units {
     while (da > Math.PI) da -= Math.PI * 2;
     while (da < -Math.PI) da += Math.PI * 2;
     u.heading += da * Math.min(1, dt * def.turnRate);
-    const facing = Math.max(0.15, 0.35 + 0.65 * Math.cos(da));
+    // (round 23: facing more than a right angle away, a walker turns about
+    // first instead of drifting backwards or sideways at a sixth of its pace
+    // with its feet walking the other way)
+    const ca = Math.cos(da);
+    const facing = ca >= 0.5 ? 0.35 + 0.65 * ca : Math.max(0.03, ca * 1.36);
     const stepLen = Math.min(d, u.spd * facing * dt);
     let nx = u.x + (dx / d) * stepLen,
       nz = u.z + (dz / d) * stepLen;
@@ -1171,6 +1175,16 @@ export class Units {
           n++;
         }
       }
+    // (round 23) in a crowd the nudges of many neighbors add up: held down,
+    // so a press of people never shoves a walker
+    // backwards against its stride (a jitter to and fro) or pops it a tile
+    // (a third of its pace at most)
+    const cap = (u.def.speed || 1) * 0.3;
+    const sl = Math.hypot(sx, sz) * 1.6;
+    if (sl > cap) {
+      sx *= cap / sl;
+      sz *= cap / sl;
+    }
     // building repulsion (except the building being entered)
     if (u.def.habitat === 'land') {
       const w = this.game.world;

@@ -354,7 +354,7 @@ export const land = {
     while (left > Math.PI) left -= Math.PI * 2;
     while (left < -Math.PI) left += Math.PI * 2;
     const al = Math.cos(left);
-    const target = speed * road * (1 - slope) * (v.def.rail ? (Math.abs(diff) > 1.2 ? 0.4 : 1) : al > 0.94 ? 1 : Math.max(0.1, al * al * al));
+    const target = speed * road * (1 - slope) * (v.def.rail ? (Math.abs(diff) > 1.2 ? 0.4 : 1) : al > 0.94 ? 1 : Math.max(0.32, al));
     v.speed += (target - v.speed) * Math.min(1, step * (target < v.speed ? 6 : 3));
     const s = Math.min(d, v.speed * step);
     // (a train keeps exactly to its rails)
