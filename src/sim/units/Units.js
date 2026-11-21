@@ -658,6 +658,8 @@ export class Units {
     }
     g.events.emit('unit:hurt', { unit: u, amount, source });
     if (u.hp <= 0) {
+      // a soldier struck down in war may be left wounded, not slain (Civ)
+      if (source && !u.flags?.immortal && g.civ?.spareFallen?.(u, source)) return;
       if (source) source.kills = (source.kills || 0) + 1;
       this.kill(u, source ? 'killed' : opts.cause || (u.hunger >= 0.95 ? 'starvation' : u.statuses?.has('sick') ? 'sickness' : 'wounds'), source);
       return;

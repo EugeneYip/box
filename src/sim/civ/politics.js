@@ -14,6 +14,10 @@ const REALM_GRACE = 15;
 // (and an older realm under KIN_POP people, every KIN_YEARS: _keepYoungRealms)
 const KIN_POP = 14;
 const KIN_YEARS = 5;
+// The odds a soldier struck down in war lives, wounded (spareFallen): any
+// realm's, and a small realm's (two towns or fewer, or under 60 people).
+const SPARE = 0.3;
+const SPARE_SMALL = 0.55;
 const REALM_MIN_POP = 30;
 
 export const politics = {
@@ -1128,6 +1132,42 @@ export const politics = {
     }
     a.state = 'march';
     a.t = this.game.time.total;
+  },
+
+  // A soldier struck down in battle is not always slain: often he is left
+  // wounded on the field and carried home, out of this war's fighting (he
+  // counts among his realm's war losses all the same, so wars weary as
+  // before). A small realm's men are spared more often: round 23 found war
+  // took twice as many people from realms of one or two towns as old age,
+  // and these realms dwindled while their births could not keep up.
+  // Called by Units.damage before a death; true when the soldier lives.
+  spareFallen(u, src) {
+    if (u.species !== 'human' || src?.species !== 'human' || u.job !== 'soldier') return false;
+    if (!(u.kingdom >= 0 && src.kingdom >= 0) || u.kingdom === src.kingdom || !this.atWar(u.kingdom, src.kingdom)) return false;
+    const k = this.kingdoms[u.kingdom];
+    if (!k?.alive || k.ruler === u.id) return false;
+    const small = k.villages.length <= 2 || (k.population || 0) < 60;
+    if (!this.rng.chance(small ? SPARE_SMALL : SPARE)) return false;
+    u.hp = Math.max(1, u.maxHp * 0.2);
+    this.game.units.addStatus?.(u, 'wounded');
+    k.warLosses++;
+    // out of the fight: his army lets him go and he walks home a villager
+    // (the jobs are dealt again at home); the foe looks for another
+    const a = this.armies.find((x) => x.id === u.data.civ?.army);
+    if (a) {
+      a.units.delete(u);
+      if (a.bearer === u.id) a.bearer = a.units.values().next().value?.id ?? -1;
+    }
+    u.job = null;
+    if (u.data.civ) {
+      u.data.civ.army = null;
+      u.data.civ.task = null;
+    }
+    u.data.speedMul = 1;
+    const U = this.game.units;
+    U.disengage?.(u);
+    if (src.combat?.target === u.id) U.disengage?.(src);
+    return true;
   },
 
   _makeRefugee(u, kingdom) {
