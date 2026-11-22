@@ -26,6 +26,8 @@ const COUNT = 6; // a rocket's countdown on the pad (seconds) before it lifts of
 //       sky taxis); to: building id | {x, z}. Refused in a storm (aircraft are
 //       grounded) and beyond the air budget. Emits 'fleet:landed'
 //       {flight, kind, kingdom, from, to, cargo, x, z} on arrival.
+//   airLimit()                              the limit on aircraft aloft now
+//       (the map's budget.air plus a place for every four airfields)
 //   requestLaunch({kingdom, from, payload})  payload: satellite|station|starship;
 //       from: a launch pad or spaceport building id. Emits 'fleet:orbit'
 //       {kingdom, payload, x, z} when the payload reaches orbit (a starship
