@@ -63,6 +63,7 @@ const COL = {
   guide2: 0xaab2b8,
   glow: 0x9ff0ff,
   asphalt: 0x3e4044,
+  shoulder: 0x6c6a66,
   mark: 0xe8e6dc,
   edge: 0xd8b840,
   platform: 0xb4aea4,
@@ -412,21 +413,69 @@ export class InfraRenderer {
   }
 
   // a highway beside a track, a tile off its bed (where the sim laid its
-  // road: hw marks the points, hwPoint the centre), with a gravel shoulder
+  // road: hw marks the points, hwPoint the centre). Round 29: one continuous
+  // ribbon per run (the decks were separate slabs with steps and seams at
+  // every joint, and the ground poked through their edges as olive spikes):
+  // each point's cross-section is shared by the two steps either side of it
+  // and turned to the bisector of the bend (a mitred joint); the deck lies
+  // level across at the highest ground under it, and concrete skirts run
+  // from its edges down into the ground (or a fascia over water).
   _highway(E, seg, far) {
     const P = seg.pts,
       hw = seg.hw;
     const n = P.length / 2;
     const C = [];
     for (let i = 0; i < n; i++) C.push(hwPoint(P, i));
+    // the cross-section direction at each point: the bisector of the steps
+    // either side, and the mitre's stretch so the deck keeps its width
+    const Nx = new Float32Array(n),
+      Nz = new Float32Array(n),
+      Mi = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const a = Math.max(0, i - 1),
+        b = Math.min(n - 1, i + 1);
+      let dx = C[b][0] - C[a][0],
+        dz = C[b][1] - C[a][1];
+      if (Math.abs(dx) > 6 || Math.abs(dz) > 6) (dx = C[Math.min(n - 1, i + 1)][0] - C[i][0]), (dz = C[Math.min(n - 1, i + 1)][1] - C[i][1]);
+      const L = Math.hypot(dx, dz) || 1;
+      Nx[i] = -dz / L;
+      Nz[i] = dx / L;
+      let m = 1;
+      if (i > 0 && i < n - 1) {
+        const sx = C[i + 1][0] - C[i][0],
+          sz = C[i + 1][1] - C[i][1];
+        const sL = Math.hypot(sx, sz) || 1;
+        m = 1 / Math.max(0.6, (sx * dx + sz * dz) / (sL * L));
+      }
+      Mi[i] = m;
+    }
+    const SO = HW_W / 2 + 0.14; // the deck's half width, shoulders and all
+    // the highest ground under the deck at each point: its centre, both
+    // edges and halfway to the next point either side
+    const gAt = (i, o) => this._h(C[i][0] + Nx[i] * o, C[i][1] + Nz[i] * o);
+    const G = C.map(([x, z]) => this._h(x, z));
+    const GL = new Float32Array(n),
+      GR = new Float32Array(n),
+      Gmax = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      GL[i] = gAt(i, SO);
+      GR[i] = gAt(i, -SO);
+      let m = Math.max(G[i], GL[i], GR[i]);
+      for (const j of [i - 1, i + 1]) {
+        if (j < 0 || j >= n || Math.abs(C[j][0] - C[i][0]) > 3) continue;
+        const mx = (C[i][0] + C[j][0]) / 2,
+          mz = (C[i][1] + C[j][1]) / 2;
+        for (const o of [0, SO, -SO]) m = Math.max(m, this._h(mx + Nx[i] * o, mz + Nz[i] * o));
+      }
+      Gmax[i] = m;
+    }
     // its level: on the ground, on a bridge over water (hw 2) with ramps
     // at a gentle grade either side
-    const G = C.map(([x, z]) => this._h(x, z));
-    const Yh = G.map((g, i) => (hw[i] === 2 || g < SEA_LEVEL ? SEA_LEVEL + 0.3 * BS : g + 0.03));
+    const Yh = G.map((g, i) => (hw[i] === 2 || g < SEA_LEVEL ? SEA_LEVEL + 0.3 * BS : Math.max(g, Gmax[i]) + 0.035));
     // (round 27) the ramps run only out from a bridge and along the drawn
     // road: a deck carried on at the grade from the top of a slope stood on
     // tall pillars over a canyon edge, and one ended in mid-air at a bank
-    const up = (i) => Yh[i] - G[i] > 0.05;
+    const up = (i) => Yh[i] - Gmax[i] > 0.05;
     for (let i = 1; i < n; i++) if (hw[i] && hw[i - 1] && up(i - 1)) Yh[i] = Math.max(Yh[i], Yh[i - 1] - 0.08);
     for (let i = n - 2; i >= 0; i--) if (hw[i] && hw[i + 1] && up(i + 1)) Yh[i] = Math.max(Yh[i], Yh[i + 1] - 0.08);
     // every run starts and ends on the ground: a raised end is cut back to
@@ -441,11 +490,28 @@ export class InfraRenderer {
       while (j < n && hw[j]) j++;
       let a = i,
         b = j - 1;
-      while (a <= b && Yh[a] - G[a] > 0.1) a++;
-      while (b >= a && Yh[b] - G[b] > 0.1) b--;
+      while (a <= b && Yh[a] - Gmax[a] > 0.1) a++;
+      while (b >= a && Yh[b] - Gmax[b] > 0.1) b--;
       for (let m = a; m <= b; m++) draw[m] = 1;
       i = j;
     }
+    // (a branch's first stretch lies over its trunk's road at the junction:
+    // a hair higher there, so the two decks never flicker into each other)
+    if (seg.junction)
+      for (let i = 0; i < Math.min(n, 10); i++) Yh[i] += 0.006 * (1 - i / 10);
+    // the cross-section at point i, o across (+ left), at height y
+    const X = (i, o, y) => [C[i][0] + Nx[i] * o * Mi[i], y, C[i][1] + Nz[i] * o * Mi[i]];
+    const wet = (i) => hw[i] === 2 || G[i] < SEA_LEVEL;
+    // where the skirt ends below the deck's edge: in the ground, or a deep
+    // fascia over the water
+    const foot = (i, side) => {
+      const ge = side > 0 ? GL[i] : GR[i];
+      if (wet(i) || ge < SEA_LEVEL) return Yh[i] - 0.14;
+      return Math.min(ge - 0.08, Yh[i] - 0.06);
+    };
+    const HA = HW_W / 2; // the carriageway's half width
+    const EL = HW_W * 0.44; // the edge lines
+    const LW = 0.008;
     let lastPier = -9;
     for (let i = 0; i + 1 < n; i++) {
       if (!draw[i] || !draw[i + 1]) continue;
@@ -456,26 +522,37 @@ export class InfraRenderer {
       const ya = Yh[i],
         yb = Yh[i + 1];
       far.push(ax, ya + 0.02, az, bx, yb + 0.02, bz);
-      const px = -(bz - az) / L,
-        pz = (bx - ax) / L;
-      const raised = ya - G[i] > 0.1 || yb - G[i + 1] > 0.1;
-      if (raised) {
-        // a bridge: a concrete deck with parapets, on piers
-        E.bar(ax, az, bx, bz, ya - 0.004, yb - 0.004, HW_W + 0.14, 0.1, COL.pier);
-        for (const s of [1, -1]) E.bar(ax + px * (HW_W / 2 + 0.05) * s, az + pz * (HW_W / 2 + 0.05) * s, bx + px * (HW_W / 2 + 0.05) * s, bz + pz * (HW_W / 2 + 0.05) * s, ya + 0.05, yb + 0.05, 0.04, 0.05, COL.pier);
-        if (i - lastPier >= 5) {
-          lastPier = i;
-          E.post(ax, az, G[i] - 0.2, ya - 0.1, PIER_W, COL.pier);
-        }
-      } else
-        // gravel shoulders, then the carriageway
-        for (const s of [1, -1]) {
-          const o = (HW_W / 2 + 0.07) * s;
-          E.bar(ax + px * o, az + pz * o, bx + px * o, bz + pz * o, ya - 0.006, yb - 0.006, 0.14, 0.03, COL.ballast);
-        }
-      E.bar(ax, az, bx, bz, ya, yb, HW_W, 0.04, COL.asphalt);
-      for (const s of [1, -1]) E.bar(ax + px * HW_W * 0.44 * s, az + pz * HW_W * 0.44 * s, bx + px * HW_W * 0.44 * s, bz + pz * HW_W * 0.44 * s, ya + 0.003, yb + 0.003, 0.016, 0, COL.edge, 0, false);
-      if (i % 2 === 0) E.bar(ax, az, ax + (bx - ax) * 0.55, az + (bz - az) * 0.55, ya + 0.003, ya + (yb - ya) * 0.55 + 0.003, 0.016, 0, COL.mark, 0, false);
+      const j = i + 1;
+      const raised = ya - Gmax[i] > 0.12 || yb - Gmax[j] > 0.12;
+      const shoulder = raised ? COL.pier : COL.shoulder;
+      // the deck: shoulder, carriageway, shoulder (one level surface across)
+      E.quad(X(i, SO, ya), X(j, SO, yb), X(j, HA, yb), X(i, HA, ya), shoulder);
+      E.quad(X(i, HA, ya), X(j, HA, yb), X(j, -HA, yb), X(i, -HA, ya), COL.asphalt);
+      E.quad(X(i, -HA, ya), X(j, -HA, yb), X(j, -SO, yb), X(i, -SO, ya), shoulder);
+      // concrete skirts from both edges down into the ground
+      for (const s of [1, -1]) {
+        const fa = foot(i, s),
+          fb = foot(j, s);
+        E.quad(X(i, s * SO, fa), X(j, s * SO, fb), X(j, s * SO, yb), X(i, s * SO, ya), COL.pier);
+        // a parapet along a bridge or a raised ramp
+        if (raised) E.quad(X(i, s * SO, ya), X(j, s * SO, yb), X(j, s * SO, yb + 0.05), X(i, s * SO, ya + 0.05), COL.viaduct);
+      }
+      // the yellow edge lines and the dashed centre line
+      for (const s of [1, -1]) E.quad(X(i, s * EL + LW, ya + 0.003), X(j, s * EL + LW, yb + 0.003), X(j, s * EL - LW, yb + 0.003), X(i, s * EL - LW, ya + 0.003), COL.edge);
+      if (i % 2 === 0) {
+        const t = 0.55;
+        const cx = ax + (bx - ax) * t,
+          cz = az + (bz - az) * t,
+          cy = ya + (yb - ya) * t + 0.003;
+        const qx = -(bz - az) / L,
+          qz = (bx - ax) / L;
+        E.quad([ax + Nx[i] * LW, ya + 0.003, az + Nz[i] * LW], [cx + qx * LW, cy, cz + qz * LW], [cx - qx * LW, cy, cz - qz * LW], [ax - Nx[i] * LW, ya + 0.003, az - Nz[i] * LW], COL.mark);
+      }
+      // piers under a bridge
+      if (raised && ya - G[i] > 0.3 && i - lastPier >= 5) {
+        lastPier = i;
+        E.post(ax, az, G[i] - 0.2, ya - 0.14, PIER_W, COL.pier);
+      }
     }
   }
   _subGeo() {
@@ -525,6 +602,16 @@ export class InfraRenderer {
     const m = new THREE.Matrix4(),
       sm = new THREE.Matrix4().makeScale(BS, BS, BS);
     const arm = new THREE.Vector3();
+    // (round 29: a pair of wires crossed a town at 55 tiles: a span over a
+    // town's built ground runs underground, so no wire is drawn there)
+    const towns = (civ.villages || []).filter((v) => v?.alive && Number.isFinite(v.cx)).map((v) => [v.cx, v.cz, Math.max(v.radius || 6, (v.buildRadius || 0) + 1)]);
+    const overTown = (a, b) => {
+      for (const [cx, cz, r] of towns) {
+        if (Math.abs(cx - (a[0] + b[0]) / 2) > r + Math.abs(a[0] - b[0]) / 2 + 1 || Math.abs(cz - (a[2] + b[2]) / 2) > r + Math.abs(a[2] - b[2]) / 2 + 1) continue;
+        for (const t of [0.2, 0.35, 0.5, 0.65, 0.8]) if (Math.hypot(a[0] + (b[0] - a[0]) * t - cx, a[2] + (b[2] - a[2]) * t - cz) < r * 0.9) return true;
+      }
+      return false;
+    };
     for (const l of civ.powerLines?.() || []) {
       const P = [l.pts[0], l.pts[1], ...(l.pylons || []), l.pts[2], l.pts[3]];
       const tips = [];
@@ -555,6 +642,7 @@ export class InfraRenderer {
         const A = tips[i],
           B = tips[i + 1];
         if (Math.abs(A[0][0] - B[0][0]) > W / 2) continue;
+        if (overTown(A[0], B[0])) continue;
         const n0 = far.length / 3;
         far.push(A[0][0], A[0][1], A[0][2], B[0][0], B[0][1], B[0][2]);
         farCol(n0, 0x3c3c3a);

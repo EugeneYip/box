@@ -14,6 +14,11 @@ import { BUILDING } from './scale.js';
 //   uCut     overall strength 0..1 (1 under distance 10, none past 14)
 //   uCutBox  up to CUT_N footprints (minX, minZ, maxX, maxZ) in world units
 //   uCutA    each footprint's own strength 0..1 (eased, so it fades in and out)
+//   uCutY    each footprint's cut height in world units (round 29): the
+//            building is drawn up to just under the lowest sight line through
+//            it, with a dark rim along the cut, and nothing above (the old
+//            screen-door ghost turned to a muddy see-through block under the
+//            depth of field); the cut slides down from the roof as it fades in
 //   uCamW    the camera's world matrix (view space -> world space)
 export const CUT_N = 6;
 export const CAM_CUT = {
@@ -22,6 +27,7 @@ export const CAM_CUT = {
   uCutTan: { value: 0.34 },
   uCutBox: { value: Array.from({ length: CUT_N }, () => new THREE.Vector4(0, 0, -1, -1)) },
   uCutA: { value: new Array(CUT_N).fill(0) },
+  uCutY: { value: new Array(CUT_N).fill(1e4) },
   uCamW: { value: new THREE.Matrix4() },
 };
 // cut range: full at CUT_NEAR, gone by CUT_FAR
@@ -48,6 +54,7 @@ export class CameraRig {
     this.viewRect = null;
     this._vOff = { x: 0, y: 0 };
     this._cutA = new Map(); // building id -> eased cut strength
+    this._cutY = new Map(); // building id -> the lowest sight line through it
     this._dt = 1 / 60;
     // a wide (2:1) map is framed by its width on a landscape screen; squares
     // are unchanged (the height wins). This is the reference distance: the
@@ -171,6 +178,7 @@ export class CameraRig {
       this._groundY = null; // no easing from the old spot's ground
       this._lift = null; // nor from its line-of-sight pitch
       this._cutA.clear();
+      this._cutY.clear();
       this._dt = 1; // (settle everything eased at once)
     }
     this.apply();
@@ -493,7 +501,8 @@ export class CameraRig {
   _cutaway(cam, dt, f) {
     const A = this._cutA;
     const on = CAM_CUT.uCut.value > 0.001;
-    const hitNow = new Set();
+    // building id -> the lowest point of a sight line inside its box
+    const hitNow = new Map();
     const g = this.game;
     const W = g.world;
     const civ = g.civ;
@@ -509,12 +518,16 @@ export class CameraRig {
         [T.x + ex.x, T.y + ex.y, T.z + ex.z],
         [T.x - ex.x, T.y - ex.y, T.z - ex.z],
         [T.x + ey.x, T.y + ey.y, T.z + ey.z],
-        [T.x - ey.x * 0.6, T.y - ey.y * 0.6, T.z - ey.z * 0.6],
       ];
       if (f) {
         const fy = f.y ?? W.surfaceAt(f.x, f.z);
         const bh = g.picker?.bodyHeight ? g.picker.bodyHeight(f) : 0.18;
         ends.push([f.x, fy + bh, f.z], [f.x, fy, f.z]);
+        // (round 29) the helper line below the target only when the followed
+        // unit stands down there on the screen: it cut buildings in the
+        // foreground that hid nothing
+        const below = ((f.x - T.x) * ey.x + (fy - T.y) * ey.y + (f.z - T.z) * ey.z) / (rr * rr);
+        if (below < -0.3) ends.push([T.x - ey.x * 0.6, T.y - ey.y * 0.6, T.z - ey.z * 0.6]);
       }
       for (const [x1, y1, z1] of ends) {
         const L = Math.hypot(x1 - E.x, y1 - E.y, z1 - E.z);
@@ -526,35 +539,54 @@ export class CameraRig {
             y = E.y + (y1 - E.y) * t,
             z = E.z + (z1 - E.z) * t;
           const b = this._bAt(x, z);
-          if (!b || b === tb || hitNow.has(b.id)) continue;
-          if (y < b.y + this._bHeight(b)) hitNow.add(b.id);
+          if (!b || b === tb) continue;
+          if (y < b.y + this._bHeight(b)) {
+            const o = hitNow.get(b.id);
+            if (o === undefined || y < o) hitNow.set(b.id, y);
+          }
         }
       }
     }
     const kin = 1 - Math.exp(-dt * 7),
       kout = 1 - Math.exp(-dt * 4);
-    for (const id of hitNow) if (!A.has(id)) A.set(id, 0);
+    const Y = this._cutY;
+    for (const [id, y] of hitNow) {
+      if (!A.has(id)) A.set(id, 0);
+      // (the lowest sight line, eased as the camera moves)
+      const o = Y.get(id);
+      Y.set(id, o === undefined ? y : o + (y - o) * Math.min(1, kin * 2));
+    }
     for (const [id, a] of A) {
       const goal = hitNow.has(id) ? 1 : 0;
       const na = a + (goal - a) * (goal > a ? kin : kout);
-      if (na < 0.01 && !goal) A.delete(id);
-      else A.set(id, na);
+      if (na < 0.01 && !goal) {
+        A.delete(id);
+        Y.delete(id);
+      } else A.set(id, na);
     }
     // the strongest CUT_N go to the material
     const list = A.size ? [...A.entries()].sort((p, q) => q[1] - p[1]) : [];
     const boxes = CAM_CUT.uCutBox.value,
-      als = CAM_CUT.uCutA.value;
+      als = CAM_CUT.uCutA.value,
+      ys = CAM_CUT.uCutY.value;
+    const cut = CAM_CUT.uCut.value;
     for (let i = 0; i < CUT_N; i++) {
       const e = list[i];
       const b = e && civ?._bById?.get(e[0]);
       if (!b || b.alive === false) {
         als[i] = 0;
+        ys[i] = 1e4;
         boxes[i].set(0, 0, -1, -1);
         continue;
       }
       const m = 0.35; // eaves and porches reach a little past the plot
       boxes[i].set(b.tx - m, b.ty - m, b.tx + (b.w || 1) + m, b.ty + (b.h || 1) + m);
       als[i] = e[1];
+      // the cut: from over the roof down to just under the lowest sight line
+      // (a sliver of wall is always left, so the plot still reads)
+      const top = (b.y || 0) + this._bHeight(b) * 1.6 + 0.3;
+      const low = Math.max((b.y || 0) + 0.05, (Y.get(e[0]) ?? top) - 0.06);
+      ys[i] = top - (top - low) * e[1] * cut;
     }
   }
   _bAt(x, z) {

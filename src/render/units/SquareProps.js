@@ -39,12 +39,20 @@ const C = {
   crown2: new THREE.Color(0x4f8a3c),
 };
 
+// the parade pad's ground by era (round 29): a, b the two tones of its
+// checker, its kerb and its painted lines
+const PAD = {
+  gravel: { a: new THREE.Color(0x7a6e5b), b: new THREE.Color(0x6f6451), kerb: new THREE.Color(0x544b40), line: new THREE.Color(0xc9c0aa) },
+  setts: { a: new THREE.Color(0x6b665f), b: new THREE.Color(0x5f5a54), kerb: new THREE.Color(0x4a4641), line: new THREE.Color(0xd2ccbe) },
+  concrete: { a: new THREE.Color(0x777875), b: new THREE.Color(0x6c6d6a), kerb: new THREE.Color(0x525457), line: new THREE.Color(0xd4d2c8) },
+};
+
 export class SquareProps {
   constructor(game, parent) {
     this.game = game;
     const geo = new THREE.BoxGeometry(1, 1, 1);
     geo.translate(0, 0.5, 0); // boxes stand on their base
-    const mat = new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0 });
+    const mat = new THREE.MeshStandardMaterial({ roughness: 0.94, metalness: 0 });
     this.mesh = new THREE.InstancedMesh(geo, mat, MAX);
     this.mesh.name = 'units:props';
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -97,36 +105,59 @@ export class SquareProps {
     for (let i = 0; i < 4; i++) this._box(p.x, y, p.z, r, -0.33 + i * 0.22, 0.62, 0.04, 0.22, 0.04, 0.56, i % 2 ? C.awningB : C.awningA);
   }
 
-  _pad(pd, w, flagCol) {
+  _pad(pd, w, flagCol, era = 0) {
     // the parade square (round 25): flush with the levelled ground (the site
-    // is levelled when it is laid out, planner._keepClear), a thin wash of
-    // setts with white painted lines (a border and the two rank lines the
-    // soldiers stand on) and a flagpole at the corner before the ranks.
-    // Sizes in world units (scale 1): it is part of the ground, not a model.
+    // is levelled when it is laid out, planner._keepClear), with painted
+    // lines (a border and the two rank lines the soldiers stand on) and a
+    // flagpole at the corner before the ranks. Sizes in world units (scale
+    // 1): it is part of the ground, not a model.
+    // Round 29: the pad was a plain light slab, the brightest thing in a
+    // town, read as a parking lot (and glowed blue-white under a storm):
+    // now a darker ground of the era (packed earth and gravel before the
+    // Industrial era, dark setts, then grey concrete flags) in a checker of
+    // two tones under a dark kerb, faint lines, and a tall flagpole whose
+    // flag shows from 30 tiles.
     const r = Math.atan2(pd.ax, pd.az);
     const W = pd.W + 0.2,
       D = pd.D + 0.2;
     const y = pd.y ?? w.heightAt(pd.x, pd.z);
-    this._box(pd.x, y - 0.03, pd.z, r, 0, 0, 0, W, 0.036, D, C.pave, 1);
-    const lw = 0.035,
+    const P = era >= 5 ? PAD.concrete : era >= 3 ? PAD.setts : PAD.gravel;
+    this._box(pd.x, y - 0.03, pd.z, r, 0, 0, 0, W + 0.1, 0.034, D + 0.1, P.kerb, 1);
+    this._box(pd.x, y - 0.03, pd.z, r, 0, 0, 0, W - 0.04, 0.036, D - 0.04, P.a, 1);
+    // the checker of setts or flags (the darker squares only, flush)
+    const nx = Math.max(2, Math.round(W / 0.55)),
+      nz = Math.max(2, Math.round(D / 0.55));
+    const cw = (W - 0.04) / nx,
+      cd = (D - 0.04) / nz;
+    for (let i = 0; i < nx; i++)
+      for (let k = 0; k < nz; k++) {
+        if ((i + k) & 1) continue;
+        this._box(pd.x, y + 0.001, pd.z, r, -W / 2 + 0.02 + (i + 0.5) * cw, 0, -D / 2 + 0.02 + (k + 0.5) * cd, cw - 0.03, 0.004, cd - 0.03, P.b, 1);
+      }
+    const lw = 0.03,
       ly = y + 0.006,
       th = 0.003,
-      e = 0.08;
+      e = 0.1;
     // the border
-    this._box(pd.x, ly, pd.z, r, 0, 0, D / 2 - e, W - 2 * e, th, lw, C.paint, 1);
-    this._box(pd.x, ly, pd.z, r, 0, 0, -D / 2 + e, W - 2 * e, th, lw, C.paint, 1);
-    this._box(pd.x, ly, pd.z, r, W / 2 - e, 0, 0, lw, th, D - 2 * e, C.paint, 1);
-    this._box(pd.x, ly, pd.z, r, -W / 2 + e, 0, 0, lw, th, D - 2 * e, C.paint, 1);
+    this._box(pd.x, ly, pd.z, r, 0, 0, D / 2 - e, W - 2 * e, th, lw, P.line, 1);
+    this._box(pd.x, ly, pd.z, r, 0, 0, -D / 2 + e, W - 2 * e, th, lw, P.line, 1);
+    this._box(pd.x, ly, pd.z, r, W / 2 - e, 0, 0, lw, th, D - 2 * e, P.line, 1);
+    this._box(pd.x, ly, pd.z, r, -W / 2 + e, 0, 0, lw, th, D - 2 * e, P.line, 1);
     // the two rank lines (units/daily.js _paradeSlot: ranks half a rank
-    // gap either side of the centre) and the centre mark
+    // gap either side of the centre)
     const f = 0.5 * Math.min(pd.D / 2.9, 1.5 * SU);
-    for (const s of [-1, 1]) this._box(pd.x, ly, pd.z, r, 0, 0, s * f, Math.min(W - 0.5, 6 * 0.75 * SU + 0.2), th, lw * 0.7, C.paint, 1);
-    // the flagpole at the corner on the barracks side, its flag in the realm's colour
-    const fx = -W / 2 + 0.16,
-      fz = -D / 2 + 0.16;
-    this._box(pd.x, y, pd.z, r, fx, 0, fz, 0.1, 0.05, 0.1, C.paveEdge, 1);
-    this._box(pd.x, y, pd.z, r, fx, 0, fz, 0.022, 0.95, 0.022, C.metal, 1);
-    this._box(pd.x, y, pd.z, r, fx + 0.13, 0.78, fz, 0.24, 0.15, 0.01, flagCol || C.awningA, 1);
+    for (const s of [-1, 1]) this._box(pd.x, ly, pd.z, r, 0, 0, s * f, Math.min(W - 0.5, 6 * 0.75 * SU + 0.2), th, lw * 0.7, P.line, 1);
+    // the flagpole at the corner on the barracks side on a stone base, its
+    // flag in the realm's colour flying out over the pad
+    const fx = -W / 2 + 0.2,
+      fz = -D / 2 + 0.2;
+    this._box(pd.x, y, pd.z, r, fx, 0, fz, 0.2, 0.08, 0.2, P.kerb, 1);
+    this._box(pd.x, y, pd.z, r, fx, 0.08, fz, 0.13, 0.05, 0.13, C.stone, 1);
+    this._box(pd.x, y, pd.z, r, fx, 0, fz, 0.035, 1.75, 0.035, C.metal, 1);
+    this._box(pd.x, y, pd.z, r, fx, 1.75, fz, 0.06, 0.06, 0.06, C.goods, 1);
+    const fc = flagCol || C.awningA;
+    this._box(pd.x, y, pd.z, r, fx + 0.36, 1.27, fz + 0.02, 0.7, 0.46, 0.014, fc, 1);
+    this._box(pd.x, y, pd.z, r, fx + 0.36, 1.48, fz + 0.025, 0.7, 0.06, 0.016, C.paint, 1);
   }
 
   // The main square by day (round 25: the squares and plazas read vast and
@@ -310,7 +341,7 @@ export class SquareProps {
           if (!b || b.alive === false) v._parade = null;
           else {
             const kc = civ.kingdoms?.[v.kingdom]?.color;
-            this._pad(pd, w, kc != null ? this._flag.set(kc) : null);
+            this._pad(pd, w, kc != null ? this._flag.set(kc) : null, era);
           }
         }
         if (era >= 2 && (v.pop || 0) >= 10) this._square(v, civ, w, pd && pd.ok ? pd : null, era >= 5, day);

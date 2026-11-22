@@ -104,7 +104,10 @@ export const CORE_LIFT = 0.9 * BUILDING.scale;
 // (round 20: viaducts on piers as tall as the towers marched through an
 // Atomic downtown); past that the bed follows the ground down more steeply
 export const PIER_MAX = 1.1 * BUILDING.scale;
-const PIER_MAX_MAG = Math.max(MAG_CLEAR, PIER_MAX) + 0.3 * BUILDING.scale;
+// (round 29: a guideway capped at that height plunged down a cliff face like
+// a roller coaster; it now keeps its grade on a tall viaduct instead, its
+// piers up to six storeys over the valley)
+const PIER_MAX_MAG = Math.max(MAG_CLEAR, PIER_MAX) + 5 * BUILDING.scale;
 // the clear zone round an airport's plot (tiles): no track, guideway or
 // highway is routed through it
 const AIR_CLEAR = 3;
@@ -1260,7 +1263,7 @@ export const modern = {
         s.up = s.parent >= 0 ? tree[s.parent] : null;
         if (kind === 'rail') s.core = this._railCoreRuns(s);
         trackLevels(w, s, s.up);
-        if (s.hwOn) s.hw = this._hwMask(s);
+        if (s.hwOn) s.hw = this._hwMask(s, out.concat(tree));
         out.push(s);
       }
     }
@@ -1416,6 +1419,35 @@ export const modern = {
     B.fill(0);
     this._airZoneBuild();
     const CB = this._conurbs();
+    // the square before the hall and a tile round it
+    // (round 29: a rail line crossed an Industrial town's main square past
+    // its fountain, which stands up to six tiles out from the door: the
+    // whole open plaza before the hall, out past the fountain, is closed,
+    // in a conurbation's towns too)
+    const markHall = (v) => {
+      const h = v.hall;
+      if (!h?.alive) return;
+      {
+        const cx = Math.floor(h.doorX),
+          cz = Math.floor(h.doorZ);
+        let ux = h.doorX - (h.x ?? h.doorX),
+          uz = h.doorZ - (h.z ?? h.doorZ);
+        const uL = Math.hypot(ux, uz) || 1;
+        ux /= uL;
+        uz /= uL;
+        const fx = h.doorX + ux * 3.5,
+          fz = h.doorZ + uz * 3.5;
+        for (let dz = -7; dz <= 7; dz++)
+          for (let dx = -7; dx <= 7; dx++) {
+            const x = cx + dx,
+              y = cz + dz;
+            if (!w.inBounds(x, y)) continue;
+            const px = x + 0.5,
+              pz = y + 0.5;
+            if ((Math.abs(dx) <= 3 && Math.abs(dz) <= 3) || Math.hypot(px - h.doorX, pz - h.doorZ) < 4.5 || Math.hypot(px - fx, pz - fz) < 4.5) B[y * W + x] = 255;
+          }
+      }
+    };
     for (const v of this.villages) {
       if (!v?.alive || !Number.isFinite(v.cx)) continue;
       const R = Math.max(v.radius || 6, (v.buildRadius || 0) + 1);
@@ -1436,6 +1468,8 @@ export const modern = {
             if (d < R) B[i] = B[i] >= 254 ? B[i] : 253;
             else if (d < R + 2 && B[i] === 0) B[i] = 3;
           }
+        // (round 29: its squares are closed outright too)
+        markHall(v);
         continue;
       }
       const x0 = Math.max(0, Math.floor(v.cx - R - 2)),
@@ -1451,14 +1485,7 @@ export const modern = {
           else if (d < R) B[i] = B[i] === 3 ? 1 : Math.max(B[i], 1);
           else if (d < R + 2 && B[i] === 0) B[i] = 3;
         }
-      // the square before the hall and a tile round it
-      const h = v.hall;
-      if (h?.alive) {
-        const cx = Math.floor(h.doorX),
-          cz = Math.floor(h.doorZ);
-        for (let dz = -3; dz <= 3; dz++)
-          for (let dx = -3; dx <= 3; dx++) if (w.inBounds(cx + dx, cz + dz)) B[(cz + dz) * W + cx + dx] = 255;
-      }
+      markHall(v);
     }
     for (const b of this.buildings) {
       if (!b.alive) continue;
@@ -1674,9 +1701,17 @@ export const modern = {
         .slice(0, -1)
         .map((i) => [(i % W) + 0.5, ((i / W) | 0) + 0.5]);
     }
-    const way = rdp([lead, ...mid, o2.lead], C.eps);
-    const pts = fillet([...head, ...way.slice(0, -1), ...tail], C.R);
-    if (!pts || pts.length < 4) return null;
+    // (round 29) the straightened, rounded line keeps off every town's
+    // square and core too: a corner cut across one is drawn tighter, and a
+    // line that still crosses one is not laid
+    let pts = null;
+    for (const f of [1, 0.5, 0.25]) {
+      const way = rdp([lead, ...mid, o2.lead], C.eps * f);
+      pts = fillet([...head, ...way.slice(0, -1), ...tail], C.R * f);
+      if (!pts || pts.length < 4) return null;
+      if (!this._railInTown(pts)) break;
+      if (f === 0.25) return null;
+    }
     const n = pts.length / 2;
     // no switch on a platform or right at a station's throat
     const arc = [0];
@@ -1750,6 +1785,30 @@ export const modern = {
         }
     }
     return seg;
+  },
+  // a drawn line over a town's square (255) or a single town's core (2)
+  // away from its own ends (_railBlocks)
+  _railInTown(pts) {
+    const w = this.world;
+    const B = this._railBlk;
+    if (!B) return false;
+    const n = pts.length / 2;
+    const sx = pts[0],
+      sz = pts[1],
+      ex = pts[n * 2 - 2],
+      ez = pts[n * 2 - 1];
+    for (let i = 0; i < n; i++) {
+      const x = pts[i * 2],
+        z = pts[i * 2 + 1];
+      const tx = Math.floor(x),
+        tz = Math.floor(z);
+      if (!w.inBounds(tx, tz)) continue;
+      const b = B[tz * w.w + tx];
+      if (b !== 255 && b !== 2) continue;
+      const dE = Math.min(Math.hypot(x - sx, z - sz), Math.hypot(x - ex, z - ez));
+      if (b === 255 ? dE > 1.5 : dE > 3.5) return true;
+    }
+    return false;
   },
   // A grid path pulled taut: each run goes straight on to the farthest
   // point it can see over ground no dearer than the path's own (a line used
@@ -1838,7 +1897,10 @@ export const modern = {
       if (b === 1 || b === 2) {
         const ne = nearEnd(i);
         if (use[i] === USE.BUILDING) return Infinity;
-        if (b === 2 && !(ends ? ne : relaxed)) return Infinity;
+        // (round 29: a single town's core is closed like a conurbation's, in
+        // every pass: a line reaches only its own station on the edge; a
+        // track on a low viaduct crossed an Industrial town's main square)
+        if (b === 2 && !nearC(i)) return Infinity;
         if (use[i] === USE.ROAD) c += b === 2 ? 8 : 4;
         else if (ends && !ne) return Infinity;
         else c += b === 2 ? 16 : relaxed ? 9 : 12;
@@ -1897,7 +1959,7 @@ export const modern = {
   // field: each end runs on into its town until it meets a street, or meets
   // its trunk's highway at a junction (or a road crossing it); an end that
   // finds neither is cut back to the last road it crossed, or dropped.
-  _hwMask(s) {
+  _hwMask(s, segs = null) {
     const w = this.world;
     const W = w.w;
     const P = s.pts;
@@ -1917,6 +1979,70 @@ export const modern = {
       else {
         st[i] = 1;
         for (const v of towns) if (Math.abs(v.cx - x) < v.radius && Math.hypot(v.cx - x, v.cz - z) < v.radius * 0.85) st[i] = 2;
+      }
+    }
+    // (round 29) the highway never runs along over another track: where a
+    // branch turned off to the left, its road (on the right of its track)
+    // ran across its trunk's rails at a shallow angle into a jagged knot of
+    // decks. A short stretch over a track is a level crossing; a long one
+    // is blocked, so the road keeps a gap from the other corridor
+    if (segs) {
+      const Hm = new Map();
+      let x0 = Infinity,
+        x1 = -Infinity,
+        z0 = Infinity,
+        z1 = -Infinity;
+      for (const [x, z] of C) {
+        x0 = Math.min(x0, x);
+        x1 = Math.max(x1, x);
+        z0 = Math.min(z0, z);
+        z1 = Math.max(z1, z);
+      }
+      for (const o of segs) {
+        if (o === s || o.kind !== 'rail') continue;
+        const Q = o.pts;
+        // (a branch of this line leaves it at its switch: that stretch never
+        // breaks this line's own highway)
+        let j0 = 0;
+        if (o.junction && o.kingdom === s.kingdom)
+          for (let m = 0; m + 1 < P.length; m += 2)
+            if (Math.abs(P[m] - Q[0]) < 0.3 && Math.abs(P[m + 1] - Q[1]) < 0.3) {
+              j0 = Math.round(5 / SPACING) * 2;
+              break;
+            }
+        for (let j = j0; j + 1 < Q.length; j += 2) {
+          const x = Q[j],
+            z = Q[j + 1];
+          if (x < x0 - 2 || x > x1 + 2 || z < z0 - 2 || z > z1 + 2) continue;
+          const k = Math.floor(x) * 65536 + Math.floor(z);
+          let a = Hm.get(k);
+          if (!a) Hm.set(k, (a = []));
+          a.push(x, z);
+        }
+      }
+      if (Hm.size) {
+        const over = new Uint8Array(n);
+        for (let i = 0; i < n; i++) {
+          if (st[i] !== 1 && st[i] !== 3) continue;
+          const [x, z] = C[i];
+          const fx = Math.floor(x),
+            fz = Math.floor(z);
+          for (let dx = -1; dx <= 1 && !over[i]; dx++)
+            for (let dz = -1; dz <= 1 && !over[i]; dz++) {
+              const a = Hm.get((fx + dx) * 65536 + fz + dz);
+              if (a) for (let m = 0; m < a.length; m += 2) if (Math.abs(a[m] - x) < 0.75 && Math.hypot(a[m] - x, a[m + 1] - z) < 0.75) over[i] = 1;
+            }
+        }
+        for (let i = 0; i < n; ) {
+          if (!over[i]) {
+            i++;
+            continue;
+          }
+          let j = i;
+          while (j < n && over[j]) j++;
+          if (j - i > 6) for (let m = i; m < j; m++) st[m] = 0;
+          i = j;
+        }
       }
     }
     // a street (not this highway's own road, mask 4) beside point i

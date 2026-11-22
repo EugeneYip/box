@@ -27,6 +27,7 @@ export function createBuildingMaterial(uniforms, { clip = false, inst = null } =
     sh.uniforms.uCutTan = CAM_CUT.uCutTan;
     sh.uniforms.uCutBox = CAM_CUT.uCutBox;
     sh.uniforms.uCutA = CAM_CUT.uCutA;
+    sh.uniforms.uCutY = CAM_CUT.uCutY;
     sh.uniforms.uCamW = CAM_CUT.uCamW;
     if (inst) sh.uniforms.uBInst = inst;
     sh.vertexShader = sh.vertexShader
@@ -79,6 +80,7 @@ uniform float uCutD;
 uniform float uCutTan;
 uniform vec4 uCutBox[${CUT_N}];
 uniform float uCutA[${CUT_N}];
+uniform float uCutY[${CUT_N}];
 uniform mat4 uCamW;
 varying float vTint;
 varying float vGlow;
@@ -92,22 +94,20 @@ float wsHash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p
       .replace(
         '#include <color_fragment>',
         `#include <color_fragment>
-// close-zoom cutaway (round 27): a building the camera flagged as standing
+// close-zoom cutaway (round 29): a building the camera flagged as standing
 // between the eye and the target (CameraRig CAM_CUT: footprint boxes in world
-// space) fades whole, roof and floor alike, to a sparse screen-door ghost
+// space) is cut level just under the lowest sight line through it: nothing
+// above the cut is drawn, and a dark rim runs along the cut edge (the old
+// screen-door ghost read as a muddy see-through block under depth of field)
 if (uCut > 0.001) {
   vec3 wsWp = (uCamW * vec4(-vViewPosition, 1.0)).xyz;
-  float wsW = 0.0;
+  float wsCy = 1e4;
   for (int i = 0; i < ${CUT_N}; i++) {
     vec4 bx = uCutBox[i];
-    if (wsWp.x > bx.x && wsWp.x < bx.z && wsWp.z > bx.y && wsWp.z < bx.w) wsW = max(wsW, uCutA[i]);
+    if (uCutA[i] > 0.01 && wsWp.x > bx.x && wsWp.x < bx.z && wsWp.z > bx.y && wsWp.z < bx.w) wsCy = min(wsCy, uCutY[i]);
   }
-  wsW *= uCut;
-  // a 4 x 4 ordered dither: about a quarter of the building stays at full strength
-  ivec2 wsP = ivec2(gl_FragCoord.xy) & 3;
-  int wsX = wsP.x ^ wsP.y;
-  float wsB = float(((wsX & 1) << 3) | ((wsP.y & 1) << 2) | (wsX & 2) | ((wsP.y & 2) >> 1)) / 16.0 + 0.03;
-  if (wsW > 0.02 && wsW * 0.78 > wsB) discard;
+  if (wsWp.y > wsCy) discard;
+  if (wsWp.y > wsCy - 0.035) diffuseColor.rgb *= 0.32;
 }
 ${clip ? 'if (vLocal.y > vState.w) discard; if (!gl_FrontFacing) diffuseColor.rgb = vec3(0.5, 0.47, 0.42) * (0.75 + 0.25 * clamp(vLocal.y / max(vState.w, 0.1), 0.0, 1.0));' : ''}
 // roof surface detail: courses, tiles, slate, turf, eave shadow, weathering

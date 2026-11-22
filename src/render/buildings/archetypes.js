@@ -1165,6 +1165,12 @@ function docks(g, K, style) {
     sd = 0.8,
     sz = -0.45;
   g.box(0, -0.06, sz, sw + 0.06, 0.1, sd + 0.06, K.stone);
+  // (round 29: the shed stood house-sized beside the half-size boats: a
+  // net store at about six tenths of a house)
+  const SH = 0.6;
+  g.push();
+  g.translate(0, 0, sz * (1 - SH));
+  g.scale(SH, SH, SH);
   if (style === 'mire') {
     stilts(g, K, 0, sz, sw, sd, 0.3, 2);
     g.box(0, 0.3, sz, sw, 0.4, sd, K.wall);
@@ -1174,6 +1180,7 @@ function docks(g, K, style) {
     roofFor(g, K, style, 0, 0.54, sz, sw, sd, 0.45, { thatch: style !== 'frost' });
   }
   g.box(0, 0.04, sz + sd / 2 + 0.01, 0.3, 0.34, 0.03, K.door);
+  g.pop();
   // pier
   const px = 0.25,
     pz0 = 0.1,
@@ -1909,7 +1916,8 @@ function aqueduct(g, K, style) {
 function harbour(g, K, style) {
   const info = docks(g, K, style);
   // a stone quay, a crane and a sea-going ship at the long pier
-  g.box(0.25, -0.6, 3.6, 1.0, 0.8, 0.5, K.stone, { jit: 0.08 });
+  // (round 29: a low quay head flush with the deck, not a block over it)
+  g.box(0.25, -0.6, 3.6, 0.7, 0.74, 0.45, K.stone, { jit: 0.08 });
   g.box(0.25, 0.08, 4.35, 0.5, 0.06, 1.0, K.plank);
   for (const s of [-1, 1]) g.box(0.25 + s * 0.24, -1.4, 4.6, 0.06, 1.62, 0.06, K.timber);
   g.beam(-0.4, 0.05, 0.6, -0.4, 1.35, 0.6, 0.07, K.timber);
