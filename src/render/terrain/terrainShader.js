@@ -1489,9 +1489,16 @@ void terrainSurface() {
   float under = smoothstep(-0.05, 0.9, depth + (s.det.r - 0.5) * 0.5);
   // sandy floors take the rippled seabed look; other beds keep their material, wet
   float sandy = dot(vec4(equal(vec4(t0, t1, t2, t3), vec4(0.0))) * live, b);
+  // (round 31: the sea floor past ~2.8 deep is ROCK tiles, and as a "wet bed"
+  // their dark mountain stone showed through the shelf water as ragged,
+  // tile-stepped ink blots on every regional map; a rock floor under the sea
+  // takes the smooth seabed too, which carries its own rock in the deep, and
+  // any other bed fades to it as the water deepens past a tile or so)
+  float rockBed = dot(vec4(equal(vec4(t0, t1, t2, t3), vec4(8.0))) * live, b) * smoothstep(0.4, 1.4, depth);
   vec3 wetBed = albedo * 0.62;
   float deepK = smoothstep(1.8, 4.5, depth + (s.macro.r - 0.5) * 2.5);
-  albedo = mix(albedo, mix(wetBed, sea, max(sandy, deepK)), under * (1.0 - cliff * 0.6));
+  float seaBedK = max(max(min(sandy + rockBed, 1.0), deepK), smoothstep(1.0, 2.6, depth));
+  albedo = mix(albedo, mix(wetBed, sea, seaBedK), under * (1.0 - cliff * 0.6));
   H = mix(H, hb * 0.05, under);
   rough = mix(rough, 0.6, under);
   // wet band above the waterline (with a slow swash)
