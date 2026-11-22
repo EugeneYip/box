@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { drawBanner, bannerDataURL } from './emblems.js';
 import { BUILDING } from '../../core/scale.js';
+import { SEA_LEVEL } from '../../world/constants.js';
 
 // Floating map labels: kingdom names over capitals (mid and far zoom), village
 // names (mid zoom), and crossed-swords markers over active battles. Canvas
@@ -16,6 +17,16 @@ const FONT = 'Cinzel, "Cinzel Variable", Georgia, "Times New Roman", serif';
 // "ROC" was 6 px against HONG KONG's 14.
 const TOWN_H = 0.029; // a town label's world height per unit of distance
 const RIBBON_OVER_TOWN = 1.75;
+// (round 31) a realm ribbon's capitals are clamped to about 12-16 px on screen
+// at every zoom (16-18 px caps on 300 px plates covered the towns on the 256
+// map at 90-110 tiles; 8-9 px on the region overviews), and stay at least
+// 1.3x the capitals of the town names shown with them
+const RIBBON_CAP_MIN = 12;
+const RIBBON_CAP_MAX = 16;
+const RIBBON_CAP_FLOOR = 10.5; // a crowded overview may shrink to this before a name is left out
+const RIBBON_OVER_TOWN_CAPS = 1.3;
+// a realm is named at mid zoom when it holds at least this share of the land in view
+const LAND_SHARE = 0.05;
 
 function hexCss(hex, k = 1) {
   const r = Math.min(255, ((hex >> 16) & 255) * k),
@@ -50,7 +61,10 @@ function makeLabel(text, color, kind, banner = null) {
   if (big) {
     // a heraldic ribbon behind the name
     const h = px * 0.95;
-    x.fillStyle = 'rgba(14,16,24,0.62)';
+    // (round 31) pale realm colors (Italy, Belgium, the ROC) get a darker
+    // plate, so the stripes and the name keep their contrast over bright land
+    const lum = (0.2126 * ((color >> 16) & 255) + 0.7152 * ((color >> 8) & 255) + 0.0722 * (color & 255)) / 255;
+    x.fillStyle = `rgba(14,16,24,${(0.62 + 0.24 * smooth(0.45, 0.78, lum)).toFixed(3)})`;
     x.beginPath();
     x.moveTo(8, cy - h / 2);
     x.lineTo(c.width - 8, cy - h / 2);
@@ -95,6 +109,15 @@ function makeLabel(text, color, kind, banner = null) {
   }
   const sp = labelNode(c);
   sp.userData.aspect = c.width / c.height;
+  // capital height as a share of the sprite's (sizes are set in capitals on screen)
+  let capPx = px * 0.7;
+  try {
+    const m = x.measureText('H');
+    if (m.actualBoundingBoxAscent > 0) capPx = m.actualBoundingBoxAscent;
+  } catch {
+    /* no text metrics */
+  }
+  sp.userData.capK = capPx / c.height;
   sp.userData.text = text;
   sp.userData.color = color;
   sp.userData.banner = banner ? banner.symbol + '|' + banner.field : '';
@@ -236,8 +259,10 @@ void main() {
 
 // Spots tried for a realm's name, in label widths (x) and heights (y) from
 // its seat, nearest first.
+// (round 31) the first try is a little above the seat: centred on it, the
+// ribbon hid the capital itself at 68 tiles
 const LABEL_SPOTS = [
-  [0, 0], [0, -1.1], [0, 1.1], [-0.3, 0], [0.3, 0], [-0.3, -1.1], [0.3, -1.1], [-0.3, 1.1], [0.3, 1.1],
+  [0, -1.1], [0, 0], [0, 1.1], [-0.3, 0], [0.3, 0], [-0.3, -1.1], [0.3, -1.1], [-0.3, 1.1], [0.3, 1.1],
   [-0.48, 0], [0.48, 0], [-0.48, -1.1], [0.48, -1.1], [-0.48, 1.1], [0.48, 1.1], [0, -2.2], [0, 2.2],
 ];
 // (round 27) the last, smaller try also looks a little farther round the seat
@@ -394,12 +419,17 @@ export class Labels {
     // (50-56 tiles) instead of a half tone from 34 to 70, so between 40 and 80
     // every name on screen is drawn solid: the town names below the band, the
     // realm's name above it (its capital's name stays if the realm is not named)
-    const kA = smooth(50, 56, D);
+    // (round 31) on World Map worlds the countries are named from 50 tiles
+    // (they came only by 54-65), so the band ends there
+    const wm = g.params?.preset === 'earth';
+    const kA = wm ? smooth(45, 50, D) : smooth(50, 56, D);
     // far zoom keeps only kingdom names
     const z01 = this.game.view?.zoom01 ?? 0;
     // (round 29: a short fade band at 19-22 tiles, not 18-30, so a town's
     // name never hangs over its hall as a washed-out outline)
-    const vA = smooth(19, 22, D) * (1 - smooth(120, 190, D)) * (1 - smooth(0.4, 0.55, z01)) * (this.game.view?.far ? 0 : 1);
+    // (round 31: switched on at 21 with no in-between: a half-faded name had
+    // its pale letters left over a plate too faint to see)
+    const vA = (D >= 21 ? 1 : 0) * (1 - smooth(120, 190, D)) * (1 - smooth(0.4, 0.55, z01)) * (this.game.view?.far ? 0 : 1);
     const cand = [];
     // mid-zoom: only the realm in view and its neighbours are named (all of
     // them at the overview); close in, only the realm in view
@@ -422,15 +452,15 @@ export class Labels {
       const show = (this._focusSet = this._focusSet || new Set());
       show.clear();
       this._focusK = fk;
-      if (fk >= 0) {
-        show.add(fk);
-        if (D > 80) for (const r of civ.relations?.values?.() || []) if ((r.border || 0) > 0 && (r.a === fk || r.b === fk)) show.add(r.a === fk ? r.b : r.a);
-      }
+      if (fk >= 0) show.add(fk);
       // (round 29) every realm with a fair share of land on screen is named
       // too: on World Map worlds from the moment realm names take over, so
       // Europe at 90 tiles no longer names the Netherlands alone
-      const wm = g.params?.preset === 'earth';
-      if (D > (wm ? 50 : 80)) for (const id of this._landOnScreen(rig, w)) show.add(id);
+      // (round 31) "a fair share" is at least 5% of the land in view, and the
+      // whole screen is sampled (less the open inspector), so the neighbors
+      // are named from 50 tiles; a bordering realm with a sliver in view no
+      // longer adds a ribbon
+      if (D > (wm ? 45 : 80)) for (const id of this._landOnScreen(rig, w)) show.add(id);
     }
     for (const [id, s] of this.kLabels) {
       const k = civ.kingdoms[id];
@@ -477,6 +507,7 @@ export class Labels {
       // capitals at 30 tiles, hard to read)
       const h = Math.max(0.8, dist * TOWN_H);
       s.scale.set(h * s.userData.aspect, h, 1);
+      if (s.userData.capK) this._townCapK = s.userData.capK;
       cand.push({ s, a, prio: (isCap ? 2 : 1) + (v.pop || 0) * 0.001 });
     }
     // battle markers
@@ -520,11 +551,21 @@ export class Labels {
     const y0 = w.surfaceAt?.(rig.cur.x, rig.cur.z) ?? 0;
     const cnt = (this._landCnt = this._landCnt || new Map());
     cnt.clear();
-    const NX = 11,
+    const NX = 13,
       NY = 7;
+    // the open inspector card hides the screen right of its left edge
+    let x1 = 0.97;
+    try {
+      const ins = document.querySelector('.ws-insp.is-open');
+      const r = ins?.getBoundingClientRect();
+      if (r && r.width > 0 && r.left > innerWidth * 0.3) x1 = Math.min(x1, r.left / innerWidth - 0.01);
+    } catch {
+      /* no DOM */
+    }
+    let land = 0;
     for (let j = 0; j < NY; j++)
       for (let i = 0; i < NX; i++) {
-        const sx = 0.04 + (0.78 - 0.04) * (i / (NX - 1)),
+        const sx = 0.03 + (x1 - 0.03) * (i / (NX - 1)),
           sy = 0.14 + (0.86 - 0.14) * (j / (NY - 1));
         p.set(sx * 2 - 1, -(sy * 2 - 1), 0.5).unproject(cam);
         d.copy(p).sub(cam.position);
@@ -535,8 +576,10 @@ export class Labels {
         if (!w.inBounds?.(x, z)) continue;
         const o = w.owner[z * w.w + x];
         if (o >= 0) cnt.set(o, (cnt.get(o) || 0) + 1);
+        if (o >= 0 || (w.height && w.height[z * w.w + x] >= SEA_LEVEL)) land++;
       }
-    for (const [id, n] of cnt) if (n >= 2) out.add(id);
+    const need = Math.max(2, Math.ceil(land * LAND_SHARE));
+    for (const [id, n] of cnt) if (n >= need) out.add(id);
     return out;
   }
 
@@ -561,9 +604,20 @@ export class Labels {
     }
     const uiOn = this.game.params?.ui !== false;
     // HUD-safe margins that scale with the screen (phones and tablets in portrait)
+    // (round 31: the right margin is the open inspector's own edge, else
+    // small: the panels themselves are in the HUD list)
+    if (this._hudT === 1 || this._inspL == null) {
+      this._inspL = null;
+      try {
+        const r = document.querySelector('.ws-insp.is-open')?.getBoundingClientRect();
+        if (r && r.width > 0 && r.left > W * 0.3) this._inspL = r.left;
+      } catch {
+        /* no DOM */
+      }
+    }
     const mTop = uiOn ? Math.min(90, H * 0.1) : 8,
       mBot = uiOn ? Math.min(90, H * 0.12) : 8,
-      mRight = uiOn ? Math.min(300, W * 0.18) : 8,
+      mRight = uiOn ? (this._inspL != null ? Math.max(12, W - this._inspL + 8) : 12) : 8,
       mLeft = 8;
     // many realms on one screen get smaller name ribbons so that neighbours
     // (Japan beside the two Chinas, the Low Countries) all fit
@@ -585,7 +639,11 @@ export class Labels {
     // smaller name
     const townOn = this._townOn || 0;
     const townPx = Math.min(52, TOWN_H * fovK);
-    const kMax = Math.max(20, Math.min(44, H * 0.055) * Math.max(0.62, Math.min(1, 1 - (nView - 8) * 0.022)), townPx * RIBBON_OVER_TOWN * townOn);
+    // (round 31) ribbon capitals in px: 12-16 by screen height, never under
+    // 1.3x the town names' capitals while those are shown
+    const townCap = townPx * (this._townCapK || 0.42);
+    const ribCap = Math.max(Math.min(RIBBON_CAP_MAX, Math.max(RIBBON_CAP_MIN, H * 0.02)), townCap * RIBBON_OVER_TOWN_CAPS * townOn);
+    this._ribCap = ribCap;
     const v = this._v || (this._v = new (cam.position.constructor)());
     cand.sort((a, b) => b.prio - a.prio);
     const taken = [];
@@ -607,7 +665,15 @@ export class Labels {
       let pw = (sp.scale.x / dist) * fovK;
       // cap on-screen size: an anchor close to the camera (e.g. a realm centre
       // just below the view) would otherwise blow its label up across the frame
-      const maxPx = c.prio >= 3 ? kMax : 52;
+      if (c.prio >= 3 && ph > 0) {
+        // a ribbon is drawn at its clamped capital size at every zoom
+        const k = ribCap / (sp.userData.capK || 0.36) / ph;
+        sp.scale.x *= k;
+        sp.scale.y *= k;
+        ph *= k;
+        pw *= k;
+      }
+      const maxPx = c.prio >= 3 ? Infinity : 52;
       if (ph > maxPx) {
         const k = maxPx / ph;
         sp.scale.x *= k;
@@ -654,6 +720,17 @@ export class Labels {
           if (!world.inBounds?.(tx, tz)) return false;
           return world.owner[tz * world.w + tx] === c.kid;
         };
+        // (round 31) a small realm's name does not sit over a neighbor's
+        // land (the Bahamas over Florida): such spots are tried last
+        const foreign = (x, y) => {
+          if (c.kid == null || !world) return false;
+          v2.set((x / W) * 2 - 1, -((y / H) * 2 - 1), v.z).unproject(cam);
+          const tx = Math.floor(v2.x),
+            tz = Math.floor(v2.z);
+          if (!world.inBounds?.(tx, tz)) return false;
+          const o = world.owner[tz * world.w + tx];
+          return o >= 0 && o !== c.kid;
+        };
         let placed = false,
           shrink = 1;
         // nearest spots first; failing all of them at full size, try once more
@@ -663,28 +740,32 @@ export class Labels {
         // (round 29: while town names are shown a ribbon shrinks only a
         // little, so it stays larger than them; the realm in view may go one
         // step further before it gives its name up)
-        const tries = townOn > 0.5 ? (c.focus ? [1, 0.92, 0.82] : [1, 0.92]) : [1, 0.8, 0.62];
+        // (round 31: never below about 1.3x the town names, nor under about
+        // 10.5 px capitals: a name that does not fit then is left out)
+        const tries = (townOn > 0.5 ? [1, 0.92] : [1, 0.9, 0.8, 0.7]).filter((k, i) => i === 0 || ribCap * k >= RIBBON_CAP_FLOOR);
         for (const k of tries) {
           const w2 = pw * k,
             h2 = ph * k;
           const x0 = Math.min(right - w2 / 2, Math.max(mLeft + w2 / 2, sx)),
             y0 = Math.min(bot - h2 / 2, Math.max(top + h2 / 2, sy));
-          for (const [dx, dy] of k === tries[tries.length - 1] && tries.length > 2 ? LABEL_SPOTS_WIDE : LABEL_SPOTS) {
-            const yy = y0 + dy * h2,
-              xx = Math.min(right - w2 / 2, Math.max(mLeft + w2 / 2, x0 + dx * w2));
-            if (yy - h2 / 2 < top || yy + h2 / 2 > bot) continue;
-            const r = { l: xx - w2 / 2, r: xx + w2 / 2, t: yy - h2 / 2, b: yy + h2 / 2 };
-            if (!hits(r) && overRealm(xx, yy, w2, h2)) {
-              rect.l = r.l;
-              rect.r = r.r;
-              rect.t = r.t;
-              rect.b = r.b;
-              cy = yy;
-              cx = xx;
-              placed = true;
-              break;
+          const spots = k === tries[tries.length - 1] && tries.length > 2 ? LABEL_SPOTS_WIDE : LABEL_SPOTS;
+          for (let pass = 0; pass < 2 && !placed; pass++)
+            for (const [dx, dy] of spots) {
+              const yy = y0 + dy * h2,
+                xx = Math.min(right - w2 / 2, Math.max(mLeft + w2 / 2, x0 + dx * w2));
+              if (yy - h2 / 2 < top || yy + h2 / 2 > bot) continue;
+              const r = { l: xx - w2 / 2, r: xx + w2 / 2, t: yy - h2 / 2, b: yy + h2 / 2 };
+              if (!hits(r) && overRealm(xx, yy, w2, h2) && (pass === 1 || !foreign(xx, yy))) {
+                rect.l = r.l;
+                rect.r = r.r;
+                rect.t = r.t;
+                rect.b = r.b;
+                cy = yy;
+                cx = xx;
+                placed = true;
+                break;
+              }
             }
-          }
           if (placed) {
             shrink = k;
             break;
@@ -706,7 +787,12 @@ export class Labels {
       } else if (target > 0) {
         // keep clear of the screen edges where the HUD lives
         if (rect.t < mTop || rect.b > H - mBot || rect.r > W - mRight || rect.l < mLeft) target = 0;
-        if (hits(rect)) target = 0;
+        // (round 31) a town name under a realm's ribbon goes at once, not in
+        // a slow fade that left WUHAN half drawn under MAINLAND REGION
+        if (hits(rect)) {
+          target = 0;
+          if (c.prio < 3) sp.userData.fade = 0;
+        }
       }
       // (each placed name keeps a margin round it, so two realm ribbons never
       // sit edge to edge: round 24 had two nearly touching on the overview)

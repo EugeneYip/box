@@ -6,7 +6,8 @@ import { el, esc, safe, hexCss, fmtNum, realmColourText } from './dom.js';
 import { traitDef, statusDef, modLines, prettyId, eraNames, techDef, techList, ERA_ICON } from './depth.js';
 import { kingdomOf, eraOf, researchOf } from './TechPanel.js';
 import { CULTURES } from '../sim/civ/cultures.js';
-import { buildingLabel } from '../sim/civ/catalog.js';
+import { buildingLabel, BUILDING_TYPES } from '../sim/civ/catalog.js';
+import { BUILDING } from '../core/scale.js';
 import { Editor } from './Editor.js';
 import { bannerURL } from './banner.js';
 import { YEAR } from '../core/time.js';
@@ -61,6 +62,20 @@ const TILE_POWER = {
 const KIND_LABEL = { unit: 'Creature', building: 'Building', plot: 'Building plot', village: 'Village', kingdom: 'Realm', flora: 'Flora', tile: 'Land', info: 'Detail', vessel: 'Vessel', vehicle: 'Vehicle' };
 // Fleets (game.fleet.inspect): cargo lines with an icon each
 const CARGO_ICON = { settlers: 'found-village', army: 'job-soldier', fish: 'spawn-fish', food: 'plant-wheat', wood: 'plant-tree', stone: 'mountain', ore: 'job-miner', gold: 'gold', goods: 'trade' };
+// (round 31) a land craft whose title already names its kind gets its purpose
+const CRAFT_ROLE = { truck: 'Freight truck', car: 'Town car', bus: 'City bus', tram: 'Streetcar', fireengine: 'Fire service', ambulance: 'Medical service', tractor: 'Farm vehicle', oxcart: 'Goods cart', caravan: 'Trade convoy', train: 'Railway', maglev: 'Railway', tank: 'Armor', cannon: 'Siege gun', artillery: 'Siege gun' };
+// (round 31) about how tall a building stands (world units, for the pin):
+// a one-tile hut is under a unit, towers and monuments keep the old 3.2
+const roofOf = (b) => {
+  const def = BUILDING_TYPES[b?.type];
+  if (!def) return 1.6;
+  if (def.wall) return 0.7;
+  if (def.monument || def.kind === 'skyscraper' || b.type === 'skyscraper' || b.type === 'arcology') return 3.2;
+  const lv = Math.max(1, Math.min(b.level || 1, def.levels || 1));
+  const span = Math.max(def.dw ?? def.w ?? 1, def.dh ?? def.h ?? 1);
+  const design = def.modern ? 3 + 0.6 * span : 1.2 + 0.35 * (lv - 1) + 0.4 * (span - 1);
+  return Math.min(3.2, design * BUILDING.scale * (b.constructing ? Math.max(0.3, b.progress || 0) : 1));
+};
 const isCraft = (r) => !!r?.vessel || r?.kind === 'vessel' || r?.kind === 'vehicle';
 const JOB = {
   woodcutter: ['job-woodcutter', '#d9a466', 'Woodcutter'],
@@ -127,6 +142,16 @@ export class Inspector {
     this.editor = new Editor(this);
     this.editing = null;
     this.game.events.on('inspect', (hit) => (hit ? this.show(hit) : this.close()));
+    // (round 31) a vehicle that ends its trip and leaves the map has "Arrived";
+    // only a real wreck is "Lost"
+    this._lost = new WeakSet();
+    this._arrived = new WeakSet();
+    const mark = (set) => (e) => {
+      const v = e && (e.vessel || e.vehicle || e.flight);
+      if (v && typeof v === 'object') set.add(v);
+    };
+    this.game.events.on('fleet:lost', mark(this._lost));
+    for (const ev of ['fleet:arrived', 'fleet:delivered', 'fleet:landed']) this.game.events.on(ev, mark(this._arrived));
     this.bindSheet();
     this.el.addEventListener('pointerdown', () => (this._ptr = true));
     for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) this.el.addEventListener(ev, () => (this._ptr = false));
@@ -477,6 +502,16 @@ export class Inspector {
     return null;
   }
 
+  // (round 31) a craft that left the world: wrecked ("Lost") or done with its
+  // trip ("Arrived"). The fleet may flag it (v.endedTrip) or report it
+  // ('fleet:arrived'); else a despawn with no damage is an arrival.
+  craftEnded(c) {
+    if (!c || c.alive !== false) return false;
+    if (this._lost.has(c) || c.state === 'sinking' || c.state === 'wrecked' || c.state === 'crashed' || c.phase === 'crash' || c.wrecked || c.destroyed) return false;
+    if (c.endedTrip || this._arrived.has(c)) return true;
+    return !(Number.isFinite(c.hp) && c.hp <= 0);
+  }
+
   render() {
     const r = this.track;
     if (!r) return;
@@ -487,7 +522,8 @@ export class Inspector {
     // names on a craft's route ("Ruareva → Oromoku"): shown there, so not again
     const vrow = craft ? (r.stats || []).find((s) => /^voyage$/i.test(String(s?.[0]))) : null;
     const routeNames = new Set(vrow ? String(vrow[1]).split('→').map((x) => x.trim().toLowerCase()) : []);
-    const dead = (u && u.alive === false) || (craft && (craft.alive === false || craft.state === 'sinking'));
+    const ended = !!craft && this.craftEnded(craft);
+    const dead = (u && u.alive === false) || (craft && !ended && (craft.alive === false || craft.state === 'sinking'));
     const kTint = this.kingdomTint(r);
     // a building's own era only matters when it differs from its realm's
     let realmEraName = null;
@@ -499,6 +535,8 @@ export class Inspector {
       .filter((s) => Array.isArray(s) && s.length >= 2 && !HIDE_STATS.test(String(s[0])))
       .filter((s) => !(realmEraName && /^built in$/i.test(String(s[0])) && String(s[1]).toLowerCase() === realmEraName))
       .filter((s) => !(craft && /^(voyage|cargo)$/i.test(String(s[0]))))
+      // a craft that has arrived is no longer "Driving through the streets"
+      .filter((s) => !((ended || dead) && /^(doing|status|activity|state)$/i.test(String(s[0]))))
       .filter((s) => !(craft && /^home( port)?$/i.test(String(s[0])) && routeNames.has(String(s[1]).toLowerCase())))
       .map((s, i) => [s, i])
       .sort((a, b) => rankOf(a[0][0]) - rankOf(b[0][0]) || a[1] - b[1])
@@ -607,13 +645,15 @@ export class Inspector {
     const subShown = r.subtitle ? this.subText(r) : '';
     const following = (u || craft) && this.game.cameraRig.follow === (u || craft);
     const actions = [];
-    if ((u || craft) && !dead) actions.push(`<button class="ws-btn ws-btn--sm ${following ? 'is-on' : ''}" type="button" data-act="follow">${uiIcon('follow')}<span>${following ? 'Following' : 'Follow'}</span><kbd class="ws-key">F</kbd></button>`);
+    if ((u || craft) && !dead && !ended) actions.push(`<button class="ws-btn ws-btn--sm ${following ? 'is-on' : ''}" type="button" data-act="follow">${uiIcon('follow')}<span>${following ? 'Following' : 'Follow'}</span><kbd class="ws-key">F</kbd></button>`);
     actions.push(`<button class="ws-btn ws-btn--sm ws-btn--ghost" type="button" data-act="focus">${uiIcon('focus')}<span>Focus</span></button>`);
     let kindLabel = k === 'tile' && r.tile?.water ? 'Waters' : u && ic.label ? ic.label : craft ? (craft.name && craft.def?.name ? craft.def.name : craft.def?.war ? 'Warship' : craft.def?.siege ? 'Siege engine' : KIND_LABEL[k]) : KIND_LABEL[k] || 'Detail';
     // the kind line never repeats the title ("Rescue helicopter" over "Rescue helicopter of …")
     if (craft && kindLabel && String(this.titleOf(r) || '').toLowerCase().startsWith(String(kindLabel).toLowerCase())) {
       const cls = craft.def?.cls || craft.cls;
-      kindLabel = cls === 'air' ? 'Aircraft' : cls === 'space' ? 'Spacecraft' : cls === 'sea' || r.kind === 'vessel' ? 'Vessel' : 'Vehicle';
+      // (round 31) say what kind of craft it is ("Freight truck" over "Truck of
+      // Elderley"), not a bare "Vehicle"
+      kindLabel = CRAFT_ROLE[craft.kind || craft.def?.kind] || (cls === 'air' ? 'Aircraft' : cls === 'space' ? 'Spacecraft' : cls === 'sea' || r.kind === 'vessel' ? 'Vessel' : craft.def?.rail ? 'Train' : craft.def?.siege ? 'Siege engine' : craft.def?.road ? 'Road vehicle' : 'Vehicle');
     }
     const pref = u || r.building;
     // a realm shows its banner (the same drawing as its flags) in place of a portrait
@@ -650,7 +690,7 @@ export class Inspector {
       <header class="ws-insp__head">
         <span class="ws-insp__badge${portrait ? ' has-portrait' : ''}${kObj?.banner ? ' has-banner' : ''}">${level != null ? `<i class="ws-lvl" title="Level ${level}">${level}</i>` : ''}${portrait ? `<img class="ws-insp__portrait" src="${portrait}" alt=""><span class="ws-insp__glyph">${ic.svg}</span>` : ic.svg}${kTint ? `<i class="ws-insp__kdot" style="--k:${kTint}"></i>` : ''}</span>
         <div class="ws-insp__titles">
-          <div class="ws-insp__kind">${esc(kindLabel)}${dead ? ` <em class="ws-insp__dead">${craft ? 'Lost' : 'Fallen'}</em>` : ''}</div>
+          <div class="ws-insp__kind">${esc(kindLabel)}${dead ? ` <em class="ws-insp__dead">${craft ? 'Lost' : 'Fallen'}</em>` : ended ? ` <em class="ws-insp__dead is-arrived">${(craft.def?.cls || craft.cls) === 'air' ? 'Landed' : 'Arrived'}</em>` : ''}</div>
           <h3 class="ws-insp__title">${esc(this.titleOf(r) || 'Unknown')}${epithet ? ` <span class="ws-insp__epithet">${esc(epithet)}</span>` : ''}</h3>
           <div class="ws-insp__fact" data-fact>${esc(this.factLine(r))}</div>
           ${subShown ? `<div class="ws-insp__sub" data-sub>${craft && ownerK?.banner ? `<img class="ws-crest ws-crest--banner" alt="" src="${bannerURL(ownerK.banner, ownerK.color, 28)}">` : kTint ? `<i class="ws-crest" style="--k:${kTint}"></i>` : ''}<span>${esc(subShown)}</span></div>` : ''}
@@ -1322,6 +1362,23 @@ export class Inspector {
     const n = String(title || '').length;
     h.classList.toggle('is-long', n > 16 && n <= 24);
     h.classList.toggle('is-vlong', n > 24);
+    h.classList.remove('is-xlong');
+    // (round 31) never cut a name that fits the card: when a word would break
+    // or a third line would be clamped, step the size down
+    this.fitTitle(h);
+    requestAnimationFrame(() => this.fitTitle(h));
+  }
+  fitTitle(h) {
+    if (!h?.isConnected || !(h.clientWidth > 0)) return;
+    const steps = ['', 'is-long', 'is-vlong', 'is-xlong'];
+    let i = h.classList.contains('is-xlong') ? 3 : h.classList.contains('is-vlong') ? 2 : h.classList.contains('is-long') ? 1 : 0;
+    h.style.overflowWrap = 'normal';
+    const over = () => h.scrollWidth > h.clientWidth + 1 || h.scrollHeight > h.clientHeight + 1;
+    while (i < 3 && over()) {
+      if (steps[i]) h.classList.remove(steps[i]);
+      h.classList.add(steps[++i]);
+    }
+    h.style.overflowWrap = '';
   }
   // after a rename: update the header without touching the edit card
   patchTitle(text) {
@@ -1390,8 +1447,15 @@ export class Inspector {
       if (isCraft(r)) {
         if (!this._deadShown) {
           this._deadShown = true;
-          if (this.game.cameraRig.follow === b) this.game.cameraRig.follow = null;
+          const c = r.vessel || r.building;
+          if (this.game.cameraRig.follow === b || this.game.cameraRig.follow === c) this.game.cameraRig.follow = null;
           this.render();
+          // (round 31) the car is gone from view: say where it went
+          if (this.craftEnded(c)) {
+            const air = (c.def?.cls || c.cls) === 'air';
+            const name = String(this.titleOf(r) || '').trim() || 'The vehicle';
+            safe(() => this.ui.toast(air ? `${name} has landed` : `${name} reached its stop`, 2200));
+          }
         }
         return;
       }
@@ -1433,16 +1497,20 @@ export class Inspector {
     // and never less than ~14 px above its feet
     const y0 = ref.y ?? W.surfaceAt(ref.x, ref.z);
     let y;
-    if (kind === 'building') y = y0 + 3.2;
+    const cam = this.game.cameraRig.camera;
+    const d = Math.max(0.5, cam.position.distanceTo(this._v.set(ref.x, y0, ref.z)));
+    const px = (2 * d * Math.tan((cam.fov * Math.PI) / 360)) / Math.max(1, innerHeight);
+    // (round 31) a building's pin sits on its roof plus about 12 px, like a
+    // vehicle's (a fixed 3.2 floated ~120 px over a one-tile hut at 22)
+    if (kind === 'building') y = y0 + Math.max(roofOf(ref) + 12 * px, 18 * px);
     else {
       const bh = this.game.picker?.bodyHeight ? this.game.picker.bodyHeight(ref) : 0.18;
-      const cam = this.game.cameraRig.camera;
-      const d = Math.max(0.5, cam.position.distanceTo(this._v.set(ref.x, y0, ref.z)));
-      const px = (2 * d * Math.tan((cam.fov * Math.PI) / 360)) / Math.max(1, innerHeight);
       // (round 29) over a craft: its roof (the picker's body height runs low
       // for a box truck, hence 1.6x) plus about 12 px; 2.3 x the body height
       // floated ~90 px over a truck at the closest zoom
-      y = kind === 'vessel' ? y0 + Math.max(bh * 1.6 + 12 * px, 14 * px) : y0 + Math.max(bh * 2.3, 14 * px);
+      // (round 31) and a creature's pin clears its head by ~5 px more (its
+      // pointer covered a followed person's head at 2.5 on phones)
+      y = kind === 'vessel' ? y0 + Math.max(bh * 1.6 + 12 * px, 14 * px) : y0 + Math.max(bh * 2.3 + 5 * px, 19 * px);
     }
     const v = this._v.set(ref.x, y, ref.z).project(this.game.cameraRig.camera);
     if (v.z > 1 || v.z < -1) {
