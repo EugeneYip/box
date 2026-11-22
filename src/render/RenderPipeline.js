@@ -426,6 +426,7 @@ export class RenderPipeline {
       info.batches++;
       info.compiled += made;
       this._warmFence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+      this._warmFenceT = performance.now();
       gl.flush();
     }
     this._warmLater(made > 0 ? 50 : 16, !Q.length);
@@ -439,9 +440,17 @@ export class RenderPipeline {
   // side never holds a queue of frames, so a page that is leaving, a frame
   // that needs a new program or the next page waits for one frame at most.
   gpuBusy() {
+    const gl = this.renderer.getContext();
+    // (a warm-up batch still compiling also holds the frame: a frame that
+    // drew with a program still being linked would wait for the link on the
+    // main thread, seconds under software GL)
+    const wf = this._warmFence;
+    if (wf && !gl.isContextLost?.() && gl.getSyncParameter(wf, gl.SYNC_STATUS) !== gl.SIGNALED && performance.now() - (this._warmFenceT || 0) < 30000) {
+      this.framesHeld = (this.framesHeld || 0) + 1;
+      return true;
+    }
     const f = this._frameFence;
     if (!f) return false;
-    const gl = this.renderer.getContext();
     if (gl.isContextLost?.()) {
       this._frameFence = null;
       return false;
