@@ -292,7 +292,7 @@ export const land = {
       this._serviceWork(v, step);
     } else if (v.state === 'rest') {
       if (v.stateT > 3) {
-        if (v.mission?.phase === 'home' && v.path) v.state = 'move';
+        if ((v.mission?.phase === 'home' || v.mission?.type === 'train') && v.path) v.state = 'move';
         else if (v.keep) this._findWork(v);
         else this.remove(v);
       }
@@ -435,6 +435,7 @@ export const land = {
     }
     if (m.phase === 'home') {
       if ((m.type === 'fire' || m.type === 'medic') && v.base) return this._standBy(v);
+      if (m.type === 'train' && this._trainAgain(v, m)) return;
       if (v.role === 'caravan') {
         const home = civ.villages[m.from];
         if (home?.alive) home.gold = (home.gold || 0) + 10 * (civ.techMod?.(v.kingdom, 'gold') ?? 1) * 0.67;
