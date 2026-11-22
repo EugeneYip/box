@@ -141,6 +141,7 @@ export class ChroniclePanel {
           class: 'ws-cpill' + (f.id === this.filter ? ' is-on' : ''),
           type: 'button',
           role: 'tab',
+          'aria-selected': f.id === this.filter ? 'true' : 'false',
           onclick: () => this.setFilter(f.id),
         },
         el('span', { text: f.name }),
@@ -149,6 +150,42 @@ export class ChroniclePanel {
       this.pills.set(f.id, b);
       pills.append(b);
     }
+    // (round 33) the filters are one sideways row that never shrinks (as a
+    // flex item with overflow hidden it was squeezed to 6 px by a full book),
+    // with arrows and edge fades on the side that has more chips
+    pills.setAttribute('aria-label', 'Filter entries');
+    const nav = (dir) =>
+      el('button', {
+        class: `ws-chron__fnav is-${dir}`,
+        type: 'button',
+        tabindex: '-1',
+        'aria-hidden': 'true',
+        html: uiIcon(dir === 'l' ? 'chev-left' : 'chev-right'),
+        onclick: () => {
+          const from = pills.scrollLeft,
+            to = from + (dir === 'l' ? -1 : 1) * Math.max(110, pills.clientWidth * 0.66);
+          pills.scrollTo({ left: to, behavior: 'smooth' });
+          // (a busy frame can hold a smooth scroll back: then it jumps)
+          setTimeout(() => {
+            if (Math.abs(pills.scrollLeft - from) < 2) pills.scrollLeft = to;
+            this.syncFilterEdges();
+          }, 400);
+        },
+      });
+    this.filterBar = el('div', { class: 'ws-chron__filterbar' }, pills, nav('l'), nav('r'));
+    this.pillRow = pills;
+    pills.addEventListener('scroll', () => this.syncFilterEdges(), { passive: true });
+    // a mouse wheel over the row scrolls it sideways
+    pills.addEventListener(
+      'wheel',
+      (e) => {
+        if (pills.scrollWidth <= pills.clientWidth + 1 || Math.abs(e.deltaX) >= Math.abs(e.deltaY)) return;
+        pills.scrollLeft += e.deltaY;
+        e.preventDefault();
+      },
+      { passive: false },
+    );
+    if (typeof ResizeObserver === 'function') new ResizeObserver(() => this.syncFilterEdges()).observe(pills);
     this.list = el('div', { class: 'ws-chron__list' });
     this.empty = el('div', { class: 'ws-empty ws-chron__empty' }, el('div', { class: 'ws-empty__art', html: uiIcon('chronicle') }), el('div', { class: 'ws-empty__title', text: 'The pages are blank' }), el('p', { class: 'ws-empty__txt', text: 'Wars, disasters and the rise of realms will be written here as they happen.' }));
     this.el.append(
@@ -160,7 +197,7 @@ export class ChroniclePanel {
         this.countEl,
         el('button', { class: 'ws-iconbtn ws-iconbtn--sm', type: 'button', 'aria-label': 'Close (J)', html: uiIcon('close'), onclick: () => this.toggle(false) }),
       ),
-      pills,
+      this.filterBar,
       this.list,
       this.empty,
     );
@@ -224,12 +261,37 @@ export class ChroniclePanel {
       b.querySelector('b').textContent = counts[id] || 0;
       b.hidden = id !== 'all' && id !== this.filter && !counts[id];
     }
+    this.syncFilterEdges();
+  }
+
+  // which ends of the filter row hide more chips (arrow and fade on that side)
+  syncFilterEdges() {
+    const p = this.pillRow;
+    if (!p || !this.open) return;
+    const max = p.scrollWidth - p.clientWidth;
+    this.filterBar.classList.toggle('has-l', max > 1 && p.scrollLeft > 2);
+    this.filterBar.classList.toggle('has-r', max > 1 && p.scrollLeft < max - 2);
   }
 
   setFilter(id) {
     this.filter = id;
-    for (const [fid, b] of this.pills) b.classList.toggle('is-on', fid === id);
+    for (const [fid, b] of this.pills) {
+      b.classList.toggle('is-on', fid === id);
+      b.setAttribute('aria-selected', fid === id ? 'true' : 'false');
+    }
     this.renderAll();
+    // the chosen filter comes fully into view
+    const b = this.pills.get(id);
+    const p = this.pillRow;
+    if (b && p) {
+      const pr = p.getBoundingClientRect(),
+        br = b.getBoundingClientRect();
+      const l = br.left - pr.left + p.scrollLeft,
+        r = l + br.width;
+      if (l < p.scrollLeft + 28) p.scrollLeft = Math.max(0, l - 28);
+      else if (r > p.scrollLeft + p.clientWidth - 28) p.scrollLeft = r - p.clientWidth + 28;
+      this.syncFilterEdges();
+    }
     this.game.audio?.play?.('ui-click', { volume: 0.4 });
   }
 

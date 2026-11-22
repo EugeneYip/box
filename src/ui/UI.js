@@ -12,6 +12,7 @@ import './hud9.css';
 import './hud10.css';
 import './hud11.css';
 import './hud12.css';
+import './hud13.css';
 import { CATEGORIES, listPowers, getPower } from '../powers/registry.js';
 import { el, safe, hexCss } from './dom.js';
 import { SEA_LEVEL } from '../world/constants.js';

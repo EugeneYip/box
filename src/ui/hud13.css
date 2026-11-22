@@ -1,0 +1,76 @@
+/* ==========================================================================
+   Round 33: Chronicle filters, arrived vehicles, inspector header and
+   smaller fixes.
+   ========================================================================== */
+
+/* ---- Chronicle: the filter row keeps its height (as a flex item with
+   overflow hidden it shrank to 6 px under a full book) and shows which side
+   has more chips: an arrow and an edge fade on that side */
+.ws-chron__filterbar {
+  position: relative;
+  flex: none;
+  margin-bottom: 10px;
+}
+.ws-chron__filters {
+  flex: none;
+  margin-bottom: 0;
+  padding-bottom: 0;
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+.ws-chron__filterbar.has-r .ws-chron__filters {
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 46px), transparent calc(100% - 14px));
+  mask-image: linear-gradient(90deg, #000 calc(100% - 46px), transparent calc(100% - 14px));
+}
+.ws-chron__filterbar.has-l .ws-chron__filters {
+  -webkit-mask-image: linear-gradient(90deg, transparent 14px, #000 46px);
+  mask-image: linear-gradient(90deg, transparent 14px, #000 46px);
+}
+.ws-chron__filterbar.has-l.has-r .ws-chron__filters {
+  -webkit-mask-image: linear-gradient(90deg, transparent 14px, #000 46px, #000 calc(100% - 46px), transparent calc(100% - 14px));
+  mask-image: linear-gradient(90deg, transparent 14px, #000 46px, #000 calc(100% - 46px), transparent calc(100% - 14px));
+}
+.ws-chron__fnav {
+  position: absolute;
+  top: 50%;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin-top: -12px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  font-size: 14px;
+  color: var(--ws-gold-hi);
+  background: rgba(22, 25, 36, 0.96);
+  box-shadow:
+    inset 0 0 0 1px rgba(235, 201, 119, 0.4),
+    0 1px 6px rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  visibility: hidden;
+  cursor: pointer;
+  transition:
+    opacity 0.18s,
+    visibility 0.18s,
+    background 0.18s;
+}
+.ws-chron__fnav:hover {
+  background: rgba(48, 42, 28, 0.98);
+}
+.ws-chron__fnav.is-l {
+  left: -2px;
+}
+.ws-chron__fnav.is-r {
+  right: -2px;
+}
+.ws-chron__filterbar.has-l .ws-chron__fnav.is-l,
+.ws-chron__filterbar.has-r .ws-chron__fnav.is-r {
+  opacity: 1;
+  visibility: visible;
+}
+.is-touch .ws-chron__fnav {
+  width: 30px;
+  height: 30px;
+  margin-top: -15px;
+}
