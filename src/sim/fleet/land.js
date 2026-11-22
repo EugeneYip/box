@@ -147,7 +147,8 @@ export const land = {
     if (!w.inBounds(sx, sy) || !w.inBounds(gx, gy)) return null;
     // first along the laid roads only (cheap: few tiles), then across country
     const use = civ.use;
-    const kc = civ.keepClear;
+    // (every town's paving on the way: a truck crosses none it can drive round)
+    const kc = this._paveMask ? this._paveMask() : civ.keepClear;
     const base = civ._roadCost();
     const nearEnds = (i) => {
       const x = i % w.w,

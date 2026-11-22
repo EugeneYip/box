@@ -384,14 +384,14 @@ export const modern = {
     // (round 31: a town's paved square and parade pad dear too, and the
     // open ground dearer: vehicles kept to the streets round a block in only
     // a quarter of the samples near a Modern capital)
-    const kc = this.game.civ?.keepClear;
+    const pv = this._paveMask();
     const cost = (i) => {
-      if (use && use[i] === USE.ROAD) return kc && kc[i] ? 16 : 1;
+      if (use && use[i] === USE.ROAD) return pv[i] ? 16 : 1;
       if (use && use[i] === USE.BUILDING) return Infinity;
       const x = i % w.w,
         y = (i / w.w) | 0;
       if (!w.isWalkable(x, y)) return Infinity;
-      return use && use[i] === USE.PLOT ? 30 : kc && kc[i] ? 20 : 11;
+      return use && use[i] === USE.PLOT ? 30 : pv[i] ? 20 : 11;
     };
     const p = civPath(w, sx, sz, gx, gz, cost, maxNodes, 1);
     if (!p || !p.length) return null;
@@ -462,6 +462,37 @@ export const modern = {
       }
       return false;
     };
+  },
+  // (round 31) Every town's paving at once (_squareTest: the square round
+  // the hall door, the parade pad and the planner's keep-clear tiles), as a
+  // map of the world rebuilt every few seconds, for the route costs of the
+  // road vehicles: 1 on the paving.
+  _paveMask() {
+    const now = this.game.time.total;
+    const civ = this.game.civ;
+    const w = this.world;
+    const N = w.w * w.h;
+    if (this._pave && this._pave.length === N && now - this._paveT < 6) return this._pave;
+    if (!this._pave || this._pave.length !== N) this._pave = new Uint8Array(N);
+    else this._pave.fill(0);
+    this._paveT = now;
+    const M = this._pave;
+    const kc = civ?.keepClear;
+    if (kc && kc.length === N) for (let i = 0; i < N; i++) if (kc[i]) M[i] = 1;
+    for (const v of civ?.villages || []) {
+      if (!v?.alive) continue;
+      const sq = this._squareTest(v);
+      if (!sq) continue;
+      const pts = [];
+      const h = v.hall;
+      if (h && h.alive !== false && h.doorX != null) pts.push([Math.floor(h.doorX), Math.floor(h.doorZ), 3]);
+      const pd = v._parade?.ok ? v._parade : null;
+      if (pd) pts.push([Math.floor(pd.x), Math.floor(pd.z), Math.ceil(Math.max(pd.W || 2, pd.D || 2) / 2 + 1)]);
+      for (const [cx, cz, r] of pts)
+        for (let z = cz - r; z <= cz + r; z++)
+          for (let x = cx - r; x <= cx + r; x++) if (w.inBounds(x, z) && sq(x, z)) M[z * w.w + x] = 1;
+    }
+    return M;
   },
   // A town's square test (_squareTest), kept a few seconds on the town
   // (asked for every street tile a car looks at, traffic.js)
@@ -585,7 +616,7 @@ export const modern = {
         if (w.fire[i] > 0.05) continue;
         const d = Math.hypot(dx, dz);
         if (d < 1.2) continue;
-        const s = Math.abs(d - 2) * 2 + (use && use[i] === USE.ROAD ? -1.5 : 0) + (this.game.civ?.keepClear?.[i] ? 3 : 0) + Math.hypot(tx - fx, tz - fz) * 0.05;
+        const s = Math.abs(d - 2) * 2 + (use && use[i] === USE.ROAD ? -1.5 : 0) + (this._paveMask()[i] ? 3 : 0) + Math.hypot(tx - fx, tz - fz) * 0.05;
         if (s < bs) (bs = s), (best = { x: tx + 0.5, z: tz + 0.5 });
       }
     return best;
