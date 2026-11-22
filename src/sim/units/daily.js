@@ -649,7 +649,10 @@ export function installDaily(Units) {
       // one of the square's crowd finds a new place in it at once
       // (round 29: a grown-up's pause between errands halved; idle grown-ups
       // by day rose to 16%, most of them "Resting" between two errands)
-      u._dlNext = was === 'chore' || was === 'school' || sq0 || (child && was !== 'goto') ? now + 0.5 : now + (child ? 1.5 : 2) + hash(u.id, (now * 7) | 0) * 2;
+      // (a worker goes back to the brain for real work at once, as after a
+      // chore: farmers stood "Resting" between lunch and the afternoon's work)
+      const worker = !!u.job && u.job !== 'soldier' && u.job !== 'king';
+      u._dlNext = was === 'chore' || was === 'school' || sq0 || worker || (child && was !== 'goto') ? now + 0.5 : now + (child ? 1.5 : 2) + hash(u.id, (now * 7) | 0) * 2;
       return false;
     }
     if (now < u._dlNext) return false;
