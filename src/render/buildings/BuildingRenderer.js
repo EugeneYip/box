@@ -4,7 +4,7 @@ import { buildArchetype, foundation, scaffold, ruin, wallPost, wallArm, lampPost
 import { Labels } from './labels.js';
 import { createBuildingMaterial, createPropMaterial } from './material.js';
 import { emblemAtlas, EMBLEM_IDS, FIELD_IDS } from './emblems.js';
-import { bannerGeometry, bannerMaterial, bladesGeometry, boatGeometry, FENCE, scarecrowGeometry, glowTexture, PuffSystem } from './props.js';
+import { bannerGeometry, bannerMaterial, bladesGeometry, turbineBladesGeometry, boatGeometry, FENCE, scarecrowGeometry, glowTexture, PuffSystem } from './props.js';
 import { TerritoryOverlay } from './TerritoryOverlay.js';
 import { InfraRenderer } from './InfraRenderer.js';
 import { GlowSprites, HazeLayer, StackPlumes } from './nightAndHaze.js';
@@ -13,6 +13,7 @@ import { CULTURES, baseCulture } from '../../sim/civ/cultures.js';
 import { SEA_LEVEL, TILE } from '../../world/constants.js';
 import { hash2 } from '../../core/Random.js';
 import { BUILDING, PROP, UNIT, FOOTPRINT, VEHICLE } from '../../core/scale.js';
+import { padFlagSpot } from '../units/SquareProps.js';
 
 // Models are drawn at their design size (archetypes.js: a cottage for a 2 x 2
 // plot) and brought to the world by BUILDING.scale in each instance matrix,
@@ -21,6 +22,11 @@ import { BUILDING, PROP, UNIT, FOOTPRINT, VEHICLE } from '../../core/scale.js';
 // ruins and proxies under the same matrix; def.w x def.h are tiles.
 const BS = BUILDING.scale;
 const PS = PROP.scale;
+// (round 31) street lights stand beside the half-size people: a powered
+// street light about two and a half people tall, a lantern post under two
+// (at PS they stood four and a half and three people tall)
+const LS = PROP.kit * 1.0,
+  LP = PROP.kit * 1.2;
 // walls run tile to tile: their arms keep their length, the rest shrinks
 const _wallS = new THREE.Vector3(1, BS, BS);
 const _bS = new THREE.Vector3(BS, BS, BS);
@@ -410,7 +416,36 @@ export class BuildingRenderer {
     const scene = this.group;
     // stone footings that keep every building grounded on uneven terrain
     const fgeo = new THREE.BoxGeometry(1, 1, 1).translate(0, -0.5, 0);
-    this.footing = new THREE.InstancedMesh(fgeo, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95 }), 64);
+    // (round 31) dressed stone courses and a pale capping course, so a tall
+    // footing on a slope reads as a retaining wall of stone, not a brown slab
+    const fmat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95 });
+    fmat.onBeforeCompile = (sh) => {
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', '#include <common>\nvarying vec3 vFtW;\nvarying vec3 vFtN;\nvarying float vFtTop;')
+        .replace(
+          '#include <worldpos_vertex>',
+          '#include <worldpos_vertex>\nvFtW = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;\nvFtN = normalize(mat3(modelMatrix * instanceMatrix) * objectNormal);\nvFtTop = (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).y;',
+        );
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vFtW;\nvarying vec3 vFtN;\nvarying float vFtTop;').replace(
+        '#include <color_fragment>',
+        `#include <color_fragment>
+        {
+          float dy = vFtTop - vFtW.y;
+          float row = floor(dy / 0.075);
+          float u = (abs(vFtN.x) > abs(vFtN.z) ? vFtW.z : vFtW.x) / 0.16 + row * 0.5;
+          float aa = max(fwidth(dy / 0.075), 1e-3);
+          float bed = smoothstep(0.0, aa * 1.5, fract(dy / 0.075)) * smoothstep(0.0, aa * 1.5, 1.0 - fract(dy / 0.075));
+          float au = max(fwidth(u), 1e-3);
+          float head = smoothstep(0.0, au * 1.5, fract(u)) * smoothstep(0.0, au * 1.5, 1.0 - fract(u));
+          float tone = 0.9 + 0.14 * fract(sin(dot(vec2(row, floor(u)), vec2(12.9898, 78.233))) * 43758.5453);
+          diffuseColor.rgb *= tone * mix(0.72, 1.0, bed * head);
+          // the capping course
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.78, 0.76, 0.72) * tone, step(dy, 0.05) * step(abs(vFtN.y), 0.5));
+        }`,
+      );
+    };
+    fmat.customProgramCacheKey = () => 'footing-courses';
+    this.footing = new THREE.InstancedMesh(fgeo, fmat, 64);
     this.footing.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(64 * 3), 3);
     this.footing.castShadow = false;
     this.footing.receiveShadow = true;
@@ -430,6 +465,7 @@ export class BuildingRenderer {
       this.bladeGeo.set(st, bladesGeometry(st));
       this.boatGeo.set(st, boatGeometry(st));
     }
+    this.bladeGeo.set('turbine', turbineBladesGeometry());
     // ground glow under lanterns & doors at night
     const dgeo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
     this.decalMat = new THREE.MeshBasicMaterial({ map: glowTexture(), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, color: 0xffb060, opacity: 0, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 });
@@ -730,15 +766,16 @@ export class BuildingRenderer {
         if (!ox && !oz) continue;
         const x = tx + 0.5 + ox,
           z = ty + 0.5 + oz;
-        const lm = this._m2.makeRotationY(Math.atan2(-oz, ox) + Math.PI).scale(this._s.set(PS, PS, PS)).setPosition(x, world.heightAt(x, z), z);
+        const ls = lit ? LS : LP;
+        const lm = this._m2.makeRotationY(Math.atan2(-oz, ox) + Math.PI).scale(this._s.set(ls, ls, ls)).setPosition(x, world.heightAt(x, z), z);
         const gy = world.heightAt(x, z);
         if (lit) {
           push('streetlamp', false, lm, col, null);
-          decals.push([x - ox * 0.75, gy, z - oz * 0.75, 0.75 * PS]);
-          this.lights.push(x - ox * 0.75 * PS, gy + 1.08 * PS, z - oz * 0.75 * PS, 0.9);
+          decals.push([x - ox * 0.75 * (LS / PS), gy, z - oz * 0.75 * (LS / PS), 0.6 * PS]);
+          this.lights.push(x - ox * 0.75 * LS, gy + 1.08 * LS, z - oz * 0.75 * LS, 0.75);
         } else {
           push('lamppost', false, lm, col, null);
-          decals.push([x - ox * 0.4, gy, z - oz * 0.4, 0.6 * PS]);
+          decals.push([x - ox * 0.4 * (LP / PS), gy, z - oz * 0.4 * (LP / PS), 0.5 * PS]);
         }
       }
     }
@@ -807,7 +844,8 @@ export class BuildingRenderer {
     }
     for (let i = 0; i < footings.length; i++) {
       this.footing.setMatrixAt(i, footings[i].m);
-      this._c.setHex(PAL[footings[i].style]?.stone2 ?? 0x847c70);
+      // (round 31) a grey dressed stone, only tinged by the style's own
+      this._c.setHex(PAL[footings[i].style]?.stone2 ?? 0x847c70).lerp(this._fg || (this._fg = new THREE.Color(0x8d8a84)), 0.65);
       this.footing.setColorAt(i, this._c);
     }
     this.footing.count = footings.length;
@@ -860,7 +898,7 @@ export class BuildingRenderer {
     }
     for (const c of an.blades) {
       const bm = new THREE.Matrix4().copy(M).multiply(new THREE.Matrix4().makeTranslation(c.x, c.y, c.z));
-      this.blades.push({ m: bm, style: b.style, phase: b.seed * 10 });
+      this.blades.push({ m: bm, style: c.turbine ? 'turbine' : b.style, phase: b.seed * 10 });
     }
     const moreShips = b.type === 'docks' && (this.game.civ?.kingdoms?.[b.kingdom]?.mastery || 0) >= 8;
     for (const c of moreShips ? [...an.boats, ...an.boats.map((o) => ({ ...o, x: o.x + 0.55, z: o.z + 0.35, ship: true }))] : an.boats) {
@@ -1079,6 +1117,24 @@ export class BuildingRenderer {
       let L = per.get(st);
       if (!L) per.set(st, (L = []));
       L.push({ x: x + 0.02 * US, y: y + 1.8 * US, z, s: 1.7 * US, style: st, color: civ.kingdomColor(a.kingdom), k: a.kingdom });
+    }
+    // the realm's flag over each parade pad (round 31: it had been a blank
+    // flat board about 0.7 by 0.46 tiles; now a standard with the emblem,
+    // about 0.6 that size)
+    {
+      const cam = this.game.cameraRig?.cur;
+      for (const v of civ.villages || []) {
+        const pd = v && v.alive && v._parade;
+        if (!pd || !pd.ok) continue;
+        if (cam && (Math.abs(v.cx - cam.x) > 60 || Math.abs(v.cz - cam.z) > 60)) continue;
+        const f = padFlagSpot(pd, this.game.world);
+        const hgt = 1.05;
+        staffs.push([f.x, f.y, f.z, hgt]);
+        const st = CULTURES[baseCulture(civ.kingdoms[v.kingdom]?.culture)]?.style || 'vale';
+        let L = per.get(st);
+        if (!L) per.set(st, (L = []));
+        L.push({ x: f.x + 0.02, y: f.y + hgt - 0.04, z: f.z, s: 1.15, style: st, color: civ.kingdomColor(v.kingdom), k: v.kingdom });
+      }
     }
     const sm = this._grow(this.staffMap, 's', staffs.length);
     for (let i = 0; i < staffs.length; i++) {

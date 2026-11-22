@@ -277,6 +277,10 @@ const BUILD = {
   },
 
   rowhouse(g, P) {
+    // (round 31) in an Atomic or Future realm the terrace stands refitted as
+    // a row of flat-roofed townhouses (Victorian rows had stood in Future
+    // towns: a 3 by 1 terrace never fits the plot of a block that renews it)
+    if (P.era >= 6) return BUILD.townrow(g, P);
     const n = 4,
       uw = 0.68,
       d = 0.62,
@@ -314,6 +318,30 @@ const BUILD = {
       g.box(x + ins, h + 0.48, bz, 0.15, 0.03, 0.19, P.dark);
       for (const s of [-0.035, 0.035]) g.cyl(x + ins + s, h + 0.51, bz, 0.018, 0.06, 5, 0xb06a4a, {});
       if (i % 2 === 0) g.anchor('chimneys', x + ins, h + 0.6, bz, { rate: 0.45 });
+    }
+  },
+
+  townrow(g, P) {
+    const n = 4,
+      uw = 0.68,
+      d = 0.64,
+      bz = -0.12;
+    const W = n * uw;
+    g.box(0, -0.06, bz, W + 0.06, 0.1, d + 0.06, P.concrete2);
+    for (let i = 0; i < n; i++) {
+      const x = -W / 2 + uw * (i + 0.5);
+      const h = 0.9 + (i % 2 ? 0.14 : 0);
+      const fz = bz + d / 2;
+      g.box(x, 0.04, bz, uw - 0.012, h - 0.04, d, i % 2 ? P.wall : P.wall2);
+      // a glazed ground floor and an upper band of glass, a slim flat roof
+      // with a parapet and a garden on the Future ones
+      g.box(x, 0.06, fz + 0.01, uw * 0.78, 0.3, 0.02, P.glass, { glow: 1 });
+      g.box(x, 0.5, fz + 0.01, uw * 0.86, 0.22, 0.02, P.glass, { glow: 1 });
+      g.box(x, 0.46, fz + 0.03, uw - 0.03, 0.03, 0.06, P.frame);
+      g.box(x, 0.5, bz - d / 2 - 0.01, uw * 0.6, 0.2, 0.02, P.glass, { glow: 1 });
+      g.box(x, h, bz, uw - 0.012, 0.05, d + 0.02, P.frame);
+      g.box(x, h + 0.05, bz, uw - 0.08, 0.02, d - 0.08, P.era >= 7 ? P.roof : P.concrete2);
+      g.box(x + (i % 2 ? 0.2 : -0.2), 0.04, fz + 0.02, 0.13, 0.3, 0.02, P.accent ?? P.frame);
     }
   },
 

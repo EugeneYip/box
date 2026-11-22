@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { CAM_CUT } from '../../core/CameraRig.js';
 
 // Shader patches for the vegetation. Both the flora and the ground-cover
 // materials are MeshStandardMaterial (so they keep PBR lighting, shadows and
@@ -43,6 +44,12 @@ export function createSharedUniforms(stateTexture, w, h) {
 
 const VERT_PARS = /* glsl */ `
 attribute vec4 aInfo;
+uniform float uCut;
+uniform float uCutTan;
+uniform vec3 uCutT;
+#ifndef FLORA_DEPTH
+varying float vFCut;
+#endif
 attribute vec3 aPivot;
 uniform float uTime;
 uniform vec4 uWind;
@@ -133,6 +140,30 @@ float fPetalK = (1.0 - smoothstep(uFlowerFade.x, uFlowerFade.y, distance(fOrigin
 fLeafK *= mix(1.0, fPetalK, fPetal);
 transformed = mix(aPivot, transformed, mix(1.0, fLeafK, max(fLeaf, fPetal)));
 #ifndef FLORA_DEPTH
+// (round 31) the close-zoom cutaway reaches the trees: a whole tree that
+// stands on the sight line from the eye to the target (its trunk axis within
+// its crown's reach of the line plus a narrow cone round it), short of the
+// target itself, dissolves away (CameraRig CAM_CUT), so a trunk and its
+// leaves never fill the frame; trees off the line are left alone
+vFCut = 0.0;
+if (uCut > 0.001) {
+  vec3 fO = (modelMatrix * vec4(fOrigin, 1.0)).xyz;
+  float fTH = 2.0 * length(instanceMatrix[1].xyz);
+  vec3 fTc = uCutT - cameraPosition;
+  float fTD = length(fTc);
+  vec3 fTd = fTc / max(fTD, 1e-4);
+  float fBest = 1e3, fAlB = fTD;
+  for (int k = 0; k < 3; k++) {
+    vec3 q = fO + vec3(0.0, fTH * (0.25 + 0.3 * float(k)), 0.0) - cameraPosition;
+    float al = dot(q, fTd);
+    float r = (length(q - fTd * al) - 0.32 * fTH) / max(0.08, al * uCutTan * 0.3);
+    if (r < fBest) {
+      fBest = r;
+      fAlB = al;
+    }
+  }
+  vFCut = uCut * step(0.0, fAlB) * (1.0 - smoothstep(fTD * 0.62, fTD * 0.88, fAlB)) * (1.0 - smoothstep(0.6, 1.0, fBest));
+}
 // canopy over units: leaf clusters pull in and thin out (trunks stay)
 float fOcc = texelFetch(uOcc, fTile, 0).r * uOccStrength * fLeaf;
 transformed = mix(aPivot, transformed, 1.0 - 0.6 * fOcc);
@@ -248,9 +279,19 @@ float fVNoise(vec3 p) {
   return mix(mix(a, b, f.y), mix(c, d, f.y), f.z);
 }
 const float fBayer[16] = float[16](0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
+#ifndef FLORA_GROUND
+varying float vFCut;
+#endif
 `;
 
 const FRAG_COLOR = /* glsl */ `
+#ifndef FLORA_GROUND
+// (round 31) a tree on the sight line dissolves (vFCut, see FLORA_BEGIN)
+if (vFCut > 0.001) {
+  float fTh = (fBayer[int(mod(gl_FragCoord.x, 4.0)) + 4 * int(mod(gl_FragCoord.y, 4.0))] + 0.5) / 16.0;
+  if (vFCut > fTh) discard;
+}
+#endif
 float fLeafM = vFInfo.x;
 float fMat = vFInfo.y;
 if (abs(fMat - 11.0) < 0.5) {
@@ -401,6 +442,9 @@ if (uCloudParams.w > 0.0) {
 
 function patch(shader, shared, kind, depth) {
   for (const k in shared) shader.uniforms[k] = shared[k];
+  shader.uniforms.uCut = CAM_CUT.uCut;
+  shader.uniforms.uCutTan = CAM_CUT.uCutTan;
+  shader.uniforms.uCutT = CAM_CUT.uCutT;
   const defs = (depth ? '#define FLORA_DEPTH\n' : '') + (kind === 'ground' ? '#define FLORA_GROUND\n' : '');
   shader.vertexShader = defs + shader.vertexShader.replace('#include <common>', '#include <common>\n' + VERT_PARS);
   shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', kind === 'ground' ? GROUND_BEGIN : FLORA_BEGIN);

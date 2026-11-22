@@ -529,12 +529,10 @@ export class BrushCursor {
         this.hover.build(Math.max(0.04, lineW * 0.6), lift, g.world.surfaceAt(o.x, o.z), 0.8);
         this.hover.style(this.white, 0.5, this.t, 0, 0, 0.6, 0.25);
         hovered = true;
-      } else if (!o && (!hit.water || g.world.isLand(hit.tx, hit.ty))) {
-        this.hover.square(hit.tx, hit.ty, hit.tx + 1, hit.ty + 1);
-        this.hover.build(Math.max(0.04, lineW * 0.55), lift, g.world.surfaceAt(hit.tx + 0.5, hit.ty + 0.5), 0.45);
-        this.hover.style(this.white, 0.4, this.t, 0, 0, 0.6, 0.2);
-        hovered = true;
       }
+      // (round 31) no outline round a bare tile: nothing there opens on a
+      // click, and at the closest follow zoom it drew a 470 px white square
+      // round the followed truck
     }
     this.hover.visible = hovered;
     const cur = uiOn && clickable ? 'pointer' : '';

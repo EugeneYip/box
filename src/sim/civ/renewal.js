@@ -276,9 +276,25 @@ export const renewal = {
     mark(oldest);
     if (v.tier < 1) return;
     houses.sort((a, b) => (a.builtAt || 0) - (b.builtAt || 0));
-    const want = (cons ? 5 : 2) + (v.tier >= 2 ? 1 : 0);
+    // (round 31) in the Modern eras only the oldest one or two houses stay as
+    // heritage: rows of Victorian houses had stood in Future towns. The
+    // houses the realm chose beyond that are let go (newest first) and renew
+    // with the rest; the player's own choices are kept.
+    const modern = (k.era || 0) >= 5;
+    const want = modern ? (cons ? 2 : 1) : (cons ? 5 : 2) + (v.tier >= 2 ? 1 : 0);
     let have = 0;
     for (const b of v.buildings) if (b.alive && b.type === 'house' && b.heritage) have++;
+    if (modern && have > want) {
+      const mine = v.buildings.filter((b) => b.alive && b.type === 'house' && b.heritage && !b.heritage.player);
+      mine.sort((a, b) => (b.builtAt || 0) - (a.builtAt || 0));
+      for (const b of mine) {
+        if (have <= want) break;
+        delete b.heritage;
+        b.restored = false;
+        have--;
+        this.version++;
+      }
+    }
     for (const b of houses) {
       if (have >= want) break;
       if (mark(b)) have++;

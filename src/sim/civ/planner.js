@@ -155,6 +155,9 @@ export const planner = {
           const i = y * w.w + x;
           if (w.height[i] < SEA_LEVEL + 0.02) continue;
           if (this.use[i] === USE.BUILDING) continue;
+          // (round 31) the levelled square before a hall stays level: easing
+          // a new neighbour's ring into it tilted its paving into facets
+          if (this.keepClear && this.keepClear[i] & 1) continue;
           if (shore(x, y)) continue;
           const kk = nearShore(x, y) ? k * 0.5 : k;
           w.height[i] = Math.max(SEA_LEVEL + 0.03, lerp(w.height[i], target, kk));
@@ -391,10 +394,22 @@ export const planner = {
           y0 = cz,
           y1 = cz,
           any = false;
+        // (round 31) and the ring of tiles round it, so the paving's outer
+        // edge lies on level ground too (facet diagonals crossed the plaza
+        // where its last row met the unlevelled ring)
+        const ring = [];
+        for (let dz = -3; dz <= 3; dz++)
+          for (let dx = -3; dx <= 3; dx++) {
+            if (Math.max(Math.abs(dx), Math.abs(dz)) !== 3 || !w.inBounds(cx + dx, cz + dz)) continue;
+            const i = (cz + dz) * w.w + cx + dx;
+            if (w.building[i] >= 0 || this.use[i] === USE.BUILDING) continue;
+            ring.push(i);
+          }
         if (L >= SEA_LEVEL + 0.05)
-          for (const i of t) {
+          for (const i of t.concat(ring)) {
             const hh = w.height[i];
-            if (this.use[i] === USE.BUILDING || this.railMask?.[i] || Math.abs(hh - L) > 0.35 || Math.abs(hh - L) < 0.004) continue;
+            if (this.use[i] === USE.BUILDING || this.railMask?.[i] || Math.abs(hh - L) > 0.4 || Math.abs(hh - L) < 0.004) continue;
+            if (hh < SEA_LEVEL + 0.02) continue;
             w.height[i] = L;
             any = true;
             const x = i % w.w,
