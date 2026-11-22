@@ -276,6 +276,7 @@ export const brain = {
       if (now - (this._pathCacheT ?? -1e9) > 12 || PC.size > 6000 || now - (this._pathCacheVT ?? -1e9) > 3) {
         PC.clear();
         this._trunks?.clear();
+        this._routesTo?.clear();
         this._pathCacheT = now;
         this._pathCacheV = this.version;
         this._pathCacheVT = now;
@@ -290,6 +291,18 @@ export const brain = {
         return false;
       }
       u.path = hit;
+      u.pathIdx = 0;
+      u.target = { x, z };
+      return true;
+    }
+    // (round 31) a walk to a tile some route found in the last few seconds
+    // also ends at, from a tile on that route or next to it (the morning
+    // commute to the same field, the deposit at the granary, the walk to
+    // the square): the rest of that route, no new search
+    const sp0 = this._routeRest(w.clampTx(sx), w.clampTy(sy), gy * w.w + gx);
+    if (sp0) {
+      PC.set(key, sp0);
+      u.path = sp0;
       u.pathIdx = 0;
       u.target = { x, z };
       return true;
@@ -329,6 +342,7 @@ export const brain = {
     const p = civPath(w, w.clampTx(sx), w.clampTy(sy), gx, gy, this._walkCost(), long ? 32000 : 3200, 0.5, null, this._levelCrossing());
     PC.set(key, p || null);
     if (long && p && p.length > 24 && p[p.length - 1] === gy * w.w + gx) this._addTrunk(w.clampTx(sx), w.clampTy(sy), gx, gy, p);
+    if (p && p.length > 3 && p[p.length - 1] === gy * w.w + gx) this._addRoute(gy * w.w + gx, p);
     if (!p) {
       u.target = null;
       u.path = null;
@@ -423,6 +437,60 @@ export const brain = {
         if (l >= 0 && (l === a || l === b || l === c)) return false;
       }
     return true;
+  },
+
+  // Routes found in the last few seconds that reach their goal, by goal tile
+  // (cleared with the path cache; the last four to each goal).
+  _addRoute(G, p) {
+    const R = this._routesTo || (this._routesTo = new Map());
+    let a = R.get(G);
+    if (!a) R.set(G, (a = []));
+    if (a.length >= 4) a.shift();
+    a.push(p);
+  },
+
+  // The rest of a recent route to goal tile G for a walker on tile (sx,sy):
+  // from that tile on the route, or else from the route's tile nearest the
+  // goal among the eight round it (a step onto the route that never cuts a
+  // blocked corner). Null when no route passes. A part of a shortest route
+  // is itself a shortest route, so the walker goes the way a search would.
+  _routeRest(sx, sy, G) {
+    const a = this._routesTo?.get(G);
+    if (!a) return null;
+    const W = this.world.w;
+    const S = sy * W + sx;
+    for (let r = a.length - 1; r >= 0; r--) {
+      const p = a[r];
+      const k = p.indexOf(S);
+      if (k >= 0) return k < p.length - 1 ? p.slice(k + 1) : null;
+    }
+    let best = null,
+      bk = -1,
+      br = Infinity;
+    for (let r = a.length - 1; r >= 0; r--) {
+      const p = a[r];
+      for (let k = p.length - 2; k >= 0; k--) {
+        const i = p[k];
+        const dx = (i % W) - sx,
+          dy = ((i / W) | 0) - sy;
+        if (dx < -1 || dx > 1 || dy < -1 || dy > 1) continue;
+        if (p.length - k < br) {
+          br = p.length - k;
+          best = p;
+          bk = k;
+        }
+        break;
+      }
+    }
+    if (!best) return null;
+    const J = best[bk];
+    const jx = J % W,
+      jy = (J / W) | 0;
+    if (jx !== sx && jy !== sy) {
+      const cost = this._walkCost();
+      if (cost(sy * W + jx) === Infinity || cost(jy * W + sx) === Infinity) return null;
+    }
+    return best.slice(bk);
   },
 
   // Long routes found in the last few seconds, by the 8-tile block of their

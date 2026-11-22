@@ -585,6 +585,27 @@ export class Units {
       _celeSeen: null,
       _brigade: 0,
       _space: 0,
+      // (round 31) fields other passes add part-way through a life (a bed, a
+      // school day, a stall at the dock, an off-duty errand, a death), left
+      // undefined until then: added later, each in its own order, they split
+      // the people into dozens of object shapes, and every property read in
+      // the per-tick loop went the slow, many-shape way
+      alarm: undefined,
+      _depthReady: undefined,
+      _adFor: undefined,
+      _ad: undefined,
+      _adT: undefined,
+      _offd: undefined,
+      _inAcc: undefined,
+      _schoolDay: undefined,
+      _fireLogged: undefined,
+      _padNear: undefined,
+      _padTry: undefined,
+      _padWait: undefined,
+      _bedT: undefined,
+      _bedB: undefined,
+      deathTime: undefined,
+      deathCause: undefined,
     };
     if (def.habitat === 'air') {
       u.alt = opts.alt ?? 6;

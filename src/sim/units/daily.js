@@ -652,7 +652,10 @@ export function installDaily(Units) {
       // (a worker goes back to the brain for real work at once, as after a
       // chore: farmers stood "Resting" between lunch and the afternoon's work)
       const worker = !!u.job && u.job !== 'soldier' && u.job !== 'king';
-      u._dlNext = was === 'chore' || was === 'school' || sq0 || worker || (child && was !== 'goto') ? now + 0.5 : now + (child ? 1.5 : 2) + hash(u.id, (now * 7) | 0) * 2;
+      // (round 31) a worker's next errand comes 0.5-1.5 s on (spread by
+      // person): a shift's meals and chats ending together no longer send
+      // the whole crew back to the brain and the path search on one tick
+      u._dlNext = was === 'chore' || was === 'school' || sq0 || (child && was !== 'goto') ? now + 0.5 : worker ? now + 0.5 + hash(u.id, (now * 7) | 0) : now + (child ? 1.5 : 2) + hash(u.id, (now * 7) | 0) * 2;
       return false;
     }
     if (now < u._dlNext) return false;
