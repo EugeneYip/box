@@ -432,6 +432,13 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   // steep channels: stylised cascades = brighter streaks running downhill, never solid white
   float cascade = flowK * smoothstep(1.2, 3.5, dl);
   col += cascade * streak * foamCol * 0.30;
+  // night: open water is a dark sea that hides the moonlit bed (shallow
+  // lagoons glowed bright teal under the night exposure, round 32); the
+  // moon's glints and the dimmed surf stay on top. Deep water is dark
+  // already and takes less of it.
+  float nightW = (1.0 - smoothstep(0.06, 0.45, uDay)) * (1.0 - outK) * (1.0 - 0.6 * smoothstep(1.5, 5.0, depth));
+  col *= 1.0 - 0.6 * nightW;
+  a = mix(a, 1.0, 0.75 * nightW);
   col = mix(col, foamCol, foam);
   a = mix(a, 1.0, foam);
   col += spec * (1.0 - foam);
