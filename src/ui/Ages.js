@@ -12,7 +12,7 @@ export class AgeChip {
   constructor(ui) {
     this.ui = ui;
     this.game = ui.game;
-    this.el = el('button', { class: 'ws-agechip', type: 'button', 'aria-label': 'World age', onclick: () => ui.modals.toggle('ages') });
+    this.el = el('button', { class: 'ws-agechip', type: 'button', 'aria-label': 'World Age', onclick: () => ui.modals.toggle('ages') });
     this.el.innerHTML = `<svg class="ws-agechip__ring" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.5" class="bg"/><circle cx="12" cy="12" r="9.5" class="fg" pathLength="100" stroke-dasharray="0 100"/></svg><span class="ws-agechip__ico"></span><span class="ws-agechip__txt"><small>Age of</small><b></b></span><i class="ws-agechip__left" aria-hidden="true"></i>`;
     this.fg = this.el.querySelector('.fg');
     this.ico = this.el.querySelector('.ws-agechip__ico');
@@ -24,7 +24,7 @@ export class AgeChip {
     this.left = this.el.querySelector('.ws-agechip__left');
     // (round 29) phones draw no chip: a small age badge on the clock's dial
     // (the age's color and glyph) opens the Ages panel
-    this.dot = el('button', { class: 'ws-agedot', type: 'button', 'aria-label': 'World age', onclick: (e) => (e.stopPropagation(), ui.modals.toggle('ages')) });
+    this.dot = el('button', { class: 'ws-agedot', type: 'button', 'aria-label': 'World Age', onclick: (e) => (e.stopPropagation(), ui.modals.toggle('ages')) });
     this._t = 0;
     this._id = null;
     this.game.events.on('age', () => this.sync(true));

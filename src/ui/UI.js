@@ -192,7 +192,7 @@ export class UI {
     this._lawT = new Map();
     game.events.on('laws', ({ key, value } = {}) => {
       if (key == null) {
-        this.toast('World laws restored to their defaults');
+        this.toast('World Laws restored to their defaults');
         return safe(() => game.notify('The World Laws are restored to their ancient defaults.', 'info'));
       }
       clearTimeout(this._lawT.get(key));

@@ -359,7 +359,7 @@ export class Editor {
           this.toggle('Lock diplomacy', () => pol().lockDiplomacy ?? false, okPol, (v) => setPol('lockDiplomacy', v, !v, v ? 'Relations locked' : 'Relations free'), 'Kings may not undo your decrees'),
           okPol ? null : this.missing(),
         ],
-        { summary: () => (k.policy && Object.keys(k.policy).length ? `${Object.keys(k.policy).length} set by you` : 'Following world laws') },
+        { summary: () => (k.policy && Object.keys(k.policy).length ? `${Object.keys(k.policy).length} set by you` : 'Following the World Laws') },
       ),
     );
   }

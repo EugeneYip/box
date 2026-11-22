@@ -69,7 +69,7 @@ const STAT_DEFS = [
 export const PRESET_NAMES = { continent: 'Continent', pangaea: 'Pangaea', archipelago: 'Archipelago', islands: 'Islands', earth: 'World Map' };
 
 // short captions for the phone rail (the full name is the long-press tip)
-const NAV_CAPTION = { 'World laws': 'Laws', 'World ages': 'Ages', Controls: 'Help', 'New world': 'New' };
+const NAV_CAPTION = { 'World Laws': 'Laws', 'World Ages': 'Ages', Controls: 'Help', 'New World': 'New' };
 
 export class TopBar {
   constructor(ui) {
@@ -88,7 +88,7 @@ export class TopBar {
       { class: 'ws-brand ws-glass' },
       (this.brandBtn = el(
         'button',
-        { class: 'ws-brand__id', type: 'button', 'aria-label': 'Worldseed menu', 'data-tip': 'New world · G', onclick: () => (this.menuMode() ? this.toggleMenu() : ui.modals.toggle('newworld')) },
+        { class: 'ws-brand__id', type: 'button', 'aria-label': 'Worldseed menu', 'data-tip': 'New World · G', onclick: () => (this.menuMode() ? this.toggleMenu() : ui.modals.toggle('newworld')) },
         el('span', { class: 'ws-brand__emblem', html: emblemSvg('', 'brand') }),
         el('span', { class: 'ws-brand__txt' }, el('span', { class: 'ws-brand__name', text: 'Worldseed' }), this.worldLine),
       )),
@@ -96,12 +96,12 @@ export class TopBar {
       el(
         'nav',
         { class: 'ws-nav' },
-        this.navBtn('new-world', 'New world', 'G', () => ui.modals.toggle('newworld')),
+        this.navBtn('new-world', 'New World', 'G', () => ui.modals.toggle('newworld')),
         (this.kBtn = this.navBtn('kingdoms', 'Realms', 'K', () => ui.kingdoms.toggle())),
         this.navBtn('chronicle', 'Chronicle', 'J', () => ui.chronicle.toggle()),
-        this.navBtn('trade', 'World laws', 'L', () => ui.modals.toggle('laws')),
+        this.navBtn('trade', 'World Laws', 'L', () => ui.modals.toggle('laws')),
         (() => {
-          const b = this.navBtn('eclipse', 'World ages', 'Y', () => ui.modals.toggle('ages'));
+          const b = this.navBtn('eclipse', 'World Ages', 'Y', () => ui.modals.toggle('ages'));
           b.classList.add('ws-nav__ages');
           return b;
         })(),
@@ -244,11 +244,11 @@ export class TopBar {
       this.menu = el(
         'div',
         { class: 'ws-menu ws-glass', role: 'menu' },
-        item('new-world', 'New world', () => ui.modals.open('newworld')),
+        item('new-world', 'New World', () => ui.modals.open('newworld')),
         item('kingdoms', 'Realms', () => ui.kingdoms.toggle(true)),
         item('chronicle', 'Chronicle', () => ui.chronicle.toggle(true)),
-        item('trade', 'World laws', () => ui.modals.open('laws')),
-        item('eclipse', 'World ages', () => ui.modals.open('ages')),
+        item('trade', 'World Laws', () => ui.modals.open('laws')),
+        item('eclipse', 'World Ages', () => ui.modals.open('ages')),
         item('settings', 'Settings', () => ui.modals.open('settings')),
         item('help', 'Controls', () => ui.modals.open('help')),
       );
@@ -295,8 +295,8 @@ export class TopBar {
     const menu = this.menuMode();
     // (round 27: no key names on touch screens)
     const g = this.ui.root?.classList.contains('is-touch') ? '' : ' (G)';
-    this.brandBtn.dataset.tip = menu ? `Menu · New world, Realms, World laws, World ages… — ${this._place || ''}` : `Menu · New world${g} — ${this._place || ''}`;
-    this.brandBtn.setAttribute('aria-label', menu ? 'Worldseed menu' : `New world${g}`);
+    this.brandBtn.dataset.tip = menu ? `Menu · New World, Realms, World Laws, World Ages… — ${this._place || ''}` : `Menu · New World${g} — ${this._place || ''}`;
+    this.brandBtn.setAttribute('aria-label', menu ? 'Worldseed menu' : `New World${g}`);
   }
 
   syncSpeed() {
