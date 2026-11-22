@@ -108,3 +108,46 @@
   color: #f6e2a8;
   background: rgba(235, 201, 119, 0.17);
 }
+
+/* ---- inspector header: a side duty is a chip on the line under the name,
+   and the level badge on a portrait says what it counts ("Lv 2") */
+.ws-insp__duty {
+  flex: none;
+  max-width: 100%;
+  padding: 1px 7px 2px;
+  border-radius: 9px;
+  font-style: normal;
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 15px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: color-mix(in srgb, var(--tint) 55%, #fff 45%);
+  background: color-mix(in srgb, var(--tint) 12%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tint) 30%, transparent);
+}
+.ws-insp__sub > span + .ws-insp__duty {
+  margin-left: 2px;
+}
+@media (min-width: 721px) and (min-height: 501px), (max-width: 720px) {
+  .ws-insp__sub {
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+}
+.ws-lvl {
+  display: block;
+  padding: 0 5px;
+  line-height: 20px;
+  text-align: center;
+  white-space: nowrap;
+}
+.ws-lvl small {
+  margin-right: 1px;
+  font-size: 7.5px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  vertical-align: 1px;
+  opacity: 0.78;
+}

@@ -749,7 +749,10 @@ export class Inspector {
     // button and no Heritage switch until it stands
     const isSite = k === 'building' && !craft && !!r.building?.alive && !!r.building.constructing;
     if (isSite) kindLabel = 'Building site';
-    if (u && roleBase && ic.label && roleBase.toLowerCase() !== String(ic.label).toLowerCase()) kindLabel = `${ic.label} · ${roleBase}`;
+    // (round 33) a side duty ("Police officer" beside a builder's job) is a
+    // chip on the line under the name: in the kind row beside the edit, star
+    // and close buttons it wrapped to three lines ("BUILDER · / POLICE / OFFICER")
+    const duty = u && roleBase && ic.label && roleBase.toLowerCase() !== String(ic.label).toLowerCase() ? roleBase : null;
     const realmK = !u && !isSite && (k === 'village' || k === 'kingdom' || k === 'building') ? (typeof r.kingdom === 'object' && r.kingdom) || kingdomOf(this.game, (r.village || this.game.civ?.villages?.[r.building?.village])?.kingdom) : null;
     if (realmK) actions.unshift(`<button class="ws-btn ws-btn--sm" type="button" data-act="tech" data-k="${realmK.id}">${uiIcon('chronicle')}<span>Technology</span></button>`);
     // a building may be marked or unmarked as heritage (never replaced by renewal)
@@ -761,12 +764,12 @@ export class Inspector {
     this.el.innerHTML = `
       <div class="ws-insp__grab" data-act="sheet" aria-hidden="true"><i></i></div>
       <header class="ws-insp__head">
-        <span class="ws-insp__badge${portrait ? ' has-portrait' : ''}${kObj?.banner ? ' has-banner' : ''}">${level != null ? `<i class="ws-lvl" title="Level ${level}">${level}</i>` : ''}${portrait ? `<img class="ws-insp__portrait" src="${portrait}" alt=""><span class="ws-insp__glyph">${ic.svg}</span>` : ic.svg}${kTint ? `<i class="ws-insp__kdot" style="--k:${kTint}"></i>` : ''}</span>
+        <span class="ws-insp__badge${portrait ? ' has-portrait' : ''}${kObj?.banner ? ' has-banner' : ''}">${level != null ? `<i class="ws-lvl" title="Level ${level} of 10" data-tip="Level ${level} of 10: experience from work, fights and the years" aria-label="Level ${level}"><small>Lv</small>${level}</i>` : ''}${portrait ? `<img class="ws-insp__portrait" src="${portrait}" alt=""><span class="ws-insp__glyph">${ic.svg}</span>` : ic.svg}${kTint ? `<i class="ws-insp__kdot" style="--k:${kTint}"></i>` : ''}</span>
         <div class="ws-insp__titles">
           <div class="ws-insp__kind">${esc(kindLabel)}${dead ? ` <em class="ws-insp__dead">${craft ? 'Lost' : 'Fallen'}</em>` : ended ? ` <em class="ws-insp__dead is-arrived${stop?.chip ? ' is-home' : ''}">${esc(ENDED_WORD[craft.endedWhy] || stop?.chip || arrivedWord(craft))}</em>` : ''}</div>
           <h3 class="ws-insp__title">${esc(this.titleOf(r) || 'Unknown')}${epithet ? ` <span class="ws-insp__epithet">${esc(epithet)}</span>` : ''}</h3>
           <div class="ws-insp__fact" data-fact>${esc(this.factLine(r))}</div>
-          ${subShown ? `<div class="ws-insp__sub" data-sub>${craft && ownerK?.banner ? `<img class="ws-crest ws-crest--banner" alt="" src="${bannerURL(ownerK.banner, ownerK.color, 28)}">` : kTint ? `<i class="ws-crest" style="--k:${kTint}"></i>` : ''}<span>${esc(subShown)}</span></div>` : ''}
+          ${subShown || duty ? `<div class="ws-insp__sub" data-sub>${subShown ? `${craft && ownerK?.banner ? `<img class="ws-crest ws-crest--banner" alt="" src="${bannerURL(ownerK.banner, ownerK.color, 28)}">` : kTint ? `<i class="ws-crest" style="--k:${kTint}"></i>` : ''}<span>${esc(subShown)}</span>` : ''}${duty ? `<em class="ws-insp__duty" data-tip="${esc(`Side duty: also serves as ${/^[aeiou]/i.test(duty) ? 'an' : 'a'} ${duty.toLowerCase()}`)}">${esc(duty)}</em>` : ''}</div>` : ''}
         </div>
         ${editable ? `<button class="ws-iconbtn ws-iconbtn--sm ws-insp__edit${editing ? ' is-on' : ''}" type="button" aria-label="${editing ? 'Done editing' : 'Edit'}" data-tip="${editing ? 'Done editing' : 'Edit name, colors and more'}" data-act="${editing ? 'edit-done' : 'edit'}">${uiIcon(editing ? 'check' : 'edit')}</button>` : ''}
         ${starBtn}
