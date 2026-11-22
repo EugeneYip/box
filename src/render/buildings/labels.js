@@ -9,6 +9,14 @@ import { BUILDING } from '../../core/scale.js';
 
 const FONT = 'Cinzel, "Cinzel Variable", Georgia, "Times New Roman", serif';
 
+// (round 29) while town names are on screen a realm's ribbon is drawn at least
+// this many times a town label's height (its letters about 1.3x a town's: the
+// ribbon's letters fill a smaller share of its sprite). Round 28 shrank every
+// ribbon by the number of realms in the whole world, so on the whole Earth
+// "ROC" was 6 px against HONG KONG's 14.
+const TOWN_H = 0.029; // a town label's world height per unit of distance
+const RIBBON_OVER_TOWN = 1.6;
+
 function hexCss(hex, k = 1) {
   const r = Math.min(255, ((hex >> 16) & 255) * k),
     g = Math.min(255, ((hex >> 8) & 255) * k),
@@ -389,11 +397,14 @@ export class Labels {
     const kA = smooth(50, 56, D);
     // far zoom keeps only kingdom names
     const z01 = this.game.view?.zoom01 ?? 0;
-    const vA = smooth(18, 30, D) * (1 - smooth(120, 190, D)) * (1 - smooth(0.4, 0.55, z01)) * (this.game.view?.far ? 0 : 1);
+    // (round 29: a short fade band at 19-22 tiles, not 18-30, so a town's
+    // name never hangs over its hall as a washed-out outline)
+    const vA = smooth(19, 22, D) * (1 - smooth(120, 190, D)) * (1 - smooth(0.4, 0.55, z01)) * (this.game.view?.far ? 0 : 1);
     const cand = [];
     // mid-zoom: only the realm in view and its neighbours are named (all of
     // them at the overview); close in, only the realm in view
     const mid = 1 - smooth(120, 170, D);
+    if (mid <= 0.01) this._focusK = -1;
     if (mid > 0.01 && (this._focusT = (this._focusT || 0) - dt) <= 0) {
       this._focusT = 0.5;
       const tx = Math.floor(rig.cur.x),
@@ -410,10 +421,16 @@ export class Labels {
       }
       const show = (this._focusSet = this._focusSet || new Set());
       show.clear();
+      this._focusK = fk;
       if (fk >= 0) {
         show.add(fk);
         if (D > 80) for (const r of civ.relations?.values?.() || []) if ((r.border || 0) > 0 && (r.a === fk || r.b === fk)) show.add(r.a === fk ? r.b : r.a);
       }
+      // (round 29) every realm with a fair share of land on screen is named
+      // too: on World Map worlds from the moment realm names take over, so
+      // Europe at 90 tiles no longer names the Netherlands alone
+      const wm = g.params?.preset === 'earth';
+      if (D > (wm ? 50 : 80)) for (const id of this._landOnScreen(rig, w)) show.add(id);
     }
     for (const [id, s] of this.kLabels) {
       const k = civ.kingdoms[id];
@@ -429,10 +446,13 @@ export class Labels {
       const y = w.surfaceAt(ax, az) + 2.5 * BUILDING.scale + D * 0.03;
       s.position.set(ax, y, az);
       const dist = cam.distanceTo(s.position);
-      const many = this.kLabels.size > 9 ? Math.max(0.45, 1 - (this.kLabels.size - 9) * 0.03) : 1;
-      const h = Math.max(1.4, dist * 0.032 * many);
+      // many realms in view (not in the whole world) get smaller ribbons, but
+      // never below the town names around them while those are shown
+      const nV = this._nView || 0;
+      const many = nV > 9 ? Math.max(0.6, 1 - (nV - 9) * 0.03) : 1;
+      const h = Math.max(1.4, dist * 0.032 * many, dist * TOWN_H * RIBBON_OVER_TOWN * smooth(0, 0.3, vA));
       s.scale.set(h * s.userData.aspect, h, 1);
-      cand.push({ s, a: kAk, prio: 3 + (k.villages.length || 0) * 0.01 + (this._focusSet?.has(id) ? 0.5 : 0), kid: id });
+      cand.push({ s, a: kAk, prio: 3 + (k.villages.length || 0) * 0.01 + (id === this._focusK ? 0.5 : 0), kid: id, focus: id === this._focusK });
     }
     for (const [id, s] of this.vLabels) {
       const v = civ.villages[id];
@@ -455,7 +475,7 @@ export class Labels {
       const dist = cam.distanceTo(s.position);
       // (about 12 px capitals on screen: at 0.02 a town's name was ~8 px
       // capitals at 30 tiles, hard to read)
-      const h = Math.max(0.8, dist * 0.029);
+      const h = Math.max(0.8, dist * TOWN_H);
       s.scale.set(h * s.userData.aspect, h, 1);
       cand.push({ s, a, prio: (isCap ? 2 : 1) + (v.pop || 0) * 0.001 });
     }
@@ -482,8 +502,42 @@ export class Labels {
       sp.scale.set(h, h, 1);
       cand.push({ s: sp, a: sA, prio: 2.5 });
     }
+    this._townOn = smooth(0, 0.3, vA);
     this._declutter(cand, dt);
     this.batch.draw([this.vLabels, this.kLabels, this.swords]);
+  }
+
+  // Realms owning at least two of a grid of ground points across the screen's
+  // open area (inside the HUD margins).
+  _landOnScreen(rig, w) {
+    const out = (this._landIds = this._landIds || new Set());
+    out.clear();
+    const cam = rig.camera;
+    if (!w?.owner || !cam) return out;
+    const V = cam.position.constructor;
+    const p = this._lp || (this._lp = new V()),
+      d = this._ld || (this._ld = new V());
+    const y0 = w.surfaceAt?.(rig.cur.x, rig.cur.z) ?? 0;
+    const cnt = (this._landCnt = this._landCnt || new Map());
+    cnt.clear();
+    const NX = 11,
+      NY = 7;
+    for (let j = 0; j < NY; j++)
+      for (let i = 0; i < NX; i++) {
+        const sx = 0.04 + (0.78 - 0.04) * (i / (NX - 1)),
+          sy = 0.14 + (0.86 - 0.14) * (j / (NY - 1));
+        p.set(sx * 2 - 1, -(sy * 2 - 1), 0.5).unproject(cam);
+        d.copy(p).sub(cam.position);
+        if (d.y >= -1e-6) continue;
+        const t = (y0 - cam.position.y) / d.y;
+        const x = Math.floor(cam.position.x + d.x * t),
+          z = Math.floor(cam.position.z + d.z * t);
+        if (!w.inBounds?.(x, z)) continue;
+        const o = w.owner[z * w.w + x];
+        if (o >= 0) cnt.set(o, (cnt.get(o) || 0) + 1);
+      }
+    for (const [id, n] of cnt) if (n >= 2) out.add(id);
+    return out;
   }
 
   // Hide labels that collide with a higher-priority label or with the HUD.
@@ -515,9 +569,23 @@ export class Labels {
     // (Japan beside the two Chinas, the Low Countries) all fit
     let nK = 0;
     for (const c of cand) if (c.prio >= 3 && c.a > 0.01) nK++;
-    const kMax = Math.max(20, Math.min(44, H * 0.055) * Math.max(0.62, Math.min(1, 1 - (nK - 8) * 0.022)));
     const world = this.game.world;
     const fovK = H / (2 * Math.tan((cam.fov * Math.PI) / 360));
+    // realms counted for the ribbon size are the ones whose seat is in view
+    const vp = this._v3 || (this._v3 = new (cam.position.constructor)());
+    let nView = 0;
+    for (const c of cand)
+      if (c.prio >= 3 && c.a > 0.01) {
+        vp.copy(c.s.position).project(cam);
+        if (vp.z <= 1 && vp.z >= -1 && Math.abs(vp.x) <= 1 && Math.abs(vp.y) <= 1) nView++;
+      }
+    this._nView = nView;
+    // (round 29) while towns are named, the cap on a ribbon's height stays
+    // above a town label's own on-screen height, so a ribbon is never the
+    // smaller name
+    const townOn = this._townOn || 0;
+    const townPx = Math.min(52, TOWN_H * fovK);
+    const kMax = Math.max(20, Math.min(44, H * 0.055) * Math.max(0.62, Math.min(1, 1 - (nView - 8) * 0.022)), townPx * RIBBON_OVER_TOWN * townOn);
     const v = this._v || (this._v = new (cam.position.constructor)());
     cand.sort((a, b) => b.prio - a.prio);
     const taken = [];
@@ -592,12 +660,16 @@ export class Labels {
         // with a slightly smaller ribbon before giving the name up
         // (round 27: a third, smaller try and the wider spots below, so a
         // crowded realm such as the Netherlands is nudged aside, not dropped)
-        for (const k of [1, 0.8, 0.62]) {
+        // (round 29: while town names are shown a ribbon shrinks only a
+        // little, so it stays larger than them; the realm in view may go one
+        // step further before it gives its name up)
+        const tries = townOn > 0.5 ? (c.focus ? [1, 0.92, 0.82] : [1, 0.92]) : [1, 0.8, 0.62];
+        for (const k of tries) {
           const w2 = pw * k,
             h2 = ph * k;
           const x0 = Math.min(right - w2 / 2, Math.max(mLeft + w2 / 2, sx)),
             y0 = Math.min(bot - h2 / 2, Math.max(top + h2 / 2, sy));
-          for (const [dx, dy] of k < 0.7 ? LABEL_SPOTS_WIDE : LABEL_SPOTS) {
+          for (const [dx, dy] of k === tries[tries.length - 1] && tries.length > 2 ? LABEL_SPOTS_WIDE : LABEL_SPOTS) {
             const yy = y0 + dy * h2,
               xx = Math.min(right - w2 / 2, Math.max(mLeft + w2 / 2, x0 + dx * w2));
             if (yy - h2 / 2 < top || yy + h2 / 2 > bot) continue;

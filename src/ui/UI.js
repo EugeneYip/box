@@ -101,6 +101,7 @@ export class UI {
     // the age chip and the actual-speed note share one row under the clock: the
     // chip stays centered and the note hangs to its right, so neither moves the other
     this.ageRow = el('div', { class: 'ws-agerow' }, this.ageChip.el, this.topbar.effEl);
+    this.topbar.dialEl.append(this.ageChip.dot);
     this.topbar.centre.insertBefore(this.ageRow, this.topbar.pausedEl);
     this.ageBanner = new AgeBanner(this);
     // Overview replaces the always-on minimap (M)

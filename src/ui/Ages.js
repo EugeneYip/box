@@ -22,6 +22,9 @@ export class AgeChip {
     // placed inside the fixed-width box, so nothing moves; shown only where
     // the title leaves room for it
     this.left = this.el.querySelector('.ws-agechip__left');
+    // (round 29) phones draw no chip: a small age badge on the clock's dial
+    // (the age's color and glyph) opens the Ages panel
+    this.dot = el('button', { class: 'ws-agedot', type: 'button', 'aria-label': 'World age', onclick: (e) => (e.stopPropagation(), ui.modals.toggle('ages')) });
     this._t = 0;
     this._id = null;
     this.game.events.on('age', () => this.sync(true));
@@ -35,17 +38,23 @@ export class AgeChip {
       this.el.style.setProperty('--age', hexCss(a.color));
       this.title.textContent = a.title || a.name;
       this.ico.innerHTML = uiIcon(ageGlyph(a.id));
+      this.dot.style.setProperty('--age', hexCss(a.color));
+      this.dot.innerHTML = uiIcon(ageGlyph(a.id));
     }
     const p = Math.max(0, Math.min(1, a.progress || 0));
     this.fg.setAttribute('stroke-dasharray', `${(p * 100).toFixed(1)} 100`);
     const left = Math.max(0, Math.round(((1 - p) * (a.duration || 0)) / YEAR));
     const lasting = this.game.laws?.ageCycle === false;
     this.el.dataset.tip = `${a.name} — ${lasting ? 'lasts until you call another' : `about ${left} years remain`}`;
+    const dl = `${a.name}, ${lasting ? 'lasting until you call another' : `about ${left} years left`}. Open the Ages panel`;
+    if (this.dot.getAttribute('aria-label') !== dl) this.dot.setAttribute('aria-label', dl);
     const note = lasting || !(a.duration > 0) ? '' : `${left}y`;
     if (this.left.textContent !== note) this.left.textContent = note;
     // room for it: the words end before the note begins (measured in the box)
     const cw = this.el.clientWidth;
-    const room = note && cw > 0 ? cw - (this.txt.offsetLeft + this.txt.scrollWidth) - (this.left.offsetWidth || 0) - 14 : -1;
+    // (round 29: the chip is sized for the longest title plus the note, so
+    // it shows for Tempests and Twilight too)
+    const room = note && cw > 0 ? cw - (this.txt.offsetLeft + this.txt.scrollWidth) - (this.left.offsetWidth || 0) - 6 : -1;
     this.left.classList.toggle('is-on', room >= 0);
   }
   update(dt) {
