@@ -109,6 +109,15 @@ function makeLabel(text, color, kind, banner = null) {
   }
   const sp = labelNode(c);
   sp.userData.aspect = c.width / c.height;
+  // (round 33) the part of the sprite that is drawn (the ribbon's plate or
+  // the town's pill), as shares of its width and height from the top left:
+  // the HUD and overlap tests use it, not the transparent margin round it
+  {
+    const ph = big ? px * 0.95 : px + 8,
+      py = big ? cy : cy + 1,
+      ix = big ? 8 : 2;
+    sp.userData.plate = { l: ix / c.width, r: 1 - ix / c.width, t: (py - ph / 2) / c.height, b: (py + ph / 2) / c.height };
+  }
   // capital height as a share of the sprite's (sizes are set in capitals on screen)
   let capPx = px * 0.7;
   try {
@@ -629,30 +638,65 @@ export class Labels {
     return out;
   }
 
+  // The boxes of what can be seen of the HUD: the top bar's pieces, the
+  // feed's cards, the camera pad, the coach card, the minimap, the toolbar,
+  // the favorites, the open inspector and the other glass panels. Faded-out
+  // panels are skipped; a container (the dock, the feed, the toolbar) gives
+  // way to the panels inside it, whose boxes are what it shows.
+  _readHud(W, H) {
+    const out = [];
+    try {
+      const root = document.getElementById('ui-root') || document.body;
+      if (root.classList?.contains('is-photo')) return out;
+      const shown = [];
+      for (const el of root.querySelectorAll('.ws-glass, .ws-feed__item, .ws-campad, .ws-coach, .ws-map, .ws-insp.is-open, .hud-panel, [class*="panel"], [class*="toolbar"], [class*="feed"], [class*="minimap"], [class*="chip"], [class*="badge"], [class*="topbar"], [class*="dock"]')) {
+        if (el.closest('.ws-ovlabels')) continue;
+        const r = el.getBoundingClientRect();
+        if (!(r.width > 4 && r.height > 4 && r.width < W * 0.95 && r.height < H * 0.95)) continue;
+        if (r.right < 0 || r.left > W || r.bottom < 0 || r.top > H) continue;
+        let op = 1;
+        for (let a = el; a && a !== root && op > 0.05; a = a.parentElement) {
+          const cs = getComputedStyle(a);
+          if (cs.visibility === 'hidden' || cs.display === 'none') op = 0;
+          else op *= +cs.opacity;
+        }
+        if (op > 0.05) shown.push([el, r]);
+      }
+      const box = /dock|toolbar|tray|ws-feed(?!__)|mapwrap|panels\b/;
+      for (const [el, r] of shown) {
+        const cls = typeof el.className === 'string' ? el.className : '';
+        if (box.test(cls) && shown.some(([m]) => m !== el && el.contains(m))) continue;
+        out.push({ l: r.left, r: r.right, t: r.top, b: r.bottom });
+      }
+    } catch {
+      /* no DOM */
+    }
+    return out;
+  }
+
   // Hide labels that collide with a higher-priority label or with the HUD.
   _declutter(cand, dt) {
     const rig = this.game.cameraRig;
     const cam = rig.camera;
     const W = innerWidth,
       H = innerHeight;
-    this._hudT = (this._hudT || 0) - dt;
-    if (this._hudT <= 0) {
-      this._hudT = 1;
-      this._hud = [];
-      try {
-        for (const el of document.querySelectorAll('#ui-root .hud-panel, #ui-root [class*="panel"], #ui-root [class*="toolbar"], #ui-root [class*="feed"], #ui-root [class*="minimap"], #ui-root [class*="chip"], #ui-root [class*="badge"], #ui-root [class*="topbar"], #ui-root [class*="dock"], #ui-root [class*="glass"]')) {
-          const r = el.getBoundingClientRect();
-          if (r.width > 4 && r.height > 4 && getComputedStyle(el).visibility !== 'hidden' && r.width < W * 0.95) this._hud.push(r);
-        }
-      } catch {
-        /* no DOM */
-      }
+    // (round 33) the HUD's boxes are read again every 0.4 s of wall-clock
+    // time: on drawn-frame time (capped at 0.1 s a frame) a slow GPU read
+    // them once a minute, so a ribbon placed before the feed's cards came in
+    // stayed under them (MAINLAND REGION under the feed on the whole Earth)
+    const now = performance.now();
+    const fresh = !this._hud || now - (this._hudAt || 0) > 400 || this._hudW !== W || this._hudH !== H;
+    if (fresh) {
+      this._hudAt = now;
+      this._hudW = W;
+      this._hudH = H;
+      this._hud = this._readHud(W, H);
     }
     const uiOn = this.game.params?.ui !== false;
     // HUD-safe margins that scale with the screen (phones and tablets in portrait)
     // (round 31: the right margin is the open inspector's own edge, else
     // small: the panels themselves are in the HUD list)
-    if (this._hudT === 1 || this._inspL === undefined) {
+    if (fresh || this._inspL === undefined) {
       this._inspL = null;
       try {
         const r = document.querySelector('.ws-insp.is-open')?.getBoundingClientRect();
@@ -728,9 +772,20 @@ export class Labels {
         pw *= k;
       }
       const rect = { l: sx - pw / 2, r: sx + pw / 2, t: sy - ph / 2, b: sy + ph / 2 };
+      const pl = sp.userData.plate;
       const hits = (r) => {
         for (const o of taken) if (r.l < o.r && r.r > o.l && r.t < o.b && r.b > o.t) return true;
-        if (uiOn) for (const h of this._hud) if (r.l < h.right && r.r > h.left && r.t < h.bottom && r.b > h.top) return true;
+        if (uiOn) {
+          // (round 33) the drawn plate, a few px clear of every panel
+          const rw = r.r - r.l,
+            rh = r.b - r.t;
+          const l = pl ? r.l + pl.l * rw : r.l,
+            rr = pl ? r.l + pl.r * rw : r.r,
+            t = pl ? r.t + pl.t * rh : r.t,
+            b = pl ? r.t + pl.b * rh : r.b;
+          const M = c.prio >= 3 ? 5 : 2;
+          for (const h of this._hud) if (l - M < h.r && rr + M > h.l && t - M < h.b && b + M > h.t) return true;
+        }
         return false;
       };
       // a realm whose seat lies off screen is not named at the screen edge
