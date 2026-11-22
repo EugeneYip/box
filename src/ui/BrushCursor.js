@@ -4,6 +4,8 @@ import { UNIT, VEHICLE } from '../core/scale.js';
 
 // a craft's drawn length in world units (its design length at the craft scale)
 const craftLen = (o) => (o?.def?.length || 1) * VEHICLE.rel * (o?.def?.road ? 1.15 : 1);
+// (round 33) building hover outlines only up to about this camera distance (tiles)
+const HOVER_BUILDING_MAX = 40;
 
 // Ground cursor for god powers, drawn as terrain-conforming meshes:
 //   * brush powers: a soft glowing rim, a falloff-shaded fill (denser at the
@@ -524,7 +526,10 @@ export class BrushCursor {
         this.hover.build(Math.max(0.03, lineW * 0.6), lift, g.world.surfaceAt(o.x, o.z), 0.25);
         this.hover.style(this.white, 0.6, this.t, 0, 0, 0.6, 0.3);
         hovered = true;
-      } else if (o && o !== sel && tg.kind === 'building') {
+      } else if (o && o !== sel && tg.kind === 'building' && !g.cameraRig.follow && dist <= HOVER_BUILDING_MAX) {
+        // (round 33) no building outline while following someone (the hall
+        // under the resting cursor was framed as the town slid by) nor from
+        // world-map heights (a white frame sat on Taipei at 54-75 tiles)
         this.hover.square(o.tx - 0.06, o.ty - 0.06, o.tx + (o.w || 1) + 0.06, o.ty + (o.h || 1) + 0.06);
         this.hover.build(Math.max(0.04, lineW * 0.6), lift, g.world.surfaceAt(o.x, o.z), 0.8);
         this.hover.style(this.white, 0.5, this.t, 0, 0, 0.6, 0.25);
