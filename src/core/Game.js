@@ -476,9 +476,39 @@ export class Game {
         window.__error = String(err && err.stack ? err.stack : err);
       }
       window.__frames = this.frame;
+      this._rafAt = performance.now();
       this._raf = requestAnimationFrame(loop);
     };
     this._raf = requestAnimationFrame(loop);
+    // (round 29) Animation frames stop coming while the GPU side is busy with
+    // a heavy frame (software GL: the browser's compositor waits on the same
+    // GPU thread, 4-9 s at close zoom), although the main thread is idle.
+    // Live play then advanced only with the few animation frames that came
+    // (0.2x real time). While none has come for a while, a timer steps the
+    // simulation, input, camera, interface and audio as a held frame does;
+    // drawing stays with the animation frames. On a GPU that keeps up the
+    // timer finds a recent animation frame and does nothing; a hidden tab
+    // pauses as before.
+    this._rafAt = performance.now();
+    const pump = () => {
+      if (this.disposed) return;
+      this._pumpT = setTimeout(pump, 50);
+      const now = performance.now();
+      if (now - this._rafAt < 120 || now - last < 120) return;
+      if (window.__hold || this._leavingT || document.visibilityState === 'hidden') {
+        last = now;
+        return;
+      }
+      const dt = Math.min(0.5, Math.max(0, (now - last) / 1000));
+      last = now;
+      try {
+        this.frameStep(dt, false);
+      } catch (err) {
+        console.error(err);
+        window.__error = String(err && err.stack ? err.stack : err);
+      }
+    };
+    this._pumpT = setTimeout(pump, 50);
   }
 
   // Page teardown: stop the frame loop, free the renderer's GPU resources and
@@ -493,6 +523,7 @@ export class Game {
     this.disposed = true;
     if (this._raf) cancelAnimationFrame(this._raf);
     this._raf = 0;
+    clearTimeout(this._pumpT);
     removeEventListener('pagehide', this._onPageHide);
     removeEventListener('visibilitychange', this._onHidden);
     removeEventListener('beforeunload', this._onLeaving);
