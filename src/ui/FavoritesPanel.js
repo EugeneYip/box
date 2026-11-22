@@ -122,8 +122,15 @@ export class FavoritesPanel {
   place() {
     const st = this.el.style;
     const desk = matchMedia('(min-width: 721px) and (min-height: 501px)').matches;
-    const dock = this.ui.toolbar?.el;
-    const t = desk && dock ? dock.getBoundingClientRect() : null;
+    // the tray's visible panel (the dock's own box also spans a hidden
+    // power bar above it), or the power bar when one is shown
+    const tb = this.ui.toolbar;
+    let t = desk && tb?.panel ? tb.panel.getBoundingClientRect() : null;
+    const br = tb?.brush?.el;
+    if (t && br?.classList.contains('is-shown')) {
+      const b = br.getBoundingClientRect();
+      if (b.height > 0 && b.top < t.top) t = { left: Math.min(t.left, b.left), right: Math.max(t.right, b.right), top: b.top, width: Math.max(t.right, b.right) - Math.min(t.left, b.left), height: t.bottom - b.top };
+    }
     const r = this.el.getBoundingClientRect();
     const H = innerHeight;
     if (t && t.width > 40 && t.height > 20 && t.top < H && t.left < r.right + 10 && t.right > r.left - 10) {
