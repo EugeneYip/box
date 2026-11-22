@@ -293,8 +293,10 @@ export class TopBar {
   // and on short screens the emblem is the menu), then the whole world line
   brandTip() {
     const menu = this.menuMode();
-    this.brandBtn.dataset.tip = menu ? `Menu · New world, Realms, World laws, World ages… — ${this._place || ''}` : `Menu · New world (G) — ${this._place || ''}`;
-    this.brandBtn.setAttribute('aria-label', menu ? 'Worldseed menu' : 'New world (G)');
+    // (round 27: no key names on touch screens)
+    const g = this.ui.root?.classList.contains('is-touch') ? '' : ' (G)';
+    this.brandBtn.dataset.tip = menu ? `Menu · New world, Realms, World laws, World ages… — ${this._place || ''}` : `Menu · New world${g} — ${this._place || ''}`;
+    this.brandBtn.setAttribute('aria-label', menu ? 'Worldseed menu' : `New world${g}`);
   }
 
   syncSpeed() {

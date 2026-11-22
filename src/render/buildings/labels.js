@@ -634,7 +634,10 @@ export class Labels {
       }
       // (each placed name keeps a margin round it, so two realm ribbons never
       // sit edge to edge: round 24 had two nearly touching on the overview)
-      if (target > 0.02) {
+      // (round 27: only a clearly visible name reserves its place; a faint
+      // realm ribbon fading in no longer drops its capital's name, Taipei
+      // under the ROC's on the whole Earth)
+      if (target > 0.3) {
         const gx = c.prio >= 3 ? 14 : 5,
           gy = c.prio >= 3 ? 6 : 2;
         taken.push({ l: rect.l - gx, r: rect.r + gx, t: rect.t - gy, b: rect.b + gy });
