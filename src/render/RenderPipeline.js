@@ -80,6 +80,7 @@ export class RenderPipeline {
     // (looked up now, so the page teardown can drop the context without a
     // round trip to the GPU side: see Game.dispose)
     this._loseExt = renderer.getContext().getExtension('WEBGL_lose_context');
+    this._bootT = performance.now();
     this.dynScale = 1; // dynamic resolution factor (opt-in)
     this.saverScale = game.settings?.powerSaver ? SAVER_SCALE : 1; // applied power-saver resolution factor
     this._saverT = 0; // seconds since the saver was toggled
@@ -290,8 +291,16 @@ export class RenderPipeline {
   // scene is looked over again and any material that has no program yet (a
   // new era's buildings and vehicles, new effects) is warmed the same way.
   // (?warm=0 turns it off, for measuring)
+  // (round 27) It starts after 24 drawn frames or 15 s after boot, whichever
+  // comes first (and once the composer exists, so programs are compiled for
+  // its target): on a slow GPU, where the loop holds frames while the last
+  // one is drawn, 24 frames could take many minutes. Game.frameStep calls it
+  // on held frames too.
   warmPrograms() {
-    if (this._progWarm || (this.game.frame || 0) < 24) return;
+    if (this._progWarm) return;
+    const f = this.game.frame || 0;
+    if (f < 24 && (f < 2 || performance.now() - this._bootT < 15000)) return;
+    if (this.tier.post && !this.failed && !this.composer) return;
     this._progWarm = true;
     if (typeof location !== 'undefined' && /[?&]warm=0\b/.test(location.search)) return;
     const r = this.renderer;
