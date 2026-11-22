@@ -239,7 +239,9 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   // (round 23: a wider spread and a warped third scale, so an islet's
   // shallows are no longer one even turquoise oval)
   vec2 wq = p + (texture2D(uNoise, p * (1.0 / 31.0) + 0.47).rg - 0.5) * 9.0;
-  float n47 = texture2D(uNoise, wq * (1.0 / 47.0) + 0.23).g, n15 = texture2D(uNoise, wq * (1.0 / 15.0) + 0.61).b;
+  // (n15 reads a smooth channel: the ridged one (B) has thin crests along its
+  // isolines, which drew dark veins and rings over the shallow sand, round 28)
+  float n47 = texture2D(uNoise, wq * (1.0 / 47.0) + 0.23).g, n15 = texture2D(uNoise, wq * (1.0 / 15.0) + 0.61).r;
   float depthN = depth * (0.62 + 0.48 * n47 + 0.34 * n15);
   vec3 scat = mix(waterShallowColorV(scatVis), waterDeepColorV(scatVis), waterDeepMix(depthN));
   // shallow flats: patches of pale sand and darker weed and rock beds under

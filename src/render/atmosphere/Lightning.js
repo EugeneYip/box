@@ -270,6 +270,18 @@ export class Lightning {
       }
     }
     this.bolts = this.bolts.filter((b) => b.age < b.life);
+    // the world flash follows where the strike is on screen: full at the
+    // centre, weaker toward the edges, none for a strike off screen, and at
+    // most about 0.15 from the overview (round 28: every bolt whitened the
+    // whole frame, even far out at the overview)
+    const cap = 1 - 0.85 * THREE.MathUtils.smoothstep(camDist, 35, 150);
+    let strokeW = 0;
+    for (const b of this.bolts) {
+      const q = (this._sp || (this._sp = new THREE.Vector3())).set(b.x, b.y, b.z).project(camera);
+      const on = q.z < 1 && Math.abs(q.x) < 1.1 && Math.abs(q.y) < 1.1;
+      b.screenW = on ? (1 - 0.7 * THREE.MathUtils.smoothstep(Math.hypot(q.x, q.y), 0.15, 1.2)) * cap : 0;
+      if (b.age >= 0 && b.stroke >= 0 && b.age - b.strokes[b.stroke] < dt + 1e-4) strokeW = Math.max(strokeW, b.screenW);
+    }
     let vi = 0;
     const camPos = camera.position;
     const core = 0.05 + camDist * 0.0022;
@@ -304,7 +316,7 @@ export class Lightning {
     let ii = 0;
     for (const b of this.bolts) {
       const flashB = this.brightness(b);
-      flash = Math.max(flash, flashB);
+      flash = Math.max(flash, flashB * (b.screenW ?? 1));
       // the ionised channel keeps a faint glow between the return strokes, so
       // a bolt stays visible for about half a second (not only for the scene
       // flash, which stays on the strobe curve)
@@ -331,6 +343,6 @@ export class Lightning {
     for (const k of ['position', 'aEdge', 'aGlow', 'aBright']) this.geo.attributes[k].needsUpdate = true;
     this.mesh.visible = vi > 0;
     this.star.visible = this.bolts.length > 0;
-    return { flash, strokes };
+    return { flash, strokes, strokeW };
   }
 }
