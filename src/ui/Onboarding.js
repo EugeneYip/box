@@ -75,9 +75,19 @@ export class Onboarding {
       ),
     );
     this.el.classList.remove('is-shown');
+    // (round 31) the card is placed for its step at once, with no slide from
+    // the last step's spot (on a slow device it sat at the old place for
+    // seconds); later small moves still glide
+    this.el.classList.add('is-placing');
+    this._t = 0.3;
+    this.place();
     void this.el.offsetWidth;
     this.el.classList.add('is-shown');
-    this.place();
+    clearTimeout(this._placingT);
+    this._placingT = setTimeout(() => {
+      this.place();
+      this.el.classList.remove('is-placing');
+    }, 450);
   }
 
   complete(what) {

@@ -103,6 +103,7 @@ export class FavoritesPanel {
       this.render();
     }
     this.el.classList.toggle('is-open', open);
+    if (!open) this.tail?.classList.remove('is-shown');
     ui.root.classList.toggle('has-side', open || !!ui.kingdoms?.open || !!ui.chronicle?.open);
     if (ui.favBtn) {
       ui.favBtn.classList.toggle('is-on', open);
@@ -138,10 +139,34 @@ export class FavoritesPanel {
       const maxH = Math.max(160, Math.floor(t.top - 10 - 104));
       if (st.bottom !== bottom + 'px') st.bottom = bottom + 'px';
       if (st.maxHeight !== maxH + 'px') st.maxHeight = maxH + 'px';
+      this.placeTail(true);
     } else {
       if (st.bottom) st.removeProperty('bottom');
       if (st.maxHeight) st.removeProperty('max-height');
+      this.placeTail(false);
     }
+  }
+
+  // (round 31) lifted above the tray, the panel keeps a short stem down to
+  // its own button (it floated 74 px above it with nothing joining them)
+  placeTail(on) {
+    if (!this.tail) {
+      this.tail = document.createElement('i');
+      this.tail.className = 'ws-favs__tail';
+      this.tail.setAttribute('aria-hidden', 'true');
+      this.el.parentElement?.append(this.tail);
+    }
+    const btn = on && this.open ? this.ui.root.querySelector('.ws-favbtn') : null;
+    const pr = this.el.getBoundingClientRect();
+    const br = btn?.getBoundingClientRect();
+    const gap = br ? br.top - pr.bottom : 0;
+    if (!br || br.width < 4 || gap < 6) {
+      this.tail.classList.remove('is-shown');
+      return;
+    }
+    const x = Math.round(Math.max(pr.left + 18, Math.min(pr.right - 18, br.left + 26)));
+    Object.assign(this.tail.style, { left: `${x}px`, top: `${Math.round(pr.bottom)}px`, height: `${Math.round(gap)}px` });
+    this.tail.classList.add('is-shown');
   }
 
   pickInspect() {
