@@ -445,7 +445,12 @@ export class Labels {
     const rig = g.cameraRig;
     if (!civ || !rig) return;
     this._t += dt;
-    this._syncT = (this._syncT || 0) - dt;
+    // (round 33) on wall-clock time: on drawn-frame time (capped at 0.1 s a
+    // frame) a slow GPU named a new realm or town only after a minute
+    const nowS = performance.now();
+    const rdt = Math.min(1, (nowS - (this._syncAt || nowS)) / 1000);
+    this._syncAt = nowS;
+    this._syncT = (this._syncT || 0) - rdt;
     if (this._syncT <= 0) {
       this._syncT = 0.75;
       this._sync();
