@@ -101,6 +101,7 @@ export class UI {
     // the age chip and the actual-speed note share one row under the clock: the
     // chip stays centered and the note hangs to its right, so neither moves the other
     this.ageRow = el('div', { class: 'ws-agerow' }, this.ageChip.el, this.topbar.effEl);
+    this.topbar.dialEl.append(this.ageChip.dot);
     this.topbar.centre.insertBefore(this.ageRow, this.topbar.pausedEl);
     this.ageBanner = new AgeBanner(this);
     // Overview replaces the always-on minimap (M)
@@ -1168,10 +1169,25 @@ export class UI {
         this.togglePhoto();
         break;
       case 'KeyF':
-        if (this.inspector.open && this.inspector.track?.unit) this.inspector.toggleFollow();
+        if (this.inspector.open && this.inspector.followTarget()) this.inspector.toggleFollow();
         break;
       default:
         break;
+    }
+  }
+
+  stripKeyNames() {
+    // (a lone digit only after "speed": other tips may end in a number)
+    const KEY = String.raw`(?:[A-Z]|F\d{1,2}|Space|Esc|Enter|Tab|\x60|1–5|1-5)`;
+    const tipRe = new RegExp(String.raw`(?:\s+·\s+${KEY}|(?<=speed)\s+·\s+\d)$`);
+    const ariaRe = new RegExp(String.raw`\s*\(${KEY}\)$`);
+    for (const e of this.root.querySelectorAll('[data-tip]')) {
+      const t = e.getAttribute('data-tip');
+      if (t && tipRe.test(t)) e.setAttribute('data-tip', t.replace(tipRe, ''));
+    }
+    for (const e of this.root.querySelectorAll('[aria-label]')) {
+      const t = e.getAttribute('aria-label');
+      if (t && ariaRe.test(t)) e.setAttribute('aria-label', t.replace(ariaRe, ''));
     }
   }
 
@@ -1221,6 +1237,15 @@ export class UI {
       }, null, 'title labels');
     }
     for (const p of this.parts) safe(() => p.update(dt), null, p.constructor.name);
+    // (round 29) touch screens: no desktop key names in tips or labels
+    // ("Pause · Space", "1× speed · 1", "Overview (M)"); swept every 1.5 s
+    if (this.root.classList.contains('is-touch')) {
+      const now = performance.now();
+      if (!(now - (this._keysT || 0) < 1500)) {
+        this._keysT = now;
+        safe(() => this.stripKeyNames(), null, 'touch key names');
+      }
+    }
     // (round 27) the screen area the HUD leaves visible, for the camera's
     // framing of a followed unit (measured a few times a second while following)
     this._vrT = (this._vrT || 0) - dt;

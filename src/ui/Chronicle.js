@@ -24,6 +24,11 @@ export const FILTERS = [
   { id: 'realm', name: 'Realms' },
   { id: 'settle', name: 'Settlements' },
   { id: 'age', name: 'Ages' },
+  // (round 29) "Other" held 64 of 73 entries: technology, trade and daily
+  // life have filters of their own
+  { id: 'tech', name: 'Technology' },
+  { id: 'trade', name: 'Trade' },
+  { id: 'life', name: 'Daily life' },
   { id: 'other', name: 'Other' },
 ];
 const EMOJI_ICON = { '🤝': 'alliance', '⚔': 'war', '🕊': 'make-peace', '🔥': 'fire', '⚑': 'banner', '✊': 'rebellion', '✨': 'golden-age', '👑': 'crown', '💀': 'kill' };
@@ -52,6 +57,9 @@ const RULES = [
   [/has fallen|absorbed|is no more|collapses/, 'realm', 'kill'],
   [/moves its capital|capital/, 'realm', 'banner'],
   [/is founded at|strike out on their own|proclaim|new realm|kingdom of/, 'realm', 'banner'],
+  [/\bfirst\b|master|discover|learn|invent|research|enters? the .*\b(age|era)\b|\bera\b|launch|satellite|starship|space|survey|explorers|chart/, 'tech', 'chronicle'],
+  [/trade|caravan|market|merchant|cargo|goods|harbor|\bport\b|convoy|ships?\b|shipment|fleet|galley|sails?\b|ferry|truck|train|rail/, 'trade', 'trade'],
+  [/marr|\bwed|is born|festival|feast|\bfair\b|people|culture|become the|emerges|hero|legend|earns the title|reaches level|named the|sing|danc|wander|healer|school|lesson/, 'life', 'spawn-human'],
   [/plenty|harvest|granar/, 'settle', 'bountiful-harvest'],
   [/grown into|becomes a (town|city)/, 'settle', 'found-kingdom'],
   [/abandoned|razed/, 'settle', 'raze'],

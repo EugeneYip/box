@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 import { powerIcon } from './icons.js';
-import { UNIT } from '../core/scale.js';
+import { UNIT, VEHICLE } from '../core/scale.js';
+
+// a craft's drawn length in world units (its design length at the craft scale)
+const craftLen = (o) => (o?.def?.length || 1) * VEHICLE.rel * (o?.def?.road ? 1.15 : 1);
 
 // Ground cursor for god powers, drawn as terrain-conforming meshes:
 //   * brush powers: a soft glowing rim, a falloff-shaded fill (denser at the
@@ -515,7 +518,7 @@ export class BrushCursor {
       const o = tg?.ref;
       if (o && o !== sel && tg.kind !== 'building') {
         const sz = (o.scale || 1) * (o.def?.size || 1);
-        const rw = tg.kind === 'unit' ? 0.42 * sz * UNIT.rel + 0.09 : 0.3 + (o.def?.length || 1) * 0.4;
+        const rw = tg.kind === 'unit' ? 0.42 * sz * UNIT.rel + 0.09 : 0.62 * craftLen(o) + 0.04;
         const r = Math.max(rw, 8 * this.pxAt(o.x, o.y ?? g.world.surfaceAt(o.x, o.z), o.z));
         this.hover.circle(o.x, o.z, r);
         this.hover.build(Math.max(0.03, lineW * 0.6), lift, g.world.surfaceAt(o.x, o.z), 0.25);
@@ -547,7 +550,10 @@ export class BrushCursor {
     if (uiOn && ref && ref.alive !== false && ref.x != null) {
       let r;
       if (s.kind === 'building') r = Math.max(1, Math.max(ref.w || 1, ref.h || 1) * 0.72);
-      else if (s.kind === 'vessel') r = 0.45 + (ref.def?.length || 1) * 0.55;
+      // (round 29) a craft's ring is about 1.3 times its length across (it
+      // was 0.45 + 0.55 x length from before craft were halved: ~520 px round
+      // a truck at the closest zoom), never under ~9 px
+      else if (s.kind === 'vessel') r = Math.max(0.65 * craftLen(ref) + 0.04, 9 * this.pxAt(ref.x, ref.y ?? g.world.surfaceAt(ref.x, ref.z), ref.z));
       // (round 25) half-size creatures: a ring sized to the body, never under ~9 px
       else r = Math.max(0.5 * (ref.scale || 1) * (ref.def?.size || 1) * UNIT.rel + 0.14, 9 * this.pxAt(ref.x, ref.y ?? g.world.surfaceAt(ref.x, ref.z), ref.z));
       r *= 1 + Math.sin(this.t * 3.2) * 0.04;

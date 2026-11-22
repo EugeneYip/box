@@ -230,7 +230,10 @@ export class Inspector {
     const site = !!b.constructing;
     const pct = Math.round(Math.max(0, Math.min(1, site ? b.progress ?? 0 : b.upgradeProgress ?? 0)) * 100);
     const si = r.stats.findIndex((s) => s?.[0] === 'Status');
-    if (si >= 0 && /^(under construction|being upgraded)/i.test(String(r.stats[si][1]))) r.stats[si] = ['Status', site ? 'Under construction' : 'Being upgraded'];
+    // (round 29) the header already says "Building site": the status tells
+    // how far the work has come, or what holds it up
+    const stage = (b.unreachable || 0) > 2 ? 'Builders cannot reach it' : !n ? 'Waiting for builders' : pct < 15 ? 'Laying the foundations' : pct < 55 ? 'Raising the walls' : pct < 85 ? 'Putting on the roof' : 'Finishing touches';
+    if (si >= 0 && /^(under construction|being upgraded)/i.test(String(r.stats[si][1]))) r.stats[si] = ['Status', site ? stage : 'Being upgraded'];
     if (site) {
       const hi = r.stats.findIndex((s) => /^health$/i.test(String(s?.[0])));
       if (hi >= 0 && !(b.burning > 0.05)) r.stats.splice(hi, 1);
@@ -238,7 +241,8 @@ export class Inspector {
       if (ho >= 0) r.stats[ho] = ['Will house', String(r.stats[ho][1])];
     }
     const at = Math.max(0, r.stats.findIndex((s) => s?.[0] === 'Status')) + 1;
-    const rows = [[site ? 'Built' : 'Upgraded', `${pct}%`], ['Builders', n ? `${n} at work` : 'None yet']];
+    const rows = [[site ? 'Built' : 'Upgraded', `${pct}%`]];
+    if (n || !site) rows.push(['Builders', n ? `${n} at work` : 'None yet']);
     const was = b.replaces;
     if (was) {
       const era = eraNames()[was.era];
@@ -398,7 +402,8 @@ export class Inspector {
     this.el.classList.remove('is-open');
     this.ui.root.classList.remove('has-insp');
     const rig = this.game.cameraRig;
-    if (this.track?.unit && rig.follow === this.track.unit) rig.follow = null;
+    const fu = this.track?.unit || (isCraft(this.track) ? this.track.vessel || this.track.building : null);
+    if (fu && rig.follow === fu) rig.follow = null;
     this.track = null;
     this.hit = null;
     this.setSelected(null);
@@ -510,7 +515,23 @@ export class Inspector {
         return s;
       });
     // lay out cells two per row; a half cell left alone on its row spans both
-    const wideOf = stats.map(([, v]) => this.meter(cap(v)) != null || String(cap(v)).length > 16);
+    // (round 29) the header names a person's job (and a side duty such as
+    // police work, "Builder · Police officer"), so the grid no longer repeats
+    // the job or contradicts the header with a different "Role"
+    let roleBase = null;
+    if (u) {
+      const ri = stats.findIndex((s) => /^role$/i.test(String(s[0])));
+      if (ri >= 0) {
+        const rv = String(stats[ri][1]);
+        roleBase = rv.replace(/\s*\(.*\)\s*$/, '');
+        if (rv === roleBase) stats.splice(ri, 1);
+      }
+      const ji = stats.findIndex((s) => /^job$/i.test(String(s[0])));
+      if (ji >= 0 && ic.label && String(stats[ji][1]).toLowerCase() === String(ic.label).toLowerCase()) stats.splice(ji, 1);
+    }
+    // (round 29) what a creature or craft is doing is the card's main live
+    // fact: always a full-width row ("Carrying food t…" was cut in a half cell)
+    const wideOf = stats.map(([key, v]) => this.meter(cap(v)) != null || String(cap(v)).length > 16 || /^doing$/i.test(String(key)));
     let col = 0;
     for (let i = 0; i < wideOf.length; i++) {
       if (wideOf[i]) {
@@ -615,6 +636,7 @@ export class Inspector {
     // button and no Heritage switch until it stands
     const isSite = k === 'building' && !craft && !!r.building?.alive && !!r.building.constructing;
     if (isSite) kindLabel = 'Building site';
+    if (u && roleBase && ic.label && roleBase.toLowerCase() !== String(ic.label).toLowerCase()) kindLabel = `${ic.label} · ${roleBase}`;
     const realmK = !u && !isSite && (k === 'village' || k === 'kingdom' || k === 'building') ? (typeof r.kingdom === 'object' && r.kingdom) || kingdomOf(this.game, (r.village || this.game.civ?.villages?.[r.building?.village])?.kingdom) : null;
     if (realmK) actions.unshift(`<button class="ws-btn ws-btn--sm" type="button" data-act="tech" data-k="${realmK.id}">${uiIcon('chronicle')}<span>Technology</span></button>`);
     // a building may be marked or unmarked as heritage (never replaced by renewal)
@@ -637,7 +659,7 @@ export class Inspector {
         ${starBtn}
         <button class="ws-iconbtn ws-iconbtn--sm ws-insp__x" type="button" aria-label="Close (Esc)" data-act="close">${uiIcon('close')}</button>
       </header>
-      ${chips ? `<div class="ws-insp__also" aria-label="Also here">${chips}</div>` : ''}
+      ${chips ? `<div class="ws-insp__also" aria-label="Also here"><span class="ws-insp__alsok" aria-hidden="true">Here</span>${chips}</div>` : ''}
       ${editing ? '<div class="ws-insp__scroll ws-insp__editwrap"></div>' : `${cells || depth ? `<div class="ws-insp__scroll">${cells ? `<div class="ws-insp__grid">${cells}</div>` : ''}${depth}</div>` : ''}
       <div class="ws-insp__actions">${actions.join('')}</div>`}`;
     const th = this.el.querySelector('.ws-insp__title');
@@ -747,7 +769,7 @@ export class Inspector {
     };
     this._sig = this.signature();
     this._vsig = this.valueSignature();
-    this.pin.querySelector('.ws-pin__label').textContent = r.title || '';
+    this.pin.querySelector('.ws-pin__label').textContent = this.titleOf(r) || '';
     this.pin.style.setProperty('--tint', ic.tint);
   }
 
@@ -1091,10 +1113,11 @@ export class Inspector {
     const parts = [];
     if (r.unit) {
       const u = r.unit;
+      // (round 29) the job is the kind line right above, so the fact line
+      // does not repeat it ("FARMER / Celian / Having lunch · Farmer · 40/40")
       parts.push(cap(row('doing')));
-      const ic = safe(() => this.iconFor(r), null);
-      parts.push(ic?.label || u.def?.name || '');
-      parts.push(hp(row('health')));
+      const h = hp(row('health'));
+      parts.push(h ? `${h} HP` : '');
     } else if (k === 'building' && r.building?.alive && !isCraft(r) && (r.building.constructing || r.building.upgrading)) {
       const b = r.building;
       const site = !!b.constructing;
@@ -1104,7 +1127,7 @@ export class Inspector {
       parts.push(`${site ? 'Built' : 'Upgraded'} ${pct}%`, n ? `${n} builder${n === 1 ? '' : 's'}` : 'No builders yet');
     } else if (k === 'plot') parts.push(row('status'), row('next') ? `Next: ${row('next')}` : '');
     else if (k === 'building') parts.push(row('status').replace(/\s*\(.*\)$/, ''), row('level') ? `Level ${row('level').replace(/\s*\/\s*/, '/')}` : '', hp(row('health')));
-    else if (isCraft(r) || k === 'vessel' || k === 'vehicle') parts.push(cap(row('doing')), hp(row('health')));
+    else if (isCraft(r) || k === 'vessel' || k === 'vehicle') parts.push(cap(row('doing')), row('health') ? `${hp(row('health'))} HP` : '');
     else if (k === 'village') parts.push(row('population') ? `Population ${row('population')}` : '');
     return parts.filter(Boolean).join(' · ');
   }
@@ -1121,9 +1144,16 @@ export class Inspector {
     return !!(hov || kbd);
   }
 
-  toggleFollow() {
+  /** The person or craft the F key / Follow button would follow, or null. */
+  followTarget() {
     const u = this.track?.unit || (isCraft(this.track) ? this.track.vessel || this.track.building : null);
-    if (!u || u.alive === false || u.state === 'sinking') return;
+    if (!u || u.alive === false || u.state === 'sinking') return null;
+    return u;
+  }
+
+  toggleFollow() {
+    const u = this.followTarget();
+    if (!u) return;
     const rig = this.game.cameraRig;
     if (rig.follow === u) rig.follow = null;
     else {
@@ -1247,7 +1277,7 @@ export class Inspector {
     const hb = kObj?.banner && this.el.querySelector('.ws-insp__badge.has-banner .ws-insp__portrait');
     if (hb) hb.src = bannerURL(kObj.banner, kObj.color, 72);
     const pin = this.pin?.querySelector('.ws-pin__label');
-    if (pin) pin.textContent = r.title || '';
+    if (pin) pin.textContent = this.titleOf(r) || '';
     this._sig = this.signature();
   }
   // A named vessel or vehicle shows its kind in the label above, so the title
@@ -1255,10 +1285,13 @@ export class Inspector {
   titleOf(r) {
     const c = isCraft(r) ? r.vessel || r.building : null;
     const t = String(r?.title || '');
-    if (!c?.name || !c.def?.name) return t;
+    if (!c?.def?.name) return t;
     const kind = c.def.name;
     const esc2 = kind.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const t1 = t.replace(new RegExp(`\\s*\\(${esc2}\\)\\s*$`, 'i'), '');
+    // (round 29) an unnamed craft whose title already starts with its kind
+    // drops the repeat too: "Truck of Elderley (truck)" -> "Truck of Elderley"
+    if (!c.name) return new RegExp(`^${esc2}\\b`, 'i').test(t1) ? t1 : t;
     // "Tank of Ruareva" keeps its noun: the kind leaves only a name that stands alone
     const t2 = t1.replace(new RegExp(`^${esc2}\\s+`, 'i'), '');
     return (/^(of|from|at|in|on|the)\b/i.test(t2) ? t1 : t2) || t;
@@ -1406,7 +1439,10 @@ export class Inspector {
       const cam = this.game.cameraRig.camera;
       const d = Math.max(0.5, cam.position.distanceTo(this._v.set(ref.x, y0, ref.z)));
       const px = (2 * d * Math.tan((cam.fov * Math.PI) / 360)) / Math.max(1, innerHeight);
-      y = y0 + Math.max(bh * 2.3, 14 * px);
+      // (round 29) over a craft: its roof (the picker's body height runs low
+      // for a box truck, hence 1.6x) plus about 12 px; 2.3 x the body height
+      // floated ~90 px over a truck at the closest zoom
+      y = kind === 'vessel' ? y0 + Math.max(bh * 1.6 + 12 * px, 14 * px) : y0 + Math.max(bh * 2.3, 14 * px);
     }
     const v = this._v.set(ref.x, y, ref.z).project(this.game.cameraRig.camera);
     if (v.z > 1 || v.z < -1) {

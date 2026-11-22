@@ -149,3 +149,106 @@
 .ws-agechip__left.is-on {
   opacity: 0.5;
 }
+
+/* ==========================================================================
+   Round 29
+   ========================================================================== */
+
+/* ---- the age chip is sized for the longest title and its years-left note
+   ("Age of Tempests 36y"): one fixed width for every age */
+.ws-agechip {
+  width: 172px;
+}
+
+/* ---- phones draw no age chip: a small badge on the clock's dial shows the
+   age's color and glyph and opens the Ages panel */
+.ws-agedot {
+  display: none;
+}
+@media (max-width: 720px), (max-height: 500px) {
+  .ws-clock__dial {
+    position: relative;
+  }
+  .ws-agedot {
+    display: grid;
+    place-items: center;
+    position: absolute;
+    right: -5px;
+    bottom: -5px;
+    width: 19px;
+    height: 19px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    font-size: 11px;
+    color: var(--age);
+    --tint: var(--age);
+    background: rgba(10, 12, 19, 0.92);
+    box-shadow:
+      inset 0 0 0 1.5px color-mix(in srgb, var(--age) 80%, transparent),
+      0 0 8px color-mix(in srgb, var(--age) 40%, transparent);
+    pointer-events: auto;
+    cursor: pointer;
+  }
+  /* a finger-sized target around the small badge */
+  .ws-agedot::before {
+    content: '';
+    position: absolute;
+    inset: -12px;
+  }
+}
+
+/* ---- inspector: a quiet "Here" before the chips of the other things under
+   the click, so a plant or a crop is not read as cargo */
+.ws-insp__alsok {
+  flex: none;
+  align-self: center;
+  margin-right: 1px;
+  font: 700 9.5px/1 var(--ws-font);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ws-ink-3);
+}
+
+/* ---- phone landscape inspector: the chips wrap (the realm's long name was
+   cut and the village chip fell off the end of one scrolling row) */
+@media (max-height: 500px) and (min-width: 721px) {
+  .ws-insp__also {
+    flex-wrap: wrap;
+    overflow: visible;
+    -webkit-mask-image: none;
+    mask-image: none;
+    padding-right: 0;
+  }
+  .ws-insp__also .ws-chip2 {
+    max-width: 100%;
+  }
+}
+
+/* ---- phone portrait peek: one sideways row of chips (the half sheet shows
+   them all), so the peek stays near 280 px tall */
+@media (max-width: 720px) and (min-height: 501px) {
+  .ws-insp.is-peek .ws-insp__also {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
+    mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
+    padding-right: 24px;
+  }
+  .ws-insp.is-peek .ws-insp__also.is-end {
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+  .ws-insp.is-peek .ws-insp__also .ws-chip2 {
+    max-width: 210px;
+  }
+}
+
+/* ---- phone landscape: the vehicle chooser is one short row; its hint was
+   cut ("It joins the neares…"), so the row keeps just the tabs and options */
+@media (max-height: 500px) and (min-width: 721px) {
+  .ws-vehpick__hint {
+    display: none;
+  }
+}

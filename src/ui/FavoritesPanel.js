@@ -112,6 +112,35 @@ export class FavoritesPanel {
       safe(() => this.store.adopt(), null, 'favorites adopt');
       this._t = 0;
       this.render();
+      safe(() => this.place(), null, 'favorites place');
+    }
+  }
+
+  // (round 29) on desktop the panel stands above the power tray wherever the
+  // two overlap side to side (at 1280 x 720 its bottom row slid under the
+  // tray); elsewhere it keeps its place above the Favorites button
+  place() {
+    const st = this.el.style;
+    const desk = matchMedia('(min-width: 721px) and (min-height: 501px)').matches;
+    // the tray's visible panel (the dock's own box also spans a hidden
+    // power bar above it), or the power bar when one is shown
+    const tb = this.ui.toolbar;
+    let t = desk && tb?.panel ? tb.panel.getBoundingClientRect() : null;
+    const br = tb?.brush?.el;
+    if (t && br?.classList.contains('is-shown')) {
+      const b = br.getBoundingClientRect();
+      if (b.height > 0 && b.top < t.top) t = { left: Math.min(t.left, b.left), right: Math.max(t.right, b.right), top: b.top, width: Math.max(t.right, b.right) - Math.min(t.left, b.left), height: t.bottom - b.top };
+    }
+    const r = this.el.getBoundingClientRect();
+    const H = innerHeight;
+    if (t && t.width > 40 && t.height > 20 && t.top < H && t.left < r.right + 10 && t.right > r.left - 10) {
+      const bottom = Math.ceil(H - t.top + 10);
+      const maxH = Math.max(160, Math.floor(t.top - 10 - 104));
+      if (st.bottom !== bottom + 'px') st.bottom = bottom + 'px';
+      if (st.maxHeight !== maxH + 'px') st.maxHeight = maxH + 'px';
+    } else {
+      if (st.bottom) st.removeProperty('bottom');
+      if (st.maxHeight) st.removeProperty('max-height');
     }
   }
 
@@ -573,6 +602,7 @@ export class FavoritesPanel {
     if (this._t <= 0 || this._ver !== this.store.version) {
       this._t = 1;
       safe(() => this.render(), null, 'favorites render');
+      safe(() => this.place(), null, 'favorites place');
       this._more();
     }
     this._pT -= dt;
