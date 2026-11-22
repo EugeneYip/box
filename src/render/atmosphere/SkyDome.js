@@ -268,25 +268,21 @@ export class SkyDome {
       // 0.999995) instead of leaving the cleared 1.0: N8AO's half-res
       // composite treats depth == 1.0 as fully occluded (black sky).
       // LinearDepthPass maps this depth back to "sky".
-      // (round 29) Drawn after the opaque scene, where the depth buffer
-      // still holds its cleared 1.0: the land covers most of the screen at
-      // close and mid zoom, and the dome's sky shading under it was wasted
-      // (0.5-0.6 s of a frame under software GL). The picture is the same.
       depthWrite: true,
       depthTest: true,
-      depthFunc: THREE.LessEqualDepth,
+      depthFunc: THREE.AlwaysDepth,
       fog: false,
     });
     this.mesh = new THREE.Mesh(geo, this.material);
     this.mesh.name = 'sky';
     this.mesh.frustumCulled = false;
-    this.mesh.renderOrder = 1000; // last of the opaque objects (transparents still follow)
+    this.mesh.renderOrder = -1000;
     this.mesh.onBeforeRender = (r, s, cam) => {
       // keep the dome centred on whichever camera is drawing it this instant
       this.mesh.position.setFromMatrixPosition(cam.matrixWorld);
       this.mesh.updateMatrixWorld();
-      // (the shadow cache's composite runs right after three's shadow pass:
-      // ShadowCache hooks the shadow map's render)
+      // first draw of the main pass: three's shadow pass has just run
+      if (cam === game.cameraRig?.camera) this.atm.shadowCache?.composite(r);
     };
     game.scene.add(this.mesh);
 
