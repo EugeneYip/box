@@ -1164,8 +1164,13 @@ export class FleetRenderer {
     const rig = this.game.cameraRig;
     const pitch = rig?.pitchFor ? rig.pitchFor(dist) : 0.8;
     const laneTop = 1 - Math.min(1, Math.max(0, (pitch - 0.9) / 0.15)); // 52 to 60 degrees
-    this.uniforms.uLaneAlpha.value = Math.min(0.55, (dist - 45) / 60) * 0.6 * laneFar * laneTop;
-    if (laneTop <= 0.01) {
+    // (round 33) a faint trace only: at most 0.05 alpha, dimming with the
+    // daylight and gone at night (white dashes crossed the sea at 60-90
+    // tiles and shone brightest at night, reading as debug lines)
+    const day = this.game.env?.daylight ?? 1;
+    const dayK = Math.min(1, Math.max(0, (day - 0.15) / 0.45));
+    this.uniforms.uLaneAlpha.value = 0.05 * Math.min(1, (dist - 45) / 20) * laneFar * laneTop * dayK;
+    if (laneTop <= 0.01 || this.uniforms.uLaneAlpha.value < 0.004) {
       this.lanes.visible = false;
       return;
     }
@@ -1187,10 +1192,12 @@ export class FleetRenderer {
       P[n * 3 + 3] = bx;
       P[n * 3 + 4] = 0.05;
       P[n * 3 + 5] = bz;
+      // the realm's colour, softened (it was lifted twice, here and in the
+      // shader, and drew near-white)
       for (let q = 0; q < 2; q++) {
-        C[(n + q) * 3] = c.r * 1.3 + 0.2;
-        C[(n + q) * 3 + 1] = c.g * 1.3 + 0.2;
-        C[(n + q) * 3 + 2] = c.b * 1.3 + 0.2;
+        C[(n + q) * 3] = c.r * 0.8 + 0.12;
+        C[(n + q) * 3 + 1] = c.g * 0.8 + 0.12;
+        C[(n + q) * 3 + 2] = c.b * 0.8 + 0.12;
       }
       D[n * 2] = d0;
       D[n * 2 + 2] = d1;

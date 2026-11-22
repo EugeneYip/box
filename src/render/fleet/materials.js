@@ -319,7 +319,8 @@ void main() {
   } else if (kind < 5.5) {
     float d = fract(vUV.x * 0.7 - uTime * 0.25);
     if (d > 0.55) discard;
-    gl_FragColor = vec4(vC * 1.3 + 0.2, uLaneAlpha);
+    // (lit like the water it lies on: dims with the daylight)
+    gl_FragColor = vec4(vC * mix(0.3, 1.0, uLight), uLaneAlpha);
   } else {
     // kind 6: a jet's contrail, soft and spreading as it fades (a = strength)
     float v = abs(vUV.y * 2.0 - 1.0);
