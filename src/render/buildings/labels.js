@@ -410,6 +410,15 @@ export class Labels {
       this._syncT = 0.75;
       this._sync();
     }
+    // (round 31) in the Overview the HTML realm names stand in for these: the
+    // sprites are not drawn at all (they showed under the HTML names there)
+    const ui = g.ui;
+    if (ui?._overview && !ui.title?.active && !ui.root?.classList?.contains('is-photo')) {
+      for (const m of [this.kLabels, this.vLabels]) for (const sp of m.values()) (sp.visible = false), (sp.userData.fade = 0), (sp.material.opacity = 0);
+      for (const sp of this.swords) sp.visible = false;
+      this.batch.draw([this.vLabels, this.kLabels, this.swords]);
+      return;
+    }
     const D = rig.cur.dist;
     const cam = rig.camera.position;
     const w = g.world;
