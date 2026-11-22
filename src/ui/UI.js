@@ -1176,6 +1176,21 @@ export class UI {
     }
   }
 
+  stripKeyNames() {
+    // (a lone digit only after "speed": other tips may end in a number)
+    const KEY = String.raw`(?:[A-Z]|F\d{1,2}|Space|Esc|Enter|Tab|\x60|1–5|1-5)`;
+    const tipRe = new RegExp(String.raw`(?:\s+·\s+${KEY}|(?<=speed)\s+·\s+\d)$`);
+    const ariaRe = new RegExp(String.raw`\s*\(${KEY}\)$`);
+    for (const e of this.root.querySelectorAll('[data-tip]')) {
+      const t = e.getAttribute('data-tip');
+      if (t && tipRe.test(t)) e.setAttribute('data-tip', t.replace(tipRe, ''));
+    }
+    for (const e of this.root.querySelectorAll('[aria-label]')) {
+      const t = e.getAttribute('aria-label');
+      if (t && ariaRe.test(t)) e.setAttribute('aria-label', t.replace(ariaRe, ''));
+    }
+  }
+
   // ---------------------------------------------------------------- debug / tooling
   open(name) {
     if (name === 'kingdoms') this.kingdoms.toggle(true);
@@ -1222,6 +1237,15 @@ export class UI {
       }, null, 'title labels');
     }
     for (const p of this.parts) safe(() => p.update(dt), null, p.constructor.name);
+    // (round 29) touch screens: no desktop key names in tips or labels
+    // ("Pause · Space", "1× speed · 1", "Overview (M)"); swept every 1.5 s
+    if (this.root.classList.contains('is-touch')) {
+      const now = performance.now();
+      if (!(now - (this._keysT || 0) < 1500)) {
+        this._keysT = now;
+        safe(() => this.stripKeyNames(), null, 'touch key names');
+      }
+    }
     // (round 27) the screen area the HUD leaves visible, for the camera's
     // framing of a followed unit (measured a few times a second while following)
     this._vrT = (this._vrT || 0) - dt;

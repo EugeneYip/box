@@ -244,3 +244,11 @@
     max-width: 210px;
   }
 }
+
+/* ---- phone landscape: the vehicle chooser is one short row; its hint was
+   cut ("It joins the neares…"), so the row keeps just the tabs and options */
+@media (max-height: 500px) and (min-width: 721px) {
+  .ws-vehpick__hint {
+    display: none;
+  }
+}

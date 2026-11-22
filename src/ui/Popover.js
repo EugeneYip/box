@@ -164,7 +164,16 @@ export class Popover {
     const side = sticky && t.closest('.ws-tech__grid');
     const roomR = r.right + 8 + pw <= vw - 8,
       roomL = r.left - pw - 8 >= 8;
-    if (side) {
+    if (side && (roomR || roomL)) {
+      // (round 29) beside the card first: below it, the tip lay over the next
+      // card in the column (Computing, the art being studied)
+      this.el.style.maxWidth = Math.min(w, 260) + 'px';
+      const pw3 = this.el.offsetWidth,
+        ph3 = this.el.offsetHeight;
+      const fitsR = r.right + 8 + pw3 <= vw - 8;
+      x = fitsR ? r.right + 8 : Math.max(8, r.left - pw3 - 8);
+      y = Math.max(ceil, Math.min(innerHeight - ph3 - 8, r.top));
+    } else if (side) {
       this.el.style.maxWidth = Math.max(200, Math.round(r.width)) + 'px';
       const pw2 = this.el.offsetWidth,
         ph2 = this.el.offsetHeight;

@@ -311,6 +311,9 @@ export class Toolbar {
       clearTimeout(this._touchTip);
       setTimeout(() => {
         if (this.game.activePower !== next) return;
+        // (round 29) a power that opens its own chooser (Spawn Vehicle) shows
+        // no tip over it: the chooser says what to do
+        if (this.chooserOpen()) return;
         this.showTip(next, null);
         this._touchTip = setTimeout(() => this.hideTip(), 2600);
       }, 220);
@@ -518,7 +521,15 @@ export class Toolbar {
     this.game.audio?.play?.(open ? 'ui-open' : 'ui-click', { volume: 0.4 });
   }
 
-  update() {}
+  chooserOpen() {
+    const c = document.querySelector('.ws-vehpick:not(.is-folded)');
+    return !!(c && c.getBoundingClientRect().height > 0);
+  }
+
+  update() {
+    // a touch tip still up when a chooser opens is put away
+    if (this.tip?.classList.contains('is-shown') && this.ui.root.classList.contains('is-touch') && this.chooserOpen()) this.hideTip();
+  }
 }
 
 export { CAT_BLURB };

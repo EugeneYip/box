@@ -158,9 +158,11 @@ export class Feed {
   groupText(it) {
     const t = [...new Set(it.things.map(nounLabel))];
     const list = t.length === 2 ? `${t[0]} and ${t[1]}` : it.open ? `${t.slice(0, -1).join(', ')} and ${t[t.length - 1]}` : `${t[0]}, ${t[1]} and ${t.length - 2} more`;
-    it.el.querySelector('.ws-feed__txt').textContent = `${it.realm}: new firsts: ${list}`;
+    // (round 29) one colon: "New for the Svartvik Hearthmoot: fishing jetties and boats"
+    const who = String(it.realm || '').replace(/^The\s/, 'the ');
+    it.el.querySelector('.ws-feed__txt').textContent = `New for ${who}: ${list}`;
     it.el.classList.toggle('is-open', !!it.open);
-    it.el.setAttribute('aria-label', `${it.realm}: new firsts: ${t.length === 2 ? list : `${t.slice(0, -1).join(', ')} and ${t[t.length - 1]}`}. Show on map`);
+    it.el.setAttribute('aria-label', `New for ${who}: ${t.length === 2 ? list : `${t.slice(0, -1).join(', ')} and ${t[t.length - 1]}`}. Show on map`);
     if (t.length > 2) it.el.dataset.tip = it.open ? 'Click to show fewer' : 'Click to list them all';
   }
 

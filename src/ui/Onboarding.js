@@ -115,8 +115,14 @@ export class Onboarding {
     }
     this.ring.classList.toggle('is-shown', !!r);
     if (!r) return null;
+    // (round 29) the ring stays inside the screen (round 28 ran it off the
+    // top, at -17, round the clock)
     const pad = 5;
-    Object.assign(this.ring.style, { left: `${Math.round(r.left - pad)}px`, top: `${Math.round(r.top - pad)}px`, width: `${Math.round(r.width + pad * 2)}px`, height: `${Math.round(r.height + pad * 2)}px` });
+    const l = Math.max(2, Math.round(r.left - pad)),
+      t = Math.max(2, Math.round(r.top - pad)),
+      rr = Math.min(innerWidth - 2, Math.round(r.right + pad)),
+      b = Math.min(innerHeight - 2, Math.round(r.bottom + pad));
+    Object.assign(this.ring.style, { left: `${l}px`, top: `${t}px`, width: `${Math.max(8, rr - l)}px`, height: `${Math.max(8, b - t)}px` });
     return r;
   }
 
@@ -137,8 +143,17 @@ export class Onboarding {
       const gap = 14;
       const cx = (r.left + r.right) / 2;
       x = Math.min(W - 12 - w / 2, Math.max(12 + w / 2, cx));
-      if ((r.top + r.bottom) / 2 < H * 0.5) y = Math.min(H - h - 12, Math.round(r.bottom + gap));
-      else y = Math.max(12, Math.round(Math.min(r.top, top) - h - gap));
+      if ((r.top + r.bottom) / 2 < H * 0.5) {
+        y = Math.round(r.bottom + gap);
+        // (round 29) a card under the clock also clears the age row beneath
+        // it (the age chip and the actual-speed note it talks about)
+        for (const e of document.querySelectorAll('.ws-agerow .ws-agechip, .ws-agerow .ws-speed__eff, .ws-paused')) {
+          const b = e.getBoundingClientRect();
+          if (b.width < 4 || b.height < 4 || getComputedStyle(e).display === 'none' || +getComputedStyle(e).opacity < 0.1) continue;
+          if (b.top < y + h && b.bottom > r.bottom - 2 && b.left < x + w / 2 && b.right > x - w / 2) y = Math.max(y, Math.round(b.bottom + 10));
+        }
+        y = Math.min(H - h - 12, y);
+      } else y = Math.max(12, Math.round(Math.min(r.top, top) - h - gap));
     }
     this.el.style.top = y + 'px';
     this.el.style.left = Math.round(x) + 'px';
