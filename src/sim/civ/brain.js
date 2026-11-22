@@ -337,9 +337,22 @@ export const brain = {
       if (u.thinkT > 0.6) u.thinkT = 0.3 + this.rng.next() * 0.5;
       return WAIT;
     }
+    // (round 31) a goal no walker can step next to (a fisher's spot out in
+    // the water, a builder's inside a site): the search used to run to its
+    // last node and then give the route to the nearest tile it had seen; it
+    // now stops at the first tile as near the goal as any open tile there is
+    // (the same nearness, for a fraction of the work). Nothing open within
+    // six tiles: no route, as before, without the search.
+    const ring = this._goalRing(gx, gy);
+    if (ring === null) {
+      PC.set(key, null);
+      u.target = null;
+      u.path = null;
+      return false;
+    }
     if (long) this._longBudget--;
     else this._pathBudget--;
-    const p = civPath(w, w.clampTx(sx), w.clampTy(sy), gx, gy, this._walkCost(), long ? 32000 : 3200, 0.5, null, this._levelCrossing());
+    const p = civPath(w, w.clampTx(sx), w.clampTy(sy), gx, gy, this._walkCost(), long ? 32000 : 3200, 0.5, ring || null, this._levelCrossing());
     PC.set(key, p || null);
     if (long && p && p.length > 24 && p[p.length - 1] === gy * w.w + gx) this._addTrunk(w.clampTx(sx), w.clampTy(sy), gx, gy, p);
     if (p && p.length > 3 && p[p.length - 1] === gy * w.w + gx) this._addRoute(gy * w.w + gx, p);
@@ -437,6 +450,39 @@ export const brain = {
         if (l >= 0 && (l === a || l === b || l === c)) return false;
       }
     return true;
+  },
+
+  // For a search toward (gx,gy): false when a walker may step onto the goal
+  // (it or one of the eight round it is open: the search as ever); null when
+  // no open tile lies within six tiles of it (the search could only fail);
+  // else a goal test that takes any tile as near the goal as the nearest open
+  // one (octile distance, as the search measures it)
+  _goalRing(gx, gy) {
+    const w = this.world;
+    const W = w.w,
+      H = w.h;
+    const cost = this._walkCost();
+    for (let oy = -1; oy <= 1; oy++)
+      for (let ox = -1; ox <= 1; ox++) {
+        const x = gx + ox,
+          y = gy + oy;
+        if (x < 0 || y < 0 || x >= W || y >= H) continue;
+        if (cost(y * W + x) !== Infinity) return false;
+      }
+    const oct = (x, y) => {
+      const dx = Math.abs(x - gx),
+        dy = Math.abs(y - gy);
+      return dx + dy + (Math.SQRT2 - 2) * Math.min(dx, dy);
+    };
+    let dm = Infinity;
+    for (let y = Math.max(0, gy - 6); y <= Math.min(H - 1, gy + 6); y++)
+      for (let x = Math.max(0, gx - 6); x <= Math.min(W - 1, gx + 6); x++) {
+        const d = oct(x, y);
+        if (d < dm && d <= 6 && cost(y * W + x) !== Infinity) dm = d;
+      }
+    if (dm === Infinity) return null;
+    const lim = dm + 1e-6;
+    return (i) => oct(i % W, (i / W) | 0) <= lim;
   },
 
   // Routes found in the last few seconds that reach their goal, by goal tile
