@@ -1421,8 +1421,10 @@ export const brain = {
     const pl = U._dlPlaces ? U._dlPlaces(v) : null;
     // the night watch: one guard in four, a different quarter each night (a
     // night counts from noon to noon, so the watch holds past midnight)
+    // (round 29) in war one guard in two, not all of them (a soldier in
+    // four of a realm at war; soldiers asleep at night fell to 58%)
     const nightNo = (g.time.day | 0) - ((g.time.hour ?? 12) < 12 ? 1 : 0);
-    if (onDuty && !war && live && U._bedtime && U._bedtime(u) && ((u.id >> 1) + nightNo) % 4 !== 0) {
+    if (onDuty && live && U._bedtime && U._bedtime(u) && ((u.id >> 1) + nightNo) % (war ? 2 : 4) !== 0) {
       // to bed: the barracks, else home (the night watch, one guard in four, stays up)
       if (u.carry) return this._deposit(u, v, d);
       d.task = null;
@@ -1431,7 +1433,9 @@ export const brain = {
       u._bedT = now;
       u._bedB = b.type === 'barracks';
       const r = this._go(u, b.doorX, b.doorZ, 0.7);
-      if (r === ARRIVED || (r === FAIL && Math.hypot(b.doorX - u.x, b.doorZ - u.z) < 3)) U._goInside(u, b);
+      // (round 29: within a short walk of the door they slip in anyway, as
+      // everyone does at bedtime, instead of a nap in the street)
+      if (r === ARRIVED || (r === FAIL && Math.hypot(b.doorX - u.x, b.doorZ - u.z) < 6)) U._goInside(u, b);
       else if (r === FAIL) U._nap0?.(u);
       return;
     }

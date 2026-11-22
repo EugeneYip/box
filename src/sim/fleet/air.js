@@ -100,8 +100,18 @@ export const air = {
       b = civ.villages[line.b];
     if (!a?.alive || !b?.alive) return null;
     const kid = o.kingdom ?? line.kingdom;
-    // one train at a time on a line
-    if (this.list.some((v) => v.alive && v.mission?.rail === line.id)) return null;
+    // one train at a time on a line, and a realm's fair share of the
+    // world's trains (round 29: rail has its own quota, Fleet.landRoom):
+    // every line of a network of four or fewer, three lines in five beyond
+    let mine = 0;
+    for (const v of this.list) {
+      if (!v.alive || v.mission?.type !== 'train') continue;
+      if (v.mission.rail === line.id) return null;
+      if (v.kingdom === kid && !v.keep) mine++;
+    }
+    let lines = 0;
+    for (const l of civ.rails || []) if (l.kingdom === kid && l.pts && l.pts.length >= 4) lines++;
+    if (mine >= (lines <= 4 ? lines : Math.ceil(lines * 0.6))) return null;
     // on the rails themselves: a line's pts are the centre of the drawn track
     const fwd = o.reverse ? reversePts(line.pts) : line.pts;
     const from = o.reverse ? b : a,
@@ -400,6 +410,11 @@ export const air = {
       this._ac = base + Math.min(Math.round(base / 3), n >> 2);
     }
     return this._ac;
+  },
+  // The limit on aircraft aloft as it stands now (tools and the inspector:
+  // budget.air is only the map's base, before the airfields' share)
+  airLimit() {
+    return this.airCap();
   },
   // Room in a full sky: the circuit, drone or sky taxi farthest out of sight
   // (cruising, with nothing aboard that matters) lands early. False if none.

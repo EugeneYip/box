@@ -7,7 +7,9 @@
 // centers. Boxes, where given, are [west, south, east, north] in degrees: a
 // rebel seat takes the region's name only inside one of them (round 26 seated
 // a "State of Michigan" at Milwaukee and a "Republic of the Maritimes" at
-// Quebec City, the nearest region centers).
+// Quebec City, the nearest region centers). Round 29: Ontario's boxes keep
+// to its side of the lakes and rivers (one box took in Detroit, Buffalo and
+// the north of several states).
 
 const S = 'State of',
   R = 'Republic of';
@@ -23,9 +25,13 @@ export const REGIONS = [
   ['Montana', -109.6, 47.0, S, [[-116.05, 44.4, -104.05, 49.0]]], ['Wyoming', -107.5, 43.0, S, [[-111.05, 41.0, -104.05, 45.0]]], ['Idaho', -114.6, 44.4, S, [[-117.2, 42.0, -111.05, 49.0]]], ['Oregon', -120.5, 43.9, S, [[-124.6, 42.0, -116.5, 46.3]]],
   ['Washington', -120.4, 47.4, S, [[-124.8, 45.5, -116.9, 49.0]]], ['California', -119.5, 37.2, S, [[-124.5, 32.5, -114.1, 42.0]]], ['Alaska', -150.0, 63.5, S, [[-180, 51, -129.9, 71.5]]], ['Hawaii', -157.5, 20.8, S, [[-160.5, 18.8, -154.7, 22.3]]],
   ['Puerto Rico', -66.5, 18.2, S, [[-67.3, 17.9, -65.2, 18.6]]],
+  // (round 29: the states between, so a seat there takes its own state's
+  // name, not a city's or a neighbor's)
+  ['Arkansas', -92.4, 34.9, S, [[-94.6, 33.0, -89.6, 36.5]]], ['Mississippi', -89.7, 32.7, S, [[-91.7, 30.2, -88.1, 35.0]]], ['Alabama', -86.8, 32.8, S, [[-88.5, 30.2, -84.9, 35.0]]],
+  ['Kentucky', -85.3, 37.5, S, [[-89.6, 36.5, -81.9, 39.1]]], ['Indiana', -86.3, 39.9, S, [[-87.5, 37.8, -84.8, 41.8]]], ['Iowa', -93.5, 42.0, S, [[-96.6, 40.4, -90.1, 43.5]]],
   // Canada
   ['British Columbia', -124.5, 53.7, R, [[-139.1, 48.3, -114.0, 60.0]]], ['Alberta', -114.5, 54.5, R, [[-120.0, 49.0, -110.0, 60.0]]], ['Saskatchewan', -105.9, 54.0, R, [[-110.0, 49.0, -101.4, 60.0]]], ['Manitoba', -97.4, 54.9, R, [[-102.0, 49.0, -88.9, 60.0]]],
-  ['Ontario', -85.3, 50.0, R, [[-95.2, 41.7, -74.3, 56.9]]], ['Quebec', -71.8, 52.5, R, [[-74.5, 45.0, -57.1, 62.6], [-79.6, 46.5, -74.5, 62.6]]], ['the Maritimes', -64.5, 46.0, R, [[-69.1, 43.4, -59.7, 48.1]]], ['Newfoundland', -57.5, 50.5, R, [[-67.8, 46.6, -52.6, 60.4]]],
+  ['Ontario', -85.3, 50.0, R, [[-95.2, 49.0, -79.5, 56.9], [-89.5, 48.0, -79.5, 49.0], [-84.4, 46.6, -79.5, 48.0], [-82.3, 42.2, -79.1, 46.6], [-79.1, 43.6, -76.3, 46.3], [-76.3, 45.0, -74.3, 46.3]]], ['Quebec', -71.8, 52.5, R, [[-74.5, 45.0, -57.1, 62.6], [-79.6, 46.5, -74.5, 62.6]]], ['the Maritimes', -64.5, 46.0, R, [[-69.1, 43.4, -59.7, 48.1]]], ['Newfoundland', -57.5, 50.5, R, [[-67.8, 46.6, -52.6, 60.4]]],
   ['the Yukon', -135.5, 63.6, R, [[-141, 60, -124, 69.6]]], ['the Northwest', -118.0, 64.8, R, [[-136, 60, -102, 78]]], ['Nunavut', -90.0, 66.0, R, [[-120, 51.5, -61, 83]]],
   // Mexico, Central America and the Caribbean
   ['Sonora', -110.7, 29.6, S], ['Chihuahua', -106.1, 28.6, S], ['Baja California', -114.5, 28.5, S], ['Jalisco', -103.6, 20.6, S],

@@ -8,6 +8,11 @@ import { BUILDING, VEHICLE } from '../../core/scale.js';
 // Land vehicles (mixed into Fleet): ox carts that pool a realm's goods along
 // its roads (The Wheel), trade caravans between realms at peace (Banking),
 // and battering rams and catapults that roll with armies (Siegecraft).
+// raiders leave these alone: rail and transit, as the ambulances and fire
+// engines (SERVICE_KINDS); trucks and cars are fair game only off their own
+// realm's land (round 29)
+const RAID_SPARED = new Set(['train', 'maglev', 'tram', 'bus', 'tractor']);
+const ROAD_OWN = new Set(['truck', 'car']);
 const ROAD_NODES = 2500; // across country (the laid roads are searched first, cheaply)
 const BATTERY_RANGE = 10.5; // a catapult throws at most this far from its battery
 
@@ -323,7 +328,11 @@ export const land = {
     // Fleet.tick's _warAny)
     // (round 27: never an ambulance or a fire engine on its call; a third of
     // the ambulances, sent to the wounded of a war, were taken by raiders)
-    if (!v.def.siege && !SERVICE_KINDS.has(v.kind) && (v.raidT = (v.raidT || 0) - step) <= 0 && (v.raidT = 1) && (!this._warAny || this._warAny[v.kingdom])) {
+    // (round 29: nor a train, a maglev, a tram, a bus or a tractor, on
+    // their own rails and streets; and a truck or a car only away from its
+    // own realm's land: by Year 600 raiders had taken 40 trains, 108 buses
+    // and 146 trucks)
+    if (!v.def.siege && !SERVICE_KINDS.has(v.kind) && !RAID_SPARED.has(v.kind) && (v.raidT = (v.raidT || 0) - step) <= 0 && (v.raidT = 1) && (!this._warAny || this._warAny[v.kingdom]) && !(ROAD_OWN.has(v.kind) && this._ownGround(v))) {
       const U = this.game.units;
       const foe = U?.nearest?.(v.x, v.z, 1.3, (o) => o.alive && o.species === 'human' && o.job === 'soldier' && this.atWar(o.kingdom, v.kingdom));
       if (foe) {
@@ -333,6 +342,15 @@ export const land = {
         this.lose(v, 'raided', { id: foe.id, kind: 'soldier', kingdom: foe.kingdom });
       }
     }
+  },
+
+  // On its own realm's land (a truck there is under the realm's protection)
+  _ownGround(v) {
+    const w = this.world;
+    const tx = Math.floor(v.x),
+      ty = Math.floor(v.z);
+    if (tx < 0 || ty < 0 || tx >= w.w || ty >= w.h) return false;
+    return w.owner[ty * w.w + tx] === v.kingdom;
   },
 
   // (round 23) A vehicle that has stopped squares up to its parking line

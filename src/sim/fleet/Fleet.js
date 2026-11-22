@@ -451,6 +451,8 @@ export class Fleet {
     return c;
   }
   // Room under the world's land limit for one more vehicle of this kind.
+  // (Round 29: trains and maglevs now have a quota of their own, outside
+  // the road limit: see below.)
   // The limit is shared by quota, not first come first served (round 18: at
   // Year 600 the trains and caravans had taken every place and no realm sent
   // out an ambulance or a fire engine): trains and maglevs hold at most 30%
@@ -474,12 +476,32 @@ export class Fleet {
     const extra = Math.min(Math.round(L0 * 0.4), mt.cities + Math.round(mt.towns * 0.5));
     const L = L0 + extra;
     const g = LAND_GROUP[kind] || 'other';
-    const over = t.all >= Math.ceil(L * 1.06);
+    // (round 29) trains and maglevs run on rails of their own, off the
+    // streets: they have a quota of their own, one train to a line on a
+    // short network and about three to every five lines on a long one,
+    // outside the road limit (round 28: rail and the trucks shared three
+    // quarters of the limit, the trucks and road units held 30 of its 46
+    // places and 12 trains ran on 31 lines at Year 600)
+    if (g === 'rail') return t.rail < Math.min(this._railQuota(), Math.max(4, Math.round(L0 * 0.4)));
+    const road = t.all - t.rail;
+    const over = road >= Math.ceil(L * 1.06);
     if (g === 'aid') return !over && t.aid < Math.max(4, Math.round(L0 * 0.12));
     if (g === 'transit') return !over && t.transit < Math.max(4, Math.round(L0 * 0.14)) + extra;
-    if (t.all >= L || t.rail + t.other >= Math.round(L0 * 0.75)) return false;
-    if (g === 'rail') return t.rail < Math.max(2, Math.round(L * 0.3));
-    return t.other < Math.max(3, Math.round(L * 0.45));
+    if (road >= L) return false;
+    return t.other < Math.max(3, Math.min(Math.round(L * 0.45), Math.round(L0 * 0.62)));
+  }
+  // Trains the world's rail lines may hold at once (counted every few
+  // seconds): every line while there are four or fewer, then three to every
+  // five lines.
+  _railQuota() {
+    const now = this.game.time.total;
+    const c = this._rq || (this._rq = { t: -1e9, n: 0 });
+    if (now - c.t < 5) return c.n;
+    c.t = now;
+    let lines = 0;
+    for (const l of this.game.civ?.rails || []) if (l.pts && l.pts.length >= 4) lines++;
+    c.n = lines <= 4 ? lines : Math.max(4, Math.ceil(lines * 0.6));
+    return c.n;
   }
   // per-realm caps (a realm with many harbours keeps more ships)
   cap(kid, kind) {

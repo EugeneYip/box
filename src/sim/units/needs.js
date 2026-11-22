@@ -146,7 +146,10 @@ export function installNeeds(Units) {
       }
       if (d.civ?.task && d.civ.task.kind !== 'migrate' && d.civ.task.kind !== 'arrive') d.civ.task = null;
       if (u.state === 'work') u.state = 'idle';
-      const b = this._homeOf(u, v);
+      // (round 29) a soldier sleeps in the barracks (docs/DAILY-LIFE.md), else
+      // at home: soldiers with no house napped in the street
+      const bk = u.job === 'soldier' ? this._dlPlaces?.(v)?.barracks : null;
+      const b = (bk?.alive && bk.doorX != null && bk) || this._homeOf(u, v);
       if (!b) return this._nap0(u);
       const dx = b.doorX - u.x,
         dz = b.doorZ - u.z;
