@@ -310,6 +310,10 @@ export class Labels {
     this.vLabels.clear();
     this.batch.reset();
     for (const sp of this.swords) sp.userData.rect = null;
+    // rebuild on the very next update: the sync timer runs on drawn-frame
+    // time, and on a slow GPU (one frame every few seconds) waiting it out
+    // left every realm and town unnamed for a minute after the font loaded
+    this._syncT = 0;
   }
 
   // a label's place in the atlas; a full atlas is repacked from the labels

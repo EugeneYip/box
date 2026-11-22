@@ -463,7 +463,11 @@ export class Game {
         return;
       }
       const draw = !this.pipeline.gpuBusy?.();
-      const dt = Math.min(0.1, Math.max(0, (now - last) / 1000));
+      // (the simulation, input and camera take up to half a second of real
+      // time per animation frame, so live play keeps its pace when frames are
+      // held behind a slow GPU; the scene's renderers still step at most 0.1 s
+      // a drawn frame, see frameStep)
+      const dt = Math.min(0.5, Math.max(0, (now - last) / 1000));
       last = now;
       try {
         this.frameStep(dt, draw);
