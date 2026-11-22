@@ -725,7 +725,7 @@ export const modern = {
       return true;
     }
     if (m.type === 'farm') {
-      this.remove(v);
+      this._ended(v, 'field done');
       return true;
     }
     return false;
@@ -797,7 +797,7 @@ export const modern = {
       if (v.stateT > 2.5) {
         m.legs--;
         const leg = m.legs > 0 ? this._transitLeg(this.game.civ.villages[m.vid] || {}, { x: v.x, z: v.z }) : null;
-        if (!leg) return this.remove(v);
+        if (!leg) return this._ended(v, 'last stop');
         this.setPath(v, leg);
         v.state = 'move';
       }

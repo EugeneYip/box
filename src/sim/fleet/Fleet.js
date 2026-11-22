@@ -48,6 +48,9 @@ const ROT_DIR = [
 //              listens (civ._onFleetArrived); otherwise Fleets applies a
 //              default (goods to the harbour town, settlers found a village).
 //          'fleet:lost'     {vessel, id, kind, kingdom, cargo, cause, x, z}
+//          'fleet:ended'    {vehicle, id, kind, kingdom, why, x, z}  a land
+//              vehicle that finished its trip and went out of service (round
+//              31: v.endedTrip = true, v.endedWhy = why; never for a wreck)
 //          'fleet:delivered' {vehicle, kind, kingdom, from, to, cargo}  (carts, caravans, fish)
 //   vehicles() -> live vehicles (vessels and land vehicles), count(kingdom?, kind?)
 //   harbours(kingdomId) -> [{id, building, village, kingdom, level, harbour, x, z, berth, water}]
@@ -491,8 +494,8 @@ export class Fleet {
     return t.other < Math.max(3, Math.min(Math.round(L * 0.45), Math.round(L0 * 0.62)));
   }
   // Trains the world's rail lines may hold at once (counted every few
-  // seconds): every line while there are four or fewer, then three to every
-  // five lines.
+  // seconds): every line with track while there are four or fewer, then
+  // three to every four lines.
   _railQuota() {
     const now = this.game.time.total;
     const c = this._rq || (this._rq = { t: -1e9, n: 0 });
@@ -500,7 +503,9 @@ export class Fleet {
     c.t = now;
     let lines = 0;
     for (const l of this.game.civ?.rails || []) if (l.pts && l.pts.length >= 4) lines++;
-    c.n = lines <= 4 ? lines : Math.max(4, Math.ceil(lines * 0.6));
+    // (round 31: three in four, up from three in five: 8 trains ran on 20
+    // lines at Year 400)
+    c.n = lines <= 4 ? lines : Math.max(4, Math.ceil(lines * 0.75));
     return c.n;
   }
   // per-realm caps (a realm with many harbours keeps more ships)
@@ -594,8 +599,15 @@ export class Fleet {
 
   // Take a vessel out of the world (laid up, culled, lost its way). Anyone
   // still aboard steps ashore first, and the voyage's end is reported.
+  // (round 31) v.endedTrip: true when it simply went out of service (a town
+  // car home from its drive, a bus off its last run, a truck home, a ship
+  // laid up), false when it was wrecked or sunk (lose()); v.endedWhy says
+  // why ('arrived', 'laid up', 'retired', ...). The inspector reads these
+  // to say "Arrived" instead of "Lost" for a vehicle that finished its trip.
   remove(v, why = 'laid up') {
     if (!v.alive) return;
+    v.endedTrip = v.state !== 'wrecked' && v.state !== 'sinking';
+    v.endedWhy = v.endedTrip ? why : v.lostCause || 'lost';
     if (v.cls === 'sea' && v.state !== 'sinking') {
       const n = this.disembarkAll(v);
       if (n || (v.mission && v.mission.phase === 'out' && (v.cargo?.settlers || v.cargo?.army))) {
@@ -1305,7 +1317,10 @@ export class Fleet {
       const nx = v.x + Math.cos(v.heading) * v.speed * step,
         nz = v.z + Math.sin(v.heading) * v.speed * step;
       const bow = Math.min(1, def.length * 0.4);
-      const deepOK = def.clear < 2 || this.world.heightAt(nx + Math.cos(v.heading) * bow, nz + Math.sin(v.heading) * bow) < -(def.draft || 0.3) * 0.5;
+      let deepOK = def.clear < 2 || this.world.heightAt(nx + Math.cos(v.heading) * bow, nz + Math.sin(v.heading) * bow) < -(def.draft || 0.3) * 0.5;
+      // (round 31) a great hull on patrol circles in open water only: a
+      // carrier lay in the shallows beside a beach
+      if (deepOK && v.state === 'patrol' && DEEP_WATER.has(v.kind) && this.nav.clearAt(nx + Math.cos(v.heading) * bow, nz + Math.sin(v.heading) * bow) < 2) deepOK = false;
       if (deepOK && this.nav.isWater(nx, nz) && this.nav.isWater(nx + Math.cos(v.heading) * bow, nz + Math.sin(v.heading) * bow)) {
         v.x = nx;
         v.z = nz;
@@ -1420,6 +1435,7 @@ export class Fleet {
   lose(v, cause = 'lost', by = null) {
     if (!v.alive || v.state === 'sinking') return;
     const g = this.game;
+    v.lostCause = cause;
     const info = { vessel: v, vehicle: v, id: v.id, kind: v.kind, kingdom: v.kingdom, cargo: v.cargo, cause, x: v.x, z: v.z, by: by ? { id: by.id, kind: by.kind, kingdom: by.kingdom } : null, voyage: v.voyage };
     if (v.cls === 'sea') {
       v.state = 'sinking';

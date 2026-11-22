@@ -294,7 +294,7 @@ export const land = {
       if (v.stateT > 3) {
         if ((v.mission?.phase === 'home' || v.mission?.type === 'train') && v.path) v.state = 'move';
         else if (v.keep) this._findWork(v);
-        else this.remove(v);
+        else this._ended(v, 'arrived');
       }
     } else if (v.state === 'parked') {
       v.speed = 0;
@@ -304,7 +304,7 @@ export const land = {
         if (Math.abs(Math.sin((v.heading - v.settleH) / 2)) < 0.01) v.settleH = null;
       }
       // an ambulance or a fire engine on standby goes back in after a while
-      if (v.standby != null && this.game.time.total > v.standby) return this.remove(v);
+      if (v.standby != null && this.game.time.total > v.standby) return this._ended(v, 'back at the station');
       // a train with no railway looks again for one now and then
       if (v.def.rail && v.stateT > 6) {
         v.stateT = 0;
@@ -342,6 +342,14 @@ export const land = {
         this.lose(v, 'raided', { id: foe.id, kind: 'soldier', kingdom: foe.kingdom });
       }
     }
+  },
+
+  // (round 31) A land vehicle done with its trip goes out of service: marked
+  // as arrived (v.endedTrip, v.endedWhy, 'fleet:ended'), never as lost.
+  _ended(v, why = 'arrived') {
+    if (!v.alive) return;
+    this.remove(v, why);
+    this.game.events.emit('fleet:ended', { vehicle: v, id: v.id, kind: v.kind, model: v.model, kingdom: v.kingdom, why, x: v.x, z: v.z });
   },
 
   // On its own realm's land (a truck there is under the realm's protection)
@@ -447,7 +455,7 @@ export const land = {
     }
     const to = civ.villages[m.to];
     if (m.type === 'train') return this._trainArrive(v, m, to);
-    if (m.type === 'drive') return v.keep ? this._findWork(v) : this.remove(v);
+    if (m.type === 'drive') return v.keep ? this._findWork(v) : this._ended(v, 'arrived');
     if (v.role === 'service' && this._serviceArrive(v)) return;
     if (v.role === 'oxcart') {
       if (to?.alive && v.cargo) for (const [r, n] of Object.entries(v.cargo)) to[r] = (to[r] || 0) + n;
