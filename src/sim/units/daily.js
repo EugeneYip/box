@@ -933,8 +933,9 @@ export function installDaily(Units) {
     if (u.job && u.job !== 'soldier') {
       // (round 27) a worker with nothing to do this hour takes a turn on the
       // main square now and then instead of a chore (plazas stood empty by day)
-      if (h >= 9 && h < 16.5 && u.state === 'idle' && !u.moving && !d.civ?.task && rng() < 0.35 && this._dlPlaza(u, v, pl, rng, false)) return true;
-      if (h >= wake + 1.4 && h < 16.6 && u.state === 'idle' && !u.moving && !d.civ?.task) return this._dlChore(u, v, pl, rng);
+      const day = h >= 9 && h < 16.5;
+      if (day && u.state === 'idle' && !u.moving && !d.civ?.task && rng() < 0.5 && this._dlPlaza(u, v, pl, rng, false)) return true;
+      if (h >= wake + 1.4 && h < 16.6 && u.state === 'idle' && !u.moving && !d.civ?.task) return this._dlChore(u, v, pl, rng) || (day && this._dlPlaza(u, v, pl, rng, false));
       return false;
     }
     if (soldier) {
@@ -947,7 +948,7 @@ export function installDaily(Units) {
         this._dlStart(u, 'inside', 18 + rng() * 18, { x: hx, z: hz, free: true, lab: 'Off duty at home', go: 'Walking home', act: null });
         return true;
       }
-      if (r0 < 0.6) return false;
+      if (r0 < 0.6) return h >= 9 && h < 16.5 && this._dlPlaza(u, v, pl, rng, false);
     }
     // the jobless and the off-duty: errands about town
     const r = rng();
@@ -1016,7 +1017,8 @@ export function installDaily(Units) {
   P._dlPlaza = function (u, v, pl, rng, lunch) {
     const sq = pl.sq;
     if (!sq || !(v.pop >= 8)) return false;
-    if (this._plazaN(v) >= PLAZA_DAY) return false;
+    // (a small town's square holds a few; a city's up to PLAZA_DAY)
+    if (this._plazaN(v) >= Math.min(PLAZA_DAY, 2 + Math.floor(v.pop / 8))) return false;
     const a = rng() * Math.PI * 2,
       rr = 0.7 + rng() * 1.9;
     const spot = this._dlSpot(u, sq.x + Math.sin(a) * rr, sq.z + Math.cos(a) * rr, 2);
