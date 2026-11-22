@@ -173,6 +173,7 @@ export class Lightning {
       main: null,
       branches: [],
       age: 0,
+      rt0: this.game.time?.realTime ?? 0, // real time at the strike (the scene flash runs on it)
       life: 0.8 + r() * 0.35,
       strokes: [0, 0.07 + r() * 0.06, 0.19 + r() * 0.12, 0.36 + r() * 0.1].slice(0, 2 + Math.floor(r() * 3)),
       stroke: -1,
@@ -244,15 +245,23 @@ export class Lightning {
     return pts;
   }
 
-  // Strobe curve of a bolt at its age.
-  brightness(b) {
+  // Strobe curve of a bolt at its age (default: its drawn age).
+  brightness(b, age = b.age) {
     let v = 0;
     for (const s of b.strokes) {
-      const t = b.age - s;
+      const t = age - s;
       if (t >= 0) v = Math.max(v, Math.exp(-t * 9) * (s === 0 ? 1 : 0.85));
     }
-    v *= 1 - THREE.MathUtils.smoothstep(b.age, b.life * 0.55, b.life);
+    v *= 1 - THREE.MathUtils.smoothstep(age, b.life * 0.55, b.life);
     return v * b.intensity;
+  }
+  // The same curve in real (wall-clock) time since the strike: what lights
+  // the scene. The channel itself is drawn on the drawn age, so a bolt still
+  // shows in a slow frame, but its flash never outlasts the strobe (round
+  // 33: under software GL a drawn frame steps at most 0.1 s while frames
+  // come seconds apart, and one bolt whitened the view for several frames).
+  flashBrightness(b) {
+    return this.brightness(b, (this.game.time?.realTime ?? 0) - (b.rt0 ?? 0));
   }
 
   // Returns the strongest flash this frame and how many new strokes fired.
@@ -316,7 +325,7 @@ export class Lightning {
     let ii = 0;
     for (const b of this.bolts) {
       const flashB = this.brightness(b);
-      flash = Math.max(flash, flashB * (b.screenW ?? 1));
+      flash = Math.max(flash, this.flashBrightness(b) * (b.screenW ?? 1));
       // the ionised channel keeps a faint glow between the return strokes, so
       // a bolt stays visible for about half a second (not only for the scene
       // flash, which stays on the strobe curve)

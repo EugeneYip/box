@@ -30,3 +30,10 @@ export const smoothstep = (e0, e1, x) => {
 };
 // Frame-rate independent exponential approach.
 export const approach = (cur, target, rate, dt) => cur + (target - cur) * (1 - Math.exp(-rate * dt));
+
+// A sky flash seen in real (wall-clock) time, by its age in seconds: full
+// for 50 ms, gone by 180 ms, no afterglow. (round 33) Flashes used to decay
+// per drawn frame, and a drawn frame steps at most 0.1 s: where frames come
+// seconds apart (software GL, a busy GPU) one strike stayed on screen for
+// several frames as a milky veil over the whole view.
+export const flashEnv = (age) => (age < 0 ? 0 : 1 - smoothstep(0.05, 0.18, age));

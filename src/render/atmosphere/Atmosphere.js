@@ -7,8 +7,8 @@ import { Lightning } from './Lightning.js';
 import { Weather, WEATHER_TYPES } from './Weather.js';
 import { ShadowCache } from './ShadowCache.js';
 import { AgeLook } from './AgeLooks.js';
-import { noise1, smoothstep, mulberry32, approach } from './util.js';
-import { geoWrapOn } from '../../world/geo.js';
+import { noise1, smoothstep, mulberry32, approach, flashEnv } from './util.js';
+import { geoWrapOn, geoDist } from '../../world/geo.js';
 
 // Atmosphere: sun / moon / sky lighting, camera-fitted stable shadows, the
 // procedural sky, clouds and cloud shadows, day-night cycle, weather visuals
@@ -22,6 +22,10 @@ import { geoWrapOn } from '../../world/geo.js';
 //   game.atmosphere.strike(x, z, opts?)  draws a lightning bolt + flash at a
 //       world position. opts: { sound = true, intensity = 1 }. No gameplay
 //       damage (the caller applies it).
+//   game.atmosphere.flashAt(v, x?, z?)  a sky flash raised by another module
+//       (a lightning strike the disasters draw). It lasts under 0.2 s of real
+//       time, and its strength is capped by zoom (about 0.02 below 60 tiles)
+//       and by where it lands (none for a strike off screen and far away).
 //   game.atmosphere.weather   the Weather state object (type, intensity, mix)
 //   game.settings.autoWeather  (default true) lets weather change by itself.
 //
@@ -153,6 +157,9 @@ export class Atmosphere {
     this._extFlash = 0;
     this._lastFlash = 0;
     this._myFlash = 0;
+    // flashes run on real time: {peak, t0 (game.time.realTime)}
+    this._ext = { peak: 0, t0: -1e9 };
+    this._sheet = { peak: 0, t0: -1e9 };
     this._thunder = [];
     this._focus = 50;
     this._maxH = 22;
@@ -188,6 +195,37 @@ export class Atmosphere {
     this.weather.autoHeld = total + (duration ?? 240);
     this.weather.nextAuto = Math.max(this.weather.nextAuto, total + (duration ?? 240));
     this.game.env.weather.type = type;
+  }
+
+  // A sky flash raised by another module (the disasters' lightning strikes).
+  // Real time: full for 50 ms, gone by 180 ms, no afterglow. Capped by zoom
+  // (about 0.02 below 60 tiles, rising to 0.08 at the overview) and by where
+  // the strike lands: full near the centre of the view, weaker toward the
+  // edges, and nothing for a strike off screen and away from the target.
+  // (round 32: the calamity storms' strikes fed an uncapped flash that
+  // decayed per drawn frame and left a milky veil over mid-zoom views)
+  flashAt(v = 1, x = null, z = null) {
+    const k = v * this._flashGain(x, z);
+    if (k <= 0) return;
+    const now = this.game.time.realTime;
+    const E = this._ext;
+    if (k >= E.peak * flashEnv(now - E.t0)) {
+      E.peak = k;
+      E.t0 = now;
+    }
+  }
+
+  _flashGain(x, z) {
+    const rig = this.game.cameraRig;
+    const D = rig.cur.dist;
+    const cap = 0.02 + 0.06 * smoothstep(60, 160, D);
+    if (x == null || z == null) return cap;
+    const w = this.game.world;
+    const q = this._v.set(x, w.surfaceAt(x, z), z).project(rig.camera);
+    const on = q.z < 1 && Math.abs(q.x) < 1.1 && Math.abs(q.y) < 1.1 ? 1 - 0.6 * smoothstep(0.2, 1.2, Math.hypot(q.x, q.y)) : 0;
+    const span = 12 + D * 0.6;
+    const near = 1 - smoothstep(span * 0.5, span, geoDist(w, x, z, rig.target.x, rig.target.z));
+    return cap * Math.max(on, near);
   }
 
   strike(x, z, opts = {}) {
@@ -278,6 +316,7 @@ export class Atmosphere {
     const hour = game.time.hour;
     const W = this.weather;
     const paused = game.paused;
+    const now = time; // real (wall-clock) seconds: every flash runs on it
 
     // ---- weather + wind --------------------------------------------------
     // light valley mist around dawn
@@ -307,9 +346,16 @@ export class Atmosphere {
         const span = 20 + rig.cur.dist * 0.75;
         const x = THREE.MathUtils.clamp(rig.target.x + (this.rng() - 0.5) * span * 1.6, 2, game.world.w - 2);
         const z = THREE.MathUtils.clamp(rig.target.z + (this.rng() - 0.65) * span * 1.4, 2, game.world.h - 2);
-        // some bolts stay inside the clouds (sheet lightning)
-        if (this.rng() < 0.2) this._myFlash = Math.max(this._myFlash, 0.45 + this.rng() * 0.3);
-        else {
+        // some bolts stay inside the clouds (sheet lightning): no more than
+        // a faint pulse at the overview
+        if (this.rng() < 0.2) {
+          const v = (0.45 + this.rng() * 0.3) * (1 - 0.85 * THREE.MathUtils.smoothstep(rig.cur.dist, 35, 150));
+          const S = this._sheet;
+          if (v >= S.peak * flashEnv(now - S.t0)) {
+            S.peak = v;
+            S.t0 = now;
+          }
+        } else {
           this.strike(x, z, { intensity: 0.8 + this.rng() * 0.4 });
           // Occasionally a bolt lands with ground effects (ignition follows
           // the calamityLightning law inside the disasters module).
@@ -329,11 +375,13 @@ export class Atmosphere {
     const bolts = this.lightning.update(dt, camera, rig.cur.dist);
     const boltFlash = bolts.flash;
     if (bolts.strokes > 0 && bolts.strokeW > 0.01) game.pipeline?.flash?.(0xc4ceff, 0.05 * bolts.strokeW);
-    // (sheet lightning inside the clouds: no more than a faint pulse at the overview)
-    this._myFlash = Math.min(Math.max(0, this._myFlash - dt * 3.5), 1 - 0.85 * THREE.MathUtils.smoothstep(rig.cur.dist, 35, 150));
-    // merge flashes raised by other modules (Effects may write env.lightning)
-    if (env.lightning > this._lastFlash + 1e-4) this._extFlash = Math.max(this._extFlash, env.lightning);
-    this._extFlash = Math.max(0, this._extFlash - dt * 3);
+    // (round 33) every flash runs on real time, so none outlasts its strobe
+    // however far apart the drawn frames come
+    this._myFlash = this._sheet.peak * flashEnv(now - this._sheet.t0);
+    // a flash another module wrote into env.lightning (no position known):
+    // merged through flashAt, capped by zoom
+    if (env.lightning > this._lastFlash + 1e-4) this.flashAt(env.lightning);
+    this._extFlash = this._ext.peak * flashEnv(now - this._ext.t0);
     const flash = Math.min(1, Math.max(boltFlash, this._myFlash, this._extFlash));
     env.lightning = flash;
     this._lastFlash = flash;
@@ -348,7 +396,7 @@ export class Atmosphere {
     this.flashLight.intensity = flash * 3.2;
     {
       const b = this._strikeBolt;
-      const br = b && b.age < b.life ? this.lightning.brightness(b) : 0;
+      const br = b && b.age < b.life ? this.lightning.flashBrightness(b) : 0;
       const D = rig.cur.dist;
       this.strikeLight.distance = 34 + D * 0.4;
       this.strikeLight.position.y = (b ? b.y : 0) + 6 + D * 0.06;

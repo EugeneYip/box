@@ -19,8 +19,10 @@ export function lightningStrike(ds, x, z, opts = {}) {
   const camY = g.cameraRig?.camera?.position?.y ?? y + 60;
   const top = y + Math.min(55, Math.max(14, camY * 0.72 - y));
   fx.beams.bolt(x + rand(-5, 5), top, z + rand(-5, 5), x, y, z, { width: 0.3, life: 0.5, color: 0xc8dcff, branches: 5, intensity: 1.8 });
-  fx.screenFlash(0xd8e4ff, 0.5);
-  ds.flashSky(1);
+  // the god power's bolt flashes the screen; a natural strike (a calamity
+  // storm) only lights the sky, through the atmosphere's capped flash
+  if (!opts.natural) fx.screenFlash(0xd8e4ff, 0.5);
+  ds.flashSky(1, x, z);
   // thin additive blue-white ring: expands and fades in under ~0.3 s
   const P = fx.P.reset();
   P.x = x;
