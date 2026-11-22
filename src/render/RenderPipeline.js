@@ -24,6 +24,10 @@ import { GradeEffect } from './atmosphere/post/GradeEffect.js';
 //   game.pipeline.removePass(pass)
 //   game.pipeline.beforeRender      array of fn(renderer, dt) run each frame
 //                                   before the scene is drawn (offscreen work)
+//   game.pipeline.afterRender       array of fn(renderer) run each drawn frame
+//                                   once the frame is on screen: drawn over
+//                                   it, outside depth of field, haze, bloom
+//                                   and grade (the map's name labels)
 //   game.pipeline.passInfo()        {composer, enabled: [...pass names]}
 //
 // Detail by zoom and power saving (round 5): as game.view.zoom01 rises the
@@ -104,6 +108,7 @@ export class RenderPipeline {
     this.failed = false;
     this.userPasses = [];
     this.beforeRender = [];
+    this.afterRender = [];
     this._flash = new THREE.Vector3();
     this._fog = new THREE.Fog(0x9fc6e8, 300, 900);
     game.events?.on?.('powersaver', () => {
@@ -692,6 +697,17 @@ export class RenderPipeline {
     this._fog.far = P.haze.x + 2.3 / Math.max(1e-4, P.haze.y);
   }
 
+  // the overlays drawn over the finished frame (see afterRender)
+  _drawAfter() {
+    for (const fn of this.afterRender) {
+      try {
+        fn(this.renderer);
+      } catch (err) {
+        console.error('[pipeline] afterRender', err);
+      }
+    }
+  }
+
   render(dt) {
     const game = this.game;
     const renderer = this.renderer;
@@ -720,6 +736,7 @@ export class RenderPipeline {
         this.warmVariants();
         this.warmPrograms();
         this.composer.render(dt);
+        this._drawAfter();
         this._fenceFrame();
         return;
       } catch (err) {
@@ -733,6 +750,7 @@ export class RenderPipeline {
     renderer.autoClear = true;
     this.warmPrograms();
     renderer.render(game.scene, game.cameraRig.camera);
+    this._drawAfter();
     this._fenceFrame();
   }
 }

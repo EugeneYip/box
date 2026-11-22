@@ -214,6 +214,8 @@ void main() {
       transparent: true,
       depthTest: false,
       depthWrite: false,
+      // (drawn over the finished frame, already tone mapped)
+      toneMapped: false,
     });
     const m = new THREE.InstancedMesh(geo, mat, cap);
     m.name = 'civ-labels:batch';
@@ -337,7 +339,16 @@ export class Labels {
     this.vLabels = new Map(); // village id -> sprite
     this.swords = [];
     this.swordCanvas = swordsTexture();
-    this.batch = new LabelBatch(this.group);
+    // (round 33) the labels are drawn over the finished frame, after depth of
+    // field, haze, bloom and grade: inside the scene the miniature lens
+    // blurred them on phones (a ribbon took the blur of the ground behind it)
+    const pl = game.pipeline;
+    if (pl?.afterRender) {
+      this.overlay = new THREE.Scene();
+      this.overlay.name = 'civ-labels:overlay';
+      this.batch = new LabelBatch(this.overlay);
+      pl.afterRender.push((r) => this._drawOverlay(r));
+    } else this.batch = new LabelBatch(this.group);
     this._t = 0;
     this._fontReady = false;
     // player edits (names, colours, banners) show at once
@@ -350,6 +361,18 @@ export class Labels {
     } catch {
       /* fonts API unavailable */
     }
+  }
+
+  // draws the label batch over the frame on screen (no clear, no tone map)
+  _drawOverlay(r) {
+    const m = this.batch.mesh;
+    const cam = this.game.cameraRig?.camera;
+    if (!m.visible || !m.count || !cam) return;
+    const ac = r.autoClear;
+    r.autoClear = false;
+    r.setRenderTarget(null);
+    r.render(this.overlay, cam);
+    r.autoClear = ac;
   }
 
   clear() {
