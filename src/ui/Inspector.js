@@ -1439,9 +1439,10 @@ export class Inspector {
       const cam = this.game.cameraRig.camera;
       const d = Math.max(0.5, cam.position.distanceTo(this._v.set(ref.x, y0, ref.z)));
       const px = (2 * d * Math.tan((cam.fov * Math.PI) / 360)) / Math.max(1, innerHeight);
-      // (round 29) over a craft: its roof plus about 12 px (2.3 x its body
-      // height floated ~90 px over a truck at the closest zoom)
-      y = kind === 'vessel' ? y0 + Math.max(bh + 12 * px, 14 * px) : y0 + Math.max(bh * 2.3, 14 * px);
+      // (round 29) over a craft: its roof (the picker's body height runs low
+      // for a box truck, hence 1.6x) plus about 12 px; 2.3 x the body height
+      // floated ~90 px over a truck at the closest zoom
+      y = kind === 'vessel' ? y0 + Math.max(bh * 1.6 + 12 * px, 14 * px) : y0 + Math.max(bh * 2.3, 14 * px);
     }
     const v = this._v.set(ref.x, y, ref.z).project(this.game.cameraRig.camera);
     if (v.z > 1 || v.z < -1) {
