@@ -1999,7 +1999,9 @@ export const modern = {
         z1 = Math.max(z1, z);
       }
       for (const o of segs) {
-        if (o === s || o.kind !== 'rail') continue;
+        // (only the trunk a branch leaves: blocking every other line's
+        // track as well cut most highways into stubs)
+        if (o === s || o.kind !== 'rail' || o !== s.up) continue;
         const Q = o.pts;
         // (a branch of this line leaves it at its switch: that stretch never
         // breaks this line's own highway)
