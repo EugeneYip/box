@@ -92,7 +92,9 @@
   transition-property: opacity, transform;
 }
 
-/* ---- phones: the age badge is a small dial with the age's initial */
+/* ---- phones: the age badge is a small dial with the age's first two
+   letters (round 33: one initial was shared by Tempests and Twilight, and by
+   Bounty and Blight) */
 @media (max-width: 720px), (max-height: 500px) {
   .ws-agedot svg {
     position: absolute;
@@ -115,9 +117,9 @@
   }
   .ws-agedot b {
     position: relative;
-    font: 800 9.5px/1 var(--ws-font);
+    font: 800 7.6px/1 var(--ws-font);
     color: var(--age);
-    letter-spacing: 0;
+    letter-spacing: -0.02em;
   }
 }
 

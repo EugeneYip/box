@@ -42,8 +42,11 @@ export class AgeChip {
       // (round 31) a small dial in the age's color with its initial, not the
       // age's glyph (a storm cloud for Tempests read as a second weather icon
       // beside the season's)
-      const nm = String(a.name || a.title || '').replace(/^(the\s+)?age\s+of\s+(the\s+)?/i, '');
-      this.dot.innerHTML = `<svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="8" class="ws-agedot__bg"/><circle cx="10" cy="10" r="8" class="ws-agedot__fg" pathLength="100" transform="rotate(-90 10 10)"/></svg><b>${(nm.trim()[0] || '?').toUpperCase()}</b>`;
+      // (round 33) two letters: one initial was shared by Tempests and
+      // Twilight (T) and by Bounty and Blight (B)
+      const nm = String(a.name || a.title || '').replace(/^(the\s+)?age\s+of\s+(the\s+)?/i, '').trim();
+      const ab = nm ? nm[0].toUpperCase() + (nm[1] || '').toLowerCase() : '?';
+      this.dot.innerHTML = `<svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="8" class="ws-agedot__bg"/><circle cx="10" cy="10" r="8" class="ws-agedot__fg" pathLength="100" transform="rotate(-90 10 10)"/></svg><b>${esc(ab)}</b>`;
       this.dotFg = this.dot.querySelector('.ws-agedot__fg');
     }
     const p = Math.max(0, Math.min(1, a.progress || 0));
