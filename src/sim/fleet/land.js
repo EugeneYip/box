@@ -180,13 +180,15 @@ export const land = {
         if (c === Infinity) return c;
         return use[i] === USE.FREE ? c + 12 : 60;
       };
-      const q = civPath(w, sx, sy, gx, gy, motorCost, 9000, 0.4);
+      // (5000 nodes: a realm's road network and a little round it; a pair
+      // with no road between them is refused, and remembered a while)
+      const q = civPath(w, sx, sy, gx, gy, motorCost, 5000, 0.4);
       const open = (r) => r.some((i) => use[i] !== USE.ROAD && !nearEnds(i));
       if (reaches(q) && this._closeGaps(q, sy * w.w + sx)) {
         p = q;
         // (the new road was laid in straight runs: the way along it)
         if (open(q)) {
-          const r = civPath(w, sx, sy, gx, gy, motorCost, 9000, 0.4);
+          const r = civPath(w, sx, sy, gx, gy, motorCost, 5000, 0.4);
           if (reaches(r) && !open(r)) p = r;
         }
       }
