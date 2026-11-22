@@ -5,6 +5,8 @@ import { realmsFor, regionStyle } from './places/index.js';
 import { REGIONS } from './places/regions.js';
 import { peopleCultureId } from './peoples.js';
 import { USE, SPIRAL, spiralCount, clamp, YEAR, ADULT_AGE } from './util.js';
+// (the relations map's key: politics.js relKey)
+const relKey = (a, b) => (a < b ? a * 4096 + b : b * 4096 + a);
 
 // Real realms on World Map worlds (contract: docs/REGIONS.md section 3).
 // A map of the Earth (or of one of its regions) starts with real countries
