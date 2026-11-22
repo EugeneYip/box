@@ -106,6 +106,18 @@ function ringMaterial(occluded) {
   });
 }
 
+// How much of the scene's light an unlit ground marker takes: 1 at a clear
+// noon, falling with the key and sky light (storm, dusk, night) to 0.3.
+// (round 33) The hover and selection outlines are unlit, unfogged lines: a
+// white frame round a hall glowed over the dark frame of a storm.
+function markerLight(game) {
+  const env = game.env || {};
+  const lum = (c) => (c ? c.r * 0.2126 + c.g * 0.7152 + c.b * 0.0722 : null);
+  const key = lum(env.lightColor) ?? 3.1;
+  const sky = lum(env.ambientColor) ?? 0.7;
+  return Math.max(0.3, Math.min(1, Math.pow((key + sky) / 3.6, 0.75)));
+}
+
 // A closed band laid on the ground along a loop of points.
 class GroundLoop {
   constructor(game, n, renderOrder = 990) {
@@ -141,6 +153,7 @@ class GroundLoop {
     this.back.renderOrder = renderOrder - 1;
     this.px = new Float32Array(n);
     this.pz = new Float32Array(n);
+    this.lit = false; // dims with the scene's light (markerLight)
   }
   set visible(v) {
     this.front.visible = this.back.visible = v;
@@ -149,12 +162,13 @@ class GroundLoop {
     return this.front.visible;
   }
   style(color, opacity, time, dash = 0, dashSpeed = 0, duty = 0.6, backOpacity = 0.28) {
+    const lk = this.lit ? markerLight(this.game) : 1;
     for (const [m, o] of [
       [this.front, opacity],
       [this.back, opacity * backOpacity],
     ]) {
       const u = m.material.uniforms;
-      u.uColor.value.copy(color);
+      u.uColor.value.copy(color).multiplyScalar(lk);
       u.uOpacity.value = o;
       u.uTime.value = time;
       u.uDash.value = dash;
@@ -368,6 +382,7 @@ export class BrushCursor {
     this.fill = new GroundDisc(game);
     this.hover = new GroundLoop(game, 64, 991);
     this.sel = new GroundLoop(game, 72, 993);
+    this.hover.lit = this.sel.lit = true; // outlines take the scene's light (the power brush keeps its own)
     this.color = new THREE.Color();
     this.white = new THREE.Color(1, 1, 1);
     this.gold = new THREE.Color('#fbe3a6');
