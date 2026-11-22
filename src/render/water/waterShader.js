@@ -242,12 +242,7 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   // (n15 reads a smooth channel: the ridged one (B) has thin crests along its
   // isolines, which drew dark veins and rings over the shallow sand, round 28)
   float n47 = texture2D(uNoise, wq * (1.0 / 47.0) + 0.23).g, n15 = texture2D(uNoise, wq * (1.0 / 15.0) + 0.61).r;
-  // the colour ramp and the deep veil read a depth smoothed over ~2 tiles
-  // (round 28: the regional shelves' coarse depth steps drew blocky,
-  // stair-stepped deep patches in the turquoise)
-  float hS = (hAt(pd + vec2(2.1, 0.7)) + hAt(pd - vec2(2.1, 0.7)) + hAt(pd + vec2(-0.7, 2.1)) + hAt(pd + vec2(0.7, -2.1))) * 0.25;
-  float depthS = mix(depth, mix(max(0.0, -mix(hc, hS, 0.8)), 16.0, outK), smoothstep(0.8, 2.2, depth));
-  float depthN = depthS * (0.62 + 0.48 * n47 + 0.34 * n15);
+  float depthN = depth * (0.62 + 0.48 * n47 + 0.34 * n15);
   vec3 scat = mix(waterShallowColorV(scatVis), waterDeepColorV(scatVis), waterDeepMix(depthN));
   // shallow flats: patches of pale sand and darker weed and rock beds under
   // the water, broken at two scales
@@ -264,7 +259,7 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   veil = mix(veil, 1.0, outK);
   // deep open water is opaque, exactly like the endless ocean beyond the map,
   // so the map rectangle never shows as a lighter box against the outer sea
-  veil = mix(veil, 1.0, smoothstep(2.8, 5.5, depthS) * 0.92);
+  veil = mix(veil, 1.0, smoothstep(2.8, 5.5, depth) * 0.92);
   // rivers and narrow channels: a clear teal body of their own
   // rivers keep their teal under overcast skies: a soft light floor (scaled at night)
   vec3 irrR = max(waterIrradianceV(lightVis), vec3(0.44, 0.66, 0.64) * (0.25 + 0.75 * uDay));
