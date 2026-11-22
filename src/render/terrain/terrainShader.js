@@ -71,6 +71,8 @@ float tUrb; // far-zoom urban patch weight (the realm tint stays light over town
 vec3 tUrbCol; // far-zoom urban patch colour (laid again over the realm tint)
 float tBuilt; // a town's built footprint at any zoom (the realm tint and borders stay light over it)
 float tRivBank; // map zoom: land beside a river channel (no crease shading there)
+float tPaveK; // a paved town's streets, sidewalks and square (dimmed at night)
+float tTownN; // near a town's houses at all (even a young town's sparse footprint)
 
 const mat2 ROT1 = mat2(0.80, -0.60, 0.60, 0.80);
 const mat2 ROT2 = mat2(0.28, 0.96, -0.96, 0.28);
@@ -84,6 +86,13 @@ float hash12(vec2 p) {
   return fract((p3.x + p3.y) * p3.z);
 }
 float lum(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
+// how much of a town's street grid is drawn: all of it up to ~100 units,
+// none past ~135, and from ~80 only where the block is built up (dens: the
+// town's building density, Terrain._writeUrban), so the overview never turns
+// into graph paper (round 28)
+float tStreetVis(float dens) {
+  return (1.0 - smoothstep(100.0, 135.0, uCamDist)) * mix(1.0, smoothstep(0.12, 0.45, dens), smoothstep(80.0, 120.0, uCamDist));
+}
 
 float tileTypeAt(ivec2 c) {
   ivec2 sz = ivec2(uWorldSize);
@@ -786,12 +795,15 @@ vec3 seabedColor(NS s, float depth, out float hgt) {
   vec3 rock = vec3(0.12, 0.13, 0.13) * (0.82 + 0.22 * s.cellL.b + 0.12 * (s.meso.r - 0.5));
   // (broad and finer noise on the sand line: the shallow halo round an islet
   // is wide on one side and narrow on another, never a uniform ring)
-  float k1 = smoothstep(1.8, 4.5, depth + (s.macro.r - 0.5) * 4.0 + (s.meso.b - 0.5) * 2.2);
+  // (smooth noise only: the ridged channel (B) has thin crests along its
+  // isolines, and in the shallows they drew a net of dark veins and rings
+  // in the silt line and the seagrass, round 28)
+  float k1 = smoothstep(1.8, 4.5, depth + (s.macro.r - 0.5) * 4.0 + (s.meso.r - 0.5) * 2.2);
   float k2 = smoothstep(4.0, 7.5, depth + (s.meso.g - 0.5) * 3.0);
   // patches of seagrass in sunny shallows: a soft olive tint over the sand
   // with a gentle edge (round 26: near-black blotches with ragged edges
   // read as stains in the water)
-  float grass = smoothstep(0.54, 0.86, s.meso.b * 0.5 + s.macro.g * 0.5) * smoothstep(0.4, 1.0, depth) * (1.0 - k1);
+  float grass = smoothstep(0.50, 0.86, s.meso.g * 0.5 + s.macro.g * 0.5) * smoothstep(0.6, 1.5, depth) * (1.0 - k1);
   vec3 c = mix(sand, sand * vec3(0.62, 0.80, 0.55) * (0.94 + 0.12 * s.det.r), grass * 0.6);
   c = mix(c, silt, k1);
   c = mix(c, rock, k2);
@@ -860,7 +872,10 @@ void applyOverlay(vec2 p, inout vec3 albedo, inout vec3 emissive, float snowK) {
   float line = smoothstep(1.0, 1.8, px) * (1.0 - smoothstep(3.4, 4.2, px)) * (1.0 - uniformRegion);
   float glow = exp(-max(dist, 0.0) * 4.5) * (1.0 - uniformRegion);
   // fill: none closer than ~22, ~18% at mid zoom (30-80), >= 40% at map zoom
-  float fillAmt = 0.25 * smoothstep(22.0, 32.0, uCamDist) + 0.20 * smoothstep(80.0, 180.0, uCamDist);
+  // (round 29: about 40% lighter at the overview and a little lighter at mid
+  // zoom; the old 45% at map zoom laid pastel paint over the whole map and
+  // stained the small young realms round their capitals)
+  float fillAmt = 0.21 * smoothstep(22.0, 32.0, uCamDist) + 0.06 * smoothstep(80.0, 180.0, uCamDist);
   float fillK = smoothstep(22.0, 110.0, uCamDist);
   vec3 col = pow(own.rgb, vec3(2.2)); // overlay colours are authored in sRGB
   float a = own.a;
@@ -870,12 +885,17 @@ void applyOverlay(vec2 p, inout vec3 albedo, inout vec3 emissive, float snowK) {
   float la = lum(albedo);
   vec3 tintC = min(col * (la / max(lum(col), 0.03)), vec3(1.0));
   tintC = mix(tintC, col * 0.6, 0.2);
+  // (a softer chroma: on green meadows a blue or violet realm turned a
+  // strong cyan-lilac disc round each young town)
+  tintC = mix(vec3(la), tintC, 0.7);
   // snow composites above the territory tint (borders still read)
   float onSnow = 1.0 - 0.85 * snowK;
   // (a town's grey patch keeps most of its grey under the realm's tint)
   // (and at mid zoom, 40-80, a town's built footprint keeps only a light
   // wash of it: round 24 washed a Modern town salmon pink at 55 tiles)
-  float townK = max(0.7 * tUrb, 0.8 * tBuilt);
+  // (a young town's few houses count too: its whole footprint keeps only a
+  // light wash, so the realm no longer paints a disc over it)
+  float townK = max(max(0.7 * tUrb, 0.8 * tBuilt), 0.6 * tTownN);
   albedo = mix(albedo, tintC, min(1.0, aFill * fillAmt * 1.3) * onSnow * (1.0 - townK));
   // far zoom: a town's grey patch is laid again over the realm's tint, with
   // at most a tenth of the realm's colour left in it, so the town reads as a
@@ -903,6 +923,8 @@ void applyOverlay(vec2 p, inout vec3 albedo, inout vec3 emissive, float snowK) {
 void terrainSurface() {
   tUrb = 0.0;
   tBuilt = 0.0;
+  tPaveK = 0.0;
+  tTownN = 0.0;
   tUrbCol = vec3(0.34, 0.33, 0.31);
   NS s;
   s.p = vWPos;
@@ -1311,7 +1333,19 @@ void terrainSurface() {
           albedo = mix(albedo, verge * clamp(lum(albedo) / 0.12, 0.8, 1.3), (1.0 - laneK) * flat0 * 0.9);
           pk *= laneK;
         }
+        // far zoom: the streets fade out past ~100-135 units, and from ~80
+        // where the block is sparse, to the lawn or verge between the
+        // houses (round 28: the paved grid drew graph paper over the whole
+        // map at the overview); dense cores keep the urban patch below
+        float stVis = tStreetVis(st.r);
+        if (stVis < 0.999) {
+          vec3 fillG = mix(vec3(0.19, 0.26, 0.10), vec3(0.17, 0.30, 0.085), modern) * (0.88 + 0.2 * s.det.r + 0.1 * (s.meso.g - 0.5));
+          fillG = mix(fillG, vec3(lum(fillG)) * vec3(0.95, 0.95, 1.0), snowB);
+          albedo = mix(albedo, fillG * clamp(lum(albedo) / 0.12, 0.8, 1.3), (1.0 - stVis) * pk);
+          pk *= stVis;
+        }
         albedo = mix(albedo, pave, pk);
+        tPaveK = pk;
         rough = mix(rough, mix(0.9, 0.78, modern * (1.0 - side)), pk);
         H *= 1.0 - pk * 0.85;
       } else if (plvl > 1.5) {
@@ -1356,6 +1390,7 @@ void terrainSurface() {
     // (the street grid had covered two thirds of the land as one megacity).
     float dens = st.r;
     tBuilt = smoothstep(0.10, 0.45, dens);
+    tTownN = smoothstep(0.015, 0.20, dens);
     float urbK = smoothstep(68.0, 92.0, uCamDist) * (1.0 - snowB * 0.2);
     if (dens > 0.02 && urbK > 0.0) {
       // (a noise-broken edge that hugs the blocks: no soft cloud fringe)
@@ -1395,7 +1430,9 @@ void terrainSurface() {
       // streets: pale concrete lines along the road tiles (the real grid),
       // with less contrast in a sparse block and at the overview, where a
       // tile is a couple of pixels and the lines turned to graph paper
-      if (rdT) urb = mix(urb, mix(vec3(0.29, 0.28, 0.265), vec3(0.32, 0.32, 0.31), modU) * (0.94 + 0.08 * s.det.g), mix(0.35, 1.0, smoothstep(0.25, 0.75, dens)) * (1.0 - 0.6 * ovK));
+      // (and none past ~135 or in a sparse block far out: tStreetVis)
+      float stV = rdT ? tStreetVis(dens) : 0.0;
+      if (rdT) urb = mix(urb, mix(vec3(0.29, 0.28, 0.265), vec3(0.32, 0.32, 0.31), modU) * (0.94 + 0.08 * s.det.g), mix(0.35, 1.0, smoothstep(0.25, 0.75, dens)) * stV);
       // snow-covered towns: roofs and yards under snow, still a patch apart
       urb = mix(urb, vec3(0.50, 0.505, 0.51) * (0.9 + 0.15 * bldT), clamp(snowB, 0.0, 1.0) * 0.6);
       // the ground's own light and shade carry through (hill shading and
@@ -1412,7 +1449,7 @@ void terrainSurface() {
       // its grass, so hills read as hills; and the open yards of a sparse
       // block keep more of their lawn than its roofs and streets)
       float slopeU = smoothstep(0.80, 0.94, s.n.y);
-      float yardU = mix(mix(0.45, 1.0, smoothstep(0.3, 0.8, dens)), 1.0, max(bldT, rdT ? 1.0 : 0.0));
+      float yardU = mix(mix(0.45, 1.0, smoothstep(0.3, 0.8, dens)), 1.0, max(bldT, stV));
       float uk = (ring * 0.8 + core * 0.2) * yardU * urbK * (1.0 - 0.75 * cliff) * mix(0.25, 1.0, slopeU);
       albedo = mix(albedo, urb, uk * 0.95);
       rough = mix(rough, 0.82, uk);
@@ -1508,11 +1545,16 @@ void terrainSurface() {
 
   // night: green ground (lawns, meadows, parks) loses most of its colour
   // under the moon, as the walls are dimmed; it stayed a saturated green
-  // beside the dark walls of a town at night (round 26)
+  // beside the dark walls of a town at night (round 26). It darkens as it
+  // greys: a pale blue-grey (round 28) lifted red and blue, so the meadows
+  // read as frost beside the dark trees and a town at night as one grey
+  // sheet; and the pale paving of a town dims too, as its walls do, so the
+  // lit windows stand out again
   {
     float nightG = 1.0 - smoothstep(0.08, 0.55, uDay);
     float greenK = smoothstep(0.01, 0.07, albedo.g - max(albedo.r, albedo.b)) * step(0.0, s.p.y);
-    albedo = mix(albedo, vec3(lum(albedo)) * vec3(0.80, 0.86, 0.92), greenK * nightG * 0.6);
+    albedo = mix(albedo, vec3(lum(albedo)) * vec3(0.42, 0.47, 0.52), greenK * nightG * 0.6);
+    albedo *= 1.0 - nightG * tPaveK * 0.45 * smoothstep(0.06, 0.30, lum(albedo));
   }
 
   // ---- territory overlay

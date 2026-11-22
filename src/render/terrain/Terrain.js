@@ -215,9 +215,26 @@ export class Terrain {
       this._applyFire(r);
     }
     // towns and their fields: rebuilt when a town changes shape (at most
-    // every 1.5 s; FloraSim refreshes the outlines every few game seconds)
-    this._settleT -= dt;
-    this._sigT = (this._sigT || 0) - dt;
+    // every 1.5 s; FloraSim refreshes the outlines every few game seconds).
+    // The timers run on real time: the drawn-frame dt is capped at 0.1 s, so
+    // behind a slow GPU (a frame every few seconds) new streets showed up a
+    // minute late. After a fast-forward (a jump in game time) or when a realm
+    // enters a new era the paving is repainted at once.
+    const now = performance.now();
+    const rdt = this._lastNow != null ? Math.min(10, Math.max(0, (now - this._lastNow) / 1000)) : dt;
+    this._lastNow = now;
+    const gt = g.time?.total ?? 0;
+    const jumped = this._lastGT != null && gt - this._lastGT > 20;
+    this._lastGT = gt;
+    let eraSig = 0;
+    for (const k of g.civ?.kingdoms || []) if (k && k.alive !== false) eraSig = (eraSig * 7 + (k.era || 0) + 1) | 0;
+    if (jumped || eraSig !== this._eraSig) {
+      this._eraSig = eraSig;
+      this._sigT = 0;
+      this._settleT = 0;
+    }
+    this._settleT -= rdt;
+    this._sigT = (this._sigT || 0) - rdt;
     if (this._sigT <= 0) {
       this._sigT = 2;
       const sg = this._settleSig();

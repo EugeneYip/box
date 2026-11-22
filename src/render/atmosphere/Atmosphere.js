@@ -328,8 +328,9 @@ export class Atmosphere {
     }
     const bolts = this.lightning.update(dt, camera, rig.cur.dist);
     const boltFlash = bolts.flash;
-    if (bolts.strokes > 0) game.pipeline?.flash?.(0xc4ceff, 0.05);
-    this._myFlash = Math.max(0, this._myFlash - dt * 3.5);
+    if (bolts.strokes > 0 && bolts.strokeW > 0.01) game.pipeline?.flash?.(0xc4ceff, 0.05 * bolts.strokeW);
+    // (sheet lightning inside the clouds: no more than a faint pulse at the overview)
+    this._myFlash = Math.min(Math.max(0, this._myFlash - dt * 3.5), 1 - 0.85 * THREE.MathUtils.smoothstep(rig.cur.dist, 35, 150));
     // merge flashes raised by other modules (Effects may write env.lightning)
     if (env.lightning > this._lastFlash + 1e-4) this._extFlash = Math.max(this._extFlash, env.lightning);
     this._extFlash = Math.max(0, this._extFlash - dt * 3);

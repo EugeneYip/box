@@ -154,6 +154,10 @@ if (vRoof.x > 0.5) {
   // so its lit cells (emissive, below) stand out against dark panes.
   float wsLum = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
   float wsGl = step(0.05, vGlow) * step(vGlow, 1.5);
+  // green roofs (turf, garden terraces) grey and darken under the moon, as
+  // the lawns below do (round 28: they stayed a lit green at night)
+  float wsGr = smoothstep(0.01, 0.07, diffuseColor.g - max(diffuseColor.r, diffuseColor.b)) * (1.0 - wsGl);
+  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(wsLum) * vec3(0.42, 0.47, 0.52), wsGr * uNight * 0.75);
   // (round 25: pale civic buildings and the white Future cylinders still
   // read as lanterns at night: pale walls now keep under a fifth of their
   // daylight colour, so only the lit windows carry them)
