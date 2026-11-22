@@ -540,52 +540,76 @@ export class Units {
       _mAggr: 1,
       _lvlHp: 1,
       _blessHp: 1,
-      _eqVer: 0,
-      _battles: 0,
-      _wars: null,
-      _yr: null,
-      _woundLow: null,
-      _famine: null,
-      _luckLogged: false,
-      _divine: null,
-      _riding: false,
-      _rideMul: 1,
-      _charged: -99,
-      _chargeT: -99,
-      _trips: 0,
-      _cured: 0,
-      _nurse: 0,
-      _nurseWait: 0,
-      _healAt: -99,
-      _lostT: 0,
-      _aboardSince: 0,
-      _rs: null,
-      _rm: null,
-      _nap: false,
-      _away: false,
-      flags: null,
-      _homeB: null,
-      _homeT: -99,
-      _simT: g.time.total, // game time of its last full update (level of detail)
-      _mvx: 0, // a distant walker's stride, shown in steps between its updates
-      _mvz: 0,
-      _mvn: 0,
-      _forager: null,
-      _foraged: false,
-      // daily life (daily.js)
-      _dl: null,
-      _dlNext: 0,
-      _hid: false,
-      _meal: -1,
-      _privyT: null,
-      _spSeen: undefined,
-      _hitAt: -99,
-      _singUntil: 0,
-      _envN: 0,
-      _celeSeen: null,
-      _brigade: 0,
-      _space: 0,
     };
+    // (round 31) The rest are added one by one: an object literal of 128 or
+    // more properties is born with slow (dictionary) properties, and every
+    // creature had been, so each property read in the per-tick loop was a
+    // hash lookup. Named stores in a fixed order keep one fast shape.
+    u._eqVer = 0;
+    u._battles = 0;
+    u._wars = null;
+    u._yr = null;
+    u._woundLow = null;
+    u._famine = null;
+    u._luckLogged = false;
+    u._divine = null;
+    u._riding = false;
+    u._rideMul = 1;
+    u._charged = -99;
+    u._chargeT = -99;
+    u._trips = 0;
+    u._cured = 0;
+    u._nurse = 0;
+    u._nurseWait = 0;
+    u._healAt = -99;
+    u._lostT = 0;
+    u._aboardSince = 0;
+    u._rs = null;
+    u._rm = null;
+    u._nap = false;
+    u._away = false;
+    u.flags = null;
+    u._homeB = null;
+    u._homeT = -99;
+    u._simT = g.time.total; // game time of its last full update (level of detail)
+    u._mvx = 0; // a distant walker's stride, shown in steps between its updates
+    u._mvz = 0;
+    u._mvn = 0;
+    u._forager = null;
+    u._foraged = false;
+    // daily life (daily.js)
+    u._dl = null;
+    u._dlNext = 0;
+    u._hid = false;
+    u._meal = -1;
+    u._privyT = null;
+    u._spSeen = undefined;
+    u._hitAt = -99;
+    u._singUntil = 0;
+    u._envN = 0;
+    u._celeSeen = null;
+    u._brigade = 0;
+    u._space = 0;
+    // (round 31) fields other passes add part-way through a life (a bed, a
+    // school day, a stall at the dock, an off-duty errand, a death), left
+    // undefined until then, so a creature keeps the shape it was born with
+    u.alarm = undefined;
+    u._depthReady = undefined;
+    u._adFor = undefined;
+    u._ad = undefined;
+    u._adT = undefined;
+    u._offd = undefined;
+    u._inAcc = undefined;
+    u._schoolDay = undefined;
+    u._fireLogged = undefined;
+    u._padNear = undefined;
+    u._padTry = undefined;
+    u._padWait = undefined;
+    u._bedT = undefined;
+    u._bedB = undefined;
+    u.deathTime = undefined;
+    u.deathCause = undefined;
+    u._parentLogged = undefined;
     if (def.habitat === 'air') {
       u.alt = opts.alt ?? 6;
       u.altGoal = u.alt;

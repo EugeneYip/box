@@ -349,12 +349,24 @@ export class Game {
       // runs on accumulators simply thinks less often per game second.
       const step = TICK * Math.min(4, Math.max(1, Math.ceil(this.speed / 4)));
       this.simStep = step;
+      // (round 31) A step that draws nothing (the timer's, while software GL
+      // holds the animation frames back) leaves the main thread otherwise
+      // idle: it runs at least three ticks, up to 25 ms, before it stops.
+      // Ticks of 6-19 ms used to stop it after one. When the budget runs out
+      // the backlog is kept, up to half a second of game time, for the next
+      // step (it used to be cut to one tick, so live play under software GL
+      // ran at 0.7x real time); a drawn frame keeps its own budget.
+      const minTicks = draw ? 1 : 3;
+      const hardMs = draw ? budgetMs : Math.max(budgetMs, 25);
       const t0 = performance.now();
+      let n = 0;
       while (this._acc >= step) {
         this.tick(step);
         this._acc -= step;
-        if (performance.now() - t0 > budgetMs) {
-          this._acc = Math.min(this._acc, step); // drop the backlog
+        n++;
+        const el = performance.now() - t0;
+        if (el > hardMs || (el > budgetMs && n >= minTicks)) {
+          this._acc = Math.min(this._acc, Math.max(step, 0.5 * this.speed)); // cap the backlog
           break;
         }
       }

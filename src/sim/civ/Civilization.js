@@ -2547,7 +2547,10 @@ export class Civilization {
     for (const b of this.buildings) if (b.alive && !b.constructing && (b.type === 'watchtower' || b.type === 'tower')) sig = (Math.imul(sig, 31) + b.id) | 0;
     const now = this.game.time.total;
     if (sig === this._terrSig && !this._terrDirty && now - (this._terrT ?? -1e9) < every) return;
-    if (gap && !this._terrDirty && this._aliveN === this._terrAliveN && now - (this._terrT ?? -1e9) < gap) return;
+    // (round 31: a changed shore or a town's own claim spread on founding,
+    // the dirty mark, waits out the same gap; it forced a whole fill at every
+    // look, and the fill had grown to 7% of the coarse tick in a busy century)
+    if (gap && this._aliveN === this._terrAliveN && now - (this._terrT ?? -1e9) < gap) return;
     this._terrAliveN = this._aliveN;
     this._terrSig = sig;
     this._terrDirty = false;
