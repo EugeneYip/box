@@ -316,7 +316,9 @@ export const politics = {
       // (a real country's crown passes more surely: the seeded ones at
       // seven tenths split their land into a crown per province)
       const realK = k.realm >= 0 && this._realMapOn?.();
-      if (k.villages.length >= 3 && this._kLaw(k.id, 'civRebellions') && !abdicated && this.rng.chance(Math.min(0.35, 0.1 + (k.villages.length - 3) * 0.03) * (realK ? 0.4 : k.seeded ? 0.7 : 1))) {
+      // (round 29: damped like the other risings, and counted among them; a
+      // run of the 100s saw seven contested successions)
+      if (k.villages.length >= 3 && this._kLaw(k.id, 'civRebellions') && !abdicated && this.rng.chance(Math.min(0.35, 0.1 + (k.villages.length - 3) * 0.03) * (realK ? 0.4 : k.seeded ? 0.7 : 1) * this._riseDamp())) {
         let claimant = null;
         for (const vid of k.villages) {
           const v = this.villages[vid];
@@ -330,6 +332,7 @@ export const politics = {
           const R = this.rebel(claimant, false, true);
           this._autoRise = false;
           this._civilWar = false;
+          if (R) this._noteRise();
           if (R) this.declareWar(R.id, k.id, 'rebellion', true);
         }
       }
