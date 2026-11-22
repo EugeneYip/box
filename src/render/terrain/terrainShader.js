@@ -1509,7 +1509,11 @@ void terrainSurface() {
   emit += vec3(0.8, 0.15, 0.015) * smoothstep(0.05, 1.0, lavaRaw) * (1.0 - lavaB) * 0.45 * (0.6 + 0.8 * s.meso.r);
 
   // ---- normals: material bump + seabed ripples
-  vec3 nb = fine ? bumpPerturb(s.p, nrm, H * uDetail) : nrm;
+  // (at the closest zooms the material noise is magnified several times, and
+  // the derivative bump of its bilinear texels lit the grass as coarse green
+  // blocks round a followed person; the bump eases off there, round 29)
+  float closeB = mix(0.3, 1.0, smoothstep(0.004, 0.014, s.fw));
+  vec3 nb = fine ? bumpPerturb(s.p, nrm, H * uDetail * closeB) : nrm;
   tNormalW = nb;
 
   // ---- snow sparkle (view dependent, band-limited)
