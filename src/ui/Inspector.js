@@ -76,6 +76,9 @@ const roofOf = (b) => {
   const design = def.modern ? 3 + 0.6 * span : 1.2 + 0.35 * (lv - 1) + 0.4 * (span - 1);
   return Math.min(3.2, design * BUILDING.scale * (b.constructing ? Math.max(0.3, b.progress || 0) : 1));
 };
+// (round 31) what a craft that ended its trip has done, by class
+const ARRIVED_WORD = { land: 'Arrived', sea: 'In port', air: 'Landed', space: 'In orbit' };
+const ARRIVED_TOAST = { land: 'reached its stop', sea: 'reached port', air: 'has landed', space: 'reached orbit' };
 const isCraft = (r) => !!r?.vessel || r?.kind === 'vessel' || r?.kind === 'vehicle';
 const JOB = {
   woodcutter: ['job-woodcutter', '#d9a466', 'Woodcutter'],
@@ -692,7 +695,7 @@ export class Inspector {
       <header class="ws-insp__head">
         <span class="ws-insp__badge${portrait ? ' has-portrait' : ''}${kObj?.banner ? ' has-banner' : ''}">${level != null ? `<i class="ws-lvl" title="Level ${level}">${level}</i>` : ''}${portrait ? `<img class="ws-insp__portrait" src="${portrait}" alt=""><span class="ws-insp__glyph">${ic.svg}</span>` : ic.svg}${kTint ? `<i class="ws-insp__kdot" style="--k:${kTint}"></i>` : ''}</span>
         <div class="ws-insp__titles">
-          <div class="ws-insp__kind">${esc(kindLabel)}${dead ? ` <em class="ws-insp__dead">${craft ? 'Lost' : 'Fallen'}</em>` : ended ? ` <em class="ws-insp__dead is-arrived">${(craft.def?.cls || craft.cls) === 'air' ? 'Landed' : 'Arrived'}</em>` : ''}</div>
+          <div class="ws-insp__kind">${esc(kindLabel)}${dead ? ` <em class="ws-insp__dead">${craft ? 'Lost' : 'Fallen'}</em>` : ended ? ` <em class="ws-insp__dead is-arrived">${ARRIVED_WORD[craft.def?.cls || craft.cls] || 'Arrived'}</em>` : ''}</div>
           <h3 class="ws-insp__title">${esc(this.titleOf(r) || 'Unknown')}${epithet ? ` <span class="ws-insp__epithet">${esc(epithet)}</span>` : ''}</h3>
           <div class="ws-insp__fact" data-fact>${esc(this.factLine(r))}</div>
           ${subShown ? `<div class="ws-insp__sub" data-sub>${craft && ownerK?.banner ? `<img class="ws-crest ws-crest--banner" alt="" src="${bannerURL(ownerK.banner, ownerK.color, 28)}">` : kTint ? `<i class="ws-crest" style="--k:${kTint}"></i>` : ''}<span>${esc(subShown)}</span></div>` : ''}
@@ -1454,9 +1457,8 @@ export class Inspector {
           this.render();
           // (round 31) the car is gone from view: say where it went
           if (this.craftEnded(c)) {
-            const air = (c.def?.cls || c.cls) === 'air';
             const name = String(this.titleOf(r) || '').trim() || 'The vehicle';
-            safe(() => this.ui.toast(air ? `${name} has landed` : `${name} reached its stop`, 2200));
+            safe(() => this.ui.toast(`${name} ${ARRIVED_TOAST[c.def?.cls || c.cls] || 'reached its stop'}`, 2200));
           }
         }
         return;
