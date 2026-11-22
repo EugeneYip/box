@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { PF, DF, RAMP } from './FxTextures.js';
 import { TRAIL } from './Debris.js';
+import { UNIT } from '../../core/scale.js';
 
 // Effect type presets. Each preset receives (fx, pos, opts) where pos has a
 // resolved y, and opts = {scale, count, color, dir, ...}. All randomness is
@@ -460,11 +461,15 @@ export const PRESETS = {
     dustPuff(fx, p.x, p.y, p.z, 0.6 * s, {});
   },
 
+  // a birth, a patient healed, a plague cured: a soft pale-green glow and a
+  // few rising glints round the body. (round 33) Sized to the half-size
+  // people and animals (UNIT.rel): at the round-14 size it was a lime ball
+  // twice a person's height, an unexplained glowing orb at mid zoom.
   heal(fx, p, o) {
-    const s = o.scale ?? 1;
-    glints(fx, p.x, p.y + 0.1, p.z, fx.k(o.count ?? 7), { radius: 0.45 * s, height: 0.8 * s, size: 0.8 * s, ramp: RAMP.HEAL, color: o.color, rise: 1.3 });
-    glowFlash(fx, p.x, p.y + 0.6 * s, p.z, 1.4 * s, { life: 0.6, bright: 1.6, ramp: RAMP.HEAL, from: 0.3 });
-    flatRing(fx, p.x, p.y, p.z, 1.6 * s, { ramp: RAMP.HEAL, life: 0.7, bright: 1.5 });
+    const s = (o.scale ?? 1) * UNIT.rel;
+    glints(fx, p.x, p.y + 0.1, p.z, fx.k(o.count ?? 6), { radius: 0.5 * s, height: 0.9 * s, size: 1.1 * s, ramp: RAMP.HEAL, color: o.color, rise: 1.1 });
+    glowFlash(fx, p.x, p.y + 0.5 * s, p.z, 1.3 * s, { life: 0.45, bright: 0.9, ramp: RAMP.HEAL, from: 0.4, color: o.color });
+    flatRing(fx, p.x, p.y, p.z, 1.8 * s, { ramp: RAMP.HEAL, life: 0.6, bright: 1.0 });
   },
 
   spawn(fx, p, o) {
