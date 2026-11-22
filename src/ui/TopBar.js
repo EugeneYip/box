@@ -442,8 +442,10 @@ export class TopBar {
         const runs = v == null ? 'barely moves (under 0.1×)' : `runs at about ${v}×`;
         this.effEl.dataset.tip = lower != null ? `Your device can't keep up with ${g.speed}×, so the world ${runs}. Try ${lower}×, or Power saver in Settings.` : `Your device can't keep up with ${g.speed}×, so the world ${runs}. Try Power saver in Settings.`;
         this.cycleBtn.dataset.tip = lower != null ? `Running slower than chosen · try ${lower}×` : 'Running slower than chosen · try Power saver';
-      } else if (this.cycleBtn.dataset.tip !== 'Change speed · 1–5') {
-        this.cycleBtn.dataset.tip = 'Change speed · 1–5';
+      } else {
+        // (round 29) touch screens get no key names in tips
+        const tip = this.ui.root?.classList.contains('is-touch') ? 'Change speed' : 'Change speed · 1–5';
+        if (this.cycleBtn.dataset.tip !== tip) this.cycleBtn.dataset.tip = tip;
       }
     }
     this._statT -= dt;
