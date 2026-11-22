@@ -1,4 +1,5 @@
 import { geoDelta } from '../../world/geo.js';
+import { DEEP_WATER } from './hull.js';
 // War at sea and the perils of the deep (mixed into Fleet): galleys of realms
 // at war hunt enemy ships and blockade their harbours; storms, sea monsters,
 // fire and the powers of the gods sink ships.
@@ -132,16 +133,21 @@ export const war = {
         }
     }
     let px, pz;
+    // (round 31: a carrier patrolled the shallows beside a beach) the great
+    // hulls keep station further out, in open water as wide as their beam
+    // allows (they keep to deep water on every course: Fleet.seaPath)
+    const deep = DEEP_WATER.has(v.kind) ? Math.max(3, (v.def.beam || 0) * 0.5 + 2.5) : 0;
+    const out = (h, d, R, c) => nav.waterNear(h.berth.x + h.dirX * d, h.berth.z + h.dirZ * d, R, c);
     if (bh) {
       m.blockade = bh.id;
-      const sp = nav.waterNear(bh.berth.x + bh.dirX * 6, bh.berth.z + bh.dirZ * 6, 5, 2.5) || nav.waterNear(bh.berth.x + bh.dirX * 5, bh.berth.z + bh.dirZ * 5, 4, 1.5) || bh.berth;
+      const sp = (deep && (out(bh, 10, 7, deep) || out(bh, 14, 9, deep))) || out(bh, 6, 5, 2.5) || out(bh, 5, 4, 1.5) || bh.berth;
       px = sp.x;
       pz = sp.z;
     } else {
       // guard the home waters
       const home = v.harbour != null ? this.harbourInfo(v.harbour) : null;
       if (!home) return;
-      const sp = nav.waterNear(home.berth.x + home.dirX * 6, home.berth.z + home.dirZ * 6, 4, 1.5) || home.berth;
+      const sp = (deep && (out(home, 10, 7, deep) || out(home, 14, 9, deep))) || out(home, 6, 4, 1.5) || home.berth;
       px = sp.x;
       pz = sp.z;
     }
@@ -212,10 +218,11 @@ export const war = {
       az = h.dirX;
     const slot = i - (n - 1) / 2;
     const gap = v.def.length + 2.2;
+    const cl = DEEP_WATER.has(v.kind) ? Math.max(3, (v.def.beam || 0) * 0.5 + 2.5) : 1.2;
     for (const f of [1, 0.6, -1]) {
       const x = px + ax * slot * gap * f,
         z = pz + az * slot * gap * f;
-      const p = this.nav.waterNear(x, z, 2, 1.2);
+      const p = this.nav.waterNear(x, z, 2, cl);
       if (p && this.nav.comp(p.x, p.z) === this.nav.comp(px, pz)) return p;
     }
     return { x: px, z: pz };

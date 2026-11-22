@@ -14,6 +14,7 @@ import { BUILDING, VEHICLE } from '../../core/scale.js';
 const RAID_SPARED = new Set(['train', 'maglev', 'tram', 'bus', 'tractor']);
 const ROAD_OWN = new Set(['truck', 'car']);
 const ROAD_NODES = 2500; // across country (the laid roads are searched first, cheaply)
+const GAP_MAX = 12; // a motor route may lay at most this many tiles of new road to close a gap
 const BATTERY_RANGE = 10.5; // a catapult throws at most this far from its battery
 
 export const land = {
@@ -27,7 +28,8 @@ export const land = {
     // Combustion: trucks take over the hauling (no more ox carts)
     const model = o.model || this.cartModel(kid ?? a.kingdom);
     if (!this.landRoom(model || 'oxcart')) return null;
-    const path = this._roadPath(a, b);
+    // (round 31: a truck keeps to the roads: no run where none links the towns)
+    const path = this._roadPath(a, b, ROAD_NODES, !!model);
     if (!path) return null;
     const cargo = {};
     let any = 0;
@@ -56,12 +58,12 @@ export const land = {
     if (!this.landRoom('caravan')) return null;
     // (a big map's towns lie further apart: the caravan masters look further)
     const reach = this._landReach();
-    const path = this._roadPath(a, b, Math.round(5000 * reach * reach));
-    if (!path) return null;
     const kid = o.kingdom ?? a.kingdom;
     // a realm that knows Combustion sends its trade by truck (the camels and
     // pack oxen of the caravans are gone from the Industrial era on)
     const truck = this.hasTech(kid, 'combustion');
+    const path = this._roadPath(a, b, Math.round(5000 * reach * reach), truck);
+    if (!path) return null;
     const v = this.spawn('caravan', kid, path[0], path[1], { home: a.id, state: 'move', heading: Math.atan2(path[3] - path[1], path[2] - path[0]), model: truck ? 'truck' : null });
     if (!v) return null;
     v.cargo = { goods: 24 };
@@ -92,55 +94,160 @@ export const land = {
     if (h && h.alive !== false && h.doorX != null) return [Math.floor(h.doorX), Math.floor(h.doorZ)];
     return [Math.floor(v.cx), Math.floor(v.cz)];
   },
+  // (round 31) Where a road vehicle starts and ends its run in a town: the
+  // street tile nearest the hall door that is off the square and the parade
+  // pad (a truck set out from the hall door and crossed the paved square
+  // among the people), refreshed now and then; the door with no such street.
+  _depot(v) {
+    const now = this.game.time.total;
+    if (v._depot && now - v._depotT < 30) return v._depot;
+    const civ = this.game.civ;
+    const w = this.world;
+    const use = civ.use;
+    const [dx0, dz0] = this._door(v);
+    const sq = this._squareTest?.(v);
+    let best = null,
+      bd = Infinity;
+    for (let dz = -9; dz <= 9; dz++)
+      for (let dx = -9; dx <= 9; dx++) {
+        const x = dx0 + dx,
+          z = dz0 + dz;
+        if (!w.inBounds(x, z) || use[z * w.w + x] !== USE.ROAD || (sq && sq(x, z))) continue;
+        const d = dx * dx + dz * dz;
+        if (d < bd) (bd = d), (best = [x, z]);
+      }
+    v._depot = best || [dx0, dz0];
+    v._depotT = now;
+    return v._depot;
+  },
   // Road-loving route between two villages (tile centres), cached a while.
-  _roadPath(a, b, maxNodes = ROAD_NODES) {
+  // motor (round 31): a truck or a car keeps to the laid roads. A short gap
+  // in them (an intercity road broken by a plot, the stretch between the
+  // town's streets and the road out) is closed with a few tiles of new road,
+  // laid where the vehicle will drive; a run that would cross open country
+  // is not made (a truck crossed open grass with no road anywhere).
+  _roadPath(a, b, maxNodes = ROAD_NODES, motor = false) {
     const civ = this.game.civ;
     const w = this.world;
     if (!civ._roadCost) return null;
     if (a.landId != null && b.landId != null && a.landId !== b.landId) return null;
     this._rp = this._rp || new Map();
-    const key = a.id + '>' + b.id;
+    const key = a.id + '>' + b.id + (motor ? 'm' : '');
     const now = this.game.time.total;
     const c = this._rp.get(key);
     if (c && (c.path ? now - c.t < 120 && (c.fv === civ.fieldVersion || now - c.t < 20) : now - c.t < 240)) return c.path;
     // the way back is the way there, reversed
-    const rc = this._rp.get(b.id + '>' + a.id);
+    const rc = this._rp.get(b.id + '>' + a.id + (motor ? 'm' : ''));
     if (rc && rc.path && now - rc.t < 120) return reversePath(rc.path);
     // one long road search per tick at most
     if (this._roadBudget <= 0) return null;
     this._roadBudget--;
-    const [sx, sy] = this._door(a),
-      [gx, gy] = this._door(b);
+    const [sx, sy] = motor ? this._depot(a) : this._door(a),
+      [gx, gy] = motor ? this._depot(b) : this._door(b);
     if (!w.inBounds(sx, sy) || !w.inBounds(gx, gy)) return null;
     // first along the laid roads only (cheap: few tiles), then across country
     const use = civ.use;
+    // (every town's paving on the way: a truck crosses none it can drive round)
+    const kc = this._paveMask ? this._paveMask() : civ.keepClear;
     const base = civ._roadCost();
+    const nearEnds = (i) => {
+      const x = i % w.w,
+        y = (i / w.w) | 0;
+      return Math.abs(x - sx) + Math.abs(y - sy) <= 3 || Math.abs(x - gx) + Math.abs(y - gy) <= 3;
+    };
+    // (a town's square and parade pad only where there is no other way)
     const roadsOnly = use
       ? (i) => {
-          if (use[i] === USE.ROAD) return 0.4;
-          const x = i % w.w,
-            y = (i / w.w) | 0;
-          return Math.abs(x - sx) + Math.abs(y - sy) <= 3 || Math.abs(x - gx) + Math.abs(y - gy) <= 3 ? base(i) : Infinity;
+          if (use[i] === USE.ROAD) return kc && kc[i] ? 6 : 0.4;
+          return nearEnds(i) ? base(i) : Infinity;
         }
       : null;
-    let p = roadsOnly ? civPath(w, sx, sy, gx, gy, roadsOnly, 9000, 0.4) : null;
-    if (p && p.length) {
-      const last = p[p.length - 1];
-      if (Math.hypot((last % w.w) - gx, ((last / w.w) | 0) - gy) > 3) p = null;
-    }
-    if (!p && Math.hypot(gx - sx, gy - sy) < maxNodes / 60) p = civPath(w, sx, sy, gx, gy, base, maxNodes, 0.75);
-    let path = null;
-    if (p && p.length > 3) {
-      const last = p[p.length - 1];
-      if (Math.hypot((last % w.w) - gx, ((last / w.w) | 0) - gy) <= 3) {
-        path = [sx + 0.5, sy + 0.5];
-        for (const i of p) path.push((i % w.w) + 0.5, ((i / w.w) | 0) + 0.5);
-        path = chaikin(path);
+    const reaches = (q) => {
+      if (!q || !q.length) return false;
+      const last = q[q.length - 1];
+      return Math.hypot((last % w.w) - gx, ((last / w.w) | 0) - gy) <= (motor ? 1.5 : 3);
+    };
+    let p = null;
+    if (motor && use) {
+      // the laid roads, the open ground very dear (a step off the road costs
+      // as much as thirty along it) but not closed, so a diagonal run of a
+      // surveyed road (its tiles meet at the corners) is followed, and a
+      // short gap in the roads is found and closed with new road; a route
+      // needing more than a few tiles of new road is not driven
+      const motorCost = (i) => {
+        if (use[i] === USE.ROAD) return kc && kc[i] ? 6 : 0.4;
+        const c = base(i);
+        if (c === Infinity) return c;
+        return use[i] === USE.FREE ? c + 12 : 60;
+      };
+      // (5000 nodes: a realm's road network and a little round it; a pair
+      // with no road between them is refused, and remembered a while)
+      const q = civPath(w, sx, sy, gx, gy, motorCost, 5000, 0.4);
+      const open = (r) => r.some((i) => use[i] !== USE.ROAD && !nearEnds(i));
+      if (reaches(q) && this._closeGaps(q, sy * w.w + sx)) {
+        p = q;
+        // (the new road was laid in straight runs: the way along it)
+        if (open(q)) {
+          const r = civPath(w, sx, sy, gx, gy, motorCost, 5000, 0.4);
+          if (reaches(r) && !open(r)) p = r;
+        }
       }
+    } else {
+      p = roadsOnly ? civPath(w, sx, sy, gx, gy, roadsOnly, 9000, 0.4) : null;
+      if (!reaches(p)) p = null;
+    }
+    if (!p && !motor && Math.hypot(gx - sx, gy - sy) < maxNodes / 60) p = civPath(w, sx, sy, gx, gy, base, maxNodes, 0.75);
+    let path = null;
+    if (p && p.length > 3 && reaches(p)) {
+      path = [sx + 0.5, sy + 0.5];
+      for (const i of p) path.push((i % w.w) + 0.5, ((i / w.w) | 0) + 0.5);
+      // (a street route is followed tile by tile: rounding its corners cut
+      // them across the lawns; a country track is still smoothed)
+      if (!motor) path = chaikin(path);
     }
     this._rp.set(key, { path, t: now, fv: civ.fieldVersion });
     if (this._rp.size > 200) this._rp.delete(this._rp.keys().next().value);
     return path;
+  },
+  // Lay new road over the open tiles of route q (tile indices) where they
+  // are few, as straight runs (Civ._straightPath); false (nothing laid) when
+  // there are too many or one of them may not take a road.
+  _closeGaps(q, start) {
+    const civ = this.game.civ;
+    const w = this.world;
+    const use = civ.use;
+    const gap = [];
+    for (const i of q) if (use[i] !== USE.ROAD) gap.push(i);
+    if (!gap.length) return true;
+    if (gap.length > GAP_MAX) return false;
+    const lay = [];
+    let run = [];
+    const flush = (end) => {
+      if (!run.length) return;
+      if (end != null) run.push(end);
+      for (const i of civ._straightPath ? civ._straightPath(run) : run) if (use[i] !== USE.ROAD) lay.push(i);
+      run = [];
+    };
+    let prev = start;
+    for (const i of q) {
+      if (use[i] === USE.ROAD) {
+        flush(i);
+        prev = i;
+        continue;
+      }
+      if (!run.length && prev != null) run.push(prev);
+      run.push(i);
+    }
+    flush(null);
+    if (lay.length > GAP_MAX * 2) return false;
+    for (const i of lay) {
+      if (use[i] !== USE.FREE || civ.keepClear?.[i] || civ.railMask?.[i] || civ.airZone?.[i]) return false;
+      if (civ._roadOK && !civ._roadOK(i % w.w, (i / w.w) | 0)) return false;
+    }
+    for (const i of lay) civ.layRoad(null, i);
+    civ.fieldVersion = (civ.fieldVersion || 0) + 1;
+    this.totals.roadsLaid = (this.totals.roadsLaid || 0) + lay.length;
+    return true;
   },
 
   // ------------------------------------------------------------------ scheduler
@@ -294,7 +401,7 @@ export const land = {
       if (v.stateT > 3) {
         if ((v.mission?.phase === 'home' || v.mission?.type === 'train') && v.path) v.state = 'move';
         else if (v.keep) this._findWork(v);
-        else this.remove(v);
+        else this._ended(v, 'arrived');
       }
     } else if (v.state === 'parked') {
       v.speed = 0;
@@ -304,7 +411,7 @@ export const land = {
         if (Math.abs(Math.sin((v.heading - v.settleH) / 2)) < 0.01) v.settleH = null;
       }
       // an ambulance or a fire engine on standby goes back in after a while
-      if (v.standby != null && this.game.time.total > v.standby) return this.remove(v);
+      if (v.standby != null && this.game.time.total > v.standby) return this._ended(v, 'back at the station');
       // a train with no railway looks again for one now and then
       if (v.def.rail && v.stateT > 6) {
         v.stateT = 0;
@@ -342,6 +449,14 @@ export const land = {
         this.lose(v, 'raided', { id: foe.id, kind: 'soldier', kingdom: foe.kingdom });
       }
     }
+  },
+
+  // (round 31) A land vehicle done with its trip goes out of service: marked
+  // as arrived (v.endedTrip, v.endedWhy, 'fleet:ended'), never as lost.
+  _ended(v, why = 'arrived') {
+    if (!v.alive) return;
+    this.remove(v, why);
+    this.game.events.emit('fleet:ended', { vehicle: v, id: v.id, kind: v.kind, model: v.model, kingdom: v.kingdom, why, x: v.x, z: v.z });
   },
 
   // On its own realm's land (a truck there is under the realm's protection)
@@ -447,7 +562,7 @@ export const land = {
     }
     const to = civ.villages[m.to];
     if (m.type === 'train') return this._trainArrive(v, m, to);
-    if (m.type === 'drive') return v.keep ? this._findWork(v) : this.remove(v);
+    if (m.type === 'drive') return v.keep ? this._findWork(v) : this._ended(v, 'arrived');
     if (v.role === 'service' && this._serviceArrive(v)) return;
     if (v.role === 'oxcart') {
       if (to?.alive && v.cargo) for (const [r, n] of Object.entries(v.cargo)) to[r] = (to[r] || 0) + n;
@@ -457,7 +572,7 @@ export const land = {
       // trundle home empty
       m.phase = 'home';
       const back = civ.villages[m.from];
-      const p = back?.alive ? this._roadPath(to, back) : null;
+      const p = back?.alive ? this._roadPath(to, back, ROAD_NODES, v.model === 'truck' || v.model === 'car') : null;
       if (p) {
         this.setPath(v, p);
         v.state = 'rest';
@@ -478,7 +593,7 @@ export const land = {
       m.phase = 'home';
       if (this._retired(v)) return this._retireNow(v);
       const back = civ.villages[m.from];
-      const p = back?.alive && to ? this._roadPath(to, back, 5000) : null;
+      const p = back?.alive && to ? this._roadPath(to, back, 5000, v.model === 'truck') : null;
       if (p) {
         this.setPath(v, p);
         v.state = 'rest';
