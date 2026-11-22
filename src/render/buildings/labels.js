@@ -17,7 +17,6 @@ const FONT = 'Cinzel, "Cinzel Variable", Georgia, "Times New Roman", serif';
 // ribbon by the number of realms in the whole world, so on the whole Earth
 // "ROC" was 6 px against HONG KONG's 14.
 const TOWN_H = 0.029; // a town label's world height per unit of distance
-const RIBBON_OVER_TOWN = 1.75;
 // (round 31) a realm ribbon's capitals are clamped to about 12-16 px on screen
 // at every zoom (16-18 px caps on 300 px plates covered the towns on the 256
 // map at 90-110 tiles; 8-9 px on the region overviews), and stay at least
@@ -26,6 +25,23 @@ const RIBBON_CAP_MIN = 12;
 const RIBBON_CAP_MAX = 16;
 const RIBBON_CAP_FLOOR = 10.5; // a crowded overview may shrink to this before a name is left out
 const RIBBON_OVER_TOWN_CAPS = 1.3;
+// (round 33) once more than this many ribbons are in view their capitals step
+// down to RIBBON_CAP_CROWD px (and to 11 px past nine), and on a phone they
+// stay near 12 px
+const RIBBON_CROWD = 6;
+const RIBBON_CAP_CROWD = 12;
+// (round 33) a town label's on-screen height is set by the screen's height,
+// but never by more than 1.35x its width (a portrait phone drew town names
+// with 15 px capitals, so the ribbons over them had to be 20 px)
+const townScreenK = (W, H) => Math.min(1, (1.35 * W) / Math.max(1, H));
+// (round 33) how many realm names one screen may hold, by land share: 13
+// ribbons covered the 256 map at dusk; real countries have shorter names
+function ribbonCap(W, H, wm) {
+  const phone = Math.min(W, H) < 500;
+  if (phone) return wm ? 4 : 3;
+  const n = Math.round((W * H) / (wm ? 40000 : 70000));
+  return wm ? Math.max(6, Math.min(16, n)) : Math.max(5, Math.min(8, n));
+}
 // a realm is named at mid zoom when it holds at least this share of the land in view
 const LAND_SHARE = 0.05;
 
@@ -120,8 +136,12 @@ function makeLabel(text, color, kind, banner = null) {
     sp.userData.plate = { l: ix / c.width, r: 1 - ix / c.width, t: (py - ph / 2) / c.height, b: (py + ph / 2) / c.height };
   }
   // capital height as a share of the sprite's (sizes are set in capitals on screen)
+  // (round 33: measured from the alphabetic baseline; from the middle
+  // baseline the ascent was about half the capital's height, so every ribbon
+  // was drawn about 1.5x its intended size: 18 px capitals for 12)
   let capPx = px * 0.7;
   try {
+    x.textBaseline = 'alphabetic';
     const m = x.measureText('H');
     if (m.actualBoundingBoxAscent > 0) capPx = m.actualBoundingBoxAscent;
   } catch {
@@ -525,6 +545,7 @@ export class Labels {
       const rank = (focus ? 2 : 0) + (cnt?.get(id) || 0) / nLand + (0.25 * (tot?.get(id) || 0)) / maxTot + Math.min(0.05, (k.population || 0) * 1e-5) + (s.userData.fade > 0.5 ? 0.03 : 0);
       cand.push({ s, a: kAk, kind: 'realm', key: 10 + rank, kid: id, focus });
     }
+    const townK = townScreenK(innerWidth, innerHeight);
     for (const [id, s] of this.vLabels) {
       const v = civ.villages[id];
       const k = civ.kingdoms[v?.kingdom];
@@ -539,7 +560,7 @@ export class Labels {
       const dist = cam.distanceTo(s.position);
       // (about 12 px capitals on screen: at 0.02 a town's name was ~8 px
       // capitals at 30 tiles, hard to read)
-      const h = Math.max(0.8, dist * TOWN_H);
+      const h = Math.max(0.8, dist * TOWN_H * townK);
       s.scale.set(h * s.userData.aspect, h, 1);
       if (s.userData.capK) this._townCapK = s.userData.capK;
       // (round 27) a capital gives way only to its realm's name actually on
@@ -759,12 +780,20 @@ export class Labels {
     // above a town label's own on-screen height, so a ribbon is never the
     // smaller name
     const townOn = this._townOn || 0;
-    const townPx = Math.min(52, TOWN_H * fovK);
+    const townPx = Math.min(52, TOWN_H * fovK * townScreenK(W, H));
     // (round 31) ribbon capitals in px: 12-16 by screen height, never under
     // 1.3x the town names' capitals while those are shown
     const townCap = townPx * (this._townCapK || 0.42);
-    const ribCap = Math.max(Math.min(RIBBON_CAP_MAX, Math.max(RIBBON_CAP_MIN, H * 0.02)), townCap * RIBBON_OVER_TOWN_CAPS * townOn);
+    const townFloor = townCap * RIBBON_OVER_TOWN_CAPS * townOn;
+    let ribCap = Math.max(Math.min(RIBBON_CAP_MAX, Math.max(RIBBON_CAP_MIN, H * 0.02)), townFloor);
+    // (round 33) fewer and smaller names on a crowded screen and on phones:
+    // at most ribbonCap() names, by land share; 12 px capitals once more than
+    // six are in view (11 px past nine), and near 12 px on a phone
+    const maxRib = ribbonCap(W, H, this.game.params?.preset === 'earth');
+    const nRib = Math.min(maxRib, nView);
+    if (nRib > RIBBON_CROWD || Math.min(W, H) < 500) ribCap = Math.min(ribCap, Math.max(nRib > 9 ? 11 : RIBBON_CAP_CROWD, townFloor));
     this._ribCap = ribCap;
+    let nPlaced = 0;
     const v = this._v || (this._v = new (cam.position.constructor)());
     // realm names first (by their rank), then battle markers, then towns
     cand.sort((a, b) => b.key - a.key);
@@ -831,6 +860,7 @@ export class Labels {
         }
         return false;
       };
+      if (target > 0 && c.kind === 'realm' && nPlaced >= maxRib) target = 0;
       if (target > 0 && c.kind === 'realm' && v.z <= 1 && v.z >= -1) {
         // (round 33) a realm's name sits on its own land: on its capital, on
         // the middle of its land or on its land in view, never more than
@@ -1019,7 +1049,10 @@ export class Labels {
           gy = c.kind === 'realm' ? 6 : 2;
         const q = plateOf(rect);
         taken.push({ l: q.l - gx, r: q.r + gx, t: q.t - gy, b: q.b + gy });
-        if (c.kind === 'realm') ribOn.add(c.kid);
+        if (c.kind === 'realm') {
+          ribOn.add(c.kid);
+          nPlaced++;
+        }
       }
       const f = sp.userData.fade ?? target;
       const step = rdt / 0.2;
