@@ -219,7 +219,12 @@ export const realms = {
       if (c?.alive) c.keyCity = e.k.id;
     }
     for (const v of this.villages) if (v.alive && (v._must || v._oldSeat)) v.keyCity = v.kingdom;
-    for (const v of this.villages) delete v._must, delete v._oldSeat;
+    // (round 31: cleared, not deleted; a delete turns the town into a slow
+    // dictionary object for the rest of the game)
+    for (const v of this.villages) {
+      if (v._must) v._must = false;
+      if (v._oldSeat) v._oldSeat = false;
+    }
     this._kingdomTotals?.(); // realm cards show their people from the first frame
     return true;
   },
