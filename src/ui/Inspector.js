@@ -1406,7 +1406,7 @@ export class Inspector {
       const cam = this.game.cameraRig.camera;
       const d = Math.max(0.5, cam.position.distanceTo(this._v.set(ref.x, y0, ref.z)));
       const px = (2 * d * Math.tan((cam.fov * Math.PI) / 360)) / Math.max(1, innerHeight);
-      y = y0 + Math.max(bh * 1.9, 14 * px);
+      y = y0 + Math.max(bh * 2.3, 14 * px);
     }
     const v = this._v.set(ref.x, y, ref.z).project(this.game.cameraRig.camera);
     if (v.z > 1 || v.z < -1) {
