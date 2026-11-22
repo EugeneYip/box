@@ -332,7 +332,11 @@ export class Game {
     this.world.flushDirty();
   }
 
-  frameStep(dt) {
+  // draw = false on a held frame (the GPU is still drawing the last one): the
+  // simulation, input, camera, interface and audio still run, so live play
+  // keeps its pace on a slow GPU; the scene's renderers and the draw wait for
+  // the next drawn frame, which gets the time held since (capped as before).
+  frameStep(dt, draw = true) {
     this.time.realTime += dt;
     if (!this.paused) {
       this._acc += dt * this.speed;
@@ -363,16 +367,32 @@ export class Game {
     v.zoom01 = Math.min(1, Math.max(0, (rig.cur.dist - rig.minDist) / Math.max(1, rig.maxDist - rig.minDist)));
     v.far = v.zoom01 > 0.62;
     this.world.flushDirty();
+    if (!draw) {
+      this._heldDt = (this._heldDt || 0) + dt;
+      for (const s of [this.ui, this.audio]) {
+        try {
+          s?.update?.(dt);
+        } catch (err) {
+          this._systemError(s, err);
+        }
+      }
+      this.pipeline.warmPrograms?.();
+      return;
+    }
+    const vdt = Math.min(0.1, dt + (this._heldDt || 0));
+    const held = this._heldDt > 0;
+    this._heldDt = 0;
     // Each visual system is isolated: one failing renderer must not stop the
     // frame (the rest of the world, the HUD and the camera keep running).
     for (const s of this.visualSystems) {
       try {
-        s.update?.(dt);
+        // (the interface and audio already ran on the held frames)
+        s.update?.(held && (s === this.ui || s === this.audio) ? dt : vdt);
       } catch (err) {
         this._systemError(s, err);
       }
     }
-    this.pipeline.render(dt);
+    this.pipeline.render(vdt);
     this.frame++;
   }
 
@@ -399,6 +419,26 @@ export class Game {
     };
     addEventListener('pagehide', this._onPageHide);
     addEventListener('pageshow', this._onPageShow);
+    // (round 27) the earliest signs of leaving or hiding: a navigation sends
+    // beforeunload before the next page is even fetched, and a hidden tab
+    // draws nothing. Both stop the GPU work that is not a frame (the shader
+    // warm-up) at once; beforeunload also stops drawing for a moment, so the
+    // GPU side is idle by the time the next page needs it (if the page stays,
+    // after a download or a cancelled navigation, the loop picks up again).
+    this._onHidden = () => {
+      if (document.visibilityState === 'hidden') this.pipeline?.suspend?.();
+      else if (!this._leavingT) this.pipeline?.resume?.();
+    };
+    this._onLeaving = () => {
+      this.pipeline?.suspend?.();
+      clearTimeout(this._leavingT);
+      this._leavingT = setTimeout(() => {
+        this._leavingT = 0;
+        if (!this.disposed && document.visibilityState !== 'hidden') this.pipeline?.resume?.();
+      }, 3000);
+    };
+    addEventListener('visibilitychange', this._onHidden);
+    addEventListener('beforeunload', this._onLeaving);
     const loop = (now) => {
       if (this.disposed) return;
       // Tooling hook: window.__hold = true freezes rendering so headless
@@ -414,10 +454,19 @@ export class Game {
         this._raf = requestAnimationFrame(loop);
         return;
       }
+      // leaving (beforeunload, see above): nothing at all this time. The GPU
+      // still drawing the last frame (software GL, a heavy frame): a held
+      // frame, which runs the simulation, camera and interface but draws
+      // nothing, so the GPU side never holds more than one frame
+      if (this._leavingT) {
+        this._raf = requestAnimationFrame(loop);
+        return;
+      }
+      const draw = !this.pipeline.gpuBusy?.();
       const dt = Math.min(0.1, Math.max(0, (now - last) / 1000));
       last = now;
       try {
-        this.frameStep(dt);
+        this.frameStep(dt, draw);
       } catch (err) {
         console.error(err);
         window.__error = String(err && err.stack ? err.stack : err);
@@ -441,6 +490,9 @@ export class Game {
     if (this._raf) cancelAnimationFrame(this._raf);
     this._raf = 0;
     removeEventListener('pagehide', this._onPageHide);
+    removeEventListener('visibilitychange', this._onHidden);
+    removeEventListener('beforeunload', this._onLeaving);
+    clearTimeout(this._leavingT);
     const P = this.pipeline;
     try {
       P?._warmCancel?.();

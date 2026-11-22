@@ -80,6 +80,7 @@ export class RenderPipeline {
     // (looked up now, so the page teardown can drop the context without a
     // round trip to the GPU side: see Game.dispose)
     this._loseExt = renderer.getContext().getExtension('WEBGL_lose_context');
+    this._bootT = performance.now();
     this.dynScale = 1; // dynamic resolution factor (opt-in)
     this.saverScale = game.settings?.powerSaver ? SAVER_SCALE : 1; // applied power-saver resolution factor
     this._saverT = 0; // seconds since the saver was toggled
@@ -111,6 +112,21 @@ export class RenderPipeline {
     });
     this.linearDepthTexture = null;
     const gl = renderer.getContext();
+    // (round 27) software GL (SwiftShader, llvmpipe): every pixel is shaded
+    // on the CPU, and at the high tier's 1.5x pixel ratio one frame took
+    // seconds (the terrain shader alone 5-7 s under load, the post chain
+    // 3-4 s, at close and mid zoom alike). There the 3D view renders at one
+    // pixel per CSS pixel (the canvas and the DOM UI keep their size; the
+    // final pass upscales), which is 44% of the pixel work. A hardware GPU
+    // is unaffected. ?swfull=1 keeps the full resolution.
+    let rn = '';
+    try {
+      const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+      rn = String(gl.getParameter(dbg ? dbg.UNMASKED_RENDERER_WEBGL : gl.RENDERER) || '');
+    } catch (err) {
+      /* unknown renderer: treat as hardware */
+    }
+    this.softwareGL = /swiftshader|llvmpipe|softpipe|software/i.test(rn) && !(typeof location !== 'undefined' && /[?&]swfull=1\b/.test(location.search));
     this.floatTargets = renderer.capabilities.isWebGL2 && !!(renderer.extensions.has('EXT_color_buffer_float') || gl.getExtension('EXT_color_buffer_float'));
     if (!this.floatTargets && this.tier.post) {
       console.warn('[pipeline] float render targets unavailable: using the low tier');
@@ -145,7 +161,8 @@ export class RenderPipeline {
 
   // composer resolution factor (power saver x dynamic resolution)
   get renderScale() {
-    return this.saverScale * this.dynScale;
+    const soft = this.softwareGL ? Math.min(1, 1 / this.targetPixelRatio()) : 1;
+    return this.saverScale * this.dynScale * soft;
   }
 
   // Size the composer's targets to the drawing buffer times renderScale.
@@ -274,8 +291,16 @@ export class RenderPipeline {
   // scene is looked over again and any material that has no program yet (a
   // new era's buildings and vehicles, new effects) is warmed the same way.
   // (?warm=0 turns it off, for measuring)
+  // (round 27) It starts after 24 drawn frames or 15 s after boot, whichever
+  // comes first (and once the composer exists, so programs are compiled for
+  // its target): on a slow GPU, where the loop holds frames while the last
+  // one is drawn, 24 frames could take many minutes. Game.frameStep calls it
+  // on held frames too.
   warmPrograms() {
-    if (this._progWarm || (this.game.frame || 0) < 24) return;
+    if (this._progWarm) return;
+    const f = this.game.frame || 0;
+    if (f < 24 && (f < 2 || performance.now() - this._bootT < 15000)) return;
+    if (this.tier.post && !this.failed && !this.composer) return;
     this._progWarm = true;
     if (typeof location !== 'undefined' && /[?&]warm=0\b/.test(location.search)) return;
     const r = this.renderer;
@@ -284,10 +309,22 @@ export class RenderPipeline {
     this._warmQ = [];
     this._warmed = new WeakMap();
     this._warmPar = !!r.extensions?.has?.('KHR_parallel_shader_compile');
-    this._warmFull = true; // the first look compiles every object's program
+    this._warmFull = false; // (round 27) the first look: what is shown now
+    this._warmKey = this._warmBandKey();
     this._warmScanAt = 0;
     this.warmInfo = { programs0: r.info.programs?.length ?? 0, batches: 0, compiled: 0, scans: 0, parallel: this._warmPar, t0: performance.now() };
     this._warmLater(0, true);
+  }
+
+  // The camera band (close, mid, overview) and the newest era: the warm-up
+  // looks over hidden objects (other bands' levels of detail, dots and
+  // markers, other eras' models) only when one of these changes.
+  _warmBandKey() {
+    const d = this.game.cameraRig?.cur?.dist ?? 0;
+    const band = d < 40 ? 0 : d < 110 ? 1 : 2;
+    let era = 0;
+    for (const k of this.game.civ?.kingdoms || []) if (k.alive && k.era > era) era = k.era;
+    return band * 100 + era;
   }
 
   _warmLater(ms, idle = false) {
@@ -333,16 +370,30 @@ export class RenderPipeline {
     if (!Q.length) {
       if (now < this._warmScanAt) return this._warmLater(this._warmScanAt - now);
       this._warmScanAt = now + 3000;
+      // (round 27) the first look and the regular ones cover what is shown
+      // (the current camera band and era); hidden objects are looked over
+      // only once the camera moves to a new band or a new era arrives (the
+      // round-25 first look compiled everything, hidden or not, and ran for
+      // 142 s after boot under software GL)
+      const key = this._warmBandKey();
+      if (key !== this._warmKey) {
+        this._warmKey = key;
+        this._warmFull = true;
+      }
       info.scans++;
       const full = this._warmFull;
       const props = r.properties;
-      g.scene.traverse((o) => {
+      const look = (o) => {
         if (!(o.isMesh || o.isPoints || o.isLine || o.isSprite) || !o.material || Array.isArray(o.material)) return;
         if (W.get(o) === o.material) return;
-        // (after the first look, only materials that have no program yet)
+        // (a full look compiles every object's program, as a material can
+        // need a variant per object; the others only materials with none yet)
         if (!full && props.get(o.material).currentProgram) return W.set(o, o.material);
         Q.push(o);
-      });
+      };
+      if (full) g.scene.traverse(look);
+      else g.scene.traverseVisible(look);
+      if (full) info.fullLooks = (info.fullLooks || 0) + 1;
       this._warmFull = false;
       if (!Q.length) {
         if (info.doneS == null) info.doneS = +((now - info.t0) / 1000).toFixed(1);
@@ -375,9 +426,71 @@ export class RenderPipeline {
       info.batches++;
       info.compiled += made;
       this._warmFence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+      this._warmFenceT = performance.now();
       gl.flush();
     }
     this._warmLater(made > 0 ? 50 : 16, !Q.length);
+  }
+
+  // (round 27) At most one frame of GPU work in flight. Each frame ends with
+  // a GPU fence; while the previous frame's fence has not signalled, the game
+  // loop skips drawing (a non-blocking query, updated between tasks). On a
+  // fast GPU the fence has long signalled by the next animation frame, so
+  // nothing changes there; on a slow one (software GL, a heavy frame) the GPU
+  // side never holds a queue of frames, so a page that is leaving, a frame
+  // that needs a new program or the next page waits for one frame at most.
+  gpuBusy() {
+    const gl = this.renderer.getContext();
+    // (a warm-up batch still compiling also holds the frame: a frame that
+    // drew with a program still being linked would wait for the link on the
+    // main thread, seconds under software GL)
+    const wf = this._warmFence;
+    if (wf && !gl.isContextLost?.() && gl.getSyncParameter(wf, gl.SYNC_STATUS) !== gl.SIGNALED && performance.now() - (this._warmFenceT || 0) < 30000) {
+      this.framesHeld = (this.framesHeld || 0) + 1;
+      return true;
+    }
+    const f = this._frameFence;
+    if (!f) return false;
+    if (gl.isContextLost?.()) {
+      this._frameFence = null;
+      return false;
+    }
+    // (a fence that never signals, on a driver that mishandles them, must
+    // not stop the game: after 30 s the loop draws again regardless)
+    if (gl.getSyncParameter(f, gl.SYNC_STATUS) !== gl.SIGNALED && performance.now() - this._frameFenceT < 30000) {
+      this.framesHeld = (this.framesHeld || 0) + 1;
+      return true;
+    }
+    gl.deleteSync(f);
+    this._frameFence = null;
+    return false;
+  }
+
+  _fenceFrame() {
+    if (this._frameFence) return;
+    const gl = this.renderer.getContext();
+    if (!gl.fenceSync || gl.isContextLost?.()) return;
+    this._frameFence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+    this._frameFenceT = performance.now();
+    // (sent to the GPU side now: a held loop draws nothing that would flush
+    // it, and an unflushed fence would never signal)
+    gl.flush();
+  }
+
+  // Page hidden (another tab, minimised, leaving): stop issuing GPU work that
+  // is not a frame (the shader warm-up); resume() picks it up again.
+  suspend() {
+    this.suspended = true;
+    this._warmCancel?.();
+  }
+
+  resume() {
+    if (!this.suspended) return;
+    this.suspended = false;
+    if (this._progWarm && this.warmInfo && !this._warmQ) {
+      this._warmQ = [];
+      this._warmLater(500, true);
+    }
   }
 
   passInfo() {
@@ -607,6 +720,7 @@ export class RenderPipeline {
         this.warmVariants();
         this.warmPrograms();
         this.composer.render(dt);
+        this._fenceFrame();
         return;
       } catch (err) {
         console.error('[pipeline] post-processing failed; falling back', err);
@@ -619,5 +733,6 @@ export class RenderPipeline {
     renderer.autoClear = true;
     this.warmPrograms();
     renderer.render(game.scene, game.cameraRig.camera);
+    this._fenceFrame();
   }
 }
