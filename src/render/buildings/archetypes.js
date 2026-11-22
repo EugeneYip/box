@@ -1159,6 +1159,19 @@ function windmill(g, K, style) {
   return { base: null };
 }
 
+// (round 31) a windmill in a Modern realm stands as a wind turbine: a slim
+// white tapered tower and a nacelle; its three blades turn with the sails
+// (props.js turbineBladesGeometry)
+function windTurbine(g, K) {
+  const tz = -0.05;
+  g.box(0, -0.06, tz, 0.5, 0.1, 0.5, 0xb8b6ae);
+  g.cyl(0, 0.04, tz, 0.1, 2.3, 10, 0xeceae4, { r2: 0.055 });
+  g.box(0, 2.3, tz - 0.06, 0.14, 0.13, 0.36, 0xf2f0ea);
+  g.box(0, 0.04, tz + 0.1, 0.07, 0.14, 0.02, 0x6a6e74);
+  g.anchor('blades', 0, 2.37, tz + 0.15, { turbine: true });
+  return { base: null };
+}
+
 function docks(g, K, style) {
   // land shed + pier out over the water (+Z)
   const sw = 1.2,
@@ -2478,6 +2491,7 @@ export function buildArchetype(type, style, level, era = 1, variant = 0, gilded 
   } else if (era === 4 && type === 'house') info = industrialHouse(g, K, style, level) || {};
   else if (era >= 5 && type === 'house') info = eraHouse(g, K, style, level, era, variant) || {};
   else if (era >= 5 && type === 'hall') info = eraHall(g, K, style, level, era) || {};
+  else if (era >= 5 && type === 'windmill') info = windTurbine(g, K) || {};
   else if (era >= 4 && ERA_CIVIC.has(type)) info = eraCivic(g, K, modernPalette(style, era), type, style, level, era, def) || {};
   else if (fn) info = fn(g, K, style, level, variant) || {};
   else if (era >= 4) modernFallback(g, modernPalette(style, era), def, level);

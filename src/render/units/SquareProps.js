@@ -47,6 +47,30 @@ const PAD = {
   concrete: { a: new THREE.Color(0x777875), b: new THREE.Color(0x6c6d6a), kerb: new THREE.Color(0x525457), line: new THREE.Color(0xd4d2c8) },
 };
 
+// The parade pad's flagpole spot (round 31): its corner on the barracks side,
+// on the pad's surface (the highest ground under it). The pole and the
+// realm's flag with its emblem are drawn with the realm standards
+// (buildings/BuildingRenderer), about 0.6 the size of the old flag.
+export function padFlagSpot(pd, w) {
+  const r = Math.atan2(pd.ax, pd.az);
+  const W = pd.W + 0.2,
+    D = pd.D + 0.2;
+  const c = Math.cos(r),
+    sn = Math.sin(r);
+  let y = pd.y ?? w.heightAt(pd.x, pd.z);
+  for (const [lx, lz] of [
+    [0, 0],
+    [W / 2, D / 2],
+    [-W / 2, D / 2],
+    [W / 2, -D / 2],
+    [-W / 2, -D / 2],
+  ])
+    y = Math.max(y, w.heightAt(pd.x + lx * c + lz * sn, pd.z - lx * sn + lz * c));
+  const fx = -W / 2 + 0.2,
+    fz = -D / 2 + 0.2;
+  return { x: pd.x + fx * c + fz * sn, y: y + 0.13, z: pd.z - fx * sn + fz * c, r };
+}
+
 export class SquareProps {
   constructor(game, parent) {
     this.game = game;
@@ -90,9 +114,11 @@ export class SquareProps {
   _bench(p, y) {
     // a slatted seat on two iron ends, with a back rest; it faces the square
     const r = p.rot;
-    this._box(p.x, y, p.z, r, 0, 0.11, 0, 0.62, 0.035, 0.17, C.wood);
-    this._box(p.x, y, p.z, r, 0, 0.15, -0.085, 0.62, 0.12, 0.03, C.wood);
-    for (const sx of [-0.27, 0.27]) this._box(p.x, y, p.z, r, sx, 0, -0.01, 0.035, 0.12, 0.17, C.iron);
+    // (round 31: two thirds of a person long, a seat at the knee; it had been
+    // as long as a person is tall)
+    this._box(p.x, y, p.z, r, 0, 0.09, 0, 0.44, 0.03, 0.14, C.wood);
+    this._box(p.x, y, p.z, r, 0, 0.12, -0.07, 0.44, 0.1, 0.025, C.wood);
+    for (const sx of [-0.19, 0.19]) this._box(p.x, y, p.z, r, sx, 0, -0.01, 0.03, 0.1, 0.14, C.iron);
   }
 
   _stall(p, y, modern) {
@@ -167,11 +193,9 @@ export class SquareProps {
       fz = -D / 2 + 0.2;
     this._box(pd.x, y, pd.z, r, fx, 0, fz, 0.2, 0.08, 0.2, P.kerb, 1);
     this._box(pd.x, y, pd.z, r, fx, 0.08, fz, 0.13, 0.05, 0.13, C.stone, 1);
-    this._box(pd.x, y, pd.z, r, fx, 0, fz, 0.035, 1.75, 0.035, C.metal, 1);
-    this._box(pd.x, y, pd.z, r, fx, 1.75, fz, 0.06, 0.06, 0.06, C.goods, 1);
-    const fc = flagCol || C.awningA;
-    this._box(pd.x, y, pd.z, r, fx + 0.36, 1.27, fz + 0.02, 0.7, 0.46, 0.014, fc, 1);
-    this._box(pd.x, y, pd.z, r, fx + 0.36, 1.48, fz + 0.025, 0.7, 0.06, 0.016, C.paint, 1);
+    // (round 31: the pole and a smaller flag with the realm's emblem now fly
+    // with the realm standards, padFlagSpot; the flag had been a blank
+    // billboard)
   }
 
   // The main square by day (round 25: the squares and plazas read vast and
@@ -296,10 +320,11 @@ export class SquareProps {
       const [x, z] = at(Math.sin(a) * rL, Math.cos(a) * rL);
       if (!paved(x, z)) continue;
       const yy = w.heightAt(x, z);
-      this._box(x, yy, z, rot, 0, 0, 0, 0.07, 0.04, 0.07, C.iron, 1);
-      this._box(x, yy, z, rot, 0, 0, 0, 0.028, 0.5, 0.028, C.iron, 1);
-      this._box(x, yy, z, rot + a, 0, 0.5, 0, 0.09, 0.05, 0.09, C.lamp, 1);
-      this._box(x, yy, z, rot + a, 0, 0.55, 0, 0.11, 0.015, 0.11, C.iron, 1);
+      // (round 31) about two people tall (it had stood three and a half)
+      this._box(x, yy, z, rot, 0, 0, 0, 0.05, 0.03, 0.05, C.iron, 1);
+      this._box(x, yy, z, rot, 0, 0, 0, 0.02, 0.31, 0.02, C.iron, 1);
+      this._box(x, yy, z, rot + a, 0, 0.31, 0, 0.055, 0.04, 0.055, C.lamp, 1);
+      this._box(x, yy, z, rot + a, 0, 0.35, 0, 0.07, 0.012, 0.07, C.iron, 1);
     }
     // trees in round stone planters at the square's four corners (a grey
     // stone ring, dark soil, a trunk and a two-tier crown: no green slab)
