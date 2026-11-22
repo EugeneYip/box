@@ -252,7 +252,7 @@ export class Tsunami {
       const pop0 = this._pop0.get(town.v.id) ?? (this._pop0.set(town.v.id, n), n);
       if (n <= Math.ceil(pop0 * 0.6)) uDmg = 0;
     }
-    hurt(g, x, z, 1.6 + low * 0.6, uDmg, 30 * e * (1 + low * 2.4), 'tsunami');
+    hurt(g, x, z, 1.6 + low * 0.6, uDmg, 30 * e * (1 + low * 1.8), 'tsunami');
     return town ? town.levee : 0;
   }
 
