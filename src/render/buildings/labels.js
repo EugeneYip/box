@@ -458,6 +458,7 @@ export class Labels {
       // whole screen is sampled (less the open inspector), so the neighbors
       // are named from 50 tiles; a bordering realm with a sliver in view no
       // longer adds a ribbon
+      this._landAt?.clear();
       if (D > (wm ? 45 : 80)) for (const id of this._landOnScreen(rig, w)) show.add(id);
     }
     for (const [id, s] of this.kLabels) {
@@ -469,11 +470,23 @@ export class Labels {
         s.userData.fade = 0;
         continue;
       }
-      const ax = k.labelX ?? v.cx,
+      let ax = k.labelX ?? v.cx,
         az = k.labelZ ?? v.cz;
+      s.userData.seat = v;
+      // (round 31) a realm with a fair share of the land in view whose seat
+      // lies off screen is named over its own land in view (Mainland Region
+      // over the coast round Wuhan, its capital far to the north)
+      const la = mid > 0.01 && this._focusSet?.has(id) ? this._landAt?.get(id) : null;
+      if (la) {
+        const q = (this._q3 = this._q3 || new THREE.Vector3()).set(ax, w.surfaceAt(ax, az), az).project(rig.camera);
+        if (q.z > 1 || q.z < -1 || Math.abs(q.x) > 0.94 || Math.abs(q.y) > 0.9) {
+          ax = la.x;
+          az = la.z;
+          s.userData.seat = null;
+        }
+      }
       const y = w.surfaceAt(ax, az) + 2.5 * BUILDING.scale + D * 0.03;
       s.position.set(ax, y, az);
-      s.userData.seat = v;
       const dist = cam.distanceTo(s.position);
       // many realms in view (not in the whole world) get smaller ribbons, but
       // never below the town names around them while those are shown
@@ -550,6 +563,8 @@ export class Labels {
     const y0 = w.surfaceAt?.(rig.cur.x, rig.cur.z) ?? 0;
     const cnt = (this._landCnt = this._landCnt || new Map());
     cnt.clear();
+    const pts = (this._landPts = this._landPts || new Map());
+    pts.clear();
     const NX = 13,
       NY = 7;
     // the open inspector card hides the screen right of its left edge
@@ -574,11 +589,34 @@ export class Labels {
           z = Math.floor(cam.position.z + d.z * t);
         if (!w.inBounds?.(x, z)) continue;
         const o = w.owner[z * w.w + x];
-        if (o >= 0) cnt.set(o, (cnt.get(o) || 0) + 1);
+        if (o >= 0) {
+          cnt.set(o, (cnt.get(o) || 0) + 1);
+          if (!pts.has(o)) pts.set(o, []);
+          pts.get(o).push(x + 0.5, z + 0.5);
+        }
         if (o >= 0 || (w.height && w.height[z * w.w + x] >= SEA_LEVEL)) land++;
       }
     const need = Math.max(2, Math.ceil(land * LAND_SHARE));
-    for (const [id, n] of cnt) if (n >= need) out.add(id);
+    // each named realm's own land in view: the sample nearest its middle
+    const at = (this._landAt = this._landAt || new Map());
+    at.clear();
+    for (const [id, n] of cnt) {
+      if (n < need) continue;
+      out.add(id);
+      const P = pts.get(id);
+      let mx = 0,
+        mz = 0;
+      for (let i = 0; i < P.length; i += 2) (mx += P[i]), (mz += P[i + 1]);
+      mx /= P.length / 2;
+      mz /= P.length / 2;
+      let bi = 0,
+        bd = Infinity;
+      for (let i = 0; i < P.length; i += 2) {
+        const d = (P[i] - mx) ** 2 + (P[i + 1] - mz) ** 2;
+        if (d < bd) (bd = d), (bi = i);
+      }
+      at.set(id, { x: P[bi], z: P[bi + 1] });
+    }
     return out;
   }
 
