@@ -11,6 +11,7 @@ import './hud7.css';
 import './hud9.css';
 import './hud10.css';
 import './hud11.css';
+import './hud12.css';
 import { CATEGORIES, listPowers, getPower } from '../powers/registry.js';
 import { el, safe, hexCss } from './dom.js';
 import { SEA_LEVEL } from '../world/constants.js';
@@ -1181,6 +1182,7 @@ export class UI {
     const KEY = String.raw`(?:[A-Z]|F\d{1,2}|Space|Esc|Enter|Tab|\x60|1–5|1-5)`;
     const tipRe = new RegExp(String.raw`(?:\s+·\s+${KEY}|(?<=speed)\s+·\s+\d)$`);
     const ariaRe = new RegExp(String.raw`\s*\(${KEY}\)$`);
+    this._keyRe = { tipRe, ariaRe };
     for (const e of this.root.querySelectorAll('[data-tip]')) {
       const t = e.getAttribute('data-tip');
       if (t && tipRe.test(t)) e.setAttribute('data-tip', t.replace(tipRe, ''));
@@ -1189,6 +1191,34 @@ export class UI {
       const t = e.getAttribute('aria-label');
       if (t && ariaRe.test(t)) e.setAttribute('aria-label', t.replace(ariaRe, ''));
     }
+  }
+
+  watchKeyNames() {
+    this.stripKeyNames();
+    const { tipRe, ariaRe } = this._keyRe;
+    const fix = (e, attr) => {
+      if (!e?.getAttribute) return;
+      for (const [a, re] of [
+        ['data-tip', tipRe],
+        ['aria-label', ariaRe],
+      ]) {
+        if (attr && attr !== a) continue;
+        const t = e.getAttribute(a);
+        if (t && re.test(t)) e.setAttribute(a, t.replace(re, ''));
+      }
+    };
+    this._keyObs = new MutationObserver((muts) => {
+      for (const m of muts) {
+        if (m.type === 'attributes') fix(m.target, m.attributeName);
+        else
+          for (const n of m.addedNodes) {
+            if (n.nodeType !== 1) continue;
+            fix(n);
+            for (const c of n.querySelectorAll('[data-tip], [aria-label]')) fix(c);
+          }
+      }
+    });
+    this._keyObs.observe(this.root, { subtree: true, childList: true, attributes: true, attributeFilter: ['data-tip', 'aria-label'] });
   }
 
   // ---------------------------------------------------------------- debug / tooling
@@ -1238,14 +1268,11 @@ export class UI {
     }
     for (const p of this.parts) safe(() => p.update(dt), null, p.constructor.name);
     // (round 29) touch screens: no desktop key names in tips or labels
-    // ("Pause · Space", "1× speed · 1", "Overview (M)"); swept every 1.5 s
-    if (this.root.classList.contains('is-touch')) {
-      const now = performance.now();
-      if (!(now - (this._keysT || 0) < 1500)) {
-        this._keysT = now;
-        safe(() => this.stripKeyNames(), null, 'touch key names');
-      }
-    }
+    // ("Pause · Space", "1× speed · 1", "Overview (M)")
+    // (round 31) dropped the moment a tip is written or a control is added
+    // (a mutation observer), not by a sweep every 1.5 s that left "Pause ·
+    // Space" up until its next pass
+    if (this.root.classList.contains('is-touch') && !this._keyObs) safe(() => this.watchKeyNames(), null, 'touch key names');
     // (round 27) the screen area the HUD leaves visible, for the camera's
     // framing of a followed unit (measured a few times a second while following)
     this._vrT = (this._vrT || 0) - dt;

@@ -1,0 +1,171 @@
+/* ==========================================================================
+   Round 31: inspector header, arrived vehicles and smaller fixes.
+   ========================================================================== */
+
+/* ---- inspector header: the edit, star and close buttons share the kind's
+   row, so the name runs the full width beside the badge ("King Branbert" was
+   set as "KING / BRANBE…" in a 105 px column) */
+@media (min-width: 721px) and (min-height: 501px), (max-width: 720px) {
+  .ws-insp__kind {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: center;
+    padding-top: 0;
+    min-width: 0;
+  }
+  .ws-insp__title {
+    grid-column: 2 / -1;
+    grid-row: 2;
+    margin-top: 1px;
+  }
+  .ws-insp__head > .ws-iconbtn {
+    grid-row: 1;
+    align-self: start;
+    margin-top: -3px;
+  }
+}
+.ws-insp__title.is-xlong {
+  font-size: 12.5px;
+  letter-spacing: 0.02em;
+}
+@media (max-height: 500px) and (min-width: 721px) {
+  .ws-insp__title.is-xlong {
+    font-size: 13px;
+  }
+}
+
+/* ---- a vehicle that ended its trip: a calm "Arrived", not the red "Lost" */
+.ws-insp__dead.is-arrived {
+  color: #bfe8c4;
+  background: rgba(120, 210, 140, 0.16);
+}
+
+/* ---- the age chip's years-left note reads at about 70% (50% was too faint) */
+.ws-agechip__left.is-on {
+  opacity: 0.72;
+}
+
+/* ---- Favorites: a town nearly out of food shows an amber bar */
+.ws-favs__meter .ws-meter.is-low i,
+.ws-meter.is-low i {
+  background: linear-gradient(90deg, #d9701c, #ffb347);
+}
+/* (the empty track turns amber too, so a bar at 4% still reads as a warning) */
+.ws-favs__meter .ws-meter.is-low,
+.ws-meter.is-low {
+  background: rgba(255, 160, 60, 0.22);
+}
+
+/* ---- phones (portrait): the nav rail steps aside while the vehicle chooser
+   is open ("Ages" showed cut in half above it) */
+@media (max-width: 720px) and (min-height: 501px) {
+  #ui-root:has(.ws-vehpick:not(.is-folded)) .ws-nav {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none !important;
+  }
+}
+
+/* ---- Chronicle: the filters are one sideways-scrolling row (10 chips on 4
+   rows took 160 of the panel's 450 px); empty filters are hidden */
+.ws-chron__filters {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  padding-bottom: 2px;
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 22px), transparent);
+  mask-image: linear-gradient(90deg, #000 calc(100% - 22px), transparent);
+}
+.ws-chron__filters::-webkit-scrollbar {
+  display: none;
+}
+.ws-cpill {
+  flex: none;
+}
+.ws-cpill[hidden] {
+  display: none;
+}
+
+/* ---- onboarding: a new step's card appears in its place (no slide) */
+.ws-coach.is-placing {
+  transition-property: opacity, transform;
+}
+
+/* ---- phones: the age badge is a small dial with the age's initial */
+@media (max-width: 720px), (max-height: 500px) {
+  .ws-agedot svg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+  }
+  .ws-agedot__bg,
+  .ws-agedot__fg {
+    fill: none;
+    stroke-width: 2.4;
+  }
+  .ws-agedot__bg {
+    stroke: color-mix(in srgb, var(--age) 30%, transparent);
+  }
+  .ws-agedot__fg {
+    stroke: var(--age);
+    stroke-linecap: round;
+  }
+  .ws-agedot b {
+    position: relative;
+    font: 800 9.5px/1 var(--ws-font);
+    color: var(--age);
+    letter-spacing: 0;
+  }
+}
+
+/* ---- Overview realm names: about 10.5-11 px capitals (they were 8-9 px;
+   at 12 px the crowded Caribbean spilled onto the tray), on a darker plate
+   so pale realm colors (Italy, Belgium, the ROC) keep their contrast */
+.ws-ovlabel {
+  gap: 6px;
+  padding: 3px 9px 4px 7px;
+  font-size: 15px;
+  background: rgba(10, 12, 19, 0.74);
+  box-shadow:
+    inset 0 -2.5px 0 var(--k),
+    0 1px 4px rgba(0, 0, 0, 0.35);
+}
+.ws-ovlabel i {
+  width: 10px;
+  height: 13px;
+}
+@media (max-width: 720px), (max-height: 500px) {
+  .ws-ovlabel {
+    font-size: 13.5px;
+    padding: 3px 8px 4px 6px;
+  }
+}
+
+/* ---- Favorites lifted above the tray: a stem down to its button */
+.ws-favs__tail {
+  position: fixed;
+  width: 2px;
+  margin-left: -1px;
+  pointer-events: none;
+  opacity: 0;
+  background: linear-gradient(180deg, rgba(240, 200, 120, 0.7), rgba(240, 200, 120, 0.25));
+  border-radius: 1px;
+  transition: opacity 0.2s;
+  z-index: 5;
+}
+.ws-favs__tail::after {
+  content: '';
+  position: absolute;
+  left: -3px;
+  bottom: -2px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(240, 200, 120, 0.55);
+}
+.ws-favs__tail.is-shown {
+  opacity: 1;
+}

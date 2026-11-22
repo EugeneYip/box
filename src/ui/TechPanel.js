@@ -145,7 +145,7 @@ export function techPanel(ui, kingdomId) {
         col.append(
           el(
             'div',
-            { class: 'ws-techcard' + (t.side ? ' is-side' : '') + (got ? ' is-learned' : now ? ' is-now' : ready ? ' is-ready' : ' is-locked'), 'data-tip': [t.side ? `Side art · ${BRANCH_NAME[t.branch] || prettyId(t.branch || '')}` : '', t.description, Array.isArray(t.unlocks) && t.unlocks.length ? `${got ? 'Brought' : 'Brings'}: ${t.unlocks.join('; ')}` : '', got ? 'Learned' : now ? 'Being studied now' : ready ? 'Ready to study' : reqs.length ? `Needs ${reqs.join(', ')}` : ''].filter(Boolean).join(' · ') },
+            { class: 'ws-techcard' + (t.side ? ' is-side' : '') + (got ? ' is-learned' : now ? ' is-now' : ready ? ' is-ready' : ' is-locked'), 'data-tip': [t.side ? `Side art · ${BRANCH_NAME[t.branch] || prettyId(t.branch || '')}` : '', t.description, Array.isArray(t.unlocks) && t.unlocks.length > 1 ? `Also ${got ? 'brought' : 'brings'}: ${t.unlocks.slice(1).join('; ')}` : '', got ? 'Learned' : now ? 'Being studied now' : ready ? 'Ready to study' : reqs.length ? `Needs ${reqs.join(', ')}` : ''].filter(Boolean).join(' · ') },
             el('span', { class: 'ws-techcard__state', html: uiIcon(got ? 'good' : now ? 'sparkle' : ready ? 'chev-right' : 'shield') }),
             el(
               'span',

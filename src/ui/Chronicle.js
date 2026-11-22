@@ -58,7 +58,7 @@ const RULES = [
   [/moves its capital|capital/, 'realm', 'banner'],
   [/is founded at|strike out on their own|proclaim|new realm|kingdom of/, 'realm', 'banner'],
   [/\bfirst\b|master|discover|learn|invent|research|enters? the .*\b(age|era)\b|\bera\b|launch|satellite|starship|space|survey|explorers|chart/, 'tech', 'chronicle'],
-  [/trade|caravan|market|merchant|cargo|goods|harbor|\bport\b|convoy|ships?\b|shipment|fleet|galley|sails?\b|ferry|truck|train|rail/, 'trade', 'trade'],
+  [/trade|caravan|market|merchant|cargo|goods|harbor|\bport\b|convoy|ships?\b|shipment|fleet|galley|sails?\b|ferry|truck|train|rail/, 'trade', 'cart'],
   [/marr|\bwed|is born|festival|feast|\bfair\b|people|culture|become the|emerges|hero|legend|earns the title|reaches level|named the|sing|danc|wander|healer|school|lesson/, 'life', 'spawn-human'],
   [/plenty|harvest|granar/, 'settle', 'bountiful-harvest'],
   [/grown into|becomes a (town|city)/, 'settle', 'found-kingdom'],
@@ -189,6 +189,21 @@ export class ChroniclePanel {
     const c = classify(n);
     const t = this.game.time;
     const e = { ...c, x: n.x, z: n.z, year: Math.floor(t.year) + 1, season: seasonOf(t.year), raw: n };
+    // (round 31) "X learns Y" was 77% of the book: one line per realm and
+    // year ("Elderley March learns Writing, Masonry and Pottery")
+    const lm = c.cat === 'tech' && /^(.+?) learns (.+?)\.?$/.exec(c.text);
+    if (lm) {
+      e.fold = { realm: lm[1], arts: [lm[2]] };
+      const prev = this.entries.slice(0, 40).find((o) => o.fold && o.fold.realm === lm[1] && o.year === e.year);
+      if (prev) {
+        if (!prev.fold.arts.includes(lm[2])) prev.fold.arts.push(lm[2]);
+        const a = prev.fold.arts;
+        prev.text = `${lm[1]} learns ${a.length > 1 ? `${a.slice(0, -1).join(', ')} and ${a[a.length - 1]}` : a[0]}`;
+        prev.season = e.season;
+        if (prev.row?.isConnected) prev.row.querySelector('.ws-crow__txt').innerHTML = esc(prev.text);
+        return prev;
+      }
+    }
     this.entries.unshift(e);
     if (this.entries.length > 500) this.entries.length = 500;
     this.countEl.textContent = String(this.entries.length);
@@ -204,7 +219,11 @@ export class ChroniclePanel {
   updateCounts() {
     const counts = { all: this.entries.length };
     for (const e of this.entries) counts[e.cat] = (counts[e.cat] || 0) + 1;
-    for (const [id, b] of this.pills) b.querySelector('b').textContent = counts[id] || 0;
+    // (round 31) a filter with nothing in it is not shown ("Ages 0")
+    for (const [id, b] of this.pills) {
+      b.querySelector('b').textContent = counts[id] || 0;
+      b.hidden = id !== 'all' && id !== this.filter && !counts[id];
+    }
   }
 
   setFilter(id) {
@@ -223,6 +242,7 @@ export class ChroniclePanel {
       el('span', { class: 'ws-crow__txt', html: esc(e.text) }),
       el('span', { class: 'ws-crow__meta' }, el('span', { text: `Y${e.year}` }), el('small', { text: e.season }), pos ? el('span', { class: 'ws-crow__go', html: uiIcon('locate') }) : null),
     );
+    e.row = r;
     return r;
   }
 

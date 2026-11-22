@@ -39,10 +39,16 @@ export class AgeChip {
       this.title.textContent = a.title || a.name;
       this.ico.innerHTML = uiIcon(ageGlyph(a.id));
       this.dot.style.setProperty('--age', hexCss(a.color));
-      this.dot.innerHTML = uiIcon(ageGlyph(a.id));
+      // (round 31) a small dial in the age's color with its initial, not the
+      // age's glyph (a storm cloud for Tempests read as a second weather icon
+      // beside the season's)
+      const nm = String(a.name || a.title || '').replace(/^(the\s+)?age\s+of\s+(the\s+)?/i, '');
+      this.dot.innerHTML = `<svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="8" class="ws-agedot__bg"/><circle cx="10" cy="10" r="8" class="ws-agedot__fg" pathLength="100" transform="rotate(-90 10 10)"/></svg><b>${(nm.trim()[0] || '?').toUpperCase()}</b>`;
+      this.dotFg = this.dot.querySelector('.ws-agedot__fg');
     }
     const p = Math.max(0, Math.min(1, a.progress || 0));
     this.fg.setAttribute('stroke-dasharray', `${(p * 100).toFixed(1)} 100`);
+    this.dotFg?.setAttribute('stroke-dasharray', `${(p * 100).toFixed(1)} 100`);
     const left = Math.max(0, Math.round(((1 - p) * (a.duration || 0)) / YEAR));
     const lasting = this.game.laws?.ageCycle === false;
     this.el.dataset.tip = `${a.name} — ${lasting ? 'lasts until you call another' : `about ${left} years remain`}`;

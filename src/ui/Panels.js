@@ -714,8 +714,8 @@ export class Modals {
       el(
         'div',
         { class: 'ws-row ws-rules' },
-        el('span', { class: 'ws-row__txt' }, el('span', { class: 'ws-row__label', text: 'World rules' }), el('span', { class: 'ws-row__desc', text: this.lawsChanged() ? `${this.lawsChanged()} laws differ from the defaults` : 'All laws at their defaults' })),
-        el('button', { class: 'ws-btn ws-btn--sm', type: 'button', onclick: () => this.open('laws', { back: 'newworld' }), html: `${uiIcon('trade')}<span>World rules…</span>` }),
+        el('span', { class: 'ws-row__txt' }, el('span', { class: 'ws-row__label', text: 'World Laws' }), el('span', { class: 'ws-row__desc', text: this.lawsChanged() ? `${this.lawsChanged()} laws differ from the defaults` : 'All laws at their defaults' })),
+        el('button', { class: 'ws-btn ws-btn--sm', type: 'button', onclick: () => this.open('laws', { back: 'newworld' }), html: `${uiIcon('trade')}<span>World Laws…</span>` }),
       ),
       el('p', { class: 'ws-note', html: `${uiIcon('info')}<span>The current world will be replaced. Seeds are shareable — the same seed always grows the same world.</span>` }),
     );
@@ -888,7 +888,7 @@ export class Modals {
         const onState = def.type === 'bool' ? !!v : +v > 0;
         const row = el(
           def.type === 'bool' ? 'label' : 'div',
-          { class: `ws-law ws-lawcard is-${def.type}${onState ? ' is-on' : ' is-off'}${isChanged(def) ? ' is-changed' : ''}`, 'data-key': def.key, 'data-tip': `${def.label}: ${def.description}` },
+          { class: `ws-law ws-lawcard is-${def.type}${onState ? ' is-on' : ' is-off'}${isChanged(def) ? ' is-changed' : ''}`, 'data-key': def.key },
           el('span', { class: 'ws-lawcard__ico', html: uiIcon(lawIcon(def)) }),
           el('span', { class: 'ws-law__txt' }, el('span', { class: 'ws-row__label', text: def.label }), el('span', { class: 'ws-row__desc', text: def.description })),
           control,
