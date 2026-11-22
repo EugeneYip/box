@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { drawBanner, bannerDataURL } from './emblems.js';
 import { BUILDING } from '../../core/scale.js';
 import { SEA_LEVEL } from '../../world/constants.js';
+import { geoWrapX } from '../../world/geo.js';
 
 // Floating map labels: kingdom names over capitals (mid and far zoom), village
 // names (mid zoom), and crossed-swords markers over active battles. Canvas
@@ -266,19 +267,6 @@ void main() {
   }
 }
 
-// Spots tried for a realm's name, in label widths (x) and heights (y) from
-// its seat, nearest first.
-const LABEL_SPOTS = [
-  [0, 0], [0, -1.1], [0, 1.1], [-0.3, 0], [0.3, 0], [-0.3, -1.1], [0.3, -1.1], [-0.3, 1.1], [0.3, 1.1],
-  [-0.48, 0], [0.48, 0], [-0.48, -1.1], [0.48, -1.1], [-0.48, 1.1], [0.48, 1.1], [0, -2.2], [0, 2.2],
-];
-// (round 27) the last, smaller try also looks a little farther round the seat
-const LABEL_SPOTS_WIDE = [
-  ...LABEL_SPOTS,
-  [-0.75, 0], [0.75, 0], [-0.75, -1.1], [0.75, -1.1], [-0.75, 1.1], [0.75, 1.1],
-  [-0.3, -2.2], [0.3, -2.2], [-0.3, 2.2], [0.3, 2.2], [0, -3.3], [0, 3.3], [-1, 0], [1, 0],
-];
-
 function swordsTexture() {
   const c = document.createElement('canvas');
   c.width = c.height = 96;
@@ -458,6 +446,7 @@ export class Labels {
     // overview showed Norway, Poland and Portugal half faded)
     const mid = D < 170;
     const midOnly = D < 145;
+    this._midOnly = midOnly;
     const now = performance.now();
     if (!mid) this._focusK = -1;
     if (kA > 0 && (!this._landT || now - this._landT > 400 || Math.abs(D - (this._landD || 0)) > D * 0.08)) {
@@ -842,104 +831,153 @@ export class Labels {
         }
         return false;
       };
-      // a realm whose seat lies off screen is not named at the screen edge
-      // (it would sit over someone else's land)
-      if (target > 0 && c.kind === 'realm' && (sx < 0 || sx > W || sy < 0 || sy > H)) target = 0;
       if (target > 0 && c.kind === 'realm' && v.z <= 1 && v.z >= -1) {
-        // a realm's name is never dropped: fit it to the screen, clamp it into
-        // the safe area and nudge it until it no longer collides, staying
-        // over the realm's own land
+        // (round 33) a realm's name sits on its own land: on its capital, on
+        // the middle of its land or on its land in view, never more than
+        // about 40 px from that point and never with its middle over another
+        // realm or the open sea (round 32 had the United Kingdom south of
+        // Britain, Germany over the North Sea and North Korea 150 px west of
+        // Korea). Failing every such spot clear of the other names and the
+        // HUD, at full size and a little smaller, the name is left out.
         const top = mTop,
           bot = H - mBot,
           right = W - mRight;
         const avail = right - mLeft;
-        if (pw > avail) {
-          const k = avail / pw;
+        const plW = pl ? pl.r - pl.l : 1;
+        if (pw * plW > avail) {
+          const k = avail / (pw * plW);
           sp.scale.x *= k;
           sp.scale.y *= k;
-          pw = avail;
+          pw *= k;
           ph *= k;
         }
-        let cx = Math.min(right - pw / 2, Math.max(mLeft + pw / 2, sx)),
-          cy = Math.min(bot - ph / 2, Math.max(top + ph / 2, sy));
         const v2 = this._v2 || (this._v2 = new (cam.position.constructor)());
-        // A name may sit anywhere that still covers or touches its seat (a
-        // small young realm owns far less land than its ribbon spans), or
-        // anywhere over the realm's own land.
-        const overRealm = (x, y, w2, h2) => {
-          if (c.kid == null || !world) return true;
-          if (Math.abs(x - sx) <= w2 * 0.5 && Math.abs(y - sy) <= h2 * 1.2) return true;
-          v2.set((x / W) * 2 - 1, -((y / H) * 2 - 1), v.z).unproject(cam);
-          const tx = Math.floor(v2.x),
-            tz = Math.floor(v2.z);
-          if (!world.inBounds?.(tx, tz)) return false;
-          return world.owner[tz * world.w + tx] === c.kid;
-        };
-        // (round 31) a small realm's name does not sit over a neighbor's
-        // land (the Bahamas over Florida): such spots are tried last
-        const foreign = (x, y) => {
-          if (c.kid == null || !world) return false;
-          v2.set((x / W) * 2 - 1, -((y / H) * 2 - 1), v.z).unproject(cam);
-          const tx = Math.floor(v2.x),
-            tz = Math.floor(v2.z);
-          if (!world.inBounds?.(tx, tz)) return false;
+        const camP = cam.position;
+        // the owner of the ground under a point of the screen (the plane at
+        // height gy): a realm id, -1 open water, -2 unowned land, -3 off the map
+        const groundOwner = (x, y, gy) => {
+          v2.set((x / W) * 2 - 1, -((y / H) * 2 - 1), 0.5).unproject(cam).sub(camP);
+          if (v2.y >= -1e-6) return -3;
+          const t = (gy - camP.y) / v2.y;
+          const tx = Math.floor(geoWrapX(world, camP.x + v2.x * t)),
+            tz = Math.floor(camP.z + v2.z * t);
+          if (!world.inBounds?.(tx, tz)) return -3;
           const o = world.owner[tz * world.w + tx];
-          return o >= 0 && o !== c.kid;
+          if (o >= 0) return o;
+          return world.isWater?.(tx, tz) ? -1 : -2;
         };
-        // the top of the capital's houses on screen (its four sides projected)
+        const toScreen = (x, y, z) => {
+          v2.set(x, y, z).project(cam);
+          if (v2.z > 1 || v2.z < -1) return null;
+          const qx = (v2.x * 0.5 + 0.5) * W,
+            qy = (-v2.y * 0.5 + 0.5) * H;
+          return qx >= 0 && qx <= W && qy >= 0 && qy <= H ? [qx, qy] : null;
+        };
+        // the points a name may hang from, on screen
+        const k = this.game.civ.kingdoms[c.kid];
+        const seat = this.game.civ.villages[k?.capital];
+        const anchors = [];
         let townTop = null;
-        const seat = sp.userData.seat;
-        if (seat && world) {
-          const R = Math.max(1.5, (seat.radius || 4) * 0.5);
+        if (seat?.alive !== false && seat) {
           const gy = world.surfaceAt(seat.cx, seat.cz);
-          for (const [ox, oz] of [[-R, 0], [R, 0], [0, -R], [0, R], [0, 0]]) {
-            v2.set(seat.cx + ox, gy, seat.cz + oz).project(cam);
-            if (v2.z > 1 || v2.z < -1) continue;
-            const yy = (-v2.y * 0.5 + 0.5) * H;
-            townTop = townTop == null ? yy : Math.min(townTop, yy);
+          const a = toScreen(seat.cx, gy, seat.cz);
+          if (a) {
+            anchors.push({ kind: 'seat', x: a[0], y: a[1], gy });
+            // the top of the capital's houses on screen (its four sides projected)
+            const R = Math.max(1.5, (seat.radius || 4) * 0.5);
+            for (const [ox, oz] of [[-R, 0], [R, 0], [0, -R], [0, R], [0, 0]]) {
+              v2.set(seat.cx + ox, gy, seat.cz + oz).project(cam);
+              if (v2.z > 1 || v2.z < -1) continue;
+              const yy = (-v2.y * 0.5 + 0.5) * H;
+              townTop = townTop == null ? yy : Math.min(townTop, yy);
+            }
+          }
+        }
+        if (k?.labelX != null) {
+          const gy = world.surfaceAt(k.labelX, k.labelZ);
+          const a = toScreen(k.labelX, gy, k.labelZ);
+          if (a && !anchors.some((o) => Math.hypot(o.x - a[0], o.y - a[1]) < 24)) {
+            const m = { kind: 'mid', x: a[0], y: a[1], gy };
+            // on the overview the middle of the land comes first
+            if (!this._midOnly) anchors.unshift(m);
+            else anchors.push(m);
+          }
+        }
+        // its land in view (the sample nearest its middle, then a few more)
+        const lp = this._landPts?.get(c.kid);
+        const la = this._landAt?.get(c.kid);
+        if (lp) {
+          const pts = la ? [la.x, la.z] : [];
+          const step = Math.max(2, Math.floor(lp.length / 8 / 2) * 2);
+          for (let i = 0; i < lp.length && pts.length < 10; i += step) pts.push(lp[i], lp[i + 1]);
+          for (let i = 0; i < pts.length; i += 2) {
+            const gy = world.surfaceAt(pts[i], pts[i + 1]);
+            const a = toScreen(pts[i], gy, pts[i + 1]);
+            if (a && !anchors.some((o) => Math.hypot(o.x - a[0], o.y - a[1]) < 24)) anchors.push({ kind: 'land' + i, x: a[0], y: a[1], gy });
           }
         }
         let placed = false,
-          shrink = 1;
-        // nearest spots first; failing all of them at full size, try once more
-        // with a slightly smaller ribbon before giving the name up
-        // (round 27: a third, smaller try and the wider spots below, so a
-        // crowded realm such as the Netherlands is nudged aside, not dropped)
+          shrink = 1,
+          cx = sx,
+          cy = sy;
         // (round 29: while town names are shown a ribbon shrinks only a
-        // little, so it stays larger than them; the realm in view may go one
-        // step further before it gives its name up)
-        // (round 31: never below about 1.3x the town names, nor under about
-        // 10.5 px capitals: a name that does not fit then is left out)
-        const tries = (townOn > 0.5 ? [1, 0.92] : [1, 0.9, 0.8, 0.7]).filter((k, i) => i === 0 || ribCap * k >= RIBBON_CAP_FLOOR);
-        for (const k of tries) {
-          const w2 = pw * k,
-            h2 = ph * k;
-          const x0 = Math.min(right - w2 / 2, Math.max(mLeft + w2 / 2, sx)),
-            y0 = Math.min(bot - h2 / 2, Math.max(top + h2 / 2, sy));
-          let spots = k === tries[tries.length - 1] && tries.length > 2 ? LABEL_SPOTS_WIDE : LABEL_SPOTS;
-          // (round 31) the first try sits just above the capital's houses
-          // (centred on its seat the ribbon hid the town at 68 tiles)
-          const dy0 = townTop != null ? Math.max(-1.6, Math.min(0, (townTop - 6 - h2 / 2 - y0) / h2)) : 0;
-          if (dy0 < -0.02) spots = [[0, dy0], ...spots];
-          for (let pass = 0; pass < 2 && !placed; pass++)
-            for (const [dx, dy] of spots) {
-              const yy = y0 + dy * h2,
-                xx = Math.min(right - w2 / 2, Math.max(mLeft + w2 / 2, x0 + dx * w2));
-              if (yy - h2 / 2 < top || yy + h2 / 2 > bot) continue;
-              const r = { l: xx - w2 / 2, r: xx + w2 / 2, t: yy - h2 / 2, b: yy + h2 / 2 };
-              if (!hits(r) && overRealm(xx, yy, w2, h2) && (pass === 1 || !foreign(xx, yy))) {
-                rect.l = r.l;
-                rect.r = r.r;
-                rect.t = r.t;
-                rect.b = r.b;
-                cy = yy;
-                cx = xx;
-                placed = true;
-                break;
-              }
+        // little, so it stays larger than them; round 31: never below about
+        // 1.3x the town names, nor under about 10.5 px capitals)
+        const tries = (townOn > 0.5 ? [1, 0.92] : [1, 0.9, 0.8]).filter((q, i) => i === 0 || ribCap * q >= RIBBON_CAP_FLOOR);
+        const last = sp.userData.fade > 0.5 ? sp.userData.spot : null;
+        for (const q of tries) {
+          const w2 = pw * q,
+            h2 = ph * q;
+          // the plate's size and where the sprite's centre sits below the
+          // plate's middle
+          const pw2 = w2 * (pl ? pl.r - pl.l : 1),
+            ph2 = h2 * (pl ? pl.b - pl.t : 1),
+            oy = pl ? (0.5 - (pl.t + pl.b) / 2) * h2 : 0;
+          const d1 = ph2 * 0.85;
+          const offs = [[0, 0], [0, -d1], [0, d1], [-20, 0], [20, 0], [-20, -d1], [20, -d1], [-20, d1], [20, d1], [-38, 0], [38, 0], [0, -2 * d1], [0, 2 * d1]].filter(([dx, dy]) => Math.hypot(dx, dy) <= 41);
+          // a name already shown tries its own spot first, so it does not
+          // hop about as the camera moves
+          const spots = [];
+          if (last && !last.free) {
+            const a = anchors.find((o) => o.kind === last.kind);
+            if (a) spots.push([a, last.dx, last.dy, false]);
+          }
+          if (last?.free && townTop != null) {
+            const a = anchors.find((o) => o.kind === 'seat');
+            if (a) spots.push([a, 0, townTop - 4 - ph2 / 2 - a.y, true]);
+          }
+          for (const a of anchors) {
+            // (round 31) the first try on the capital sits just above its
+            // houses (centred on its seat the ribbon hid the town at 68 tiles)
+            if (a.kind === 'seat' && townTop != null) {
+              const dy = townTop - 4 - ph2 / 2 - a.y;
+              if (dy < -2) spots.push([a, 0, dy, true]);
             }
+            for (const [dx, dy] of offs) spots.push([a, dx, dy, false]);
+          }
+          for (const [a, dx, dy, free] of spots) {
+            const px = a.x + dx,
+              py = a.y + dy;
+            const pr = { l: px - pw2 / 2, r: px + pw2 / 2, t: py - ph2 / 2, b: py + ph2 / 2 };
+            if (pr.l < mLeft || pr.r > right || pr.t < top || pr.b > bot) continue;
+            const r = { l: px - w2 / 2, r: px + w2 / 2, t: py + oy - h2 / 2, b: py + oy + h2 / 2 };
+            if (hits(r)) continue;
+            // its middle over its own land; only right on the capital may it
+            // lie over the water round a small island
+            const o = groundOwner(px, py, a.gy);
+            if (o !== c.kid && !(a.kind === 'seat' && Math.hypot(dx, dy) <= 14)) continue;
+            rect.l = r.l;
+            rect.r = r.r;
+            rect.t = r.t;
+            rect.b = r.b;
+            cx = px;
+            cy = py + oy;
+            placed = true;
+            sp.userData.spot = { kind: a.kind, dx, dy, free };
+            break;
+          }
           if (placed) {
-            shrink = k;
+            shrink = q;
             break;
           }
         }
@@ -949,13 +987,16 @@ export class Labels {
           pw *= shrink;
           ph *= shrink;
         }
-        if (placed && (cx !== sx || Math.abs(cy - sy) > 0.5)) {
-          // move the sprite to the adjusted screen point at the same depth
+        if (placed && (Math.abs(cx - sx) > 0.5 || Math.abs(cy - sy) > 0.5)) {
+          // move the sprite to the chosen screen point at the same depth
           v.set((cx / W) * 2 - 1, -((cy / H) * 2 - 1), v.z).unproject(cam);
           // (same view depth, so it keeps the on-screen size measured above)
           sp.position.copy(v);
         }
-        if (!placed) target = 0;
+        if (!placed) {
+          target = 0;
+          sp.userData.spot = null;
+        }
       } else if (target > 0) {
         // keep clear of the screen edges where the HUD lives
         if (rect.t < mTop || rect.b > H - mBot || rect.r > W - mRight || rect.l < mLeft) target = 0;
