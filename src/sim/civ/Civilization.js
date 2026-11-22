@@ -932,6 +932,7 @@ export class Civilization {
       v.food = 0;
       v.emptyT = (v.emptyT || 0) + dt;
       // only a true famine: stores empty for a while and no kin can send grain
+      // (the town's need unmet: never while a store holds food)
       if (!v.starving && v.emptyT > 12) {
         v.starving = true;
         v.famineT = now;
@@ -2251,9 +2252,11 @@ export class Civilization {
     for (const v of this.villages) {
       if (!v.alive || geoDist(w, v.cx, v.cz, x, z) > radius + (v.radius || 6) * 0.5) continue;
       v.droughtUntil = Math.max(v.droughtUntil || 0, now + YEAR * years);
-      // the stores spoil: the famine is declared at the town's next tick
-      v.food = 0;
-      v.emptyT = Math.max(v.emptyT || 0, 12);
+      // the stores spoil, most of them: a famine follows once what is left
+      // is eaten and no kin or cannery can send more (round 29: the stores
+      // were emptied and a famine declared at once, while a town still
+      // held 950 meals a moment before)
+      v.food *= 0.3;
       for (const p of v.plots) {
         let dirty = false;
         for (const i of p.tiles)

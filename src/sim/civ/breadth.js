@@ -10,6 +10,10 @@ import { baseCulture } from './cultures.js';
 const RELIEF_WAIT = 30,
   RELIEF_EVERY = 15,
   RELIEF_SHARE = 1.2;
+// the cannery's own shipment when no sister town has plenty: at least
+// RELIEF_MIN meals, else RELIEF_OWN meals a head (round 29)
+const RELIEF_MIN = 3,
+  RELIEF_OWN = 0.3;
 
 // Technology breadth (docs/TECH-BREADTH.md, the parts owned by Civ): the
 // buildings of the food, medicine, biome, city-development and urban-planning
@@ -557,9 +561,15 @@ export const breadth = {
       let from = null;
       for (const o of vs) if (o !== to && o.food > o.pop * 3 + 20 && (!from || o.food > from.food)) from = o;
       // the cannery's own stores: a little even when no town has plenty
-      const amt = from ? Math.min(from.food - (from.pop * 3 + 10), to.pop * RELIEF_SHARE) : to.pop * 0.05;
+      // (round 29: at least a few cases, and about a month's meals for the
+      // town; the old twentieth of a meal a head was under the floor below
+      // for every town of fewer than forty, and no tins ever reached one)
+      let amt = from ? Math.min(from.food - (from.pop * 3 + 10), to.pop * RELIEF_SHARE) : 0;
+      if (!(amt >= RELIEF_MIN)) {
+        from = null;
+        amt = Math.max(RELIEF_MIN, to.pop * RELIEF_OWN);
+      }
       to._tinT = now;
-      if (amt <= 2) continue;
       if (from) from.food -= amt;
       to.food += amt * 0.95;
       to.emptyT = 0;

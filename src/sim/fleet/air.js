@@ -8,6 +8,7 @@ const AIRLINER_KEEP = 2; // places in the sky kept for airliners (_airFull)
 
 const YEAR = 30;
 const COUNT = 6; // a rocket's countdown on the pad (seconds) before it lifts off
+const TRAIN_SPELL = 75; // a realm's train keeps to its line this long (seconds: _trainAgain)
 
 // Modern and future vehicles (docs/MODERN-ERAS.md), mixed into Fleet. STUBS:
 // trains, trucks, cars and the modern warships and guns run as the nearest
@@ -26,6 +27,8 @@ const COUNT = 6; // a rocket's countdown on the pad (seconds) before it lifts of
 //       sky taxis); to: building id | {x, z}. Refused in a storm (aircraft are
 //       grounded) and beyond the air budget. Emits 'fleet:landed'
 //       {flight, kind, kingdom, from, to, cargo, x, z} on arrival.
+//   airLimit()                              the limit on aircraft aloft now
+//       (the map's budget.air plus a place for every four airfields)
 //   requestLaunch({kingdom, from, payload})  payload: satellite|station|starship;
 //       from: a launch pad or spaceport building id. Emits 'fleet:orbit'
 //       {kingdom, payload, x, z} when the payload reaches orbit (a starship
@@ -100,8 +103,18 @@ export const air = {
       b = civ.villages[line.b];
     if (!a?.alive || !b?.alive) return null;
     const kid = o.kingdom ?? line.kingdom;
-    // one train at a time on a line
-    if (this.list.some((v) => v.alive && v.mission?.rail === line.id)) return null;
+    // one train at a time on a line, and a realm's fair share of the
+    // world's trains (round 29: rail has its own quota, Fleet.landRoom):
+    // every line of a network of four or fewer, three lines in five beyond
+    let mine = 0;
+    for (const v of this.list) {
+      if (!v.alive || v.mission?.type !== 'train') continue;
+      if (v.mission.rail === line.id) return null;
+      if (v.kingdom === kid && !v.keep) mine++;
+    }
+    let lines = 0;
+    for (const l of civ.rails || []) if (l.kingdom === kid && l.pts && l.pts.length >= 4) lines++;
+    if (mine >= (lines <= 4 ? lines : Math.ceil(lines * 0.6))) return null;
     // on the rails themselves: a line's pts are the centre of the drawn track
     const fwd = o.reverse ? reversePts(line.pts) : line.pts;
     const from = o.reverse ? b : a,
@@ -122,7 +135,7 @@ export const air = {
     }
     v.cargo = Object.keys(cargo).length ? cargo : null;
     v.anim.cargoType = cargo.wood ? 0 : cargo.stone ? 1 : 2;
-    v.mission = { type: 'train', phase: 'out', from: from.id, to: to.id, rail: line.id };
+    v.mission = { type: 'train', phase: 'out', from: from.id, to: to.id, rail: line.id, t0: this.game.time.total };
     v.voyage = { from: from.id, to: to.id, fromName: from.name, toName: to.name };
     this._trainOnto(v, fwd);
     this.totals.trains = (this.totals.trains || 0) + 1;
@@ -218,6 +231,39 @@ export const air = {
     this._trainOnto(v, line.a === m.from ? reversePts(line.pts) : line.pts);
     v.state = 'rest';
     v.stateT = 0;
+  },
+  // (round 29) Home again: a realm's train keeps to its line for a spell,
+  // running back out with the next load after its stop, instead of going
+  // out of service after one round trip (on the many short lines of Year 600
+  // a train was gone again within seconds, and 11 trains ran on 33 lines).
+  // False when its spell is over (or the line or a town is gone).
+  _trainAgain(v, m) {
+    const civ = this.game.civ;
+    const now = this.game.time.total;
+    if (m.t0 == null) m.t0 = now;
+    if (now - m.t0 > TRAIN_SPELL) return false;
+    const line = civ?.railLine?.(m.rail);
+    if (!line?.pts || line.pts.length < 4) return false;
+    const from = civ.villages[m.from],
+      to = civ.villages[m.to];
+    if (!from?.alive || !to?.alive) return false; // (already counted in the rail quota)
+    const cargo = {};
+    for (const r of ['food', 'wood', 'stone']) {
+      const spare = (from[r] || 0) - (r === 'food' ? (from.pop || 0) * 3 + 25 : 30);
+      if (spare > 8 && (to[r] || 0) < (from[r] || 0)) {
+        const take = Math.floor(Math.min(spare * 0.5, v.def.capacity / 2));
+        from[r] -= take;
+        cargo[r] = take;
+      }
+    }
+    v.cargo = Object.keys(cargo).length ? cargo : null;
+    v.anim.cargoType = cargo.wood ? 0 : cargo.stone ? 1 : 2;
+    m.phase = 'out';
+    v.voyage = { from: from.id, to: to.id, fromName: from.name, toName: to.name };
+    this._trainOnto(v, line.a === m.from ? line.pts : reversePts(line.pts));
+    v.state = 'rest'; // (a stop at the station first: Fleet land.js)
+    v.stateT = 0;
+    return true;
   },
   // Combustion: a car drives a short way along a town's streets.
   requestCar(o = {}) {
@@ -400,6 +446,11 @@ export const air = {
       this._ac = base + Math.min(Math.round(base / 3), n >> 2);
     }
     return this._ac;
+  },
+  // The limit on aircraft aloft as it stands now (tools and the inspector:
+  // budget.air is only the map's base, before the airfields' share)
+  airLimit() {
+    return this.airCap();
   },
   // Room in a full sky: the circuit, drone or sky taxi farthest out of sight
   // (cruising, with nothing aboard that matters) lands early. False if none.

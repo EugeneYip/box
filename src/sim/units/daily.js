@@ -560,6 +560,7 @@ export function installDaily(Units) {
   };
   P._dlArrive = function (u, dl) {
     dl.ph = 'do';
+    if (dl.stay) dl.until = Math.max(dl.until, this.game.time.total + dl.stay);
     if (dl.k === 'goto' && dl.then === 'play') {
       dl.k = 'play';
       dl.act = 'play';
@@ -646,7 +647,12 @@ export function installDaily(Units) {
       // after a chore the brain looks for real work this think; if it has
       // none, the next think finds another chore (no idle gap between them);
       // one of the square's crowd finds a new place in it at once
-      u._dlNext = was === 'chore' || was === 'school' || sq0 || (child && was !== 'goto') ? now + 0.5 : now + (child ? 1.5 : 4) + hash(u.id, (now * 7) | 0) * 4;
+      // (round 29: a grown-up's pause between errands halved; idle grown-ups
+      // by day rose to 16%, most of them "Resting" between two errands)
+      // (a worker goes back to the brain for real work at once, as after a
+      // chore: farmers stood "Resting" between lunch and the afternoon's work)
+      const worker = !!u.job && u.job !== 'soldier' && u.job !== 'king';
+      u._dlNext = was === 'chore' || was === 'school' || sq0 || worker || (child && was !== 'goto') ? now + 0.5 : now + (child ? 1.5 : 2) + hash(u.id, (now * 7) | 0) * 2;
       return false;
     }
     if (now < u._dlNext) return false;
@@ -1009,22 +1015,37 @@ export function installDaily(Units) {
   };
   const PLAZA_LAB = [
     ['Strolling on the square', 'talk'],
-    ['Resting on a bench', 'wait'],
-    ['Browsing the stalls', 'shop'],
-    ['Watching the fountain', 'think'],
+    ['Feeding the pigeons on the square', 'wait'],
+    ['Browsing the stalls on the square', 'shop'],
+    ['By the fountain on the square', 'think'],
     ['Chatting on the square', 'talk'],
   ];
+  // (round 29) the farthest a person walks to a square by day (tiles; the
+  // square nearest them of the town's squares): twice as many were walking
+  // to a square as stood on one, and a long walk ate up the stay
+  const PLAZA_WALK = 16;
   P._dlPlaza = function (u, v, pl, rng, lunch) {
-    const sq = pl.sq;
-    if (!sq || !(v.pop >= 8)) return false;
+    if (!pl.sq || !(v.pop >= 8)) return false;
     // (a small town's square holds a few; a city's up to PLAZA_DAY)
     if (this._plazaN(v) >= Math.min(PLAZA_DAY, 2 + Math.floor(v.pop / 8))) return false;
+    // the nearest of the town's squares (the main square, then the hall,
+    // a park and the temple in a big town), and only within a short walk
+    let sq = null,
+      sd = PLAZA_WALK * PLAZA_WALK;
+    for (const q of pl.sqs || [pl.sq]) {
+      const d2 = (q.x - u.x) ** 2 + (q.z - u.z) ** 2;
+      if (d2 < sd) (sd = d2), (sq = q);
+    }
+    if (!sq) return false;
     const a = rng() * Math.PI * 2,
       rr = 0.7 + rng() * 1.9;
     const spot = this._dlSpot(u, sq.x + Math.sin(a) * rr, sq.z + Math.cos(a) * rr, 2);
     if (!spot) return false;
     const [lab, act] = lunch ? ['Having lunch on the square', 'eat'] : PLAZA_LAB[(u.id + ((rng() * 5) | 0)) % PLAZA_LAB.length];
-    this._dlStart(u, lunch ? 'eat' : 'shop', lunch ? 7 + rng() * 5 : 10 + rng() * 12, { x: spot.x, z: spot.z, fx: sq.x, fz: sq.z, lab, go: 'Walking to the square', act });
+    const stay = lunch ? 8 + rng() * 5 : 18 + rng() * 16;
+    this._dlStart(u, lunch ? 'eat' : 'shop', stay, { x: spot.x, z: spot.z, fx: sq.x, fz: sq.z, lab, go: 'Walking to the square', act });
+    // (the stay counts from arrival: _dlArrive)
+    u._dl.stay = stay;
     u._dl.plaza = v.id;
     if (lunch) u._dl.meal = 'lunch';
     (v._plazaSet || (v._plazaSet = new Set())).add(u.id);

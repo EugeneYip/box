@@ -23,7 +23,8 @@ const REALM_MIN_POP = 30;
 // age its chance is full, and that full chance each two-yearly look.
 // Risings: past RISE_EASY in the last RISE_YEARS, the next is slower to come.
 // (round 27: past 2, not 3; the 200s still saw 52 risings a century)
-const RISE_YEARS = 10,
+// (round 29: over 15 years, not 10; 32-36 a century in Years 100-399)
+const RISE_YEARS = 15,
   RISE_EASY = 2;
 // A peace treaty: the two crowns keep the peace for TREATY_YEARS plus up to
 // TREATY_MORE more (round 26: 34 wars a century in the 100s, and combat
@@ -32,9 +33,11 @@ const RISE_YEARS = 10,
 const TREATY_YEARS = 10,
   TREATY_MORE = 5;
 export const WOUND_YEARS = 5;
+// (round 29: 0.16 to 0.09; unions rose to 30 of 47 falls by Year 600 and
+// took most of the small realms)
 const UNION_FROM = 45,
   UNION_TO = 90,
-  UNION_P = 0.16;
+  UNION_P = 0.09;
 
 export const politics = {
   // ---------------------------------------------------------------- kingdoms
@@ -313,7 +316,9 @@ export const politics = {
       // (a real country's crown passes more surely: the seeded ones at
       // seven tenths split their land into a crown per province)
       const realK = k.realm >= 0 && this._realMapOn?.();
-      if (k.villages.length >= 3 && this._kLaw(k.id, 'civRebellions') && !abdicated && this.rng.chance(Math.min(0.35, 0.1 + (k.villages.length - 3) * 0.03) * (realK ? 0.4 : k.seeded ? 0.7 : 1))) {
+      // (round 29: damped like the other risings, and counted among them; a
+      // run of the 100s saw seven contested successions)
+      if (k.villages.length >= 3 && this._kLaw(k.id, 'civRebellions') && !abdicated && this.rng.chance(Math.min(0.35, 0.1 + (k.villages.length - 3) * 0.03) * (realK ? 0.4 : k.seeded ? 0.7 : 1) * this._riseDamp())) {
         let claimant = null;
         for (const vid of k.villages) {
           const v = this.villages[vid];
@@ -327,6 +332,7 @@ export const politics = {
           const R = this.rebel(claimant, false, true);
           this._autoRise = false;
           this._civilWar = false;
+          if (R) this._noteRise();
           if (R) this.declareWar(R.id, k.id, 'rebellion', true);
         }
       }
@@ -518,6 +524,8 @@ export const politics = {
       if (!best || score(v) > score(best)) best = v;
     }
     k.capital = best ? best.id : -1;
+    // (a realm named for a region checks the name against its new seat)
+    if (best) this._fitRealmName?.(k);
     return best;
   },
 
@@ -1383,7 +1391,9 @@ export const politics = {
     // the mid eras saw 51-53 risings a century against 41 in round 20)
     // (round 25: the 200s still saw 58 risings a century; a world that has
     // seen many risings in the last decade is slower to see the next)
-    if (v.unrest >= 4 && now - k.founded >= YEAR * 15 && this._kLaw(k.id, 'civRebellions') && this.rng.chance((alive < 3 ? 0.2 : alive >= 16 ? 0.03 : alive >= 12 ? 0.045 : 0.07) * this._riseDamp())) {
+    // (round 29: a fifth less again in a world of twelve or more realms; the
+    // 100s rose from 23 to 32 a century)
+    if (v.unrest >= 4 && now - k.founded >= YEAR * 15 && this._kLaw(k.id, 'civRebellions') && this.rng.chance((alive < 3 ? 0.2 : alive >= 16 ? 0.024 : alive >= 12 ? 0.036 : 0.07) * this._riseDamp())) {
       // (round 27: every rising counts, a charter won or a town gone over too)
       this.rebel(v);
       this._noteRise();

@@ -754,6 +754,36 @@ export const realms = {
     return best ? best.name : null;
   },
 
+  // (round 29) A realm named for a region ("State of Virginia") keeps the
+  // name only while its seat stands in that region: when the seat moves (the
+  // old one lost or abandoned) it takes the name a realm rising at the new
+  // seat would take. North America by Year 45 had a "State of Virginia"
+  // seated at Pittsburgh and a "State of Texas" at Little Rock.
+  _fitRealmName(k) {
+    if (!k?.alive || k.realm >= 0 || k.player?.name || !this._realMapOn?.()) return;
+    const byName = this._regionByName || (this._regionByName = new Map(REGIONS.map((r) => [`${r[3]} ${r[0]}`, r])));
+    const reg = byName.get(k.base);
+    if (!reg) return;
+    const cap = this.villages[k.capital];
+    if (!cap?.alive) return;
+    // (inside one of the region's boxes, where it has them; else the
+    // region nearest the seat)
+    const ll = reg[4] ? geoLonLat(this.world, cap.cx, cap.cz) : null;
+    if (ll && reg[4].some((b) => ll[0] >= b[0] && ll[0] <= b[2] && ll[1] >= b[1] && ll[1] <= b[3])) return;
+    const living = new Set();
+    for (const o of this.kingdoms) if (o !== k && o.alive && o.villages.length) living.add(o.name);
+    if (!ll && this._regionNear(cap.cx, cap.cz, living) === k.base) return;
+    const real = this._newRealmName(cap.name, { x: cap.cx, z: cap.cz, home: cap.home });
+    if (!real?.name || real.name === k.base) return;
+    const old = k.name;
+    k.name = this._uniqueRealmName(real.name, k.culture, real.name, true);
+    k.base = real.name;
+    if (real.realm >= 0) k.realm = real.realm;
+    if (real.placesFrom >= 0) k.placesFrom = real.placesFrom;
+    this.version++;
+    this._history(`With its seat now at ${cap.name}, ${old} takes the name ${k.name}`, 'info', { x: cap.cx, z: cap.cz });
+  },
+
   // The real realm a town belongs to (World Map): the first real realm that
   // held it (its seed, its founder, or the first real crown to take it),
   // while that realm still stands. A town held by someone else longs for it
