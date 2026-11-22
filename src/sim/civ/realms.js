@@ -696,7 +696,8 @@ export const realms = {
     if (near >= 0 && (d < 0 || near === d)) return real(near);
     // the region of the country it rises in ("State of Queensland",
     // "Republic of Sumatra") before the name of one city
-    const reg = this._regionNear(opts.x, opts.z, living, d);
+    const sp = this._seatPlace(base, opts.x, opts.z);
+    const reg = this._regionNear(sp.x, sp.z, living, d);
     if (reg) return { name: reg, realm: -1, placesFrom: d };
     if (base && !living.has(base)) return { name: base, realm: -1, placesFrom: d };
     let best = null,
@@ -710,6 +711,16 @@ export const realms = {
       }
     }
     return { name: best ? best.name : base, realm: -1, placesFrom: d };
+  },
+
+  // (round 31) Where a seat named for a real city stands for the regions'
+  // boxes: the city's own place when it lies near (a town grows a few tiles
+  // from its real spot: "Raleigh" stood north of 36.5 degrees, inside
+  // Virginia's box, and its realm was named the "State of Virginia").
+  _seatPlace(name, x, z) {
+    if (name && x != null)
+      for (const p of this._places || []) if (p.name === name && geoDist(this.world, p.x, p.z, x, z) < 16) return { x: p.x, z: p.z };
+    return { x, z };
   },
 
   // The name of the region (places/regions.js) nearest a tile, within a
@@ -778,11 +789,12 @@ export const realms = {
     if (!cap?.alive) return;
     // (inside one of the region's boxes, where it has them; else the
     // region nearest the seat)
-    const ll = reg[4] ? geoLonLat(this.world, cap.cx, cap.cz) : null;
+    const sp = this._seatPlace(cap.name, cap.cx, cap.cz);
+    const ll = reg[4] ? geoLonLat(this.world, sp.x, sp.z) : null;
     if (ll && reg[4].some((b) => ll[0] >= b[0] && ll[0] <= b[2] && ll[1] >= b[1] && ll[1] <= b[3])) return;
     const living = new Set();
     for (const o of this.kingdoms) if (o !== k && o.alive && o.villages.length) living.add(o.name);
-    if (!ll && this._regionNear(cap.cx, cap.cz, living) === k.base) return;
+    if (!ll && this._regionNear(sp.x, sp.z, living) === k.base) return;
     const real = this._newRealmName(cap.name, { x: cap.cx, z: cap.cz, home: cap.home });
     if (!real?.name || real.name === k.base) return;
     const old = k.name;
