@@ -1168,7 +1168,7 @@ export class UI {
         this.togglePhoto();
         break;
       case 'KeyF':
-        if (this.inspector.open && this.inspector.track?.unit) this.inspector.toggleFollow();
+        if (this.inspector.open && this.inspector.followTarget()) this.inspector.toggleFollow();
         break;
       default:
         break;

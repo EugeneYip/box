@@ -398,7 +398,8 @@ export class Inspector {
     this.el.classList.remove('is-open');
     this.ui.root.classList.remove('has-insp');
     const rig = this.game.cameraRig;
-    if (this.track?.unit && rig.follow === this.track.unit) rig.follow = null;
+    const fu = this.track?.unit || (isCraft(this.track) ? this.track.vessel || this.track.building : null);
+    if (fu && rig.follow === fu) rig.follow = null;
     this.track = null;
     this.hit = null;
     this.setSelected(null);
@@ -1121,9 +1122,16 @@ export class Inspector {
     return !!(hov || kbd);
   }
 
-  toggleFollow() {
+  /** The person or craft the F key / Follow button would follow, or null. */
+  followTarget() {
     const u = this.track?.unit || (isCraft(this.track) ? this.track.vessel || this.track.building : null);
-    if (!u || u.alive === false || u.state === 'sinking') return;
+    if (!u || u.alive === false || u.state === 'sinking') return null;
+    return u;
+  }
+
+  toggleFollow() {
+    const u = this.followTarget();
+    if (!u) return;
     const rig = this.game.cameraRig;
     if (rig.follow === u) rig.follow = null;
     else {
