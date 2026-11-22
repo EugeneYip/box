@@ -259,10 +259,8 @@ void main() {
 
 // Spots tried for a realm's name, in label widths (x) and heights (y) from
 // its seat, nearest first.
-// (round 31) the first try is a little above the seat: centred on it, the
-// ribbon hid the capital itself at 68 tiles
 const LABEL_SPOTS = [
-  [0, -1.1], [0, 0], [0, 1.1], [-0.3, 0], [0.3, 0], [-0.3, -1.1], [0.3, -1.1], [-0.3, 1.1], [0.3, 1.1],
+  [0, 0], [0, -1.1], [0, 1.1], [-0.3, 0], [0.3, 0], [-0.3, -1.1], [0.3, -1.1], [-0.3, 1.1], [0.3, 1.1],
   [-0.48, 0], [0.48, 0], [-0.48, -1.1], [0.48, -1.1], [-0.48, 1.1], [0.48, 1.1], [0, -2.2], [0, 2.2],
 ];
 // (round 27) the last, smaller try also looks a little farther round the seat
@@ -475,6 +473,7 @@ export class Labels {
         az = k.labelZ ?? v.cz;
       const y = w.surfaceAt(ax, az) + 2.5 * BUILDING.scale + D * 0.03;
       s.position.set(ax, y, az);
+      s.userData.seat = v;
       const dist = cam.distanceTo(s.position);
       // many realms in view (not in the whole world) get smaller ribbons, but
       // never below the town names around them while those are shown
@@ -606,7 +605,7 @@ export class Labels {
     // HUD-safe margins that scale with the screen (phones and tablets in portrait)
     // (round 31: the right margin is the open inspector's own edge, else
     // small: the panels themselves are in the HUD list)
-    if (this._hudT === 1 || this._inspL == null) {
+    if (this._hudT === 1 || this._inspL === undefined) {
       this._inspL = null;
       try {
         const r = document.querySelector('.ws-insp.is-open')?.getBoundingClientRect();
@@ -731,6 +730,19 @@ export class Labels {
           const o = world.owner[tz * world.w + tx];
           return o >= 0 && o !== c.kid;
         };
+        // the top of the capital's houses on screen (its four sides projected)
+        let townTop = null;
+        const seat = sp.userData.seat;
+        if (seat && world) {
+          const R = Math.max(1.5, (seat.radius || 4) * 0.5);
+          const gy = world.surfaceAt(seat.cx, seat.cz);
+          for (const [ox, oz] of [[-R, 0], [R, 0], [0, -R], [0, R], [0, 0]]) {
+            v2.set(seat.cx + ox, gy, seat.cz + oz).project(cam);
+            if (v2.z > 1 || v2.z < -1) continue;
+            const yy = (-v2.y * 0.5 + 0.5) * H;
+            townTop = townTop == null ? yy : Math.min(townTop, yy);
+          }
+        }
         let placed = false,
           shrink = 1;
         // nearest spots first; failing all of them at full size, try once more
@@ -748,7 +760,11 @@ export class Labels {
             h2 = ph * k;
           const x0 = Math.min(right - w2 / 2, Math.max(mLeft + w2 / 2, sx)),
             y0 = Math.min(bot - h2 / 2, Math.max(top + h2 / 2, sy));
-          const spots = k === tries[tries.length - 1] && tries.length > 2 ? LABEL_SPOTS_WIDE : LABEL_SPOTS;
+          let spots = k === tries[tries.length - 1] && tries.length > 2 ? LABEL_SPOTS_WIDE : LABEL_SPOTS;
+          // (round 31) the first try sits just above the capital's houses
+          // (centred on its seat the ribbon hid the town at 68 tiles)
+          const dy0 = townTop != null ? Math.max(-1.6, Math.min(0, (townTop - 6 - h2 / 2 - y0) / h2)) : 0;
+          if (dy0 < -0.02) spots = [[0, dy0], ...spots];
           for (let pass = 0; pass < 2 && !placed; pass++)
             for (const [dx, dy] of spots) {
               const yy = y0 + dy * h2,
