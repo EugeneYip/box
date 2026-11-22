@@ -412,8 +412,12 @@ export const breadth = {
       v.spoil = has('preservation') ? (here.smokehouse ? 0.3 : 0.55) : 1;
       v.winterNeed = has('vertfarms') ? 1.0 : has('coldbuild') ? 1.06 : 1.2;
       v.farmEase = has('tractors') ? 1.8 : has('canning') ? 1.2 : 1;
-      if (here.pasture) v.food += here.pasture * 0.5 * dt;
-      if (here.vertfarm) v.food += here.vertfarm * 1.6 * dt;
+      // (round 31) a drought halves what pastures and vertical farms yield
+      // (their water runs short too): in the Future era three droughts in
+      // eight years brought no town to want
+      const parched = now < (v.droughtUntil || 0) ? 0.5 : 1;
+      if (here.pasture) v.food += here.pasture * 0.5 * dt * parched;
+      if (here.vertfarm) v.food += here.vertfarm * 1.6 * dt * parched;
       // desalination: a dry coast cannot starve
       if (here.desal && v.food < v.pop * 1.5) v.food = v.pop * 1.5;
       // growth: transit, smart cities and garden cities (and renewal, renewal.js)

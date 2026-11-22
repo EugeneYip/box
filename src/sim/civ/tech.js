@@ -201,6 +201,13 @@ const LAG_YEARS = 30;
 // One era behind, a much gentler floor (an era in LAG1_YEARS) keeps a small
 // realm from standing still for a century until it falls two behind.
 const LAG1_YEARS = 90;
+// (round 31) A follower past its own year for the next era crosses what is
+// left of it within LATE_YEARS of that year at the least (two realms were
+// still Atomic at Year 600, 85 years after the first Future realm, at the
+// one-era floor above), and the world's leader on a big map may be hurried
+// up to BIG_LEAD times the harder (Vast had no Iron realm by Year 100.4).
+const LATE_YEARS = 22;
+const BIG_LEAD = 0.8;
 
 // Extra research on big maps (planner _bigMap: none on Medium): their realms
 // stay small and far apart, and on their own reached the Enlightened arts
@@ -691,11 +698,18 @@ export const tech = {
         // own year up to FOLLOW_HURRY (eleven of sixteen realms were still
         // Industrial 77 years after the first Modern one)
         const late = lead && overdue > 0 && next === nextE ? Math.min(3, 1 + overdue / 8) : 1;
-        const hurry = lead ? PACE_LEAD * Math.max(1, ts) * late : left > 1 ? 1 : FOLLOW_HURRY;
+        const hurry = lead ? PACE_LEAD * Math.max(1, ts) * late * (1 + big * BIG_LEAD) : left > 1 ? 1 : FOLLOW_HURRY;
         let f = left > 1 ? eta / left : hurry;
         f = Math.max(PACE_MIN, Math.min(hurry, f));
         k.pace = k.pace == null ? f : k.pace + (f - k.pace) * 0.25;
         gain *= k.pace;
+        // a follower past its own year: what is left of the era within
+        // LATE_YEARS of that year (sooner at a higher research speed)
+        if (!lead && left < 0) {
+          const due = Math.max(3, LATE_YEARS / ts + left);
+          const min = (this._eraNeed(k) / (due * YEAR)) * dt;
+          if (gain < min) gain = min;
+        }
         // the art that would carry the realm into the era waits for its year
         // (a strong court still came in 9-18 years early at the floor pace)
         if (left > 0) k.eraHold = target;
