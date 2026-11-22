@@ -438,21 +438,37 @@ export class Labels {
     // (round 31) on World Map worlds the countries are named from 50 tiles
     // (they came only by 54-65), so the band ends there
     const wm = g.params?.preset === 'earth';
-    const kA = wm ? smooth(45, 50, D) : smooth(50, 56, D);
+    // (round 33) every name is shown fully or not at all: the realm names come
+    // on at one distance (50 tiles on World Map worlds, 53 elsewhere) with no
+    // half tone over a band of zoom (52 tiles drew them at a quarter)
+    const kA = D >= (wm ? 47.5 : 53) ? 1 : 0;
     // far zoom keeps only kingdom names
     const z01 = this.game.view?.zoom01 ?? 0;
     // (round 29: a short fade band at 19-22 tiles, not 18-30, so a town's
     // name never hangs over its hall as a washed-out outline)
     // (round 31: switched on at 21 with no in-between: a half-faded name had
     // its pale letters left over a plate too faint to see)
-    const vA = (D >= 21 ? 1 : 0) * (1 - smooth(120, 190, D)) * (1 - smooth(0.4, 0.55, z01)) * (this.game.view?.far ? 0 : 1);
+    // (round 33: and off again at 155 tiles, also with no in-between)
+    const vA = D >= 21 && D < 155 && z01 < 0.475 && !this.game.view?.far ? 1 : 0;
     const cand = [];
     // mid-zoom: only the realm in view and its neighbours are named (all of
     // them at the overview); close in, only the realm in view
-    const mid = 1 - smooth(120, 170, D);
-    if (mid <= 0.01) this._focusK = -1;
-    if (mid > 0.01 && (this._focusT = (this._focusT || 0) - dt) <= 0) {
-      this._focusT = 0.5;
+    // (round 33: the overview's "all of them" begins at 145 tiles; between
+    // 120 and 170 the others were drawn at part strength, so the Europe
+    // overview showed Norway, Poland and Portugal half faded)
+    const mid = D < 170;
+    const midOnly = D < 145;
+    const now = performance.now();
+    if (!mid) this._focusK = -1;
+    if (kA > 0 && (!this._landT || now - this._landT > 400 || Math.abs(D - (this._landD || 0)) > D * 0.08)) {
+      // what each realm holds of the land in view, read every 0.4 s
+      this._landT = now;
+      this._landD = D;
+      this._landOnScreen(rig, w);
+      this._landTotals();
+    }
+    if (mid && (this._focusT === undefined || now - this._focusT > 400)) {
+      this._focusT = now;
       const tx = Math.floor(rig.cur.x),
         tz = Math.floor(rig.cur.z);
       let fk = w.inBounds?.(tx, tz) ? w.owner[tz * w.w + tx] : -1;
@@ -476,13 +492,20 @@ export class Labels {
       // whole screen is sampled (less the open inspector), so the neighbors
       // are named from 50 tiles; a bordering realm with a sliver in view no
       // longer adds a ribbon
-      this._landAt?.clear();
-      if (D > (wm ? 45 : 80)) for (const id of this._landOnScreen(rig, w)) show.add(id);
+      if (D > (wm ? 45 : 80) && this._landIds) for (const id of this._landIds) show.add(id);
     }
+    // (round 33) when two names collide the realm with more of the land in
+    // view keeps its name (then the larger realm, then the more populous);
+    // the realm under the camera comes first, and a name already shown keeps
+    // a small lead so that two near equals do not take turns
+    const cnt = this._landCnt,
+      tot = this._landTot;
+    const nLand = Math.max(1, this._landN || 0),
+      maxTot = Math.max(1, this._landMax || 0);
     for (const [id, s] of this.kLabels) {
       const k = civ.kingdoms[id];
       const v = k && k.alive && k.villages.length ? civ.villages[k.capital] : null; // no names for fallen realms
-      const kAk = mid > 0.01 && this._focusSet?.size && !this._focusSet.has(id) ? kA * (1 - mid) : kA;
+      const kAk = midOnly && this._focusSet?.size && !this._focusSet.has(id) ? 0 : kA;
       if (!v || !v.alive || kAk < 0.01) {
         s.visible = false;
         s.userData.fade = 0;
@@ -494,7 +517,7 @@ export class Labels {
       // (round 31) a realm with a fair share of the land in view whose seat
       // lies off screen is named over its own land in view (Mainland Region
       // over the coast round Wuhan, its capital far to the north)
-      const la = mid > 0.01 && this._focusSet?.has(id) ? this._landAt?.get(id) : null;
+      const la = mid && this._focusSet?.has(id) ? this._landAt?.get(id) : null;
       if (la) {
         const q = (this._q3 = this._q3 || new THREE.Vector3()).set(ax, w.surfaceAt(ax, az), az).project(rig.camera);
         if (q.z > 1 || q.z < -1 || Math.abs(q.x) > 0.94 || Math.abs(q.y) > 0.9) {
@@ -506,26 +529,18 @@ export class Labels {
       const y = w.surfaceAt(ax, az) + 2.5 * BUILDING.scale + D * 0.03;
       s.position.set(ax, y, az);
       const dist = cam.distanceTo(s.position);
-      // many realms in view (not in the whole world) get smaller ribbons, but
-      // never below the town names around them while those are shown
-      const nV = this._nView || 0;
-      const many = nV > 9 ? Math.max(0.6, 1 - (nV - 9) * 0.03) : 1;
-      const h = Math.max(1.4, dist * 0.032 * many, dist * TOWN_H * RIBBON_OVER_TOWN * smooth(0, 0.3, vA));
+      // (the size is clamped on screen in _declutter)
+      const h = Math.max(1.4, dist * 0.032);
       s.scale.set(h * s.userData.aspect, h, 1);
-      cand.push({ s, a: kAk, prio: 3 + (k.villages.length || 0) * 0.01 + (id === this._focusK ? 0.5 : 0), kid: id, focus: id === this._focusK });
+      const focus = id === this._focusK;
+      const rank = (focus ? 2 : 0) + (cnt?.get(id) || 0) / nLand + (0.25 * (tot?.get(id) || 0)) / maxTot + Math.min(0.05, (k.population || 0) * 1e-5) + (s.userData.fade > 0.5 ? 0.03 : 0);
+      cand.push({ s, a: kAk, kind: 'realm', key: 10 + rank, kid: id, focus });
     }
     for (const [id, s] of this.vLabels) {
       const v = civ.villages[id];
       const k = civ.kingdoms[v?.kingdom];
       const isCap = k && k.capital === id;
-      // (round 27) a capital gives way only to its realm's name actually on
-      // screen (not to the zoom alone: at 55 tiles a capital whose realm is
-      // not named faded to a ghost outline); a short cross-fade, never a half
-      // tone held over a range of zoom
-      const kS = isCap ? this.kLabels.get(k.id) : null;
-      const kOn = kS && kS.visible ? kS.userData.fade || 0 : 0;
-      const a = isCap ? vA * (1 - smooth(0.3, 0.6, kOn)) : vA;
-      if (!v || a < 0.01) {
+      if (!v || vA < 0.01) {
         s.visible = false;
         s.userData.fade = 0;
         continue;
@@ -538,7 +553,10 @@ export class Labels {
       const h = Math.max(0.8, dist * TOWN_H);
       s.scale.set(h * s.userData.aspect, h, 1);
       if (s.userData.capK) this._townCapK = s.userData.capK;
-      cand.push({ s, a, prio: (isCap ? 2 : 1) + (v.pop || 0) * 0.001 });
+      // (round 27) a capital gives way only to its realm's name actually on
+      // screen, not to the zoom alone (round 33: decided in _declutter once
+      // the ribbons are placed, so the two never cross-fade)
+      cand.push({ s, a: vA, kind: 'town', key: (isCap ? 2 : 1) + Math.min(0.99, (v.pop || 0) * 0.001), capOf: isCap ? k.id : -1 });
     }
     // battle markers
     const battles = civ.battles || [];
@@ -548,7 +566,7 @@ export class Labels {
       this.swords.push(sp);
     }
     for (const sp of this.swords) if (!sp.userData.rect) this._pack(sp);
-    const sA = smooth(14, 26, D);
+    const sA = D >= 20 ? 1 : 0;
     for (let i = 0; i < this.swords.length; i++) {
       const sp = this.swords[i];
       const b = battles[i];
@@ -561,9 +579,9 @@ export class Labels {
       const dist = cam.distanceTo(sp.position);
       const h = Math.max(1.1, dist * 0.04) * (1 + Math.sin(this._t * 5 + i) * 0.06);
       sp.scale.set(h, h, 1);
-      cand.push({ s: sp, a: sA, prio: 2.5 });
+      cand.push({ s: sp, a: sA, kind: 'swords', key: 5 });
     }
-    this._townOn = smooth(0, 0.3, vA);
+    this._townOn = vA;
     this._declutter(cand, dt);
     this.batch.draw([this.vLabels, this.kLabels, this.swords]);
   }
@@ -583,8 +601,9 @@ export class Labels {
     cnt.clear();
     const pts = (this._landPts = this._landPts || new Map());
     pts.clear();
-    const NX = 13,
-      NY = 7;
+    // (round 33: a finer grid, 19 x 11; the counts also rank the names)
+    const NX = 19,
+      NY = 11;
     // the open inspector card hides the screen right of its left edge
     let x1 = 0.97;
     try {
@@ -614,7 +633,8 @@ export class Labels {
         }
         if (o >= 0 || (w.height && w.height[z * w.w + x] >= SEA_LEVEL)) land++;
       }
-    const need = Math.max(2, Math.ceil(land * LAND_SHARE));
+    this._landN = land;
+    const need = Math.max(3, Math.ceil(land * LAND_SHARE));
     // each named realm's own land in view: the sample nearest its middle
     const at = (this._landAt = this._landAt || new Map());
     at.clear();
@@ -674,6 +694,32 @@ export class Labels {
     return out;
   }
 
+  // Every realm's land in the whole world (tiles it owns), read every 3 s:
+  // ranks the names of realms with little or none of the land in view.
+  _landTotals() {
+    const now = performance.now();
+    if (this._totT && now - this._totT < 3000) return;
+    this._totT = now;
+    const tot = (this._landTot = this._landTot || new Map());
+    tot.clear();
+    this._landMax = 0;
+    const o = this.game.world?.owner;
+    const n = this.game.civ?.kingdoms?.length || 0;
+    if (!o || !n) return;
+    if (!this._totArr || this._totArr.length < n) this._totArr = new Int32Array(n + 16);
+    const a = this._totArr;
+    a.fill(0);
+    for (let i = 0; i < o.length; i++) {
+      const k = o[i];
+      if (k >= 0 && k < a.length) a[k]++;
+    }
+    for (let k = 0; k < n; k++)
+      if (a[k]) {
+        tot.set(k, a[k]);
+        if (a[k] > this._landMax) this._landMax = a[k];
+      }
+  }
+
   // Hide labels that collide with a higher-priority label or with the HUD.
   _declutter(cand, dt) {
     const rig = this.game.cameraRig;
@@ -709,17 +755,13 @@ export class Labels {
       mBot = uiOn ? Math.min(90, H * 0.12) : 8,
       mRight = uiOn ? (this._inspL != null ? Math.max(12, W - this._inspL + 8) : 12) : 8,
       mLeft = 8;
-    // many realms on one screen get smaller name ribbons so that neighbours
-    // (Japan beside the two Chinas, the Low Countries) all fit
-    let nK = 0;
-    for (const c of cand) if (c.prio >= 3 && c.a > 0.01) nK++;
     const world = this.game.world;
     const fovK = H / (2 * Math.tan((cam.fov * Math.PI) / 360));
     // realms counted for the ribbon size are the ones whose seat is in view
     const vp = this._v3 || (this._v3 = new (cam.position.constructor)());
     let nView = 0;
     for (const c of cand)
-      if (c.prio >= 3 && c.a > 0.01) {
+      if (c.kind === 'realm' && c.a > 0.01) {
         vp.copy(c.s.position).project(cam);
         if (vp.z <= 1 && vp.z >= -1 && Math.abs(vp.x) <= 1 && Math.abs(vp.y) <= 1) nView++;
       }
@@ -735,13 +777,22 @@ export class Labels {
     const ribCap = Math.max(Math.min(RIBBON_CAP_MAX, Math.max(RIBBON_CAP_MIN, H * 0.02)), townCap * RIBBON_OVER_TOWN_CAPS * townOn);
     this._ribCap = ribCap;
     const v = this._v || (this._v = new (cam.position.constructor)());
-    cand.sort((a, b) => b.prio - a.prio);
+    // realm names first (by their rank), then battle markers, then towns
+    cand.sort((a, b) => b.key - a.key);
     const taken = [];
+    // (round 33) fades run on wall-clock time and take 0.2 s: on drawn-frame
+    // time a slow GPU (a frame every few seconds) showed names half faded
+    const rdt = Math.min(0.5, (now - (this._fadeAt || now)) / 1000);
+    this._fadeAt = now;
+    const ribOn = (this._ribOn = this._ribOn || new Set());
+    ribOn.clear();
     for (const c of cand) {
       const sp = c.s;
       v.copy(sp.position).project(cam);
       let target = c.a;
       if (v.z > 1 || v.z < -1) target = 0;
+      // a capital's name gives way to its realm's name placed this frame
+      if (c.kind === 'town' && c.capOf >= 0 && ribOn.has(c.capOf)) target = 0;
       const sx = (v.x * 0.5 + 0.5) * W,
         sy = (-v.y * 0.5 + 0.5) * H;
       // a sprite's on-screen size follows its depth along the view axis, not
@@ -755,7 +806,7 @@ export class Labels {
       let pw = (sp.scale.x / dist) * fovK;
       // cap on-screen size: an anchor close to the camera (e.g. a realm centre
       // just below the view) would otherwise blow its label up across the frame
-      if (c.prio >= 3 && ph > 0) {
+      if (c.kind === 'realm' && ph > 0) {
         // a ribbon is drawn at its clamped capital size at every zoom
         const k = ribCap / (sp.userData.capK || 0.36) / ph;
         sp.scale.x *= k;
@@ -763,7 +814,7 @@ export class Labels {
         ph *= k;
         pw *= k;
       }
-      const maxPx = c.prio >= 3 ? Infinity : 52;
+      const maxPx = c.kind === 'realm' ? Infinity : 52;
       if (ph > maxPx) {
         const k = maxPx / ph;
         sp.scale.x *= k;
@@ -772,26 +823,29 @@ export class Labels {
         pw *= k;
       }
       const rect = { l: sx - pw / 2, r: sx + pw / 2, t: sy - ph / 2, b: sy + ph / 2 };
+      // (round 33) the overlap and HUD tests use the drawn plate, not the
+      // sprite's transparent margin
       const pl = sp.userData.plate;
+      const plateOf = (r) => {
+        if (!pl) return r;
+        const rw = r.r - r.l,
+          rh = r.b - r.t;
+        return { l: r.l + pl.l * rw, r: r.l + pl.r * rw, t: r.t + pl.t * rh, b: r.t + pl.b * rh };
+      };
       const hits = (r) => {
-        for (const o of taken) if (r.l < o.r && r.r > o.l && r.t < o.b && r.b > o.t) return true;
+        const q = plateOf(r);
+        for (const o of taken) if (q.l < o.r && q.r > o.l && q.t < o.b && q.b > o.t) return true;
         if (uiOn) {
-          // (round 33) the drawn plate, a few px clear of every panel
-          const rw = r.r - r.l,
-            rh = r.b - r.t;
-          const l = pl ? r.l + pl.l * rw : r.l,
-            rr = pl ? r.l + pl.r * rw : r.r,
-            t = pl ? r.t + pl.t * rh : r.t,
-            b = pl ? r.t + pl.b * rh : r.b;
-          const M = c.prio >= 3 ? 5 : 2;
-          for (const h of this._hud) if (l - M < h.r && rr + M > h.l && t - M < h.b && b + M > h.t) return true;
+          // a few px clear of every panel
+          const M = c.kind === 'realm' ? 5 : 2;
+          for (const h of this._hud) if (q.l - M < h.r && q.r + M > h.l && q.t - M < h.b && q.b + M > h.t) return true;
         }
         return false;
       };
       // a realm whose seat lies off screen is not named at the screen edge
       // (it would sit over someone else's land)
-      if (target > 0 && c.prio >= 3 && (sx < 0 || sx > W || sy < 0 || sy > H)) target = 0;
-      if (target > 0 && c.prio >= 3 && v.z <= 1 && v.z >= -1) {
+      if (target > 0 && c.kind === 'realm' && (sx < 0 || sx > W || sy < 0 || sy > H)) target = 0;
+      if (target > 0 && c.kind === 'realm' && v.z <= 1 && v.z >= -1) {
         // a realm's name is never dropped: fit it to the screen, clamp it into
         // the safe area and nudge it until it no longer collides, staying
         // over the realm's own land
@@ -909,7 +963,7 @@ export class Labels {
         // a slow fade that left WUHAN half drawn under MAINLAND REGION
         if (hits(rect)) {
           target = 0;
-          if (c.prio < 3) sp.userData.fade = 0;
+          if (c.kind !== 'realm') sp.userData.fade = 0;
         }
       }
       // (each placed name keeps a margin round it, so two realm ribbons never
@@ -917,13 +971,18 @@ export class Labels {
       // (round 27: only a clearly visible name reserves its place; a faint
       // realm ribbon fading in no longer drops its capital's name, Taipei
       // under the ROC's on the whole Earth)
+      // (round 33: a ribbon or town name is shown fully or not at all; one
+      // that collides with a higher-ranked name is dropped, not dimmed)
       if (target > 0.3) {
-        const gx = c.prio >= 3 ? 14 : 5,
-          gy = c.prio >= 3 ? 6 : 2;
-        taken.push({ l: rect.l - gx, r: rect.r + gx, t: rect.t - gy, b: rect.b + gy });
+        const gx = c.kind === 'realm' ? 12 : 5,
+          gy = c.kind === 'realm' ? 6 : 2;
+        const q = plateOf(rect);
+        taken.push({ l: q.l - gx, r: q.r + gx, t: q.t - gy, b: q.b + gy });
+        if (c.kind === 'realm') ribOn.add(c.kid);
       }
       const f = sp.userData.fade ?? target;
-      const nf = f + (target - f) * Math.min(1, dt * 6);
+      const step = rdt / 0.2;
+      const nf = target > f ? Math.min(target, f + step) : Math.max(target, f - step);
       sp.userData.fade = nf;
       sp.material.opacity = nf;
       sp.visible = nf > 0.01;
