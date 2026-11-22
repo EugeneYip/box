@@ -957,6 +957,16 @@ export class Civilization {
     const fert = 1 + (this._easedMods().fertility - 1) * 0.5;
     // a drought (the Drought power) parches the fields: next to nothing grows
     const dry = now < (v.droughtUntil || 0);
+    // (round 31) each new year of a drought spoils part of the stores again
+    // (the first year's loss comes with the drought itself: drought())
+    if (dry) {
+      const yr = Math.floor(now / YEAR);
+      if (v._dryYr == null) v._dryYr = yr;
+      else if (yr !== v._dryYr) {
+        v._dryYr = yr;
+        v.food *= 0.7;
+      }
+    } else if (v._dryYr != null) v._dryYr = null;
     const growRate = (dt / 42) * (golden ? 1.3 : 1) * (rain ? 1.25 : 1) * seasonGrow * fert * this.techMod(v.kingdom, 'harvest') * (dry ? 0.04 : 1);
     if (winter && !dry) v.food += (v.jobCount.farmer || 0) * 0.6 * dt * fert;
     // spring sowing: seed is broadcast on the bare tilled fields of the village
@@ -1119,6 +1129,8 @@ export class Civilization {
       for (const o of this.villages) {
         if (!o.alive || o === v || o.starving || o.landId !== v.landId || o.pop >= o.housing) continue;
         if (this.atWar(o.kingdom, v.kingdom)) continue;
+        // (round 31: on the World Map within the realm or to a neighbor)
+        if (this._migrantFrom && !this._migrantFrom(v, o)) continue;
         const dd = geoDist(this.world, o.cx, o.cz, v.cx, v.cz);
         if (dd < bd && dd < 80) {
           bd = dd;
@@ -1507,7 +1519,10 @@ export class Civilization {
         // spoiling, and no want was ever felt for the tinned food to answer
         const dry = this.game.time.total < (to.droughtUntil || 0);
         if (dry && this.game.time.total - (to._cartT ?? -1e9) < 15) continue;
-        const amt = Math.min(from.food - (from.pop * 5 + 20), dry ? to.pop * 1.2 : to.pop * 4 + 20);
+        // (round 31: a cart of 1.2 meals a head every half year more than fed
+        // a drought town, and kin with full stores kept every Future-era
+        // town out of want through three droughts: about half its need now)
+        const amt = Math.min(from.food - (from.pop * 5 + 20), dry ? to.pop * 0.5 : to.pop * 4 + 20);
         if (amt <= 4) continue;
         if (dry) to._cartT = this.game.time.total;
         from.food -= amt;
@@ -1672,7 +1687,10 @@ export class Civilization {
     give('fisher', v.docks ? Math.min(v.docks * (ctr('Seafaring') ? 3 : 2), 1 + n * (ctr('Seafaring') ? 0.25 : 0.15)) : foodLow && n >= 5 && v.coastal ? 1 : 0);
     const drafting = this.game.time.total - (v.draft ?? -99) < 45;
     // a people's ways show in its trades: martial folk keep many under arms
-    if (atWar) give('soldier', Math.min(n * warShare + 1, Math.max(kEra <= 2 ? 2 : 3, n * Math.min(warShare, (drafting ? 0.26 : 0.16) * lean)) + (v.hasBarracks ? 2 : 0)));
+    // (round 31) the industrial ages fight with guns, tanks and artillery:
+    // a smaller standing share at war outside a draft (soldiers were 16% of
+    // all people at Year 600)
+    if (atWar) give('soldier', Math.min(n * warShare + 1, Math.max(kEra <= 2 ? 2 : 3, n * Math.min(warShare, (drafting ? 0.26 : kEra >= 4 ? 0.13 : 0.16) * lean)) + (v.hasBarracks ? 2 : 0)));
     give('builder', sites ? Math.min(Math.max(1, Math.ceil(sites * 1.1 * shift)), 1 + Math.floor((n * shift) / 6)) : repairs ? 1 : 0);
     // an empty woodshed stops all building: send more hands to the woods
     const woodsCap = (v.trees ?? 99) < 20 ? 1 : (v.trees ?? 99) < 45 ? 2 : (v.trees ?? 99) < 75 ? 3 : 9;

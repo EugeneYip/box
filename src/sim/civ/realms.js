@@ -5,6 +5,8 @@ import { realmsFor, regionStyle } from './places/index.js';
 import { REGIONS } from './places/regions.js';
 import { peopleCultureId } from './peoples.js';
 import { USE, SPIRAL, spiralCount, clamp, YEAR, ADULT_AGE } from './util.js';
+// (the relations map's key: politics.js relKey)
+const relKey = (a, b) => (a < b ? a * 4096 + b : b * 4096 + a);
 
 // Real realms on World Map worlds (contract: docs/REGIONS.md section 3).
 // A map of the Earth (or of one of its regions) starts with real countries
@@ -694,7 +696,8 @@ export const realms = {
     if (near >= 0 && (d < 0 || near === d)) return real(near);
     // the region of the country it rises in ("State of Queensland",
     // "Republic of Sumatra") before the name of one city
-    const reg = this._regionNear(opts.x, opts.z, living, d);
+    const sp = this._seatPlace(base, opts.x, opts.z);
+    const reg = this._regionNear(sp.x, sp.z, living, d);
     if (reg) return { name: reg, realm: -1, placesFrom: d };
     if (base && !living.has(base)) return { name: base, realm: -1, placesFrom: d };
     let best = null,
@@ -708,6 +711,16 @@ export const realms = {
       }
     }
     return { name: best ? best.name : base, realm: -1, placesFrom: d };
+  },
+
+  // (round 31) Where a seat named for a real city stands for the regions'
+  // boxes: the city's own place when it lies near (a town grows a few tiles
+  // from its real spot: "Raleigh" stood north of 36.5 degrees, inside
+  // Virginia's box, and its realm was named the "State of Virginia").
+  _seatPlace(name, x, z) {
+    if (name && x != null)
+      for (const p of this._places || []) if (p.name === name && geoDist(this.world, p.x, p.z, x, z) < 16) return { x: p.x, z: p.z };
+    return { x, z };
   },
 
   // The name of the region (places/regions.js) nearest a tile, within a
@@ -742,6 +755,11 @@ export const realms = {
     // (round 27) a region with boxes names only a seat inside one of them
     const ll = geoLonLat(this.world, x, z);
     const inBox = (p) => !p.boxes || !ll || p.boxes.some((b) => ll[0] >= b[0] && ll[0] <= b[2] && ll[1] >= b[1] && ll[1] <= b[3]);
+    // (round 31) first a region whose box holds the seat, wherever its
+    // center lies; only then the nearest center of a region without boxes
+    // (a "State of Virginia" sat at Raleigh, inside the Carolinas' box: the
+    // nearest-center rule had the last word)
+    let boxed = false;
     for (const p of this._regionPts) {
       if (living.has(p.name)) continue;
       if (!inBox(p)) continue;
@@ -749,7 +767,10 @@ export const realms = {
         dz = p.z - z;
       if (p.realm !== own) continue;
       const d = Math.hypot(dx * cx, dz);
-      if (d < R && d < bd) (bd = d), (best = p);
+      const b = !!(p.boxes && ll);
+      if (boxed && !b) continue;
+      if (b && !boxed) (boxed = true), (bd = Infinity);
+      if ((b || d < R) && d < bd) (bd = d), (best = p);
     }
     return best ? best.name : null;
   },
@@ -768,11 +789,12 @@ export const realms = {
     if (!cap?.alive) return;
     // (inside one of the region's boxes, where it has them; else the
     // region nearest the seat)
-    const ll = reg[4] ? geoLonLat(this.world, cap.cx, cap.cz) : null;
+    const sp = this._seatPlace(cap.name, cap.cx, cap.cz);
+    const ll = reg[4] ? geoLonLat(this.world, sp.x, sp.z) : null;
     if (ll && reg[4].some((b) => ll[0] >= b[0] && ll[0] <= b[2] && ll[1] >= b[1] && ll[1] <= b[3])) return;
     const living = new Set();
     for (const o of this.kingdoms) if (o !== k && o.alive && o.villages.length) living.add(o.name);
-    if (!ll && this._regionNear(cap.cx, cap.cz, living) === k.base) return;
+    if (!ll && this._regionNear(sp.x, sp.z, living) === k.base) return;
     const real = this._newRealmName(cap.name, { x: cap.cx, z: cap.cz, home: cap.home });
     if (!real?.name || real.name === k.base) return;
     const old = k.name;
@@ -830,6 +852,18 @@ export const realms = {
       this._refillKey(v, floor + 2 - v.pop);
     }
   },
+  // (round 31) May people of town o move to town v? Always off the World
+  // Map; on it only within the same realm, the same real country (a town's
+  // home realm) or a realm that borders it: migrants crossed continents
+  // (Palmas, Brazil to Anchorage and Seattle; Ottawa to Mexico City).
+  _migrantFrom(o, v) {
+    if (!this._realMapOn() || o.kingdom === v.kingdom) return true;
+    if (o.kingdom < 0 || v.kingdom < 0) return false;
+    const realOf = (k) => (k >= 0 ? this.kingdoms[k]?.realm ?? -1 : -1);
+    const homeR = v.home != null ? realOf(v.home) : -1;
+    if (homeR >= 0 && (realOf(o.kingdom) === homeR || (o.home != null && realOf(o.home) === homeR))) return true;
+    return (this.relations?.get(relKey(o.kingdom, v.kingdom))?.border || 0) > 0;
+  },
   // Move up to n settlers into key city v; returns how many came.
   _refillKey(v, n) {
     let src = null,
@@ -837,6 +871,9 @@ export const realms = {
     for (const o of this.villages) {
       if (!o.alive || o === v || o.landId !== v.landId || o.starving || o.pop < 16 || this._keyCity(o) && o.pop < 24) continue;
       if (o.kingdom !== v.kingdom && this.atWar(o.kingdom, v.kingdom)) continue;
+      // (round 31) families of the city's own realm, its real country or a
+      // realm on its border only ("Families from Palmas settle in Anchorage")
+      if (!this._migrantFrom(o, v)) continue;
       const d = geoDist(this.world, o.cx, o.cz, v.cx, v.cz) * (o.kingdom === v.kingdom ? 0.4 : 1) - o.pop * 0.5;
       if (d < sd) (sd = d), (src = o);
     }

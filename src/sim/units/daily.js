@@ -896,7 +896,10 @@ export function installDaily(Units) {
       // used to leave after an hour or two and walk back (school fell to
       // 9.7% of a child's day plus 6.2% walking; resting was their top
       // activity)
-      if (u.age >= 6 && school && h >= 7.5 && h < 14.8 && rng() < 0.8) {
+      // (round 31) from five, and nine days in ten: the toddlers under four
+      // were a third of the children and stood "Resting" by the door all day
+      // (21% of the children by day), and school fell to 9% of their day
+      if (u.age >= 5 && school && h >= 7.5 && h < 14.8 && rng() < 0.9) {
         // (morning class to lunch, eaten at school; afternoon class to 15:12)
         const end = h < 11.6 ? 11.8 : 15.2;
         const dur = Math.max(12, (end - h) * H + rng() * 0.3 * H);
@@ -907,7 +910,17 @@ export function installDaily(Units) {
       // the older ones help lightly (water, the hens, the animals), never in the fields
       if (u.age >= 8 && h < 15.5 && rng() < 0.3 && this._dlHelp(u, v, pl, home, rng)) return true;
       if (u.age >= 4) return this._dlPlay(u, v, pl, 12 + rng() * 14, u.x, u.z);
-      return false;
+      // (round 31) a toddler by day: indoors with the family, or at play by
+      // the door (the brain left them standing idle: "Resting")
+      if (!home) return false;
+      if (rng() < 0.4) {
+        this._dlStart(u, 'inside', 14 + rng() * 16, { x: hx, z: hz, free: true, lab: 'At home with the family', go: 'Toddling home', act: null });
+        return true;
+      }
+      const dl = this._dlStart(u, 'play', 12 + rng() * 12, { x: hx + (rng() - 0.5) * 1.6, z: hz + (rng() - 0.5) * 1.6, lab: 'Playing by the door', go: 'Toddling home', act: 'play' });
+      dl.cx = dl.x;
+      dl.cz = dl.z;
+      return true;
     }
     // by day: rulers think, the idle shop and wait, workers take a short break
     if (job === 'king') {

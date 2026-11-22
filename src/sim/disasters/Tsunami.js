@@ -242,15 +242,17 @@ export class Tsunami {
       }
     });
     fx.emit('splash', { x, y: w.heightAt(x, z), z }, { scale: 0.7 + e, dir: { x: this.hx, y: 0.3, z: this.hz } });
-    // one wave takes at most about three in five of a town's people: the
-    // rest cling to roofs and high ground (round 22: a town of 41 kept 1)
-    let uDmg = 18 * e * (1 + low * 1.5);
+    // one wave takes at most about two in five of a town's people: the
+    // rest cling to roofs and high ground (round 22: a town of 41 kept 1;
+    // round 31: an unguarded low town lost 62% of its people and 92% of its
+    // buildings, while a drought barely touched a town)
+    let uDmg = 15 * e * (1 + low * 1.2);
     if (town) {
       const n = town.v.members?.size ?? town.v.pop ?? 0;
       const pop0 = this._pop0.get(town.v.id) ?? (this._pop0.set(town.v.id, n), n);
-      if (n <= Math.ceil(pop0 * 0.4)) uDmg = 0;
+      if (n <= Math.ceil(pop0 * 0.6)) uDmg = 0;
     }
-    hurt(g, x, z, 1.6 + low * 0.6, uDmg, 30 * e * (1 + low * 3.2), 'tsunami');
+    hurt(g, x, z, 1.6 + low * 0.6, uDmg, 30 * e * (1 + low * 1.8), 'tsunami');
     return town ? town.levee : 0;
   }
 
