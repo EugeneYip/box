@@ -128,17 +128,57 @@ void main() {
   _make(cap) {
     return sprites(cap, this.frag, this.uniforms, THREE.NormalBlending);
   }
-  // haze: civ.haze() list; ground(x, z) -> height; daylight 0..1
-  update(dt, haze, ground, daylight, t) {
+  // haze: civ.haze() list; ground(x, z) -> height; daylight 0..1; dist the
+  // camera distance; eraOf(kingdom) the realm's era
+  update(dt, haze, ground, daylight, t, dist = 60, eraOf = null) {
     this.uniforms.uTime.value = t;
-    // dusk and night: the haze darkens with the land
-    this.uniforms.uColor.value.setRGB(0.67, 0.67, 0.66).multiplyScalar(0.35 + 0.65 * daylight);
+    // a far-zoom touch only (round 31): from a 25-40 tile camera the puffs sat
+    // between the eye and the town and laid a milky veil over every Modern
+    // town, by day and by night. None closer than ~35 tiles, full by ~65, and
+    // gone again past ~90, where the soft discs lay on slopes as bruises.
+    const fin = Math.min(1, Math.max(0, (dist - 35) / 30)),
+      fout = Math.min(1, Math.max(0, (dist - 78) / 14));
+    const zoomK = fin * fin * (3 - 2 * fin) * (1 - fout * fout * (3 - 2 * fout));
+    // dusk and night: the haze darkens with the land, down to below the
+    // night ground's own brightness (a 0.23 grey whitened the dark town into
+    // the white night haze), and thins
+    const dl = Math.max(0, Math.min(1, daylight));
+    this.uniforms.uColor.value.setRGB(0.67, 0.67, 0.66).multiplyScalar(0.04 + 0.96 * dl * Math.sqrt(dl));
+    this.uniforms.uOpacity.value = 0.11 * zoomK * (0.4 + 0.6 * dl);
+    // sources closer than ~6 tiles merge into one (a works district of a dozen
+    // stacks piled a dozen haze discs into one opaque sheet); fusion-era
+    // (Future) towns burn clean and put out none
+    if (haze !== this._src || this._srcN !== (haze?.length ?? 0)) {
+      this._src = haze;
+      this._srcN = haze?.length ?? 0;
+      const cl = [];
+      for (const h of haze || []) {
+        if (eraOf && eraOf(h.kingdom) >= 7) continue;
+        let c = null;
+        for (const q of cl)
+          if (Math.hypot(q.x - h.x, q.z - h.z) < 6) {
+            c = q;
+            break;
+          }
+        if (!c) cl.push({ x: h.x, z: h.z, r: h.r, s: h.s, n: 1 });
+        else {
+          c.x = (c.x * c.n + h.x) / (c.n + 1);
+          c.z = (c.z * c.n + h.z) / (c.n + 1);
+          c.n++;
+          c.r = Math.min(Math.max(c.r, h.r) + 0.25, 6);
+          c.s = Math.max(c.s, h.s);
+        }
+      }
+      this._cl = cl;
+    }
     const seen = new Set();
-    for (const h of haze || []) {
-      const key = Math.round(h.x * 4) * 65536 + Math.round(h.z * 4);
+    for (const h of this._cl) {
+      const key = Math.round(h.x) * 65536 + Math.round(h.z);
       seen.add(key);
       let e = this.cur.get(key);
       if (!e) this.cur.set(key, (e = { x: h.x, z: h.z, r: h.r, a: 0, target: 0, k: key }));
+      e.x = h.x;
+      e.z = h.z;
       e.r = h.r;
       e.target = Math.min(1, h.s);
     }
@@ -179,7 +219,8 @@ void main() {
         // (lifted well clear of the roofs: low down it read as brown smears on the ground)
         _m.makeScale(s, s, s).setPosition(px, Math.max(gy, g0) + 2.6 + j * 0.3 + e.r * 0.15, pz);
         m.setMatrixAt(i, _m);
-        al.array[i] = e.a * (j === 0 ? 0.85 : 0.6);
+        // (a puff's own alpha is capped low: overlapping puffs add up)
+        al.array[i] = e.a * (j === 0 ? 0.32 : 0.24);
         sd.array[i] = ((e.k % 997) / 997 + j * 0.31) % 1;
         i++;
       }
@@ -188,7 +229,7 @@ void main() {
     m.instanceMatrix.needsUpdate = true;
     al.needsUpdate = true;
     sd.needsUpdate = true;
-    m.visible = i > 0;
+    m.visible = i > 0 && zoomK > 0.001;
   }
 }
 
@@ -317,7 +358,11 @@ export class StackPlumes {
       wz = wind?.z ?? 0;
     const l = Math.hypot(wx, wz) || 1;
     this.uniforms.uWind.value.set((wx / l) * st, (wz / l) * st);
-    this.uniforms.uLight.value = 0.3 + 0.7 * daylight;
+    // (round 31: at night the white plumes glowed over the dark town; they
+    // take the daylight down to a dim grey and thin out)
+    const dl = Math.max(0, Math.min(1, daylight));
+    this.uniforms.uLight.value = 0.06 + 0.94 * dl * Math.sqrt(dl);
+    this.uniforms.uOpacity.value = 0.72 * (0.45 + 0.55 * dl);
     this.mesh.visible = show && this.mesh.count > 0;
   }
 }

@@ -860,6 +860,7 @@ void applyOverlay(vec2 p, inout vec3 albedo, inout vec3 emissive, float snowK) {
   if (fD > fo) { own = D; fo = fD; }
   // derivative before any non-uniform branch
   float fwd = max(fwidth(fo), 1e-4);
+  float pxT = max(length(fwidth(p * sc)), 1e-4); // overlay texels per pixel
   if (own.a < 0.004) return;
   float uniformRegion = step(0.999, fo);
   // distance (in tiles) from the border contour, approximately
@@ -907,10 +908,33 @@ void applyOverlay(vec2 p, inout vec3 albedo, inout vec3 emissive, float snowK) {
   }
   vec3 lineCol = col * 1.05 + 0.015;
   albedo = mix(albedo, albedo * (1.0 - 0.35 * a) + col * 0.35 * a, glow * mix(0.3, 0.6, fillK) * onSnow * (1.0 - townK));
+  // map zoom (an overlay texel only a few pixels across): the contour field
+  // above spans a single texel, too narrow to hold the coloured band, so the
+  // border vanished at the overview and neighbouring realms ran together
+  // (round 31). There a ring of exact fetches ~1.2 and ~3 px out finds the
+  // realm's edge in screen space: a dark outer edge on the contour and a
+  // crisp realm-coloured band inside it, the same look as up close.
+  float nbK = 1.0 - smoothstep(4.0, 8.0, 1.0 / pxT);
+  if (nbK > 0.001) {
+    vec2 gc = g + 0.5;
+    float lineN = 0.0, edgeN = 0.0;
+    for (int i = 0; i < 8; i++) {
+      float an = float(i) * 0.7853982;
+      vec2 d = vec2(cos(an), sin(an)) * pxT;
+      vec4 n1 = texelFetch(uOverlay, clamp(ivec2(floor(gc + d * 1.2)), ivec2(0), osz - 1), 0);
+      vec4 n2 = texelFetch(uOverlay, clamp(ivec2(floor(gc + d * 3.0)), ivec2(0), osz - 1), 0);
+      edgeN = max(edgeN, 1.0 - SAMEC(n1, own));
+      lineN = max(lineN, 1.0 - SAMEC(n2, own));
+    }
+    lineN *= 1.0 - edgeN;
+    line = mix(line, lineN, nbK);
+    edge = mix(edge, edgeN, nbK);
+  }
   // far zoom (past ~90): the border softens - a fainter coloured band and
   // almost no dark outer edge - so a small realm's border round its town no
-  // longer draws a hard outlined box (round 21)
-  float farSoft = smoothstep(80.0, 120.0, uCamDist) * (1.0 - smoothstep(260.0, 420.0, uCamDist));
+  // longer draws a hard outlined box (round 21); not at map zoom, where the
+  // border is the only thing that tells the realms apart
+  float farSoft = smoothstep(80.0, 120.0, uCamDist) * (1.0 - smoothstep(260.0, 420.0, uCamDist)) * (1.0 - nbK);
   // (a border that runs through a town's blocks fades to a faint line, so it
   // never cuts the town in two)
   float aLine = min(1.0, a * 1.3) * (1.0 - 0.45 * farSoft) * (1.0 - 0.8 * tBuilt);

@@ -1415,10 +1415,10 @@ export class BuildingRenderer {
     this.glow.update(this.uniforms.uNight.value, !this._far);
     // (null over water: no haze puffs over the sea, lakes or rivers)
     this.plumes.update(this.t, env.wind, day, !this._far && (g.cameraRig?.cur?.dist ?? 60) < 175, g.cameraRig?.cur?.dist ?? 60);
-    this.haze.update(dt, civ.haze?.(), (x, z) => (g.world.isWater(Math.floor(x), Math.floor(z)) ? null : Math.max(g.world.heightAt(x, z), SEA_LEVEL)), day, this.t);
-    // (the low factory haze is a mid-zoom touch: seen from far above its
-    // soft discs lay on the slopes as brown bruises)
-    if ((g.cameraRig?.cur?.dist ?? 60) > 85) this.haze.mesh.visible = false;
+    // (the low factory haze is a far-zoom touch, ~35-90 tiles, faded in
+    // HazeLayer.update: closer it veiled the town, farther its soft discs lay
+    // on the slopes as brown bruises)
+    this.haze.update(dt, civ.haze?.(), (x, z) => (g.world.isWater(Math.floor(x), Math.floor(z)) ? null : Math.max(g.world.heightAt(x, z), SEA_LEVEL)), day, this.t, g.cameraRig?.cur?.dist ?? 60, (kid) => civ.kingdoms[kid]?.era ?? 0);
     this._updateBanners();
     this._updateBoatsAndBlades(dt);
     this._smoke(dt);

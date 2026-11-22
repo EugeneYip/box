@@ -333,14 +333,17 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   float iceF = mix(mix(i00, i10, ifr.x), mix(i01, i11, ifr.x), ifr.y);
   float ice = smoothstep(0.30, 0.70, iceF + (fn.g - 0.5) * 0.35 + (iw.b - 0.5) * 0.25) * (1.0 - outK) * step(0.001, depth);
   // seasonal freeze: lakes, rivers and calm shallows at the coldest latitudes
+  float fzIn = 0.0; // how far inside the seasonal sheet (1 = more than ~2.5 tiles in)
   if (uFreezeT > -0.1) {
     // coherent: the shelf grows out from the shore as the cold deepens (smooth
     // fields only, so warm lagoons near the threshold never break out in a rash)
     float calmW = max(1.0 - open, 1.0 - smoothstep(1.2, 3.0, depth));
     float coldness = uFreezeT - temp + (mac - 0.5) * 0.03;
     float shelfW = clamp(coldness * 70.0, 0.0, 40.0);
-    float fz = (1.0 - smoothstep(shelfW, shelfW + 0.7 + 0.5 * fn.r, shoreD + (fn.b - 0.5) * 0.7)) * smoothstep(0.0, 0.008, coldness);
+    float coldG = smoothstep(0.0, 0.008, coldness);
+    float fz = (1.0 - smoothstep(shelfW, shelfW + 0.7 + 0.5 * fn.r, shoreD + (fn.b - 0.5) * 0.7)) * coldG;
     ice = max(ice, fz * calmW * (1.0 - outK) * step(0.001, depth));
+    fzIn = (1.0 - smoothstep(shelfW - 2.5, shelfW + 0.2, shoreD + (fn.b - 0.5) * 0.7)) * coldG * calmW;
   }
   // fast ice: a shelf welded to cold shores
   float fastI = smoothstep(0.72, 0.92, gCold) * (1.0 - smoothstep(1.3 + 0.9 * fn.r, 2.4 + 0.9 * fn.r, shoreD)) * (1.0 - outK) * step(0.001, depth);
@@ -365,7 +368,11 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   // irregular plates: the cell lookup is warped so leads never form a regular net
   vec4 fl = texture2D(uCells, WROT2 * (p + (fn.rg - 0.5) * 7.0 + (fc.rg - 0.5) * 1.6) * (1.0 / 38.0) + 0.37);
   float iceW = iceF + (fn.g - 0.5) * 0.35 + (iw.b - 0.5) * 0.25;
-  float edgeZone = 1.0 - smoothstep(0.55, 0.95, max(iceW, fastI));
+  // (the seasonal sheet over calm shallows counts as sheet ice too: measured
+  // on the ICE tiles alone, a frozen lagoon was all "margin", and its plates
+  // drew a net of open dark-green leads and pale rims, the "veins and rings"
+  // over the shallows, rounds 28-30)
+  float edgeZone = 1.0 - smoothstep(0.55, 0.95, max(max(iceW, fastI), fzIn));
   float gapW = max(mix(0.05, 0.12, edgeZone), fw * 1.4);
   float lead = 1.0 - smoothstep(gapW * 0.45, gapW, fl.g);
   // loose floes and edge shadows only where real ice is near (iceW alone is
@@ -394,7 +401,8 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   // a pocket of open water ringed by sheet ice is skimmed with thin new ice
   // (a dark navy hole in a pale sheet read as a stain)
   ice = max(ice, smoothstep(0.82, 0.98, margin) * 0.75 * (1.0 - outK) * step(0.001, depth));
-  float iceRim = (1.0 - smoothstep(gapW, gapW * 2.4, fl.g)) * (1.0 - lead);
+  // (plate rims are faint inside the sheet: pale rings round every plate)
+  float iceRim = (1.0 - smoothstep(gapW, gapW * 2.4, fl.g)) * (1.0 - lead) * mix(0.2, 1.0, edgeZone);
   iceRim = max(iceRim, floeDrift * smoothstep(floeR - 0.07, floeR - 0.01, floeE));
   // icebergs: rare faceted bergs in cold open water
   vec2 bgUV = p * (1.0 / 150.0) + (fn.gb - 0.5) * 0.012 + 0.53;
@@ -439,7 +447,7 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
     iceAlb *= (1.0 - cracks * 0.30) * (1.0 - cracks2 * 0.14);
     // plates: each a slightly different tone, separated by darker refrozen seams
     iceAlb *= 0.88 + 0.22 * fl.a;
-    iceAlb = mix(iceAlb, iceAlb * 0.60 + vec3(0.03, 0.05, 0.07), thinLead);
+    iceAlb = mix(iceAlb, iceAlb * 0.60 + vec3(0.03, 0.05, 0.07), thinLead * 0.4);
     // thin, darker slush towards the floe edge
     iceAlb = mix(scat * 4.0 + vec3(0.06, 0.08, 0.10), iceAlb, smoothstep(0.0, 0.6, ice));
     // raised rim along every plate and sheet edge (reads as thickness)
