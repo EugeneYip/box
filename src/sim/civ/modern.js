@@ -1039,16 +1039,17 @@ export const modern = {
     if (best) {
       const fails = k.railFail || (k.railFail = {});
       if (!(this.game.time.total - (fails[best.id] ?? -1e9) < YEAR * 8)) {
-        const l = { id: this._nextLine++, kind: 'rail', kingdom: k.id, a: cap.id, b: best.id, pts: null, highway: false, built: this.game.time.total };
+        const l = { id: this._nextLine++, kind: 'rail', kingdom: k.id, a: cap.id, b: best.id, pts: null, highway: false, built: this.game.time.total, survey: true };
         this.rails.push(l);
         this._railNetBuild(k);
+        l.survey = false;
         if (l.pts) {
           this._railEnds();
           this.infraVersion++;
           this._firstUse(k, 'rail', { x: (cap.cx + best.cx) / 2, z: (cap.cz + best.cz) / 2 });
           return;
         }
-        this.rails.pop();
+        this.rails = this.rails.filter((x) => x !== l);
         this._railNetBuild(k);
         fails[best.id] = this.game.time.total;
       }
@@ -1059,7 +1060,7 @@ export const modern = {
       let l = null,
         ld = 14;
       for (const x of this.rails) {
-        if (x.kingdom !== k.id || x.kind !== 'rail') continue;
+        if (x.kingdom !== k.id || x.kind !== 'rail' || x.noMaglev || !x.pts) continue;
         const A = this.villages[x.a],
           B = this.villages[x.b];
         if (!(A?.tier >= 1 && B?.tier >= 1)) continue;
@@ -1071,7 +1072,8 @@ export const modern = {
         l.maglevAt = this.game.time.total;
         this._railNetBuild(k);
         this.infraVersion++;
-        this._firstUse(k, 'maglev', { x: l.pts?.[0] ?? cap.cx, z: l.pts?.[1] ?? cap.cz });
+        // (a guideway that could not be laid went back to rail: _railDrop)
+        if (l.kind === 'maglev') this._firstUse(k, 'maglev', { x: l.pts?.[0] ?? cap.cx, z: l.pts?.[1] ?? cap.cz });
         return;
       }
     }
@@ -1194,7 +1196,7 @@ export const modern = {
       z = T.z + ez * st;
     return { pts: [[x, z]], lead: [x + ex * lead * 0.6, z + ez * lead * 0.6] };
   },
-  _railNetBuild(k) {
+  _railNetBuild(k, depth = 0) {
     const w = this.world;
     const N = w.w * w.h;
     if (!this._railTmp || this._railTmp.length !== N) this._railTmp = new Uint8Array(N);
@@ -1223,7 +1225,10 @@ export const modern = {
       const tree = [];
       const at = new Map();
       for (const t of towns) {
-        const seg = this._railBranch(kind, k, R, this.villages[t], tree, mask);
+        // (round 31: a branch that cannot be laid is tried once more with
+        // the last-resort rules, see _railBranch's retry; a quarter of the
+        // lines had no track at Year 600 and stayed listed for good)
+        const seg = this._railBranch(kind, k, R, this.villages[t], tree, mask) || this._railBranch(kind, k, R, this.villages[t], tree, mask, true);
         if (!seg) continue;
         at.set(t, tree.length);
         tree.push(seg);
@@ -1269,6 +1274,7 @@ export const modern = {
     }
     this.railNet = out;
     this._railYIndex();
+    if (depth < 3 && this._railDrop(k)) return this._railNetBuild(k, depth + 1);
     // the tiles under the tracks (trams and buses keep to other streets)
     if (!this.railMask || this.railMask.length !== N) this.railMask = new Uint8Array(N);
     this.railMask.fill(0);
@@ -1302,6 +1308,50 @@ export const modern = {
         }
       }
     }
+  },
+  // (round 31) Lines a rebuild could not lay even on the second try, with
+  // both towns standing: a guideway goes back to plain rail (and is never
+  // tried as a guideway again); a rail line is taken up, with its station
+  // when no other line ends there, and the pair is not surveyed again for
+  // a while (railFail). A line being surveyed (_surveyRail) is left to its
+  // caller. True when the realm's lines changed (the network is rebuilt).
+  _railDrop(k) {
+    let changed = false;
+    const now = this.game.time.total;
+    for (const l of this.rails) {
+      if (l.kingdom !== k.id || l.survey || (l.pts && l.pts.length >= 4)) continue;
+      const a = this.villages[l.a],
+        b = this.villages[l.b];
+      if (!a?.alive || !b?.alive) continue;
+      changed = true;
+      if (l.kind === 'maglev') {
+        l.kind = 'rail';
+        l.noMaglev = true;
+        continue;
+      }
+      l.dead = true;
+      const fails = k.railFail || (k.railFail = {});
+      fails[l.a] = fails[l.b] = now;
+    }
+    if (!changed) return false;
+    const gone = this.rails.filter((l) => l.dead);
+    if (gone.length) {
+      this.rails = this.rails.filter((l) => !l.dead);
+      this._railEnds();
+      // its station goes too when no line ends in the town now
+      for (const l of gone)
+        for (const vid of [l.a, l.b]) {
+          const v = this.villages[vid];
+          if (!v?.alive || v.railEnds > 0) continue;
+          const st = this._stationOf(v);
+          if (st) {
+            this._fx?.('dust', st.x, st.z, 1.2, true);
+            this._unbuild(st, USE.FREE);
+          }
+        }
+    }
+    this.infraVersion++;
+    return true;
   },
   // Round 27: towns whose built footprints touch form one conurbation:
   // vid -> {g (the group's first town), n (towns in it)}; cached per tick
@@ -1604,7 +1654,12 @@ export const modern = {
   },
   // one branch of a network: from the nearest point of the tree (or the
   // root's station) to the town's station
-  _railBranch(kind, k, root, v, tree, mask) {
+  // (round 31) retry: the last resort for a branch the usual rules could
+  // not lay: the other way of joining (a switch on the tree instead of a
+  // line of its own from the root, or the other way round), short spans
+  // over water for a rail line, and the curves drawn tighter, down to the
+  // pulled path itself; still never across a square, a core or a building
+  _railBranch(kind, k, root, v, tree, mask, retry = false) {
     const w = this.world;
     const W = w.w;
     const C = NET[kind];
@@ -1649,7 +1704,8 @@ export const modern = {
     // (a line of its own from the root when that is much the shorter way)
     const RT = this._railTerm(kind, root);
     const dRoot = Math.hypot(RT.x - T.x, RT.z - T.z);
-    if (bs >= 0 && Math.sqrt(bd) > dRoot * 0.8 + 6) bs = -1;
+    if (retry) bs = bs >= 0 && Math.sqrt(bd) > dRoot * 0.8 + 6 ? bs : -1;
+    else if (bs >= 0 && Math.sqrt(bd) > dRoot * 0.8 + 6) bs = -1;
     if (bs < 0) {
       const o = this._railOrient(RT, T.x, T.z, C.lead);
       head = o.pts;
@@ -1696,6 +1752,17 @@ export const modern = {
       let q = civPath(w, sx, sy, gx, gy, cost, 14000, mc);
       if (!near(q)) q = civPath(w, sx, sy, gx, gy, (cost = this._railCost(kind, mask, false, null, ends)), 14000, mc);
       if (!near(q)) q = civPath(w, sx, sy, gx, gy, (cost = this._railCost(kind, mask, true, null, ends)), 16000, mc);
+      if (!near(q) && retry && kind === 'rail') {
+        const c0 = this._railCost(kind, mask, true, null, ends);
+        const wet = (i) => {
+          const c = c0(i);
+          if (c !== Infinity) return c;
+          const h = w.height[i];
+          const b = this._railBlk?.[i];
+          return h < SEA_LEVEL + 0.03 && h > SEA_LEVEL - 2.6 && this.use[i] !== USE.BUILDING && !(b >= 253) && b !== 2 ? 6 : Infinity;
+        };
+        q = civPath(w, sx, sy, gx, gy, (cost = wet), 16000, mc);
+      }
       if (!near(q)) return null;
       mid = this._railPull(q, cost)
         .slice(0, -1)
@@ -1705,12 +1772,13 @@ export const modern = {
     // square and core too: a corner cut across one is drawn tighter, and a
     // line that still crosses one is not laid
     let pts = null;
-    for (const f of [1, 0.5, 0.25]) {
+    const FS = retry ? [1, 0.5, 0.25, 0.12, 0.05] : [1, 0.5, 0.25];
+    for (const f of FS) {
       const way = rdp([lead, ...mid, o2.lead], C.eps * f);
       pts = fillet([...head, ...way.slice(0, -1), ...tail], C.R * f);
       if (!pts || pts.length < 4) return null;
       if (!this._railInTown(pts)) break;
-      if (f === 0.25) return null;
+      if (f === FS[FS.length - 1]) return null;
     }
     const n = pts.length / 2;
     // no switch on a platform or right at a station's throat

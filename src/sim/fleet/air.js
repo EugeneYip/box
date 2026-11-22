@@ -26,7 +26,8 @@ const TRAIN_SPELL = 75; // a realm's train keeps to its line this long (seconds:
 //       (airfield, airport, or any building such as a town hall for drones and
 //       sky taxis); to: building id | {x, z}. Refused in a storm (aircraft are
 //       grounded) and beyond the air budget. Emits 'fleet:landed'
-//       {flight, kind, kingdom, from, to, cargo, x, z} on arrival.
+//       {flight, kind, kingdom, from, to, cargo, x, z} on arrival (once a
+//       flight), and 'fleet:strike' (the same fields) over a sortie's target.
 //   airLimit()                              the limit on aircraft aloft now
 //       (the map's budget.air plus a place for every four airfields)
 //   requestLaunch({kingdom, from, payload})  payload: satellite|station|starship;
@@ -105,7 +106,8 @@ export const air = {
     const kid = o.kingdom ?? line.kingdom;
     // one train at a time on a line, and a realm's fair share of the
     // world's trains (round 29: rail has its own quota, Fleet.landRoom):
-    // every line of a network of four or fewer, three lines in five beyond
+    // every line of a network of four or fewer, three lines in four beyond
+    // (round 31, up from three in five), counting only lines with track
     let mine = 0;
     for (const v of this.list) {
       if (!v.alive || v.mission?.type !== 'train') continue;
@@ -114,7 +116,7 @@ export const air = {
     }
     let lines = 0;
     for (const l of civ.rails || []) if (l.kingdom === kid && l.pts && l.pts.length >= 4) lines++;
-    if (mine >= (lines <= 4 ? lines : Math.ceil(lines * 0.6))) return null;
+    if (mine >= (lines <= 4 ? lines : Math.ceil(lines * 0.75))) return null;
     // on the rails themselves: a line's pts are the centre of the drawn track
     const fwd = o.reverse ? reversePts(line.pts) : line.pts;
     const from = o.reverse ? b : a,
@@ -281,7 +283,11 @@ export const air = {
       y1 = (i1 / w.w) | 0;
     if (Math.hypot(x1 - x0, y1 - y0) < 5) return null;
     const use = civ.use;
-    const p = civPath(w, x0, y0, x1, y1, (i) => (use[i] === USE.ROAD ? 1 : Infinity), 1500, 1);
+    // (round 31) along the streets only, never across the town's square or
+    // parade pad (cars drove and parked on the paving among the people)
+    const sq = this._sqOf?.(v0);
+    if (sq && (sq(x0, y0) || sq(x1, y1))) return null;
+    const p = civPath(w, x0, y0, x1, y1, (i) => (use[i] === USE.ROAD && !(sq && sq(i % w.w, (i / w.w) | 0)) ? 1 : Infinity), 1500, 1);
     if (!p || p.length < 4) return null;
     const path = [x0 + 0.5, y0 + 0.5];
     for (const i of p) path.push((i % w.w) + 0.5, ((i / w.w) | 0) + 0.5);
@@ -914,9 +920,14 @@ export const air = {
     }
     return false;
   },
-  // A sortie's pass over its target (Civ applies it on 'fleet:landed'), then home.
+  // A sortie's pass over its target, then home. (round 31: the pass is
+  // 'fleet:strike', not a landing: jets and biplanes were counted as landing
+  // twice a sortie, 592 landings for 302 launches. Civ applies the strike
+  // through the same handler as a landing's cargo.)
   _strike(f) {
-    this.game.events.emit('fleet:landed', { flight: f, kind: f.kind, kingdom: f.kingdom, from: f.from.building, to: null, cargo: f.cargo, x: f.x, z: f.z, early: false });
+    const e = { flight: f, kind: f.kind, kingdom: f.kingdom, from: f.from.building, to: null, cargo: f.cargo, x: f.x, z: f.z, early: false, strike: true };
+    this.game.civ?._onAirLanded?.(e);
+    this.game.events.emit('fleet:strike', e);
     this._fx('sparks', f.x, f.z, 0.6, { y: Math.max(0, this.world.heightAt(f.x, f.z)) + 0.3 });
     f.cargo = null;
     const home = f.home || f.from;
