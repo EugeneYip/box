@@ -471,7 +471,7 @@ export class InfraRenderer {
     }
     // its level: on the ground, on a bridge over water (hw 2) with ramps
     // at a gentle grade either side
-    const Yh = G.map((g, i) => (hw[i] === 2 || g < SEA_LEVEL ? SEA_LEVEL + 0.3 * BS : Math.max(g, Gmax[i]) + 0.035));
+    const Yh = G.map((g, i) => Math.max(hw[i] === 2 || g < SEA_LEVEL ? SEA_LEVEL + 0.3 * BS : g, Gmax[i] + 0.035));
     // (round 27) the ramps run only out from a bridge and along the drawn
     // road: a deck carried on at the grade from the top of a slope stood on
     // tall pillars over a canyon edge, and one ended in mid-air at a bank
