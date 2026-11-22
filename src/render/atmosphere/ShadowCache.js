@@ -81,6 +81,22 @@ export class ShadowCache {
     const churn = () => (this.worldDirty = Math.min(this.worldDirty || 1e9, 120));
     for (const e of ['world:height', 'world:regenerated']) this.game.events.on(e, shape);
     for (const e of ['world:type', 'world:flora']) this.game.events.on(e, churn);
+    // (round 29) The composite runs right after three's shadow pass for the
+    // main view (it used to ride on the sky dome's first draw, which now
+    // comes last): a frame that captures composites once the static casters
+    // are drawn; a cached frame restores the copy and draws the units.
+    const r = this.game.pipeline?.renderer;
+    const sm = r?.shadowMap;
+    if (sm) {
+      const render = sm.render.bind(sm);
+      sm.render = (lights, scene, camera) => {
+        const ran = sm.enabled && (sm.autoUpdate || sm.needsUpdate) && lights.length > 0;
+        render(lights, scene, camera);
+        if (!this.phase || scene !== this.game.scene || camera !== this.game.cameraRig?.camera) return;
+        if (this.phase === 'capture' && !ran) return;
+        this.composite(r);
+      };
+    }
   }
 
   dynamicRoot() {
