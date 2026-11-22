@@ -79,6 +79,11 @@ const roofOf = (b) => {
 // (round 31) what a craft that ended its trip has done, by class
 const ARRIVED_WORD = { land: 'Arrived', sea: 'In port', air: 'Landed', space: 'In orbit' };
 const ARRIVED_TOAST = { land: 'reached its stop', sea: 'reached port', air: 'has landed', space: 'reached orbit' };
+// the fleet's reason for a trip's end (v.endedWhy), in the card's words
+const ENDED_WORD = { arrived: null, 'last stop': 'Last stop', 'back at the station': 'Back at the station', 'field done': 'Field done', 'laid up': 'Laid up', retired: 'Retired' };
+const ENDED_TOAST = { 'last stop': 'reached its last stop', 'back at the station': 'is back at the station', 'field done': 'finished its field', 'laid up': 'was laid up', retired: 'was retired' };
+const arrivedWord = (c) => ENDED_WORD[c.endedWhy] || ARRIVED_WORD[c.def?.cls || c.cls] || 'Arrived';
+const arrivedToast = (c) => ENDED_TOAST[c.endedWhy] || ARRIVED_TOAST[c.def?.cls || c.cls] || 'reached its stop';
 const isCraft = (r) => !!r?.vessel || r?.kind === 'vessel' || r?.kind === 'vehicle';
 const JOB = {
   woodcutter: ['job-woodcutter', '#d9a466', 'Woodcutter'],
@@ -154,7 +159,7 @@ export class Inspector {
       if (v && typeof v === 'object') set.add(v);
     };
     this.game.events.on('fleet:lost', mark(this._lost));
-    for (const ev of ['fleet:arrived', 'fleet:delivered', 'fleet:landed']) this.game.events.on(ev, mark(this._arrived));
+    for (const ev of ['fleet:arrived', 'fleet:delivered', 'fleet:landed', 'fleet:ended']) this.game.events.on(ev, mark(this._arrived));
     this.bindSheet();
     this.el.addEventListener('pointerdown', () => (this._ptr = true));
     for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) this.el.addEventListener(ev, () => (this._ptr = false));
@@ -510,6 +515,9 @@ export class Inspector {
   // ('fleet:arrived'); else a despawn with no damage is an arrival.
   craftEnded(c) {
     if (!c || c.alive !== false) return false;
+    // the fleet's own word first (round 31: endedTrip true on a trip's end, false on a wreck)
+    if (c.endedTrip === true) return true;
+    if (c.endedTrip === false) return false;
     if (this._lost.has(c) || c.state === 'sinking' || c.state === 'wrecked' || c.state === 'crashed' || c.phase === 'crash' || c.wrecked || c.destroyed) return false;
     if (c.endedTrip || this._arrived.has(c)) return true;
     return !(Number.isFinite(c.hp) && c.hp <= 0);
@@ -695,7 +703,7 @@ export class Inspector {
       <header class="ws-insp__head">
         <span class="ws-insp__badge${portrait ? ' has-portrait' : ''}${kObj?.banner ? ' has-banner' : ''}">${level != null ? `<i class="ws-lvl" title="Level ${level}">${level}</i>` : ''}${portrait ? `<img class="ws-insp__portrait" src="${portrait}" alt=""><span class="ws-insp__glyph">${ic.svg}</span>` : ic.svg}${kTint ? `<i class="ws-insp__kdot" style="--k:${kTint}"></i>` : ''}</span>
         <div class="ws-insp__titles">
-          <div class="ws-insp__kind">${esc(kindLabel)}${dead ? ` <em class="ws-insp__dead">${craft ? 'Lost' : 'Fallen'}</em>` : ended ? ` <em class="ws-insp__dead is-arrived">${ARRIVED_WORD[craft.def?.cls || craft.cls] || 'Arrived'}</em>` : ''}</div>
+          <div class="ws-insp__kind">${esc(kindLabel)}${dead ? ` <em class="ws-insp__dead">${craft ? 'Lost' : 'Fallen'}</em>` : ended ? ` <em class="ws-insp__dead is-arrived">${esc(arrivedWord(craft))}</em>` : ''}</div>
           <h3 class="ws-insp__title">${esc(this.titleOf(r) || 'Unknown')}${epithet ? ` <span class="ws-insp__epithet">${esc(epithet)}</span>` : ''}</h3>
           <div class="ws-insp__fact" data-fact>${esc(this.factLine(r))}</div>
           ${subShown ? `<div class="ws-insp__sub" data-sub>${craft && ownerK?.banner ? `<img class="ws-crest ws-crest--banner" alt="" src="${bannerURL(ownerK.banner, ownerK.color, 28)}">` : kTint ? `<i class="ws-crest" style="--k:${kTint}"></i>` : ''}<span>${esc(subShown)}</span></div>` : ''}
@@ -1458,7 +1466,7 @@ export class Inspector {
           // (round 31) the car is gone from view: say where it went
           if (this.craftEnded(c)) {
             const name = String(this.titleOf(r) || '').trim() || 'The vehicle';
-            safe(() => this.ui.toast(`${name} ${ARRIVED_TOAST[c.def?.cls || c.cls] || 'reached its stop'}`, 2200));
+            safe(() => this.ui.toast(`${name} ${arrivedToast(c)}`, 2200));
           }
         }
         return;
