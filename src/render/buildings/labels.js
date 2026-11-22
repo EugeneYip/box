@@ -15,7 +15,7 @@ const FONT = 'Cinzel, "Cinzel Variable", Georgia, "Times New Roman", serif';
 // ribbon by the number of realms in the whole world, so on the whole Earth
 // "ROC" was 6 px against HONG KONG's 14.
 const TOWN_H = 0.029; // a town label's world height per unit of distance
-const RIBBON_OVER_TOWN = 1.6;
+const RIBBON_OVER_TOWN = 1.75;
 
 function hexCss(hex, k = 1) {
   const r = Math.min(255, ((hex >> 16) & 255) * k),
