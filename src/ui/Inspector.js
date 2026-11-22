@@ -82,7 +82,10 @@ const ARRIVED_TOAST = { land: 'reached its stop', sea: 'reached port', air: 'has
 // the fleet's reason for a trip's end (v.endedWhy), in the card's words
 const ENDED_WORD = { arrived: null, 'last stop': 'Last stop', 'back at the station': 'Back at the station', 'field done': 'Field done', 'laid up': 'Laid up', retired: 'Retired' };
 const ENDED_TOAST = { 'last stop': 'reached its last stop', 'back at the station': 'is back at the station', 'field done': 'finished its field', 'laid up': 'was laid up', retired: 'was retired' };
-const arrivedWord = (c) => ENDED_WORD[c.endedWhy] || ARRIVED_WORD[c.def?.cls || c.cls] || 'Arrived';
+// (round 33) a spent booster that flew back is "Landed", not "In orbit"
+const arrivedWord = (c) => ENDED_WORD[c.endedWhy] || (c.stageV === 2 ? 'Landed' : ARRIVED_WORD[c.def?.cls || c.cls]) || 'Arrived';
+// where a craft that ended its trip stopped, in words ("Arrived at Khaveh")
+const STOP_WORD = { land: 'Arrived at', sea: 'In port at', air: 'Landed at' };
 const arrivedToast = (c) => ENDED_TOAST[c.endedWhy] || ARRIVED_TOAST[c.def?.cls || c.cls] || 'reached its stop';
 const isCraft = (r) => !!r?.vessel || r?.kind === 'vessel' || r?.kind === 'vehicle';
 const JOB = {
@@ -523,6 +526,62 @@ export class Inspector {
     return !(Number.isFinite(c.hp) && c.hp <= 0);
   }
 
+  // (round 33) Where a craft that ended its trip stopped: back home, at the
+  // end of its route, or somewhere on the way (laid up, retired). The route
+  // bar of a homeward trip that ended at home was drawn as the outbound route
+  // with the dot near its start, under an "Arrived" chip.
+  // Returns { home, line, from } or null (stopped on the way: the bar stays).
+  craftStop(c) {
+    if (!c) return null;
+    const civ = this.game.civ;
+    const cls = c.def?.cls || c.cls;
+    if (cls === 'space') {
+      const pad = this.airPlace(c.from);
+      if (c.stageV === 2) return { home: true, line: 'Landed back on its pad', from: null, toast: 'landed back on its pad' };
+      return { home: false, line: c.payload === 'starship' ? 'Gone to the stars' : 'Reached orbit', from: pad ? `launched from ${pad}` : null };
+    }
+    if (cls === 'air' && !c.voyage) {
+      const from = this.airPlace(c.from),
+        to = this.airPlace(c.to);
+      const fb = c.from?.building,
+        tb = c.to?.building;
+      // (a diverted flight came down short of where it was going)
+      if (c.diverted || !to) return { home: false, line: 'Landed early', from: from ? `from ${from}` : null };
+      if (fb != null && fb === tb) return { home: true, chip: 'Home', line: `Back home in ${to}`, from: null, toast: `is back home in ${to}` };
+      return { home: false, line: `${STOP_WORD.air} ${to}`, from: from ? `from ${from}` : null, toast: `landed at ${to}` };
+    }
+    const vo = c.voyage;
+    const place = (ref) => (ref && typeof ref === 'object' ? ref : civ?.villages?.[ref]);
+    const homeV = place(c.home) || place(vo?.from);
+    const toV = place(vo?.to);
+    const homeName = homeV?.name || vo?.fromName || null;
+    // (a ship's open-sea goal is a spot, not a port: no "In port at uncharted waters")
+    const toName = toV && toV !== homeV && toV.name ? toV.name : null;
+    // a town car's drive along its own streets
+    if (c.mission?.type === 'drive') return homeName ? { home: false, line: `Parked in ${homeName}`, from: null, toast: `parked in ${homeName}` } : null;
+    if (vo && vo.from === vo.to && vo.from != null) return homeName ? { home: true, chip: 'Home', line: `Back home in ${homeName}`, from: null, toast: `is back home in ${homeName}` } : null;
+    const at = (p) => (p ? Math.hypot((p.cx ?? p.x) - c.x, (p.cz ?? p.z) - c.z) : Infinity);
+    const dHome = at(homeV),
+      dTo = toV && toV !== homeV ? at(toV) : Infinity;
+    if (!Number.isFinite(dHome) && !Number.isFinite(dTo)) return null;
+    const home = dHome <= dTo;
+    const total = homeV && toV && toV !== homeV ? Math.hypot((toV.cx ?? toV.x) - (homeV.cx ?? homeV.x), (toV.cz ?? toV.z) - (homeV.cz ?? homeV.z)) : 0;
+    const near = Math.min(dHome, dTo) <= Math.max(6, total * 0.3);
+    // laid up or retired out on the road: the bar shows where it stopped
+    if (!near && c.endedWhy && c.endedWhy !== 'arrived') return null;
+    if (home) return homeName ? { home: true, chip: 'Home', line: `Back home in ${homeName}`, from: toName ? `from ${toName}` : null, toast: `is back home in ${homeName}` } : null;
+    const reached = { land: 'arrived at', sea: 'reached port at', air: 'landed at' }[cls] || 'arrived at';
+    return toName ? { home: false, line: `${STOP_WORD[cls] || STOP_WORD.land} ${toName}`, from: homeName ? `from ${homeName}` : null, toast: `${reached} ${toName}` } : null;
+  }
+  // the town of an airfield, a pad or a carrier (an aircraft's from / to)
+  airPlace(p) {
+    const civ = this.game.civ;
+    if (!p) return null;
+    if (p.vessel != null) return 'a carrier at sea';
+    const b = p.building != null ? civ?._bById?.get?.(p.building) : null;
+    return (b && civ?.villages?.[b.village]?.name) || null;
+  }
+
   render() {
     const r = this.track;
     if (!r) return;
@@ -534,6 +593,7 @@ export class Inspector {
     const vrow = craft ? (r.stats || []).find((s) => /^voyage$/i.test(String(s?.[0]))) : null;
     const routeNames = new Set(vrow ? String(vrow[1]).split('→').map((x) => x.trim().toLowerCase()) : []);
     const ended = !!craft && this.craftEnded(craft);
+    const stop = ended ? safe(() => this.craftStop(craft), null, 'craft stop') : null;
     const dead = (u && u.alive === false) || (craft && !ended && (craft.alive === false || craft.state === 'sinking'));
     const kTint = this.kingdomTint(r);
     // a building's own era only matters when it differs from its realm's
@@ -703,7 +763,7 @@ export class Inspector {
       <header class="ws-insp__head">
         <span class="ws-insp__badge${portrait ? ' has-portrait' : ''}${kObj?.banner ? ' has-banner' : ''}">${level != null ? `<i class="ws-lvl" title="Level ${level}">${level}</i>` : ''}${portrait ? `<img class="ws-insp__portrait" src="${portrait}" alt=""><span class="ws-insp__glyph">${ic.svg}</span>` : ic.svg}${kTint ? `<i class="ws-insp__kdot" style="--k:${kTint}"></i>` : ''}</span>
         <div class="ws-insp__titles">
-          <div class="ws-insp__kind">${esc(kindLabel)}${dead ? ` <em class="ws-insp__dead">${craft ? 'Lost' : 'Fallen'}</em>` : ended ? ` <em class="ws-insp__dead is-arrived">${esc(arrivedWord(craft))}</em>` : ''}</div>
+          <div class="ws-insp__kind">${esc(kindLabel)}${dead ? ` <em class="ws-insp__dead">${craft ? 'Lost' : 'Fallen'}</em>` : ended ? ` <em class="ws-insp__dead is-arrived${stop?.chip ? ' is-home' : ''}">${esc(ENDED_WORD[craft.endedWhy] || stop?.chip || arrivedWord(craft))}</em>` : ''}</div>
           <h3 class="ws-insp__title">${esc(this.titleOf(r) || 'Unknown')}${epithet ? ` <span class="ws-insp__epithet">${esc(epithet)}</span>` : ''}</h3>
           <div class="ws-insp__fact" data-fact>${esc(this.factLine(r))}</div>
           ${subShown ? `<div class="ws-insp__sub" data-sub>${craft && ownerK?.banner ? `<img class="ws-crest ws-crest--banner" alt="" src="${bannerURL(ownerK.banner, ownerK.color, 28)}">` : kTint ? `<i class="ws-crest" style="--k:${kTint}"></i>` : ''}<span>${esc(subShown)}</span></div>` : ''}
@@ -864,7 +924,13 @@ export class Inspector {
     const vo = v.voyage;
     // the route follows Fleets' own account: none in port, reversed on the way home
     const hasVoyage = r?.stats ? r.stats.some((s) => /^voyage$/i.test(String(s?.[0]))) : !!vo && v.state !== 'moored';
-    if (vo && hasVoyage) {
+    // (round 33) a trip that has ended says where it stopped instead of a
+    // route bar with the dot part way along
+    const stop = this.craftEnded(v) ? safe(() => this.craftStop(v), null, 'craft stop') : null;
+    if (stop) {
+      const cls = v.def?.cls || v.cls;
+      html += `<section class="ws-dsec"><h5>${cls === 'land' ? 'Route' : cls === 'air' || cls === 'space' ? 'Flight' : 'Voyage'}</h5><div class="ws-voyend${stop.home ? ' is-home' : ''}">${uiIcon('check')}<span><b>${esc(stop.line)}</b>${stop.from ? ` <small>${esc(stop.from)}</small>` : ''}</span></div></section>`;
+    } else if (vo && hasVoyage) {
       const homeward = v.mission?.phase === 'home' || v.mission?.type === 'home';
       const homeV = civ?.villages?.[v.home];
       const place = (ref) => (ref && typeof ref === 'object' ? ref : civ?.villages?.[ref]);
@@ -1466,7 +1532,9 @@ export class Inspector {
           // (round 31) the car is gone from view: say where it went
           if (this.craftEnded(c)) {
             const name = String(this.titleOf(r) || '').trim() || 'The vehicle';
-            safe(() => this.ui.toast(`${name} ${arrivedToast(c)}`, 2200));
+            // (round 33) where it stopped: "… is back home in Sulsun"
+            const st = ENDED_TOAST[c.endedWhy] ? null : safe(() => this.craftStop(c), null);
+            safe(() => this.ui.toast(`${name} ${st?.toast || arrivedToast(c)}`, 2200));
           }
         }
         return;

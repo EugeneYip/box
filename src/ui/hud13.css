@@ -74,3 +74,37 @@
   height: 30px;
   margin-top: -15px;
 }
+
+/* ---- a vehicle that ended its trip says where it stopped ("Back home in
+   Sulsun · from Khaveh"), not a route bar with the dot part way along; a trip
+   that ends at home carries a gold "Home" chip */
+.ws-voyend {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--ws-ink-2);
+}
+.ws-voyend > .ico {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-top: 0.5px;
+  color: #9fe0b0;
+}
+.ws-voyend.is-home > .ico {
+  color: var(--ws-gold-hi);
+}
+.ws-voyend b {
+  font-weight: 600;
+  color: var(--ws-ink);
+}
+.ws-voyend small {
+  font-size: 11px;
+  color: var(--ws-ink-3);
+}
+.ws-insp__dead.is-arrived.is-home {
+  color: #f6e2a8;
+  background: rgba(235, 201, 119, 0.17);
+}
