@@ -367,6 +367,18 @@ export class FleetRenderer {
     const viewR = dist * 1.7 + 24;
     const alpha = g.paused ? 1 : Math.min(1, Math.max(0, (g._acc || 0) / (g.simStep || TICK)));
     const list = F.list;
+    // (round 29) a kind seen for the first time has both its models built
+    // and added to the batch at once, wherever it is, so it is drawn on its
+    // first frame in view and never pops in at the switch to its simple
+    // model (a carrier spawned off screen was not drawn for seconds)
+    const seen = this._seenKinds || (this._seenKinds = new Set());
+    for (let i = 0; i < list.length; i++) {
+      const k = list[i].kind;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      this.vb._geoId(k);
+      if (hasLo(k)) this.vb._geoId(k + ':lo');
+    }
     this._hwDecks();
     // ---- detailed vehicles (one batched multi-draw with the aircraft)
     this._cx = cx;

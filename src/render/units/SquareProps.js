@@ -120,9 +120,23 @@ export class SquareProps {
     const r = Math.atan2(pd.ax, pd.az);
     const W = pd.W + 0.2,
       D = pd.D + 0.2;
-    const y = pd.y ?? w.heightAt(pd.x, pd.z);
+    // (on the highest ground under it: grass covered half of a pad whose
+    // site had been raised since it was levelled; a deep kerb skirts it)
+    let y = pd.y ?? w.heightAt(pd.x, pd.z);
+    {
+      const c = Math.cos(r),
+        sn = Math.sin(r);
+      for (const [lx, lz] of [
+        [0, 0],
+        [W / 2, D / 2],
+        [-W / 2, D / 2],
+        [W / 2, -D / 2],
+        [-W / 2, -D / 2],
+      ])
+        y = Math.max(y, w.heightAt(pd.x + lx * c + lz * sn, pd.z - lx * sn + lz * c));
+    }
     const P = era >= 5 ? PAD.concrete : era >= 3 ? PAD.setts : PAD.gravel;
-    this._box(pd.x, y - 0.03, pd.z, r, 0, 0, 0, W + 0.1, 0.034, D + 0.1, P.kerb, 1);
+    this._box(pd.x, y - 0.14, pd.z, r, 0, 0, 0, W + 0.1, 0.144, D + 0.1, P.kerb, 1);
     this._box(pd.x, y - 0.03, pd.z, r, 0, 0, 0, W - 0.04, 0.036, D - 0.04, P.a, 1);
     // the checker of setts or flags (the darker squares only, flush)
     const nx = Math.max(2, Math.round(W / 0.55)),
@@ -132,10 +146,10 @@ export class SquareProps {
     for (let i = 0; i < nx; i++)
       for (let k = 0; k < nz; k++) {
         if ((i + k) & 1) continue;
-        this._box(pd.x, y + 0.001, pd.z, r, -W / 2 + 0.02 + (i + 0.5) * cw, 0, -D / 2 + 0.02 + (k + 0.5) * cd, cw - 0.03, 0.004, cd - 0.03, P.b, 1);
+        this._box(pd.x, y + 0.006, pd.z, r, -W / 2 + 0.02 + (i + 0.5) * cw, 0, -D / 2 + 0.02 + (k + 0.5) * cd, cw - 0.03, 0.002, cd - 0.03, P.b, 1);
       }
     const lw = 0.03,
-      ly = y + 0.006,
+      ly = y + 0.008,
       th = 0.003,
       e = 0.1;
     // the border
