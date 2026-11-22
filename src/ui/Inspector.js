@@ -642,7 +642,9 @@ export class Inspector {
     // each fact once: names shown as chips leave the subtitle and the realm line
     this._chipNames = new Set(chipList.map(({ o }) => nameKey(o)).filter(Boolean));
     this._routeNames = routeNames;
-    const subShown = r.subtitle ? this.subText(r) : '';
+    let subShown = r.subtitle ? this.subText(r) : '';
+    // (round 31) an arrived craft is no longer "driving through the streets"
+    if ((ended || (craft && dead)) && subShown.includes(' · ')) subShown = subShown.slice(0, subShown.lastIndexOf(' · '));
     const following = (u || craft) && this.game.cameraRig.follow === (u || craft);
     const actions = [];
     if ((u || craft) && !dead && !ended) actions.push(`<button class="ws-btn ws-btn--sm ${following ? 'is-on' : ''}" type="button" data-act="follow">${uiIcon('follow')}<span>${following ? 'Following' : 'Follow'}</span><kbd class="ws-key">F</kbd></button>`);

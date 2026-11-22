@@ -39,3 +39,50 @@
   color: #bfe8c4;
   background: rgba(120, 210, 140, 0.16);
 }
+
+/* ---- the age chip's years-left note reads at about 70% (50% was too faint) */
+.ws-agechip__left.is-on {
+  opacity: 0.72;
+}
+
+/* ---- Favorites: a town nearly out of food shows an amber bar */
+.ws-favs__meter .ws-meter.is-low i,
+.ws-meter.is-low i {
+  background: linear-gradient(90deg, #d9701c, #ffb347);
+}
+/* (the empty track turns amber too, so a bar at 4% still reads as a warning) */
+.ws-favs__meter .ws-meter.is-low,
+.ws-meter.is-low {
+  background: rgba(255, 160, 60, 0.22);
+}
+
+/* ---- phones (portrait): the nav rail steps aside while the vehicle chooser
+   is open ("Ages" showed cut in half above it) */
+@media (max-width: 720px) and (min-height: 501px) {
+  #ui-root:has(.ws-vehpick:not(.is-folded)) .ws-nav {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none !important;
+  }
+}
+
+/* ---- Chronicle: the filters are one sideways-scrolling row (10 chips on 4
+   rows took 160 of the panel's 450 px); empty filters are hidden */
+.ws-chron__filters {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  padding-bottom: 2px;
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 22px), transparent);
+  mask-image: linear-gradient(90deg, #000 calc(100% - 22px), transparent);
+}
+.ws-chron__filters::-webkit-scrollbar {
+  display: none;
+}
+.ws-cpill {
+  flex: none;
+}
+.ws-cpill[hidden] {
+  display: none;
+}

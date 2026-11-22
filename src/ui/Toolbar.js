@@ -347,7 +347,10 @@ export class Toolbar {
       // "Spawn Vehicle · Technology"), so a narrow handle never cuts the choice
       const catName = CATEGORIES.find((c) => c.id === ap.category)?.name || '';
       const pick = typeof ap.pick === 'function' ? safe(() => ap.pick(this.game), null, 'power pick') : null;
-      const html = pick ? `<b>${esc(pick)}</b><small>${esc(ap.name)} · ${esc(catName)}</small>` : `<b>${esc((typeof ap.label === 'function' && safe(() => ap.label(this.game), null, 'power label')) || ap.name)}</b><small>${esc(catName)} · tap to change</small>`;
+      // (round 31) on a phone, where the chooser's own hint is hidden, the
+      // handle says what to do next
+      const narrow = typeof matchMedia === 'function' && matchMedia('(max-width: 720px)').matches;
+      const html = pick ? `<b>${esc(pick)}</b><small>${narrow ? 'Tap the map to place it' : `${esc(ap.name)} · ${esc(catName)}`}</small>` : `<b>${esc((typeof ap.label === 'function' && safe(() => ap.label(this.game), null, 'power label')) || ap.name)}</b><small>${esc(catName)} · tap to change</small>`;
       if (txt.innerHTML !== html) txt.innerHTML = html;
     } else {
       ico.innerHTML = categoryIcon(this.cat);

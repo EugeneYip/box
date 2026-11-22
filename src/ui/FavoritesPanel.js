@@ -209,7 +209,7 @@ export class FavoritesPanel {
         place: kname(v.kingdom) || 'Unclaimed',
         color: kcolor(v.kingdom),
         doing,
-        meter: v.foodCap > 0 ? { v: Math.max(0, Math.min(1, v.food / v.foodCap)), text: `${Math.floor(v.food)} / ${v.foodCap}`, label: 'Food', cls: v.starving ? 'is-bad' : '' } : null,
+        meter: v.foodCap > 0 ? { v: Math.max(0, Math.min(1, v.food / v.foodCap)), text: `${Math.floor(v.food)} / ${v.foodCap}`, label: 'Food', cls: v.starving ? 'is-bad' : v.food / v.foodCap < 0.1 ? 'is-bad is-low' : '' } : null,
       };
     }
     if (e.kind === 'realm') {
