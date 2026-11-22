@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { CAM_CUT } from '../../core/CameraRig.js';
 
 // Shader patches for the vegetation. Both the flora and the ground-cover
 // materials are MeshStandardMaterial (so they keep PBR lighting, shadows and
@@ -251,6 +252,23 @@ const float fBayer[16] = float[16](0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.
 `;
 
 const FRAG_COLOR = /* glsl */ `
+#ifndef FLORA_GROUND
+// (round 31) the close-zoom cutaway reaches the trees: a tree between the
+// eye and the target (inside a cone round the sight line that covers the
+// middle of the frame, and short of the target itself) dissolves away, so a
+// trunk and its leaves never fill the frame (CameraRig CAM_CUT)
+if (uCut > 0.001) {
+  vec3 fTc = uCutT - cameraPosition;
+  float fTD = length(fTc);
+  vec3 fTd = fTc / max(fTD, 1e-4);
+  vec3 fV = vFWorld - cameraPosition;
+  float fAl = dot(fV, fTd);
+  float fPr = length(fV - fTd * fAl);
+  float fCutK = uCut * (1.0 - smoothstep(fTD * 0.6, fTD * 0.85, fAl)) * (1.0 - smoothstep(0.7, 1.0, fPr / max(0.2, fAl * uCutTan * 1.35)));
+  float fTh = (fBayer[int(mod(gl_FragCoord.x, 4.0)) + 4 * int(mod(gl_FragCoord.y, 4.0))] + 0.5) / 16.0;
+  if (fCutK > fTh) discard;
+}
+#endif
 float fLeafM = vFInfo.x;
 float fMat = vFInfo.y;
 if (abs(fMat - 11.0) < 0.5) {
@@ -401,6 +419,9 @@ if (uCloudParams.w > 0.0) {
 
 function patch(shader, shared, kind, depth) {
   for (const k in shared) shader.uniforms[k] = shared[k];
+  shader.uniforms.uCut = CAM_CUT.uCut;
+  shader.uniforms.uCutTan = CAM_CUT.uCutTan;
+  shader.uniforms.uCutT = CAM_CUT.uCutT;
   const defs = (depth ? '#define FLORA_DEPTH\n' : '') + (kind === 'ground' ? '#define FLORA_GROUND\n' : '');
   shader.vertexShader = defs + shader.vertexShader.replace('#include <common>', '#include <common>\n' + VERT_PARS);
   shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', kind === 'ground' ? GROUND_BEGIN : FLORA_BEGIN);

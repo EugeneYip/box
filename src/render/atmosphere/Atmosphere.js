@@ -695,9 +695,20 @@ export class Atmosphere {
     const cam = rig.camera;
     this._ray.origin.copy(cam.position);
     cam.getWorldDirection(this._ray.direction);
-    const hit = game.picker?.intersect?.(this._ray, true);
-    if (hit) focus = cam.position.distanceTo(this._v.set(hit.x, hit.y, hit.z));
-    this._focus = this._focus ? approach(this._focus, focus, 10, dt || 1) : focus;
+    // (round 31) following a creature or craft, the focus locks to it (at
+    // distance 2.5 the centre ray ran on past the person to the ground
+    // behind, and the followed person was out of focus)
+    const fol = rig._followed?.();
+    if (fol) {
+      const fy = fol.y ?? game.world.surfaceAt(fol.x, fol.z);
+      const bh = game.picker?.bodyHeight ? game.picker.bodyHeight(fol) : 0.18;
+      focus = cam.position.distanceTo(this._v.set(fol.x, fy + bh * 0.5, fol.z));
+      this._focus = focus;
+    } else {
+      const hit = game.picker?.intersect?.(this._ray, true);
+      if (hit) focus = cam.position.distanceTo(this._v.set(hit.x, hit.y, hit.z));
+      this._focus = this._focus ? approach(this._focus, focus, 10, dt || 1) : focus;
+    }
     // strong only close up; a gentle miniature hint at mid zoom; off far out
     const s = (1 - 0.72 * smoothstep(25, 90, dist)) * (1 - smoothstep(90, 140, dist));
     P.dof.focus = this._focus;

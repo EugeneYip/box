@@ -29,6 +29,10 @@ export const CAM_CUT = {
   uCutA: { value: new Array(CUT_N).fill(0) },
   uCutY: { value: new Array(CUT_N).fill(1e4) },
   uCamW: { value: new THREE.Matrix4() },
+  // (round 31) the point the camera looks at, in world units: trees between
+  // the eye and it fade out (src/render/nature/floraMaterial.js), as
+  // buildings are cut
+  uCutT: { value: new THREE.Vector3() },
 };
 // cut range: full at CUT_NEAR, gone by CUT_FAR
 const CUT_NEAR = 10,
@@ -387,6 +391,65 @@ export class CameraRig {
     }
     return maxP - pitch;
   }
+  // The extra pitch (radians, at least `lift`) at which terrain near the eye
+  // covers no more than about 30% of the lower part of the frame. Rays through
+  // a 5 x 3 grid of points in the lower 60% of the picture are marched toward
+  // the plane at the target's height; a ray that meets the ground before 70%
+  // of its way there is covered by a foreground slope.
+  _coverLift(pitch, lift, c, ty) {
+    const W = this.game.world;
+    const cam = this.camera;
+    const tanH = Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2);
+    const asp = cam.aspect || 1;
+    const s = Math.sin(c.yaw),
+      co = Math.cos(c.yaw);
+    const maxP = THREE.MathUtils.degToRad(78);
+    const wMax = W.w - 1,
+      hMax = W.h - 1;
+    const covered = (p) => {
+      const horiz = Math.cos(p) * c.dist;
+      const ex = c.x + s * horiz,
+        ey = ty + Math.sin(p) * c.dist,
+        ez = c.z + co * horiz;
+      // camera basis: forward toward the target, right, up
+      const fx = -s * Math.cos(p),
+        fy = -Math.sin(p),
+        fz = -co * Math.cos(p);
+      const rx = co,
+        rz = -s;
+      const ux = -s * Math.sin(p),
+        uy = Math.cos(p),
+        uz = -co * Math.sin(p);
+      let n = 0,
+        hit = 0;
+      for (let j = 0; j < 3; j++) {
+        const b = -0.15 - j * 0.3; // lower frame, NDC
+        for (let i = 0; i < 5; i++) {
+          const a = -0.8 + i * 0.4;
+          const dx = fx + rx * a * tanH * asp + ux * b * tanH,
+            dy = fy + uy * b * tanH,
+            dz = fz + rz * a * tanH * asp + uz * b * tanH;
+          if (dy > -0.02) continue;
+          const L = (ey - ty) / -dy; // along the ray to the target's plane
+          n++;
+          for (let k = 1; k <= 8; k++) {
+            const t = (k / 8) * 0.7;
+            const x = ex + dx * L * t,
+              z = ez + dz * L * t;
+            if (x < 0 || z < 0 || x > wMax || z > hMax) continue;
+            if (Math.max(0, W.heightAt(x, z)) + 0.05 > ey + dy * L * t) {
+              hit++;
+              break;
+            }
+          }
+        }
+      }
+      return n ? hit / n : 0;
+    };
+    let p = pitch + lift;
+    for (let i = 0; i < 12 && p < maxP; i++, p += 0.04) if (covered(p) <= 0.3) break;
+    return Math.max(lift, Math.min(maxP, p) - pitch);
+  }
   // The followed creature or craft, when there is one to aim at.
   _followed() {
     const f = this.follow;
@@ -423,7 +486,12 @@ export class CameraRig {
     // close in, raise the pitch until the line of sight clears the terrain
     // (rises quickly, settles back slowly)
     if (c.dist < 30) {
-      const need = this._clearLift(pitch, c, this.target.y);
+      let need = this._clearLift(pitch, c, this.target.y);
+      // (round 31) up close, a slope beside the sight line could still fill
+      // half the frame (a blurred hillside over the right half at 5 tiles):
+      // pitch up further while terrain covers more than about 30% of the
+      // lower frame
+      if (c.dist < 16) need = this._coverLift(pitch, need, c, this.target.y);
       if (this._lift == null) this._lift = need;
       else this._lift += (need - this._lift) * (1 - Math.exp(-dt * (need > this._lift ? 20 : 2.5)));
       pitch = Math.min(THREE.MathUtils.degToRad(80), pitch + this._lift);
@@ -462,6 +530,7 @@ export class CameraRig {
     CAM_CUT.uCutD.value = cam.position.distanceTo(this.target);
     CAM_CUT.uCutTan.value = Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2);
     CAM_CUT.uCamW.value.copy(cam.matrixWorld);
+    CAM_CUT.uCutT.value.copy(this.target);
     this._cutaway(cam, dt, f);
   }
 
