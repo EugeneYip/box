@@ -966,8 +966,8 @@ export class Labels {
         const la = this._landAt?.get(c.kid);
         if (lp) {
           const pts = la ? [la.x, la.z] : [];
-          const step = Math.max(2, Math.floor(lp.length / 8 / 2) * 2);
-          for (let i = 0; i < lp.length && pts.length < 10; i += step) pts.push(lp[i], lp[i + 1]);
+          const step = Math.max(2, Math.floor(lp.length / 6 / 2) * 2);
+          for (let i = 0; i < lp.length && pts.length < 8; i += step) pts.push(lp[i], lp[i + 1]);
           for (let i = 0; i < pts.length; i += 2) {
             const gy = world.surfaceAt(pts[i], pts[i + 1]);
             const a = toScreen(pts[i], gy, pts[i + 1]);
@@ -982,6 +982,9 @@ export class Labels {
         // little, so it stays larger than them; round 31: never below about
         // 1.3x the town names, nor under about 10.5 px capitals)
         const tries = (townOn > 0.5 ? [1, 0.92] : [1, 0.9, 0.8]).filter((q, i) => i === 0 || ribCap * q >= RIBBON_CAP_FLOOR);
+        // a name left out looks for a spot again only every 0.25 s (the full
+        // search is the costly part of a frame with many realms in view)
+        if (sp.userData.dropAt && now - sp.userData.dropAt < 250) tries.length = 0;
         const last = sp.userData.fade > 0.5 ? sp.userData.spot : null;
         for (const q of tries) {
           const w2 = pw * q,
@@ -1032,6 +1035,7 @@ export class Labels {
             cy = py + oy;
             placed = true;
             sp.userData.spot = { kind: a.kind, dx, dy, free };
+            sp.userData.dropAt = 0;
             break;
           }
           if (placed) {
@@ -1054,6 +1058,7 @@ export class Labels {
         if (!placed) {
           target = 0;
           sp.userData.spot = null;
+          if (!sp.userData.dropAt || now - sp.userData.dropAt >= 250) sp.userData.dropAt = now;
         }
       } else if (target > 0) {
         // keep clear of the screen edges where the HUD lives
