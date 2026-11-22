@@ -283,7 +283,11 @@ export const air = {
       y1 = (i1 / w.w) | 0;
     if (Math.hypot(x1 - x0, y1 - y0) < 5) return null;
     const use = civ.use;
-    const p = civPath(w, x0, y0, x1, y1, (i) => (use[i] === USE.ROAD ? 1 : Infinity), 1500, 1);
+    // (round 31) along the streets only, never across the town's square or
+    // parade pad (cars drove and parked on the paving among the people)
+    const sq = this._sqOf?.(v0);
+    if (sq && (sq(x0, y0) || sq(x1, y1))) return null;
+    const p = civPath(w, x0, y0, x1, y1, (i) => (use[i] === USE.ROAD && !(sq && sq(i % w.w, (i / w.w) | 0)) ? 1 : Infinity), 1500, 1);
     if (!p || p.length < 4) return null;
     const path = [x0 + 0.5, y0 + 0.5];
     for (const i of p) path.push((i % w.w) + 0.5, ((i / w.w) | 0) + 0.5);

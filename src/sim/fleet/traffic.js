@@ -85,11 +85,13 @@ export const traffic = {
     const w = this.world;
     const use = this.game.civ.use;
     const R = v.roadTiles;
+    const sq = this._sqOf?.(v);
     for (let tries = 0; tries < 4; tries++) {
       const i = R[(this.rng() * R.length) | 0];
       if (use[i] !== USE.ROAD) continue;
       const x = i % w.w,
         z = (i / w.w) | 0;
+      if (sq && sq(x, z)) continue;
       const c = { x: x + 0.5, z: z + 0.5, px: 0, pz: 0, h: 0, ph: 0, tx: 0, tz: 0, fx: -1, fz: -1, vid: v.id, kingdom: k.id, v: (this.rng() * 4) | 0, s: SPEED * (0.92 + this.rng() * 0.16), r2: ((v.radius || 6) * 1.25 + 2) ** 2, cx: v.cx, cz: v.cz, k: (this.rng() * 4) | 0, acc: 0 };
       if (!this._trafficNext(c, x, z)) continue;
       c.h = c.ph = Math.atan2(c.tz - c.z, c.tx - c.x);
@@ -108,11 +110,17 @@ export const traffic = {
   // false when it has nowhere to go.
   _trafficNext(c, x, z) {
     const w = this.world;
-    const use = this.game.civ.use;
-    const rail = this.game.civ.railMask;
+    const civ = this.game.civ;
+    const use = civ.use;
+    const rail = civ.railMask;
+    // (round 31) never onto the town's square or parade pad unless there is
+    // no other way on (cars drove across the paving among the people)
+    const sq = this._sqOf?.(civ.villages[c.vid]);
     let best = -1,
       sum = 0,
-      back = -1;
+      back = -1,
+      sqBest = -1,
+      sqSum = 0;
     const fx = c.fx,
       fz = c.fz;
     // straight on is the way the car came in (from fx, fz to x, z)
@@ -133,10 +141,18 @@ export const traffic = {
       let wt = ox * ox + oz * oz > c.r2 ? 0.08 : 1;
       if (nx - x === sx && nz - z === sz) wt *= 3;
       if (rail?.[i]) wt *= 0.15;
+      if (sq && sq(nx, nz)) {
+        sqSum += wt;
+        if (this.rng() * sqSum < wt) sqBest = i;
+        continue;
+      }
       sum += wt;
       if (this.rng() * sum < wt) best = i;
     }
+    // (a car already on the paving drives off it the shortest way: on)
+    if (best < 0 && sq && sq(x, z) && sqBest >= 0) best = sqBest;
     if (best < 0) best = back;
+    if (best < 0) best = sqBest;
     if (best < 0) return false;
     c.fx = x;
     c.fz = z;

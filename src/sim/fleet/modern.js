@@ -381,13 +381,17 @@ export const modern = {
     // (round 23: the open ground dearer, fenced fields dearer still, so a
     // vehicle keeps to the streets round a block instead of cutting across
     // lawns and plots, leaving them only for the last stretch to a fire)
+    // (round 31: a town's paved square and parade pad dear too, and the
+    // open ground dearer: vehicles kept to the streets round a block in only
+    // a quarter of the samples near a Modern capital)
+    const kc = this.game.civ?.keepClear;
     const cost = (i) => {
-      if (use && use[i] === USE.ROAD) return 1;
+      if (use && use[i] === USE.ROAD) return kc && kc[i] ? 16 : 1;
       if (use && use[i] === USE.BUILDING) return Infinity;
       const x = i % w.w,
         y = (i / w.w) | 0;
       if (!w.isWalkable(x, y)) return Infinity;
-      return use && use[i] === USE.PLOT ? 24 : 6;
+      return use && use[i] === USE.PLOT ? 30 : kc && kc[i] ? 20 : 11;
     };
     const p = civPath(w, sx, sz, gx, gz, cost, maxNodes, 1);
     if (!p || !p.length) return null;
@@ -459,6 +463,17 @@ export const modern = {
       return false;
     };
   },
+  // A town's square test (_squareTest), kept a few seconds on the town
+  // (asked for every street tile a car looks at, traffic.js)
+  _sqOf(t) {
+    if (!t) return null;
+    const now = this.game.time.total;
+    const c = t._sqC;
+    if (c && now - c.t < 8) return c.f;
+    const f = this._squareTest(t);
+    t._sqC = { t: now, f };
+    return f;
+  },
   // (x, z) on a town's square or parade pad
   _onSquare(x, z) {
     const civ = this.game.civ;
@@ -483,7 +498,13 @@ export const modern = {
   _service(kind, k, v, from, path, mission) {
     // a station on the square (or the hall, with none): its vehicles stand by
     // at the nearest curb, not in the middle of the square
-    const home = this._curbFor(path[0], path[1]) || { x: path[0], z: path[1] };
+    const curb = this._curbFor(path[0], path[1]);
+    const home = curb || { x: path[0], z: path[1] };
+    // (round 31: and it sets out from that curb, not across the square)
+    if (curb && path.length >= 4) {
+      const p2 = this._streetPath(curb.x, curb.z, path[path.length - 2], path[path.length - 1]);
+      if (p2) path = p2;
+    }
     // one standing by at the station answers the call (else a new one sets out)
     let veh = null;
     for (const o of this.list)
@@ -564,7 +585,7 @@ export const modern = {
         if (w.fire[i] > 0.05) continue;
         const d = Math.hypot(dx, dz);
         if (d < 1.2) continue;
-        const s = Math.abs(d - 2) * 2 + (use && use[i] === USE.ROAD ? -1.5 : 0) + Math.hypot(tx - fx, tz - fz) * 0.05;
+        const s = Math.abs(d - 2) * 2 + (use && use[i] === USE.ROAD ? -1.5 : 0) + (this.game.civ?.keepClear?.[i] ? 3 : 0) + Math.hypot(tx - fx, tz - fz) * 0.05;
         if (s < bs) (bs = s), (best = { x: tx + 0.5, z: tz + 0.5 });
       }
     return best;
@@ -630,7 +651,11 @@ export const modern = {
         dz = ((i / w.w) | 0) + 0.5 - v.cz;
       return dx * dx + dz * dz < rr * rr;
     };
-    const R = v.roadTiles?.filter((i) => !rail?.[i] && inTown(i));
+    // (round 31: and off the town's square and parade pad: buses and trams
+    // drove across the paving among the people)
+    const sq = this._sqOf(v);
+    const onSq = (i) => !!sq && sq(i % w.w, (i / w.w) | 0);
+    const R = v.roadTiles?.filter((i) => !rail?.[i] && inTown(i) && !onSq(i));
     if (!R?.length) return null;
     for (let tries = 0; tries < 4; tries++) {
       const i1 = R[(this.rng() * R.length) | 0];
@@ -645,7 +670,7 @@ export const modern = {
       }
       if (Math.hypot(x1 - x0, z1 - z0) < 6) continue;
       const use = civ.use;
-      const p = civPath(w, Math.floor(x0), Math.floor(z0), Math.floor(x1), Math.floor(z1), (i) => (use[i] !== USE.ROAD ? Infinity : rail?.[i] ? 9 : inTown(i) ? 1 : 4), 1500, 1);
+      const p = civPath(w, Math.floor(x0), Math.floor(z0), Math.floor(x1), Math.floor(z1), (i) => (use[i] !== USE.ROAD ? Infinity : onSq(i) ? 40 : rail?.[i] ? 9 : inTown(i) ? 1 : 4), 1500, 1);
       if (!p || p.length < 4) continue;
       const path = [x0, z0];
       for (const i of p) path.push((i % w.w) + 0.5, ((i / w.w) | 0) + 0.5);
