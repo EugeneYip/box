@@ -158,7 +158,7 @@ export const land = {
     const roadsOnly = use
       ? (i) => {
           if (use[i] === USE.ROAD) return kc && kc[i] ? 6 : 0.4;
-          return !motor && nearEnds(i) ? base(i) : Infinity;
+          return nearEnds(i) ? base(i) : Infinity;
         }
       : null;
     const reaches = (q) => {
@@ -166,22 +166,32 @@ export const land = {
       const last = q[q.length - 1];
       return Math.hypot((last % w.w) - gx, ((last / w.w) | 0) - gy) <= (motor ? 1.5 : 3);
     };
-    let p = roadsOnly ? civPath(w, sx, sy, gx, gy, roadsOnly, 9000, 0.4) : null;
-    if (!reaches(p)) p = null;
-    if (!p && motor && use) {
-      // a gap in the roads: the cheapest way that keeps to them, the open
-      // ground dear; closed with new road when the gap is short
-      const gapCost = (i) => {
+    let p = null;
+    if (motor && use) {
+      // the laid roads, the open ground very dear (a step off the road costs
+      // as much as thirty along it) but not closed, so a diagonal run of a
+      // surveyed road (its tiles meet at the corners) is followed, and a
+      // short gap in the roads is found and closed with new road; a route
+      // needing more than a few tiles of new road is not driven
+      const motorCost = (i) => {
         if (use[i] === USE.ROAD) return kc && kc[i] ? 6 : 0.4;
         const c = base(i);
-        if (c === Infinity || use[i] !== USE.FREE) return Infinity;
-        return c + 7;
+        if (c === Infinity) return c;
+        return use[i] === USE.FREE ? c + 12 : 60;
       };
-      const q = civPath(w, sx, sy, gx, gy, gapCost, 9000, 0.4);
-      if (reaches(q) && this._closeGaps(q, a, b)) {
-        p = civPath(w, sx, sy, gx, gy, roadsOnly, 9000, 0.4);
-        if (!reaches(p)) p = null;
+      const q = civPath(w, sx, sy, gx, gy, motorCost, 9000, 0.4);
+      const open = (r) => r.some((i) => use[i] !== USE.ROAD && !nearEnds(i));
+      if (reaches(q) && this._closeGaps(q, sy * w.w + sx)) {
+        p = q;
+        // (the new road was laid in straight runs: the way along it)
+        if (open(q)) {
+          const r = civPath(w, sx, sy, gx, gy, motorCost, 9000, 0.4);
+          if (reaches(r) && !open(r)) p = r;
+        }
       }
+    } else {
+      p = roadsOnly ? civPath(w, sx, sy, gx, gy, roadsOnly, 9000, 0.4) : null;
+      if (!reaches(p)) p = null;
     }
     if (!p && !motor && Math.hypot(gx - sx, gy - sy) < maxNodes / 60) p = civPath(w, sx, sy, gx, gy, base, maxNodes, 0.75);
     let path = null;
@@ -199,7 +209,7 @@ export const land = {
   // Lay new road over the open tiles of route q (tile indices) where they
   // are few, as straight runs (Civ._straightPath); false (nothing laid) when
   // there are too many or one of them may not take a road.
-  _closeGaps(q, a, b) {
+  _closeGaps(q, start) {
     const civ = this.game.civ;
     const w = this.world;
     const use = civ.use;
@@ -215,7 +225,7 @@ export const land = {
       for (const i of civ._straightPath ? civ._straightPath(run) : run) if (use[i] !== USE.ROAD) lay.push(i);
       run = [];
     };
-    let prev = null;
+    let prev = start;
     for (const i of q) {
       if (use[i] === USE.ROAD) {
         flush(i);
@@ -234,8 +244,6 @@ export const land = {
     for (const i of lay) civ.layRoad(null, i);
     civ.fieldVersion = (civ.fieldVersion || 0) + 1;
     this.totals.roadsLaid = (this.totals.roadsLaid || 0) + lay.length;
-    void a;
-    void b;
     return true;
   },
 
