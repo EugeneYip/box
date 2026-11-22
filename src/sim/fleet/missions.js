@@ -327,8 +327,13 @@ export const missions = {
       }
       return false;
     };
+    // (alongside the planks, off the pier by half its width plus half the
+    // boat's beam, as the larger hulls lie: round 26, at 0.7 of a pier width
+    // out a boat sat between the pilings under the deck of a harbour's
+    // wider pier)
+    const sA = pierHalf(h) + def.beam * 0.5 + 0.1 * BERTH;
     for (const f of [2.2 * PIER])
-      for (const sd of [0.7 * PIER, -0.7 * PIER]) {
+      for (const sd of [sA, -sA]) {
         const x = h.x + h.dirX * f + px * sd,
           z = h.z + h.dirZ * f + pz * sd;
         if (!this._hullFits(x, z, h.dirX, h.dirZ, def)) continue;

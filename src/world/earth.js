@@ -1235,11 +1235,26 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
   if (!REG) {
     const nW = 7 * scale768;
     for (let i = 0; i < N; i++) {
-      if (!land[i] || landW[i] > nW || hgt[i] <= 0.4) continue;
+      if (!land[i] || landW[i] > nW) continue;
       const dl = dLand[i];
-      const c = dl <= 1.01 ? 0.4 : dl <= 2.01 ? 0.95 : dl <= 3.01 ? 1.7 : 1e9;
+      let c = dl <= 1.01 ? 0.4 : dl <= 2.01 ? 0.95 : dl <= 3.01 ? 1.7 : 1e9;
+      // (round 26: a shore tile stands only as high as the share of land it
+      // covers, so the drawn coast, the zero line of the filtered heights,
+      // passes between the tile centres instead of round the grid's notches)
+      if (dl <= 1.01) c = Math.min(c, 0.05 + 0.35 * smoothstep(0.5, 0.95, cov[i]));
       if (hgt[i] > c) hgt[i] = c;
     }
+    // ...and the sea tiles beside them are as shallow as the land they hold
+    for (let y = 1; y < H - 1; y++)
+      for (let x = 0; x < W; x++) {
+        const i = y * W + x;
+        if (land[i] || cov[i] < 0.06 || hgt[i] >= 0) continue;
+        let near = false;
+        for (const j of [i - 1, i + 1, i - W, i + W]) if (land[j] && landW[j] <= nW) near = true;
+        if (!near) continue;
+        const f = -(0.04 + 0.3 * (1 - smoothstep(0.06, 0.5, cov[i])));
+        if (hgt[i] < f) hgt[i] = f;
+      }
   }
   fillCraters(hgt, W, H, sea, marsh, !REG);
   _t('rivers');
@@ -1306,9 +1321,17 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
         // broad bays and capes (~120-tile swells, warped), then a gentle
         // ~90-tile swell along the shore
         const wx = x + fbm(nWarp, x / 70 + 11.3, y / 70 - 4.7, 2) * 28, wy = y + fbm(nWarp, x / 70 - 7.9, y / 70 + 2.2, 2) * 28;
-        const bz = Math.min(1, Math.max(0, 0.5 + fbm(nBorder, wx / (SR * 0.13) + 5.3, wy / (SR * 0.13) - 2.1, 3) * 1.5));
-        const big = bz * bz * (3 - 2 * bz);
-        coastF[i] = coastBase + coastBig * big + fbm(nDetail, x / 110 + 31.7, y / 110 - 17.3, 2) * 36;
+        // (round 26: a soft curve, not a clamp: where the noise stayed past
+        // the clamp for a whole edge, Asia Mainland's north coast ran as a
+        // near-straight line under the frame)
+        const big = 0.5 + 0.5 * Math.tanh(fbm(nBorder, wx / (SR * 0.13) + 5.3, wy / (SR * 0.13) - 2.1, 3) * 2.4);
+        // and a slow swell along each edge (two incommensurate waves), so no
+        // stretch of the fading coast keeps one distance from the frame
+        const dxE = Math.min(x, W - 1 - x), dyE = Math.min(y, H - 1 - y);
+        const edgeSK = smoothstep(-12, 12, dxE - dyE); // 1 near a top or bottom edge
+        const along = x * edgeSK + y * (1 - edgeSK) + (y < H / 2 ? 0 : 977) + (x < W / 2 ? 0 : 433);
+        const swell = Math.sin(along / 31 + 1.7) * 15 + Math.sin(along / 13.5 + 4.2) * 8;
+        coastF[i] = coastBase + coastBig * big + fbm(nDetail, x / 110 + 31.7, y / 110 - 17.3, 2) * 36 + swell;
       }
     const tmp = new Float32Array(N);
     const box = (src, dst, r, horiz) => {
@@ -1349,7 +1372,12 @@ export function generateEarth(world, seed = 1, options = {}, H_) {
         // a known city keeps up to ~12 tiles of land toward the border,
         // widening into a cape around it
         for (const [cx, cy, ce, sl, rk] of keepPts) {
-          const dk = Math.hypot(x - cx, y - cy) * (1 + fbm(nBank, x / 34 - 4.4, y / 34 + 6.1, 2) * 0.45); // (an uneven headland, not a disc, and not frayed)
+          // (inland of the city the cape runs on as a neck of land to the
+          // main coast: round 26, a city whose cape ended short of the
+          // fading coast stood on an islet off Asia Mainland's west edge)
+          const dIn = Math.max(0, e - ce);
+          const dk0 = Math.sqrt(Math.max(0, (x - cx) * (x - cx) + (y - cy) * (y - cy) - dIn * dIn * 0.92));
+          const dk = dk0 * (1 + fbm(nBank, x / 34 - 4.4, y / 34 + 6.1, 2) * 0.45); // (an uneven headland, not a disc, and not frayed)
           if (dk < rk) coast = Math.min(coast, Math.max(6, ce - 12 + Math.max(0, dk - 9) * sl));
         }
         fadeDc[i] = e - coast; // tiles inland of the fading coast

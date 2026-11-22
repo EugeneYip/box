@@ -1,5 +1,6 @@
 import { WATER_PARS_GLSL } from '../water/waterCommon.js';
 import { BUILDING } from '../../core/scale.js';
+import * as THREE from 'three';
 
 // paving stones follow the buildings' scale (docs/WORLD-SCALE.md)
 const PAVE = BUILDING.scale;
@@ -65,6 +66,7 @@ float tCloud;
 float tSpecK;
 float tCold;
 float tRivBed;
+float tShFade; // sun shadows fade out on the seabed with the water's depth
 float tUrb; // far-zoom urban patch weight (the realm tint stays light over towns)
 vec3 tUrbCol; // far-zoom urban patch colour (laid again over the realm tint)
 float tBuilt; // a town's built footprint at any zoom (the realm tint and borders stay light over it)
@@ -779,14 +781,18 @@ vec3 seabedColor(NS s, float depth, out float hgt) {
   vec3 sand = mix(vec3(0.56, 0.50, 0.36), vec3(0.25, 0.245, 0.235), 1.0 - smoothstep(0.22, 0.50, s.temp)) * (0.92 + 0.08 * s.det.g);
   sand *= 1.0 - 0.10 * rip * (1.0 - smoothstep(0.1, 0.4, s.fw));
   vec3 silt = vec3(0.24, 0.24, 0.20) * (0.8 + 0.3 * s.meso.r);
-  vec3 rock = vec3(0.12, 0.13, 0.13) * (0.7 + 0.5 * s.cellL.b) * (0.6 + 0.4 * smoothstep(0.0, 0.1, s.cellL.g));
+  // (round 26: no dark lines along the cell edges, which drew the shelf
+  // through the water as a net of branching cracks)
+  vec3 rock = vec3(0.12, 0.13, 0.13) * (0.82 + 0.22 * s.cellL.b + 0.12 * (s.meso.r - 0.5));
   // (broad and finer noise on the sand line: the shallow halo round an islet
   // is wide on one side and narrow on another, never a uniform ring)
   float k1 = smoothstep(1.8, 4.5, depth + (s.macro.r - 0.5) * 4.0 + (s.meso.b - 0.5) * 2.2);
   float k2 = smoothstep(4.0, 7.5, depth + (s.meso.g - 0.5) * 3.0);
-  // patches of seagrass in sunny shallows
-  float grass = smoothstep(0.56, 0.74, s.meso.b * 0.5 + s.macro.g * 0.5) * smoothstep(0.4, 1.0, depth) * (1.0 - k1);
-  vec3 c = mix(sand, vec3(0.07, 0.16, 0.05) * (0.8 + 0.4 * s.det.r), grass * 0.8);
+  // patches of seagrass in sunny shallows: a soft olive tint over the sand
+  // with a gentle edge (round 26: near-black blotches with ragged edges
+  // read as stains in the water)
+  float grass = smoothstep(0.54, 0.86, s.meso.b * 0.5 + s.macro.g * 0.5) * smoothstep(0.4, 1.0, depth) * (1.0 - k1);
+  vec3 c = mix(sand, sand * vec3(0.62, 0.80, 0.55) * (0.94 + 0.12 * s.det.r), grass * 0.6);
   c = mix(c, silt, k1);
   c = mix(c, rock, k2);
   hgt = 0.2 + rip * 0.1 + k2 * 0.3;
@@ -946,7 +952,9 @@ void terrainSurface() {
   if (w.w > 0.0) m3 = evalMat(t3, s);
   vec4 live = step(1e-5, w);
   vec4 hv = (w + vec4(m0.h, m1.h, m2.h, m3.h) * 0.6) * live;
-  float hm = max(max(hv.x, hv.y), max(hv.z, hv.w)) - 0.30;
+  // (up close the window widens: grass and bare soil fade into each other
+  // instead of meeting in hard-edged camouflage blotches; round 26, 7 tiles)
+  float hm = max(max(hv.x, hv.y), max(hv.z, hv.w)) - mix(0.30, 0.62, 1.0 - smoothstep(0.02, 0.09, s.fw));
   vec4 b = max(hv - hm, 0.0) * live;
   b /= max(b.x + b.y + b.z + b.w, 1e-5);
 
@@ -1341,14 +1349,22 @@ void terrainSurface() {
     // houses are a pixel or two (trees inside it are hidden there too).
     // Round 24: the patch followed the whole build area (grey fields ~40
     // tiles across round three houses, draped over the hills like ash).
+    // Round 26: R is the town's building density (Terrain._writeUrban), so
+    // the patch's strength follows how built-up a block is: a downtown is a
+    // full patch, a suburb of one or two houses per lawn a light wash with
+    // its lawns showing, and at the whole-map view only the dense cores stay
+    // (the street grid had covered two thirds of the land as one megacity).
     float dens = st.r;
-    tBuilt = smoothstep(0.10, 0.34, dens);
+    tBuilt = smoothstep(0.10, 0.45, dens);
     float urbK = smoothstep(68.0, 92.0, uCamDist) * (1.0 - snowB * 0.2);
     if (dens > 0.02 && urbK > 0.0) {
       // (a noise-broken edge that hugs the blocks: no soft cloud fringe)
       float sr = dens + (s.meso.b - 0.5) * 0.10 + (s.det.g - 0.5) * 0.08;
-      float core = smoothstep(0.35, 0.70, sr);
-      float ring = smoothstep(0.13, 0.24, sr);
+      float core = smoothstep(0.45, 0.85, sr);
+      float ring = smoothstep(0.10, 0.55, sr);
+      // the overview keeps only the cores: the threshold rises with distance
+      float ovK = smoothstep(130.0, 230.0, uCamDist);
+      ring *= smoothstep(0.30 * ovK, 0.30 * ovK + 0.30, sr - 0.12 * ovK);
       float pr = pvs.r * 255.0;
       float bldT = pr - 2.0 * floor(pr * 0.5 + 0.25); // (low bit: a building on this tile)
       bool rdT = tileTypeAt(pci) == 13.0;
@@ -1376,8 +1392,10 @@ void terrainSurface() {
       float gapU = 1.0 - smoothstep(0.06, 0.06 + awU * 1.2, edgeU);
       roof = mix(roof, roof * 0.55, gapU * 0.8);
       urb = mix(urb, roof, bldT);
-      // streets: pale concrete lines along the road tiles (the real grid)
-      if (rdT) urb = mix(vec3(0.29, 0.28, 0.265), vec3(0.32, 0.32, 0.31), modU) * (0.94 + 0.08 * s.det.g);
+      // streets: pale concrete lines along the road tiles (the real grid),
+      // with less contrast in a sparse block and at the overview, where a
+      // tile is a couple of pixels and the lines turned to graph paper
+      if (rdT) urb = mix(urb, mix(vec3(0.29, 0.28, 0.265), vec3(0.32, 0.32, 0.31), modU) * (0.94 + 0.08 * s.det.g), mix(0.35, 1.0, smoothstep(0.25, 0.75, dens)) * (1.0 - 0.6 * ovK));
       // snow-covered towns: roofs and yards under snow, still a patch apart
       urb = mix(urb, vec3(0.50, 0.505, 0.51) * (0.9 + 0.15 * bldT), clamp(snowB, 0.0, 1.0) * 0.6);
       // the ground's own light and shade carry through (hill shading and
@@ -1390,8 +1408,12 @@ void terrainSurface() {
       vec3 kcU = uKeyCol / max(dot(uKeyCol, vec3(0.2126, 0.7152, 0.0722)), 1e-3);
       urb /= mix(vec3(1.0), clamp(kcU, vec3(0.5), vec3(1.6)), 0.75);
       urb = pow(max(pow(urb, vec3(1.0 / 2.2)) - uGradeMid * 1.3, vec3(0.02)), vec3(2.2));
-      // (not on cliffs: a steep face keeps its rock, so hills read as hills)
-      float uk = (ring * 0.8 + core * 0.2) * urbK * (1.0 - 0.75 * cliff);
+      // (not on cliffs or slopes: a steep face keeps its rock and a hillside
+      // its grass, so hills read as hills; and the open yards of a sparse
+      // block keep more of their lawn than its roofs and streets)
+      float slopeU = smoothstep(0.80, 0.94, s.n.y);
+      float yardU = mix(mix(0.45, 1.0, smoothstep(0.3, 0.8, dens)), 1.0, max(bldT, rdT ? 1.0 : 0.0));
+      float uk = (ring * 0.8 + core * 0.2) * yardU * urbK * (1.0 - 0.75 * cliff) * mix(0.25, 1.0, slopeU);
       albedo = mix(albedo, urb, uk * 0.95);
       rough = mix(rough, 0.82, uk);
       tUrb = uk;
@@ -1484,6 +1506,15 @@ void terrainSurface() {
     }
   }
 
+  // night: green ground (lawns, meadows, parks) loses most of its colour
+  // under the moon, as the walls are dimmed; it stayed a saturated green
+  // beside the dark walls of a town at night (round 26)
+  {
+    float nightG = 1.0 - smoothstep(0.08, 0.55, uDay);
+    float greenK = smoothstep(0.01, 0.07, albedo.g - max(albedo.r, albedo.b)) * step(0.0, s.p.y);
+    albedo = mix(albedo, vec3(lum(albedo)) * vec3(0.80, 0.86, 0.92), greenK * nightG * 0.6);
+  }
+
   // ---- territory overlay
   applyOverlay(p, albedo, emit, clamp(snowB, 0.0, 1.0));
 
@@ -1495,6 +1526,10 @@ void terrainSurface() {
   // cloud shadows on the seabed are softened: sunlit gaps between them
   // showed as orange-brown sand smudges through the shallow water
   tCloud = mix(cloudShadowAt(p), 1.0, smoothstep(-0.05, 0.35, -s.p.y) * 0.75);
+  // a ship's sun shadow fades on the seabed as the water deepens (light
+  // scatters in the water column): at a few units deep it read as a second
+  // dark hull about a ship's length off to one side
+  tShFade = smoothstep(0.1, 1.8, -s.p.y) * 0.9;
   tSpecK = 1.0;
   tCold = 1.0 - smoothstep(0.22, 0.50, s.temp);
 }
@@ -1518,6 +1553,13 @@ export const TERRAIN_FRAGMENT_POST = /* glsl */ `
   }
 }
 `;
+
+// three's light loop with the directional lights' shadows faded on the seabed
+// (tShFade, set in terrainSurface)
+const LIGHTS_BEGIN_FADED = THREE.ShaderChunk.lights_fragment_begin.replace(
+  'directLight.color *= ( directLight.visible && receiveShadow ) ? getShadow( directionalShadowMap[ i ]',
+  'directLight.color *= ( directLight.visible && receiveShadow ) ? tShFade + (1.0 - tShFade) * getShadow( directionalShadowMap[ i ]',
+);
 
 // Patch a MeshStandardMaterial in place. `uniforms` is merged into the shader.
 export function patchTerrainMaterial(material, uniforms) {
@@ -1554,7 +1596,8 @@ export function patchTerrainMaterial(material, uniforms) {
          reflectedLight.directDiffuse *= mix(1.0, tAO, 0.45) * cloudN * cloudD;
          reflectedLight.directSpecular *= tAO * cloudN * cloudD;`,
       )
+      .replace('#include <lights_fragment_begin>', LIGHTS_BEGIN_FADED)
       .replace('#include <opaque_fragment>', TERRAIN_FRAGMENT_POST + '\n#include <opaque_fragment>');
   };
-  material.customProgramCacheKey = () => 'worldseed-terrain-v11';
+  material.customProgramCacheKey = () => 'worldseed-terrain-v12';
 }
