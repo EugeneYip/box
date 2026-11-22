@@ -149,3 +149,6 @@ export function cargoText(c) {
   for (const k of ['fish', 'food', 'wood', 'stone', 'ore', 'gold', 'goods']) if (c[k] > 0) parts.push(`${Math.round(c[k])} ${k}`);
   return parts.length ? parts.join(', ') : 'Empty';
 }
+
+// Emergency vehicles: never set upon by raiders, nor burned at the fire they serve.
+export const SERVICE_KINDS = new Set(['ambulance', 'fireengine']);

@@ -2,6 +2,7 @@ import { TILE, FLORA_INFO } from '../../world/constants.js';
 import { civPath } from '../civ/pathing.js';
 import { BUILDING_TYPES } from '../civ/catalog.js';
 import { USE } from '../civ/util.js';
+import { SERVICE_KINDS } from './kinds.js';
 import { BUILDING, VEHICLE } from '../../core/scale.js';
 
 // Land vehicles (mixed into Fleet): ox carts that pool a realm's goods along
@@ -320,7 +321,9 @@ export const land = {
     // raiders fall on carts and caravans of an enemy realm
     // (round 25: only a vehicle of a realm at war looks for raiders; see
     // Fleet.tick's _warAny)
-    if (!v.def.siege && (v.raidT = (v.raidT || 0) - step) <= 0 && (v.raidT = 1) && (!this._warAny || this._warAny[v.kingdom])) {
+    // (round 27: never an ambulance or a fire engine on its call; a third of
+    // the ambulances, sent to the wounded of a war, were taken by raiders)
+    if (!v.def.siege && !SERVICE_KINDS.has(v.kind) && (v.raidT = (v.raidT || 0) - step) <= 0 && (v.raidT = 1) && (!this._warAny || this._warAny[v.kingdom])) {
       const U = this.game.units;
       const foe = U?.nearest?.(v.x, v.z, 1.3, (o) => o.alive && o.species === 'human' && o.job === 'soldier' && this.atWar(o.kingdom, v.kingdom));
       if (foe) {

@@ -1,7 +1,7 @@
 import { SEA_LEVEL, TILE } from '../../world/constants.js';
 import { mulberry32 } from '../../core/Random.js';
 import { WaterNav, pathLength } from './nav.js';
-import { KINDS, AIR_KINDS, SEA_KINDS, shipName, craftName, cargoText } from './kinds.js';
+import { KINDS, AIR_KINDS, SEA_KINDS, SERVICE_KINDS, shipName, craftName, cargoText } from './kinds.js';
 import { missions } from './missions.js';
 import { land } from './land.js';
 import { war } from './war.js';
@@ -1477,6 +1477,10 @@ export class Fleet {
       const R = r + v.def.size;
       if (d > R) continue;
       if (v.cls === 'sea' && (cause === 'earthquake' || cause === 'fire' || cause === 'lava')) continue;
+      // (round 27) a fire engine or an ambulance at a burning town is built
+      // and crewed for it: half the fire engines and a third of the
+      // ambulances were lost, most of them where they were sent
+      if (cause === 'fire' && SERVICE_KINDS.has(v.kind)) continue;
       const f = Math.max(0.25, 1 - d / Math.max(0.5, R));
       this.hurt(v, amount * mul * f, cause);
       if ((cause === 'meteor' || cause === 'lightning' || cause === 'smite') && v.alive && v.state !== 'sinking') v.burning = Math.min(1, v.burning + 0.5);

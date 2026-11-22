@@ -22,8 +22,16 @@ const REALM_MIN_POP = 30;
 // Union of a small allied crown (square maps): the age it may begin and the
 // age its chance is full, and that full chance each two-yearly look.
 // Risings: past RISE_EASY in the last RISE_YEARS, the next is slower to come.
+// (round 27: past 2, not 3; the 200s still saw 52 risings a century)
 const RISE_YEARS = 10,
-  RISE_EASY = 3;
+  RISE_EASY = 2;
+// A peace treaty: the two crowns keep the peace for TREATY_YEARS plus up to
+// TREATY_MORE more (round 26: 34 wars a century in the 100s, and combat
+// outkilled old age 687 to 289 in the first century). A soldier carried home
+// wounded is not taken back under arms for WOUND_YEARS.
+const TREATY_YEARS = 10,
+  TREATY_MORE = 5;
+export const WOUND_YEARS = 5;
 const UNION_FROM = 45,
   UNION_TO = 90,
   UNION_P = 0.16;
@@ -774,8 +782,10 @@ export const politics = {
   // Game seconds between two wars of conquest anywhere in the world: about
   // one a year for every forty realms (rebellions and allies joining in come
   // on top), never less often than one in eight years.
+  // (round 27: one in 1.5 years per forty realms; 34 wars a century in the
+  // 100s on Medium, against 25 in round 24)
   _warGap(nAlive) {
-    return (YEAR * 1) / Math.max(0.125, nAlive * 0.025);
+    return (YEAR * 1.5) / Math.max(0.125, nAlive * 0.025);
   },
 
   declareWar(a, b, reason = 'border', silent = false) {
@@ -839,7 +849,7 @@ export const politics = {
     const r = this.relations.get(relKey(a, b));
     if (!r || !r.war) return false;
     r.war = false;
-    r.truceUntil = this.game.time.total + YEAR * 8;
+    r.truceUntil = this.game.time.total + YEAR * (TREATY_YEARS + this.rng.next() * TREATY_MORE);
     r.grievance = Math.min(60, r.grievance + 15);
     r.opinion = Math.max(r.opinion, -10);
     for (const army of this.armies) {
@@ -1199,6 +1209,9 @@ export const politics = {
       u.data.civ.army = null;
       u.data.civ.task = null;
     }
+    // (round 27) off the soldier rolls for WOUND_YEARS: a wounded man walked
+    // home and was dealt a soldier's job (and his strength) again
+    (u.data.civ || (u.data.civ = {})).woundedAt = this.game.time.total;
     u.data.speedMul = 1;
     const U = this.game.units;
     U.disengage?.(u);
@@ -1371,7 +1384,9 @@ export const politics = {
     // (round 25: the 200s still saw 58 risings a century; a world that has
     // seen many risings in the last decade is slower to see the next)
     if (v.unrest >= 4 && now - k.founded >= YEAR * 15 && this._kLaw(k.id, 'civRebellions') && this.rng.chance((alive < 3 ? 0.2 : alive >= 16 ? 0.03 : alive >= 12 ? 0.045 : 0.07) * this._riseDamp())) {
-      if (this.rebel(v)) this._noteRise();
+      // (round 27: every rising counts, a charter won or a town gone over too)
+      this.rebel(v);
+      this._noteRise();
     }
   },
 
@@ -1381,7 +1396,8 @@ export const politics = {
     const now = this.game.time.total;
     const log = this._riseLog || (this._riseLog = []);
     while (log.length && now - log[0] > YEAR * RISE_YEARS) log.shift();
-    return log.length <= RISE_EASY ? 1 : RISE_EASY / log.length;
+    // (round 27: in the square of the proportion; 48 a century in the 200s)
+    return log.length <= RISE_EASY ? 1 : (RISE_EASY / log.length) ** 2;
   },
   _noteRise() {
     (this._riseLog || (this._riseLog = [])).push(this.game.time.total);

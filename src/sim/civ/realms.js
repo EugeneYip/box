@@ -1,5 +1,5 @@
 import { TILE, TILE_INFO, FLORA, SEA_LEVEL } from '../../world/constants.js';
-import { geoInfo, geoRegion, geoTile, geoDist } from '../../world/geo.js';
+import { geoInfo, geoRegion, geoTile, geoDist, geoLonLat, geoKmPerTile } from '../../world/geo.js';
 import { HERALDRY, colorDist, realStyleName, REAL_TITLE } from './cultures.js';
 import { realmsFor, regionStyle } from './places/index.js';
 import { REGIONS } from './places/regions.js';
@@ -726,9 +726,9 @@ export const realms = {
     if (!ownName || ownName === 'Mainland Region' || ownName === 'ROC') return null;
     if (!this._regionPts) {
       this._regionPts = [];
-      for (const [name, lon, lat, style] of REGIONS) {
+      for (const [name, lon, lat, style, boxes] of REGIONS) {
         const p = geoTile(this.world, lon, lat);
-        if (p) this._regionPts.push({ name: `${style} ${name}`, x: p.x, z: p.z, realm: this._placeRealmAt(p.x, p.z) });
+        if (p) this._regionPts.push({ name: `${style} ${name}`, x: p.x, z: p.z, realm: this._placeRealmAt(p.x, p.z), boxes: boxes || null });
       }
     }
     // (regions are wide: up to about 16 degrees, east-west distances
@@ -739,8 +739,12 @@ export const realms = {
     const cx = Math.max(0.35, Math.cos((lat * Math.PI) / 180));
     let best = null,
       bd = Infinity;
+    // (round 27) a region with boxes names only a seat inside one of them
+    const ll = geoLonLat(this.world, x, z);
+    const inBox = (p) => !p.boxes || !ll || p.boxes.some((b) => ll[0] >= b[0] && ll[0] <= b[2] && ll[1] >= b[1] && ll[1] <= b[3]);
     for (const p of this._regionPts) {
       if (living.has(p.name)) continue;
+      if (!inBox(p)) continue;
       const dx = geoDist(this.world, p.x, z, x, z),
         dz = p.z - z;
       if (p.realm !== own) continue;
@@ -847,15 +851,27 @@ export const realms = {
   // of a realm at peace with it) land at the city's docks or hall. At most n,
   // one crossing every twelve seconds per city; returns how many came.
   _refillBySea(v, n) {
+    const NEIGHBOR_KM = 2200;
     const now = this.game.time.total;
     if (n <= 0 || now - (v._seaT ?? -1e9) < 12) return 0;
     v._seaT = now;
     let src = null,
       ss = -Infinity;
+    // (round 27) from the city's own country or a neighbor only: "Families
+    // from Paris cross the water to settle in Kumamoto". A town of another
+    // realm comes only when it is of the same real country (its home) or
+    // lies within NEIGHBOR_KM; with none, newcomers arrive from beyond.
+    const realOf = (k) => (k >= 0 ? this.kingdoms[k]?.realm ?? -1 : -1);
+    const homeR = v.home != null ? realOf(v.home) : realOf(v.kingdom);
+    const km = geoKmPerTile(this.world, v.cx, v.cz) || 0;
     for (const o of this.villages) {
       if (!o?.alive || o === v || o.landId === v.landId || o.starving || o.pop < 16 || (this._keyCity(o) && o.pop < KEY_SEAT_POP + 9)) continue;
       const own = o.kingdom === v.kingdom;
       if (!own && (o.kingdom < 0 || this.atWar(o.kingdom, v.kingdom))) continue;
+      if (!own && km > 0) {
+        const kin = homeR >= 0 && (realOf(o.kingdom) === homeR || (o.home != null && realOf(o.home) === homeR));
+        if (!kin && geoDist(this.world, o.cx, o.cz, v.cx, v.cz) * km > NEIGHBOR_KM) continue;
+      }
       const s = o.pop * (own ? 3 : 1) - geoDist(this.world, o.cx, o.cz, v.cx, v.cz) * 0.05;
       if (s > ss) (ss = s), (src = o);
     }
