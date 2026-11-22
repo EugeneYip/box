@@ -57,16 +57,32 @@ function makeLabel(text, color, kind, banner = null) {
     x.fillRect(26, cy - h / 2, c.width - 52, 3);
     if (bw) drawBanner(x, banner, color, 26, cy - h * 0.62, 34, h * 1.24);
   }
+  if (!big) {
+    // (round 27) a dark rounded plate behind a town's name, so it reads over
+    // light roofs and paved plazas
+    const pw = c.width - 4,
+      ph = px + 8,
+      r = ph / 2;
+    x.fillStyle = 'rgba(14,16,24,0.5)';
+    x.beginPath();
+    x.moveTo(2 + r, cy + 1 - ph / 2);
+    x.lineTo(2 + pw - r, cy + 1 - ph / 2);
+    x.arc(2 + pw - r, cy + 1, r, -Math.PI / 2, Math.PI / 2);
+    x.lineTo(2 + r, cy + 1 + ph / 2);
+    x.arc(2 + r, cy + 1, r, Math.PI / 2, (Math.PI * 3) / 2);
+    x.closePath();
+    x.fill();
+  }
   x.lineJoin = 'round';
-  x.lineWidth = big ? 7 : 6;
-  x.strokeStyle = 'rgba(10,12,18,0.85)';
+  x.lineWidth = big ? 7 : 7;
+  x.strokeStyle = big ? 'rgba(10,12,18,0.85)' : 'rgba(8,10,16,0.95)';
   x.strokeText(text, cx, cy + 1);
   x.fillStyle = big ? '#fbf3df' : '#f4ecd8';
   x.fillText(text, cx, cy + 1);
   if (!big) {
     x.fillStyle = hexCss(color);
     x.beginPath();
-    x.arc(10, cy + 1, 5, 0, Math.PI * 2);
+    x.arc(12, cy + 1, 5, 0, Math.PI * 2);
     x.fill();
   }
   const sp = labelNode(c);
@@ -216,6 +232,12 @@ const LABEL_SPOTS = [
   [0, 0], [0, -1.1], [0, 1.1], [-0.3, 0], [0.3, 0], [-0.3, -1.1], [0.3, -1.1], [-0.3, 1.1], [0.3, 1.1],
   [-0.48, 0], [0.48, 0], [-0.48, -1.1], [0.48, -1.1], [-0.48, 1.1], [0.48, 1.1], [0, -2.2], [0, 2.2],
 ];
+// (round 27) the last, smaller try also looks a little farther round the seat
+const LABEL_SPOTS_WIDE = [
+  ...LABEL_SPOTS,
+  [-0.75, 0], [0.75, 0], [-0.75, -1.1], [0.75, -1.1], [-0.75, 1.1], [0.75, 1.1],
+  [-0.3, -2.2], [0.3, -2.2], [-0.3, 2.2], [0.3, 2.2], [0, -3.3], [0, 3.3], [-1, 0], [1, 0],
+];
 
 function swordsTexture() {
   const c = document.createElement('canvas');
@@ -356,7 +378,11 @@ export class Labels {
     const D = rig.cur.dist;
     const cam = rig.camera.position;
     const w = g.world;
-    const kA = smooth(34, 70, D);
+    // (round 27) realm names take over from town names in a narrow band
+    // (50-56 tiles) instead of a half tone from 34 to 70, so between 40 and 80
+    // every name on screen is drawn solid: the town names below the band, the
+    // realm's name above it (its capital's name stays if the realm is not named)
+    const kA = smooth(50, 56, D);
     // far zoom keeps only kingdom names
     const z01 = this.game.view?.zoom01 ?? 0;
     const vA = smooth(18, 30, D) * (1 - smooth(120, 190, D)) * (1 - smooth(0.4, 0.55, z01)) * (this.game.view?.far ? 0 : 1);
@@ -408,7 +434,13 @@ export class Labels {
       const v = civ.villages[id];
       const k = civ.kingdoms[v?.kingdom];
       const isCap = k && k.capital === id;
-      const a = isCap ? vA * (1 - kA) : vA;
+      // (round 27) a capital gives way only to its realm's name actually on
+      // screen (not to the zoom alone: at 55 tiles a capital whose realm is
+      // not named faded to a ghost outline); a short cross-fade, never a half
+      // tone held over a range of zoom
+      const kS = isCap ? this.kLabels.get(k.id) : null;
+      const kOn = kS && kS.visible ? kS.userData.fade || 0 : 0;
+      const a = isCap ? vA * (1 - smooth(0.3, 0.6, kOn)) : vA;
       if (!v || a < 0.01) {
         s.visible = false;
         s.userData.fade = 0;
@@ -554,12 +586,14 @@ export class Labels {
           shrink = 1;
         // nearest spots first; failing all of them at full size, try once more
         // with a slightly smaller ribbon before giving the name up
-        for (const k of [1, 0.8]) {
+        // (round 27: a third, smaller try and the wider spots below, so a
+        // crowded realm such as the Netherlands is nudged aside, not dropped)
+        for (const k of [1, 0.8, 0.62]) {
           const w2 = pw * k,
             h2 = ph * k;
           const x0 = Math.min(right - w2 / 2, Math.max(mLeft + w2 / 2, sx)),
             y0 = Math.min(bot - h2 / 2, Math.max(top + h2 / 2, sy));
-          for (const [dx, dy] of LABEL_SPOTS) {
+          for (const [dx, dy] of k < 0.7 ? LABEL_SPOTS_WIDE : LABEL_SPOTS) {
             const yy = y0 + dy * h2,
               xx = Math.min(right - w2 / 2, Math.max(mLeft + w2 / 2, x0 + dx * w2));
             if (yy - h2 / 2 < top || yy + h2 / 2 > bot) continue;
@@ -600,7 +634,10 @@ export class Labels {
       }
       // (each placed name keeps a margin round it, so two realm ribbons never
       // sit edge to edge: round 24 had two nearly touching on the overview)
-      if (target > 0.02) {
+      // (round 27: only a clearly visible name reserves its place; a faint
+      // realm ribbon fading in no longer drops its capital's name, Taipei
+      // under the ROC's on the whole Earth)
+      if (target > 0.3) {
         const gx = c.prio >= 3 ? 14 : 5,
           gy = c.prio >= 3 ? 6 : 2;
         taken.push({ l: rect.l - gx, r: rect.r + gx, t: rect.t - gy, b: rect.b + gy });

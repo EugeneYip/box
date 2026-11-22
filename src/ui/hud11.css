@@ -105,3 +105,47 @@
     grid-row: 1 / span 2;
   }
 }
+
+/* ---- round 27: one line of facts under the title, shown only in the phone
+   peek ("Resting · Ruler · 150/150", "Built 72% · 1 builder") */
+.ws-insp__fact {
+  display: none;
+}
+@media (max-width: 720px) {
+  .ws-insp.is-peek .ws-insp__fact:not(:empty) {
+    display: block;
+    grid-column: 1 / -1;
+    grid-row: 4;
+    margin-top: 4px;
+    font-size: 12.5px;
+    line-height: 16px;
+    color: rgba(232, 226, 210, 0.86);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* ---- round 27: the age chip's empty tail holds a faint "years left" note,
+   absolutely placed inside the fixed-width box (nothing in the top bar moves) */
+.ws-agechip {
+  position: relative;
+}
+.ws-agechip__left {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  font: 600 10.5px var(--ws-font);
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  color: currentColor;
+  opacity: 0;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.ws-agechip__left.is-on {
+  opacity: 0.5;
+}

@@ -9,6 +9,36 @@ const shortThing = (t) =>
     .split(/[:;,]/)[0]
     .replace(/\s+(?:along|in|on|at|across|over|through|into|to|for|from|with|by|beyond|under|among|around|between|against|beside)\b.*$/i, '')
     .trim();
+// (round 27) a milestone's short noun label for the grouped card, always a
+// plural ("fallow fields", "building cranes", "cars", "factories"), never a
+// clipped sentence ("fields fallow", "building crane")
+const NOUN_SPECIAL = [
+  [/^fields fallow/i, 'fallow fields'],
+  [/^herds\b/i, 'pastures'],
+  [/^stores\b/i, 'smokehouses'],
+  [/^cargo\b/i, 'cargo flights'],
+  [/^cavalry\b/i, 'cavalry'],
+  [/^(?:waterworks|trams)\b/i, null],
+];
+const plural = (w) =>
+  /(?:[^su]s|ics|works)$/i.test(w) || /cavalry$/i.test(w)
+    ? w
+    : /[^aeiou]y$/i.test(w)
+      ? w.slice(0, -1) + 'ies'
+      : /(?:ch|sh|x|ss|us)$/i.test(w)
+        ? w + 'es'
+        : w + 's';
+export const nounLabel = (t) => {
+  const raw = String(t).trim();
+  for (const [re, lab] of NOUN_SPECIAL) if (re.test(raw)) return lab || shortThing(raw);
+  const s = shortThing(raw);
+  if (!s) return s;
+  // "trams and buses", "waterworks and sewers": already a list of plurals
+  if (/\band\b/.test(s)) return s;
+  const words = s.split(/\s+/);
+  words[words.length - 1] = plural(words[words.length - 1]);
+  return words.join(' ');
+};
 const maxVisible = () => (innerHeight <= 760 ? 3 : 4);
 
 // Toast-style feed of the newest chronicle entries. Clicking a card with a
@@ -126,7 +156,7 @@ export class Feed {
   // (round 25) a realm's grouped milestones: "The X: new firsts: trucks, cars
   // and 1 more" (two read "trucks and cars"); open, the card lists them all
   groupText(it) {
-    const t = it.things.map(shortThing);
+    const t = [...new Set(it.things.map(nounLabel))];
     const list = t.length === 2 ? `${t[0]} and ${t[1]}` : it.open ? `${t.slice(0, -1).join(', ')} and ${t[t.length - 1]}` : `${t[0]}, ${t[1]} and ${t.length - 2} more`;
     it.el.querySelector('.ws-feed__txt').textContent = `${it.realm}: new firsts: ${list}`;
     it.el.classList.toggle('is-open', !!it.open);

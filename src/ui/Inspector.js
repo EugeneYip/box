@@ -267,7 +267,8 @@ export class Inspector {
       village: v || null,
       kingdom: k || null,
       title: 'Cleared plot',
-      subtitle: `Was ${was}${next ? ` · Next: ${next}` : ''}`,
+      // (round 27: no subtitle; the Was and Next rows say it once)
+      subtitle: '',
       stats,
       x: b.x,
       z: b.z,
@@ -610,10 +611,14 @@ export class Inspector {
     const favT = favOf(r);
     const fav = this.isFav(favT);
     const starBtn = favT ? this.starHtml(favT, fav, r) : '';
-    const realmK = !u && (k === 'village' || k === 'kingdom' || k === 'building') ? (typeof r.kingdom === 'object' && r.kingdom) || kingdomOf(this.game, (r.village || this.game.civ?.villages?.[r.building?.village])?.kingdom) : null;
+    // (round 27) an unfinished building is a "Building site": no Technology
+    // button and no Heritage switch until it stands
+    const isSite = k === 'building' && !craft && !!r.building?.alive && !!r.building.constructing;
+    if (isSite) kindLabel = 'Building site';
+    const realmK = !u && !isSite && (k === 'village' || k === 'kingdom' || k === 'building') ? (typeof r.kingdom === 'object' && r.kingdom) || kingdomOf(this.game, (r.village || this.game.civ?.villages?.[r.building?.village])?.kingdom) : null;
     if (realmK) actions.unshift(`<button class="ws-btn ws-btn--sm" type="button" data-act="tech" data-k="${realmK.id}">${uiIcon('chronicle')}<span>Technology</span></button>`);
     // a building may be marked or unmarked as heritage (never replaced by renewal)
-    const hb = k === 'building' && r.building?.alive && !craft && this.game.civ?.setHeritage ? r.building : null;
+    const hb = k === 'building' && r.building?.alive && !isSite && !craft && this.game.civ?.setHeritage ? r.building : null;
     // (its own full-width row: a facade icon and an explicit On/Off switch, never the Favorites star)
     if (hb) actions.push(`<button class="ws-btn ws-btn--sm ws-btn--ghost ws-insp__heritage${hb.heritage ? ' is-on' : ''}" type="button" role="switch" aria-checked="${hb.heritage ? 'true' : 'false'}" data-act="heritage" data-tip="${hb.heritage ? 'A heritage site: urban renewal never rebuilds it. Click to turn off' : 'Make it a heritage site: urban renewal will never rebuild it'}">${uiIcon('heritage')}<span>Heritage site</span><i class="ws-insp__sw" aria-hidden="true"><b></b></i><em>${hb.heritage ? 'On' : 'Off'}</em></button>`);
 
@@ -625,6 +630,7 @@ export class Inspector {
         <div class="ws-insp__titles">
           <div class="ws-insp__kind">${esc(kindLabel)}${dead ? ` <em class="ws-insp__dead">${craft ? 'Lost' : 'Fallen'}</em>` : ''}</div>
           <h3 class="ws-insp__title">${esc(this.titleOf(r) || 'Unknown')}${epithet ? ` <span class="ws-insp__epithet">${esc(epithet)}</span>` : ''}</h3>
+          <div class="ws-insp__fact" data-fact>${esc(this.factLine(r))}</div>
           ${subShown ? `<div class="ws-insp__sub" data-sub>${craft && ownerK?.banner ? `<img class="ws-crest ws-crest--banner" alt="" src="${bannerURL(ownerK.banner, ownerK.color, 28)}">` : kTint ? `<i class="ws-crest" style="--k:${kTint}"></i>` : ''}<span>${esc(subShown)}</span></div>` : ''}
         </div>
         ${editable ? `<button class="ws-iconbtn ws-iconbtn--sm ws-insp__edit${editing ? ' is-on' : ''}" type="button" aria-label="${editing ? 'Done editing' : 'Edit'}" data-tip="${editing ? 'Done editing' : 'Edit name, colors and more'}" data-act="${editing ? 'edit-done' : 'edit'}">${uiIcon(editing ? 'check' : 'edit')}</button>` : ''}
@@ -1064,7 +1070,43 @@ export class Inspector {
         const sm = this.el.querySelector(`.ws-tchip[data-st="${CSS.escape(id)}"] small`);
         if (sm && Number.isFinite(secs)) sm.textContent = secs >= YEAR ? `${Math.ceil(secs / YEAR)}y` : `${Math.ceil(secs)}s`;
       }
+    const fe = this.el.querySelector('[data-fact]');
+    if (fe) {
+      const t = this.factLine(r);
+      if (fe.textContent !== t) fe.textContent = t;
+    }
     this._vsig = this.valueSignature();
+  }
+  // (round 27) One line of facts for the phone peek: "Resting · Ruler ·
+  // 150/150" for a creature, "Built 72% · 1 builder" for a building site.
+  factLine(r) {
+    if (!r) return '';
+    const row = (key) => {
+      const s = (r.stats || []).find((x) => Array.isArray(x) && String(x[0]).toLowerCase() === key);
+      return s ? String(s[1]) : '';
+    };
+    const cap = (t) => (t ? t[0].toUpperCase() + t.slice(1) : t);
+    const hp = (t) => t.replace(/\s*\/\s*/, '/');
+    const k = kindOf(r);
+    const parts = [];
+    if (r.unit) {
+      const u = r.unit;
+      parts.push(cap(row('doing')));
+      const ic = safe(() => this.iconFor(r), null);
+      parts.push(ic?.label || u.def?.name || '');
+      parts.push(hp(row('health')));
+    } else if (k === 'building' && r.building?.alive && !isCraft(r) && (r.building.constructing || r.building.upgrading)) {
+      const b = r.building;
+      const site = !!b.constructing;
+      const pct = Math.round(Math.max(0, Math.min(1, site ? b.progress ?? 0 : b.upgradeProgress ?? 0)) * 100);
+      const m = /^(\d+)/.exec(row('builders'));
+      const n = m ? +m[1] : 0;
+      parts.push(`${site ? 'Built' : 'Upgraded'} ${pct}%`, n ? `${n} builder${n === 1 ? '' : 's'}` : 'No builders yet');
+    } else if (k === 'plot') parts.push(row('status'), row('next') ? `Next: ${row('next')}` : '');
+    else if (k === 'building') parts.push(row('status').replace(/\s*\(.*\)$/, ''), row('level') ? `Level ${row('level').replace(/\s*\/\s*/, '/')}` : '', hp(row('health')));
+    else if (isCraft(r) || k === 'vessel' || k === 'vehicle') parts.push(cap(row('doing')), hp(row('health')));
+    else if (k === 'village') parts.push(row('population') ? `Population ${row('population')}` : '');
+    return parts.filter(Boolean).join(' · ');
   }
   // No structural re-render while a finger/pointer is down in the panel or a popover is open on it.
   frozen() {
@@ -1353,7 +1395,19 @@ export class Inspector {
     }
     const W = this.game.world;
     const kind = this.game.selected.kind;
-    const y = (ref.y ?? W.surfaceAt(ref.x, ref.z)) + (kind === 'building' ? 3.2 : 1.6 * (ref.scale || 1) * (ref.def?.size || 1));
+    // (round 27) a creature's or craft's pin sits just over its head (the old
+    // fixed 1.6 floated far above a half-size person at the closest zoom),
+    // and never less than ~14 px above its feet
+    const y0 = ref.y ?? W.surfaceAt(ref.x, ref.z);
+    let y;
+    if (kind === 'building') y = y0 + 3.2;
+    else {
+      const bh = this.game.picker?.bodyHeight ? this.game.picker.bodyHeight(ref) : 0.18;
+      const cam = this.game.cameraRig.camera;
+      const d = Math.max(0.5, cam.position.distanceTo(this._v.set(ref.x, y0, ref.z)));
+      const px = (2 * d * Math.tan((cam.fov * Math.PI) / 360)) / Math.max(1, innerHeight);
+      y = y0 + Math.max(bh * 2.3, 14 * px);
+    }
     const v = this._v.set(ref.x, y, ref.z).project(this.game.cameraRig.camera);
     if (v.z > 1 || v.z < -1) {
       pin.classList.remove('is-shown');

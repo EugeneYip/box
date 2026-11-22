@@ -263,11 +263,13 @@ export class TopBar {
 
   navBtn(icon, label, key, fn) {
     // (round 25) a caption under each rail icon (phones in portrait show it)
+    // (round 27) touch screens have no keys to name: "Controls", not "Controls · H"
+    const touch = this.ui.root?.classList.contains('is-touch') || matchMedia('(pointer: coarse)').matches;
     return el('button', {
       class: 'ws-iconbtn',
       type: 'button',
-      'aria-label': `${label} (${key})`,
-      'data-tip': `${label} · ${key}`,
+      'aria-label': touch ? label : `${label} (${key})`,
+      'data-tip': touch ? label : `${label} · ${key}`,
       'data-cap': NAV_CAPTION[label] || label,
       html: uiIcon(icon),
       onclick: () => {
@@ -291,8 +293,10 @@ export class TopBar {
   // and on short screens the emblem is the menu), then the whole world line
   brandTip() {
     const menu = this.menuMode();
-    this.brandBtn.dataset.tip = menu ? `Menu · New world, Realms, World laws, World ages… — ${this._place || ''}` : `Menu · New world (G) — ${this._place || ''}`;
-    this.brandBtn.setAttribute('aria-label', menu ? 'Worldseed menu' : 'New world (G)');
+    // (round 27: no key names on touch screens)
+    const g = this.ui.root?.classList.contains('is-touch') ? '' : ' (G)';
+    this.brandBtn.dataset.tip = menu ? `Menu · New world, Realms, World laws, World ages… — ${this._place || ''}` : `Menu · New world${g} — ${this._place || ''}`;
+    this.brandBtn.setAttribute('aria-label', menu ? 'Worldseed menu' : `New world${g}`);
   }
 
   syncSpeed() {

@@ -1221,6 +1221,13 @@ export class UI {
       }, null, 'title labels');
     }
     for (const p of this.parts) safe(() => p.update(dt), null, p.constructor.name);
+    // (round 27) the screen area the HUD leaves visible, for the camera's
+    // framing of a followed unit (measured a few times a second while following)
+    this._vrT = (this._vrT || 0) - dt;
+    if (this.game.cameraRig?.follow && this._vrT <= 0) {
+      this._vrT = 0.25;
+      safe(() => (this.game.cameraRig.viewRect = this.visibleRect()), null, 'view rect');
+    }
     safe(() => this.updateOverview(dt), null, 'overview');
     safe(() => this.updateOverviewLabels(), null, 'overview labels');
     // while a brush stroke is held, side panels fade back so the land is clear
@@ -1236,6 +1243,34 @@ export class UI {
       this._powerCheckT = 2;
       safe(() => this.toolbar.refreshIfChanged(), null, 'powers');
     }
+  }
+
+  // The part of the screen no HUD panel covers, in CSS px: below the top bar,
+  // above the power tray (or a phone's bottom sheet), beside a side panel or
+  // the desktop inspector.
+  visibleRect() {
+    const W = innerWidth,
+      H = innerHeight;
+    const r = { left: 0, top: 0, right: W, bottom: H };
+    const q = (sel) => [...this.root.querySelectorAll(sel)].map((e) => e.getBoundingClientRect()).filter((b) => b.width > 0 && b.height > 0);
+    for (const b of q('.ws-brand, .ws-clock, .ws-stats, .ws-agechip, .ws-top')) if (b.top < H * 0.2 && b.bottom < H * 0.35) r.top = Math.max(r.top, b.bottom);
+    for (const b of q('.ws-dock__panel, .ws-insp.is-open, .ws-side.is-open')) {
+      const wide = b.width > W * 0.6;
+      if (wide && b.top > H * 0.3) r.bottom = Math.min(r.bottom, b.top);
+      else if (!wide && b.height > H * 0.4) {
+        if (b.left > W * 0.5) r.right = Math.min(r.right, b.left);
+        else if (b.right < W * 0.5) r.left = Math.max(r.left, b.right);
+      } else if (b.top > H * 0.55 && b.left < W * 0.6 && b.right > W * 0.4) r.bottom = Math.min(r.bottom, b.top);
+    }
+    if (r.right - r.left < W * 0.3) {
+      r.left = 0;
+      r.right = W;
+    }
+    if (r.bottom - r.top < H * 0.3) {
+      r.top = 0;
+      r.bottom = H;
+    }
+    return r;
   }
 
   resize() {

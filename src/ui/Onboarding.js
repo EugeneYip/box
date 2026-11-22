@@ -97,7 +97,8 @@ export class Onboarding {
     this.ui.savePrefs({ onboarded: true });
   }
 
-  // the ring sits on the first of the step's controls that is on screen
+  // the ring sits on the first of the step's controls that is on screen;
+  // returns its rectangle (or null)
   pointAt() {
     const s = STEPS[this.step];
     let r = null;
@@ -113,17 +114,34 @@ export class Onboarding {
       if (r) break;
     }
     this.ring.classList.toggle('is-shown', !!r);
-    if (!r) return;
+    if (!r) return null;
     const pad = 5;
     Object.assign(this.ring.style, { left: `${Math.round(r.left - pad)}px`, top: `${Math.round(r.top - pad)}px`, width: `${Math.round(r.width + pad * 2)}px`, height: `${Math.round(r.height + pad * 2)}px` });
+    return r;
   }
 
+  // (round 27) the card stands beside its ring: under a control at the top of
+  // the screen, above one at the bottom, lined up with it across (clamped to
+  // the screen), never over the ring itself; with no ring, above the tray
   place() {
     const dock = this.ui.toolbar;
     const top = Math.min(dock.panel.getBoundingClientRect().top, dock.brush.el.classList.contains('is-shown') ? dock.brush.el.getBoundingClientRect().top : 1e9);
-    const h = this.el.offsetHeight || 110;
-    this.el.style.top = Math.max(80, Math.round(top - h - 16)) + 'px';
-    this.pointAt();
+    const h = this.el.offsetHeight || 110,
+      w = this.el.offsetWidth || 400;
+    const W = innerWidth,
+      H = innerHeight;
+    const r = this.pointAt();
+    let y = Math.max(80, Math.round(top - h - 16)),
+      x = W / 2;
+    if (r) {
+      const gap = 14;
+      const cx = (r.left + r.right) / 2;
+      x = Math.min(W - 12 - w / 2, Math.max(12 + w / 2, cx));
+      if ((r.top + r.bottom) / 2 < H * 0.5) y = Math.min(H - h - 12, Math.round(r.bottom + gap));
+      else y = Math.max(12, Math.round(Math.min(r.top, top) - h - gap));
+    }
+    this.el.style.top = y + 'px';
+    this.el.style.left = Math.round(x) + 'px';
   }
 
   update(dt) {
