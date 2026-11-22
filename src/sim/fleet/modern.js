@@ -684,8 +684,8 @@ export const modern = {
     };
     // (round 31: and off the town's square and parade pad: buses and trams
     // drove across the paving among the people)
-    const sq = this._sqOf(v);
-    const onSq = (i) => !!sq && sq(i % w.w, (i / w.w) | 0);
+    const pv = this._paveMask();
+    const onSq = (i) => pv[i] === 1;
     const R = v.roadTiles?.filter((i) => !rail?.[i] && inTown(i) && !onSq(i));
     if (!R?.length) return null;
     for (let tries = 0; tries < 4; tries++) {

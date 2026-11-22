@@ -115,7 +115,9 @@ export const traffic = {
     const rail = civ.railMask;
     // (round 31) never onto the town's square or parade pad unless there is
     // no other way on (cars drove across the paving among the people)
-    const sq = this._sqOf?.(civ.villages[c.vid]);
+    // (every town's paving: in a conurbation a car ran across the next town's square)
+    const pv = this._paveMask?.();
+    const sq = pv ? (tx, tz) => pv[tz * w.w + tx] === 1 : null;
     let best = -1,
       sum = 0,
       back = -1,
