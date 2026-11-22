@@ -7,6 +7,7 @@ import { GroundCover } from './GroundCover.js';
 import { InstanceBatcher } from './InstanceBatcher.js';
 import { stageName, isTreeId, isMineral } from '../../sim/flora/species.js';
 import { PROP } from '../../core/scale.js';
+import { hwPoint } from '../../sim/civ/modern.js';
 
 // Vegetation renderer (Nature).
 //
@@ -389,6 +390,7 @@ export class Vegetation {
     const aoTmp = [],
       glowTmp = [];
     const townMask = this.game.flora?.town;
+    const hwMask = this._hwMask;
     for (let ty = c.y0; ty <= c.y1; ty++) {
       for (let tx = c.x0; tx <= c.x1; tx++) {
         const i = ty * world.w + tx;
@@ -416,6 +418,9 @@ export class Vegetation {
         // (round 25: only trees on or beside built and street tiles, the
         // footprint the far-zoom urban patch now hugs; hiding them across the
         // whole build radius left a ring of bare ground round each town)
+        // (round 31) no tree under a highway deck or within a tile of its
+        // edge (a canopy poked up through the deck)
+        if (hwMask && hwMask[i] && isTreeId(f)) continue;
         const town = townMask && townMask[i] && isTreeId(f) && this._urbanNear(tx, ty) ? 1 : 0;
         const key = (f * 8 + v) * 2 + town;
         let s = scratch.get(key);
@@ -854,9 +859,63 @@ export class Vegetation {
   }
 
   // ---- frame update ------------------------------------------------------
+  // (round 31) the tiles under a highway deck and a tile beyond its edges,
+  // rebuilt when the infrastructure changes; chunks whose tiles changed are
+  // rebuilt (their trees there are left out)
+  _updateHwMask() {
+    const civ = this.game.civ;
+    const ver = civ?.infraVersion;
+    if (ver == null || ver === this._hwVer) return;
+    this._hwVer = ver;
+    const world = this.world;
+    const W = world.w,
+      H = world.h;
+    const m = new Uint8Array(world.size);
+    const R = 0.62 / 2 + 0.14 + 1; // the deck's half width and a tile
+    for (const seg of civ.highways?.() || []) {
+      const P = seg.pts,
+        hw = seg.hw;
+      if (!P) continue;
+      const n = P.length / 2;
+      for (let i = 0; i < n; i++) {
+        if (hw && !hw[i]) continue;
+        const [cx, cz] = hwPoint(P, i);
+        // (and halfway to the next point)
+        const pts = [[cx, cz]];
+        if (i + 1 < n && (!hw || hw[i + 1])) {
+          const [nx, nz] = hwPoint(P, i + 1);
+          if (Math.abs(nx - cx) < 4 && Math.abs(nz - cz) < 4) pts.push([(cx + nx) / 2, (cz + nz) / 2]);
+        }
+        for (const [x, z] of pts)
+          for (let y = Math.floor(z - R); y <= Math.floor(z + R); y++)
+            for (let xx = Math.floor(x - R); xx <= Math.floor(x + R); xx++) {
+              if (xx < 0 || y < 0 || xx >= W || y >= H) continue;
+              const dx = Math.max(xx - x, 0, x - xx - 1),
+                dz = Math.max(y - z, 0, z - y - 1);
+              if (dx * dx + dz * dz <= R * R) m[y * W + xx] = 1;
+            }
+      }
+    }
+    const old = this._hwMask;
+    this._hwMask = m;
+    for (const c of this.chunks) {
+      if (c.dirty) continue;
+      let ch = false;
+      for (let ty = c.y0; ty <= c.y1 && !ch; ty++)
+        for (let tx = c.x0; tx <= c.x1; tx++) {
+          const i = ty * W + tx;
+          if ((old ? old[i] : 0) !== m[i] && world.flora[i]) {
+            ch = true;
+            break;
+          }
+        }
+      if (ch) c.dirty = true;
+    }
+  }
   update(dt) {
     const g = this.game;
     const u = this.uniforms;
+    this._updateHwMask();
     u.uTime.value = g.time.realTime;
     const wind = g.env.wind || { x: 1, z: 0, strength: 0.3 };
     const wl = Math.hypot(wind.x, wind.z) || 1;
