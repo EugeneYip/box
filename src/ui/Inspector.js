@@ -63,7 +63,7 @@ const KIND_LABEL = { unit: 'Creature', building: 'Building', plot: 'Building plo
 // Fleets (game.fleet.inspect): cargo lines with an icon each
 const CARGO_ICON = { settlers: 'found-village', army: 'job-soldier', fish: 'spawn-fish', food: 'plant-wheat', wood: 'plant-tree', stone: 'mountain', ore: 'job-miner', gold: 'gold', goods: 'trade' };
 // (round 31) a land craft whose title already names its kind gets its purpose
-const CRAFT_ROLE = { truck: 'Freight truck', car: 'Town car', bus: 'City bus', tram: 'Streetcar', fireengine: 'Fire service', ambulance: 'Medical service', tractor: 'Farm vehicle', oxcart: 'Goods cart', caravan: 'Trade convoy', train: 'Railway', maglev: 'Railway', tank: 'Armor', cannon: 'Siege gun', artillery: 'Siege gun' };
+const CRAFT_ROLE = { truck: 'Freight truck', car: 'Town car', taxi: 'Taxi service', van: 'Delivery service', garbage: 'Sanitation service', bus: 'City bus', tram: 'Streetcar', fireengine: 'Fire service', ambulance: 'Medical service', tractor: 'Farm vehicle', oxcart: 'Goods cart', caravan: 'Trade convoy', train: 'Railway', maglev: 'Railway', tank: 'Armor', cannon: 'Siege gun', artillery: 'Siege gun' };
 // (round 31) about how tall a building stands (world units, for the pin):
 // a one-tile hut is under a unit, towers and monuments keep the old 3.2
 const roofOf = (b) => {

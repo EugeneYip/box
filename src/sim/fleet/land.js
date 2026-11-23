@@ -11,7 +11,7 @@ import { BUILDING, VEHICLE } from '../../core/scale.js';
 // raiders leave these alone: rail and transit, as the ambulances and fire
 // engines (SERVICE_KINDS); trucks and cars are fair game only off their own
 // realm's land (round 29)
-const RAID_SPARED = new Set(['train', 'maglev', 'tram', 'bus', 'tractor']);
+const RAID_SPARED = new Set(['train', 'maglev', 'tram', 'bus', 'tractor', 'van', 'garbage']);
 const ROAD_OWN = new Set(['truck', 'car']);
 const ROAD_NODES = 2500; // across country (the laid roads are searched first, cheaply)
 const GAP_MAX = 12; // a motor route may lay at most this many tiles of new road to close a gap
@@ -396,7 +396,9 @@ export const land = {
       for (let k = 0; k < n && v.path; k++) this._follow(v, step / n, v.def.speed);
       if (v.path == null) this._landArrive(v);
     } else if (v.state === 'work') {
-      this._serviceWork(v, step);
+      // (round 33: a town's own bus, van or garbage truck at a stop, town.js)
+      if (v.mission?.town) this._townWork(v, step);
+      else this._serviceWork(v, step);
     } else if (v.state === 'rest') {
       if (v.stateT > 3) {
         if ((v.mission?.phase === 'home' || v.mission?.type === 'train') && v.path) v.state = 'move';
@@ -532,6 +534,7 @@ export const land = {
     const civ = this.game.civ;
     const m = v.mission;
     if (!m) return this.remove(v);
+    if (m.town) return this._townArrive(v);
     // a gift of the gods' train runs its line back and forth
     if (m.type === 'train' && v.keep) return this._trainShuttle(v, m);
     if (m.type === 'park') {

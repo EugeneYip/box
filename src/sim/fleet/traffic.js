@@ -1,4 +1,6 @@
 import { USE } from '../civ/util.js';
+import { KINDS } from './kinds.js';
+import { VEHICLE } from '../../core/scale.js';
 
 // Street traffic (docs/MODERN-ERAS.md: "civilian traffic in towns"), mixed
 // into Fleet. Towns of a Modern realm (era 5+, Combustion Engine) fill their
@@ -19,6 +21,14 @@ import { USE } from '../civ/util.js';
 //             0..3), s (speed, tiles a second)}]
 //   trafficCount(kid?) -> cars in the streets
 //   totals.cars        cars that have joined the traffic
+//   carAt(x, z, r)   -> {c, d} the street car within r of (x, z) (where it is
+//                       drawn, in its lane), nearest first, or null
+//   carHandle(c)     -> the car as the picker, the inspector and the camera
+//                       see it (round 33: street cars are clickable, with a
+//                       light card, and F follows them): {id, alive, x, z,
+//                       px, pz, heading, kingdom, def, name, ...}, the same
+//                       object for the same car while it lives
+//   describeCar(h)   -> the inspector card of a car handle
 
 const SPEED = 1.45; // tiles per second in town
 const TURN = 7; // radians per second
@@ -26,7 +36,171 @@ const LOOK = 0.28; // the way on is chosen this far before a tile's middle
 const GAP0 = 0.34; // a car stops this close behind the car ahead (tiles)...
 const GAP1 = 0.62; // ...and drives at full speed from this far
 
+// (round 33) How much road vehicles grow as the camera pulls back (a third
+// as much as the people do), and how far right of the street's crown a car
+// keeps at that size: FleetRenderer draws the street cars there, and the
+// picker and the camera find them there.
+export function roadBoost(dist) {
+  return 1 + (Math.min(2.6, Math.max(1, 0.55 + dist / 28)) - 1) * 0.35;
+}
+export function laneOffset(boost) {
+  // (round 24: half-size cars keep to the right half of the same street)
+  return 0.27 * (0.5 + 0.5 * VEHICLE.rel) * Math.min(1.2, boost || 1);
+}
+// The cards' kinds: a town car, and (the yellow ones) a taxi. No hold to
+// show: a car's card says what it is doing, not what it carries.
+const CAR_DEF = Object.freeze({ ...KINDS.car, name: 'Town car', capacity: 0 });
+const TAXI_DEF = Object.freeze({ ...KINDS.car, kind: 'taxi', name: 'Taxi', capacity: 0 });
+const BODY = ['Red', 'Blue', 'White', 'Yellow'];
+// What a car is out for, by the hour (the errand seed and the trips made
+// pick one from each list, so it changes through the day)
+const ERRAND = {
+  dawn: ['Commuting to work', 'Commuting to work', 'Taking the children to school', 'Making an early delivery'],
+  day: ['Going shopping', 'Making a delivery', 'Running errands', 'Visiting family', 'Delivering groceries', 'Driving to a meeting'],
+  dusk: ['Commuting home', 'Commuting home', 'Going shopping', 'Picking up the children'],
+  eve: ['Going out to eat', 'Visiting friends', 'Driving home', 'Going to the theater'],
+  night: ['Driving home', 'Driving home late', 'Coming off the night shift', 'Driving home'],
+};
+const PARKED = {
+  dawn: ['Parked outside a house', 'Parked while its driver works', 'Parked at the school gate', 'Parked at the curb'],
+  day: ['Parked while its driver shops', 'Parked while its driver works', 'Parked at the curb', 'Parked outside a house', 'Parked while its driver delivers', 'Parked outside an office'],
+  dusk: ['Parked outside a house', 'Parked while its driver shops', 'Parked at the curb', 'Parked at the school gate'],
+  eve: ['Parked outside a diner', 'Parked outside a house', 'Parked for the night', 'Parked outside the theater'],
+  night: ['Parked for the night', 'Parked for the night', 'Parked at the curb', 'Parked for the night'],
+};
+const partOfDay = (h) => (h < 5 || h >= 23 ? 'night' : h < 9.5 ? 'dawn' : h < 16 ? 'day' : h < 19 ? 'dusk' : 'eve');
+
+// A street car as the picker, the inspector and the camera see it: where
+// it is drawn (in its lane), whether it is still in the streets, its kind
+// and name. Its record (fleet.traffic) stays the cheap thing the traffic
+// runs on; a handle is made the first time the car is pointed at.
+class StreetCar {
+  constructor(fleet, c) {
+    this._f = fleet;
+    this._c = c;
+    this.id = 'car' + c.id;
+    this.kingdom = c.kingdom;
+    this.cls = 'land';
+    this.streetCar = true;
+    this.def = c.v === 3 ? TAXI_DEF : CAR_DEF;
+    this.kind = this.def.kind;
+    const t = fleet.game.civ?.villages?.[c.vid];
+    this.name = c.v === 3 ? `Taxi of ${t?.name || 'the town'}` : `${BODY[c.v] || 'Red'} car of ${t?.name || 'the town'}`;
+    this.hp = this.maxHp = KINDS.car.hp;
+    this.crew = 1;
+    this.born = c.born ?? 0;
+    this.endedWhy = 'arrived';
+  }
+  get alive() {
+    return !this._c.gone;
+  }
+  // (a car that left the streets finished its drive: "Arrived", never "Lost")
+  get endedTrip() {
+    return this._c.gone ? true : undefined;
+  }
+  _lane() {
+    return laneOffset(roadBoost(this._f.game.cameraRig?.cur?.dist ?? 20));
+  }
+  get x() {
+    return this._c.x - Math.sin(this._c.h) * this._lane();
+  }
+  get z() {
+    return this._c.z + Math.cos(this._c.h) * this._lane();
+  }
+  get px() {
+    return this._c.px - Math.sin(this._c.ph) * this._lane();
+  }
+  get pz() {
+    return this._c.pz + Math.cos(this._c.ph) * this._lane();
+  }
+  get heading() {
+    return this._c.h;
+  }
+  get ph() {
+    return this._c.ph;
+  }
+  get speed() {
+    const c = this._c;
+    return c.park > 0 ? 0 : c.s * (c.gv ?? 1);
+  }
+  get state() {
+    return this._c.park > 0 ? 'parked' : 'move';
+  }
+  get village() {
+    return this._c.vid;
+  }
+  get home() {
+    return this._c.vid;
+  }
+}
+
 export const traffic = {
+  // (round 33) The street car nearest (x, z) within r, where it is drawn (on
+  // the right of the street): {c, d}, or null.
+  carAt(x, z, r) {
+    const T = this.traffic;
+    if (!T.length) return null;
+    const lane = laneOffset(roadBoost(this.game.cameraRig?.cur?.dist ?? 20));
+    let best = null,
+      bd = r;
+    for (let i = 0; i < T.length; i++) {
+      const c = T[i];
+      if (c.gone || Math.abs(c.x - x) > r + 0.5 || Math.abs(c.z - z) > r + 0.5) continue;
+      const d = Math.hypot(c.x - Math.sin(c.h) * lane - x, c.z + Math.cos(c.h) * lane - z);
+      if (d < bd) {
+        bd = d;
+        best = c;
+      }
+    }
+    return best ? { c: best, d: bd } : null;
+  },
+  carHandle(c) {
+    return c._h || (c._h = new StreetCar(this, c));
+  },
+  // What a street car is doing, in the card's words: commuting, shopping,
+  // delivering..., by the hour and the trips it has made; parked at the
+  // curb; held up behind the car ahead. A taxi looks for its next fare.
+  carDoing(c) {
+    if (c.gone) return 'Arrived';
+    const hour = this.game.time?.hour ?? 12;
+    const part = partOfDay(hour);
+    const n = (c.e | 0) + (c.n | 0);
+    if (c.v === 3) {
+      if (c.park > 0) return part === 'night' ? 'Waiting at the taxi rank' : 'Waiting for a fare';
+      return n % 2 ? 'Taking a fare across town' : 'Looking for a fare';
+    }
+    if (c.park > 0) {
+      const L = PARKED[part];
+      return L[n % L.length];
+    }
+    if ((c.hold || 0) > 0.8) return 'Waiting in traffic';
+    const L = ERRAND[part];
+    return L[n % L.length];
+  },
+  // The inspector card of a street car (handle h): a light one, its kind,
+  // its town and what it is doing.
+  describeCar(h) {
+    const c = h._c;
+    const civ = this.game.civ;
+    const k = this.kingdom(c.kingdom);
+    const t = civ?.villages?.[c.vid];
+    const stats = [['Doing', this.carDoing(c)]];
+    if (t) stats.push(['Town', t.name]);
+    const sp = h.speed;
+    if (sp > 0.05 && !c.gone) stats.push(['Speed', `${Math.max(1, Math.round(sp * 10))} paces`]);
+    return {
+      priority: 27,
+      kind: 'vehicle',
+      building: h,
+      vessel: h,
+      streetCar: true,
+      title: h.name,
+      subtitle: k ? k.name : 'No realm',
+      stats,
+      x: h.x,
+      z: h.z,
+    };
+  },
   trafficCount(kid = null) {
     if (kid == null) return this.traffic.length;
     let n = 0;
@@ -48,6 +222,7 @@ export const traffic = {
   _trafficPlan() {
     const civ = this.game.civ;
     if (!civ || this.law('fleetLand', true) === false) {
+      for (const c of this.traffic) c.gone = true;
       this.traffic.length = 0;
       return;
     }
@@ -93,6 +268,12 @@ export const traffic = {
         z = (i / w.w) | 0;
       if (sq && sq(x, z)) continue;
       const c = { x: x + 0.5, z: z + 0.5, px: 0, pz: 0, h: 0, ph: 0, tx: 0, tz: 0, fx: -1, fz: -1, vid: v.id, kingdom: k.id, v: (this.rng() * 4) | 0, s: SPEED * (0.92 + this.rng() * 0.16), r2: ((v.radius || 6) * 1.25 + 2) ** 2, cx: v.cx, cz: v.cz, k: (this.rng() * 4) | 0, acc: 0 };
+      // (round 33) who it is to the inspector: an id, when it joined, and
+      // an errand seed (what it is out for changes with each stop it makes)
+      c.id = this._carSeq = (this._carSeq || 0) + 1;
+      c.born = this.game.time.total;
+      c.e = (this.rng() * 12) | 0;
+      c.n = 0;
       if (!this._trafficNext(c, x, z)) continue;
       c.h = c.ph = Math.atan2(c.tz - c.z, c.tx - c.x);
       c.px = c.x;
@@ -253,6 +434,7 @@ export const traffic = {
           const a = Math.atan2(c.tz - c.z, c.tx - c.x);
           if (this.rng() < 0.07 && Math.abs(Math.sin(a - c.h)) < 0.12 && Math.cos(a - c.h) > 0 && this._trafficKerb(tx, tz, c)) {
             c.park = 6 + this.rng() * 26;
+            c.n = (c.n | 0) + 1; // (a stop made: the next errand)
             // square the car up with the street, on the tile's middle line
             c.h = Math.round(c.h / (Math.PI / 2)) * (Math.PI / 2);
             if (Math.abs(Math.cos(c.h)) > 0.5) c.z = tz + 0.5;

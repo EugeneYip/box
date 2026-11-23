@@ -8,6 +8,7 @@ import { war } from './war.js';
 import { air } from './air.js';
 import { modern } from './modern.js';
 import { traffic } from './traffic.js';
+import { town } from './town.js';
 import { hullR, hullHalf, segDist, HULL_GAP, PIER, BERTH, pierEnd, DEEP_WATER } from './hull.js';
 import { geoDist, geoWrapOn } from '../../world/geo.js';
 import { VEHICLE, PICK_PX } from '../../core/scale.js';
@@ -143,6 +144,8 @@ export class Fleet {
   reset() {
     // nobody is left aboard a ship that no longer exists
     for (const v of this.list) if (v.alive && v.cls === 'sea') this.disembarkAll(v);
+    // (a street car's handle, followed or on a card, sees it has gone)
+    for (const c of this.traffic || []) c.gone = true;
     this.list.length = 0;
     this.byId.clear();
     this.debris.length = 0;
@@ -248,6 +251,8 @@ export class Fleet {
       tractor: 'puts its first tractors in the fields',
       tram: 'runs its first trams through its towns',
       bus: 'runs its first buses through its towns',
+      van: 'sends its first delivery vans through its towns',
+      garbage: 'sends its first garbage trucks round its streets',
       helicopter: 'flies its first rescue helicopter to a disaster',
     }[kind];
     if (!what) return;
@@ -421,7 +426,7 @@ export class Fleet {
     const t = (this._lt = c || {});
     t.ver = this.version;
     t.tick = this._gwTick;
-    t.all = t.rail = t.aid = t.transit = t.other = t.tractor = 0;
+    t.all = t.rail = t.aid = t.transit = t.other = t.tractor = t.town = 0;
     for (const v of this.list) {
       if (!v.alive || v.cls !== 'land' || v.parkAt != null) continue;
       // tractors work their own town's fields and stay by them: they have a
@@ -429,6 +434,12 @@ export class Fleet {
       // tractor served 378 farmers at Year 600)
       if (v.kind === 'tractor') {
         t.tractor++;
+        continue;
+      }
+      // (round 33) a town's own bus, delivery van and garbage truck keep to
+      // its streets, with a limit of their own (town.js)
+      if (v.town != null) {
+        t.town = (t.town || 0) + 1;
         continue;
       }
       t.all++;
@@ -899,6 +910,7 @@ export class Fleet {
     if ((T.traffic = (T.traffic || 0) + step) >= 2) {
       T.traffic = 0;
       this._trafficPlan();
+      this._townPlan();
     }
     this._separate(step);
     if ((T.airport = (T.airport || 0) + step) >= 2) {
@@ -1712,20 +1724,24 @@ export class Fleet {
     if (!hit) return null;
     const a = this.inspectAir?.(hit);
     if (a) return a;
-    if (!this.list.length) return null;
+    if (!this.list.length && !this.traffic.length) return null;
     let best = null,
       bd = Infinity;
+    const pxR = Math.min(2.5, (hit.px || 0) * PICK_PX);
     for (const v of this.list) {
       if (!v.alive || v.state === 'sinking') continue;
       const d = Math.hypot(v.x - hit.x, v.z - hit.z);
       // (round 24: half-size craft) a world floor at close zoom, PICK_PX
       // screen pixels further out
-      const r = Math.max(0.9 * VEHICLE.rel, v.def.size * (v.cls === 'sea' ? 1.1 : 0.9), Math.min(2.5, (hit.px || 0) * PICK_PX));
+      const r = Math.max(0.9 * VEHICLE.rel, v.def.size * (v.cls === 'sea' ? 1.1 : 0.9), pxR);
       if (d < r && d < bd) {
         bd = d;
         best = v;
       }
     }
+    // (round 33) the street cars too, by the same rule (a light card)
+    const car = this.carAt(hit.x, hit.z, Math.min(bd, Math.max(0.9 * VEHICLE.rel, KINDS.car.size * 0.9, pxR)));
+    if (car) return this.describeCar(this.carHandle(car.c));
     if (!best) return null;
     return this.describe(best);
   }
@@ -1745,6 +1761,7 @@ export class Fleet {
     if (home) stats.push([v.cls === 'sea' ? 'Home port' : 'Home', home.name]);
     // speed only when it is really moving (a ship turning or waiting at anchor shows none)
     if (v.speed > 0.05) stats.push(['Speed', `${Math.max(1, Math.round(v.speed * 10))} ${v.cls === 'sea' ? 'knots' : 'paces'}`]);
+    if (v.town != null) this._townRows(v, stats);
     stats.push(['Built', `year ${Math.floor(v.born / YEAR) + 1}`]);
     if (v.cls === 'sea' && this.hasTech(v.kingdom, 'astronomy')) stats.push(['Charts', 'sails by the stars, day and night']);
     return {
@@ -1764,6 +1781,7 @@ export class Fleet {
   doingText(v) {
     const m = v.mission;
     if (v.state === 'sinking') return 'Sinking!';
+    if (m?.town) return this._townDoing(v);
     if (v.state === 'moored') return v.cls === 'sea' ? 'Moored at the jetty' : 'Resting';
     if (v.state === 'anchored') return this.isNight() ? 'At anchor for the night' : 'At anchor';
     if (v.state === 'fish') return 'Hauling nets over the shoal';
@@ -1850,5 +1868,5 @@ export function angDiff(a, b) {
 }
 
 
-Object.assign(Fleet.prototype, missions, land, war, air, modern, traffic);
+Object.assign(Fleet.prototype, missions, land, war, air, modern, traffic, town);
 export { KINDS, SEA_KINDS, pathLength, SEA_LEVEL };

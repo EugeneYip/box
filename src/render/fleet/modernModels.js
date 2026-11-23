@@ -815,4 +815,33 @@ function bus(lo) {
   return done(g, 1.15);
 }
 
-addBuilders({ steamer, ironclad, freighter, battleship, patrol, icebreaker, container, tanker, liner, submarine, hovercraft, hydrofoil, research, carrier, trimaran, autocargo, train, maglev, truck, car, cannon, artillery, tank, fireengine, ambulance, tractor, tram, bus });
+// (round 33) a Modern town's delivery van: a short cab and a tall box in
+// white, the realm's colour in a band round the box
+function van(lo) {
+  const g = new VB(265);
+  g.box(0.28, 0.07, 0, 0.22, 0.25, 0.32, 0xeeeeea, { top: 0xe2e2de });
+  g.box(0.36, 0.2, 0, 0.08, 0.1, 0.325, GLASS, { glow: 0.5 });
+  g.box(-0.1, 0.07, 0, 0.56, 0.38, 0.34, 0xf0ede4, { top: 0xe2dfd6 });
+  g.box(-0.1, 0.22, 0, 0.565, 0.06, 0.345, 0xffffff, { tint: 1 });
+  g.box(-0.08, 0.06, 0, 0.76, 0.035, 0.3, 0x2a2a2a);
+  if (!lo) tyres(g, [0.24, -0.24], 0.07, 0.16);
+  lights(g, 0.395, 0.12, 0.13);
+  return done(g, 0.85);
+}
+// (round 33) a garbage truck: a white cab, a green body with a rounded
+// packer at the back, an amber beacon on the cab
+function garbage(lo) {
+  const g = new VB(267);
+  g.box(0.36, 0.08, 0, 0.26, 0.34, 0.34, 0xf2f2ec, { top: 0xe2e2dc });
+  g.box(0.45, 0.27, 0, 0.09, 0.12, 0.345, GLASS, { glow: 0.5 });
+  g.box(-0.1, 0.08, 0, 0.62, 0.42, 0.36, 0x3f7a3a, { top: 0x376c33 });
+  g.box(-0.44, 0.09, 0, 0.08, 0.36, 0.34, 0x2f5e2b, { top: 0x2a5427 });
+  g.box(-0.1, 0.3, 0, 0.625, 0.04, 0.365, 0xffffff, { tint: 1 });
+  g.box(-0.1, 0.06, 0, 0.9, 0.04, 0.3, 0x2a2a2a);
+  g.box(0.36, 0.435, 0, 0.06, 0.03, 0.08, 0xffa020, { glow: 2 });
+  if (!lo) tyres(g, [0.32, -0.22, -0.36], 0.07, 0.17);
+  lights(g, 0.495, 0.12, 0.14);
+  return done(g, 1.0);
+}
+
+addBuilders({ steamer, ironclad, freighter, battleship, patrol, icebreaker, container, tanker, liner, submarine, hovercraft, hydrofoil, research, carrier, trimaran, autocargo, train, maglev, truck, car, cannon, artillery, tank, fireengine, ambulance, tractor, tram, bus, van, garbage });
