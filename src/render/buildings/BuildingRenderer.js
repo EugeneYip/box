@@ -490,6 +490,16 @@ export class BuildingRenderer {
     this._bc = new THREE.Color();
     this._fc = new THREE.Color();
     this._dir = new THREE.Vector3();
+    // ground reshaped under fields and streets: their fences and street
+    // lights are drawn again on the new ground (the rects of the edits,
+    // gathered until the next update; past 256 of them, everything)
+    this._hRects = [];
+    this._hAll = false;
+    game.events?.on?.('world:height', (r) => {
+      if (this._hAll) return;
+      if (this._hRects.length >= 256) this._hAll = true;
+      else this._hRects.push({ x0: r.x0, y0: r.y0, x1: r.x1, y1: r.y1 });
+    });
   }
 
   reset() {
@@ -745,18 +755,19 @@ export class BuildingRenderer {
 
   // The scan's fast test: the plain fields the signature is made from, kept
   // on the record (store) or compared with it. Only a building that fails it
-  // has its signature string made again.
-  _quick(b, def, rec, civ, wallAt, W, store) {
-    const K = civ.kingdoms[b.kingdom];
-    const re = K?.era ?? 0;
-    const st = this._stage(b);
+  // has its signature string made again. (kEra, kCol: the realms' eras and
+  // colours, looked up once per scan)
+  _quick(b, def, rec, civ, wallAt, W, store, kEra, kCol) {
+    const k = b.kingdom;
+    const re = kEra[k] ?? 0;
+    const st = !b.alive ? 0 : b.constructing ? (b.progress < 0.12 ? 1 : b.progress < 0.4 ? 2 : 3) : b.upgrading ? 4 : 5;
     let ex = 0;
     if (def.wall) ex = this._wallMask(b, wallAt, W) + (b.bastion ? 256 : 0);
     else if (b.type === 'skyscraper') ex = towerVariant(b);
     else if (b.type === 'colossus') ex = civ.villages?.[b.village]?.tier || 0;
-    else if (b.type === 'docks') ex = (K?.mastery || 0) >= 8 ? 1 : 0;
-    if ((st === 'found' || st === 'frame' || st === 'build') && civ.hasTech?.(b.kingdom, 'engineering')) ex += 1024;
-    const col = civ.kingdomColor(b.kingdom);
+    else if (b.type === 'docks') ex = (civ.kingdoms[k]?.mastery || 0) >= 8 ? 1 : 0;
+    if (st >= 1 && st <= 3 && civ.hasTech?.(k, 'engineering')) ex += 1024;
+    const col = kCol[k] ?? 0xffffff;
     const rot = b.rotation || 0;
     if (store) {
       rec.qT = b.type;
@@ -778,7 +789,7 @@ export class BuildingRenderer {
       rec.gm = b.groundMin;
       return true;
     }
-    return rec.qSt === st && rec.qT === b.type && rec.qS === b.style && rec.qL === b.level && rec.qE === b.era && rec.qR === re && rec.qG === b.gilded && rec.qV === b.variant && rec.qH === b.heritage && rec.qX === ex && rec.qVil === b.village && rec.col === col && rec.x === b.x && rec.y === b.y && rec.z === b.z && rec.rot === rot && rec.gm === b.groundMin;
+    return rec.qSt === st && rec.x === b.x && rec.z === b.z && rec.y === b.y && rec.qL === b.level && rec.qE === b.era && rec.qR === re && rec.col === col && rec.qX === ex && rec.qT === b.type && rec.qS === b.style && rec.qG === b.gilded && rec.qV === b.variant && rec.qH === b.heritage && rec.qVil === b.village && rec.rot === rot && rec.gm === b.groundMin;
   }
 
   _newRec(t, b, v = null) {
@@ -849,36 +860,48 @@ export class BuildingRenderer {
     _towerCiv = civ;
     const wallAt = (this._wallAt = new Map());
     for (const b of civ.buildings) if (!b.gone && b.alive && BUILDING_TYPES[b.type]?.wall) wallAt.set(b.ty * W + b.tx, b);
-    let changed = false;
+    const kEra = (this._kEra = this._kEra || []),
+      kCol = (this._kCol = this._kCol || []);
+    kEra.length = kCol.length = 0;
+    for (const k of civ.kingdoms) {
+      if (!k) continue;
+      kEra[k.id] = k.era ?? 0;
+      kCol[k.id] = civ.kingdomColor(k.id);
+    }
+    let changed = false,
+      seen = 0;
     for (const b of civ.buildings) {
       if (b.gone) continue;
       const def = BUILDING_TYPES[b.type];
       if (!def) continue;
       let rec = this._recs.get(b);
       if (rec) {
+        if (rec.seen !== stamp) seen++;
         rec.seen = stamp;
-        if (this._quick(b, def, rec, civ, wallAt, W, false)) continue;
+        if (this._quick(b, def, rec, civ, wallAt, W, false, kEra, kCol)) continue;
       }
       const sig = this._sig(b, def, civ, wallAt, W);
       if (!rec) {
         rec = this._newRec(0, b);
         rec.seen = stamp;
+        seen++;
         this._recs.set(b, rec);
       } else if (rec.sig === sig && rec.col === civ.kingdomColor(b.kingdom) && rec.x === b.x && rec.y === b.y && rec.z === b.z && rec.rot === (b.rotation || 0) && rec.gm === b.groundMin) {
-        this._quick(b, def, rec, civ, wallAt, W, true); // (looks the same: only the fast test's fields moved)
+        this._quick(b, def, rec, civ, wallAt, W, true, kEra, kCol); // (looks the same: only the fast test's fields moved)
         continue;
       }
       rec.sig = sig;
-      this._quick(b, def, rec, civ, wallAt, W, true);
+      this._quick(b, def, rec, civ, wallAt, W, true, kEra, kCol);
       this._enqueue(rec);
       changed = true;
     }
-    for (const [b, rec] of this._recs)
-      if (rec.seen !== stamp) {
-        this._dropRec(rec);
-        this._recs.delete(b);
-        changed = true;
-      }
+    if (seen !== this._recs.size)
+      for (const [b, rec] of this._recs)
+        if (rec.seen !== stamp) {
+          this._dropRec(rec);
+          this._recs.delete(b);
+          changed = true;
+        }
     // street lights, town by town
     for (const v of civ.villages) {
       if (!v) continue;
@@ -1423,6 +1446,32 @@ export class BuildingRenderer {
     return any ? h || 1 : 0;
   }
 
+  // fences and street lights of the towns whose ground was reshaped
+  _heightPass() {
+    const R = this._hRects,
+      all = this._hAll;
+    this._hRects = [];
+    this._hAll = false;
+    const hit = (x0, y0, x1, y1) => {
+      if (all) return true;
+      for (const r of R) if (x1 >= r.x0 && x0 <= r.x1 && y1 >= r.y0 && y0 <= r.y1) return true;
+      return false;
+    };
+    for (const vr of this._lrecs.values()) {
+      const v = vr.v,
+        rr = (v.radius || 8) + 1;
+      if (!vr.queued && hit(v.cx - rr, v.cz - rr, v.cx + rr, v.cz + rr)) this._enqueue(vr);
+    }
+    for (const fr of this._frecs.values()) {
+      if (fr.queued) continue;
+      for (const p of fr.v.plots || [])
+        if (hit(p.x0 - 1, p.y0 - 1, p.x1 + 1, p.y1 + 1)) {
+          this._enqueue(fr);
+          break;
+        }
+    }
+  }
+
   _scanFences() {
     const civ = this.game.civ;
     const world = this.game.world;
@@ -1918,6 +1967,7 @@ export class BuildingRenderer {
         this._flagsAll = true;
       }
     }
+    const tw = performance.now(); // (the scans and the drawing share the frame's budget)
     if ((civ.version !== this._ver || civ.colorVersion !== this._cver) && (now - this._lastRebuild > 0.2 || this._full)) {
       this._ver = civ.version;
       this._cver = civ.colorVersion;
@@ -1935,7 +1985,8 @@ export class BuildingRenderer {
       this._lastFence = now;
       this._scanFences();
     }
-    this._work(this._full ? Infinity : this.budgetMs);
+    if (this._hRects.length || this._hAll) this._heightPass();
+    this._work(this._full ? Infinity : this.budgetMs - (performance.now() - tw));
     this._full = false;
     this._applyLod();
     if (this._far && this._proxyDirty && now - this._proxyT > 1) this._rebuildProxies();
