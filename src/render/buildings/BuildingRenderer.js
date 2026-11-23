@@ -31,6 +31,9 @@ const LS = PROP.kit * 1.0,
 const _wallS = new THREE.Vector3(1, BS, BS);
 const _bS = new THREE.Vector3(BS, BS, BS);
 const _bridgeS = new THREE.Vector3(1, BS, 1);
+const _zeroM = new THREE.Matrix4().makeScale(0, 0, 0); // a released footing slot
+const _X = new THREE.Vector3(1, 0, 0);
+const STYLE_N = { vale: 0, dune: 1, frost: 2, mire: 3 };
 
 // Renders game.civ.buildings as instanced, merged procedural architecture
 // (one InstancedMesh per type x style x level x stage), plus waving banners,
@@ -165,6 +168,12 @@ class DetailBatch {
     this.items = [];
     this.extra = [];
     this.keys = [];
+    this.minor = [];
+    this.free = []; // released instance slots
+    this._hideMin = false;
+    this._off = new Set(); // archetype keys hidden (lampposts beyond prop range)
+    this._mDirty = false;
+    this._dDirty = false;
   }
   _texFor(cap) {
     const size = Math.max(4, Math.ceil(Math.sqrt(cap * 2)));
@@ -212,43 +221,74 @@ class DetailBatch {
     this.geoIds.set(key, id);
     return id;
   }
-  // list: {key, geo, m (Float32Array/Array of 16 at offset o), o, col: [r,g,b], item, extra}
-  set(L) {
-    const n = L.length;
-    this._ensure(Math.max(n, 1), this.vUsed);
-    // geometry ids first (may grow the vertex store)
-    const gids = new Int32Array(n);
-    for (let i = 0; i < n; i++) gids[i] = this.geometryId(L[i].key, L[i].geo);
-    const m = this.mesh;
-    while (this.nInst < n) m.addInstance(gids[this.nInst++]);
-    const mats = m._matricesTexture.image.data;
-    for (let i = 0; i < n; i++) {
-      const e = L[i];
-      if (m.getGeometryIdAt(i) !== gids[i]) m.setGeometryIdAt(i, gids[i]);
-      if (!m.getVisibleAt(i)) m.setVisibleAt(i, true);
-      for (let q = 0; q < 16; q++) mats[i * 16 + q] = e.m[e.o + q];
-      this.data[i * 8] = e.col[0];
-      this.data[i * 8 + 1] = e.col[1];
-      this.data[i * 8 + 2] = e.col[2];
+  // (round 33) One instance slot that stays until it is released: geometry,
+  // matrix (16 numbers), colour; the item and extra its state is read from.
+  // A released slot is hidden and handed out again, so a change touches only
+  // its own slots.
+  alloc(key, geo, e, col, item, extra, minor) {
+    const gid = this.geometryId(key, geo);
+    let id;
+    if (this.free.length) id = this.free.pop();
+    else {
+      this._ensure(this.nInst + 1, this.vUsed);
+      id = this.mesh.addInstance(gid);
+      this.nInst++;
     }
-    for (let i = n; i < this.nInst; i++) if (m.getVisibleAt(i)) m.setVisibleAt(i, false);
-    m._matricesTexture.needsUpdate = true;
-    this.items = L.map((e) => e.item);
-    this.extra = L.map((e) => e.extra);
-    this.keys = L.map((e) => e.key);
-    this.minor = L.map((e) => !!e.minor);
-    this.n = n;
-    m.visible = n > 0;
+    const m = this.mesh;
+    if (m.getGeometryIdAt(id) !== gid) m.setGeometryIdAt(id, gid);
+    const mats = m._matricesTexture.image.data;
+    for (let q = 0; q < 16; q++) mats[id * 16 + q] = e[q];
+    const data = this.data;
+    data[id * 8] = col.r;
+    data[id * 8 + 1] = col.g;
+    data[id * 8 + 2] = col.b;
+    this.items[id] = item;
+    this.extra[id] = extra;
+    this.keys[id] = key;
+    this.minor[id] = minor;
+    const vis = !(minor && this._hideMin) && !this._off.has(key);
+    if (m.getVisibleAt(id) !== vis) m.setVisibleAt(id, vis);
+    this.n++;
+    this._mDirty = true;
+    this._dDirty = true;
+    return id;
+  }
+  release(id) {
+    if (this.mesh.getVisibleAt(id)) this.mesh.setVisibleAt(id, false);
+    this.items[id] = null;
+    this.extra[id] = null;
+    this.keys[id] = null;
+    this.minor[id] = false;
+    this.free.push(id);
+    this.n--;
+  }
+  // upload what changed this frame (matrices, colours and states)
+  flush() {
+    if (!this.mesh) return;
+    if (this._mDirty) this.mesh._matricesTexture.needsUpdate = true;
+    if (this._dDirty && this.inst.value) this.inst.value.needsUpdate = true;
+    this._mDirty = this._dDirty = false;
   }
   // past mid zoom houses and small buildings are hidden (landmarks stay)
   hideMinor(hide) {
-    if (!this.mesh || !this.minor) return;
-    for (let i = 0; i < this.n; i++) if (this.minor[i] && this.mesh.getVisibleAt(i) === hide) this.mesh.setVisibleAt(i, !hide);
+    this._hideMin = hide;
+    if (!this.mesh) return;
+    for (let i = 0; i < this.nInst; i++) {
+      if (this.keys[i] == null || !this.minor[i]) continue;
+      const vis = !hide && !this._off.has(this.keys[i]);
+      if (this.mesh.getVisibleAt(i) !== vis) this.mesh.setVisibleAt(i, vis);
+    }
   }
   // per-instance visibility for one archetype key (lampposts beyond prop range)
   showKey(key, on) {
+    if (on) this._off.delete(key);
+    else this._off.add(key);
     if (!this.mesh) return;
-    for (let i = 0; i < this.n; i++) if (this.keys[i] === key && this.mesh.getVisibleAt(i) !== on) this.mesh.setVisibleAt(i, on);
+    for (let i = 0; i < this.nInst; i++) {
+      if (this.keys[i] !== key) continue;
+      const vis = on && !(this.minor[i] && this._hideMin);
+      if (this.mesh.getVisibleAt(i) !== vis) this.mesh.setVisibleAt(i, vis);
+    }
   }
 }
 
@@ -273,6 +313,8 @@ class PropBatch {
     this.k = 0;
     this.shown = 0;
     this.mesh = null;
+    this.free = []; // slot mode
+    this.live = 0;
   }
   _prep(geo) {
     const src = geo.index ? geo.toNonIndexed() : geo;
@@ -347,6 +389,30 @@ class PropBatch {
     for (let i = this.k; i < this.nInst; i++) if (m.getVisibleAt(i)) m.setVisibleAt(i, false);
     m.visible = this.shown > 0;
   }
+  // (round 33) slot mode (the field fences, town by town): an instance that
+  // stays until it is released; not mixed with begin/push/end in one batch
+  alloc(key, geo, matrix, color = null) {
+    const gid = this.geometryId(key, geo);
+    let i;
+    if (this.free.length) i = this.free.pop();
+    else {
+      this._ensure(this.nInst + 1, this.vUsed);
+      i = this.mesh.addInstance(gid);
+      this.nInst++;
+    }
+    const m = this.mesh;
+    if (m.getGeometryIdAt(i) !== gid) m.setGeometryIdAt(i, gid);
+    m.setMatrixAt(i, matrix);
+    if (color) m.setColorAt(i, color);
+    if (!m.getVisibleAt(i)) m.setVisibleAt(i, true);
+    this.live++;
+    return i;
+  }
+  release(i) {
+    this.mesh.setVisibleAt(i, false);
+    this.free.push(i);
+    this.live--;
+  }
 }
 
 export class BuildingRenderer {
@@ -401,11 +467,35 @@ export class BuildingRenderer {
     this.haze = new HazeLayer(this.group); // factory haze over industrial towns
     this.plumes = new StackPlumes(this.group); // rising plumes over works stacks and cooling towers
     this._powerSig = '';
+    // (round 33) incremental drawing: a record per building, per town's
+    // street lights and per town's fences; the queue of records to draw
+    this._recs = new Map();
+    this._lrecs = new Map();
+    this._frecs = new Map();
+    this._qN = { a: [], i: 0 }; // near the camera
+    this._qF = { a: [], i: 0 };
+    this._stamp = 0;
+    this._fstamp = 0;
+    this._wallAt = new Map();
+    this._capBanners = [];
+    this._anchorsDirty = false;
+    this._scareDirty = false;
+    this._proxyDirty = true;
+    this._proxyT = -1;
+    this._footSlots = [];
+    this._footN = 0;
+    this._footDirty = false;
+    this._full = true;
+    this.budgetMs = 4; // drawing time per frame in live play
+    this._bc = new THREE.Color();
+    this._fc = new THREE.Color();
+    this._dir = new THREE.Vector3();
   }
 
   reset() {
     this._ver = -1;
     this._fver = -1;
+    this._full = true;
     this.infra?.reset();
     this.overlay.markAll();
     this.puffs?.clear();
@@ -449,6 +539,7 @@ export class BuildingRenderer {
     this.footing.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(64 * 3), 3);
     this.footing.castShadow = false;
     this.footing.receiveShadow = true;
+    this.footing.frustumCulled = false; // (slots change one by one: no bounding sphere to keep)
     this.footing.count = 0;
     scene.add(this.footing);
     this.bannerMat = bannerMaterial(this.uniforms);
@@ -606,123 +697,215 @@ export class BuildingRenderer {
   }
 
   // ------------------------------------------------------------------ rebuild
+  // (round 33) The models are kept up to date building by building. Each
+  // building has a record of the instance slots it fills (its models and its
+  // footing), its chimneys, banners, sails, boats and glows, and a signature
+  // of how it looks; when the realm changes (a building placed, rising,
+  // finished, upgraded, restyled or lost) only the buildings whose signature
+  // changed are drawn again, about 4 ms of them a frame (the rest follow on
+  // the next frames, those near the camera first). Street lights and field
+  // fences keep a record per town the same way. Live play used to rebuild
+  // every model in the world on each drawn frame while towns grew (60-150 ms
+  // a frame: the stutter seen during city development). After a jump in time
+  // (a fast-forward, a new world) everything that changed is drawn at once.
   _stage(b) {
     if (!b.alive) return 'ruin';
     if (b.constructing) return b.progress < 0.12 ? 'found' : b.progress < 0.4 ? 'frame' : 'build';
     return b.upgrading ? 'upg' : 'done';
   }
 
-  _rebuild() {
+  // the arms a wall piece reaches out to its neighbours with (8 bits)
+  _wallMask(b, wallAt, W) {
+    let mask = 0;
+    for (let j = 0; j < 8; j++) {
+      const dx = DIRS8[j][0],
+        dy = DIRS8[j][1];
+      const nb = wallAt.get((b.ty + dy) * W + b.tx + dx);
+      if (!nb || nb.village !== b.village) continue;
+      if (dx && dy && (wallAt.has(b.ty * W + b.tx + dx) || wallAt.has((b.ty + dy) * W + b.tx))) continue;
+      mask |= 1 << j;
+    }
+    return mask;
+  }
+
+  // what a building's models depend on, besides its place and its realm's colour
+  _sig(b, def, civ, wallAt, W) {
+    const stage = this._stage(b);
+    if (stage === 'ruin') return def.wall ? 'r' : 'r' + b.type + '|' + b.style;
+    if (def.wall) return 'w' + b.type + '|' + b.style + '|' + (b.constructing ? 1 : 0) + '|' + this._wallMask(b, wallAt, W) + (b.type === 'tower' && b.bastion ? 'b' : '');
+    const K = civ.kingdoms[b.kingdom];
+    const re = K?.era ?? 0;
+    let s = stage + '|' + archKey(b, def, Math.min(b.level || 1, def.levels), re);
+    if ((stage === 'found' || stage === 'frame' || stage === 'build') && civ.hasTech?.(b.kingdom, 'engineering')) s += '|E';
+    if (b.heritage && re >= 5) s += '|H';
+    if (b.type === 'docks' && (K?.mastery || 0) >= 8) s += '|D';
+    if (b.type === 'colossus') s += '|t' + (civ.villages?.[b.village]?.tier || 0);
+    return s;
+  }
+
+  // The scan's fast test: the plain fields the signature is made from, kept
+  // on the record (store) or compared with it. Only a building that fails it
+  // has its signature string made again.
+  _quick(b, def, rec, civ, wallAt, W, store) {
+    const K = civ.kingdoms[b.kingdom];
+    const re = K?.era ?? 0;
+    const st = this._stage(b);
+    let ex = 0;
+    if (def.wall) ex = this._wallMask(b, wallAt, W) + (b.bastion ? 256 : 0);
+    else if (b.type === 'skyscraper') ex = towerVariant(b);
+    else if (b.type === 'colossus') ex = civ.villages?.[b.village]?.tier || 0;
+    else if (b.type === 'docks') ex = (K?.mastery || 0) >= 8 ? 1 : 0;
+    if ((st === 'found' || st === 'frame' || st === 'build') && civ.hasTech?.(b.kingdom, 'engineering')) ex += 1024;
+    const col = civ.kingdomColor(b.kingdom);
+    const rot = b.rotation || 0;
+    if (store) {
+      rec.qT = b.type;
+      rec.qS = b.style;
+      rec.qL = b.level;
+      rec.qE = b.era;
+      rec.qR = re;
+      rec.qG = b.gilded;
+      rec.qV = b.variant;
+      rec.qH = b.heritage;
+      rec.qSt = st;
+      rec.qX = ex;
+      rec.qVil = b.village;
+      rec.col = col;
+      rec.x = b.x;
+      rec.y = b.y;
+      rec.z = b.z;
+      rec.rot = rot;
+      rec.gm = b.groundMin;
+      return true;
+    }
+    return rec.qSt === st && rec.qT === b.type && rec.qS === b.style && rec.qL === b.level && rec.qE === b.era && rec.qR === re && rec.qG === b.gilded && rec.qV === b.variant && rec.qH === b.heritage && rec.qX === ex && rec.qVil === b.village && rec.col === col && rec.x === b.x && rec.y === b.y && rec.z === b.z && rec.rot === rot && rec.gm === b.groundMin;
+  }
+
+  _newRec(t, b, v = null) {
+    return { t, b, v, sig: null, seen: 0, queued: false, dead: false, stage: null, inst: [], chimneys: [], banners: [], blades: [], boats: [], decals: [], lights: [], scare: [], foot: -1 };
+  }
+
+  _enqueue(rec) {
+    if (rec.queued) return;
+    rec.queued = true;
+    const c = this.game.cameraRig?.cur;
+    let near = false;
+    if (c) {
+      const R = c.dist * 1.6 + 24;
+      const x = rec.b ? rec.b.x : rec.v.cx,
+        z = rec.b ? rec.b.z : rec.v.cz;
+      near = Math.abs(x - c.x) < R && Math.abs(z - c.z) < R;
+    }
+    (near ? this._qN : this._qF).a.push(rec);
+  }
+
+  // let go of everything a record holds (slots, anchors, footing)
+  _clearRec(rec) {
+    const L = rec.inst;
+    if (rec.t === 2) {
+      for (let i = 0; i < L.length; i++) this.fenceBatch.release(L[i]);
+      if (rec.scare.length) this._scareDirty = true;
+      rec.scare = [];
+    } else for (let i = 0; i < L.length; i += 2) L[i].release(L[i + 1]);
+    L.length = 0;
+    if (rec.chimneys.length || rec.banners.length || rec.blades.length || rec.boats.length || rec.decals.length || rec.lights.length) {
+      this._anchorsDirty = true;
+      rec.chimneys = [];
+      rec.banners = [];
+      rec.blades = [];
+      rec.boats = [];
+      rec.decals = [];
+      rec.lights = [];
+    }
+    if (rec.foot >= 0) {
+      this._footRelease(rec.foot);
+      rec.foot = -1;
+    }
+  }
+
+  _dropRec(rec) {
+    this._clearRec(rec);
+    rec.dead = true;
+  }
+
+  // one model instance of a record: its batch slot, colour and state
+  _put(rec, key, clip, m, col, item, extra = null) {
+    const d = this._detailFor(key, clip);
+    const id = d.alloc(key, this._arch(key).geo, m.elements, col, item, extra, item ? isMinor(item) : true);
+    this._writeState(d, id);
+    rec.inst.push(d, id);
+  }
+
+  // Which buildings changed: new ones, lost ones and those whose signature,
+  // place or colour moved. Cheap (no matrices, no geometry); the drawing
+  // waits in the queue. Also the towns' street lights and the capitals'
+  // standards.
+  _scan() {
     const g = this.game;
     const civ = g.civ;
     const world = g.world;
-    const lists = new Map(this.details.map((d) => [d, []]));
+    const W = world.w;
+    const stamp = ++this._stamp;
     _towerCiv = civ;
-    const push = (key, clip, m, color, b, extra = null) => {
-      const d = this._detailFor(key, clip);
-      lists.get(d).push({ key, geo: this._arch(key).geo, m: m.elements.slice(), o: 0, col: [color.r, color.g, color.b], item: b, extra, minor: b ? isMinor(b) : true });
-    };
-    const footings = [];
-    this.chimneys.length = 0;
-    this.lights = []; // x, y, z, size of each glow sprite (street lights, floodlights)
-    this.banners.length = 0;
-    this.blades.length = 0;
-    this.boats.length = 0;
-    const decals = [];
-    const col = new THREE.Color();
-    // wall connectivity
-    const wallAt = new Map();
-    for (const b of civ.buildings) if (!b.gone && b.alive && BUILDING_TYPES[b.type]?.wall) wallAt.set(b.ty * world.w + b.tx, b);
-
+    const wallAt = (this._wallAt = new Map());
+    for (const b of civ.buildings) if (!b.gone && b.alive && BUILDING_TYPES[b.type]?.wall) wallAt.set(b.ty * W + b.tx, b);
+    let changed = false;
     for (const b of civ.buildings) {
       if (b.gone) continue;
       const def = BUILDING_TYPES[b.type];
       if (!def) continue;
-      col.setHex(civ.kingdomColor(b.kingdom));
-      const stage = this._stage(b);
-      b._stage = stage;
-      const M = this._m.makeRotationY(b.rotation || 0).scale(b.type === 'bridge' ? _bridgeS : _bS).setPosition(b.x, b.y, b.z);
-      const dw = def.dw ?? def.w,
-        dh = def.dh ?? def.h;
-      if (stage === 'ruin') {
-        if (def.wall) continue;
-        push(`ruin|${b.style}|${dw}|${dh}|1`, false, M, col, b);
+      let rec = this._recs.get(b);
+      if (rec) {
+        rec.seen = stamp;
+        if (this._quick(b, def, rec, civ, wallAt, W, false)) continue;
+      }
+      const sig = this._sig(b, def, civ, wallAt, W);
+      if (!rec) {
+        rec = this._newRec(0, b);
+        rec.seen = stamp;
+        this._recs.set(b, rec);
+      } else if (rec.sig === sig && rec.col === civ.kingdomColor(b.kingdom) && rec.x === b.x && rec.y === b.y && rec.z === b.z && rec.rot === (b.rotation || 0) && rec.gm === b.groundMin) {
+        this._quick(b, def, rec, civ, wallAt, W, true); // (looks the same: only the fast test's fields moved)
         continue;
       }
-      if (def.wall) {
-        const clip = b.constructing;
-        if (b.type === 'wall') push(`wpost|${b.style}`, clip, this._m2.makeScale(BS, BS, BS).setPosition(b.x, b.y, b.z), col, b, { wall: true });
-        else {
-          const a = this._arch(`${b.type}|${b.style}|1`);
-          push(`${b.type}|${b.style}|1`, clip, M, col, b, { maxY: a.maxY });
-          if (!clip) this._collectAnchors(b, a, M, col, decals);
-          // Gunpowder: a star-shaped bastion round the tower's foot
-          if (b.type === 'tower' && b.bastion) push(`bastion|${b.style}`, clip, this._m2.makeRotationY(0).scale(_bS).setPosition(b.x, b.y, b.z), col, b, { maxY: 0.8 });
-        }
-        // arms toward connected neighbours
-        for (const [dx, dy] of DIRS8) {
-          const nb = wallAt.get((b.ty + dy) * world.w + b.tx + dx);
-          if (!nb || nb.village !== b.village) continue;
-          if (dx && dy && (wallAt.has(b.ty * world.w + b.tx + dx) || wallAt.has((b.ty + dy) * world.w + b.tx))) continue;
-          const yaw = Math.atan2(-dy, dx);
-          const am = this._m2.makeRotationY(yaw).scale(_wallS).setPosition(b.x, b.y, b.z);
-          if (dx && dy) am.multiply(this._m3.makeScale(Math.SQRT2, 1, 1));
-          push(`warm|${b.style}`, clip, am, col, b, { wall: true });
+      rec.sig = sig;
+      this._quick(b, def, rec, civ, wallAt, W, true);
+      this._enqueue(rec);
+      changed = true;
+    }
+    for (const [b, rec] of this._recs)
+      if (rec.seen !== stamp) {
+        this._dropRec(rec);
+        this._recs.delete(b);
+        changed = true;
+      }
+    // street lights, town by town
+    for (const v of civ.villages) {
+      if (!v) continue;
+      const sig = this._lampSig(v, civ);
+      let vr = this._lrecs.get(v);
+      if (!sig) {
+        if (vr) {
+          this._dropRec(vr);
+          this._lrecs.delete(v);
         }
         continue;
       }
-      const lvl = Math.min(b.level || 1, def.levels);
-      const akey = archKey(b, def, lvl, civ.kingdoms[b.kingdom]?.era ?? 0);
-      const a = this._arch(akey);
-      // Modern and later homes and blocks stand about a quarter larger (a car
-      // was 0.8 of a house), as wide as their plot allows; the works of
-      // industry rise taller (a factory reads at least twice a house); a
-      // colossus is cut to the size of a small town
-      const ups = this._upscale(b, def, a, civ);
-      if (ups) M.multiply(this._m3.makeScale(ups[0], ups[1], ups[0]));
-      if (stage === 'found' || stage === 'frame' || stage === 'build') {
-        // footings, then a timber frame, then walls rising, then the roof;
-        // timber and stone stacked by the site until it is done
-        if (stage === 'found') push(`found|${dw}|${dh}`, false, M, col, b);
-        else push(`frame|${dw}|${dh}|${Math.min(3, Math.max(1, Math.round(a.maxY * 2) / 2))}`, false, M, col, b);
-        if (stage === 'build') push(akey, true, M, col, b, { maxY: a.maxY });
-        const pm = this._m2.copy(M).multiply(new THREE.Matrix4().makeTranslation(dw / 2 - 0.35, 0, dh / 2 - 0.3));
-        push(`pile`, false, pm, col, b);
-        // Engineering: a tower crane over the larger sites
-        if (stage !== 'found' && dw * dh >= 4 && civ.hasTech?.(b.kingdom, 'engineering')) {
-          const cm = new THREE.Matrix4().copy(M).multiply(new THREE.Matrix4().makeTranslation(-dw / 2 + 0.25, 0, -dh / 2 + 0.25));
-          push('crane', false, cm, col, null);
-          civ._firstUse?.(civ.kingdoms[b.kingdom], 'crane', { x: b.x, z: b.z });
-        }
-      } else {
-        push(akey, false, M, col, b);
-        if (stage === 'upg') push(`scaf|${dw}|${dh}|${Math.min(3, Math.round(a.maxY * 2) / 2)}`, false, M, col, b);
-        this._collectAnchors(b, a, M, col, decals);
-        // heritage in a modern realm: floodlights at the front corners
-        if (b.heritage && (civ.kingdoms[b.kingdom]?.era ?? 0) >= 5) {
-          for (const sx of [-1, 1]) {
-            const p = this._p.set(sx * dw * 0.42, 0, dh * 0.5).applyMatrix4(M);
-            const gy = world.heightAt(p.x, p.z);
-            decals.push([p.x, gy, p.z, 0.55 * BS]);
-            this.lights.push(p.x, gy + 0.08, p.z, 0.45);
-          }
-        }
-      }
-      if (a.base && !a.stilts && stage !== 'found') {
-        const bus = ups ? ups[0] : 1;
-        const bx = (a.base.x || 0) * bus,
-          bz = (a.base.z || 0) * bus;
-        const top = b.y + 0.04;
-        const bottom = Math.min(b.groundMin ?? b.y, b.y) - 0.35;
-        const fm = new THREE.Matrix4().makeRotationY(b.rotation || 0);
-        fm.setPosition(b.x, top, b.z);
-        fm.multiply(new THREE.Matrix4().makeTranslation(bx * BS, 0, bz * BS));
-        fm.multiply(new THREE.Matrix4().makeScale((a.base.w + 0.04) * BS * bus, top - bottom, (a.base.d + 0.04) * BS * bus));
-        footings.push({ m: fm, style: b.style });
+      if (!vr) this._lrecs.set(v, (vr = this._newRec(1, null, v)));
+      vr.seen = stamp;
+      if (vr.sig !== sig) {
+        vr.sig = sig;
+        this._enqueue(vr);
       }
     }
+    for (const [v, vr] of this._lrecs)
+      if (vr.seen !== stamp) {
+        this._dropRec(vr);
+        this._lrecs.delete(v);
+      }
     // the realm's standard flies over every capital
-    this.staffs = [];
+    const staffs = [];
+    const cb = [];
     for (const k of civ.kingdoms) {
       if (!k.alive) continue;
       const v = civ.villages[k.capital];
@@ -733,59 +916,284 @@ export class BuildingRenderer {
       const x = h.x + Math.cos(r) * side + Math.sin(r) * 1.2 * BS,
         z = h.z - Math.sin(r) * side + Math.cos(r) * 1.2 * BS;
       const gy = world.heightAt(x, z);
-      this.staffs.push([x, gy, z, 2.5 * BS]);
-      this.banners.push({ x: x + 0.03 * BS, y: gy + 2.45 * BS, z, s: 1.45 * BS, style: h.style, color: civ.kingdomColor(k.id), k: k.id });
+      staffs.push([x, gy, z, 2.5 * BS]);
+      cb.push({ x: x + 0.03 * BS, y: gy + 2.45 * BS, z, s: 1.45 * BS, style: h.style, color: civ.kingdomColor(k.id), k: k.id });
     }
-    // lampposts along town streets
-    for (const v of civ.villages) {
-      // a town, or a busy village of a realm with electricity (its powered street)
-      if (!v.alive) continue;
-      if (v.tier < 1 && !(v.pop >= 20 && (v.powered || civ.hasTech?.(v.kingdom, 'electricity')))) continue;
-      col.setHex(civ.kingdomColor(v.kingdom));
-      // a realm of masters lights more of its streets; a powered town lights
-      // them with electric street lights
-      const lit = !!v.powered || (v.tier < 1 && !!civ.hasTech?.(v.kingdom, 'electricity'));
-      const lampP = lit ? 0.3 : 0.11 + Math.min(0.12, (civ.kingdoms[v.kingdom]?.mastery || 0) * 0.015);
-      for (const i of v.roadTiles) {
-        if (civ.use?.[i] !== 2) continue;
-        const tx = i % world.w,
-          ty = (i / world.w) | 0;
-        if (hash2(tx, ty, 91) > lampP) continue;
-        if (Math.hypot(tx + 0.5 - v.cx, ty + 0.5 - v.cz) > v.radius * (lit ? 0.95 : 0.8)) continue;
-        // stand on the road edge next to a building or plot
-        let ox = 0,
-          oz = 0;
-        for (const [dx, dy] of DIRS8.slice(0, 4)) {
-          const j = (ty + dy) * world.w + tx + dx;
-          if (world.building[j] >= 0) {
-            ox = dx * 0.38;
-            oz = dy * 0.38;
-            break;
-          }
-        }
-        if (!ox && !oz) continue;
-        const x = tx + 0.5 + ox,
-          z = ty + 0.5 + oz;
-        const ls = lit ? LS : LP;
-        const lm = this._m2.makeRotationY(Math.atan2(-oz, ox) + Math.PI).scale(this._s.set(ls, ls, ls)).setPosition(x, world.heightAt(x, z), z);
-        const gy = world.heightAt(x, z);
-        if (lit) {
-          push('streetlamp', false, lm, col, null);
-          decals.push([x - ox * 0.75 * (LS / PS), gy, z - oz * 0.75 * (LS / PS), 0.6 * PS]);
-          this.lights.push(x - ox * 0.75 * LS, gy + 1.08 * LS, z - oz * 0.75 * LS, 0.75);
-        } else {
-          push('lamppost', false, lm, col, null);
-          decals.push([x - ox * 0.4 * (LP / PS), gy, z - oz * 0.4 * (LP / PS), 0.5 * PS]);
+    this.staffs = staffs;
+    const cs = cb.map((o) => o.k + ',' + o.x + ',' + o.z + ',' + o.color + o.style).join(';');
+    if (cs !== this._capSig) {
+      this._capSig = cs;
+      this._capBanners = cb;
+      this._anchorsDirty = true;
+    }
+    if (changed) this._proxyDirty = true;
+  }
+
+  // Drawing what changed, nearest the camera first, until the frame's budget
+  // is spent (always at least one record, so a backlog always shrinks)
+  _work(budgetMs) {
+    const t0 = performance.now();
+    let n = 0;
+    for (const q of [this._qN, this._qF]) {
+      while (q.i < q.a.length) {
+        if (n > 0 && performance.now() - t0 > budgetMs) break;
+        const r = q.a[q.i++];
+        r.queued = false;
+        if (r.dead) continue;
+        if (r.t === 0) this._buildRec(r);
+        else if (r.t === 1) this._buildLamps(r);
+        else this._buildFences(r);
+        n++;
+      }
+      if (q.i >= q.a.length) {
+        q.a.length = 0;
+        q.i = 0;
+      } else if (q.i > 256) {
+        q.a = q.a.slice(q.i);
+        q.i = 0;
+      }
+    }
+    if (this._anchorsDirty) this._aggregate();
+    if (this._scareDirty) {
+      this._scareDirty = false;
+      const sl = (this._scareList = []);
+      for (const fr of this._frecs.values()) for (let i = 0; i < fr.scare.length; i++) sl.push(fr.scare[i]);
+    }
+    for (const d of this.details) d.flush();
+    if (this._footDirty) {
+      this._footDirty = false;
+      this.footing.instanceMatrix.needsUpdate = true;
+      if (this.footing.instanceColor) this.footing.instanceColor.needsUpdate = true;
+    }
+    const fb = this.fenceBatch;
+    this._fenceN = fb.live;
+    if (fb.mesh) fb.mesh.visible = !!this._props && this._fencesOn !== false && fb.live > 0;
+    this._meshVis();
+    return n;
+  }
+
+  // backlog of records still to draw
+  pending() {
+    return this._qN.a.length - this._qN.i + this._qF.a.length - this._qF.i;
+  }
+
+  _buildRec(rec) {
+    this._clearRec(rec);
+    const b = rec.b;
+    const g = this.game;
+    const civ = g.civ;
+    const world = g.world;
+    const def = BUILDING_TYPES[b.type];
+    const stage = this._stage(b);
+    b._stage = stage;
+    rec.stage = stage;
+    rec.hp = b.hp;
+    rec.burn = b.burning;
+    rec.prog = b.progress;
+    if (!def || b.gone) return;
+    _towerCiv = civ;
+    const col = this._bc.setHex(civ.kingdomColor(b.kingdom));
+    const push = (key, clip, m, item, extra = null) => this._put(rec, key, clip, m, col, item, extra);
+    const decals = rec.decals;
+    const M = this._m.makeRotationY(b.rotation || 0).scale(b.type === 'bridge' ? _bridgeS : _bS).setPosition(b.x, b.y, b.z);
+    const dw = def.dw ?? def.w,
+      dh = def.dh ?? def.h;
+    if (stage === 'ruin') {
+      if (!def.wall) push(`ruin|${b.style}|${dw}|${dh}|1`, false, M, b);
+      return;
+    }
+    if (def.wall) {
+      const clip = b.constructing;
+      if (b.type === 'wall') push(`wpost|${b.style}`, clip, this._m2.makeScale(BS, BS, BS).setPosition(b.x, b.y, b.z), b, { wall: true });
+      else {
+        const a = this._arch(`${b.type}|${b.style}|1`);
+        push(`${b.type}|${b.style}|1`, clip, M, b, { maxY: a.maxY });
+        if (!clip) this._collectAnchors(b, a, M, col, rec);
+        // Gunpowder: a star-shaped bastion round the tower's foot
+        if (b.type === 'tower' && b.bastion) push(`bastion|${b.style}`, clip, this._m2.makeRotationY(0).scale(_bS).setPosition(b.x, b.y, b.z), b, { maxY: 0.8 });
+      }
+      // arms toward connected neighbours
+      const wallAt = this._wallAt;
+      const W = world.w;
+      for (const [dx, dy] of DIRS8) {
+        const nb = wallAt.get((b.ty + dy) * W + b.tx + dx);
+        if (!nb || nb.village !== b.village) continue;
+        if (dx && dy && (wallAt.has(b.ty * W + b.tx + dx) || wallAt.has((b.ty + dy) * W + b.tx))) continue;
+        const yaw = Math.atan2(-dy, dx);
+        const am = this._m2.makeRotationY(yaw).scale(_wallS).setPosition(b.x, b.y, b.z);
+        if (dx && dy) am.multiply(this._m3.makeScale(Math.SQRT2, 1, 1));
+        push(`warm|${b.style}`, clip, am, b, { wall: true });
+      }
+      return;
+    }
+    const lvl = Math.min(b.level || 1, def.levels);
+    const akey = archKey(b, def, lvl, civ.kingdoms[b.kingdom]?.era ?? 0);
+    const a = this._arch(akey);
+    // Modern and later homes and blocks stand about a quarter larger (a car
+    // was 0.8 of a house), as wide as their plot allows; the works of
+    // industry rise taller (a factory reads at least twice a house); a
+    // colossus is cut to the size of a small town
+    const ups = this._upscale(b, def, a, civ);
+    if (ups) M.multiply(this._m3.makeScale(ups[0], ups[1], ups[0]));
+    if (stage === 'found' || stage === 'frame' || stage === 'build') {
+      // footings, then a timber frame, then walls rising, then the roof;
+      // timber and stone stacked by the site until it is done
+      if (stage === 'found') push(`found|${dw}|${dh}`, false, M, b);
+      else push(`frame|${dw}|${dh}|${Math.min(3, Math.max(1, Math.round(a.maxY * 2) / 2))}`, false, M, b);
+      if (stage === 'build') push(akey, true, M, b, { maxY: a.maxY });
+      const pm = this._m2.copy(M).multiply(new THREE.Matrix4().makeTranslation(dw / 2 - 0.35, 0, dh / 2 - 0.3));
+      push(`pile`, false, pm, b);
+      // Engineering: a tower crane over the larger sites
+      if (stage !== 'found' && dw * dh >= 4 && civ.hasTech?.(b.kingdom, 'engineering')) {
+        const cm = new THREE.Matrix4().copy(M).multiply(new THREE.Matrix4().makeTranslation(-dw / 2 + 0.25, 0, -dh / 2 + 0.25));
+        push('crane', false, cm, null);
+        civ._firstUse?.(civ.kingdoms[b.kingdom], 'crane', { x: b.x, z: b.z });
+      }
+    } else {
+      push(akey, false, M, b);
+      if (stage === 'upg') push(`scaf|${dw}|${dh}|${Math.min(3, Math.round(a.maxY * 2) / 2)}`, false, M, b);
+      this._collectAnchors(b, a, M, col, rec);
+      // heritage in a modern realm: floodlights at the front corners
+      if (b.heritage && (civ.kingdoms[b.kingdom]?.era ?? 0) >= 5) {
+        for (const sx of [-1, 1]) {
+          const p = this._p.set(sx * dw * 0.42, 0, dh * 0.5).applyMatrix4(M);
+          const gy = world.heightAt(p.x, p.z);
+          decals.push([p.x, gy, p.z, 0.55 * BS]);
+          rec.lights.push(p.x, gy + 0.08, p.z, 0.45);
         }
       }
     }
-    // write the building models: one batched draw per DetailBatch
-    for (const [d, L] of lists) {
-      d.set(L);
-      this._writeStates(d);
+    if (a.base && !a.stilts && stage !== 'found') {
+      const bus = ups ? ups[0] : 1;
+      const bx = (a.base.x || 0) * bus,
+        bz = (a.base.z || 0) * bus;
+      const top = b.y + 0.04;
+      const bottom = Math.min(b.groundMin ?? b.y, b.y) - 0.35;
+      const fm = this._m2.makeRotationY(b.rotation || 0);
+      fm.setPosition(b.x, top, b.z);
+      fm.multiply(this._m3.makeTranslation(bx * BS, 0, bz * BS));
+      fm.multiply(this._m3.makeScale((a.base.w + 0.04) * BS * bus, top - bottom, (a.base.d + 0.04) * BS * bus));
+      rec.foot = this._footAlloc(fm, b.style);
     }
-    this._lampsOn = null; // re-apply the lamppost range
-    // far-zoom proxies
+    if (rec.chimneys.length || rec.banners.length || rec.blades.length || rec.boats.length || rec.decals.length || rec.lights.length) this._anchorsDirty = true;
+  }
+
+  // a town's street lights: a town, or a busy village of a realm with
+  // electricity (its powered street)
+  _lampSig(v, civ) {
+    if (!v.alive) return '';
+    const elec = v.tier < 1 && !!civ.hasTech?.(v.kingdom, 'electricity');
+    if (v.tier < 1 && !(v.pop >= 20 && (v.powered || elec))) return '';
+    const lit = !!v.powered || elec;
+    return (lit ? 'L' : 'l') + (v.tier >= 1 ? 1 : 0) + '|' + v.roadTiles.length + '|' + v.buildings.length + '|' + Math.round(v.radius * 4) + '|' + Math.round(v.cx * 2) + '|' + Math.round(v.cz * 2) + '|' + civ.kingdomColor(v.kingdom) + '|' + Math.min(8, civ.kingdoms[v.kingdom]?.mastery || 0);
+  }
+
+  _buildLamps(vr) {
+    this._clearRec(vr);
+    const v = vr.v;
+    const civ = this.game.civ;
+    const world = this.game.world;
+    if (!v.alive) return;
+    if (v.tier < 1 && !(v.pop >= 20 && (v.powered || civ.hasTech?.(v.kingdom, 'electricity')))) return;
+    const col = this._bc.setHex(civ.kingdomColor(v.kingdom));
+    // a realm of masters lights more of its streets; a powered town lights
+    // them with electric street lights
+    const lit = !!v.powered || (v.tier < 1 && !!civ.hasTech?.(v.kingdom, 'electricity'));
+    const lampP = lit ? 0.3 : 0.11 + Math.min(0.12, (civ.kingdoms[v.kingdom]?.mastery || 0) * 0.015);
+    for (const i of v.roadTiles) {
+      if (civ.use?.[i] !== 2) continue;
+      const tx = i % world.w,
+        ty = (i / world.w) | 0;
+      if (hash2(tx, ty, 91) > lampP) continue;
+      if (Math.hypot(tx + 0.5 - v.cx, ty + 0.5 - v.cz) > v.radius * (lit ? 0.95 : 0.8)) continue;
+      // stand on the road edge next to a building or plot
+      let ox = 0,
+        oz = 0;
+      for (let j = 0; j < 4; j++) {
+        const dx = DIRS8[j][0],
+          dy = DIRS8[j][1];
+        if (world.building[(ty + dy) * world.w + tx + dx] >= 0) {
+          ox = dx * 0.38;
+          oz = dy * 0.38;
+          break;
+        }
+      }
+      if (!ox && !oz) continue;
+      const x = tx + 0.5 + ox,
+        z = ty + 0.5 + oz;
+      const ls = lit ? LS : LP;
+      const gy = world.heightAt(x, z);
+      const lm = this._m2.makeRotationY(Math.atan2(-oz, ox) + Math.PI).scale(this._s.set(ls, ls, ls)).setPosition(x, gy, z);
+      if (lit) {
+        this._put(vr, 'streetlamp', false, lm, col, null);
+        vr.decals.push([x - ox * 0.75 * (LS / PS), gy, z - oz * 0.75 * (LS / PS), 0.6 * PS]);
+        vr.lights.push(x - ox * 0.75 * LS, gy + 1.08 * LS, z - oz * 0.75 * LS, 0.75);
+      } else {
+        this._put(vr, 'lamppost', false, lm, col, null);
+        vr.decals.push([x - ox * 0.4 * (LP / PS), gy, z - oz * 0.4 * (LP / PS), 0.5 * PS]);
+      }
+    }
+    if (vr.decals.length || vr.lights.length) this._anchorsDirty = true;
+  }
+
+  // the flat lists the animation reads (chimneys, banners, sails, boats),
+  // the ground glows and the night lights, gathered from the records
+  _aggregate() {
+    this._anchorsDirty = false;
+    const ch = (this.chimneys = []),
+      bn = (this.banners = this._capBanners.slice()),
+      bl = (this.blades = []),
+      bo = (this.boats = []),
+      lights = (this.lights = []), // x, y, z, size of each glow sprite (street lights, floodlights)
+      decals = [];
+    const add = (r) => {
+      for (let i = 0; i < r.chimneys.length; i++) ch.push(r.chimneys[i]);
+      for (let i = 0; i < r.banners.length; i++) bn.push(r.banners[i]);
+      for (let i = 0; i < r.blades.length; i++) bl.push(r.blades[i]);
+      for (let i = 0; i < r.boats.length; i++) bo.push(r.boats[i]);
+      for (let i = 0; i < r.lights.length; i++) lights.push(r.lights[i]);
+      for (let i = 0; i < r.decals.length; i++) decals.push(r.decals[i]);
+    };
+    for (const r of this._recs.values()) add(r);
+    for (const r of this._lrecs.values()) add(r);
+    // decals
+    if (decals.length > this.decals.instanceMatrix.count) {
+      const nm = new THREE.InstancedMesh(this.decals.geometry, this.decalMat, Math.ceil(decals.length * 1.5));
+      nm.renderOrder = 3;
+      nm.frustumCulled = false;
+      nm.visible = this.decals.visible;
+      this.group.remove(this.decals);
+      this.decals.dispose();
+      this.decals = nm;
+      this.group.add(nm);
+    }
+    for (let i = 0; i < decals.length; i++) {
+      const [x, y, z, r] = decals[i];
+      this._m.compose(this._p.set(x, y + 0.03, z), this._q.identity(), this._s.set(r * 2, 1, r * 2));
+      this.decals.setMatrixAt(i, this._m);
+    }
+    this.decals.count = decals.length;
+    this.decals.instanceMatrix.needsUpdate = true;
+    this.glow.set(lights);
+    // smoke plumes over the stacks of working industry, steam over cooling towers
+    const pl = [];
+    for (const c of ch) {
+      if (!(c.stack || c.steam) || !c.b.alive || c.b.constructing) continue;
+      const t = c.b.type;
+      const soot = t === 'foundry' || t === 'bloomery' || t === 'kiln';
+      pl.push({ x: c.x, y: c.y, z: c.z, s: c.steam ? 1.15 : soot ? 0.8 : t === 'powerstation' ? 1.05 : 0.95, tone: c.steam ? 2 : soot ? 0.85 : 0.2 });
+    }
+    this.plumes.set(pl);
+  }
+
+  // far-zoom proxies: the landmarks as plain blocks, one batch per style
+  // (rebuilt only while the far view is shown)
+  _rebuildProxies() {
+    const civ = this.game.civ;
+    this._proxyDirty = false;
+    this._proxyT = this.game.time.realTime;
+    _towerCiv = civ;
+    const col = this._bc;
     const proxies = new Map();
     for (const b of civ.buildings) {
       if (b.gone || !b.alive) continue;
@@ -831,58 +1239,47 @@ export class BuildingRenderer {
       batch.mesh.computeBoundingSphere();
     }
     for (const [key, batch] of this.proxyBatches) if (!proxies.has(key) && batch.mesh) batch.mesh.count = 0;
-    this._applyLod(true);
-    // footings
-    if (footings.length > this.footing.instanceMatrix.count) {
-      const nm = new THREE.InstancedMesh(this.footing.geometry, this.footing.material, Math.ceil(footings.length * 1.5));
-      nm.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(Math.ceil(footings.length * 1.5) * 3), 3);
-      nm.receiveShadow = true;
-      this.group.remove(this.footing);
-      this.footing.dispose();
-      this.footing = nm;
-      this.group.add(nm);
-    }
-    for (let i = 0; i < footings.length; i++) {
-      this.footing.setMatrixAt(i, footings[i].m);
-      // (round 31) a grey dressed stone, only tinged by the style's own
-      this._c.setHex(PAL[footings[i].style]?.stone2 ?? 0x847c70).lerp(this._fg || (this._fg = new THREE.Color(0x8d8a84)), 0.65);
-      this.footing.setColorAt(i, this._c);
-    }
-    this.footing.count = footings.length;
-    this.footing.instanceMatrix.needsUpdate = true;
-    if (this.footing.instanceColor) this.footing.instanceColor.needsUpdate = true;
-    this.footing.computeBoundingSphere();
-    // decals
-    if (decals.length > this.decals.instanceMatrix.count) {
-      const nm = new THREE.InstancedMesh(this.decals.geometry, this.decalMat, Math.ceil(decals.length * 1.5));
-      nm.renderOrder = 3;
-      nm.frustumCulled = false;
-      this.group.remove(this.decals);
-      this.decals.dispose();
-      this.decals = nm;
-      this.group.add(nm);
-    }
-    for (let i = 0; i < decals.length; i++) {
-      const [x, y, z, r] = decals[i];
-      this._m.compose(this._p.set(x, y + 0.03, z), this._q.identity(), this._s.set(r * 2, 1, r * 2));
-      this.decals.setMatrixAt(i, this._m);
-    }
-    this.decals.count = decals.length;
-    this.decals.instanceMatrix.needsUpdate = true;
-    this._updateBoatsAndBlades(0, true);
-    this.glow.set(this.lights);
-    // smoke plumes over the stacks of working industry, steam over cooling towers
-    const pl = [];
-    for (const c of this.chimneys) {
-      if (!(c.stack || c.steam) || !c.b.alive || c.b.constructing) continue;
-      const t = c.b.type;
-      const soot = t === 'foundry' || t === 'bloomery' || t === 'kiln';
-      pl.push({ x: c.x, y: c.y, z: c.z, s: c.steam ? 1.15 : soot ? 0.8 : t === 'powerstation' ? 1.05 : 0.95, tone: c.steam ? 2 : soot ? 0.85 : 0.2 });
-    }
-    this.plumes.set(pl);
+    for (const b of this.proxyBatches.values()) if (b.mesh) b.mesh.visible = !!this._far && b.mesh.count > 0;
   }
 
-  _collectAnchors(b, a, M, col, decals) {
+  // footings: one slot each in the footing batch (a freed slot is scaled to nothing)
+  _footAlloc(m, style) {
+    let i = this._footSlots.pop();
+    if (i == null) {
+      i = this._footN++;
+      if (i >= this.footing.instanceMatrix.count) {
+        const cap = Math.ceil((i + 1) * 1.5);
+        const old = this.footing;
+        const nm = new THREE.InstancedMesh(old.geometry, old.material, cap);
+        nm.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(cap * 3), 3);
+        nm.instanceMatrix.array.set(old.instanceMatrix.array);
+        if (old.instanceColor) nm.instanceColor.array.set(old.instanceColor.array);
+        nm.castShadow = false;
+        nm.receiveShadow = true;
+        nm.frustumCulled = false;
+        nm.visible = old.visible;
+        this.group.remove(old);
+        old.dispose();
+        this.group.add(nm);
+        this.footing = nm;
+      }
+      this.footing.count = this._footN;
+    }
+    this.footing.setMatrixAt(i, m);
+    // (round 31) a grey dressed stone, only tinged by the style's own
+    this._c.setHex(PAL[style]?.stone2 ?? 0x847c70).lerp(this._fg || (this._fg = new THREE.Color(0x8d8a84)), 0.65);
+    this.footing.setColorAt(i, this._c);
+    this._footDirty = true;
+    return i;
+  }
+
+  _footRelease(i) {
+    this.footing.setMatrixAt(i, _zeroM);
+    this._footSlots.push(i);
+    this._footDirty = true;
+  }
+
+  _collectAnchors(b, a, M, col, rec) {
     const an = a.anchors;
     if (!an) return;
     const world = this.game.world;
@@ -890,15 +1287,15 @@ export class BuildingRenderer {
     for (const c of an.chimneys) {
       p.set(c.x, c.y, c.z).applyMatrix4(M);
       const stack = !c.steam && INDUSTRY.has(b.type);
-      this.chimneys.push({ x: p.x, y: p.y, z: p.z, rate: c.rate || 1, forge: !!c.forge, steam: !!c.steam, stack, b, t: Math.random() * 3 });
+      rec.chimneys.push({ x: p.x, y: p.y, z: p.z, rate: c.rate || 1, forge: !!c.forge, steam: !!c.steam, stack, b, t: Math.random() * 3 });
     }
     for (const c of an.banners) {
       p.set(c.x, c.y, c.z).applyMatrix4(M);
-      this.banners.push({ x: p.x, y: p.y, z: p.z, s: (c.s || 1) * BS, style: b.style, color: col.getHex(), k: b.kingdom });
+      rec.banners.push({ x: p.x, y: p.y, z: p.z, s: (c.s || 1) * BS, style: b.style, color: col.getHex(), k: b.kingdom });
     }
     for (const c of an.blades) {
       const bm = new THREE.Matrix4().copy(M).multiply(new THREE.Matrix4().makeTranslation(c.x, c.y, c.z));
-      this.blades.push({ m: bm, style: c.turbine ? 'turbine' : b.style, phase: b.seed * 10 });
+      rec.blades.push({ m: bm, style: c.turbine ? 'turbine' : b.style, phase: b.seed * 10 });
     }
     const moreShips = b.type === 'docks' && (this.game.civ?.kingdoms?.[b.kingdom]?.mastery || 0) >= 8;
     for (const c of moreShips ? [...an.boats, ...an.boats.map((o) => ({ ...o, x: o.x + 0.55, z: o.z + 0.35, ship: true }))] : an.boats) {
@@ -906,7 +1303,7 @@ export class BuildingRenderer {
       const tx = Math.floor(p.x),
         tz = Math.floor(p.z);
       if (!world.inBounds(tx, tz) || world.height[tz * world.w + tx] >= SEA_LEVEL) continue;
-      this.boats.push({ x: p.x, z: p.z, ry: (b.rotation || 0) + (c.ry || 0), style: c.ship ? (b.style === 'frost' || b.style === 'vale' ? 'frost' : 'dune') : b.style, phase: b.seed * 20 + this.boats.length, s: (c.ship ? 1.75 : 1) * VEHICLE.sea }); // (boats are craft: half size since round 24)
+      rec.boats.push({ x: p.x, z: p.z, ry: (b.rotation || 0) + (c.ry || 0), style: c.ship ? (b.style === 'frost' || b.style === 'vale' ? 'frost' : 'dune') : b.style, phase: b.seed * 20 + rec.boats.length, s: (c.ship ? 1.75 : 1) * VEHICLE.sea }); // (boats are craft: half size since round 24)
     }
     for (const c of an.lamps) {
       if (c.water) continue;
@@ -917,51 +1314,59 @@ export class BuildingRenderer {
       const ti = tz * world.w + tx;
       if (world.height[ti] < SEA_LEVEL + 0.05 || world.type[ti] === TILE.FARMLAND) continue;
       if (world.slopeAt(tx, tz) > 0.5) continue;
-      decals.push([p.x, world.heightAt(p.x, p.z), p.z, Math.min(0.75, (c.r || 1) * 0.5) * BS]);
+      rec.decals.push([p.x, world.heightAt(p.x, p.z), p.z, Math.min(0.75, (c.r || 1) * 0.5) * BS]);
     }
   }
 
   // Per-instance state: damage, burning, seed and the clip height of a
-  // building rising in its scaffolding. A DetailBatch keeps it in its
-  // instance texture (texel 1 of 2), a proxy Batch in its iState attribute.
+  // building rising in its scaffolding, and the shader flags. A DetailBatch
+  // keeps it in its instance texture (texel 1 of 2).
+  _writeState(d, id) {
+    const arr = d.data;
+    const b = d.items[id];
+    const k = id * 8 + 4;
+    d._dDirty = true;
+    if (!b) {
+      arr[id * 8 + 3] = 0;
+      arr[k] = 0;
+      arr[k + 1] = 0;
+      arr[k + 2] = 0.37;
+      arr[k + 3] = 99;
+      return;
+    }
+    const ex = d.extra[id];
+    const hpf = b.maxHp ? b.hp / b.maxHp : 1;
+    let dmg = b.alive ? Math.max(0, 1 - hpf - 0.12) / 0.88 : 0.7;
+    if (b.constructing) dmg = 0;
+    arr[k] = Math.min(1, dmg);
+    arr[k + 1] = b.burning || 0;
+    arr[k + 2] = b.seed || 0;
+    let clipY = 99;
+    if (b.constructing && b.progress >= 0.4) {
+      const maxY = ex?.maxY ?? (BUILDING_TYPES[b.type]?.wall ? WALL_H + 0.1 : 2);
+      const t = (b.progress - 0.4) / 0.6;
+      clipY = ex?.wall ? -0.5 + (WALL_H + 0.65) * b.progress : -0.1 + (maxY + 0.15) * t;
+    } else if (b.constructing && ex?.wall) clipY = -0.5 + (WALL_H + 0.65) * b.progress;
+    arr[k + 3] = clipY;
+    arr[id * 8 + 3] = this._flags(b);
+  }
+
+  // the same state for a far-zoom proxy Batch (its iState attribute)
   _writeStates(batch) {
-    const det = batch instanceof DetailBatch;
-    const arr = det ? batch.data : batch.iState.array;
-    const stride = det ? 8 : 4,
-      off = det ? 4 : 0;
+    const arr = batch.iState.array;
     const items = batch.items;
-    let burning = false;
     for (let i = 0; i < items.length; i++) {
       const b = items[i];
-      const k = i * stride + off;
-      if (!b) {
-        if (det) arr[i * 8 + 3] = 0;
-        arr[k] = 0;
-        arr[k + 1] = 0;
-        arr[k + 2] = 0.37;
-        arr[k + 3] = 99;
-        continue;
-      }
+      const k = i * 4;
       const hpf = b.maxHp ? b.hp / b.maxHp : 1;
       let dmg = b.alive ? Math.max(0, 1 - hpf - 0.12) / 0.88 : 0.7;
       if (b.constructing) dmg = 0;
       arr[k] = Math.min(1, dmg);
       arr[k + 1] = b.burning || 0;
       arr[k + 2] = b.seed || 0;
-      let clipY = 99;
-      if (b.constructing && b.progress >= 0.4) {
-        const maxY = batch.extra?.[i]?.maxY ?? (BUILDING_TYPES[b.type]?.wall ? WALL_H + 0.1 : 2);
-        const t = (b.progress - 0.4) / 0.6;
-        clipY = batch.extra?.[i]?.wall ? -0.5 + (WALL_H + 0.65) * b.progress : -0.1 + (maxY + 0.15) * t;
-      } else if (b.constructing && batch.extra?.[i]?.wall) clipY = -0.5 + (WALL_H + 0.65) * b.progress;
-      arr[k + 3] = clipY;
-      if (det) arr[i * 8 + 3] = this._flags(b);
-      if (b.burning > 0.02) burning = true;
+      arr[k + 3] = 99;
     }
-    if (det) {
-      if (batch.inst.value) batch.inst.value.needsUpdate = true;
-    } else batch.iState.needsUpdate = true;
-    return burning;
+    batch.iState.needsUpdate = true;
   }
 
   // instance flags for the shader: 1 lit by electricity (a powered town),
@@ -973,112 +1378,161 @@ export class BuildingRenderer {
     return f;
   }
 
-  _updateStates() {
-    const civ = this.game.civ;
-    // stage changes need a structural rebuild
-    for (const b of civ.buildings) if (!b.gone && b._stage && b._stage !== this._stage(b)) return this._rebuild();
-    for (const d of this.details) if (d.n) this._writeStates(d);
+  // Damage, fire and building progress: only the buildings whose numbers
+  // moved are written; one that reached a new stage of building is queued
+  // to be drawn again. (all: every instance, when the towns' power changed.)
+  _statePass(all = false) {
+    for (const rec of this._recs.values()) {
+      if (rec.queued || rec.dead) continue;
+      const b = rec.b;
+      if (b.gone) continue;
+      if (this._stage(b) !== rec.stage) {
+        this._enqueue(rec);
+        continue;
+      }
+      if (!all && b.hp === rec.hp && b.burning === rec.burn && b.progress === rec.prog) continue;
+      rec.hp = b.hp;
+      rec.burn = b.burning;
+      rec.prog = b.progress;
+      const L = rec.inst;
+      for (let i = 0; i < L.length; i += 2) this._writeState(L[i], L[i + 1]);
+    }
+    if (this._far && this.proxyBatches) for (const batch of this.proxyBatches.values()) if (batch.mesh?.count) this._writeStates(batch);
   }
 
   // ------------------------------------------------------------------ fences & fields
-  _rebuildFences() {
-    const g = this.game;
-    const civ = g.civ;
-    const world = g.world;
-    const per = new Map();
-    const scare = new Map();
-    for (const st of Object.keys(FENCE)) per.set(st, { posts: [], rails: [] });
-    for (const st of this.scareGeo.keys()) scare.set(st, []);
-    const q = this._q;
+  // a town's field fences and scarecrows, redrawn only when its fields change
+  // (a number: the town's style and centre, and each tilled plot's bounds,
+  // size and whether its middle is tilled; 0 when it has no fences)
+  _fenceSig(v, world) {
+    if (!v.alive || !v.plots?.length) return 0;
+    const FARM = TILE.FARMLAND;
+    const type = world.type;
+    let h = (STYLE_N[CULTURES[baseCulture(v.culture)]?.style] ?? 0) + 1;
+    h = (Math.imul(h, 31) + Math.floor(v.cx) * 4099 + Math.floor(v.cz)) | 0;
+    let any = false;
+    for (const p of v.plots) {
+      let tilled = 0;
+      const T = p.tiles;
+      for (let j = 0; j < T.length; j++) if (type[T[j]] === FARM && ++tilled >= 2) break;
+      if (tilled < 2) continue;
+      any = true;
+      const ci = Math.floor((p.y0 + p.y1 + 1) / 2) * world.w + Math.floor((p.x0 + p.x1 + 1) / 2);
+      h = (Math.imul(h, 31) + p.x0 * 7919 + p.y0 * 104729 + p.x1 * 1299709 + p.y1 * 15485863 + T.length * 2 + (type[ci] === FARM ? 1 : 0)) | 0;
+    }
+    return any ? h || 1 : 0;
+  }
+
+  _scanFences() {
+    const civ = this.game.civ;
+    const world = this.game.world;
+    const stamp = ++this._fstamp;
     for (const v of civ.villages) {
-      if (!v.alive) continue;
-      const st = CULTURES[baseCulture(v.culture)]?.style || 'vale';
-      const F = FENCE[st];
-      const P = per.get(st);
-      for (const p of v.plots) {
-        let tilled = 0;
-        for (const i of p.tiles) if (world.type[i] === TILE.FARMLAND) tilled++;
-        if (tilled < 2) continue;
-        const set = new Set(p.tiles);
-        const inPlot = (x, y) => world.inBounds(x, y) && set.has(y * world.w + x);
-        // gate: the edge closest to the village centre
-        const gx = Math.max(p.x0, Math.min(p.x1, Math.floor(v.cx))),
-          gy = Math.max(p.y0, Math.min(p.y1, Math.floor(v.cz)));
-        const edges = [];
-        for (const i of p.tiles) {
-          const x = i % world.w,
-            y = (i / world.w) | 0;
-          if (!inPlot(x, y - 1)) edges.push([x, y, x + 1, y, x === gx && y === p.y0 && v.cz < p.y0]);
-          if (!inPlot(x, y + 1)) edges.push([x, y + 1, x + 1, y + 1, x === gx && y === p.y1 && v.cz > p.y1]);
-          if (!inPlot(x - 1, y)) edges.push([x, y, x, y + 1, y === gy && x === p.x0 && v.cx < p.x0]);
-          if (!inPlot(x + 1, y)) edges.push([x + 1, y, x + 1, y + 1, y === gy && x === p.x1 && v.cx > p.x1]);
+      if (!v) continue;
+      const sig = this._fenceSig(v, world);
+      let fr = this._frecs.get(v);
+      if (!sig) {
+        if (fr) {
+          this._dropRec(fr);
+          this._frecs.delete(v);
         }
-        const postSet = new Set();
-        const inset = 0.08;
-        const cx = (p.x0 + p.x1 + 1) / 2,
-          cz = (p.y0 + p.y1 + 1) / 2;
-        const ins = (x, z) => [x + Math.sign(cx - x) * inset, z + Math.sign(cz - z) * inset];
-        for (const [x0, z0, x1, z1, gate] of edges) {
-          if (gate) continue;
-          const [ax, az] = ins(x0, z0),
-            [bx, bz] = ins(x1, z1);
-          const ay = world.heightAt(ax, az),
-            by = world.heightAt(bx, bz);
-          for (const [px, py, pz] of [
-            [ax, ay, az],
-            [bx, by, bz],
-          ]) {
-            const key = Math.round(px * 10) * 100000 + Math.round(pz * 10);
-            if (postSet.has(key)) continue;
-            postSet.add(key);
-            if (!F.wall || true) P.posts.push([px, py, pz]);
-          }
-          for (const ry of F.wall ? [F.rail[1] * 0.5] : F.rails) P.rails.push([ax, ay + ry * PS, az, bx, by + ry * PS, bz]);
-        }
-        if (st !== 'dune' && p.tiles.length >= Math.round(12 * Math.max(0.5, FOOTPRINT.scale ** 2))) {
-          const ci = Math.floor(cz) * world.w + Math.floor(cx);
-          if (world.type[ci] === TILE.FARMLAND) scare.get(st)?.push([cx + 0.1, world.heightAt(cx, cz), cz, hash2(p.x0, p.y0, 5) * 6]);
-        }
+        continue;
+      }
+      if (!fr) this._frecs.set(v, (fr = this._newRec(2, null, v)));
+      fr.seen = stamp;
+      if (fr.sig !== sig) {
+        fr.sig = sig;
+        this._enqueue(fr);
       }
     }
-    const dir = new THREE.Vector3();
-    const X = new THREE.Vector3(1, 0, 0);
-    const fb = this.fenceBatch;
-    fb.begin();
-    for (const [st, P] of per) {
-      const F = FENCE[st];
-      const base = new THREE.Color(F.color);
-      if (!F.wall)
-        for (let i = 0; i < P.posts.length; i++) {
-          const [x, y, z] = P.posts[i];
-          const s = F.post;
-          this._m.compose(this._p.set(x, y - 0.06, z), q.setFromAxisAngle(this._up, hash2(Math.round(x * 7), Math.round(z * 7), 3) * 0.4), this._s.set(s[0] * PS, s[1] * PS + 0.06, s[2] * PS));
-          this._c.copy(base).multiplyScalar(0.85 + hash2(i, 7, 1) * 0.3);
-          fb.push('post', this.postGeo, this._m, this._c);
-        }
-      for (let i = 0; i < P.rails.length; i++) {
-        const [ax, ay, az, bx, by, bz] = P.rails[i];
-        dir.set(bx - ax, by - ay, bz - az);
-        const len = dir.length();
-        dir.normalize();
-        q.setFromUnitVectors(X, dir);
-        const th = F.rail;
-        this._m.compose(this._p.set((ax + bx) / 2, (ay + by) / 2, (az + bz) / 2), q, this._s.set(len + (F.wall ? th[0] * 0.5 * PS : 0.02), th[1] * PS, th[0] * PS));
-        this._c.copy(base).multiplyScalar(0.8 + hash2(i, 9, 2) * 0.35);
-        fb.push('rail', this.railGeo, this._m, this._c);
+    for (const [v, fr] of this._frecs)
+      if (fr.seen !== stamp) {
+        this._dropRec(fr);
+        this._frecs.delete(v);
       }
-    }
-    fb.end();
-    this._fenceN = fb.k;
-    if (fb.mesh) fb.mesh.visible = !!this._props && this._fencesOn !== false && fb.k > 0; // (shown as a whole with the props)
-    // scarecrows join the sails and boats (written every frame)
-    const sl = (this._scareList = []);
-    for (const [st, list] of scare)
-      for (let i = 0; i < list.length; i++) {
-        const [x, y, z, r] = list[i];
+  }
+
+  _buildFences(fr) {
+    this._clearRec(fr);
+    const v = fr.v;
+    const world = this.game.world;
+    if (!v.alive) return;
+    const st = CULTURES[baseCulture(v.culture)]?.style || 'vale';
+    const F = FENCE[st];
+    if (!F) return;
+    const posts = [],
+      rails = [];
+    const q = this._q;
+    for (const p of v.plots) {
+      let tilled = 0;
+      for (const i of p.tiles) if (world.type[i] === TILE.FARMLAND) tilled++;
+      if (tilled < 2) continue;
+      const set = new Set(p.tiles);
+      const inPlot = (x, y) => world.inBounds(x, y) && set.has(y * world.w + x);
+      // gate: the edge closest to the village centre
+      const gx = Math.max(p.x0, Math.min(p.x1, Math.floor(v.cx))),
+        gy = Math.max(p.y0, Math.min(p.y1, Math.floor(v.cz)));
+      const edges = [];
+      for (const i of p.tiles) {
+        const x = i % world.w,
+          y = (i / world.w) | 0;
+        if (!inPlot(x, y - 1)) edges.push([x, y, x + 1, y, x === gx && y === p.y0 && v.cz < p.y0]);
+        if (!inPlot(x, y + 1)) edges.push([x, y + 1, x + 1, y + 1, x === gx && y === p.y1 && v.cz > p.y1]);
+        if (!inPlot(x - 1, y)) edges.push([x, y, x, y + 1, y === gy && x === p.x0 && v.cx < p.x0]);
+        if (!inPlot(x + 1, y)) edges.push([x + 1, y, x + 1, y + 1, y === gy && x === p.x1 && v.cx > p.x1]);
+      }
+      const postSet = new Set();
+      const inset = 0.08;
+      const cx = (p.x0 + p.x1 + 1) / 2,
+        cz = (p.y0 + p.y1 + 1) / 2;
+      const ins = (x, z) => [x + Math.sign(cx - x) * inset, z + Math.sign(cz - z) * inset];
+      for (const [x0, z0, x1, z1, gate] of edges) {
+        if (gate) continue;
+        const [ax, az] = ins(x0, z0),
+          [bx, bz] = ins(x1, z1);
+        const ay = world.heightAt(ax, az),
+          by = world.heightAt(bx, bz);
+        for (const [px, py, pz] of [
+          [ax, ay, az],
+          [bx, by, bz],
+        ]) {
+          const key = Math.round(px * 10) * 100000 + Math.round(pz * 10);
+          if (postSet.has(key)) continue;
+          postSet.add(key);
+          posts.push([px, py, pz]);
+        }
+        for (const ry of F.wall ? [F.rail[1] * 0.5] : F.rails) rails.push([ax, ay + ry * PS, az, bx, by + ry * PS, bz]);
+      }
+      if (st !== 'dune' && p.tiles.length >= Math.round(12 * Math.max(0.5, FOOTPRINT.scale ** 2))) {
+        const ci = Math.floor(cz) * world.w + Math.floor(cx);
         // (a person-height prop: the people's factor, PROP.kit, round 25)
-        sl.push(st, new THREE.Matrix4().compose(this._p.set(x, y, z), q.setFromAxisAngle(this._up, r), this._s.set(PROP.kit, PROP.kit, PROP.kit)));
+        if (world.type[ci] === TILE.FARMLAND && this.scareGeo.has(st)) fr.scare.push(st, new THREE.Matrix4().compose(this._p.set(cx + 0.1, world.heightAt(cx, cz), cz), q.setFromAxisAngle(this._up, hash2(p.x0, p.y0, 5) * 6), this._s.set(PROP.kit, PROP.kit, PROP.kit)));
       }
+    }
+    if (fr.scare.length) this._scareDirty = true;
+    // (posts and rails of every style: one batched draw and one shadow draw)
+    const fb = this.fenceBatch;
+    const base = this._fc.setHex(F.color);
+    if (!F.wall)
+      for (let i = 0; i < posts.length; i++) {
+        const [x, y, z] = posts[i];
+        const s = F.post;
+        this._m.compose(this._p.set(x, y - 0.06, z), q.setFromAxisAngle(this._up, hash2(Math.round(x * 7), Math.round(z * 7), 3) * 0.4), this._s.set(s[0] * PS, s[1] * PS + 0.06, s[2] * PS));
+        this._c.copy(base).multiplyScalar(0.85 + hash2(Math.round(x * 7), Math.round(z * 7), 1) * 0.3);
+        fr.inst.push(fb.alloc('post', this.postGeo, this._m, this._c));
+      }
+    const dir = this._dir;
+    for (let i = 0; i < rails.length; i++) {
+      const [ax, ay, az, bx, by, bz] = rails[i];
+      dir.set(bx - ax, by - ay, bz - az);
+      const len = dir.length();
+      dir.normalize();
+      q.setFromUnitVectors(_X, dir);
+      const th = F.rail;
+      this._m.compose(this._p.set((ax + bx) / 2, (ay + by) / 2, (az + bz) / 2), q, this._s.set(len + (F.wall ? th[0] * 0.5 * PS : 0.02), th[1] * PS, th[0] * PS));
+      this._c.copy(base).multiplyScalar(0.8 + hash2(Math.round((ax + bx) * 7), Math.round((az + bz) * 7 + ay * 3), 2) * 0.35);
+      fr.inst.push(fb.alloc('rail', this.railGeo, this._m, this._c));
+    }
   }
 
   // ------------------------------------------------------------------ animation
@@ -1233,13 +1687,13 @@ export class BuildingRenderer {
     this._far = far;
     this._props = props;
     this._mid = mid;
-    for (const d of this.details) if (d.mesh) d.mesh.visible = !far && d.n > 0;
-    if (this.dSmall.mesh) this.dSmall.mesh.visible = !far && !mid && this.dSmall.n > 0;
+    this._meshVis();
     if (force || midChanged) {
       this.dSolid.hideMinor(mid);
       this.dClip.hideMinor(mid);
       this._lampsOn = null;
     }
+    if (far && this._proxyDirty) this._rebuildProxies();
     for (const b of (this.proxyBatches || new Map()).values()) if (b.mesh) b.mesh.visible = far && b.mesh.count > 0;
     // (footings go with the small buildings: past ~90 tiles they were a
     // field of brown and orange squares on the town's grey patch)
@@ -1255,6 +1709,13 @@ export class BuildingRenderer {
     if (fb.mesh) fb.mesh.visible = fences && (this._fenceN || 0) > 0;
     for (const m of this.bannerMeshes.values()) m.visible = !far && m.count > 0;
     if (this.decals) this.decals.visible = props && this.decalMat.opacity > 0.01;
+  }
+
+  // the model batches are drawn when they hold something and the zoom shows them
+  _meshVis() {
+    const far = !!this._far;
+    for (const d of this.details) if (d.mesh) d.mesh.visible = !far && d.n > 0;
+    if (this.dSmall.mesh) this.dSmall.mesh.visible = !far && !this._mid && this.dSmall.n > 0;
   }
 
   // civ-related draw calls (meshes that will render, plus shadow casters)
@@ -1436,25 +1897,15 @@ export class BuildingRenderer {
     this.decalMat.opacity = this.uniforms.uNight.value * 0.42;
     this.decals.visible = this._props !== false && this.decalMat.opacity > 0.01;
     const now = g.time.realTime;
-    if ((civ.version !== this._ver || civ.colorVersion !== this._cver) && now - this._lastRebuild > 0.2) {
-      this._ver = civ.version;
-      this._cver = civ.colorVersion;
-      this._sver = civ.stateVersion;
-      this._lastRebuild = now;
-      this._rebuild();
-    } else if (civ.stateVersion !== this._sver && now - this._lastState > 0.12) {
-      this._sver = civ.stateVersion;
-      this._lastState = now;
-      this._updateStates();
-    }
-    if (civ.fieldVersion !== this._fver && now - this._lastFence > 1) {
-      this._fver = civ.fieldVersion;
-      this._lastFence = now;
-      this._rebuildFences();
-    }
+    // a jump in time (a fast-forward, the first frame, a new world): what
+    // changed is drawn at once; in live play a few milliseconds a frame
+    const tG = g.time.total;
+    if (this._tG != null && tG - this._tG > 30 + 2 * Math.max(0, now - this._tR) * Math.max(1, g.speed || 1)) this._full = true;
+    this._tG = tG;
+    this._tR = now;
     // which towns have power: street lights and electric windows follow it
     this._powT = (this._powT || 0) - dt;
-    if (this._powT <= 0) {
+    if (this._powT <= 0 || this._full) {
       this._powT = 1;
       let sig = '';
       for (const v of civ.villages) if (v.alive && v.powered) sig += v.id + ',';
@@ -1464,9 +1915,30 @@ export class BuildingRenderer {
       if (sig !== this._powerSig) {
         this._powerSig = sig;
         this._ver = -1;
+        this._flagsAll = true;
       }
     }
+    if ((civ.version !== this._ver || civ.colorVersion !== this._cver) && (now - this._lastRebuild > 0.2 || this._full)) {
+      this._ver = civ.version;
+      this._cver = civ.colorVersion;
+      this._lastRebuild = now;
+      this._scan();
+    }
+    if ((civ.stateVersion !== this._sver && now - this._lastState > 0.12) || this._flagsAll) {
+      this._sver = civ.stateVersion;
+      this._lastState = now;
+      this._statePass(!!this._flagsAll);
+      this._flagsAll = false;
+    }
+    if (civ.fieldVersion !== this._fver && (now - this._lastFence > 1 || this._full)) {
+      this._fver = civ.fieldVersion;
+      this._lastFence = now;
+      this._scanFences();
+    }
+    this._work(this._full ? Infinity : this.budgetMs);
+    this._full = false;
     this._applyLod();
+    if (this._far && this._proxyDirty && now - this._proxyT > 1) this._rebuildProxies();
     this.glow.uniforms.uTime.value = this.t;
     this.glow.update(this.uniforms.uNight.value, !this._far);
     // (null over water: no haze puffs over the sea, lakes or rivers)

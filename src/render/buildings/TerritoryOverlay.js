@@ -80,7 +80,15 @@ export class TerritoryOverlay {
     }
     if (civ && civ.colorVersion !== this._colorVer) {
       this._colorVer = civ.colorVersion;
-      this.markAll();
+      // (round 33) the whole map is repainted only when a realm's colour
+      // really changed: the colour version also moves when a town is founded
+      // or a realm rises, whose tiles arrive as owner changes anyway
+      let sig = '';
+      for (const k of civ.kingdoms || []) if (k) sig += k.id + ':' + civ.kingdomColor(k.id) + ',';
+      if (sig !== this._colorSig) {
+        this._colorSig = sig;
+        this.markAll();
+      }
     }
     if (this.dirty) this._refresh();
     if (this.fallback) this._updateFallback();
