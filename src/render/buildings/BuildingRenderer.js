@@ -911,7 +911,12 @@ export class BuildingRenderer {
           this._recs.delete(b);
           changed = true;
         }
-    // street lights, town by town
+    // street lights, town by town (and every 15 s all of them again, slowly:
+    // a lamp stands by a road tile next to any building, which the signature
+    // does not follow tile by tile)
+    const now = g.time.realTime;
+    const relamp = now - (this._lampT ?? 0) > 15;
+    if (relamp) this._lampT = now;
     for (const v of civ.villages) {
       if (!v) continue;
       const sig = this._lampSig(v, civ);
@@ -925,7 +930,7 @@ export class BuildingRenderer {
       }
       if (!vr) this._lrecs.set(v, (vr = this._newRec(1, null, v)));
       vr.seen = stamp;
-      if (vr.sig !== sig) {
+      if (vr.sig !== sig || relamp) {
         vr.sig = sig;
         this._enqueue(vr);
       }
