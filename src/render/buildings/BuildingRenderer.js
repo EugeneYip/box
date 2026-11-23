@@ -378,6 +378,11 @@ class PropBatch {
       m.addInstance(gid);
       this.nInst++;
     } else if (m.getGeometryIdAt(i) !== gid) m.setGeometryIdAt(i, gid);
+    if (!visible) {
+      // (round 33) hidden (out of view or out of range): nothing else to write
+      if (m.getVisibleAt(i)) m.setVisibleAt(i, false);
+      return;
+    }
     m.setMatrixAt(i, matrix);
     if (color) m.setColorAt(i, color);
     if (m.getVisibleAt(i) !== visible) m.setVisibleAt(i, visible);
@@ -490,6 +495,10 @@ export class BuildingRenderer {
     this._bc = new THREE.Color();
     this._fc = new THREE.Color();
     this._dir = new THREE.Vector3();
+    this._vf = new THREE.Frustum();
+    this._vpm = new THREE.Matrix4();
+    this._vs = new THREE.Sphere();
+    this._vfOk = false;
     // ground reshaped under fields and streets: their fences and street
     // lights are drawn again on the new ground (the rects of the edits,
     // gathered until the next update; past 256 of them, everything)
@@ -1600,6 +1609,7 @@ export class BuildingRenderer {
     const yaw = Math.atan2(-(wind.z || 0), wind.x || 1);
     const per = new Map();
     for (const b of this.banners) {
+      if (!this._inView(b.x, b.y, b.z, b.s * 1.5 + 0.5)) continue; // (round 33: banners cast no shadow)
       let L = per.get(b.style);
       if (!L) per.set(b.style, (L = []));
       L.push(b);
@@ -1694,25 +1704,44 @@ export class BuildingRenderer {
     const showBlades = !this._far,
       showBoats = D < this.lodDist,
       showScare = !!this._props;
+    // (round 33) none of these cast a shadow: those outside the view are
+    // only hidden, not written (sails, boats and scarecrows of the whole
+    // world were rewritten every frame)
+    const K = this._pkeys || (this._pkeys = new Map());
+    const key = (a, st) => {
+      const k = a + st;
+      let v = K.get(k);
+      if (v === undefined) K.set(k, (v = a + '|' + st));
+      return v;
+    };
     for (const [st, L] of per) {
       const geo = this.bladeGeo.get(st);
       if (!geo) continue;
+      const kk = key('blades', st);
       for (let i = 0; i < L.length; i++) {
-        this._m.copy(L[i].m).multiply(this._m2.makeRotationZ(spin + L[i].phase));
-        pb.push('blades|' + st, geo, this._m, null, showBlades);
+        const e = L[i].m.elements;
+        const vis = showBlades && this._inView(e[12], e[13], e[14], 2.5);
+        if (vis) this._m.copy(L[i].m).multiply(this._m2.makeRotationZ(spin + L[i].phase));
+        pb.push(kk, geo, this._m, null, vis);
       }
     }
     for (const b of this.boats) {
       const geo = this.boatGeo.get(b.style);
       if (!geo) continue;
-      const t = this.t + b.phase;
-      const bob = Math.sin(t * 1.6) * 0.025;
-      this._q.setFromEuler(this._eu.set(Math.sin(t * 1.3) * 0.05, b.ry + Math.PI / 2 + Math.sin(t * 0.3) * 0.08, Math.sin(t * 1.1 + 1) * 0.04));
-      this._m.compose(this._p.set(b.x + Math.sin(t * 0.25) * 0.08, SEA_LEVEL - 0.03 + bob, b.z), this._q, this._s.set(b.s || 1, b.s || 1, b.s || 1));
-      pb.push('boat|' + b.style, geo, this._m, null, showBoats);
+      const vis = showBoats && this._inView(b.x, SEA_LEVEL, b.z, 1.5);
+      if (vis) {
+        const t = this.t + b.phase;
+        const bob = Math.sin(t * 1.6) * 0.025;
+        this._q.setFromEuler(this._eu.set(Math.sin(t * 1.3) * 0.05, b.ry + Math.PI / 2 + Math.sin(t * 0.3) * 0.08, Math.sin(t * 1.1 + 1) * 0.04));
+        this._m.compose(this._p.set(b.x + Math.sin(t * 0.25) * 0.08, SEA_LEVEL - 0.03 + bob, b.z), this._q, this._s.set(b.s || 1, b.s || 1, b.s || 1));
+      }
+      pb.push(key('boat', b.style), geo, this._m, null, vis);
     }
     const sl = this._scareList;
-    for (let i = 0; i < sl.length; i += 2) pb.push('scare|' + sl[i], this.scareGeo.get(sl[i]), sl[i + 1], null, showScare);
+    for (let i = 0; i < sl.length; i += 2) {
+      const e = sl[i + 1].elements;
+      pb.push(key('scare', sl[i]), this.scareGeo.get(sl[i]), sl[i + 1], null, showScare && this._inView(e[12], e[13], e[14], 1));
+    }
     pb.end();
     void dt;
     void force;
@@ -1758,6 +1787,14 @@ export class BuildingRenderer {
     if (fb.mesh) fb.mesh.visible = fences && (this._fenceN || 0) > 0;
     for (const m of this.bannerMeshes.values()) m.visible = !far && m.count > 0;
     if (this.decals) this.decals.visible = props && this.decalMat.opacity > 0.01;
+  }
+
+  // whether a sphere at (x,y,z) of radius r meets this frame's (widened) view
+  _inView(x, y, z, r) {
+    if (!this._vfOk) return true;
+    this._vs.center.set(x, y, z);
+    this._vs.radius = r;
+    return this._vf.intersectsSphere(this._vs);
   }
 
   // the model batches are drawn when they hold something and the zoom shows them
@@ -1990,6 +2027,18 @@ export class BuildingRenderer {
     this._full = false;
     this._applyLod();
     if (this._far && this._proxyDirty && now - this._proxyT > 1) this._rebuildProxies();
+    // the camera's view this frame, widened by two tiles (for the props and
+    // banners that are only written while in view)
+    {
+      const cam = g.cameraRig?.camera;
+      this._vfOk = !!cam;
+      if (cam) {
+        cam.updateMatrixWorld();
+        this._vpm.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
+        this._vf.setFromProjectionMatrix(this._vpm);
+        for (const pl of this._vf.planes) pl.constant += 2;
+      }
+    }
     this.glow.uniforms.uTime.value = this.t;
     this.glow.update(this.uniforms.uNight.value, !this._far);
     // (null over water: no haze puffs over the sea, lakes or rivers)
