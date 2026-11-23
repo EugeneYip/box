@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { Pass } from 'postprocessing';
+import { SEA_LEVEL } from '../../world/constants.js';
 
 // Static / dynamic split of the key light's shadow map.
 //
@@ -14,6 +15,11 @@ import { Pass } from 'postprocessing';
 // Hook point: the sky dome's onBeforeRender, which three calls inside the
 // main render after its shadow pass and before anything else is drawn (the
 // same nested-render pattern three's Reflector uses).
+
+const _pm = new THREE.Matrix4();
+const _fr = new THREE.Frustum();
+const _d = new THREE.Vector3();
+const _b = new THREE.Box3();
 
 const COPY_VERT = /* glsl */ `
 varying vec2 vUv;
@@ -105,9 +111,11 @@ export class ShadowCache {
     const far = (this.game.view?.zoom01 ?? 0) > (this.farMode ? 0.76 : 0.82) - (ps ? 0.3 : 0);
     const modeFlip = far !== !!this.farMode;
     this.farMode = far;
-    const refresh = changed || modeFlip || !this.valid || !sizeOk || worldDue || heartbeat || this.game.frame < 4;
+    let refresh = changed || modeFlip || !this.valid || !sizeOk || worldDue || heartbeat || this.game.frame < 4;
+    const stale = !refresh && !far && this._cullStale();
+    refresh = refresh || stale;
     // refresh-trigger counters (inspect game.atmosphere.shadowCache.stats)
-    const st = this.stats || (this.stats = { frames: 0, refresh: 0, changed: 0, world: 0, heartbeat: 0, invalid: 0 });
+    const st = this.stats || (this.stats = { frames: 0, refresh: 0, changed: 0, world: 0, heartbeat: 0, invalid: 0, culled: 0 });
     st.frames++;
     if (refresh) {
       st.refresh++;
@@ -115,6 +123,7 @@ export class ShadowCache {
       else if (!this.valid || !sizeOk) st.invalid++;
       else if (worldDue) st.world++;
       else if (heartbeat) st.heartbeat++;
+      else if (stale) st.culled++;
     }
     for (const o of this.dyn) o.castShadow = true; // safety: never leave flags off
     this.dyn.length = 0;
@@ -139,6 +148,7 @@ export class ShadowCache {
       // power saver: the terrain (hundreds of chunks on big maps) receives
       // but does not cast; trees and buildings still give the land depth
       if (ps) off(this.game.terrain?.group || this.game.scene.getObjectByName('terrain'));
+      if (this.cullList) this.cullList.length = 0;
       if (this.farMode) {
         const g = this.game;
         off(g.vegetation?.group || g.scene.getObjectByName('vegetation'));
@@ -148,11 +158,79 @@ export class ShadowCache {
         // maps) is a draw call in every refresh; relief comes from its
         // shading instead (docs/WORLD-SCALE.md: shadows only near the camera)
         off(g.terrain?.group || g.scene.getObjectByName('terrain'));
-      }
+      } else if (!ps) this._cullTerrain();
     } else {
       sh.needsUpdate = false;
       this.phase = sizeOk ? 'cached' : null;
     }
+  }
+
+  // (round 33) Terrain chunks whose shadow cannot reach the view stay out of
+  // the static shadow pass. A chunk's shadow falls away from the sun, so the
+  // chunk's box swept along the light down to the lowest ground must meet
+  // the camera's view, widened by a margin for the slack the cached map
+  // allows before it is drawn again (the window may slide 1.5% and changes
+  // size in 6% steps). The fitted shadow window covers the whole ground
+  // footprint of the view plus a margin, so at mid zoom it held a third more
+  // chunks than the view itself (35 shadow draws against 26 in the view); a
+  // chunk that cannot shade anything on screen is no longer drawn into it.
+  _cullTerrain() {
+    const T = this.game.terrain;
+    const list = (this.cullList = this.cullList || []);
+    list.length = 0;
+    this.culled = 0;
+    if (!T?.chunks || !this._viewFrustum(0.08)) return;
+    const test = (mesh, box) => {
+      if (!mesh || !mesh.visible || !mesh.castShadow || box.isEmpty()) return;
+      // a chunk all deeper than 1.8 under the water casts only onto deep
+      // seabed, where sun shadows are faded to a tenth (terrainShader
+      // tShFade): left out wherever the view is
+      const deep = box.max.y < SEA_LEVEL - 1.8;
+      if (!deep && this._shadesView(box)) return;
+      mesh.castShadow = false;
+      this.dyn.push(mesh); // (restored after the capture, with the units)
+      if (!deep) list.push(box);
+      this.culled++;
+    };
+    for (const c of T.chunks) test(c.mesh, c.box);
+    for (const b of T.blocks || []) test(b.mesh, b.box);
+  }
+
+  // the camera's view frustum, widened by `slack` of the shadow window's
+  // size (plus two tiles); the light's direction toward the ground
+  _viewFrustum(slack) {
+    const cam = this.game.cameraRig?.camera;
+    if (!cam) return false;
+    cam.updateMatrixWorld();
+    _pm.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
+    _fr.setFromProjectionMatrix(_pm);
+    const sc = this.light.shadow.camera;
+    const margin = slack * Math.max(sc.right - sc.left, sc.top - sc.bottom) + 2;
+    for (const p of _fr.planes) p.constant += margin;
+    _d.subVectors(this.light.target.position, this.light.position).normalize();
+    return true;
+  }
+
+  // whether a box or its shadow on the lowest ground can fall in that view
+  _shadesView(box) {
+    const yLow = -1.5;
+    const drop = Math.max(0, box.max.y - yLow) / Math.max(0.12, -_d.y);
+    const ox = _d.x * drop,
+      oz = _d.z * drop;
+    _b.min.set(Math.min(box.min.x, box.min.x + ox), yLow, Math.min(box.min.z, box.min.z + oz));
+    _b.max.set(Math.max(box.max.x, box.max.x + ox), box.max.y, Math.max(box.max.z, box.max.z + oz));
+    return _fr.intersectsBox(_b);
+  }
+
+  // A chunk left out of the cached map whose shadow could now reach the
+  // view (the camera turned or slid without moving the shadow window
+  // enough to redraw it): the map is drawn again at once, so a shadow never
+  // pops in late at the edge of the screen.
+  _cullStale() {
+    const list = this.cullList;
+    if (!list || !list.length || !this._viewFrustum(0.02)) return false;
+    for (const box of list) if (this._shadesView(box)) return true;
+    return false;
   }
 
   // Inside the main render, after three's shadow pass.
