@@ -467,8 +467,8 @@ export const PRESETS = {
   // twice a person's height, an unexplained glowing orb at mid zoom.
   heal(fx, p, o) {
     const s = (o.scale ?? 1) * UNIT.rel;
-    glints(fx, p.x, p.y + 0.1, p.z, fx.k(o.count ?? 6), { radius: 0.5 * s, height: 0.9 * s, size: 1.1 * s, ramp: RAMP.HEAL, color: o.color, rise: 1.1 });
-    glowFlash(fx, p.x, p.y + 0.5 * s, p.z, 1.3 * s, { life: 0.45, bright: 0.9, ramp: RAMP.HEAL, from: 0.4, color: o.color });
+    glints(fx, p.x, p.y + 0.1, p.z, fx.k(o.count ?? 6), { radius: 0.5 * s, height: 0.9 * s, size: 1.1 * s, ramp: RAMP.HEAL, color: o.color, rise: 1.1, bright: 1.8 });
+    glowFlash(fx, p.x, p.y + 0.5 * s, p.z, 1.3 * s, { life: 0.45, bright: 0.7, ramp: RAMP.HEAL, from: 0.4, color: o.color });
     flatRing(fx, p.x, p.y, p.z, 1.8 * s, { ramp: RAMP.HEAL, life: 0.6, bright: 1.0 });
   },
 
