@@ -10,6 +10,7 @@ import { modern } from './modern.js';
 import { traffic } from './traffic.js';
 import { hullR, hullHalf, segDist, HULL_GAP, PIER, BERTH, pierEnd, DEEP_WATER } from './hull.js';
 import { geoDist, geoWrapOn } from '../../world/geo.js';
+import { seaIceOf, freezeLevel, NAV_PAD, LEVEL_MAX } from '../../world/seaIce.js';
 import { VEHICLE, PICK_PX } from '../../core/scale.js';
 
 const _SD = { x: 0, z: 0 };
@@ -89,31 +90,28 @@ export class Fleet {
       this.nav?.markDirty(r);
       this._heightDirty = true;
     });
-    // ice painted on the water (or thawed off it) closes or opens it to ships
-    game.events.on('world:type', (r) => {
-      const R = this._typeRect;
-      if (!R) this._typeRect = { x0: r.x0, y0: r.y0, x1: r.x1, y1: r.y1 };
-      else {
-        R.x0 = Math.min(R.x0, r.x0);
-        R.y0 = Math.min(R.y0, r.y0);
-        R.x1 = Math.max(R.x1, r.x1);
-        R.y1 = Math.max(R.y1, r.y1);
-      }
-    });
+    // (ice painted on the water or thawed off it, and the seasons' ice, reach
+    // the ships through the shared sea-ice keys: _iceCheck)
     game.events.on('laws', ({ key }) => this._onLaw(key));
     this._wrapDamage();
   }
 
   _init() {
     const w = this.world;
-    this.nav = new WaterNav(w, 4);
+    // which water tiles are frozen over: the ice the water shader draws, from
+    // the same per-tile keys and freeze level (src/world/seaIce.js), with a
+    // small pad so a keel keeps clear of the sheet's ragged edge
+    this.seaIce = seaIceOf(this.game);
+    this.seaIce.invalidate();
+    this._ice = new Uint8Array(w.w * w.h);
+    this._iceVer = -1;
+    this._iceLevel = NaN;
+    this._iceCand = null;
+    this._iceMask();
+    this.nav = new WaterNav(w, 4, this._ice);
     this.rng = mulberry32(((this.game.params?.seed ?? 1) * 7919 + 101) >>> 0);
     this._nextId = 1;
     this._timers = { sched: 0.5, war: 0, hazard: 0, land: 1, siege: 0.3, debris: 0, ice: 0 };
-    // which water tiles are frozen over (ice sheets the ships keep out of)
-    this._ice = new Uint8Array(w.w * w.h);
-    for (let i = 0; i < this._ice.length; i++) this._ice[i] = w.height[i] < SEA_LEVEL && w.type[i] === TILE.ICE ? 1 : 0;
-    this._typeRect = null;
     this.firsts = new Set();
     this.charts = new Map(); // kingdom -> Set of charted cells
     this._berths = new Map();
@@ -929,35 +927,68 @@ export class Fleet {
     if (this.list.some((v) => !v.alive)) this.list = this.list.filter((v) => v.alive);
   }
 
-  // Tiles whose surface changed since the last look: where water froze over
-  // or thawed, the water graph is patched (land edits are ignored).
-  _iceCheck() {
-    const r = this._typeRect;
-    if (!r) return;
-    this._typeRect = null;
+  // the map tile under a point (-1 off the map; the Round world's seam wraps)
+  _tileOf(x, z) {
+    const w = this.world;
+    let tx = Math.floor(x);
+    const tz = Math.floor(z);
+    if (this.nav.wrap && (tx < 0 || tx >= w.w)) tx = ((tx % w.w) + w.w) % w.w;
+    return tx < 0 || tz < 0 || tx >= w.w || tz >= w.h ? -1 : tz * w.w + tx;
+  }
+
+  // Bring the frozen-tile mask up to date with the sea-ice keys and the
+  // season's freeze level. Returns the bounds of the tiles that changed, one
+  // rect per half of the map (north, south), or null.
+  _iceMask() {
     const w = this.world,
       M = this._ice;
-    if (!M || M.length !== w.w * w.h) return;
-    // the northern and southern halves are patched separately: ice forming
-    // round both poles at once must not re-plan the whole ocean in between
+    const si = this.seaIce;
+    const key = si.ensure();
+    const level = freezeLevel(this.game);
+    const rebuilt = si.version !== this._iceVer;
+    if (!rebuilt && Math.abs(level - this._iceLevel) < 0.002) return null;
+    this._iceVer = si.version;
+    this._iceLevel = level;
+    const thr = level + NAV_PAD;
+    const h = w.height,
+      W = w.w;
+    const mid = w.h >> 1;
     const B = [
       [Infinity, Infinity, -1, -1],
       [Infinity, Infinity, -1, -1],
     ];
-    const mid = w.h >> 1;
-    for (let y = Math.max(0, r.y0); y <= Math.min(w.h - 1, r.y1); y++) {
+    const look = (i) => {
+      const f = h[i] < SEA_LEVEL && key[i] < thr ? 1 : 0;
+      if (f === M[i]) return;
+      M[i] = f;
+      const x = i % W,
+        y = (i / W) | 0;
       const b = B[y < mid ? 0 : 1];
-      for (let x = Math.max(0, r.x0); x <= Math.min(w.w - 1, r.x1); x++) {
-        const i = y * w.w + x;
-        const ice = w.height[i] < SEA_LEVEL && w.type[i] === TILE.ICE ? 1 : 0;
-        if (ice === M[i]) continue;
-        M[i] = ice;
-        if (x < b[0]) b[0] = x;
-        if (y < b[1]) b[1] = y;
-        if (x > b[2]) b[2] = x;
-        if (y > b[3]) b[3] = y;
+      if (x < b[0]) b[0] = x;
+      if (y < b[1]) b[1] = y;
+      if (x > b[2]) b[2] = x;
+      if (y > b[3]) b[3] = y;
+    };
+    if (rebuilt || !this._iceCand) {
+      // every tile once; then only those any age could ever freeze
+      const cand = [];
+      const top = LEVEL_MAX + NAV_PAD;
+      for (let i = 0; i < M.length; i++) {
+        look(i);
+        if (h[i] < SEA_LEVEL && key[i] < top) cand.push(i);
       }
-    }
+      this._iceCand = Int32Array.from(cand);
+    } else for (const i of this._iceCand) look(i);
+    return B;
+  }
+
+  // The season turned, or the ice was painted or broken: patch the water
+  // graph where water froze over or thawed.
+  _iceCheck() {
+    const B = this._iceMask();
+    if (!B) return;
+    // the northern and southern halves are patched separately: ice forming
+    // round both poles at once must not re-plan the whole ocean in between
     if (B[0][2] >= 0 && B[1][2] >= 0 && !this.nav.dirty) {
       // patch the north now; the south waits for the usual debounced update
       this.nav.markDirty({ x0: B[0][0], y0: B[0][1], x1: B[0][2], y1: B[0][3] });
@@ -1241,13 +1272,20 @@ export class Fleet {
       this.hurt(v, step * 3 * v.burning, 'fire');
       if (!v.alive || v.state === 'sinking') return;
     }
-    // the ground rose beneath the keel
+    // the ground rose beneath the keel, or the sea froze round it
     if (!this.nav.isWater(v.x, v.z)) {
-      const wpt = this.nav.waterNear(v.x, v.z, 2, 0.5);
-      if (wpt) {
-        v.x = wpt.x;
-        v.z = wpt.z;
-      } else return this.lose(v, 'aground');
+      const ti = this._tileOf(v.x, v.z);
+      const frozen = ti >= 0 && this.world.height[ti] < SEA_LEVEL;
+      if (!frozen || (v._besetT = (v._besetT || 0) - step) <= 0) {
+        // (caught by the ice: it works out to the nearest open water)
+        const wpt = this.nav.waterNear(v.x, v.z, frozen ? 9 : 2, 0.5);
+        if (wpt) {
+          v.x = wpt.x;
+          v.z = wpt.z;
+          v._besetT = 0;
+        } else if (!frozen) return this.lose(v, 'aground');
+        else v._besetT = 3; // beset: it waits for the thaw (looks again in a while)
+      }
     }
     this._missionTick(v, step + (v._lodAcc || 0), night); // (with the time a distant ship's last skipped ticks missed)
     v._lodAcc = 0;

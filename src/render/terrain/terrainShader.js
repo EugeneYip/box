@@ -452,6 +452,33 @@ Mat matTundra(NS s) {
   c = seasonal(c, 0.45, s.temp);
   return mk(c, 0.90, 0.40 + 0.25 * lich + 0.3 * stn, 0.05 + 0.04 * stn);
 }
+// (round 33) Snow on high ground reads as peaks, not smooth white sausages
+// along a range: steep faces and the sunward flanks shed their snow, the
+// snow line wanders with broad noise and parts the band into peaks, and the
+// summits and crests (higher than the ground ~2.5 tiles round) keep theirs.
+// Returns how much of the cover to take away (0..0.9); edge adds to the
+// break-up toward a snowfield's edge.
+// (round world: the taps east and west read across the seam)
+vec2 seamTap(vec2 q) {
+  if (uWrapBand.x > 0.0) q.x = mod(q.x, uWrapBand.x);
+  return q;
+}
+float snowBreak(NS s, vec2 p, float edge) {
+  float stp = 1.0 - s.n.y;
+  float asp = dot(s.n.xz, vec2(0.62, 0.44)) / max(length(s.n.xz), 1e-3) * smoothstep(0.03, 0.14, stp);
+  float hRing = (heightTap(seamTap(p + vec2(2.5, 0.0))) + heightTap(seamTap(p - vec2(2.5, 0.0))) + heightTap(p + vec2(0.0, 2.5)) + heightTap(p - vec2(0.0, 2.5))) * 0.25;
+  float hWide = (heightTap(seamTap(p + vec2(6.0, 0.0))) + heightTap(seamTap(p - vec2(6.0, 0.0))) + heightTap(p + vec2(0.0, 6.0)) + heightTap(p - vec2(0.0, 6.0))) * 0.25;
+  float peak = clamp(s.p.y - hRing, -2.0, 2.0);
+  float peakW = clamp(s.p.y - hWide, -3.0, 3.0);
+  // (from afar a range is a strip a few pixels wide and its faces barely
+  // tilt: there the noise alone parts the strip into a chain of peaks; a
+  // broad snowy plateau thins to patches between its summits, while the
+  // polar ice caps, colder than any range, stay whole)
+  float farK = max(1.0 - uDetail, uMapZoom);
+  float polar = smoothstep(0.07, 0.01, s.temp);
+  float brk = 0.34 + stp * 2.4 + asp * 0.30 + (s.macro.g - 0.5) * (1.1 + 0.8 * farK) + (s.meso.r - 0.5) * (0.65 + 0.5 * farK) + edge + 0.06 * farK - peak * 0.20 * (1.0 - 0.5 * farK) - peakW * 0.06 - polar * 0.9;
+  return smoothstep(0.36, 0.60, brk) * 0.9;
+}
 Mat matSnow(NS s) {
   // mid-value snow (never paper white): blue-violet hollows, wind ripples
   float drift = s.meso.r * 0.6 + s.det.g * 0.4;
@@ -1032,6 +1059,7 @@ void terrainSurface() {
     float cover = smoothstep(0.22, 0.78, snowF + (s.micro.r - 0.5) * 0.35 + (s.det.b - 0.5) * 0.25) * smoothstep(-0.04, 0.12, s.p.y);
     // warm ages / low frost: snow fields retreat up to the peaks
     if (uMeltH > 0.01) cover *= smoothstep(uMeltH - 2.0, uMeltH + 2.0, s.p.y + (s.det.r - 0.5) * 2.0);
+    cover *= 1.0 - snowBreak(s, p, (1.0 - snowF) * 0.35);
     vec4 bn = b * (1.0 - isSnow);
     float bsum = bn.x + bn.y + bn.z + bn.w;
     vec3 ground = bsum > 1e-4 ? (m0.albedo * bn.x + m1.albedo * bn.y + m2.albedo * bn.z + m3.albedo * bn.w) / bsum : matTundra(s).albedo;
@@ -1115,6 +1143,9 @@ void terrainSurface() {
     float sv = uSnowT - s.temp + (s.det.b - 0.5) * 0.05 + (s.meso.r - 0.5) * 0.08;
     float sn = smoothstep(-0.03, 0.03, sv) * smoothstep(-0.02, 0.3, s.p.y) * (1.0 - lavaRaw);
     sn *= mix(1.0, smoothstep(0.55, 0.78, nrm.y), cliff);
+    // high ground that is always cold (the snow line of the ranges) breaks
+    // up into peaks; deep in a winter's snow the blanket stays whole
+    if (sn > 0.001) sn *= 1.0 - snowBreak(s, p, 0.0) * (1.0 - smoothstep(0.06, 0.22, sv));
     if (sn > 0.001) {
       albedo = mix(albedo, matSnow(s).albedo, sn);
       rough = mix(rough, 0.62, sn);
@@ -1488,7 +1519,9 @@ void terrainSurface() {
   vec3 sea = seabedColor(s, max(depth, 0.0), hb);
   float under = smoothstep(-0.05, 0.9, depth + (s.det.r - 0.5) * 0.5);
   // sandy floors take the rippled seabed look; other beds keep their material, wet
-  float sandy = dot(vec4(equal(vec4(t0, t1, t2, t3), vec4(0.0))) * live, b);
+  // (sea-ice tiles too: thawed in summer, the floor under them is the shelf's
+  // own sand, not the ice material's cracks seen through the water)
+  float sandy = dot((vec4(equal(vec4(t0, t1, t2, t3), vec4(0.0))) + vec4(equal(vec4(t0, t1, t2, t3), vec4(15.0)))) * live, b);
   // (round 31: the sea floor past ~2.8 deep is ROCK tiles, and as a "wet bed"
   // their dark mountain stone showed through the shelf water as ragged,
   // tile-stepped ink blots on every regional map; a rock floor under the sea

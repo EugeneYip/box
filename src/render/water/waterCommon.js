@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { freezeLevel } from '../../world/seaIce.js';
 
 // Shared optics for the landscape shaders.
 //
@@ -47,7 +48,7 @@ export function landscapeUniforms(game) {
       uSeason: { value: 0.5 }, // game.time.season (0 spring .. 4), for crops
       uSnowT: { value: -1 }, // seasonal snow where temperature < uSnowT
       uMeltH: { value: 0 }, // snow tiles below this height melt (warm ages)
-      uFreezeT: { value: -1 }, // lakes / calm shallows freeze where temperature < uFreezeT
+      uFreezeT: { value: -1 }, // freeze level: water tiles whose sea-ice key is below it are frozen (seaIce.js)
       uDry: { value: 0 }, // sun-baked grass (warm ages)
       uDetail: { value: 1 }, // 1 = full close-up detail .. 0 = far / power-saver path
       uPower: { value: 0 }, // 1 = power saver: fewer texture taps, no triplanar
@@ -148,7 +149,8 @@ function updateSeasonUniforms(game, u, dt = 0.016) {
   const target = {
     snow: (winter * 0.3 + cold * 0.75) * frost - warm * 0.5 - (frost < 1 ? (1 - frost) * 0.12 : 0),
     melt: warm * 30 + Math.max(0, 1 - frost) * 10,
-    freeze: (winter * 0.2 + cold * 0.6) * frost - warm * 0.3,
+    // (the same level the fleet keeps its keels out of the ice by: seaIce.js)
+    freeze: freezeLevel(game),
     dry: Math.min(1, warm * 2),
   };
   // ease toward targets so snow builds in and melts out gradually (time based);
@@ -204,8 +206,8 @@ const float KEYN = 0.30;
 // climate of the water being shaded: 0 temperate/tropical .. 1 polar (set by callers)
 float gCold = 0.0;
 
-// absorption per world unit of path (r, g, b); polar water is greyer
-vec3 waterAbsorb() { return mix(vec3(0.60, 0.150, 0.085), vec3(0.36, 0.24, 0.20), gCold); }
+// absorption per world unit of path (r, g, b); polar water is a greyer slate
+vec3 waterAbsorb() { return mix(vec3(0.60, 0.150, 0.085), vec3(0.44, 0.21, 0.15), gCold); }
 
 // Light available inside the upper water column; vis = shadow * cloud factor.
 vec3 waterIrradianceV(float vis) {
@@ -225,15 +227,16 @@ vec3 waterIrradiance() { return waterIrradianceV(1.0); }
 vec3 waterDeepColorV(float vis) {
   // (a clear ocean blue: darker albedos read as near-black ink up close, and
   // the polar slate as a dark band round the poles at map zoom)
-  return mix(vec3(0.0075, 0.047, 0.128), vec3(0.014, 0.043, 0.080), gCold) * waterIrradianceV(vis);
+  // (polar: a deep slate blue, round 33: the old slate read near-black at noon)
+  return mix(vec3(0.0075, 0.047, 0.128), vec3(0.017, 0.056, 0.112), gCold) * waterIrradianceV(vis);
 }
 vec3 waterDeepColor() { return waterDeepColorV(1.0); }
 // Lighter scatter colour of the shallow shelf haze (turquoise / cold teal-grey).
 // At map zoom the shelf haze turns a quieter sea teal-blue: wide continental
 // shelves read as shallow sea, not as a glowing cyan ring around every coast.
 vec3 waterShallowColorV(float vis) {
-  vec3 c = mix(vec3(0.018, 0.150, 0.165), vec3(0.022, 0.048, 0.056), gCold);
-  c = mix(c, mix(vec3(0.016, 0.115, 0.145), vec3(0.018, 0.042, 0.058), gCold), uMapZoom);
+  vec3 c = mix(vec3(0.018, 0.150, 0.165), vec3(0.022, 0.066, 0.086), gCold);
+  c = mix(c, mix(vec3(0.016, 0.115, 0.145), vec3(0.019, 0.054, 0.082), gCold), uMapZoom);
   return c * waterIrradianceV(vis);
 }
 // Shallow -> deep scatter ramp; from afar it runs over the shelf itself, so the

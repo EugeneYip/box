@@ -3,6 +3,7 @@ import { SEA_LEVEL } from '../../world/constants.js';
 import { landscapeUniforms, refreshLandscapeUniforms } from './waterCommon.js';
 import { patchWaterMaterial } from './waterShader.js';
 import { getNoiseTextures } from '../terrain/noiseTextures.js';
+import { seaIceOf } from '../../world/seaIce.js';
 
 // Water surface (Landscape).
 //
@@ -33,6 +34,17 @@ export class Water {
     this._dist = new Float32Array(W * H);
     this._tmp = new Float32Array(Math.max(W, H) + 2);
 
+    // sea ice: per-tile freeze keys (R) and icebergs (G), read with exact
+    // fetches; the same field keeps the ships off the ice (seaIce.js)
+    this.iceData = new Float32Array(W * H * 2);
+    this.iceTexture = new THREE.DataTexture(this.iceData, W, H, THREE.RGFormat, THREE.FloatType);
+    this.iceTexture.magFilter = this.iceTexture.minFilter = THREE.NearestFilter;
+    this.iceTexture.wrapS = this.iceTexture.wrapT = THREE.ClampToEdgeWrapping;
+    this.iceTexture.generateMipmaps = false;
+    this.iceTexture.colorSpace = THREE.NoColorSpace;
+    this._iceVer = -1;
+    this._iceWait = 0;
+
     const shared = landscapeUniforms(game);
     const noise = getNoiseTextures();
     const terrain = game.terrain;
@@ -45,6 +57,7 @@ export class Water {
       uCells: { value: noise.cells },
       uCamFar: { value: 2000 },
       uClimTex: { value: terrain?.climTexture || null },
+      uIceKey: { value: this.iceTexture },
     };
     // the terrain reads the same shore field (river banks at map zoom)
     if (terrain?.uniforms?.uShoreTex) terrain.uniforms.uShoreTex.value = this.shoreTexture;
@@ -96,12 +109,38 @@ export class Water {
       this._shoreTimer = Math.max(this._shoreTimer, 0.15);
     });
     this._computeShore();
+    this._syncIce(true);
   }
 
   reset() {
     this._shoreDirty = true;
     this._shoreTimer = 0;
     this._computeShore();
+    seaIceOf(this.game).invalidate();
+    this._syncIce(true);
+  }
+
+  // Upload the sea-ice keys when they changed (rebuilt at most every ~2 s
+  // while the water is being edited: an icebreaker cuts a tile at a time).
+  _syncIce(now = false, dt = 0) {
+    const si = seaIceOf(this.game);
+    if (si.dirty) {
+      this._iceWait += dt;
+      if (!now && this._iceWait < 2) return;
+      this._iceWait = 0;
+      si.ensure();
+    }
+    if (si.version === this._iceVer && si.world === this._iceWorld) return;
+    this._iceVer = si.version;
+    this._iceWorld = si.world;
+    const k = si.key,
+      b = si.berg,
+      d = this.iceData;
+    for (let i = 0; i < k.length; i++) {
+      d[i * 2] = k[i];
+      d[i * 2 + 1] = b[i];
+    }
+    this.iceTexture.needsUpdate = true;
   }
 
   update(dt) {
@@ -118,6 +157,7 @@ export class Water {
       this._shoreTimer -= dt;
       if (this._shoreTimer <= 0) this._computeShore();
     }
+    this._syncIce(false, dt);
   }
 
   // Euclidean distance (tiles) from water tiles to the nearest land tile, and
