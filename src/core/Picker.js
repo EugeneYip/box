@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { SEA_LEVEL } from '../world/constants.js';
 import { UNIT, VEHICLE, PICK_PX } from './scale.js';
+import { KINDS } from '../sim/fleet/kinds.js';
 
 // (round 25) Inside a building's footprint a creature or vehicle takes the
 // click only when its body is within this many CSS pixels of the cursor.
@@ -98,6 +99,13 @@ export class Picker {
         mover = v;
         kind = 'vessel';
       }
+    }
+    // (round 33) a street car (fleet.traffic, where it is drawn in its lane)
+    // by the same rule as the other half-size craft: the nearer one wins
+    const car = g.fleet?.carAt?.(hit.x, hit.z, Math.min(bd, Math.max(0.9 * VEHICLE.rel, KINDS.car.size * 0.9, pxR)));
+    if (car) {
+      mover = g.fleet.carHandle(car.c);
+      kind = 'vessel';
     }
     if (!mover && g.units?.forEachNear) {
       let bs = Infinity;

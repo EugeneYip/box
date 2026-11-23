@@ -337,16 +337,45 @@ export class CameraRig {
     if (this.keys.has('Equal') || this.keys.has('NumpadAdd')) this.zoom(Math.pow(0.35, dt));
     if (this.keys.has('Minus') || this.keys.has('NumpadSubtract')) this.zoom(Math.pow(1 / 0.35, dt));
 
+    // (round 33) a followed creature or craft that has left the world (a
+    // vehicle at the end of its trip, a street car gone from the streets, a
+    // death) is let go here and now, whether or not its card is open: the
+    // view stays where it was last seen and eases back out to minDist, as
+    // Escape does (a dead follow target lingered on the rig until the
+    // inspector's next refresh, or for good when followed from Favorites)
+    if (this.follow && this.follow.alive === false) {
+      this.follow = null;
+      this._fLast = null;
+      if (this.goal.dist < this.minDist) this.goal.dist = this.minDist;
+    }
     // the closer follow zoom ends when the unit is let go: back out to minDist
     if (this.goal.dist < this.minDist && !this.closeOK()) this.goal.dist = this.minDist;
 
     const wrapW = geoWrapOn(this.game.world) ? this.game.world.w : 0;
     if (this.follow && this.follow.alive !== false) {
-      this.goal.x = this.follow.x;
-      this.goal.z = this.follow.z;
+      // (round 33) aim where the unit is drawn this frame (between its last
+      // two ticks, as the renderers place it), and move the view with it by
+      // the same step it took since the last frame: the eased chase alone
+      // trailed a walking person by 8-19 px at the closest zoom (a constant
+      // lag of its pace over the ease rate); the ease now only closes the
+      // gap left when the follow starts
+      const f = this.follow;
+      const p = this._drawnAt(f);
+      const L = this._fLast;
+      if (L && L.ref === f) {
+        const dx = p.x - L.x,
+          dz = p.z - L.z;
+        if (Math.abs(dx) + Math.abs(dz) < 2) {
+          this.cur.x += dx;
+          this.cur.z += dz;
+        }
+      }
+      this._fLast = { ref: f, x: p.x, z: p.z };
+      this.goal.x = p.x;
+      this.goal.z = p.z;
       // (a ship followed across the Round world's seam: the camera goes round with her)
       if (wrapW && Math.abs(this.goal.x - this.cur.x) > wrapW / 2) this.cur.x += this.goal.x > this.cur.x ? wrapW : -wrapW;
-    }
+    } else this._fLast = null;
 
     const k = 1 - Math.exp(-dt * 9);
     const kz = 1 - Math.exp(-dt * 7);
@@ -450,6 +479,90 @@ export class CameraRig {
     for (let i = 0; i < 12 && p < maxP; i++, p += 0.04) if (covered(p) <= 0.3) break;
     return Math.max(lift, Math.min(maxP, p) - pitch);
   }
+  // (round 33) The extra pitch (radians, at least `lift`) at which terrain
+  // rising beyond the target fills no more than about 40% of the upper half
+  // of the frame. Rays through a 5 x 4 grid of points in the upper half are
+  // marched out to 1.5 times the eye's distance to the target; a ray that
+  // meets ground standing above the target there is on a wall (at 5 tiles a
+  // cliff beyond the target filled ~70% of the frame, and the lower-frame
+  // test above never saw it). Pitching up turns the upper frame down onto
+  // the ground round the target.
+  _wallLift(pitch, lift, c, ty) {
+    const W = this.game.world;
+    const cam = this.camera;
+    const tanH = Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2);
+    const asp = cam.aspect || 1;
+    const s = Math.sin(c.yaw),
+      co = Math.cos(c.yaw);
+    const maxP = THREE.MathUtils.degToRad(78);
+    const wMax = W.w - 1,
+      hMax = W.h - 1;
+    const D = c.dist;
+    const covered = (p) => {
+      const horiz = Math.cos(p) * D;
+      const ex = c.x + s * horiz,
+        ey = ty + Math.sin(p) * D,
+        ez = c.z + co * horiz;
+      const fx = -s * Math.cos(p),
+        fy = -Math.sin(p),
+        fz = -co * Math.cos(p);
+      const rx = co,
+        rz = -s;
+      const ux = -s * Math.sin(p),
+        uy = Math.cos(p),
+        uz = -co * Math.sin(p);
+      let n = 0,
+        hit = 0;
+      for (let j = 0; j < 4; j++) {
+        const b = 0.15 + j * 0.25; // upper frame, NDC
+        for (let i = 0; i < 5; i++) {
+          const a = -0.8 + i * 0.4;
+          let dx = fx + rx * a * tanH * asp + ux * b * tanH,
+            dy = fy + uy * b * tanH,
+            dz = fz + rz * a * tanH * asp + uz * b * tanH;
+          const l = Math.hypot(dx, dy, dz);
+          dx /= l;
+          dy /= l;
+          dz /= l;
+          n++;
+          for (let k = 1; k <= 16; k++) {
+            const t = (k / 16) * 1.5 * D;
+            const x = ex + dx * t,
+              z = ez + dz * t;
+            if (x < 0 || z < 0 || x > wMax || z > hMax) break;
+            const g = Math.max(0, W.heightAt(x, z));
+            if (g > ey + dy * t) {
+              if (g > ty + 0.2) hit++;
+              break;
+            }
+          }
+        }
+      }
+      return n ? hit / n : 0;
+    };
+    let p = pitch + lift;
+    for (let i = 0; i < 26 && p < maxP; i++, p += 0.04) if (covered(p) <= 0.4) break;
+    return Math.max(lift, Math.min(maxP, p) - pitch);
+  }
+  // Where a creature or craft is drawn this frame: between its last two
+  // ticks (px, pz -> x, z) by the share of the next tick already run, as
+  // UnitRenderer and FleetRenderer interpolate it.
+  _drawnAt(f) {
+    const g = this.game;
+    const out = this._dAt || (this._dAt = { x: 0, z: 0 });
+    out.x = f.x;
+    out.z = f.z;
+    const px = f.px,
+      pz = f.pz;
+    // (FleetRenderer draws a paused craft at its tick; UnitRenderer keeps a
+    // creature at the share of the tick run when the game paused)
+    const craft = f.cls != null || f.def?.cls != null;
+    if (px == null || pz == null || (craft && g.paused) || Math.abs(px - f.x) + Math.abs(pz - f.z) > 2) return out;
+    const a = Math.min(1, Math.max(0, (g._acc || 0) / ((craft ? g.simStep : g.units?.tickDt) || 1 / 15)));
+    out.x = px + (f.x - px) * a;
+    out.z = pz + (f.z - pz) * a;
+    return out;
+  }
   // The followed creature or craft, when there is one to aim at.
   _followed() {
     const f = this.follow;
@@ -492,6 +605,8 @@ export class CameraRig {
       // pitch up further while terrain covers more than about 30% of the
       // lower frame
       if (c.dist < 16) need = this._coverLift(pitch, need, c, this.target.y);
+      // (round 33) and while a slope beyond the target fills the upper frame
+      if (c.dist < 16) need = this._wallLift(pitch, need, c, this.target.y);
       if (this._lift == null) this._lift = need;
       else this._lift += (need - this._lift) * (1 - Math.exp(-dt * (need > this._lift ? 20 : 2.5)));
       pitch = Math.min(THREE.MathUtils.degToRad(80), pitch + this._lift);
@@ -598,12 +713,30 @@ export class CameraRig {
         const below = ((f.x - T.x) * ey.x + (fy - T.y) * ey.y + (f.z - T.z) * ey.z) / (rr * rr);
         if (below < -0.3) ends.push([T.x - ey.x * 0.6, T.y - ey.y * 0.6, T.z - ey.z * 0.6]);
       }
-      for (const [x1, y1, z1] of ends) {
+      // (round 33) and lines to the ground at the bottom of the frame, cutting
+      // only what stands in their first half, by the eye: a building close
+      // in front of the camera filled the bottom of the frame as a blurred
+      // dome (the lines to the target pass over it)
+      {
+        const tanH = CAM_CUT.uCutTan.value,
+          asp = cam.aspect || 1;
+        const f = new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld, 2).negate();
+        const rx = new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld, 0),
+          uy = new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld, 1);
+        for (const a of [-0.6, 0, 0.6]) {
+          const d = f.clone().addScaledVector(rx, a * tanH * asp).addScaledVector(uy, -0.8 * tanH);
+          if (d.y > -0.05) continue;
+          const t = (E.y - T.y) / -d.y;
+          ends.push([E.x + d.x * t, T.y, E.z + d.z * t, 0.5]);
+        }
+      }
+      for (const [x1, y1, z1, tMax = 1] of ends) {
         const L = Math.hypot(x1 - E.x, y1 - E.y, z1 - E.z);
         const n = Math.min(160, Math.ceil(L / 0.2));
         // (stops short of the end, so what stands right at the target is kept)
         for (let i = 1; i < n - 1; i++) {
           const t = i / n;
+          if (t > tMax) break;
           const x = E.x + (x1 - E.x) * t,
             y = E.y + (y1 - E.y) * t,
             z = E.z + (z1 - E.z) * t;
@@ -648,7 +781,10 @@ export class CameraRig {
         boxes[i].set(0, 0, -1, -1);
         continue;
       }
-      const m = 0.35; // eaves and porches reach a little past the plot
+      // eaves, porches, balconies and the flagpoles and posts before a
+      // building reach a little past the plot (round 33: 0.35 left some
+      // standing outside the cut)
+      const m = 0.45;
       boxes[i].set(b.tx - m, b.ty - m, b.tx + (b.w || 1) + m, b.ty + (b.h || 1) + m);
       als[i] = e[1];
       // the cut: from over the roof down to just under the lowest sight line
@@ -675,7 +811,13 @@ export class CameraRig {
     if (def.wall) return 1.2 * BUILDING.scale;
     const t = b.type;
     const h = t === 'skyscraper' || t === 'arcology' ? 14 : def.monument ? 9 : def.modern ? 7 : 3.4;
-    return h * BUILDING.scale * (b.constructing ? Math.max(0.3, b.progress || 0) : 1);
+    // (round 33) a building site's frame and scaffold stand up to three
+    // design units however far the walls have risen inside them
+    // (BuildingRenderer 'frame'): a site judged by its progress alone was
+    // missed by the sight lines and left its frame members and posts
+    // standing beside the cut
+    if (b.constructing) return Math.max(h * Math.max(0.3, b.progress || 0), Math.min(h, 3)) * BUILDING.scale;
+    return h * BUILDING.scale;
   }
   resize(w, h) {
     this.camera.aspect = w / h;

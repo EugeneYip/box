@@ -59,6 +59,10 @@ export const KINDS = {
   tractor: { cls: 'land', road: true, role: 'service', name: 'Tractor', tech: 'tractors', speed: 0.9, turn: 3, hp: 60, crew: 1, capacity: 0, scale: 1, length: 0.7, size: 0.5, dps: 0 },
   tram: { cls: 'land', road: true, role: 'service', name: 'Tram', tech: 'transit', speed: 1.7, turn: 5, hp: 90, crew: 1, capacity: 40, scale: 1, length: 1.3, size: 0.7, dps: 0 },
   bus: { cls: 'land', road: true, role: 'service', name: 'Bus', tech: 'transit', speed: 2.0, turn: 4, hp: 80, crew: 1, capacity: 36, scale: 1, length: 1.15, size: 0.65, dps: 0 },
+  // (round 33) a Modern town's own vehicles on its streets (town.js): not in
+  // the god powers' chooser (LAND_KINDS), only ever sent by their towns
+  van: { cls: 'land', road: true, role: 'town', name: 'Delivery van', tech: 'combustion', speed: 1.2, turn: 4, hp: 50, crew: 1, capacity: 0, scale: 1, length: 0.85, size: 0.55, dps: 0 },
+  garbage: { cls: 'land', road: true, role: 'town', name: 'Garbage truck', tech: 'combustion', speed: 1.0, turn: 3.5, hp: 80, crew: 2, capacity: 0, scale: 1, length: 1.0, size: 0.6, dps: 0 },
 };
 
 // Design sizes to the world's (VEHICLE in src/core/scale.js): the model scale,

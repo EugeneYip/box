@@ -12,6 +12,7 @@ import { VEHICLE, BUILDING } from '../../core/scale.js';
 import { SEA_LEVEL } from '../../world/constants.js';
 import { geoWrapOn } from '../../world/geo.js';
 import { hwPoint } from '../../sim/civ/modern.js';
+import { roadBoost, laneOffset } from '../../sim/fleet/traffic.js';
 
 // Draws game.fleet: every vessel, land vehicle, aircraft and rocket through
 // ONE batched multi-draw (a THREE.BatchedMesh holding each kind's full and
@@ -403,7 +404,7 @@ export class FleetRenderer {
     // road vehicles grow a little as the camera pulls back, a third as much as
     // the people do (UnitRenderer's readability boost), so a car stays about
     // two people long at play zoom as well as up close
-    C.roadBoost = 1 + (Math.min(2.6, Math.max(1, 0.55 + dist / 28)) - 1) * 0.35;
+    C.roadBoost = roadBoost(dist);
     // round 25: out to about 75 tiles a car keeps at least ~5.5 px of length
     // on screen (half-size cars had shrunk to specks at 30 tiles and vanished
     // at 55); up close it keeps its true half size
@@ -623,9 +624,9 @@ export class FleetRenderer {
     const grow = C.minRoadLen > 0 && def.length > 0 ? Math.max(1, Math.min(3.2, C.minRoadLen / (def.length * (C.roadBoost || 1)))) : 1;
     const sc = (def.scale || 1) * (C.roadBoost || 1) * grow;
     const hl = def.length * 0.4 * grow;
-    // (the right-hand lane: half a car's width and a little off the crown)
-    // (round 24: half-size cars keep to the right half of the same street)
-    const lane = 0.27 * (0.5 + 0.5 * VEHICLE.rel) * Math.min(1.2, C.roadBoost || 1);
+    // (the right-hand lane: half a car's width and a little off the crown;
+    // the picker and the camera find a street car there too, traffic.js)
+    const lane = laneOffset(C.roadBoost);
     let n = 0;
     for (let i = 0; i < T.length; i++) {
       const c = T[i];

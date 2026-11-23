@@ -241,3 +241,44 @@ if (vRoof.x > 0.5) {
 export function createPropMaterial() {
   return new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.88, metalness: 0 });
 }
+
+// (round 33) The close-zoom cutaway (CameraRig CAM_CUT) for the things that
+// stand with the buildings but are drawn with materials of their own: the
+// realm's standards and their staffs, banners, fences, windmill sails and
+// the like. Inside a building's cut box they are cut at the same height as
+// the building (its flagpoles and posts were left standing above the cut).
+export function withCutaway(mat) {
+  const prev = mat.onBeforeCompile;
+  mat.onBeforeCompile = (sh, renderer) => {
+    if (prev) prev.call(mat, sh, renderer);
+    sh.uniforms.uCut = CAM_CUT.uCut;
+    sh.uniforms.uCutBox = CAM_CUT.uCutBox;
+    sh.uniforms.uCutA = CAM_CUT.uCutA;
+    sh.uniforms.uCutY = CAM_CUT.uCutY;
+    sh.uniforms.uCamW = CAM_CUT.uCamW;
+    sh.fragmentShader = sh.fragmentShader
+      .replace(
+        '#include <common>',
+        `#include <common>
+uniform float uCut;
+uniform vec4 uCutBox[${CUT_N}];
+uniform float uCutA[${CUT_N}];
+uniform float uCutY[${CUT_N}];
+uniform mat4 uCamW;`,
+      )
+      .replace(
+        '#include <clipping_planes_fragment>',
+        `#include <clipping_planes_fragment>
+if (uCut > 0.001) {
+  vec3 wsCp = (uCamW * vec4(-vViewPosition, 1.0)).xyz;
+  for (int i = 0; i < ${CUT_N}; i++) {
+    vec4 bx = uCutBox[i];
+    if (uCutA[i] > 0.01 && wsCp.x > bx.x && wsCp.x < bx.z && wsCp.z > bx.y && wsCp.z < bx.w && wsCp.y > uCutY[i]) discard;
+  }
+}`,
+      );
+  };
+  const key = mat.customProgramCacheKey ? mat.customProgramCacheKey.call(mat) : '';
+  mat.customProgramCacheKey = () => key + '|cutaway';
+  return mat;
+}

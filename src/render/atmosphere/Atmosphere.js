@@ -770,6 +770,18 @@ export class Atmosphere {
       const bh = game.picker?.bodyHeight ? game.picker.bodyHeight(fol) : 0.18;
       focus = cam.position.distanceTo(this._v.set(fol.x, fy + bh * 0.5, fol.z));
       this._focus = focus;
+    } else if (dist < 40) {
+      // (round 33) with nothing followed, close in the focus is the ground
+      // under the camera's target, the point the view turns round (at 4
+      // tiles the centre ray met ground the focus then eased toward a frame
+      // at a time, from wherever the camera had been: under a slow frame
+      // rate the whole frame was out of focus for seconds); a jump of the
+      // view is taken at once
+      const T = rig.target;
+      const gy = Math.max(0, game.world.heightAt(T.x, T.z));
+      focus = cam.position.distanceTo(this._v.set(T.x, gy, T.z));
+      const f0 = this._focus;
+      this._focus = !f0 || f0 > focus * 1.5 || f0 < focus / 1.5 ? focus : approach(f0, focus, 10, dt || 1);
     } else {
       const hit = game.picker?.intersect?.(this._ray, true);
       if (hit) focus = cam.position.distanceTo(this._v.set(hit.x, hit.y, hit.z));
@@ -777,10 +789,14 @@ export class Atmosphere {
     }
     // strong only close up; a gentle miniature hint at mid zoom; off far out
     const s = (1 - 0.72 * smoothstep(25, 90, dist)) * (1 - smoothstep(90, 140, dist));
+    // (round 33) below about 6 tiles the in-focus band widens (from +-20% of
+    // the focus distance to about +-40% at 4 tiles) and the blur softens, so
+    // the ground round the target and the street in front stay sharp
+    const wide = 1 - smoothstep(3.5, 7, dist);
     P.dof.focus = this._focus;
-    P.dof.band = 0.2 + 0.03 * (1 - s);
-    P.dof.ramp = 0.42;
-    P.dof.maxCoc = 4.5 * s;
+    P.dof.band = 0.2 + 0.03 * (1 - s) + 0.24 * wide;
+    P.dof.ramp = 0.42 + 0.2 * wide;
+    P.dof.maxCoc = 4.5 * s * (1 - 0.3 * wide);
     P.dof.nearBoost = 0.8;
 
     // AO scale follows the zoom: fine contact shadows close, valleys far
