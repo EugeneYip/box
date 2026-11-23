@@ -458,11 +458,16 @@ Mat matTundra(NS s) {
 // summits and crests (higher than the ground ~2.5 tiles round) keep theirs.
 // Returns how much of the cover to take away (0..0.9); edge adds to the
 // break-up toward a snowfield's edge.
+// (round world: the taps east and west read across the seam)
+vec2 seamTap(vec2 q) {
+  if (uWrapBand.x > 0.0) q.x = mod(q.x, uWrapBand.x);
+  return q;
+}
 float snowBreak(NS s, vec2 p, float edge) {
   float stp = 1.0 - s.n.y;
   float asp = dot(s.n.xz, vec2(0.62, 0.44)) / max(length(s.n.xz), 1e-3) * smoothstep(0.03, 0.14, stp);
-  float hRing = (heightTap(p + vec2(2.5, 0.0)) + heightTap(p - vec2(2.5, 0.0)) + heightTap(p + vec2(0.0, 2.5)) + heightTap(p - vec2(0.0, 2.5))) * 0.25;
-  float hWide = (heightTap(p + vec2(6.0, 0.0)) + heightTap(p - vec2(6.0, 0.0)) + heightTap(p + vec2(0.0, 6.0)) + heightTap(p - vec2(0.0, 6.0))) * 0.25;
+  float hRing = (heightTap(seamTap(p + vec2(2.5, 0.0))) + heightTap(seamTap(p - vec2(2.5, 0.0))) + heightTap(p + vec2(0.0, 2.5)) + heightTap(p - vec2(0.0, 2.5))) * 0.25;
+  float hWide = (heightTap(seamTap(p + vec2(6.0, 0.0))) + heightTap(seamTap(p - vec2(6.0, 0.0))) + heightTap(p + vec2(0.0, 6.0)) + heightTap(p - vec2(0.0, 6.0))) * 0.25;
   float peak = clamp(s.p.y - hRing, -2.0, 2.0);
   float peakW = clamp(s.p.y - hWide, -3.0, 3.0);
   // (from afar a range is a strip a few pixels wide and its faces barely
