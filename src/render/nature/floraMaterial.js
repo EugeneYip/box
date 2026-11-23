@@ -152,17 +152,26 @@ if (uCut > 0.001) {
   vec3 fTc = uCutT - cameraPosition;
   float fTD = length(fTc);
   vec3 fTd = fTc / max(fTD, 1e-4);
-  float fBest = 1e3, fAlB = fTD;
+  float fLine = 0.0, fNear = 1e3;
   for (int k = 0; k < 3; k++) {
     vec3 q = fO + vec3(0.0, fTH * (0.25 + 0.3 * float(k)), 0.0) - cameraPosition;
     float al = dot(q, fTd);
     float r = (length(q - fTd * al) - 0.32 * fTH) / max(0.08, al * uCutTan * 0.3);
-    if (r < fBest) {
-      fBest = r;
-      fAlB = al;
-    }
+    // (round 33) on the line all the way to the target: any part of the
+    // crown in the cone and short of the target by a little hides it (a
+    // conifer stood solid over the person at 4 tiles; the cut used to stop
+    // at 62-88% of the way, judged at one height of the crown only)
+    fLine = max(fLine, step(0.0, al) * (1.0 - smoothstep(fTD - 0.45, fTD - 0.08, al)) * (1.0 - smoothstep(0.6, 1.0, r)));
+    // how near the crown comes to the eye
+    fNear = min(fNear, length(q) - 0.3 * fTH);
   }
-  vFCut = uCut * step(0.0, fAlB) * (1.0 - smoothstep(fTD * 0.62, fTD * 0.88, fAlB)) * (1.0 - smoothstep(0.6, 1.0, fBest));
+  // (round 33) and any tree whose crown comes within about two fifths of the
+  // target's distance of the eye dissolves wherever it stands in the frame
+  // (trunks and boughs filled its edges and bottom)
+  float fNearR = max(0.9, fTD * 0.42);
+  float fEye = 1.0 - smoothstep(fNearR * 0.75, fNearR, fNear);
+  // (sharpened: a half-cut tree drew a screen-door dot pattern over its crown)
+  vFCut = uCut * smoothstep(0.3, 0.7, max(fLine, fEye));
 }
 // canopy over units: leaf clusters pull in and thin out (trunks stay)
 float fOcc = texelFetch(uOcc, fTile, 0).r * uOccStrength * fLeaf;
@@ -289,7 +298,8 @@ const FRAG_COLOR = /* glsl */ `
 // (round 31) a tree on the sight line dissolves (vFCut, see FLORA_BEGIN)
 if (vFCut > 0.001) {
   float fTh = (fBayer[int(mod(gl_FragCoord.x, 4.0)) + 4 * int(mod(gl_FragCoord.y, 4.0))] + 0.5) / 16.0;
-  if (vFCut > fTh) discard;
+  // (a tree all but gone is gone: its last few dots read as stipple)
+  if (vFCut > fTh || vFCut > 0.9) discard;
 }
 #endif
 float fLeafM = vFInfo.x;
