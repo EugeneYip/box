@@ -1,5 +1,6 @@
 import { SEA_LEVEL, TILE } from '../../world/constants.js';
 import { KINDS, AIR_KINDS } from './kinds.js';
+import { DEEP_WATER } from './hull.js';
 import { civPath } from '../civ/pathing.js';
 import { USE } from '../civ/util.js';
 
@@ -996,6 +997,21 @@ export const modern = {
       }
       v.mission = { type: 'home', phase: 'home' };
       if (h) this._goHome(v);
+      else if (DEEP_WATER.has(def.kind)) {
+        // (round 33) no port of her own on these waters: a great hull rides
+        // out to deep water off the shore instead of lying in the shallows
+        // where she was set down (out along the most open bearing)
+        let a0 = 0,
+          best = -1;
+        for (let k = 0; k < 8; k++) {
+          const a = (k * Math.PI) / 4;
+          const c = this.nav.clearAt(p.x + Math.cos(a) * 6, p.z + Math.sin(a) * 6);
+          if (c > best) (best = c), (a0 = a);
+        }
+        const roads = { berth: { x: p.x, z: p.z }, dirX: Math.cos(a0), dirZ: Math.sin(a0), water: this.nav.comp(p.x, p.z) };
+        const spot = this._offshoreMooring(roads, v, def, true) || this._offshoreMooring(roads, v, def, false);
+        if (spot) this._sail(v, spot);
+      }
       return v;
     }
     if (def.cls === 'land') {

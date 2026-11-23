@@ -220,11 +220,16 @@ export const missions = {
   // then further out, each spaced by the ships' lengths and in water deep
   // enough for the keel. null when the harbour is full.
   _mooringSpot(h, self, kind = null) {
-    const nav = this.nav;
     const def = self?.def || KINDS[kind] || KINDS.cog;
-    const L = def.length;
     if (def === KINDS.fishing) return this._boatSlot(h, self);
-    if (def.carrier) return this._offshoreMooring(h, self, def);
+    // a carrier rides in deep water well out; with no deep roads in reach
+    // she lies at the pier's head if she fits there, and only then nearer in
+    if (def.carrier) return this._offshoreMooring(h, self, def, true) || this._pierMooring(h, self, def) || this._offshoreMooring(h, self, def, false);
+    return this._pierMooring(h, self, def);
+  },
+  _pierMooring(h, self, def) {
+    const nav = this.nav;
+    const L = def.length;
     if (this.berthed(h, self) >= this.harbourCap(h)) return null;
     const px = -h.dirZ,
       pz = h.dirX;
@@ -279,20 +284,36 @@ export const missions = {
   // A carrier never lies at a jetty: she moors out in the roads off her
   // harbour, her whole hull at least three tiles from any shore (round 20:
   // one lay beached on a sand bank beside a farm plot), clear of the other
-  // ships and of where they are bound.
-  _offshoreMooring(h, self, def) {
+  // ships and of where they are bound. (Round 33: and in deep blue water,
+  // well out: at four tiles off a beach she sat in the turquoise shallows.
+  // Deep and far first; nearer and shallower only when the sea has nothing
+  // better within reach.)
+  _offshoreMooring(h, self, def, deepOnly = false) {
     const nav = this.nav;
     const half = def.length * 0.5;
     const a0 = Math.atan2(h.dirZ, h.dirX);
-    for (const need of [3 + half, 3 + half * 0.5, 3]) {
-      for (let r = 5; r <= 22; r += 1.5) {
-        for (let k = 0; k < 13; k++) {
+    const depthAt = (x, z) => this._depthAt(x, z);
+    const tiers = deepOnly
+      ? [
+          [6 + half, 3.4, 34],
+          [4 + half, 2.8, 34],
+        ]
+      : [
+          [3 + half, 1.8, 24],
+          [3 + half * 0.5, 0, 22],
+          [3, 0, 22],
+        ];
+    for (const [need, deep, rMax] of tiers) {
+      for (let r = 5; r <= rMax; r += 1.5) {
+        // (deep water is looked for all round the harbour, not only ahead)
+        for (let k = 0, kn = deep > 0 ? 23 : 13; k < kn; k++) {
           const a = a0 + (k & 1 ? 1 : -1) * Math.ceil(k / 2) * 0.28;
           const x = h.berth.x + Math.cos(a) * r,
             z = h.berth.z + Math.sin(a) * r;
           if (nav.clearAt(x, z) < need || nav.comp(x, z) !== h.water) continue;
           // (bow and stern too: three tiles of water all round her)
           if (nav.clearAt(x + h.dirX * half, z + h.dirZ * half) < 3 || nav.clearAt(x - h.dirX * half, z - h.dirZ * half) < 3) continue;
+          if (deep > 0 && (depthAt(x, z) < deep || depthAt(x + h.dirX * half, z + h.dirZ * half) < deep * 0.8 || depthAt(x - h.dirX * half, z - h.dirZ * half) < deep * 0.8)) continue;
           if (!this._hullFits(x, z, h.dirX, h.dirZ, def) || this._inBerth(x, z, 0.5)) continue;
           let busy = false;
           for (const o of this.list) {
@@ -353,15 +374,28 @@ export const missions = {
     return null;
   },
 
+  // water depth under a point (0 on land or off the map)
+  _depthAt(x, z) {
+    const w = this.world;
+    let tx = Math.floor(x);
+    const tz = Math.floor(z);
+    if (this.nav.wrap && (tx < 0 || tx >= w.w)) tx = ((tx % w.w) + w.w) % w.w;
+    if (tx < 0 || tz < 0 || tx >= w.w || tz >= w.h) return 0;
+    return Math.max(0, -w.height[tz * w.w + tx]);
+  },
+
   // Roads off a full harbour: open water a little way out, deep enough.
+  // (the great hulls look for deep blue water first, round 33)
   _anchorage(h, def) {
     const nav = this.nav;
+    for (const deep of DEEP_WATER.has(def.kind) ? [2.4, 0] : [0])
     for (let r = 4; r <= 14; r += 2) {
       for (let k = 0; k < 7; k++) {
         const a = Math.atan2(h.dirZ, h.dirX) + (k - 3) * 0.35;
         const x = h.berth.x + Math.cos(a) * r,
           z = h.berth.z + Math.sin(a) * r;
         if (nav.clearAt(x, z) < Math.max(1.5, def.clear || 0)) continue;
+        if (deep > 0 && this._depthAt(x, z) < deep) continue;
         if (!this._hullFits(x, z, Math.cos(a), Math.sin(a), def)) continue;
         if (nav.comp(x, z) !== h.water || this._inBerth(x, z, 0.5)) continue;
         // spread out: well clear of other hulls and of where they are bound
