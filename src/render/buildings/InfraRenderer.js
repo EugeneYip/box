@@ -218,6 +218,8 @@ export class InfraRenderer {
     this._ver = -1;
     this._hver = 0;
     this._pylon = null;
+    // (every tunnel mouth drawn: the inspector and the probes read these)
+    this.portals = [];
     game.events.on('world:height', () => this._hver++);
   }
 
@@ -256,6 +258,21 @@ export class InfraRenderer {
       return { g: h, wet: h < SEA_LEVEL, y, deck: ys ? ys[i] : Math.max(h, SEA_LEVEL) + MAG_Y };
     });
     if (elevated) seg._deck = [Y[0].deck, Y[Y.length - 1].deck];
+    // (round 35) the mouths first: they mark the points behind them, whose
+    // track is out of sight under the hill and not drawn
+    const hide = tun ? new Uint8Array(n) : null;
+    if (tun)
+      this._portals(
+        E,
+        S,
+        Y.map((o) => (elevated ? o.deck : o.y)),
+        Y.map((o) => o.g),
+        tun,
+        (elevated ? GUIDE_W : BAL_B * 2) * 0.5 + 0.08,
+        TUN_COVER,
+        hide,
+        elevated ? 'maglev' : 'rail',
+      );
     let arc = 0,
       lastPier = -1e9,
       lastPillar = -1e9;
@@ -267,7 +284,7 @@ export class InfraRenderer {
       const a0 = arc;
       arc += L;
       if (Math.abs(bx - ax) > 40 || L < 1e-4) continue; // the seam of a round world
-      if (tun && tun[i] && tun[i + 1]) continue;
+      if (hide && hide[i] && hide[i + 1]) continue;
       const ya = Y[i].y,
         yb = Y[i + 1].y;
       const px = -(bz - az) / L,
@@ -348,16 +365,6 @@ export class InfraRenderer {
         rz = pz * (GAUGE / 2);
       for (const s of [1, -1]) E.bar(ax + rx * s, az + rz * s, bx + rx * s, bz + rz * s, ya + SLEEPER_H + RAIL_H, yb + SLEEPER_H + RAIL_H, RAIL_W, RAIL_H, COL.rail);
     }
-    if (tun)
-      this._portals(
-        E,
-        S,
-        Y.map((o) => (elevated ? o.deck : o.y)),
-        Y.map((o) => o.g),
-        tun,
-        (elevated ? GUIDE_W : BAL_B * 2) * 0.5 + 0.08,
-        TUN_COVER,
-      );
     // a diamond where two tracks cross: a steel crossing plate
     for (const [x, z, a1, a2] of seg.xing || []) {
       const y = Math.max(this._h(x, z), SEA_LEVEL) + 0.02 + SLEEPER_H + 0.002;
@@ -377,46 +384,20 @@ export class InfraRenderer {
       E.post(bx, bz, y, y + 0.05 * BS * 2, 0.07 * BS * 2, COL.buffer);
     }
   }
-  // (round 33) A tunnel's mouths: at each end of a run of points in a
-  // tunnel (tun), the stretch where the line is already below the ground
-  // but not yet deep in it is a covered way (a concrete box on its walls,
-  // its roof cover over the level y), and its outer end a headwall round a
-  // dark mouth. S: the points [x, z, tx, tz], g: the ground at each, half:
-  // the half width inside.
-  _portals(E, S, y, g, tun, half, cover) {
+  // (round 35) A tunnel's mouths. The sim keeps a bore's approach short
+  // (modern.js PORTAL_LEN): the line runs on the surface up to the foot of
+  // a hillside steep enough that the ground stands a storey over it within
+  // half a tile, and goes under it there. At each end of a run of points in
+  // a tunnel (tun), out along the approach while the line is still below the
+  // ground, the mouth stands where it goes under: a headwall facing out,
+  // never over the water. The points behind it are marked in hide (their
+  // track is not drawn). S: the points [x, z, tx, tz], y: the line's level,
+  // g: the ground at each, half: the half width inside, cover: the cover a
+  // bore needs, kind: 'rail', 'maglev' or 'hw'. Round 33 drew the approach
+  // as a covered way, a concrete box over the line up to 1.2 tiles long,
+  // which stood on level fields and out in the water as cream slabs.
+  _portals(E, S, y, g, tun, half, cover, hide, kind) {
     const n = S.length;
-    const T = 0.05; // the walls' and the roof's thickness
-    const box = (i, j) => {
-      const [ax, az] = S[i],
-        [bx, bz] = S[j];
-      if (Math.hypot(bx - ax, bz - az) > 3) return;
-      const L = Math.hypot(bx - ax, bz - az) || 1;
-      const px = -(bz - az) / L,
-        pz = (bx - ax) / L;
-      const ra = y[i] + cover + T,
-        rb = y[j] + cover + T;
-      E.bar(ax, az, bx, bz, ra, rb, half * 2 + T * 2, T, COL.portal);
-      for (const sd of [1, -1]) {
-        const o = half + T / 2;
-        E.bar(ax + px * o * sd, az + pz * o * sd, bx + px * o * sd, bz + pz * o * sd, ra - T, rb - T, T, cover + 0.04, COL.portal);
-      }
-    };
-    const mouth = (i, out) => {
-      // out: +1 when the open side faces along the line's direction
-      const [x, z, tx, tz] = S[i];
-      const px = -tz,
-        pz = tx;
-      const top = Math.max(y[i] + cover + T, g[i]) + 0.06;
-      const ox = tx * out * 0.03,
-        oz = tz * out * 0.03;
-      const W2 = half + T + 0.07;
-      E.bar(x - px * W2 + ox, z - pz * W2 + oz, x + px * W2 + ox, z + pz * W2 + oz, top, top, 0.07, top - (y[i] - 0.06), COL.portal);
-      // the dark opening on its outer face
-      const fx = x + tx * out * 0.075,
-        fz = z + tz * out * 0.075;
-      const hw = half * 0.92;
-      E.quad([fx - px * hw, y[i] - 0.02, fz - pz * hw], [fx + px * hw, y[i] - 0.02, fz + pz * hw], [fx + px * hw, y[i] + cover, fz + pz * hw], [fx - px * hw, y[i] + cover, fz - pz * hw], COL.mouth);
-    };
     for (let i = 0; i < n; ) {
       if (!tun[i]) {
         i++;
@@ -424,18 +405,42 @@ export class InfraRenderer {
       }
       let j = i;
       while (j < n && tun[j]) j++;
-      // the way in before i, and the way out after j - 1
+      for (let m = i; m < j; m++) hide[m] = 1;
       for (const [edge, step] of [
         [i, -1],
         [j - 1, 1],
       ]) {
         let m = edge;
-        while (m + step >= 0 && m + step < n && !tun[m + step] && g[m + step] - y[m + step] > -0.02 && Math.abs(m + step - edge) < 30) m += step;
-        for (let a = edge; a !== m; a += step) box(Math.min(a, a + step), Math.max(a, a + step));
-        mouth(m, step);
+        while (m + step >= 0 && m + step < n && !tun[m + step] && g[m + step] - y[m + step] > 0.01 && Math.abs(m + step - edge) < 6) {
+          m += step;
+          hide[m] = 1;
+        }
+        // (a bore that runs on to the end of the stretch opens on the next)
+        if (m + step < 0 || m + step >= n) continue;
+        if (g[m] < SEA_LEVEL + 0.02 || g[m + step] < SEA_LEVEL + 0.02) continue;
+        this._mouth(E, S[m], y[m], step, half, cover, kind);
       }
       i = j;
     }
+  }
+  // A tunnel's mouth at point Sm [x, z, tx, tz], the line's level y there,
+  // out: +1 when the open side faces along the line's direction
+  _mouth(E, Sm, y, out, half, cover, kind) {
+    const [x, z, tx, tz] = Sm;
+    (this._partPortals || []).push({ x, z, y, tx: tx * out, tz: tz * out, kind });
+    const px = -tz,
+      pz = tx;
+    const T = 0.05;
+    const top = y + cover + T + 0.06;
+    const ox = tx * out * 0.03,
+      oz = tz * out * 0.03;
+    const W2 = half + T + 0.07;
+    E.bar(x - px * W2 + ox, z - pz * W2 + oz, x + px * W2 + ox, z + pz * W2 + oz, top, top, 0.07, top - (y - 0.06), COL.portal);
+    // the dark opening on its outer face
+    const fx = x + tx * out * 0.075,
+      fz = z + tz * out * 0.075;
+    const hw = half * 0.92;
+    E.quad([fx - px * hw, y - 0.02, fz - pz * hw], [fx + px * hw, y - 0.02, fz + pz * hw], [fx + px * hw, y + cover, fz + pz * hw], [fx - px * hw, y + cover, fz - pz * hw], COL.mouth);
   }
   // which side a branch turns to (+1 right, -1 left of its first direction)
   _turnSide(P) {
@@ -582,6 +587,16 @@ export class InfraRenderer {
     // a hair higher there, so the two decks never flicker into each other)
     if (seg.junction)
       for (let i = 0; i < Math.min(n, 10); i++) Yh[i] += 0.006 * (1 - i / 10);
+    // the tunnels' mouths (marking the points behind them, not drawn)
+    const hide = tun ? new Uint8Array(n) : null;
+    if (tun) {
+      // (the deck's own points, its centre line, for the portals)
+      const S = C.map(([x, z], i) => [x, z, Nz[i], -Nx[i]]);
+      // (only the drawn runs: a point off them never opens a mouth)
+      const t2 = new Uint8Array(n);
+      for (let i = 0; i < n; i++) t2[i] = tun[i] && hw[i] ? 1 : 0;
+      this._portals(E, S, Array.from(Yh), Array.from(Gmax), t2, SO + 0.04, HW_COVER, hide, 'hw');
+    }
     // the cross-section at point i, o across (+ left), at height y
     const X = (i, o, y) => [C[i][0] + Nx[i] * o * Mi[i], y, C[i][1] + Nz[i] * o * Mi[i]];
     const wet = (i) => hw[i] === 2 || G[i] < SEA_LEVEL;
@@ -603,7 +618,7 @@ export class InfraRenderer {
     const tall = (i, side) => Yh[i] - (side > 0 ? GL[i] : GR[i]) > EMB_MAX;
     for (let i = 0; i + 1 < n; i++) {
       if (!draw[i] || !draw[i + 1]) continue;
-      if (tun && tun[i] && tun[i + 1]) continue;
+      if (hide && hide[i] && hide[i + 1]) continue;
       const [ax, az] = C[i],
         [bx, bz] = C[i + 1];
       const L = Math.hypot(bx - ax, bz - az);
@@ -655,15 +670,6 @@ export class InfraRenderer {
         E.post(ax, az, G[i] - 0.2, ya - 0.14, PIER_W, COL.pier);
       }
     }
-    if (tun) {
-      // (the deck's own points, its centre line, for the portals)
-      const S = C.map(([x, z], i) => [x, z, Nz[i], -Nx[i]]);
-      const gm = Array.from(Gmax);
-      // (only the drawn runs: a point off them never opens a mouth)
-      const t2 = new Uint8Array(n);
-      for (let i = 0; i < n; i++) t2[i] = tun[i] && hw[i] ? 1 : 0;
-      this._portals(E, S, Array.from(Yh), gm, t2, SO + 0.04, HW_COVER);
-    }
   }
   _subGeo() {
     if (this._sub) return this._sub;
@@ -687,6 +693,7 @@ export class InfraRenderer {
     const far = [],
       farC = [],
       wire = [];
+    this._partPortals = [];
     const farCol = (from, hex) => {
       const c = new THREE.Color(hex);
       for (let i = from; i < far.length / 3; i++) farC.push(c.r, c.g, c.b);
@@ -707,6 +714,8 @@ export class InfraRenderer {
         farCol(n1, 0x34373c);
       }
     }
+    this.portals = this._partPortals;
+    this._partPortals = null;
     // power lines: pylons and sagging wires
     const pg = this._pylonGeo();
     const m = new THREE.Matrix4(),
