@@ -112,7 +112,6 @@
 /* ---- inspector header: a side duty is a chip on the line under the name,
    and the level badge on a portrait says what it counts ("Lv 2") */
 .ws-insp__duty {
-  flex: none;
   max-width: 100%;
   padding: 1px 7px 2px;
   border-radius: 9px;
@@ -129,6 +128,17 @@
 }
 .ws-insp__sub > span + .ws-insp__duty {
   margin-left: 2px;
+}
+/* (the chip drops to its own line when the subtitle leaves no room, on the
+   compact phone-landscape header too, rather than cutting "Police officer") */
+.ws-insp__duty {
+  flex: none;
+}
+@media (max-height: 500px) and (min-width: 721px) {
+  .ws-insp__sub:has(.ws-insp__duty) {
+    flex-wrap: wrap;
+    row-gap: 3px;
+  }
 }
 @media (min-width: 721px) and (min-height: 501px), (max-width: 720px) {
   .ws-insp__sub {
