@@ -55,11 +55,16 @@
 .ws-meter.is-low {
   background: rgba(255, 160, 60, 0.22);
 }
+/* (round 33) and so does its number ("9 / 201") */
+.ws-favs__meter .ws-meter.is-low + small {
+  color: #ffb45e;
+}
 
 /* ---- phones (portrait): the nav rail steps aside while the vehicle chooser
-   is open ("Ages" showed cut in half above it) */
+   is open ("Ages" showed cut in half above it); round 33: the whole rail,
+   its frame and brand mark too, not just its buttons */
 @media (max-width: 720px) and (min-height: 501px) {
-  #ui-root:has(.ws-vehpick:not(.is-folded)) .ws-nav {
+  #ui-root:has(.ws-vehpick:not(.is-folded)) .ws-brand {
     opacity: 0;
     visibility: hidden;
     pointer-events: none !important;
@@ -90,6 +95,18 @@
 /* ---- onboarding: a new step's card appears in its place (no slide) */
 .ws-coach.is-placing {
   transition-property: opacity, transform;
+}
+/* (round 33) the card stays shown from step to step; only its contents fade */
+.ws-coach.is-swap > * {
+  animation: ws-coach-swap 0.28s ease-out both;
+}
+@keyframes ws-coach-swap {
+  from {
+    opacity: 0.35;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 /* ---- phones: the age badge is a small dial with the age's first two
@@ -170,4 +187,11 @@
 }
 .ws-favs__tail.is-shown {
   opacity: 1;
+}
+
+/* ---- (round 33) New World: the notice is one line and sits a little closer,
+   so it clears the footer at 720p (its second line hid under it) */
+.ws-note.ws-nw__note {
+  margin-top: 10px;
+  padding: 9px 12px;
 }

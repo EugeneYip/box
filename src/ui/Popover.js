@@ -164,7 +164,15 @@ export class Popover {
     const side = sticky && t.closest('.ws-tech__grid');
     const roomR = r.right + 8 + pw <= vw - 8,
       roomL = r.left - pw - 8 >= 8;
-    if (side && (roomR || roomL)) {
+    // (round 33) of the places round a tech card (below, above, beside), the
+    // one that hides the least of the other cards, and never the art being
+    // studied: beside a left-column card the tip covered Skyscrapers next door
+    const spot = side ? this.techSpot(t, r, w, ceil) : null;
+    if (spot) {
+      this.el.style.maxWidth = spot.maxW + 'px';
+      x = spot.x;
+      y = spot.y;
+    } else if (side && (roomR || roomL)) {
       // (round 29) beside the card first: below it, the tip lay over the next
       // card in the column (Computing, the art being studied)
       this.el.style.maxWidth = Math.min(w, 260) + 'px';
@@ -204,6 +212,52 @@ export class Popover {
       const b = tg.isConnected ? tg.getBoundingClientRect() : null;
       if (!b || (!b.width && !b.height) || tg.closest('[hidden], [inert]')) this.hide();
     }, 250);
+  }
+  // (round 33) The spot round a tech card where its tip hides least: each
+  // place (below, beside, above) is scored by the area of the other cards it
+  // would cover, the art being studied counting twelve times and the arts
+  // ready to study twice; places off the screen or over the panel's header
+  // are out. Returns { x, y, maxW } or null.
+  techSpot(t, r, w, ceil) {
+    const vw = innerWidth;
+    const floor = Math.min(innerHeight, t.closest('.ws-modal__body')?.getBoundingClientRect().bottom ?? innerHeight) - 6;
+    const cards = [];
+    for (const c of t.closest('.ws-tech__grid')?.querySelectorAll('.ws-techcard') || []) {
+      if (c === t) continue;
+      const b = c.getBoundingClientRect();
+      if (!b.width || b.bottom <= ceil || b.top >= floor) continue;
+      cards.push({ b, wgt: c.classList.contains('is-now') ? 12 : c.classList.contains('is-ready') ? 2 : 1 });
+    }
+    const size = (maxW) => {
+      this.el.style.maxWidth = maxW + 'px';
+      return [this.el.offsetWidth, this.el.offsetHeight];
+    };
+    const sideW = Math.min(w, 260),
+      [sw, sh] = size(sideW);
+    const colW = Math.max(200, Math.round(r.width)),
+      [cw, ch] = size(colW);
+    const cx = Math.max(8, Math.min(vw - cw - 8, r.left)),
+      sy = Math.max(ceil, Math.min(floor - sh, r.top));
+    const spots = [
+      { x: cx, y: r.bottom + 6, w: cw, h: ch, maxW: colW, pref: 0 },
+      { x: r.right + 8, y: sy, w: sw, h: sh, maxW: sideW, pref: 1 },
+      { x: cx, y: r.top - 6 - ch, w: cw, h: ch, maxW: colW, pref: 2 },
+      { x: r.left - sw - 8, y: sy, w: sw, h: sh, maxW: sideW, pref: 3 },
+    ];
+    let best = null;
+    for (const s of spots) {
+      if (s.x < 8 || s.x + s.w > vw - 8 || s.y < ceil || s.y + s.h > floor) continue;
+      let cover = 0;
+      for (const { b, wgt } of cards) {
+        const ix = Math.min(s.x + s.w, b.right) - Math.max(s.x, b.left),
+          iy = Math.min(s.y + s.h, b.bottom) - Math.max(s.y, b.top);
+        if (ix > 0 && iy > 0) cover += ix * iy * wgt;
+      }
+      s.score = cover + s.pref * 400;
+      if (!best || s.score < best.score) best = s;
+    }
+    this.el.style.maxWidth = w + 'px';
+    return best;
   }
   hide() {
     clearTimeout(this._hide);

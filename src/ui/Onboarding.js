@@ -74,7 +74,11 @@ export class Onboarding {
         el('button', { class: 'ws-btn ws-btn--sm ws-btn--ghost', type: 'button', text: i === STEPS.length - 1 ? 'Done' : 'Next', onclick: () => this.show(i + 1) }),
       ),
     );
-    this.el.classList.remove('is-shown');
+    // (round 33) a card already on screen stays shown and only its words
+    // change (with a short fade of the contents): taking it away and back for
+    // each step left steps 2 and 3 at opacity 0 for 0.7 s after Next on a
+    // busy frame; only the first card fades in from nothing
+    this.el.classList.toggle('is-swap', this.el.classList.contains('is-shown'));
     // (round 31) the card is placed for its step at once, with no slide from
     // the last step's spot (on a slow device it sat at the old place for
     // seconds); later small moves still glide

@@ -717,7 +717,8 @@ export class Modals {
         el('span', { class: 'ws-row__txt' }, el('span', { class: 'ws-row__label', text: 'World Laws' }), el('span', { class: 'ws-row__desc', text: this.lawsChanged() ? `${this.lawsChanged()} laws differ from the defaults` : 'All laws at their defaults' })),
         el('button', { class: 'ws-btn ws-btn--sm', type: 'button', onclick: () => this.open('laws', { back: 'newworld' }), html: `${uiIcon('trade')}<span>World Laws…</span>` }),
       ),
-      el('p', { class: 'ws-note', html: `${uiIcon('info')}<span>The current world will be replaced. Seeds are shareable — the same seed always grows the same world.</span>` }),
+      // (round 33) one line, so it fits above the footer at 720p (its second line hid under it)
+      el('p', { class: 'ws-note ws-nw__note', html: `${uiIcon('info')}<span>Replaces the current world. The same seed always grows the same world.</span>` }),
     );
     // the World Map's regional maps can sit below the fold: a pill at the bottom
     // edge says so and scrolls to them
