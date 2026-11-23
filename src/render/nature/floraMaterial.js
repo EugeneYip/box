@@ -165,6 +165,11 @@ if (uCut > 0.001) {
     // how near the crown comes to the eye
     fNear = min(fNear, length(q) - 0.3 * fTH);
   }
+  // (round 33) only trees and boulders on the line, never the low plants
+  // (bushes, flowers, reeds, mushrooms: instance scale about 0.4, against
+  // 0.65 and more for trees): half-dissolved flowers round a followed
+  // person's feet left a stipple of single pixels on the paving at 2.5 tiles
+  fLine *= step(0.9, fTH);
   // (round 33) and any tree whose crown comes within about two fifths of the
   // target's distance of the eye dissolves wherever it stands in the frame
   // (trunks and boughs filled its edges and bottom)
