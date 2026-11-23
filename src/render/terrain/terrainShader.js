@@ -606,9 +606,22 @@ Mat matRoad(NS s) {
   // and no cobbles on sloping ground (they stretch there) - just worn earth
   // (the stones are cut at the buildings' scale: a house is about one tile)
   vec4 pc = cz(s.p.xz * ${(1 / (1.1 * PAVE)).toFixed(5)});
-  float cw = max(0.10, s.fw * ${(2.6 / (1.1 * PAVE)).toFixed(3)});
-  float cob = smoothstep(cw * 0.25, cw, pc.g);
-  float hasCob = smoothstep(0.55, 0.70, s.meso.g) * smoothstep(0.86, 0.95, s.n.y) * (1.0 - smoothstep(0.3, 0.6, cw));
+  // (round 33) the joints measured in pixels and texels: F2 - F1 climbs 1
+  // over half a cell (noiseTextures.js), 16 cells to a texture repeat (so
+  // one texel steps it by about 0.125), and a pixel is about half the
+  // footprint s.fw (no screen derivatives in this branch). Up close, where
+  // the texture is magnified, a fixed joint narrower than a texel's step
+  // broke into a stipple of single dark and light pixels over the whole
+  // road (at 2.5 tiles); now a joint is never under a texel's step either
+  // side, about three pixels across, with a soft edge, and capped so the
+  // road keeps its tone farther out; the joints fade by distance as a cell
+  // shrinks from 12 to 6 px, leaving the stones' tone (the mip-blurred look
+  // the road had there before) instead of a busy grid of pixel lines
+  float gw = clamp(0.5 * s.fw * ${(32 / (1.1 * PAVE)).toFixed(3)}, 0.125, 0.2);
+  float cw = min(0.3, max(0.10, 1.5 * gw));
+  float cellPx = ${((1.1 * PAVE) / 16).toFixed(5)} / max(0.5 * s.fw, 1e-5);
+  float cob = mix(1.0, smoothstep(cw - 0.7 * gw, cw + 0.7 * gw, pc.g), smoothstep(6.0, 12.0, cellPx));
+  float hasCob = smoothstep(0.55, 0.70, s.meso.g) * smoothstep(0.86, 0.95, s.n.y) * (1.0 - smoothstep(0.3, 0.6, max(0.10, s.fw * ${(2.6 / (1.1 * PAVE)).toFixed(3)})));
   vec3 stone = vec3(0.36, 0.33, 0.29) * (0.85 + 0.3 * pc.b);
   c = mix(c, mix(c * 0.78, stone, cob), hasCob * 0.7);
   return mk(c, 0.95, 0.25 + 0.1 * cob * hasCob, 0.03 + 0.02 * cob * hasCob);
