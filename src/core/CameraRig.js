@@ -781,7 +781,10 @@ export class CameraRig {
         boxes[i].set(0, 0, -1, -1);
         continue;
       }
-      const m = 0.35; // eaves and porches reach a little past the plot
+      // eaves, porches, balconies and the flagpoles and posts before a
+      // building reach a little past the plot (round 33: 0.35 left some
+      // standing outside the cut)
+      const m = 0.45;
       boxes[i].set(b.tx - m, b.ty - m, b.tx + (b.w || 1) + m, b.ty + (b.h || 1) + m);
       als[i] = e[1];
       // the cut: from over the roof down to just under the lowest sight line
@@ -808,7 +811,13 @@ export class CameraRig {
     if (def.wall) return 1.2 * BUILDING.scale;
     const t = b.type;
     const h = t === 'skyscraper' || t === 'arcology' ? 14 : def.monument ? 9 : def.modern ? 7 : 3.4;
-    return h * BUILDING.scale * (b.constructing ? Math.max(0.3, b.progress || 0) : 1);
+    // (round 33) a building site's frame and scaffold stand up to three
+    // design units however far the walls have risen inside them
+    // (BuildingRenderer 'frame'): a site judged by its progress alone was
+    // missed by the sight lines and left its frame members and posts
+    // standing beside the cut
+    if (b.constructing) return Math.max(h * Math.max(0.3, b.progress || 0), Math.min(h, 3)) * BUILDING.scale;
+    return h * BUILDING.scale;
   }
   resize(w, h) {
     this.camera.aspect = w / h;

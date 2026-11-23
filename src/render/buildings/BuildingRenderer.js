@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { craneGeometry } from './archetypes.js';
 import { buildArchetype, foundation, scaffold, ruin, wallPost, wallArm, lampPost, streetLamp, bastionGeometry, frameFor, materialPile, proxyGeometry, PAL, WALL_H } from './archetypes.js';
 import { Labels } from './labels.js';
-import { createBuildingMaterial, createPropMaterial } from './material.js';
+import { createBuildingMaterial, createPropMaterial, withCutaway } from './material.js';
 import { emblemAtlas, EMBLEM_IDS, FIELD_IDS } from './emblems.js';
 import { bannerGeometry, bannerMaterial, bladesGeometry, turbineBladesGeometry, boatGeometry, FENCE, scarecrowGeometry, glowTexture, PuffSystem } from './props.js';
 import { TerritoryOverlay } from './TerritoryOverlay.js';
@@ -357,7 +357,7 @@ export class BuildingRenderer {
     game.scene.add(this.group);
     this.uniforms = { uTime: { value: 0 }, uNight: { value: 0 }, uSnow: { value: 0 }, uWind: { value: 0.35 }, uEmblems: { value: emblemAtlas() } };
     this.mat = createBuildingMaterial(this.uniforms); // far-zoom proxies
-    this.propMat = createPropMaterial();
+    this.propMat = withCutaway(createPropMaterial());
     this.arche = new Map();
     // building models: shadow casters, small pieces (wells, piles, footings,
     // ruins, lampposts) that cast none, and buildings rising in scaffolding
@@ -451,7 +451,7 @@ export class BuildingRenderer {
     this.footing.receiveShadow = true;
     this.footing.count = 0;
     scene.add(this.footing);
-    this.bannerMat = bannerMaterial(this.uniforms);
+    this.bannerMat = withCutaway(bannerMaterial(this.uniforms));
     this.bannerMeshes = new Map();
     // windmill sails, boats and scarecrows of every style: one batched draw
     this.propBatch = new PropBatch(this.group, this.propMat, { name: 'props', vertexColors: true });
@@ -476,12 +476,12 @@ export class BuildingRenderer {
     scene.add(this.decals);
     // fences
     // (posts and rails of every style: one batched draw and one shadow draw)
-    this.fenceBatch = new PropBatch(this.group, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.92 }), { shadow: true, name: 'fences' });
+    this.fenceBatch = new PropBatch(this.group, withCutaway(new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.92 })), { shadow: true, name: 'fences' });
     this.postGeo = new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0);
     this.railGeo = new THREE.BoxGeometry(1, 1, 1);
     // tall staffs for capital standards and army standard-bearers
     this.staffGeo = new THREE.CylinderGeometry(0.03, 0.04, 1, 6).translate(0, 0.5, 0);
-    this.staffMesh = this._inst(this.staffGeo, new THREE.MeshStandardMaterial({ color: 0x5a3c24, roughness: 0.8 }), 16, true, 'staffs');
+    this.staffMesh = this._inst(this.staffGeo, withCutaway(new THREE.MeshStandardMaterial({ color: 0x5a3c24, roughness: 0.8 })), 16, true, 'staffs');
     this.staffMap = new Map([['s', this.staffMesh]]);
     for (const st of ['vale', 'frost', 'mire']) this.scareGeo.set(st, scarecrowGeometry(st));
     // selection ring
