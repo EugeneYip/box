@@ -4,8 +4,10 @@ import { geoWrapOn } from '../../world/geo.js';
 const ICE = TILE.ICE; // frozen water: no keel crosses it
 
 // Coarse water navigation for the Fleets module (no three.js: runs headless).
-// Open water is a tile below SEA_LEVEL that is not frozen (TILE.ICE): ships
-// never sail through, moor in or berth on an ice sheet.
+// Open water is a tile below SEA_LEVEL that is not frozen: ships never sail
+// through, moor in or berth on an ice sheet. `ice` (a per-tile mask, 1 =
+// frozen) is the fleet's view of the sea ice the water shader draws
+// (src/world/seaIce.js); without one, ICE tiles are the frozen ones.
 //
 // The map is cut into C x C tile cells. Each cell that holds water gets one
 // node, placed on its most open water tile (farthest from land), so routes
@@ -46,13 +48,19 @@ const DIRS = [
 ];
 
 export class WaterNav {
-  constructor(world, cell = 4) {
+  constructor(world, cell = 4, ice = null) {
     this.world = world;
     this.C = cell;
+    this.ice = ice;
     this.version = 0;
     this._dirty = null;
     this.wrap = false;
     this.build();
+  }
+
+  // Is water tile i frozen over?
+  _frozen(i) {
+    return this.ice ? this.ice[i] === 1 : this.world.type[i] === ICE;
   }
 
   // Round world: may the graph cross the seam on this world now?
@@ -200,7 +208,7 @@ export class WaterNav {
     for (let y = 0; y < bh; y++)
       for (let x = 0; x < bw; x++) {
         const i = (y0 + y) * W + x0 + x;
-        f[y * bw + x] = h[i] < SEA_LEVEL && ty[i] !== ICE ? DMAX : 0;
+        f[y * bw + x] = h[i] < SEA_LEVEL && !this._frozen(i) ? DMAX : 0;
       }
     // forward
     for (let y = 0; y < bh; y++)
@@ -388,14 +396,14 @@ export class WaterNav {
       tz = Math.floor(z);
     if (tx < 0 || tz < 0 || tx >= this.W || tz >= this.H) return false;
     const i = tz * this.W + tx;
-    return this.world.height[i] < SEA_LEVEL && this.world.type[i] !== ICE;
+    return this.world.height[i] < SEA_LEVEL && !this._frozen(i);
   }
   clearAt(x, z) {
     const tx = this._tx(Math.floor(x)),
       tz = Math.floor(z);
     if (tx < 0 || tz < 0 || tx >= this.W || tz >= this.H) return 0;
     const i = tz * this.W + tx;
-    if (this.world.height[i] >= SEA_LEVEL || this.world.type[i] === ICE) return 0;
+    if (this.world.height[i] >= SEA_LEVEL || this._frozen(i)) return 0;
     return this.dist[i];
   }
   cellAt(x, z) {
@@ -423,7 +431,7 @@ export class WaterNav {
       if (wrap && (tx < 0 || tx >= W)) tx = ((tx % W) + W) % W;
       if (tx < 0 || tz < 0 || tx >= W || tz >= H) return false;
       const i = tz * W + tx;
-      if (h[i] >= SEA_LEVEL || ty[i] === ICE) return false;
+      if (h[i] >= SEA_LEVEL || this._frozen(i)) return false;
       if (clear > 0 && d[i] < clear && s > 0 && s < n) return false;
     }
     return true;
@@ -474,7 +482,7 @@ export class WaterNav {
     if (tx0 < 0 || tz0 < 0 || tx0 >= W || tz0 >= H) return null;
     const h = this.world.height,
       ty = this.world.type;
-    const dry = (i) => h[i] >= SEA_LEVEL || ty[i] === ICE;
+    const dry = (i) => h[i] >= SEA_LEVEL || this._frozen(i);
     // (tile x on the map: across the seam when the world wraps)
     const mx = (t) => (wrap && (t < 0 || t >= W) ? ((t % W) + W) % W : t);
     if (dry(tz0 * W + tx0)) return null;
