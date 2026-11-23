@@ -935,7 +935,15 @@ export class Labels {
         const groundOwner = (x, y, gy) => {
           v2.set((x / W) * 2 - 1, -((y / H) * 2 - 1), 0.5).unproject(cam).sub(camP);
           if (v2.y >= -1e-6) return -3;
-          const t = (gy - camP.y) / v2.y;
+          let t = (gy - camP.y) / v2.y;
+          // two steps onto the ground's own height (hills and coasts lie
+          // off the plane through the anchor)
+          for (let i = 0; i < 2; i++) {
+            const hx = geoWrapX(world, camP.x + v2.x * t),
+              hz = camP.z + v2.z * t;
+            if (!world.inBounds?.(Math.floor(hx), Math.floor(hz))) break;
+            t = (world.surfaceAt(hx, hz) - camP.y) / v2.y;
+          }
           const tx = Math.floor(geoWrapX(world, camP.x + v2.x * t)),
             tz = Math.floor(camP.z + v2.z * t);
           if (!world.inBounds?.(tx, tz)) return -3;
