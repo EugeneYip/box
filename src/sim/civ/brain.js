@@ -270,42 +270,85 @@ export const brain = {
     // woods) over and over; a route found in the last few game seconds from
     // the same tile to the same tile is reused (paths are read-only; a
     // walker blocked by something new simply asks again)
+    // (round 33) Routes are kept 20-40 s whatever is built meanwhile, in
+    // two generations (the older one is dropped every 20 s). In a growing
+    // town the realm changes every few seconds, and every change used to
+    // throw all routes away after 3 s, while a walker asks again for the same
+    // goal about 16 s later: the morning commute missed 83% of the time. A
+    // route handed out again is checked tile by tile first, and a building, a
+    // fire or water across it since sends the walker to a new search. "No
+    // route" answers still go when the realm changes, at most 6 s on (a new
+    // bridge or street may open one).
     const now = this.game.time.total;
-    const PC = this._pathCache || (this._pathCache = new Map());
-    if (now - (this._pathCacheT ?? -1e9) > 12 || PC.size > 6000 || this._pathCacheV !== this.version) {
-      if (now - (this._pathCacheT ?? -1e9) > 12 || PC.size > 6000 || now - (this._pathCacheVT ?? -1e9) > 3) {
-        PC.clear();
-        this._trunks?.clear();
-        this._routesTo?.clear();
-        this._pathCacheT = now;
-        this._pathCacheV = this.version;
-        this._pathCacheVT = now;
-      }
+    let PC = this._pathCache || (this._pathCache = new Map());
+    const PN = this._pathNone || (this._pathNone = new Map());
+    if (now - (this._pathCacheT ?? -1e9) > 20 || PC.size + PN.size > 6000) {
+      this._pathCacheOld = PC;
+      PC = this._pathCache = new Map();
+      PN.clear();
+      this._trunksOld = this._trunks;
+      this._trunks = new Map();
+      this._routesToOld = this._routesTo;
+      this._routesTo = new Map();
+      this._corrOld = this._corr;
+      this._corr = new Map();
+      this._pathCacheT = now;
+      this._pathCacheV = this.version;
+      this._pathCacheVT = now;
+    } else if (this._pathCacheV !== this.version && now - (this._pathCacheVT ?? -1e9) > 6) {
+      PN.clear();
+      this._pathCacheV = this.version;
+      this._pathCacheVT = now;
     }
     const key = (w.clampTy(sy) * w.w + w.clampTx(sx)) * w.size + gy * w.w + gx + (long ? 0.5 : 0);
-    const hit = PC.get(key);
+    let hit = PC.get(key);
+    if (hit === undefined && this._pathCacheOld) {
+      hit = this._pathCacheOld.get(key);
+      if (hit !== undefined) this._pathCacheOld.delete(key);
+    }
     if (hit !== undefined) {
-      if (!hit) {
-        u.target = null;
-        u.path = null;
-        return false;
+      if (this._routeOk(hit)) {
+        PC.set(key, hit);
+        u.path = hit;
+        u.pathIdx = 0;
+        u.target = { x, z };
+        return true;
       }
-      u.path = hit;
-      u.pathIdx = 0;
-      u.target = { x, z };
-      return true;
+      PC.delete(key);
+    }
+    // (round 33) a search from the same 4-tile cell toward the same 4-tile
+    // cell that came back empty a moment ago: no route from here either (a
+    // failed search spends its full 3,200 tiles; nearly a third of the
+    // morning's search work went to walkers in one corner of a town asking
+    // again for the same unreachable spot)
+    const fkey = long ? 0 : -1 - (((w.clampTy(sy) >> 2) * 4096 + (w.clampTx(sx) >> 2)) * 131072 + (gy >> 2) * 512 + (gx >> 2));
+    if (PN.has(key) || (fkey && PN.has(fkey))) {
+      u.target = null;
+      u.path = null;
+      return false;
     }
     // (round 31) a walk to a tile some route found in the last few seconds
     // also ends at, from a tile on that route or next to it (the morning
     // commute to the same field, the deposit at the granary, the walk to
     // the square): the rest of that route, no new search
     const sp0 = this._routeRest(w.clampTx(sx), w.clampTy(sy), gy * w.w + gx);
-    if (sp0) {
+    if (sp0 && this._routeOk(sp0)) {
       PC.set(key, sp0);
       u.path = sp0;
       u.pathIdx = 0;
       u.target = { x, z };
       return true;
+    }
+    // (round 33) a recent route that passes by both ends of this walk
+    if (!long) {
+      const cp = this._corridor(w.clampTx(sx), w.clampTy(sy), gx, gy);
+      if (cp) {
+        PC.set(key, cp);
+        u.path = cp;
+        u.pathIdx = 0;
+        u.target = { x, z };
+        return true;
+      }
     }
     // a long walk toward a place others are already headed (an army's rally
     // or its column, settlers to their site, newcomers to the hall): join a
@@ -325,7 +368,7 @@ export const brain = {
     // a goal across the water from every tile the walker could reach: the
     // search would only come back empty (after up to 32,000 tiles)
     if (this._cutOff(w.clampTx(sx), w.clampTy(sy), gx, gy)) {
-      PC.set(key, null);
+      PN.set(key, 1);
       u.target = null;
       u.path = null;
       return false;
@@ -345,7 +388,7 @@ export const brain = {
     // six tiles: no route, as before, without the search.
     const ring = this._goalRing(gx, gy);
     if (ring === null) {
-      PC.set(key, null);
+      PN.set(key, 1);
       u.target = null;
       u.path = null;
       return false;
@@ -353,9 +396,16 @@ export const brain = {
     if (long) this._longBudget--;
     else this._pathBudget--;
     const p = civPath(w, w.clampTx(sx), w.clampTy(sy), gx, gy, this._walkCost(), long ? 32000 : 3200, 0.5, ring || null, this._levelCrossing());
-    PC.set(key, p || null);
+    if (p) PC.set(key, p);
+    else {
+      PN.set(key, 1);
+      if (fkey) PN.set(fkey, 1);
+    }
     if (long && p && p.length > 24 && p[p.length - 1] === gy * w.w + gx) this._addTrunk(w.clampTx(sx), w.clampTy(sy), gx, gy, p);
-    if (p && p.length > 3 && p[p.length - 1] === gy * w.w + gx) this._addRoute(gy * w.w + gx, p);
+    if (p && p.length > 3 && p[p.length - 1] === gy * w.w + gx) {
+      this._addRoute(gy * w.w + gx, p);
+      if (!long) this._addCorr(p);
+    }
     if (!p) {
       u.target = null;
       u.path = null;
@@ -485,6 +535,133 @@ export const brain = {
     return (i) => oct(i % W, (i / W) | 0) <= lim;
   },
 
+  // (round 33) A cached route still walkable: every tile but the goal (a
+  // goal may be the spot in the water or the site a walker works beside)
+  _routeOk(p) {
+    const cost = this._walkCost();
+    for (let i = 0, n = p.length - 1; i < n; i++) if (cost(p[i]) === Infinity) return false;
+    return true;
+  },
+
+  // (round 33) Routes found in the last few seconds, by every 4-tile cell
+  // they pass through (the last eight through each; cleared with the path
+  // cache).
+  _addCorr(p) {
+    const C = this._corr || (this._corr = new Map());
+    const W = this.world.w;
+    let last = -1;
+    for (let k = 0; k < p.length; k++) {
+      const c = (((p[k] / W) | 0) >> 2) * 4096 + ((p[k] % W) >> 2);
+      if (c === last) continue;
+      last = c;
+      let a = C.get(c);
+      if (!a) C.set(c, (a = []));
+      if (a[a.length - 1] === p) continue;
+      if (a.length >= 8) a.shift();
+      a.push(p);
+    }
+  },
+
+  // (round 33) A walk from (sx,sy) to (gx,gy) along a recent route that passes
+  // within two tiles of both ends, in either direction: a short search (or a
+  // single step) onto the route, the route between, and a short search off
+  // it to the goal. A part of a shortest route is itself a shortest route,
+  // and a town's walks mostly run along the same few streets, so most of the
+  // morning commute needs no full search. Every tile is checked as walkable
+  // and the joins never cut a blocked corner. Null when no route serves.
+  _corridor(sx, sy, gx, gy) {
+    const C = this._corr,
+      C0 = this._corrOld;
+    if (!C?.size && !C0?.size) return null;
+    const W = this.world.w;
+    const cost = this._walkCost();
+    const G = gy * W + gx;
+    if (cost(G) === Infinity) return null; // (a goal off the walkable ground keeps the full search and its ring)
+    // the routes through the cells within two tiles of the goal, both generations
+    const lists = this._corrL || (this._corrL = []);
+    lists.length = 0;
+    const cx0 = (gx - 2) >> 2,
+      cx1 = (gx + 2) >> 2,
+      cy0 = (gy - 2) >> 2,
+      cy1 = (gy + 2) >> 2;
+    for (let cy = cy0; cy <= cy1; cy++)
+      for (let cx = cx0; cx <= cx1; cx++) {
+        const a = C?.get(cy * 4096 + cx),
+          b = C0?.get(cy * 4096 + cx);
+        if (a) lists.push(a);
+        if (b) lists.push(b);
+      }
+    if (!lists.length) return null;
+    const stamp = (this._corrStamp = (this._corrStamp || 0) + 1);
+    let best = null,
+      bi = -1,
+      bj = -1,
+      bs = 99;
+    for (let li = 0; li < lists.length && bs > 0; li++) {
+      const list = lists[li];
+      for (let r = list.length - 1; r >= 0; r--) {
+        const p = list[r];
+        if (p._cs === stamp) continue; // (a route through several of the cells)
+        p._cs = stamp;
+        let i = -1,
+          di = 3,
+          j = -1,
+          dj = 3;
+        for (let k = 0; k < p.length; k++) {
+          const t = p[k];
+          const x = t % W,
+            y = (t / W) | 0;
+          const dg = Math.max(Math.abs(x - gx), Math.abs(y - gy));
+          if (dg < dj) (dj = dg), (j = k);
+          const ds = Math.max(Math.abs(x - sx), Math.abs(y - sy));
+          if (ds < di) (di = ds), (i = k);
+        }
+        if (i < 0 || j < 0 || Math.abs(i - j) < 2) continue;
+        if (di + dj < bs) {
+          bs = di + dj;
+          best = p;
+          bi = i;
+          bj = j;
+          if (bs === 0) break;
+        }
+      }
+    }
+    if (!best) return null;
+    const out = [];
+    if (!this._joinStep(out, sx, sy, best[bi], cost)) return null;
+    const dir = bj > bi ? 1 : -1;
+    for (let k = bi + dir; k !== bj + dir; k += dir) {
+      const t = best[k];
+      if (cost(t) === Infinity) return null;
+      out.push(t);
+    }
+    const J = best[bj];
+    if (!this._joinStep(out, J % W, (J / W) | 0, G, cost)) return null;
+    return out.length ? out : null;
+  },
+
+  // the tiles from (ax,ay) to tile B (excluding the first) onto `out`: a
+  // single step when they touch (never across a blocked corner), else a
+  // search of a few dozen tiles; false when there is no such way
+  _joinStep(out, ax, ay, B, cost) {
+    const W = this.world.w;
+    const bx = B % W,
+      by = (B / W) | 0;
+    if (ax === bx && ay === by) return true;
+    const dx = bx - ax,
+      dy = by - ay;
+    if (dx >= -1 && dx <= 1 && dy >= -1 && dy <= 1) {
+      if (cost(B) === Infinity) return false;
+      if (dx && dy && (cost(ay * W + bx) === Infinity || cost(by * W + ax) === Infinity)) return false;
+      out.push(B);
+      return true;
+    }
+    const h = civPath(this.world, ax, ay, bx, by, cost, 48, 0.5, null, this._levelCrossing());
+    if (!h || h[h.length - 1] !== B) return false;
+    for (let k = 0; k < h.length; k++) out.push(h[k]);
+    return true;
+  },
+
   // Routes found in the last few seconds that reach their goal, by goal tile
   // (cleared with the path cache; the last four to each goal).
   _addRoute(G, p) {
@@ -501,7 +678,9 @@ export const brain = {
   // blocked corner). Null when no route passes. A part of a shortest route
   // is itself a shortest route, so the walker goes the way a search would.
   _routeRest(sx, sy, G) {
-    const a = this._routesTo?.get(G);
+    const a1 = this._routesTo?.get(G),
+      a0 = this._routesToOld?.get(G);
+    const a = a1 && a0 ? a0.concat(a1) : a1 || a0;
     if (!a) return null;
     const W = this.world.w;
     const S = sy * W + sx;
@@ -555,8 +734,10 @@ export const brain = {
   // six tiles), follows it, and steps off to their own goal (within six tiles
   // of its end). Null when no such route is at hand.
   _joinTrunk(sx, sy, gx, gy) {
-    const T = this._trunks;
-    if (!T || !T.size) return null;
+    const T1 = this._trunks,
+      T0 = this._trunksOld;
+    if (!T1?.size && !T0?.size) return null;
+    const T = { get: (k) => { const a = T1?.get(k), b = T0?.get(k); return a && b ? b.concat(a) : a || b; } };
     const w = this.world;
     const W = w.w;
     const bx = gx >> 3,
