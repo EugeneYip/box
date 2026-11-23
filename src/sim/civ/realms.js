@@ -31,6 +31,13 @@ const KEY_YEARS = 150,
   // (three cities that must exist dropped to 14 people at Year 150.9)
   KEY_TAPER = 50,
   KEY_END_POP = 6;
+// (round 35) How far people move between towns on a World Map world (tiles):
+// to a town of another realm within MOVE_CROSS, within their own realm within
+// MOVE_OWN, overland or over the water (Ottawa to Anchorage, Houston to
+// Caracas and Minneapolis to Anchorage were moves of 215-443 tiles). A key
+// city with no town near enough is kept by newcomers from beyond.
+export const MOVE_CROSS = 60,
+  MOVE_OWN = 80;
 
 export const realms = {
   // The real realms for this world's region, or null (square presets).
@@ -862,12 +869,20 @@ export const realms = {
   // home realm) or a realm that borders it: migrants crossed continents
   // (Palmas, Brazil to Anchorage and Seattle; Ottawa to Mexico City).
   _migrantFrom(o, v) {
-    if (!this._realMapOn() || o.kingdom === v.kingdom) return true;
+    if (!this._realMapOn()) return true;
+    if (!this._moveReach(o, v)) return false;
+    if (o.kingdom === v.kingdom) return true;
     if (o.kingdom < 0 || v.kingdom < 0) return false;
     const realOf = (k) => (k >= 0 ? this.kingdoms[k]?.realm ?? -1 : -1);
     const homeR = v.home != null ? realOf(v.home) : -1;
     if (homeR >= 0 && (realOf(o.kingdom) === homeR || (o.home != null && realOf(o.home) === homeR))) return true;
     return (this.relations?.get(relKey(o.kingdom, v.kingdom))?.border || 0) > 0;
+  },
+  // (round 35) Is town v near enough for people of town o to move there? On
+  // a World Map world: MOVE_OWN tiles within a realm, MOVE_CROSS to another.
+  _moveReach(o, v, kid = o?.kingdom) {
+    if (!this._realMapOn?.() || !o || !v) return true;
+    return geoDist(this.world, o.cx, o.cz, v.cx, v.cz) <= (kid === v.kingdom ? MOVE_OWN : MOVE_CROSS);
   },
   // Move up to n settlers into key city v; returns how many came.
   _refillKey(v, n) {
@@ -900,7 +915,9 @@ export const realms = {
     if (!moved) moved = this._refillBySea(v, Math.min(n, 5));
     // nobody to come: a handful of newcomers arrive from beyond (so a
     // must-exist city never stands empty), while the world has room for them
-    const room = v.pop < 3 || this.game.units.count('human') < this._humanCap();
+    // (round 35: with moves held to MOVE_OWN / MOVE_CROSS tiles, a remote key
+    // city such as Anchorage is kept by newcomers up to KEY_MIN_POP)
+    const room = v.pop < KEY_MIN_POP || this.game.units.count('human') < this._humanCap();
     if (!moved && room && this.game.time.total < YEAR * KEY_YEARS && !(this.game.time.total - (v._newT ?? -1e9) < 8)) {
       v._newT = this.game.time.total;
       const w = this.world;
@@ -938,6 +955,7 @@ export const realms = {
     const km = geoKmPerTile(this.world, v.cx, v.cz) || 0;
     for (const o of this.villages) {
       if (!o?.alive || o === v || o.landId === v.landId || o.starving || o.pop < 16 || (this._keyCity(o) && o.pop < KEY_SEAT_POP + 9)) continue;
+      if (!this._moveReach(o, v)) continue; // (round 35) Chicago to San Juan, Kayes to Anchorage
       const own = o.kingdom === v.kingdom;
       if (!own && (o.kingdom < 0 || this.atWar(o.kingdom, v.kingdom))) continue;
       if (!own && km > 0) {
@@ -1042,7 +1060,7 @@ export const realms = {
     for (const p of this._places) {
       if (p.realm !== k.realm || taken.has(p.name)) continue;
       const d = Math.hypot(p.x - lost.cx, p.z - lost.cz);
-      if (d < near || d > 150) continue;
+      if (d < near || d > MOVE_OWN) continue; // (round 35: was 150 tiles)
       const x = Math.floor(p.x),
         z = Math.floor(p.z);
       if (!w.inBounds(x, z)) continue;

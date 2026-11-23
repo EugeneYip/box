@@ -1053,7 +1053,7 @@ export class Civilization {
       let src = null;
       for (const vid of this.kingdoms[v.kingdom]?.villages || []) {
         const o = this.villages[vid];
-        if (o?.alive && o !== v && o.pop > (this.budget.area > 1.5 ? 90 : 40) && o.landId === v.landId && (!src || o.pop > src.pop)) src = o;
+        if (o?.alive && o !== v && o.pop > (this.budget.area > 1.5 ? 90 : 40) && o.landId === v.landId && (!src || o.pop > src.pop) && this._moveReach(o, v)) src = o;
       }
       if (src) {
         let moved = 0;
@@ -1076,7 +1076,7 @@ export class Civilization {
         td = 70 * Math.sqrt(this.budget.area);
       for (const vid of this.kingdoms[v.kingdom]?.villages || []) {
         const o = this.villages[vid];
-        if (!o?.alive || o === v || o.landId !== v.landId || o.pop < 12 || o.starving) continue;
+        if (!o?.alive || o === v || o.landId !== v.landId || o.pop < 12 || o.starving || !this._moveReach(v, o)) continue;
         const d = geoDist(this.world, o.cx, o.cz, v.cx, v.cz);
         if (d < td) (td = d), (to = o);
       }

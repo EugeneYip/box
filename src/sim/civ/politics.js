@@ -596,6 +596,7 @@ export const politics = {
         sd = Infinity;
       for (const o of this.villages) {
         if (!o.alive || o.kingdom === k.id || o.landId !== v.landId || o.pop < 30 || o.starving || this.atWar(o.kingdom, k.id)) continue;
+        if (this._moveReach && !this._moveReach(o, v)) continue; // (World Map: a neighbor's town only)
         const d = geoDist(this.world, o.cx, o.cz, v.cx, v.cz);
         if (d < sd) (sd = d), (src = o);
       }
@@ -1293,6 +1294,8 @@ export const politics = {
     for (const vid of kingdom.villages) {
       const v = this.villages[vid];
       if (!v?.alive || v.id === u.village || v.razed) continue;
+      // (World Map: a town of the realm within reach, else they take to the road)
+      if (this._moveReach && !this._moveReach(this.villages[u.village], v, kingdom.id)) continue;
       const d = geoDist(this.world, v.cx, v.cz, u.x, u.z);
       if (d < bd) {
         bd = d;

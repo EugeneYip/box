@@ -3,6 +3,7 @@ import { BUILDING_TYPES } from './catalog.js';
 import { USE, YEAR, ADULT_AGE, SPIRAL, spiralCount, ROT_DIR } from './util.js';
 import { geoDist } from '../../world/geo.js';
 import { civPath } from './pathing.js';
+import { MOVE_OWN, MOVE_CROSS } from './realms.js';
 
 // The human brain: villagers pick up their job's work loop and visibly do it
 // (Life renders unit.state 'work' + unit.data.workAnim and unit.carry).
@@ -2216,9 +2217,13 @@ export const brain = {
     d.homelessT = 4;
     let best = null,
       bd = Infinity;
+    // (round 35: on a World Map world within MOVE_OWN tiles of the realm's
+    // towns, MOVE_CROSS of another's)
+    const real = this._realMapOn?.();
     for (const v of this.villages) {
       if (!v.alive || v.razed) continue;
       let dd = geoDist(this.world, v.cx, v.cz, u.x, u.z);
+      if (real && dd > (v.kingdom === u.kingdom ? MOVE_OWN : MOVE_CROSS)) continue;
       if (v.kingdom === u.kingdom) dd *= 0.5;
       if (u.kingdom >= 0 && this.atWar(u.kingdom, v.kingdom)) continue;
       if (dd < bd) {
