@@ -337,6 +337,17 @@ export class CameraRig {
     if (this.keys.has('Equal') || this.keys.has('NumpadAdd')) this.zoom(Math.pow(0.35, dt));
     if (this.keys.has('Minus') || this.keys.has('NumpadSubtract')) this.zoom(Math.pow(1 / 0.35, dt));
 
+    // (round 33) a followed creature or craft that has left the world (a
+    // vehicle at the end of its trip, a street car gone from the streets, a
+    // death) is let go here and now, whether or not its card is open: the
+    // view stays where it was last seen and eases back out to minDist, as
+    // Escape does (a dead follow target lingered on the rig until the
+    // inspector's next refresh, or for good when followed from Favorites)
+    if (this.follow && this.follow.alive === false) {
+      this.follow = null;
+      this._fLast = null;
+      if (this.goal.dist < this.minDist) this.goal.dist = this.minDist;
+    }
     // the closer follow zoom ends when the unit is let go: back out to minDist
     if (this.goal.dist < this.minDist && !this.closeOK()) this.goal.dist = this.minDist;
 
