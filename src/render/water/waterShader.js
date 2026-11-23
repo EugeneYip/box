@@ -345,8 +345,10 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   float s00 = iceDepth(k00.r), s10 = iceDepth(k10.r), s01 = iceDepth(k01.r), s11 = iceDepth(k11.r);
   float S = mix(mix(s00, s10, ifr.x), mix(s01, s11, ifr.x), ifr.y);
   float bergF = mix(mix(k00.g, k10.g, ifr.x), mix(k01.g, k11.g, ifr.x), ifr.y);
-  // ragged edge (smooth fbm only: the ridged channel drew veins)
-  float Se = S + (iw.r - 0.5) * 0.55 + (iw3.r - 0.5) * 0.35;
+  // ragged edge (smooth fbm only: the ridged channel drew veins), drawn a
+  // tile inside where the ships' frozen water begins, so a hull passing the
+  // sheet never clips its edge
+  float Se = S - 1.0 + (iw.r - 0.5) * 0.55 + (iw3.r - 0.5) * 0.35;
   float iceOK = (1.0 - outK) * step(0.001, depth);
   // (young ice along the edge is thin and lets the water show through: a
   // soft edge, never an outline)
@@ -354,7 +356,7 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   // a few big floes ride just off the edge: round plates on a coarse cell
   // grid (some cells only), smaller the farther out, gone within a tile
   vec4 fl = texture2D(uCells, WROT2 * (p + (iw2.gr - 0.5) * 2.0) * (1.0 / 36.0) + 0.37);
-  float floeR = 0.42 * smoothstep(-1.15, -0.35, Se) * step(fl.b, 0.45) * (0.75 + 0.25 * fl.a);
+  float floeR = 0.42 * smoothstep(-0.8, -0.2, Se) * step(fl.b, 0.45) * (0.75 + 0.25 * fl.a);
   float floe = (1.0 - smoothstep(floeR - 0.05, floeR, fl.r)) * step(0.03, floeR) * (1.0 - smoothstep(0.12, 0.3, fw));
   ice = max(ice, floe * iceOK * (1.0 - bergF));
   // the waterline just outside the sheet: a faint shadow (thickness)
@@ -407,7 +409,7 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
       vec2 dS = vec2(mix(s10 - s00, s11 - s01, ifr.y), mix(s01 - s00, s11 - s10, ifr.x));
       vec4 bf = texture2D(uCells, p * (1.0 / 1.7) + 0.21);
       Ni = normalize(mix(Ni, normalize(vec3(-dS.x * 0.45 + (bf.b - 0.5) * 0.6, 1.0, -dS.y * 0.45 + (bf.a - 0.5) * 0.6)), bergF));
-      iceAlb = mix(iceAlb, mix(vec3(0.62, 0.72, 0.82), vec3(0.82, 0.87, 0.92), smoothstep(0.6, 2.0, Se)), bergF);
+      iceAlb = mix(iceAlb, mix(vec3(0.62, 0.72, 0.82), vec3(0.82, 0.87, 0.92), smoothstep(0.1, 1.2, Se)), bergF);
     }
     float ndl = max(dot(Ni, L), 0.0);
     vec3 iceCol = iceAlb * (keyL * ndl * lightVis * 0.42 + uAmbCol * 0.50);
