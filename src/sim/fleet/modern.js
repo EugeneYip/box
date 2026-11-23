@@ -689,7 +689,13 @@ export const modern = {
     const onSq = (i) => pv[i] === 1;
     const R = v.roadTiles?.filter((i) => !rail?.[i] && inTown(i) && !onSq(i));
     if (!R?.length) return null;
-    for (let tries = 0; tries < 4; tries++) {
+    // (round 33: the paving was only dear, at 40 a tile, and buses and trams
+    // still drove through the square round the hall door in 8-11% of
+    // samples, wherever its streets met only there: the paving is now closed
+    // to them, and a stop they cannot reach round it is not chosen; the
+    // first stop of a run is any street tile off the paving, so every stop
+    // they do take stays reachable)
+    for (let tries = 0; tries < 8; tries++) {
       const i1 = R[(this.rng() * R.length) | 0];
       const x1 = (i1 % w.w) + 0.5,
         z1 = ((i1 / w.w) | 0) + 0.5;
@@ -702,8 +708,9 @@ export const modern = {
       }
       if (Math.hypot(x1 - x0, z1 - z0) < 6) continue;
       const use = civ.use;
-      const p = civPath(w, Math.floor(x0), Math.floor(z0), Math.floor(x1), Math.floor(z1), (i) => (use[i] !== USE.ROAD ? Infinity : onSq(i) ? 40 : rail?.[i] ? 9 : inTown(i) ? 1 : 4), 1500, 1);
+      const p = civPath(w, Math.floor(x0), Math.floor(z0), Math.floor(x1), Math.floor(z1), (i) => (use[i] !== USE.ROAD || onSq(i) ? Infinity : rail?.[i] ? 9 : inTown(i) ? 1 : 4), 1500, 1);
       if (!p || p.length < 4) continue;
+      // (a partial way that ends short of the stop still ends off the paving)
       const path = [x0, z0];
       for (const i of p) path.push((i % w.w) + 0.5, ((i / w.w) | 0) + 0.5);
       return path;

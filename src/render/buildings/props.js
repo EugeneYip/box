@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GeoBuilder, shade } from './geom.js';
 import { PAL } from './archetypes.js';
+import { BUILDING } from '../../core/scale.js';
 
 // ---------------------------------------------------------------- banners
 // Cloth geometry per culture with an aFlex attribute (0 at the pole, 1 at the
@@ -131,18 +132,20 @@ export function bladesGeometry(style) {
 }
 
 // A wind turbine's rotor (round 31): three long slender white blades on a
-// hub, in the XY plane facing +Z (turns like the sails).
+// hub, in the XY plane facing +Z (turns like the sails); round 33: at
+// BUILDING.turbine times the round-31 design, with its tower (archetypes.js)
 export function turbineBladesGeometry() {
+  const T = BUILDING.turbine;
   const g = new GeoBuilder(23, { ao: false });
   g.push();
   g.rotateX(Math.PI / 2);
-  g.cyl(0, -0.08, 0, 0.06, 0.16, 8, 0xf2f0ea, {});
+  g.cyl(0, -0.08 * T, 0, 0.06 * T, 0.16 * T, 8, 0xf2f0ea, {});
   g.pop();
   for (let i = 0; i < 3; i++) {
     g.push();
     g.rotateZ((i * Math.PI * 2) / 3);
-    g.box(0.5, -0.03, 0, 0.92, 0.06, 0.025, 0xeeece6);
-    g.box(0.25, -0.045, 0, 0.3, 0.09, 0.03, 0xeeece6);
+    g.box(0.5 * T, -0.03 * T, 0, 0.92 * T, 0.06 * T, 0.025 * T, 0xeeece6);
+    g.box(0.25 * T, -0.045 * T, 0, 0.3 * T, 0.09 * T, 0.03 * T, 0xeeece6);
     g.pop();
   }
   return g.build();

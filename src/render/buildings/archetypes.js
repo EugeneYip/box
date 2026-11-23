@@ -3,7 +3,7 @@ import { modernModel, modernFallback, modernPalette } from './modernModels.js';
 import { eraHouse, eraHall } from './eraArch.js';
 import { industrialHouse, eraCivic, ERA_CIVIC } from './eraTown.js';
 import { BUILDING_TYPES } from '../../sim/civ/catalog.js';
-import { PROP } from '../../core/scale.js';
+import { PROP, BUILDING } from '../../core/scale.js';
 
 // Procedural architecture for every building type x culture style x level.
 // Local space: footprint centred on the origin, ground (levelled) at y = 0,
@@ -1161,14 +1161,18 @@ function windmill(g, K, style) {
 
 // (round 31) a windmill in a Modern realm stands as a wind turbine: a slim
 // white tapered tower and a nacelle; its three blades turn with the sails
-// (props.js turbineBladesGeometry)
+// (props.js turbineBladesGeometry). Round 33: the tower and the nacelle
+// stand BUILDING.turbine times their round-31 design (the rotor too, in
+// props.js), the tower a little slimmer than that so it stays slender
 function windTurbine(g, K) {
+  const T = BUILDING.turbine,
+    R = T * 0.8;
   const tz = -0.05;
   g.box(0, -0.06, tz, 0.5, 0.1, 0.5, 0xb8b6ae);
-  g.cyl(0, 0.04, tz, 0.1, 2.3, 10, 0xeceae4, { r2: 0.055 });
-  g.box(0, 2.3, tz - 0.06, 0.14, 0.13, 0.36, 0xf2f0ea);
-  g.box(0, 0.04, tz + 0.1, 0.07, 0.14, 0.02, 0x6a6e74);
-  g.anchor('blades', 0, 2.37, tz + 0.15, { turbine: true });
+  g.cyl(0, 0.04, tz, 0.1 * R, 2.3 * T, 10, 0xeceae4, { r2: 0.055 * R });
+  g.box(0, 2.3 * T, tz - 0.06 * T, 0.14 * T, 0.13 * T, 0.36 * T, 0xf2f0ea);
+  g.box(0, 0.04, tz + 0.1 * R + 0.002, 0.07, 0.14, 0.02, 0x6a6e74);
+  g.anchor('blades', 0, 2.37 * T, tz + 0.15 * T, { turbine: true });
   return { base: null };
 }
 

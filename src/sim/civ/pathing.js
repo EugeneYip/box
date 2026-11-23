@@ -76,7 +76,12 @@ const SQ2 = Math.SQRT2;
 // level crossing at the street's price and pays the railway's only to walk
 // along it; the dearer crossing step made every search through a rail town
 // spread round each line)
-export function civPath(world, sx, sy, gx, gy, rawCost, maxNodes = 4000, minCost = 0.5, goalTest = null, cross = null) {
+// climb optional {h, g, k} (round 33): a step whose grade over the heights h
+// (a smoothed copy of the ground) is steeper than g costs k more per unit of
+// excess grade, so rail and highway surveys keep to gentle ground and go
+// round a hill instead of over it (a per-tile slope cost cannot tell a run
+// along a contour from one straight up the face)
+export function civPath(world, sx, sy, gx, gy, rawCost, maxNodes = 4000, minCost = 0.5, goalTest = null, cross = null, climb = null) {
   const W = world.w;
   ensure(world.size);
   stampId++;
@@ -141,6 +146,10 @@ export function civPath(world, sx, sy, gx, gy, rawCost, maxNodes = 4000, minCost
         if (xm && xm[ni] & cross.bit && c !== Infinity) c = cross.c(ni, c);
         if (ni === goal) c = Math.min(c, 2);
         if (c === Infinity) continue;
+        if (climb) {
+          const gr = Math.abs(climb.h[ni] - climb.h[cur]) * (dx && dy ? 1 / SQ2 : 1);
+          if (gr > climb.g) c += (gr - climb.g) * climb.k;
+        }
         if (dx && dy) {
           // (a diagonal step never cuts a blocked corner)
           if (cost(cy * W + nx) === Infinity || cost(ny * W + cx) === Infinity) continue;
