@@ -342,11 +342,29 @@ export class CameraRig {
 
     const wrapW = geoWrapOn(this.game.world) ? this.game.world.w : 0;
     if (this.follow && this.follow.alive !== false) {
-      this.goal.x = this.follow.x;
-      this.goal.z = this.follow.z;
+      // (round 33) aim where the unit is drawn this frame (between its last
+      // two ticks, as the renderers place it), and move the view with it by
+      // the same step it took since the last frame: the eased chase alone
+      // trailed a walking person by 8-19 px at the closest zoom (a constant
+      // lag of its pace over the ease rate); the ease now only closes the
+      // gap left when the follow starts
+      const f = this.follow;
+      const p = this._drawnAt(f);
+      const L = this._fLast;
+      if (L && L.ref === f) {
+        const dx = p.x - L.x,
+          dz = p.z - L.z;
+        if (Math.abs(dx) + Math.abs(dz) < 2) {
+          this.cur.x += dx;
+          this.cur.z += dz;
+        }
+      }
+      this._fLast = { ref: f, x: p.x, z: p.z };
+      this.goal.x = p.x;
+      this.goal.z = p.z;
       // (a ship followed across the Round world's seam: the camera goes round with her)
       if (wrapW && Math.abs(this.goal.x - this.cur.x) > wrapW / 2) this.cur.x += this.goal.x > this.cur.x ? wrapW : -wrapW;
-    }
+    } else this._fLast = null;
 
     const k = 1 - Math.exp(-dt * 9);
     const kz = 1 - Math.exp(-dt * 7);
@@ -449,6 +467,25 @@ export class CameraRig {
     let p = pitch + lift;
     for (let i = 0; i < 12 && p < maxP; i++, p += 0.04) if (covered(p) <= 0.3) break;
     return Math.max(lift, Math.min(maxP, p) - pitch);
+  }
+  // Where a creature or craft is drawn this frame: between its last two
+  // ticks (px, pz -> x, z) by the share of the next tick already run, as
+  // UnitRenderer and FleetRenderer interpolate it.
+  _drawnAt(f) {
+    const g = this.game;
+    const out = this._dAt || (this._dAt = { x: 0, z: 0 });
+    out.x = f.x;
+    out.z = f.z;
+    const px = f.px,
+      pz = f.pz;
+    // (FleetRenderer draws a paused craft at its tick; UnitRenderer keeps a
+    // creature at the share of the tick run when the game paused)
+    const craft = f.cls != null || f.def?.cls != null;
+    if (px == null || pz == null || (craft && g.paused) || Math.abs(px - f.x) + Math.abs(pz - f.z) > 2) return out;
+    const a = Math.min(1, Math.max(0, (g._acc || 0) / ((craft ? g.simStep : g.units?.tickDt) || 1 / 15)));
+    out.x = px + (f.x - px) * a;
+    out.z = pz + (f.z - pz) * a;
+    return out;
   }
   // The followed creature or craft, when there is one to aim at.
   _followed() {
