@@ -737,10 +737,12 @@ export class Labels {
         }
         if (op > 0.05) shown.push([el, r]);
       }
+      // (a glass panel always counts whole: the toolbar's glass is its
+      // ws-dock__panel, and its inner rows leave gaps a ribbon slid into)
       const box = /dock|toolbar|tray|ws-feed(?!__)|mapwrap|panels\b/;
       for (const [el, r] of shown) {
         const cls = typeof el.className === 'string' ? el.className : '';
-        if (box.test(cls) && shown.some(([m]) => m !== el && el.contains(m))) continue;
+        if (box.test(cls) && !/\bws-glass\b/.test(cls) && shown.some(([m]) => m !== el && el.contains(m))) continue;
         out.push({ l: r.left, r: r.right, t: r.top, b: r.bottom });
       }
     } catch {
