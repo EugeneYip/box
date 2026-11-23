@@ -336,6 +336,9 @@ export class Atmosphere {
     // ---- sky model -----------------------------------------------------------
     const M = this.model;
     this.updateAge(dt);
+    // the map zoom (100 to 200 tiles): the age's look and the warm grade ease
+    // back there (SkyModel.applyAge, updatePost)
+    this.ageState.mapK = smoothstep(100, 200, rig.cur.dist);
     M.update(hour, mix, this.ageState, game.time.season ?? 1.5);
 
     // ---- storms & lightning ---------------------------------------------------
@@ -702,6 +705,21 @@ export class Atmosphere {
     P.vignette.set(0.3 + 0.1 * M.night + 0.1 * W.storm + (M.ageVig || 0), 0.42, 1.02, 0);
     P.vignetteColor.setRGB(0.27, 0.24, 0.3).lerp(this._c1 || (this._c1 = new THREE.Color(0.1, 0.14, 0.3)), M.night * 0.6);
     if (M.ageVig > 0.001 && M.ageVigC) P.vignetteColor.lerp(M.ageVigC, Math.min(1, M.ageVig * 4));
+    // (round 33) the map zoom by day: a neutral, a little more saturated grade
+    // (no warm split toning, a lighter grey vignette), so the noon map reads
+    // as clear daylight rather than sepia. Close and mid zoom are unchanged.
+    {
+      const mz = smoothstep(100, 200, dist) * (1 - M.night);
+      if (mz > 0.001) {
+        P.highTint.multiplyScalar(1 - 0.85 * mz);
+        P.midTint.multiplyScalar(1 - 0.85 * mz);
+        P.shadowTint.multiplyScalar(1 - 0.5 * mz);
+        P.grade.x *= 1 + 0.12 * mz;
+        P.grade.y += 0.08 * mz;
+        P.vignette.x *= 1 - 0.5 * mz;
+        P.vignetteColor.lerp(this._c3 || (this._c3 = new THREE.Color(0.3, 0.31, 0.34)), 0.7 * mz);
+      }
+    }
 
     // haze starts around the focus distance; thicker in rain / fog
     const hazeDensity = Math.max(0.0008, 0.0026 + 0.001 * W.overcast + 0.012 * W.fog + 0.0008 * W.rain + 0.0012 * W.snow + (M.ageHazeD || 0));
