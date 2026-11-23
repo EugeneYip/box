@@ -116,6 +116,8 @@ const TUN_DEEP = 0.45;
 // than the open line (rail about 1:8, as steep as a road), so towns a little
 // above or below the trunk are still reached; the open line keeps the cap
 const APPROACH = 1.5;
+// inside a tunnel a line that must may climb this much steeper (rail 1:4)
+const BORE = 3;
 // the longest covered way at a tunnel's mouth (tiles); the line comes up
 // to the ground beyond it
 const PORTAL_LEN = 1.2;
@@ -145,41 +147,40 @@ const FILL_MAX = { rail: 14 * STOREY, maglev: 14 * STOREY };
 // highway is routed through it
 const AIR_CLEAR = 3;
 const yKey = (x, z) => Math.round(x * 50) * 131072 + Math.round(z * 50);
-// the smallest (up) or largest (!up) function over f, between max and min,
-// that changes by at most G per unit of distance (ds: the distance to the
-// previous point)
-function gradeEnv(f, ds, G, up) {
+// the smallest (up) or largest (!up) function over f that changes by at
+// most rs[i] between points i - 1 and i (the grade times their distance)
+function gradeEnv(f, rs, up) {
   const n = f.length;
   const y = Float32Array.from(f);
   if (up) {
-    for (let i = 1; i < n; i++) y[i] = Math.max(y[i], y[i - 1] - G * ds[i]);
-    for (let i = n - 2; i >= 0; i--) y[i] = Math.max(y[i], y[i + 1] - G * ds[i + 1]);
+    for (let i = 1; i < n; i++) y[i] = Math.max(y[i], y[i - 1] - rs[i]);
+    for (let i = n - 2; i >= 0; i--) y[i] = Math.max(y[i], y[i + 1] - rs[i + 1]);
   } else {
-    for (let i = 1; i < n; i++) y[i] = Math.min(y[i], y[i - 1] + G * ds[i]);
-    for (let i = n - 2; i >= 0; i--) y[i] = Math.min(y[i], y[i + 1] + G * ds[i + 1]);
+    for (let i = 1; i < n; i++) y[i] = Math.min(y[i], y[i - 1] + rs[i]);
+    for (let i = n - 2; i >= 0; i--) y[i] = Math.min(y[i], y[i + 1] + rs[i + 1]);
   }
   return y;
 }
 // raise y to lo where lo is higher, keeping the grade down from each raised point
-function gradeRaise(y, lo, ds, G) {
+function gradeRaise(y, lo, rs) {
   const n = y.length;
   for (let i = 0; i < n; i++) if (lo[i] > y[i]) y[i] = lo[i];
-  for (let i = 1; i < n; i++) y[i] = Math.max(y[i], y[i - 1] - G * ds[i]);
-  for (let i = n - 2; i >= 0; i--) y[i] = Math.max(y[i], y[i + 1] - G * ds[i + 1]);
+  for (let i = 1; i < n; i++) y[i] = Math.max(y[i], y[i - 1] - rs[i]);
+  for (let i = n - 2; i >= 0; i--) y[i] = Math.max(y[i], y[i + 1] - rs[i + 1]);
 }
-// hold point k at level v: the rest stays within the grade's reach of it
-function gradePin(y, ds, G, k, v) {
+// hold point k at level v: the rest stays within the grade's reach of it (rp)
+function gradePin(y, rp, k, v) {
   const n = y.length;
   y[k] = v;
   let d = 0;
   for (let i = k + 1; i < n; i++) {
-    d += ds[i];
-    y[i] = clamp(y[i], v - G * d, v + G * d);
+    d += rp[i];
+    y[i] = clamp(y[i], v - d, v + d);
   }
   d = 0;
   for (let i = k - 1; i >= 0; i--) {
-    d += ds[i + 1];
-    y[i] = clamp(y[i], v - G * d, v + G * d);
+    d += rp[i + 1];
+    y[i] = clamp(y[i], v - d, v + d);
   }
 }
 // The level of a run of points under a grade cap (round 33). g: the ground
@@ -188,19 +189,55 @@ function gradePin(y, ds, G, k, v) {
 // bridge's deck over water), lo: the least it may ride (a bridge over water,
 // a viaduct over a town's core), clr: its least height over g outside a
 // tunnel, ends pinned at y0 / y1. Returns {y, tun (1: in a tunnel), ex (the
-// climb that still breaks the grade), fill (the highest it rides over the ground)}.
+// climb that still breaks the grade), fill (the highest it rides over the
+// ground)}. A town on a plateau above the trunk (or below it) cannot be met
+// within the grade on a short branch: a second try lets the line climb
+// steeper (BORE times the grade) inside its tunnels, out of sight, the way
+// a mountain railway climbs in a bore (round 33: refusing those routes
+// left 8 lines at Year 400).
 function gradeLevels(g, gc, f, lo, land, ds, G, clr, cover, y0, y1) {
+  let r = gradeLevels1(g, gc, f, lo, land, ds, G, clr, cover, y0, y1, null);
   const n = f.length;
-  const U = gradeEnv(f, ds, G, true),
-    L = gradeEnv(f, ds, G, false);
-  const y = new Float32Array(n);
-  for (let i = 0; i < n; i++) y[i] = L[i] + CUT_BIAS * (U[i] - L[i]);
+  // (where a bore may climb: under its tunnels so far, and wherever the
+  // ground stands over a straight climb from one end to the other)
+  let tot = 0;
+  for (let i = 1; i < n; i++) tot += Math.min(ds[i], 40);
+  for (let pass = 0; pass < 2 && r.ex > 0.05; pass++) {
+    const steep = new Uint8Array(n);
+    let arc = 0,
+      any = false;
+    for (let i = 1; i < n; i++) {
+      arc += Math.min(ds[i], 40);
+      const line = y0 + ((y1 - y0) * arc) / (tot || 1);
+      if (r.tun?.[i] || r.tun?.[i - 1] || (land[i] && gc[i] > line + cover)) steep[i] = 1;
+      any = any || !!steep[i];
+    }
+    if (!any) break;
+    const r2 = gradeLevels1(g, gc, f, lo, land, ds, G, clr, cover, y0, y1, steep);
+    if (r2.ex >= r.ex) break;
+    r = r2;
+  }
+  return r;
+}
+function gradeLevels1(g, gc, f, lo, land, ds, G, clr, cover, y0, y1, steep) {
+  const n = f.length;
   // (the ends: a station's platform or the trunk's switch, met by an
   // approach ramp of up to APPROACH times the grade)
-  const Ga = G * APPROACH;
-  gradePin(y, ds, Ga, 0, y0);
-  gradePin(y, ds, Ga, n - 1, y1);
-  gradeRaise(y, lo, ds, G);
+  const Ga = G * APPROACH,
+    Gb = G * BORE;
+  const rs = new Float32Array(n),
+    rp = new Float32Array(n);
+  for (let i = 1; i < n; i++) {
+    rs[i] = (steep?.[i] ? Gb : G) * ds[i];
+    rp[i] = (steep?.[i] ? Gb : Ga) * ds[i];
+  }
+  const U = gradeEnv(f, rs, true),
+    L = gradeEnv(f, rs, false);
+  const y = new Float32Array(n);
+  for (let i = 0; i < n; i++) y[i] = L[i] + CUT_BIAS * (U[i] - L[i]);
+  gradePin(y, rp, 0, y0);
+  gradePin(y, rp, n - 1, y1);
+  gradeRaise(y, lo, rs);
   // a cut run deep enough is a tunnel; a shallow one is filled to the ground
   const lo2 = Float32Array.from(lo);
   const tun = new Uint8Array(n);
@@ -259,11 +296,12 @@ function gradeLevels(g, gc, f, lo, land, ds, G, clr, cover, y0, y1) {
       i = j;
     }
     if (!raised) break;
-    gradeRaise(y, lo2, ds, G);
+    gradeRaise(y, lo2, rs);
   }
   let ex = 0,
     fill = 0;
-  for (let i = 1; i < n; i++) if (ds[i] < 40) ex += Math.max(0, Math.abs(y[i] - y[i - 1]) - Ga * ds[i] * 1.02);
+  // (steeper only where both points are in a bore, out of sight)
+  for (let i = 1; i < n; i++) if (ds[i] < 40) ex += Math.max(0, Math.abs(y[i] - y[i - 1]) - (tun[i] && tun[i - 1] ? Gb : Ga) * ds[i] * 1.02);
   // (ends too far apart in height for the grade: the level cannot meet both,
   // and that counts as breaking it)
   ex += Math.max(0, Math.abs(y[0] - y0) - 0.08) + Math.max(0, Math.abs(y[n - 1] - y1) - 0.08);
