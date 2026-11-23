@@ -1228,9 +1228,13 @@ export const modern = {
       if (!(this.game.time.total - (fails[best.id] ?? -1e9) < YEAR * 8)) {
         const l = { id: this._nextLine++, kind: 'rail', kingdom: k.id, a: cap.id, b: best.id, pts: null, highway: false, built: this.game.time.total, survey: true };
         this.rails.push(l);
-        this._railNetBuild(k);
+        // (round 33) a trial: the new line is kept only when every line the
+        // realm already runs is still laid with it (round 32: a new line's
+        // track took the corridor of an old one, which was dropped as dead,
+        // and the network shrank to half its size as pairs traded places)
+        const broke = this._railTry(k);
         l.survey = false;
-        if (l.pts) {
+        if (l.pts && !broke) {
           this._railEnds();
           this.infraVersion++;
           this._firstUse(k, 'rail', { x: (cap.cx + best.cx) / 2, z: (cap.cz + best.cz) / 2 });
@@ -1257,9 +1261,15 @@ export const modern = {
       if (l) {
         l.kind = 'maglev';
         l.maglevAt = this.game.time.total;
-        this._railNetBuild(k);
+        // (round 33: a trial, as a new line: a guideway that could not be
+        // laid, or whose corridor broke another line, goes back to rail and
+        // is never tried as a guideway again)
+        if (this._railTry(k) || !l.pts) {
+          l.kind = 'rail';
+          l.noMaglev = true;
+          this._railNetBuild(k);
+        }
         this.infraVersion++;
-        // (a guideway that could not be laid went back to rail: _railDrop)
         if (l.kind === 'maglev') this._firstUse(k, 'maglev', { x: l.pts?.[0] ?? cap.cx, z: l.pts?.[1] ?? cap.cz });
         return;
       }
@@ -1504,6 +1514,19 @@ export const modern = {
       }
     }
   },
+  // (round 33) Build the realm's network with a change on trial: the
+  // number of lines already running (not the one being surveyed) that it
+  // could not lay; nothing is dropped meanwhile. The caller undoes the
+  // change and builds again when it is not zero.
+  _railTry(k) {
+    this._railTrial = { broke: 0 };
+    try {
+      this._railNetBuild(k);
+      return this._railTrial.broke;
+    } finally {
+      this._railTrial = null;
+    }
+  },
   // (round 31) Lines a rebuild could not lay even on the second try, with
   // both towns standing: a guideway goes back to plain rail (and is never
   // tried as a guideway again); a rail line is taken up, with its station
@@ -1511,6 +1534,12 @@ export const modern = {
   // a while (railFail). A line being surveyed (_surveyRail) is left to its
   // caller. True when the realm's lines changed (the network is rebuilt).
   _railDrop(k) {
+    // (round 33) in a trial build (_railTry) nothing is dropped: the lines
+    // it could not lay are only counted
+    if (this._railTrial) {
+      for (const l of this.rails) if (l.kingdom === k.id && !l.survey && !(l.pts && l.pts.length >= 4) && this.villages[l.a]?.alive && this.villages[l.b]?.alive) this._railTrial.broke++;
+      return false;
+    }
     let changed = false;
     const now = this.game.time.total;
     for (const l of this.rails) {
