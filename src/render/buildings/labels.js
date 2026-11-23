@@ -673,11 +673,28 @@ export class Labels {
       }
     this._landN = land;
     const need = Math.max(3, Math.ceil(land * LAND_SHARE));
+    // (round 33) a realm with less than that share is still named when one
+    // of its towns stands on its land in view (Germany round Hamburg on the
+    // Europe map at 90 tiles held 4% of the land in view and went unnamed)
+    const withTown = (this._landTown = this._landTown || new Set());
+    withTown.clear();
+    const civ = this.game.civ;
+    if (civ)
+      for (const v of civ.villages) {
+        if (!v?.alive || (cnt.get(v.kingdom) || 0) < 3 || (cnt.get(v.kingdom) || 0) >= need || withTown.has(v.kingdom)) continue;
+        const tx = Math.floor(v.cx),
+          tz = Math.floor(v.cz);
+        if (!w.inBounds?.(tx, tz) || w.owner[tz * w.w + tx] !== v.kingdom) continue;
+        p.set(v.cx, w.surfaceAt?.(v.cx, v.cz) ?? y0, v.cz).project(cam);
+        const sx = p.x * 0.5 + 0.5,
+          sy = -p.y * 0.5 + 0.5;
+        if (p.z <= 1 && p.z >= -1 && sx >= 0.03 && sx <= x1 && sy >= 0.14 && sy <= 0.86) withTown.add(v.kingdom);
+      }
     // each named realm's own land in view: the sample nearest its middle
     const at = (this._landAt = this._landAt || new Map());
     at.clear();
     for (const [id, n] of cnt) {
-      if (n < need) continue;
+      if (n < need && !withTown.has(id)) continue;
       out.add(id);
       const P = pts.get(id);
       let mx = 0,
