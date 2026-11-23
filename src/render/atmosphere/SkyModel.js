@@ -300,40 +300,50 @@ export class SkyModel {
   // Ages give the sky, fog, key light and grade a strong identity
   // (AgeLooks.js). Sky colours are scaled to the current daylight so a
   // daytime look never lights up the night.
+  // age.mapK (0 close .. 1 at the map zoom): from the map zoom the look eases
+  // back to about a third, so the noon map reads as neutral, saturated
+  // daylight (round 32: a warm age's orange sun, brown haze and warm grade
+  // turned the whole overview sepia); close and mid zoom keep the full look.
   applyAge(age) {
     const L = age.look;
     this.ageHazeD = 0;
     this.ageVig = 0;
     if (L) {
+      const s = 1 - 0.65 * Math.min(1, Math.max(0, age.mapK || 0));
       const dayK = 0.18 + 0.82 * this.daylight;
       // after dusk the age tint gives way to the night palette: a warm or
       // sickly age must not paint the night sky maroon or olive
-      const skyK = 0.12 + 0.88 * this.daylight;
+      const skyK = (0.12 + 0.88 * this.daylight) * s;
       const t = this._tmp;
       if (L.zen.k > 0.001) this.zenith.lerp(t.copy(L.zen.c).multiplyScalar(dayK), L.zen.k * skyK);
       if (L.hor.k > 0.001) {
         this.horizon.lerp(t.copy(L.hor.c).multiplyScalar(dayK), L.hor.k * skyK);
-        this.glow.multiplyScalar(1 - 0.35 * L.hor.k);
+        this.glow.multiplyScalar(1 - 0.35 * L.hor.k * s);
       }
       if (L.haze.k > 0.001) {
         this.groundHaze.lerp(t.copy(L.haze.c).multiplyScalar(dayK), L.haze.k * skyK);
         this.mistColor.lerp(t.copy(L.haze.c).multiplyScalar(dayK), L.haze.k * skyK);
       }
-      if (L.hemi.k > 0.001) this.hemiSky.lerp(L.hemi.c, L.hemi.k);
-      this.sunLightColor.multiply(L.key);
-      this.keyColor.multiply(L.key);
+      if (L.hemi.k > 0.001) this.hemiSky.lerp(L.hemi.c, L.hemi.k * s);
+      const key = (this._ageKey || (this._ageKey = new THREE.Color())).setRGB(1, 1, 1).lerp(L.key, s);
+      this.sunLightColor.multiply(key);
+      this.keyColor.multiply(key);
+      const ease = (v) => 1 + (v - 1) * s;
+      const keyI = ease(L.keyI),
+        hemiI = ease(L.hemiI),
+        exp = ease(L.exp);
       // dark ages keep a readable floor at night: moonlight, sky fill and
       // exposure darken less once the sun is down
       const nk = this.night;
-      this.keyIntensity *= this.keyIsMoon ? Math.max(L.keyI, 0.9) : L.keyI;
-      this.hemiIntensity *= L.hemiI + (Math.max(L.hemiI, 0.95) - L.hemiI) * nk;
-      this.exposure *= L.exp + (Math.max(L.exp, 0.9) - L.exp) * nk;
-      this.saturation *= L.sat;
-      this.contrast += L.con;
-      this.midTint.add(L.mid);
-      this.shadowTint.add(L.shd);
-      this.ageHazeD = L.hazeD;
-      this.ageVig = L.vig;
+      this.keyIntensity *= this.keyIsMoon ? Math.max(keyI, 0.9) : keyI;
+      this.hemiIntensity *= hemiI + (Math.max(hemiI, 0.95) - hemiI) * nk;
+      this.exposure *= exp + (Math.max(exp, 0.9) - exp) * nk;
+      this.saturation *= ease(L.sat);
+      this.contrast += L.con * s;
+      this.midTint.addScaledVector(L.mid, s);
+      this.shadowTint.addScaledVector(L.shd, s);
+      this.ageHazeD = L.hazeD * s;
+      this.ageVig = L.vig * s;
       this.ageVigC = L.vigC;
       this.cloudLit.copy(this.keyColor).multiplyScalar(this.keyIntensity * 0.36);
       this.cloudShade.copy(this.hemiSky).multiplyScalar(this.hemiIntensity * 0.5);

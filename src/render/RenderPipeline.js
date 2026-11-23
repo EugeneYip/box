@@ -14,7 +14,8 @@ import { GradeEffect } from './atmosphere/post/GradeEffect.js';
 //   game.pipeline.setQuality(q)     switch tier at runtime (UI settings)
 //   game.pipeline.size              Vector2 CSS-pixel viewport size
 //   game.pipeline.resize(w, h)      called by Game on window resize
-//   game.pipeline.flash(color, k)   additive full-screen flash, decays quickly
+//   game.pipeline.flash(color, k)   additive full-screen flash, gone within
+//                                   about 0.2 s of real time (no afterglow)
 //   game.pipeline.addPass(pass)     insert a pmndrs postprocessing Pass into the
 //                                   HDR chain (after AO + haze, before depth of
 //                                   field / bloom / grade). Sample
@@ -105,6 +106,8 @@ export class RenderPipeline {
     this.userPasses = [];
     this.beforeRender = [];
     this._flash = new THREE.Vector3();
+    this._flashNew = new THREE.Vector3(); // raised since the last drawn frame
+    this._flashNewT = 0;
     this._fog = new THREE.Fog(0x9fc6e8, 300, 900);
     game.events?.on?.('powersaver', () => {
       // no resize here: updateSaverResolution() applies it at a calm moment
@@ -513,9 +516,10 @@ export class RenderPipeline {
 
   flash(color = 0xffffff, intensity = 1) {
     const c = color instanceof THREE.Color ? color : new THREE.Color(color);
-    this._flash.x += c.r * intensity;
-    this._flash.y += c.g * intensity;
-    this._flash.z += c.b * intensity;
+    this._flashNew.x += c.r * intensity;
+    this._flashNew.y += c.g * intensity;
+    this._flashNew.z += c.b * intensity;
+    this._flashNewT = this.game.time?.realTime ?? 0;
   }
 
   // ---- composer ---------------------------------------------------------
@@ -695,8 +699,20 @@ export class RenderPipeline {
   render(dt) {
     const game = this.game;
     const renderer = this.renderer;
-    const k = Math.exp(-dt * 7);
-    this._flash.multiplyScalar(k);
+    // (round 33) the flash decays in real (wall-clock) time, fast enough to be
+    // gone within about 0.2 s: it decayed by the drawn frame's step (at most
+    // 0.1 s), so where frames come seconds apart one strike's flash stayed
+    // as a milky veil over several frames
+    const rt = game.time?.realTime ?? 0;
+    const rdt = Math.max(dt, rt - (this._flashRT ?? rt));
+    this._flashRT = rt;
+    this._flash.multiplyScalar(Math.exp(-rdt * 16));
+    if (this._flashNew.x + this._flashNew.y + this._flashNew.z > 0) {
+      // a flash raised since the last frame decays from when it was raised
+      this._flash.addScaledVector(this._flashNew, Math.exp(-Math.max(0, rt - this._flashNewT) * 16));
+      this._flashNew.set(0, 0, 0);
+    }
+    if (this._flash.x + this._flash.y + this._flash.z < 0.006) this._flash.set(0, 0, 0);
     this.updateDynamicResolution(dt);
     this.updateSaverResolution(dt);
     try {
