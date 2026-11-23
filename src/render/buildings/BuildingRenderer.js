@@ -479,6 +479,7 @@ export class BuildingRenderer {
     this._frecs = new Map();
     this._qN = { a: [], i: 0 }; // near the camera
     this._qF = { a: [], i: 0 };
+    this._qD = { a: [], i: 0 }; // street lights and fences
     this._stamp = 0;
     this._fstamp = 0;
     this._wallAt = new Map();
@@ -816,7 +817,8 @@ export class BuildingRenderer {
         z = rec.b ? rec.b.z : rec.v.cz;
       near = Math.abs(x - c.x) < R && Math.abs(z - c.z) < R;
     }
-    (near ? this._qN : this._qF).a.push(rec);
+    // (street lights and fences, the decor, wait behind every building)
+    (rec.t !== 0 ? this._qD : near ? this._qN : this._qF).a.push(rec);
   }
 
   // let go of everything a record holds (slots, anchors, footing)
@@ -971,7 +973,7 @@ export class BuildingRenderer {
   _work(budgetMs) {
     const t0 = performance.now();
     let n = 0;
-    for (const q of [this._qN, this._qF]) {
+    for (const q of [this._qN, this._qF, this._qD]) {
       while (q.i < q.a.length) {
         if (n > 0 && performance.now() - t0 > budgetMs) break;
         const r = q.a[q.i++];
@@ -1011,7 +1013,7 @@ export class BuildingRenderer {
 
   // backlog of records still to draw
   pending() {
-    return this._qN.a.length - this._qN.i + this._qF.a.length - this._qF.i;
+    return this._qN.a.length - this._qN.i + this._qF.a.length - this._qF.i + this._qD.a.length - this._qD.i;
   }
 
   _buildRec(rec) {
@@ -2028,7 +2030,12 @@ export class BuildingRenderer {
       this._scanFences();
     }
     if (this._hRects.length || this._hAll) this._heightPass();
-    this._work(this._full ? Infinity : this.budgetMs - (performance.now() - tw));
+    // (frames far apart, as under software GL: each gets a larger share, up
+    // to 16 ms, so the queue keeps up with the town)
+    const gapR = Math.max(0, now - (this._workR ?? now));
+    this._workR = now;
+    const budget = Math.min(16, this.budgetMs + 20 * Math.max(0, gapR - 0.05));
+    this._work(this._full ? Infinity : budget - (performance.now() - tw));
     this._full = false;
     this._applyLod();
     if (this._far && this._proxyDirty && now - this._proxyT > 1) this._rebuildProxies();
