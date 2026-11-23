@@ -40,6 +40,11 @@ export const UNIT = {
 
 export const BUILDING = {
   scale: S,
+  // a wind turbine's tower and rotor on top of that (round 33: drawn at
+  // the round-31 design it stood no taller than a six-storey block; a real
+  // one stands two to three times a mid-rise block's height): its hub about
+  // ten storeys up, its blade tips about fourteen
+  turbine: 1.75,
 };
 
 export const VEHICLE = {
