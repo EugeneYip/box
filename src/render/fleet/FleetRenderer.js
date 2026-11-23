@@ -668,15 +668,20 @@ export class FleetRenderer {
       const C = [],
         G = [],
         Y = [];
+      // (round 33: the deck's level from the sim, seg.hy, under the road's
+      // grade cap and through its tunnels, as InfraRenderer draws it)
+      const HY = seg.hy && seg.hy.length === n ? seg.hy : null;
       for (let i = 0; i < n; i++) {
         const c = hwPoint(P, i);
         const g = W.heightAt(c[0], c[1]);
         C.push(c);
         G.push(g);
-        Y.push(hw[i] === 2 || g < SEA_LEVEL ? SEA_LEVEL + 0.3 * BUILDING.scale : g + 0.03);
+        Y.push(HY && Number.isFinite(HY[i]) ? HY[i] : hw[i] === 2 || g < SEA_LEVEL ? SEA_LEVEL + 0.3 * BUILDING.scale : g + 0.03);
       }
-      for (let i = 1; i < n; i++) Y[i] = Math.max(Y[i], Y[i - 1] - 0.08);
-      for (let i = n - 2; i >= 0; i--) Y[i] = Math.max(Y[i], Y[i + 1] - 0.08);
+      if (!HY) {
+        for (let i = 1; i < n; i++) Y[i] = Math.max(Y[i], Y[i - 1] - 0.08);
+        for (let i = n - 2; i >= 0; i--) Y[i] = Math.max(Y[i], Y[i + 1] - 0.08);
+      }
       for (let i = 0; i < n; i++) {
         // (a point of a drawn stretch: InfraRenderer draws between two marked points)
         if (!hw[i] || !(hw[i - 1] || hw[i + 1])) continue;
@@ -689,7 +694,7 @@ export class FleetRenderer {
         const dx = C[j][0] - C[k][0],
           dz = C[j][1] - C[k][1],
           dl = Math.hypot(dx, dz) || 1;
-        L.push(C[i][0], C[i][1], Y[i] + 0.004, dx / dl, dz / dl);
+        L.push(C[i][0], C[i][1], Y[i] + 0.004, dx / dl, dz / dl, seg.htun?.[i] ? 1 : 0);
       }
     }
     return M;
@@ -706,14 +711,17 @@ export class FleetRenderer {
     const hc = h == null ? 0 : Math.cos(h),
       hs = h == null ? 0 : Math.sin(h);
     let s = 0,
-      ws = 0;
-    for (let i = 0; i < L.length; i += 5) {
+      ws = 0,
+      wt0 = 0;
+    for (let i = 0; i < L.length; i += 6) {
       if (h != null && Math.abs(hc * L[i + 3] + hs * L[i + 4]) < 0.6) continue;
       const wt = 1 / (0.02 + (L[i] - x) ** 2 + (L[i + 1] - z) ** 2);
       s += L[i + 2] * wt;
       ws += wt;
+      if (L[i + 5]) wt0 += wt;
     }
-    return ws > 0 ? Math.max(g, s / ws) : g;
+    // (in a tunnel the deck runs under the ground)
+    return ws > 0 ? (wt0 > ws * 0.5 ? s / ws : Math.max(g, s / ws)) : g;
   }
 
   // The level a train runs at near point k of its route: the ground (a

@@ -128,6 +128,18 @@ runways, container ports with cranes, launch pads and spaceports.
 Infrastructure follows the terrain, crosses rivers on bridges, and is
 visible at mid zoom; at far zoom it reduces to thin lines.
 
+Round 33, grade caps (heights are world units against a one-unit tile; a
+storey is about 0.23): rail at most 1:12, guideways 1:10, highways 1:8.
+Surveys pay for climbing (`civPath`'s `climb` over a smoothed ground) and
+keep to gentle ground; each laid route's level sits between its all-cut
+and all-fill profiles, nearer the cut. Embankments and highway side walls
+stand at most about 1.5 storeys; higher, the deck rides on slim piers.
+A cut deep enough runs in a tunnel (no track drawn; a covered way and a
+headwall at each mouth; `seg.tun`, highways `seg.htun`, levels `seg.hy`),
+a shallow one is filled so the line rides over the rise at the grade. A
+route that still breaks the grade, or would need piers over about fourteen
+storeys, is searched again with climbing dearer and refused if it fails.
+
 ## Acceptance
 
 - A 600-year Medium run at default speed reaches the Future era in at least

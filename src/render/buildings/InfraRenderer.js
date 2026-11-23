@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { SEA_LEVEL } from '../../world/constants.js';
 import { BUILDING, VEHICLE } from '../../core/scale.js';
-import { hwPoint } from '../../sim/civ/modern.js';
+import { hwPoint, EMB_MAX, TUN_COVER, HW_COVER } from '../../sim/civ/modern.js';
 import { GeoBuilder } from './geom.js';
 import { pylonModel, PYLON_ARMS, substationModel, SUB_ARM_Y } from './modernModels.js';
 
@@ -46,7 +46,10 @@ const GUIDE_W = 0.36 * TS, // (the maglev's beam, as wide as its trains)
 const HW_W = 0.62; // the highway's carriageway (a road, sized by the tiles)
 const FAR = 150; // beyond this camera distance: thin lines only
 const WIRE_D = 75; // wires drawn up to here (past it: pylons only, no dark scratches)
-const VIADUCT = 0.12; // a rail bed this far over the ground rides on a bridge, below it on an embankment
+// a rail bed up to this far over the ground rides on an embankment, higher
+// on a bridge on slim piers (round 33: about one and a half storeys; it was
+// 0.12, so the line rode red girders over every dip)
+const VIADUCT = EMB_MAX;
 const PIER_GAP = 1.6; // tiles between a bridge's piers
 
 const COL = {
@@ -68,6 +71,8 @@ const COL = {
   edge: 0xd8b840,
   platform: 0xb4aea4,
   buffer: 0xb83a2a,
+  portal: 0xa8a39a,
+  mouth: 0x1e1c1a,
   pylon: 0x7a8288,
 };
 
@@ -243,6 +248,8 @@ export class InfraRenderer {
     // levels from the sim (seg.ys: a gentle grade over dips, on piers where
     // the track leaves the ground); the ground is read here for the piers
     const ys = seg.ys && seg.ys.length === n ? seg.ys : null;
+    // (round 33) where the line runs in a tunnel: nothing drawn but its portals
+    const tun = seg.tun && seg.tun.length === n ? seg.tun : null;
     const Y = S.map(([x, z], i) => {
       const h = this._h(x, z);
       const y = ys ? ys[i] : h < SEA_LEVEL ? SEA_LEVEL + 0.3 * BS : h + 0.02;
@@ -260,6 +267,7 @@ export class InfraRenderer {
       const a0 = arc;
       arc += L;
       if (Math.abs(bx - ax) > 40 || L < 1e-4) continue; // the seam of a round world
+      if (tun && tun[i] && tun[i + 1]) continue;
       const ya = Y[i].y,
         yb = Y[i + 1].y;
       const px = -(bz - az) / L,
@@ -274,11 +282,11 @@ export class InfraRenderer {
         E.bar(ax, az, bx, bz, ga, gb, GUIDE_W, GUIDE_H, COL.guide);
         E.bar(ax, az, bx, bz, ga + 0.003, gb + 0.003, GUIDE_W * 0.22, 0, COL.glow, 1, false);
         for (const s of [1, -1]) E.bar(ax + px * GUIDE_W * 0.42 * s, az + pz * GUIDE_W * 0.42 * s, bx + px * GUIDE_W * 0.42 * s, bz + pz * GUIDE_W * 0.42 * s, ga + 0.012, gb + 0.012, GUIDE_W * 0.12, 0.012, COL.guide2);
-        if (a0 - lastPillar >= PILLAR_GAP && a0 > 0.3 && arc < seg.len - 0.3) {
+        if (a0 - lastPillar >= PILLAR_GAP && a0 > 0.3 && arc < seg.len - 0.3 && ga - GUIDE_H > Y[i].g + 0.02) {
           lastPillar = a0;
           const bed = Math.min(Y[i].g, SEA_LEVEL - 0.3);
-          // a tall pier over a valley is a thicker one
-          E.post(ax, az, bed, ga - GUIDE_H, PILLAR_W * (ga - Y[i].g > 1.4 ? 1.7 : 1), COL.guide2);
+          // (a tall pier over a valley a little stouter, still slim)
+          E.post(ax, az, bed, ga - GUIDE_H, PILLAR_W * (ga - Y[i].g > 1.4 ? 1.25 : 1), COL.guide2);
           E.bar(ax + tz * GUIDE_W * 0.6, az - tx * GUIDE_W * 0.6, ax - tz * GUIDE_W * 0.6, az + tx * GUIDE_W * 0.6, ga - GUIDE_H, ga - GUIDE_H, PILLAR_W * 0.8, PILLAR_W * 0.5, COL.guide2);
         }
         continue;
@@ -308,7 +316,7 @@ export class InfraRenderer {
         if (a0 - lastPier >= (Y[i].wet ? 2 : PIER_GAP) && (Y[i].wet || ha > GIRDER_H + 0.04)) {
           lastPier = a0;
           const tall = ya - Y[i].g > 1.2;
-          E.post(ax, az, Y[i].g - 0.2, ya - GIRDER_H, PIER_W * (tall ? 1.5 : 1), COL.pier);
+          E.post(ax, az, Y[i].g - 0.2, ya - GIRDER_H, PIER_W * (tall ? 1.1 : 0.85), COL.pier);
           if (tall) E.bar(ax + px * DECK_W * 0.75, az + pz * DECK_W * 0.75, ax - px * DECK_W * 0.75, az - pz * DECK_W * 0.75, ya - GIRDER_H, ya - GIRDER_H, PIER_W * 1.2, PIER_W * 0.6, COL.pier);
         }
       } else if (!sw) {
@@ -340,6 +348,16 @@ export class InfraRenderer {
         rz = pz * (GAUGE / 2);
       for (const s of [1, -1]) E.bar(ax + rx * s, az + rz * s, bx + rx * s, bz + rz * s, ya + SLEEPER_H + RAIL_H, yb + SLEEPER_H + RAIL_H, RAIL_W, RAIL_H, COL.rail);
     }
+    if (tun)
+      this._portals(
+        E,
+        S,
+        Y.map((o) => (elevated ? o.deck : o.y)),
+        Y.map((o) => o.g),
+        tun,
+        (elevated ? GUIDE_W : BAL_B * 2) * 0.5 + 0.08,
+        TUN_COVER,
+      );
     // a diamond where two tracks cross: a steel crossing plate
     for (const [x, z, a1, a2] of seg.xing || []) {
       const y = Math.max(this._h(x, z), SEA_LEVEL) + 0.02 + SLEEPER_H + 0.002;
@@ -357,6 +375,66 @@ export class InfraRenderer {
         bz = z - tx * side * 0.32;
       const y = Math.max(this._h(bx, bz), SEA_LEVEL);
       E.post(bx, bz, y, y + 0.05 * BS * 2, 0.07 * BS * 2, COL.buffer);
+    }
+  }
+  // (round 33) A tunnel's mouths: at each end of a run of points in a
+  // tunnel (tun), the stretch where the line is already below the ground
+  // but not yet deep in it is a covered way (a concrete box on its walls,
+  // its roof cover over the level y), and its outer end a headwall round a
+  // dark mouth. S: the points [x, z, tx, tz], g: the ground at each, half:
+  // the half width inside.
+  _portals(E, S, y, g, tun, half, cover) {
+    const n = S.length;
+    const T = 0.05; // the walls' and the roof's thickness
+    const box = (i, j) => {
+      const [ax, az] = S[i],
+        [bx, bz] = S[j];
+      if (Math.hypot(bx - ax, bz - az) > 3) return;
+      const L = Math.hypot(bx - ax, bz - az) || 1;
+      const px = -(bz - az) / L,
+        pz = (bx - ax) / L;
+      const ra = y[i] + cover + T,
+        rb = y[j] + cover + T;
+      E.bar(ax, az, bx, bz, ra, rb, half * 2 + T * 2, T, COL.portal);
+      for (const sd of [1, -1]) {
+        const o = half + T / 2;
+        E.bar(ax + px * o * sd, az + pz * o * sd, bx + px * o * sd, bz + pz * o * sd, ra - T, rb - T, T, cover + 0.04, COL.portal);
+      }
+    };
+    const mouth = (i, out) => {
+      // out: +1 when the open side faces along the line's direction
+      const [x, z, tx, tz] = S[i];
+      const px = -tz,
+        pz = tx;
+      const top = Math.max(y[i] + cover + T, g[i]) + 0.06;
+      const ox = tx * out * 0.03,
+        oz = tz * out * 0.03;
+      const W2 = half + T + 0.07;
+      E.bar(x - px * W2 + ox, z - pz * W2 + oz, x + px * W2 + ox, z + pz * W2 + oz, top, top, 0.07, top - (y[i] - 0.06), COL.portal);
+      // the dark opening on its outer face
+      const fx = x + tx * out * 0.075,
+        fz = z + tz * out * 0.075;
+      const hw = half * 0.92;
+      E.quad([fx - px * hw, y[i] - 0.02, fz - pz * hw], [fx + px * hw, y[i] - 0.02, fz + pz * hw], [fx + px * hw, y[i] + cover, fz + pz * hw], [fx - px * hw, y[i] + cover, fz - pz * hw], COL.mouth);
+    };
+    for (let i = 0; i < n; ) {
+      if (!tun[i]) {
+        i++;
+        continue;
+      }
+      let j = i;
+      while (j < n && tun[j]) j++;
+      // the way in before i, and the way out after j - 1
+      for (const [edge, step] of [
+        [i, -1],
+        [j - 1, 1],
+      ]) {
+        let m = edge;
+        while (m + step >= 0 && m + step < n && !tun[m + step] && g[m + step] - y[m + step] > -0.02 && Math.abs(m + step - edge) < 30) m += step;
+        for (let a = edge; a !== m; a += step) box(Math.min(a, a + step), Math.max(a, a + step));
+        mouth(m, step);
+      }
+      i = j;
     }
   }
   // which side a branch turns to (+1 right, -1 left of its first direction)
@@ -469,15 +547,20 @@ export class InfraRenderer {
       }
       Gmax[i] = m;
     }
-    // its level: on the ground, on a bridge over water (hw 2) with ramps
-    // at a gentle grade either side
-    const Yh = G.map((g, i) => Math.max(hw[i] === 2 || g < SEA_LEVEL ? SEA_LEVEL + 0.3 * BS : g, Gmax[i] + 0.035));
+    // its level: from the sim (round 33: seg.hy, under the road's grade
+    // cap, through a tunnel where it meets a ridge); else on the ground, on
+    // a bridge over water (hw 2) with ramps at a gentle grade either side
+    const HY = seg.hy && seg.hy.length === n ? seg.hy : null;
+    const tun = seg.htun && seg.htun.length === n ? seg.htun : null;
+    const Yh = G.map((g, i) => (HY && Number.isFinite(HY[i]) ? HY[i] : Math.max(hw[i] === 2 || g < SEA_LEVEL ? SEA_LEVEL + 0.3 * BS : g, Gmax[i] + 0.035)));
     // (round 27) the ramps run only out from a bridge and along the drawn
     // road: a deck carried on at the grade from the top of a slope stood on
     // tall pillars over a canyon edge, and one ended in mid-air at a bank
     const up = (i) => Yh[i] - Gmax[i] > 0.05;
-    for (let i = 1; i < n; i++) if (hw[i] && hw[i - 1] && up(i - 1)) Yh[i] = Math.max(Yh[i], Yh[i - 1] - 0.08);
-    for (let i = n - 2; i >= 0; i--) if (hw[i] && hw[i + 1] && up(i + 1)) Yh[i] = Math.max(Yh[i], Yh[i + 1] - 0.08);
+    if (!HY) {
+      for (let i = 1; i < n; i++) if (hw[i] && hw[i - 1] && up(i - 1)) Yh[i] = Math.max(Yh[i], Yh[i - 1] - 0.08);
+      for (let i = n - 2; i >= 0; i--) if (hw[i] && hw[i + 1] && up(i + 1)) Yh[i] = Math.max(Yh[i], Yh[i + 1] - 0.08);
+    }
     // every run starts and ends on the ground: a raised end is cut back to
     // its last point at grade (a run with none is not drawn)
     const draw = new Uint8Array(n);
@@ -513,8 +596,14 @@ export class InfraRenderer {
     const EL = HW_W * 0.44; // the edge lines
     const LW = 0.008;
     let lastPier = -9;
+    // (round 33) a side wall stands at most EMB_MAX over the ground (round
+    // 32: highways climbed hills on solid walls many storeys tall); higher,
+    // the deck is a bridge: a fascia girder under its edge, slim piers
+    const FASCIA = 0.12;
+    const tall = (i, side) => Yh[i] - (side > 0 ? GL[i] : GR[i]) > EMB_MAX;
     for (let i = 0; i + 1 < n; i++) {
       if (!draw[i] || !draw[i + 1]) continue;
+      if (tun && tun[i] && tun[i + 1]) continue;
       const [ax, az] = C[i],
         [bx, bz] = C[i + 1];
       const L = Math.hypot(bx - ax, bz - az);
@@ -529,13 +618,25 @@ export class InfraRenderer {
       E.quad(X(i, SO, ya), X(j, SO, yb), X(j, HA, yb), X(i, HA, ya), shoulder);
       E.quad(X(i, HA, ya), X(j, HA, yb), X(j, -HA, yb), X(i, -HA, ya), COL.asphalt);
       E.quad(X(i, -HA, ya), X(j, -HA, yb), X(j, -SO, yb), X(i, -SO, ya), shoulder);
-      // concrete skirts from both edges down into the ground
+      // concrete side walls from both edges down into the ground, or a
+      // fascia where the deck stands higher than that over the ground
       for (const s of [1, -1]) {
-        const fa = foot(i, s),
-          fb = foot(j, s);
+        const bridge = !wet(i) && !wet(j) && (tall(i, s) || tall(j, s));
+        const fa = bridge ? ya - FASCIA : foot(i, s),
+          fb = bridge ? yb - FASCIA : foot(j, s);
         E.quad(X(i, s * SO, fa), X(j, s * SO, fb), X(j, s * SO, yb), X(i, s * SO, ya), COL.pier);
+        // (its underside, so the deck does not read as a paper sheet)
+        if (bridge && s > 0) E.quad(X(i, SO, ya - FASCIA), X(j, SO, yb - FASCIA), X(j, -SO, yb - FASCIA), X(i, -SO, ya - FASCIA), COL.viaduct2);
         // a parapet along a bridge or a raised ramp
         if (raised) E.quad(X(i, s * SO, ya), X(j, s * SO, yb), X(j, s * SO, yb + 0.05), X(i, s * SO, ya + 0.05), COL.viaduct);
+      }
+      // slim piers under a bridge's deck, a crosshead under each
+      if (!wet(i) && (tall(i, 1) || tall(i, -1)) && i - lastPier >= 5) {
+        lastPier = i;
+        E.post(ax, az, Math.min(G[i], GL[i], GR[i]) - 0.2, ya - FASCIA, PIER_W * 0.8, COL.pier);
+        const [hx1, , hz1] = X(i, SO * 0.8, 0),
+          [hx2, , hz2] = X(i, -SO * 0.8, 0);
+        E.bar(hx1, hz1, hx2, hz2, ya - FASCIA, ya - FASCIA, PIER_W * 0.8, 0.06, COL.pier);
       }
       // the yellow edge lines and the dashed centre line
       for (const s of [1, -1]) E.quad(X(i, s * EL + LW, ya + 0.003), X(j, s * EL + LW, yb + 0.003), X(j, s * EL - LW, yb + 0.003), X(i, s * EL - LW, ya + 0.003), COL.edge);
@@ -548,11 +649,20 @@ export class InfraRenderer {
           qz = (bx - ax) / L;
         E.quad([ax + Nx[i] * LW, ya + 0.003, az + Nz[i] * LW], [cx + qx * LW, cy, cz + qz * LW], [cx - qx * LW, cy, cz - qz * LW], [ax - Nx[i] * LW, ya + 0.003, az - Nz[i] * LW], COL.mark);
       }
-      // piers under a bridge
-      if (raised && ya - G[i] > 0.3 && i - lastPier >= 5) {
+      // piers under a bridge over water
+      if (wet(i) && ya - G[i] > 0.3 && i - lastPier >= 5) {
         lastPier = i;
         E.post(ax, az, G[i] - 0.2, ya - 0.14, PIER_W, COL.pier);
       }
+    }
+    if (tun) {
+      // (the deck's own points, its centre line, for the portals)
+      const S = C.map(([x, z], i) => [x, z, Nz[i], -Nx[i]]);
+      const gm = Array.from(Gmax);
+      // (only the drawn runs: a point off them never opens a mouth)
+      const t2 = new Uint8Array(n);
+      for (let i = 0; i < n; i++) t2[i] = tun[i] && hw[i] ? 1 : 0;
+      this._portals(E, S, Array.from(Yh), gm, t2, SO + 0.04, HW_COVER);
     }
   }
   _subGeo() {
