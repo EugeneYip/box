@@ -1023,10 +1023,13 @@ export class Labels {
             if (pr.l < mLeft || pr.r > right || pr.t < top || pr.b > bot) continue;
             const r = { l: px - w2 / 2, r: px + w2 / 2, t: py + oy - h2 / 2, b: py + oy + h2 / 2 };
             if (hits(r)) continue;
-            // its middle over its own land; only right on the capital may it
-            // lie over the water round a small island
+            // its middle over its own land, or over unclaimed land within
+            // about 40 px of the point (a young realm owns little round its
+            // towns), never over another realm or the sea; only right on the
+            // capital may it lie over the water round a small island
             const o = groundOwner(px, py, a.gy);
-            if (o !== c.kid && !(a.kind === 'seat' && Math.hypot(dx, dy) <= 14)) continue;
+            const off = Math.hypot(dx, dy);
+            if (o !== c.kid && !(o === -2 && off <= 41) && !(a.kind === 'seat' && off <= 14)) continue;
             rect.l = r.l;
             rect.r = r.r;
             rect.t = r.t;
