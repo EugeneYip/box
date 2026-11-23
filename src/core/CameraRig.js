@@ -38,6 +38,22 @@ export const CAM_CUT = {
 const CUT_NEAR = 10,
   CUT_FAR = 14;
 
+// (round 35) The close camera's lift over rough ground keeps a slanting
+// view: it adds at most LIFT_MAX to the zoom's own pitch and never takes the
+// pitch past PITCH_MAX (round 33's lifts ran to 78-80 deg, near straight
+// down, on any rugged ground). Where that is not enough the view turns away
+// from the high side (CameraRig._swing) rather than looking down.
+const DEG = Math.PI / 180;
+const LIFT_MAX = 20 * DEG,
+  PITCH_MAX = 62 * DEG;
+// Ground beyond the target counts as a wall only where it stands WALL_RISE
+// above the target and rises at least WALL_SLOPE per unit there (round 33
+// counted anything 0.2 above, so a gentle rise behind a town was a cliff).
+const WALL_RISE = 1.2,
+  WALL_SLOPE = 0.35;
+// yaw turns tried past the cap, nearest first
+const SWING = [35, -35, 70, -70, 105, -105, 140, -140, 180].map((d) => d * DEG);
+
 // Smooth god-view camera: orbits a ground target. Zooming out tilts the view
 // toward top-down; zooming in lowers it for a diorama perspective.
 //   target (x,z) on the ground, distance, yaw (radians), pitch (radians).
@@ -177,10 +193,16 @@ export class CameraRig {
     this.goal.dist = THREE.MathUtils.clamp(dist, this.zoomMin(), this.zoomMax());
     this.goal.yaw = THREE.MathUtils.degToRad(yawDeg);
     this.manualPitch = pitchDeg == null || isNaN(pitchDeg) ? null : THREE.MathUtils.degToRad(pitchDeg);
+    // (a new view: the yaw asked for is not a turn by the player, so the
+    // view may still turn off a cliff there)
+    this._yawSeen = this.goal.yaw;
+    this._yawHold = null;
+    this._swingT = 0;
     if (instant) {
       Object.assign(this.cur, this.goal);
       this._groundY = null; // no easing from the old spot's ground
       this._lift = null; // nor from its line-of-sight pitch
+      this._dolly = null; // nor from its slide in off a hillside
       this._cutA.clear();
       this._cutY.clear();
       this._dt = 1; // (settle everything eased at once)
@@ -394,155 +416,199 @@ export class CameraRig {
     this.apply();
   }
 
-  // The extra pitch (radians) that lets the eye see the target over the
-  // terrain between them: the line of sight is sampled at a dozen points and
-  // the pitch raised in steps until every sample clears the ground (round 25:
-  // on high ground the closest zoom sat inside the hillside).
-  _clearLift(pitch, c, ty) {
+  // Does the line of sight from the eye at pitch p clear the terrain between
+  // it and the target? It is sampled at a dozen points (round 25: on high
+  // ground the closest zoom sat inside the hillside). v: {x, z, yaw, dist}.
+  _sightClear(p, v, ty) {
     const W = this.game.world;
-    const s = Math.sin(c.yaw),
-      co = Math.cos(c.yaw);
-    const maxP = THREE.MathUtils.degToRad(80);
-    for (let p = pitch; p < maxP; p += 0.035) {
-      const horiz = Math.cos(p) * c.dist,
-        up = Math.sin(p) * c.dist;
-      let clear = true;
-      for (let i = 1; i <= 12 && clear; i++) {
-        const t = i / 12;
-        const x = c.x + s * horiz * t,
-          z = c.z + co * horiz * t;
-        if (x < 0 || z < 0 || x > W.w - 1 || z > W.h - 1) continue;
-        // (a margin that grows from nothing at the target toward the eye, so
-        // flat ground never lifts the view: grass and low walls)
-        if (Math.max(0, W.heightAt(x, z)) + (0.3 + 0.05 * c.dist) * t > ty + up * t) clear = false;
-      }
-      if (clear) return p - pitch;
+    const s = Math.sin(v.yaw),
+      co = Math.cos(v.yaw);
+    const horiz = Math.cos(p) * v.dist,
+      up = Math.sin(p) * v.dist;
+    for (let i = 1; i <= 12; i++) {
+      const t = i / 12;
+      const x = v.x + s * horiz * t,
+        z = v.z + co * horiz * t;
+      if (x < 0 || z < 0 || x > W.w - 1 || z > W.h - 1) continue;
+      // (a margin that grows from nothing at the target toward the eye, so
+      // flat ground never lifts the view: grass and low walls)
+      if (Math.max(0, W.heightAt(x, z)) + (0.3 + 0.05 * v.dist) * t > ty + up * t) return false;
     }
-    return maxP - pitch;
+    return true;
   }
-  // The extra pitch (radians, at least `lift`) at which terrain near the eye
-  // covers no more than about 30% of the lower part of the frame. Rays through
-  // a 5 x 3 grid of points in the lower 60% of the picture are marched toward
-  // the plane at the target's height; a ray that meets the ground before 70%
-  // of its way there is covered by a foreground slope.
-  _coverLift(pitch, lift, c, ty) {
+  // The eye at pitch p looking at the target: its position and its forward,
+  // right and up axes, for the frame tests below.
+  _basis(p, v, ty) {
+    const s = Math.sin(v.yaw),
+      co = Math.cos(v.yaw);
+    const sp = Math.sin(p),
+      cp = Math.cos(p);
+    const b = this._bas || (this._bas = {});
+    b.ex = v.x + s * cp * v.dist;
+    b.ey = ty + sp * v.dist;
+    b.ez = v.z + co * cp * v.dist;
+    b.fx = -s * cp;
+    b.fy = -sp;
+    b.fz = -co * cp;
+    b.rx = co;
+    b.rz = -s;
+    b.ux = -s * sp;
+    b.uy = cp;
+    b.uz = -co * sp;
+    b.tanH = Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2);
+    b.asp = this.camera.aspect || 1;
+    return b;
+  }
+  // (round 31) The share of the lower frame that terrain near the eye covers
+  // at pitch p. Rays through a 5 x 3 grid of points in the lower 60% of the
+  // picture are marched toward the plane at the target's height; a ray that
+  // meets the ground before 70% of its way there is covered by a foreground
+  // slope (a blurred hillside filled the right half of the frame at 5 tiles).
+  _coverFrac(p, v, ty) {
     const W = this.game.world;
-    const cam = this.camera;
-    const tanH = Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2);
-    const asp = cam.aspect || 1;
-    const s = Math.sin(c.yaw),
-      co = Math.cos(c.yaw);
-    const maxP = THREE.MathUtils.degToRad(78);
+    const B = this._basis(p, v, ty);
     const wMax = W.w - 1,
       hMax = W.h - 1;
-    const covered = (p) => {
-      const horiz = Math.cos(p) * c.dist;
-      const ex = c.x + s * horiz,
-        ey = ty + Math.sin(p) * c.dist,
-        ez = c.z + co * horiz;
-      // camera basis: forward toward the target, right, up
-      const fx = -s * Math.cos(p),
-        fy = -Math.sin(p),
-        fz = -co * Math.cos(p);
-      const rx = co,
-        rz = -s;
-      const ux = -s * Math.sin(p),
-        uy = Math.cos(p),
-        uz = -co * Math.sin(p);
-      let n = 0,
-        hit = 0;
-      for (let j = 0; j < 3; j++) {
-        const b = -0.15 - j * 0.3; // lower frame, NDC
-        for (let i = 0; i < 5; i++) {
-          const a = -0.8 + i * 0.4;
-          const dx = fx + rx * a * tanH * asp + ux * b * tanH,
-            dy = fy + uy * b * tanH,
-            dz = fz + rz * a * tanH * asp + uz * b * tanH;
-          if (dy > -0.02) continue;
-          const L = (ey - ty) / -dy; // along the ray to the target's plane
-          n++;
-          for (let k = 1; k <= 8; k++) {
-            const t = (k / 8) * 0.7;
-            const x = ex + dx * L * t,
-              z = ez + dz * L * t;
-            if (x < 0 || z < 0 || x > wMax || z > hMax) continue;
-            if (Math.max(0, W.heightAt(x, z)) + 0.05 > ey + dy * L * t) {
-              hit++;
-              break;
-            }
+    let n = 0,
+      hit = 0;
+    for (let j = 0; j < 3; j++) {
+      const b = -0.15 - j * 0.3; // lower frame, NDC
+      for (let i = 0; i < 5; i++) {
+        const a = -0.8 + i * 0.4;
+        const dx = B.fx + B.rx * a * B.tanH * B.asp + B.ux * b * B.tanH,
+          dy = B.fy + B.uy * b * B.tanH,
+          dz = B.fz + B.rz * a * B.tanH * B.asp + B.uz * b * B.tanH;
+        if (dy > -0.02) continue;
+        const L = (B.ey - ty) / -dy; // along the ray to the target's plane
+        n++;
+        for (let k = 1; k <= 8; k++) {
+          const t = (k / 8) * 0.7;
+          const x = B.ex + dx * L * t,
+            z = B.ez + dz * L * t;
+          if (x < 0 || z < 0 || x > wMax || z > hMax) continue;
+          if (Math.max(0, W.heightAt(x, z)) + 0.05 > B.ey + dy * L * t) {
+            hit++;
+            break;
           }
         }
       }
-      return n ? hit / n : 0;
-    };
-    let p = pitch + lift;
-    for (let i = 0; i < 12 && p < maxP; i++, p += 0.04) if (covered(p) <= 0.3) break;
-    return Math.max(lift, Math.min(maxP, p) - pitch);
+    }
+    return n ? hit / n : 0;
   }
-  // (round 33) The extra pitch (radians, at least `lift`) at which terrain
-  // rising beyond the target fills no more than about 40% of the upper half
-  // of the frame. Rays through a 5 x 4 grid of points in the upper half are
-  // marched out to 1.5 times the eye's distance to the target; a ray that
-  // meets ground standing above the target there is on a wall (at 5 tiles a
-  // cliff beyond the target filled ~70% of the frame, and the lower-frame
-  // test above never saw it). Pitching up turns the upper frame down onto
-  // the ground round the target.
-  _wallLift(pitch, lift, c, ty) {
+  // (round 33) The share of the upper frame that a wall beyond the target
+  // fills at pitch p. Rays through a 5 x 4 grid of points in the upper half
+  // are marched out to 1.5 times the eye's distance to the target; a ray is
+  // on a wall where it meets ground that stands well above the target and is
+  // steep there (round 35: WALL_RISE, WALL_SLOPE; a gentle rise is only
+  // landscape beyond the target and never pitched the view up).
+  _wallFrac(p, v, ty) {
     const W = this.game.world;
-    const cam = this.camera;
-    const tanH = Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2);
-    const asp = cam.aspect || 1;
-    const s = Math.sin(c.yaw),
-      co = Math.cos(c.yaw);
-    const maxP = THREE.MathUtils.degToRad(78);
+    const B = this._basis(p, v, ty);
     const wMax = W.w - 1,
       hMax = W.h - 1;
-    const D = c.dist;
-    const covered = (p) => {
-      const horiz = Math.cos(p) * D;
-      const ex = c.x + s * horiz,
-        ey = ty + Math.sin(p) * D,
-        ez = c.z + co * horiz;
-      const fx = -s * Math.cos(p),
-        fy = -Math.sin(p),
-        fz = -co * Math.cos(p);
-      const rx = co,
-        rz = -s;
-      const ux = -s * Math.sin(p),
-        uy = Math.cos(p),
-        uz = -co * Math.sin(p);
-      let n = 0,
-        hit = 0;
-      for (let j = 0; j < 4; j++) {
-        const b = 0.15 + j * 0.25; // upper frame, NDC
-        for (let i = 0; i < 5; i++) {
-          const a = -0.8 + i * 0.4;
-          let dx = fx + rx * a * tanH * asp + ux * b * tanH,
-            dy = fy + uy * b * tanH,
-            dz = fz + rz * a * tanH * asp + uz * b * tanH;
-          const l = Math.hypot(dx, dy, dz);
-          dx /= l;
-          dy /= l;
-          dz /= l;
-          n++;
-          for (let k = 1; k <= 16; k++) {
-            const t = (k / 16) * 1.5 * D;
-            const x = ex + dx * t,
-              z = ez + dz * t;
-            if (x < 0 || z < 0 || x > wMax || z > hMax) break;
-            const g = Math.max(0, W.heightAt(x, z));
-            if (g > ey + dy * t) {
-              if (g > ty + 0.2) hit++;
-              break;
+    const D = v.dist;
+    let n = 0,
+      hit = 0;
+    for (let j = 0; j < 4; j++) {
+      const b = 0.15 + j * 0.25; // upper frame, NDC
+      for (let i = 0; i < 5; i++) {
+        const a = -0.8 + i * 0.4;
+        let dx = B.fx + B.rx * a * B.tanH * B.asp + B.ux * b * B.tanH,
+          dy = B.fy + B.uy * b * B.tanH,
+          dz = B.fz + B.rz * a * B.tanH * B.asp + B.uz * b * B.tanH;
+        const l = Math.hypot(dx, dy, dz);
+        dx /= l;
+        dy /= l;
+        dz /= l;
+        n++;
+        for (let k = 1; k <= 16; k++) {
+          const t = (k / 16) * 1.5 * D;
+          const x = B.ex + dx * t,
+            z = B.ez + dz * t;
+          if (x < 0 || z < 0 || x > wMax || z > hMax) break;
+          const g = Math.max(0, W.heightAt(x, z));
+          if (g > B.ey + dy * t) {
+            // (the ray may meet the foot of the face: its top is read a
+            // unit or two on, along the ray)
+            const hl = Math.hypot(dx, dz) || 1;
+            const top = Math.max(g, W.heightAt(x + dx / hl, z + dz / hl), W.heightAt(x + (2 * dx) / hl, z + (2 * dz) / hl));
+            if (top > ty + WALL_RISE) {
+              const sx = W.heightAt(x + 0.5, z) - W.heightAt(x - 0.5, z),
+                sz = W.heightAt(x, z + 0.5) - W.heightAt(x, z - 0.5);
+              if (Math.hypot(sx, sz) > WALL_SLOPE) hit++;
             }
+            break;
           }
         }
       }
-      return n ? hit / n : 0;
+    }
+    return n ? hit / n : 0;
+  }
+  // The least extra pitch (radians, 0 up to the cap) at which the eye sees
+  // the target over the terrain and, close in (`near`), terrain covers no
+  // more than about 30% of the lower frame and a wall no more than about 30%
+  // of the upper frame. ok is false when even the cap leaves one of these
+  // unmet; bad then says by how much (1 for a hidden target, plus the
+  // shares over the limits).
+  _liftAt(pitch, v, ty, near) {
+    const cap = Math.max(0, Math.min(LIFT_MAX, PITCH_MAX - pitch));
+    const test = (p, full) => {
+      let b = this._sightClear(p, v, ty) ? 0 : 1;
+      if (!near || (b && !full)) return b;
+      b += Math.max(0, this._coverFrac(p, v, ty) - 0.3);
+      if (b && !full) return b;
+      return b + Math.max(0, this._wallFrac(p, v, ty) - 0.3);
     };
-    let p = pitch + lift;
-    for (let i = 0; i < 26 && p < maxP; i++, p += 0.04) if (covered(p) <= 0.4) break;
-    return Math.max(lift, Math.min(maxP, p) - pitch);
+    const out = this._liftOut || (this._liftOut = {});
+    for (let l = 0; l < cap; l += 0.035)
+      if (!test(pitch + l, false)) {
+        out.lift = l;
+        out.ok = true;
+        out.bad = 0;
+        return out;
+      }
+    out.bad = test(pitch + cap, true);
+    out.lift = cap;
+    out.ok = !out.bad;
+    return out;
+  }
+  // (round 35) Past the cap the view turns away from the high side: the yaws
+  // round the current one are tried, and the view turns, once, to the nearest
+  // that the lift can clear within the cap (failing that, to the one that
+  // leaves clearly less terrain in the way). A turn by the player (any change
+  // of the goal's yaw from outside) pins the yaw at that spot until the view
+  // moves on (4 tiles) or zooms (30%). Returns true when it turned.
+  _swing(pitch, c, ty, here, dt) {
+    const g = this.goal;
+    const h = this._yawHold;
+    if (h && (Math.hypot(c.x - h.x, c.z - h.z) > 4 || Math.abs(c.dist / h.dist - 1) > 0.3)) this._yawHold = null;
+    this._swingT = (this._swingT || 0) - dt;
+    // (only a view clearly spoiled at the cap turns: a hidden target, or
+    // terrain over a tenth past the limits)
+    if (here.bad <= 0.1 || this._yawHold || (this._swingT > 0 && dt < 1)) return false;
+    this._swingT = 0.4;
+    const v = this._swV || (this._swV = {});
+    v.x = c.x;
+    v.z = c.z;
+    v.dist = c.dist;
+    const hereBad = here.bad;
+    let best = null,
+      bestCost = Infinity;
+    for (const off of SWING) {
+      v.yaw = c.yaw + off;
+      const r = this._liftAt(pitch, v, ty, true);
+      const cost = (r.ok ? r.lift / DEG : 1000 + 100 * r.bad) + 0.12 * (Math.abs(off) / DEG);
+      if (cost < bestCost && (r.ok || r.bad < hereBad - 0.15)) {
+        bestCost = cost;
+        best = off;
+      }
+    }
+    if (best == null) return false;
+    g.yaw += best;
+    if (dt >= 1) c.yaw = g.yaw;
+    this._yawSeen = g.yaw;
+    this._swingT = 1.5; // (no second turn straight after)
+    return true;
   }
   // Where a creature or craft is drawn this frame: between its last two
   // ticks (px, pz -> x, z) by the share of the next tick already run, as
@@ -596,20 +662,25 @@ export class CameraRig {
     this._groundY = this._groundY == null ? aim : this._groundY + (aim - this._groundY) * kY;
     this.target.set(c.x, this._groundY, c.z);
     let pitch = this.pitchFor(c.dist);
+    // (a turn of the view from outside: the player's own, see _swing)
+    if (this._yawSeen !== this.goal.yaw) {
+      this._yawSeen = this.goal.yaw;
+      this._yawHold = { x: c.x, z: c.z, dist: c.dist };
+    }
     // close in, raise the pitch until the line of sight clears the terrain
-    // (rises quickly, settles back slowly)
+    // (rises quickly, settles back slowly); up close (under 16 tiles) also
+    // while a slope near the eye covers the lower frame (round 31) or a wall
+    // beyond the target fills the upper frame (round 33). (round 35) The lift
+    // stops at LIFT_MAX and PITCH_MAX; past that the view turns (_swing).
     if (c.dist < 30) {
-      let need = this._clearLift(pitch, c, this.target.y);
-      // (round 31) up close, a slope beside the sight line could still fill
-      // half the frame (a blurred hillside over the right half at 5 tiles):
-      // pitch up further while terrain covers more than about 30% of the
-      // lower frame
-      if (c.dist < 16) need = this._coverLift(pitch, need, c, this.target.y);
-      // (round 33) and while a slope beyond the target fills the upper frame
-      if (c.dist < 16) need = this._wallLift(pitch, need, c, this.target.y);
+      const near = c.dist < 16;
+      const ty = this.target.y;
+      let r = this._liftAt(pitch, c, ty, near);
+      if (near && this._swing(pitch, c, ty, r, dt)) r = this._liftAt(pitch, c, ty, near);
+      const need = r.lift;
       if (this._lift == null) this._lift = need;
       else this._lift += (need - this._lift) * (1 - Math.exp(-dt * (need > this._lift ? 20 : 2.5)));
-      pitch = Math.min(THREE.MathUtils.degToRad(80), pitch + this._lift);
+      pitch = Math.min(Math.max(PITCH_MAX, pitch), pitch + this._lift);
     } else this._lift = 0;
     const horiz = Math.cos(pitch) * c.dist;
     const cam = this.camera;
@@ -619,14 +690,36 @@ export class CameraRig {
       c.z + Math.cos(c.yaw) * horiz,
     );
     // close to the ground on a slope, keep the camera above the hillside
-    // behind it
+    // behind it: (round 35) it slides in along the line of sight, keeping its
+    // pitch, to the first point clear of the ground (raising it straight up
+    // turned the view steeply down); only when no point within about two
+    // thirds of the way is clear does it rise
     if (c.dist < 30) {
       const W = this.game.world;
-      const hx = Math.min(W.w - 1, Math.max(0, cam.position.x)),
-        hz = Math.min(W.h - 1, Math.max(0, cam.position.z));
+      const T = this.target,
+        P = cam.position;
+      const room = (k) => {
+        const x = T.x + (P.x - T.x) * k,
+          z = T.z + (P.z - T.z) * k;
+        const hx = Math.min(W.w - 1, Math.max(0, x)),
+          hz = Math.min(W.h - 1, Math.max(0, z));
+        return T.y + (P.y - T.y) * k - (Math.max(0, W.heightAt(hx, hz)) + 0.8);
+      };
+      let k = 1;
+      if (room(1) < 0) {
+        let j = 0.95;
+        while (j > 0.4 && room(j) < 0) j -= 0.05;
+        if (j > 0.4) k = j;
+      }
+      // (in at once, back out slowly)
+      if (this._dolly == null || k < this._dolly) this._dolly = k;
+      else this._dolly += (k - this._dolly) * (1 - Math.exp(-dt * 2.5));
+      if (this._dolly < 0.999) P.set(T.x + (P.x - T.x) * this._dolly, T.y + (P.y - T.y) * this._dolly, T.z + (P.z - T.z) * this._dolly);
+      const hx = Math.min(W.w - 1, Math.max(0, P.x)),
+        hz = Math.min(W.h - 1, Math.max(0, P.z));
       const floor = Math.max(0, W.heightAt(hx, hz)) + 0.8;
-      if (cam.position.y < floor) cam.position.y = floor;
-    }
+      if (P.y < floor) P.y = floor;
+    } else this._dolly = null;
     if (this.shake > 0) {
       const s = this.shake * 0.35 * Math.min(1, c.dist / 40);
       const t = this._shakeT * 40;
