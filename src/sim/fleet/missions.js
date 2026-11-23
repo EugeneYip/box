@@ -293,10 +293,12 @@ export const missions = {
     const half = def.length * 0.5;
     const a0 = Math.atan2(h.dirZ, h.dirX);
     const depthAt = (x, z) => this._depthAt(x, z);
+    let routes = 0;
     const tiers = deepOnly
       ? [
           [6 + half, 5.0, 34],
           [4 + half, 3.8, 34],
+          [4 + half, 3.0, 30],
         ]
       : [
           [3 + half, 1.8, 24],
@@ -304,6 +306,7 @@ export const missions = {
           [3, 0, 22],
         ];
     for (const [need, deep, rMax] of tiers) {
+      routes = 0;
       for (let r = 5; r <= rMax; r += 1.5) {
         // (deep water is looked for all round the harbour, not only ahead)
         for (let k = 0, kn = deep > 0 ? 23 : 13; k < kn; k++) {
@@ -326,7 +329,14 @@ export const missions = {
               break;
             }
           }
-          if (!busy) return { x, z, berth: true, offshore: true };
+          if (busy) continue;
+          // (deep roads must be reachable for her hull: a few tries at most,
+          // then the pier or nearer water will do)
+          if (deepOnly && self) {
+            if (++routes > 6) break;
+            if (!this.seaPath(self, x, z)) continue;
+          }
+          return { x, z, berth: true, offshore: true };
         }
       }
     }
