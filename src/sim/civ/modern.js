@@ -116,8 +116,9 @@ const TUN_DEEP = 0.45;
 // than the open line (rail about 1:8, as steep as a road), so towns a little
 // above or below the trunk are still reached; the open line keeps the cap
 const APPROACH = 1.5;
-// inside a tunnel a line that must may climb this much steeper (rail 1:4)
-const BORE = 3;
+// inside a tunnel a line that must may climb this much steeper (out of
+// sight: its trains are too)
+const BORE = 5;
 // the longest covered way at a tunnel's mouth (tiles); the line comes up
 // to the ground beyond it
 const PORTAL_LEN = 1.2;
@@ -127,7 +128,7 @@ const CUT_BIAS = 0.3;
 // a route whose level still breaks the grade by more than this (units of
 // climb summed over the steep stretches: between its two stations, say)
 // is refused; the survey looks for a gentler way or gives the pair up
-const GRADE_SLACK = { rail: 0.6, maglev: 0.9 };
+const GRADE_SLACK = { rail: 1.5, maglev: 1.8 };
 // the climb price of a survey's grid search (see civPath's climb)
 const CLIMB_K = { rail: 14, maglev: 11 };
 // a guideway's least height over open ground outside a tunnel
@@ -209,7 +210,7 @@ function gradeLevels(g, gc, f, lo, land, ds, G, clr, cover, y0, y1) {
     for (let i = 1; i < n; i++) {
       arc += Math.min(ds[i], 40);
       const line = y0 + ((y1 - y0) * arc) / (tot || 1);
-      if (r.tun?.[i] || r.tun?.[i - 1] || (land[i] && gc[i] > line + cover)) steep[i] = 1;
+      if (r.tun?.[i] || r.tun?.[i - 1] || (land[i] && gc[i] > line + cover * 0.5)) steep[i] = 1;
       any = any || !!steep[i];
     }
     if (!any) break;
