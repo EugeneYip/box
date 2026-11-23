@@ -112,6 +112,9 @@ export const TUN_COVER = 0.26;
 export const HW_COVER = 0.32;
 // a cut becomes a tunnel where it reaches this deep (a shallower one is filled)
 const TUN_DEEP = 0.45;
+// the longest covered way at a tunnel's mouth (tiles); the line comes up
+// to the ground beyond it
+const PORTAL_LEN = 1.2;
 // where a level sits between the all-cut (0) and the all-fill (1) profile:
 // nearer the cut, since a tunnel is out of sight and a tall viaduct is not
 const CUT_BIAS = 0.3;
@@ -195,7 +198,9 @@ function gradeLevels(g, gc, f, lo, land, ds, G, clr, cover, y0, y1) {
   const lo2 = Float32Array.from(lo);
   const tun = new Uint8Array(n);
   let anyTun = false;
-  for (let it = 0; it < 3; it++) {
+  // (the last pass only marks the bores of the level it settled on)
+  for (let it = 0; it < 5; it++) {
+    const last = it === 4;
     let raised = false;
     tun.fill(0);
     anyTun = false;
@@ -215,12 +220,32 @@ function gradeLevels(g, gc, f, lo, land, ds, G, clr, cover, y0, y1) {
       // (round 33: a deep cut through a narrow ridge too: filled, the line
       // rode over its crest and stood on piers as tall as the cliff past it)
       if (deep >= TUN_DEEP && arc >= 0.5) {
-        for (let m = i; m < j; m++)
-          if (gc[m] - y[m] >= cover) {
-            tun[m] = 1;
-            anyTun = true;
+        // the bore: from the first point with cover over it to the last
+        // (a shallow stretch between two deep ones stays in the bore)
+        let a = i,
+          b = j - 1;
+        while (gc[a] - y[a] < cover) a++;
+        while (gc[b] - y[b] < cover) b--;
+        for (let m = a; m <= b; m++) tun[m] = 1;
+        anyTun = true;
+        // its approaches, below the ground with too little over them for a
+        // bore, are a short covered way at the mouth (InfraRenderer); past
+        // that the line comes up to the ground (round 33: a covered way ran
+        // for many tiles over a gentle hillside like a grey pipe)
+        for (const [from, to, st] of [
+          [a - 1, i - 1, -1],
+          [b + 1, j, 1],
+        ]) {
+          let d = 0;
+          for (let m = from; m !== to; m += st) {
+            d += Math.min(ds[st > 0 ? m : m + 1], 3);
+            if (d > PORTAL_LEN && !last) {
+              lo2[m] = Math.max(lo2[m], g[m] + clr);
+              raised = true;
+            }
           }
-      } else {
+        }
+      } else if (!last) {
         for (let m = i; m < j; m++) lo2[m] = Math.max(lo2[m], g[m] + clr);
         raised = true;
       }
@@ -232,6 +257,9 @@ function gradeLevels(g, gc, f, lo, land, ds, G, clr, cover, y0, y1) {
   let ex = 0,
     fill = 0;
   for (let i = 1; i < n; i++) if (ds[i] < 40) ex += Math.max(0, Math.abs(y[i] - y[i - 1]) - G * ds[i] * 1.02);
+  // (ends too far apart in height for the grade: the level cannot meet both,
+  // and that counts as breaking it)
+  ex += Math.max(0, Math.abs(y[0] - y0) - 0.08) + Math.max(0, Math.abs(y[n - 1] - y1) - 0.08);
   for (let i = 0; i < n; i++) if (land[i] && !tun[i]) fill = Math.max(fill, y[i] - f[i]);
   return { y, tun: anyTun ? tun : null, ex, fill };
 }
@@ -333,6 +361,13 @@ function hwLevels(w, seg) {
         }
       }
       const r = gradeLevels(g, gc, f, lo, land, ds, GRADE.road, 0.035, HW_COVER, f[0], f[m - 1]);
+      // (a run that would break the road's grade, or stand on piers taller
+      // than a line may, is not built: the track runs on without it)
+      if (r.ex > GRADE_SLACK.rail || r.fill > FILL_MAX.rail) {
+        for (let k = 0; k < m; k++) hw[a + k] = 0;
+        a = b;
+        continue;
+      }
       for (let k = 0; k < m; k++) hy[a + k] = r.y[k];
       if (r.tun) {
         if (!htun) htun = new Uint8Array(n);
