@@ -1488,7 +1488,9 @@ void terrainSurface() {
   vec3 sea = seabedColor(s, max(depth, 0.0), hb);
   float under = smoothstep(-0.05, 0.9, depth + (s.det.r - 0.5) * 0.5);
   // sandy floors take the rippled seabed look; other beds keep their material, wet
-  float sandy = dot(vec4(equal(vec4(t0, t1, t2, t3), vec4(0.0))) * live, b);
+  // (sea-ice tiles too: thawed in summer, the floor under them is the shelf's
+  // own sand, not the ice material's cracks seen through the water)
+  float sandy = dot((vec4(equal(vec4(t0, t1, t2, t3), vec4(0.0))) + vec4(equal(vec4(t0, t1, t2, t3), vec4(15.0)))) * live, b);
   // (round 31: the sea floor past ~2.8 deep is ROCK tiles, and as a "wet bed"
   // their dark mountain stone showed through the shelf water as ragged,
   // tile-stepped ink blots on every regional map; a rock floor under the sea

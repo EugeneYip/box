@@ -20,6 +20,7 @@ uniform sampler2D uTypeTex;
 uniform sampler2D uNoise;
 uniform sampler2D uCells;
 uniform sampler2D uClimTex;
+uniform sampler2D uIceKey;
 uniform float uCamFar;
 ${WATER_PARS_GLSL}
 
@@ -33,10 +34,11 @@ float ggxD(float nh, float r) {
   float d = nh * nh * (a2 - 1.0) + 1.0;
   return a2 / (3.14159 * d * d);
 }
-float isIceAt(ivec2 c, ivec2 isz) {
-  float t = floor(texelFetch(uTypeTex, clamp(c, ivec2(0), isz), 0).r * 255.0 + 0.5);
-  return t == 15.0 ? 1.0 : 0.0;
-}
+// sea ice (seaIce.js): r = the tile's freeze key, g = 1 under an iceberg
+vec2 iceKeyAt(ivec2 c, ivec2 isz) { return texelFetch(uIceKey, clamp(c, ivec2(0), isz), 0).rg; }
+// depth into the sheet in tiles at a tile (clamped: a hard pack edge sits on
+// the tile boundary, a growing shelf moves smoothly with the level)
+float iceDepth(float k) { return clamp((uFreezeT - k) * 70.0, -1.2, 2.5); }
 
 vec2 swell(vec2 p, vec2 d, float k, float a, float w, float t) {
   float ph = dot(d, p) * k + t * w;
@@ -289,8 +291,6 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   // ---- foam
   vec2 drift = vec2(t * 0.020, t * 0.013);
   vec4 fn = texture2D(uNoise, p * (1.0 / 13.0) + drift);
-  vec4 fc = texture2D(uCells, WROT1 * p * (1.0 / 6.5) + drift * 0.6);
-  vec4 fc2 = fineW ? texture2D(uCells, WROT2 * p * (1.0 / 3.1) - drift * 0.8) : vec4(0.45, 0.5, 0.5, 0.5);
   vec4 fcl = fineW ? texture2D(uCells, WROT1 * (p + (fn.gb - 0.5) * 3.2) * (1.0 / 4.3) - drift * 0.7) : vec4(0.45, 0.5, 0.5, 0.5);
   // organic (noise-led) breakup; cell edges only as a warped minor term (no crackle glaze)
   float breakup = smoothstep(0.30, 0.70, fn.r * 0.55 + fn.b * 0.25 + fcl.g * 0.35);
@@ -320,101 +320,37 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   foamCol *= mix(0.40, 1.0, foamDay);
   foam *= mix(0.6, 1.0, foamDay);
 
-  // ---- frozen water (ICE tiles under the surface) - opaque sheet, soft edges
+  // ---- sea ice and seasonal ice (src/world/seaIce.js): one sheet with a soft,
+  // ragged edge and a few big floes calved off it. S is the depth into the
+  // sheet in tiles, from the per-tile freeze keys and the freeze level; each
+  // tile's value is clamped, so a pack edge sits on the tile boundary the
+  // ships keep clear of (the fleet reads the same keys and level)
   vec4 iw = texture2D(uNoise, p * (1.0 / 4.3) + 0.19);
-  vec2 iq = pd + (fn.rg - 0.5) * 2.0 + (iw.rg - 0.5) * 0.9 - 0.5;
+  vec4 iw2 = texture2D(uNoise, p * (1.0 / 13.0) + 0.43);
+  vec4 iw3 = texture2D(uNoise, p * (1.0 / 7.1) + 0.71);
+  vec2 iq = pd + (iw2.rg - 0.5) * 0.7 + (iw3.gr - 0.5) * 0.3 - 0.5;
   ivec2 ic = ivec2(floor(iq));
-  vec2 ifr = smoothstep(0.0, 1.0, fract(iq));
+  vec2 ifr = fract(iq);
   ivec2 isz = ivec2(uWorldSize) - 1;
-  float i00 = isIceAt(ic, isz);
-  float i10 = isIceAt(ic + ivec2(1, 0), isz);
-  float i01 = isIceAt(ic + ivec2(0, 1), isz);
-  float i11 = isIceAt(ic + ivec2(1, 1), isz);
-  float iceF = mix(mix(i00, i10, ifr.x), mix(i01, i11, ifr.x), ifr.y);
-  float ice = smoothstep(0.30, 0.70, iceF + (fn.g - 0.5) * 0.35 + (iw.b - 0.5) * 0.25) * (1.0 - outK) * step(0.001, depth);
-  // seasonal freeze: lakes, rivers and calm shallows at the coldest latitudes
-  float fzIn = 0.0; // how far inside the seasonal sheet (1 = more than ~2.5 tiles in)
-  if (uFreezeT > -0.1) {
-    // coherent: the shelf grows out from the shore as the cold deepens (smooth
-    // fields only, so warm lagoons near the threshold never break out in a rash)
-    float calmW = max(1.0 - open, 1.0 - smoothstep(1.2, 3.0, depth));
-    float coldness = uFreezeT - temp + (mac - 0.5) * 0.03;
-    float shelfW = clamp(coldness * 70.0, 0.0, 40.0);
-    float coldG = smoothstep(0.0, 0.008, coldness);
-    float fz = (1.0 - smoothstep(shelfW, shelfW + 0.7 + 0.5 * fn.r, shoreD + (fn.b - 0.5) * 0.7)) * coldG;
-    ice = max(ice, fz * calmW * (1.0 - outK) * step(0.001, depth));
-    fzIn = (1.0 - smoothstep(shelfW - 2.5, shelfW + 0.2, shoreD + (fn.b - 0.5) * 0.7)) * coldG * calmW;
-  }
-  // fast ice: a shelf welded to cold shores
-  float fastI = smoothstep(0.72, 0.92, gCold) * (1.0 - smoothstep(1.3 + 0.9 * fn.r, 2.4 + 0.9 * fn.r, shoreD)) * (1.0 - outK) * step(0.001, depth);
-  // cold rivers: not two parallel shelves with a median; ice reaches across in
-  // places, the open lead wanders, narrows, widens and closes, edges are ragged
-  float rivIce = (1.0 - smoothstep(5.0, 10.0, wide)) * smoothstep(0.60, 0.80, gCold) * (1.0 - outK) * step(0.001, depth);
-  if (rivIce > 0.0) {
-    vec4 rl = texture2D(uNoise, p * (1.0 / 31.0) + 0.57);
-    float leadFrac = clamp((rl.r - 0.60) * 2.4 + (fn.g - 0.5) * 0.5, 0.0, 0.6);
-    // ice bridges close the lead every 10-20 units along the river
-    leadFrac *= smoothstep(0.30, 0.46, fn.r);
-    float halfW = max(wide, 0.6);
-    float rag = ((fc.g - 0.5) * 0.35 + (fn.b - 0.5) * 0.5 + (fcl.r - 0.5) * 0.15) * (0.6 + 0.35 * halfW);
-    // measured with the tile distance field (edt peaks at ~wide on the centreline);
-    // the depth-based shore distance overshoots mid-channel and always opened a lane
-    float rlead = smoothstep(halfW * (1.0 - leadFrac) + 0.05, halfW * (1.0 - leadFrac) + 0.3, edt + rag * 0.6) * step(0.02, leadFrac);
-    fastI = mix(fastI, 1.0 - rlead, rivIce);
-  }
-  ice = max(ice, fastI);
-  // floes: the sheet breaks into plates with dark leads, wider toward the margin;
-  // a few loose floes drift just beyond the edge
-  // irregular plates: the cell lookup is warped so leads never form a regular net
-  vec4 fl = texture2D(uCells, WROT2 * (p + (fn.rg - 0.5) * 7.0 + (fc.rg - 0.5) * 1.6) * (1.0 / 38.0) + 0.37);
-  float iceW = iceF + (fn.g - 0.5) * 0.35 + (iw.b - 0.5) * 0.25;
-  // (the seasonal sheet over calm shallows counts as sheet ice too: measured
-  // on the ICE tiles alone, a frozen lagoon was all "margin", and its plates
-  // drew a net of open dark-green leads and pale rims, the "veins and rings"
-  // over the shallows, rounds 28-30)
-  float edgeZone = 1.0 - smoothstep(0.55, 0.95, max(max(iceW, fastI), fzIn));
-  float gapW = max(mix(0.05, 0.12, edgeZone), fw * 1.4);
-  float lead = 1.0 - smoothstep(gapW * 0.45, gapW, fl.g);
-  // loose floes and edge shadows only where real ice is near (iceW alone is
-  // noise-perturbed and is positive in warm open water)
-  float nearIce = max(smoothstep(0.0, 0.05, iceF), fastI);
-  // margin zone: how much sheet ice lies within ~2-4 tiles (exact fetches, cold water only)
-  float margin = 0.0;
-  if (gCold > 0.4 && outK < 0.9) {
-    vec2 mq = (p + (fn.rg - 0.5) * 3.0) / 3.0 - 0.5;
-    vec2 mf = smoothstep(0.0, 1.0, fract(mq));
-    ivec2 m0 = ivec2(floor(mq)) * 3 + 1;
-    float a0 = isIceAt(m0, isz), a1 = isIceAt(m0 + ivec2(3, 0), isz), a2 = isIceAt(m0 + ivec2(0, 3), isz), a3 = isIceAt(m0 + ivec2(3, 3), isz);
-    margin = mix(mix(a0, a1, mf.x), mix(a2, a3, mf.x), mf.y);
-  }
-  float driftK = clamp(margin * 1.3, 0.0, 1.0) * (1.0 - smoothstep(0.3, 0.6, iceF));
-  vec4 fd = texture2D(uCells, WROT1 * (p + (fn.gb - 0.5) * 3.0) * (1.0 / 64.0) + 0.71);
-  float floeR = 0.26 + 0.24 * fd.a;
-  float floeE = fd.r + (fn.b - 0.5) * 0.10 + (iw.g - 0.5) * 0.06;
-  // round floes, fewer farther out
-  float floeDrift = smoothstep(floeR + 0.03, floeR - 0.02, floeE) * step(1.0 - 0.5 * driftK, fd.b) * step(0.06, driftK) * (1.0 - outK) * step(0.001, depth);
-  // leads open to dark water only at the margin; inside the sheet they are lighter
-  // refrozen seams (thin ice) instead of a black crack net
-  float openLead = lead * smoothstep(0.3, 0.8, edgeZone) * 0.6;
-  float thinLead = lead * (1.0 - smoothstep(0.3, 0.8, edgeZone));
-  ice = max(ice * (1.0 - openLead * smoothstep(0.05, 0.4, ice)), floeDrift);
-  // a pocket of open water ringed by sheet ice is skimmed with thin new ice
-  // (a dark navy hole in a pale sheet read as a stain)
-  ice = max(ice, smoothstep(0.82, 0.98, margin) * 0.75 * (1.0 - outK) * step(0.001, depth));
-  // (plate rims are faint inside the sheet: pale rings round every plate)
-  float iceRim = (1.0 - smoothstep(gapW, gapW * 2.4, fl.g)) * (1.0 - lead) * mix(0.2, 1.0, edgeZone);
-  iceRim = max(iceRim, floeDrift * smoothstep(floeR - 0.07, floeR - 0.01, floeE));
-  // icebergs: rare faceted bergs in cold open water
-  vec2 bgUV = p * (1.0 / 150.0) + (fn.gb - 0.5) * 0.012 + 0.53;
-  vec4 bg = texture2D(uCells, bgUV);
-  float bergGate = step(0.84, bg.b) * smoothstep(0.55, 0.8, gCold) * smoothstep(1.5, 3.0, depth) * (1.0 - outK);
-  float berg = smoothstep(0.11, 0.075, bg.r) * bergGate;
-  // shadow a berg throws onto the water, away from the sun
-  vec2 sunXZ = L.xz / max(length(L.xz), 1e-3);
-  vec4 bgS = texture2D(uCells, bgUV + sunXZ * (1.4 / 150.0));
-  float bergShadow = smoothstep(0.11, 0.08, bgS.r) * step(0.84, bgS.b) * smoothstep(0.55, 0.8, gCold) * (1.0 - berg);
-  // shadow line on the water just outside any ice edge (thickness)
-  float iceNear = max(smoothstep(0.0, 0.35, iceW) * nearIce, smoothstep(0.16, 0.11, bg.r) * step(0.84, bg.b) * smoothstep(0.55, 0.8, gCold));
+  vec2 k00 = iceKeyAt(ic, isz), k10 = iceKeyAt(ic + ivec2(1, 0), isz);
+  vec2 k01 = iceKeyAt(ic + ivec2(0, 1), isz), k11 = iceKeyAt(ic + ivec2(1, 1), isz);
+  float s00 = iceDepth(k00.r), s10 = iceDepth(k10.r), s01 = iceDepth(k01.r), s11 = iceDepth(k11.r);
+  float S = mix(mix(s00, s10, ifr.x), mix(s01, s11, ifr.x), ifr.y);
+  float bergF = mix(mix(k00.g, k10.g, ifr.x), mix(k01.g, k11.g, ifr.x), ifr.y);
+  // ragged edge (smooth fbm only: the ridged channel drew veins)
+  float Se = S + (iw.r - 0.5) * 0.55 + (iw3.r - 0.5) * 0.35;
+  float iceOK = (1.0 - outK) * step(0.001, depth);
+  // (young ice along the edge is thin and lets the water show through: a
+  // soft edge, never an outline)
+  float ice = smoothstep(-0.08, 0.10, Se) * mix(0.55, 1.0, smoothstep(0.0, 0.55, Se)) * iceOK;
+  // a few big floes ride just off the edge: round plates on a coarse cell
+  // grid (some cells only), smaller the farther out, gone within a tile
+  vec4 fl = texture2D(uCells, WROT2 * (p + (iw2.gr - 0.5) * 2.0) * (1.0 / 36.0) + 0.37);
+  float floeR = 0.42 * smoothstep(-1.15, -0.35, Se) * step(fl.b, 0.45) * (0.75 + 0.25 * fl.a);
+  float floe = (1.0 - smoothstep(floeR - 0.05, floeR, fl.r)) * step(0.03, floeR) * (1.0 - smoothstep(0.12, 0.3, fw));
+  ice = max(ice, floe * iceOK * (1.0 - bergF));
+  // the waterline just outside the sheet: a faint shadow (thickness)
+  float iceNear = smoothstep(-0.45, -0.05, Se) * iceOK;
 
   // ---- compose (premultiplied)
   vec3 refl = sky * F * mix(1.0, 0.22, max(narrow, narrowW) * overcastK);
@@ -436,45 +372,41 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   a = mix(a, 1.0, foam);
   col += spec * (1.0 - foam);
   a = clamp(a + lum(spec) * 0.25, 0.0, 1.0); // glare adds light, it must not hide the water's blue
-  col *= 1.0 - 0.35 * iceNear * (1.0 - ice) * (1.0 - outK);
-  col *= 1.0 - 0.45 * bergShadow * (1.0 - ice);
+  col *= 1.0 - 0.06 * iceNear * (1.0 - ice);
   if (ice > 0.0) {
-    float cracks = 1.0 - smoothstep(0.0, 0.06, fc.g);
-    // (a light cool ice: the old mid grey took the warm light as a beige-grey sheet)
-    vec3 iceAlb = mix(vec3(0.31, 0.38, 0.45), vec3(0.42, 0.49, 0.55), smoothstep(0.3, 0.8, fn.r));
-    iceAlb = mix(iceAlb, vec3(0.20, 0.24, 0.33), smoothstep(0.55, 0.85, fn.b) * 0.5); // blue-violet hollows
-    float cracks2 = 1.0 - smoothstep(0.0, 0.05, fc2.g);
-    iceAlb *= (1.0 - cracks * 0.30) * (1.0 - cracks2 * 0.14);
-    // plates: each a slightly different tone, separated by darker refrozen seams
-    iceAlb *= 0.88 + 0.22 * fl.a;
-    iceAlb = mix(iceAlb, iceAlb * 0.60 + vec3(0.03, 0.05, 0.07), thinLead * 0.4);
-    // thin, darker slush towards the floe edge
-    iceAlb = mix(scat * 4.0 + vec3(0.06, 0.08, 0.10), iceAlb, smoothstep(0.0, 0.6, ice));
-    // raised rim along every plate and sheet edge (reads as thickness)
-    float rimK = max(iceRim, smoothstep(0.3, 0.5, ice) * (1.0 - smoothstep(0.55, 0.85, ice))) * (1.0 - 0.85 * rivIce);
-    iceAlb = mix(iceAlb, vec3(0.52, 0.58, 0.63), rimK * 0.55);
-    float ndl = max(L.y, 0.0);
-    vec3 iceCol = iceAlb * (keyL * ndl * lightVis * 0.85 + uAmbCol * 0.65);
+    // white-blue sea ice under thin, wind-packed snow: soft drifts, broad
+    // patches of bare blue ice the wind scoured clear, hairline cracks up close
+    float snowD = smoothstep(0.30, 0.72, iw2.r * 0.55 + iw.g * 0.45);
+    vec3 iceAlb = mix(vec3(0.56, 0.66, 0.78), vec3(0.74, 0.80, 0.88), snowD);
+    float bare = smoothstep(0.58, 0.80, iw3.g * 0.7 + iw2.g * 0.3);
+    iceAlb = mix(iceAlb, vec3(0.42, 0.56, 0.72), bare * 0.6);
+    // sastrugi: faint wind ripples in the snow (close up only)
+    float rip = sin(dot(p, vec2(0.917, 0.401)) * 3.1 + iw.r * 6.0) * 0.5 + 0.5;
+    iceAlb *= 1.0 - 0.035 * rip * (1.0 - smoothstep(0.02, 0.08, fw)) * (1.0 - bare);
+    vec4 icr = texture2D(uCells, WROT1 * p * (1.0 / 9.0) + 0.29);
+    float crW = max(fwidth(icr.g), 1e-4);
+    float crack = (1.0 - smoothstep(0.0, crW * 1.1, icr.g)) * step(0.62, icr.b) * (1.0 - smoothstep(0.015, 0.05, fw));
+    iceAlb *= 1.0 - 0.20 * crack;
+    // young grey-blue ice along the edge (soft, never a dark band)
+    float young = 1.0 - smoothstep(0.0, 0.45, Se);
+    iceAlb = mix(iceAlb, vec3(0.50, 0.62, 0.74), young * 0.35);
+    // a pressure ridge just inside the edge catches the light
+    float rimK = smoothstep(0.08, 0.22, Se) * (1.0 - smoothstep(0.22, 0.42, Se)) * (1.0 - smoothstep(0.03, 0.10, fw));
+    iceAlb = mix(iceAlb, vec3(0.80, 0.85, 0.90), rimK * 0.35);
+    vec3 Ni = vec3(0.0, 1.0, 0.0);
+    if (bergF > 0.01) {
+      // an iceberg: a faceted dome rising from its tile, bright top, shaded flank
+      vec2 dS = vec2(mix(s10 - s00, s11 - s01, ifr.y), mix(s01 - s00, s11 - s10, ifr.x));
+      vec4 bf = texture2D(uCells, p * (1.0 / 1.7) + 0.21);
+      Ni = normalize(mix(Ni, normalize(vec3(-dS.x * 0.45 + (bf.b - 0.5) * 0.6, 1.0, -dS.y * 0.45 + (bf.a - 0.5) * 0.6)), bergF));
+      iceAlb = mix(iceAlb, mix(vec3(0.62, 0.72, 0.82), vec3(0.82, 0.87, 0.92), smoothstep(0.6, 2.0, Se)), bergF);
+    }
+    float ndl = max(dot(Ni, L), 0.0);
+    vec3 iceCol = iceAlb * (keyL * ndl * lightVis * 0.42 + uAmbCol * 0.50);
     float Fi = 0.04 + 0.96 * pow(1.0 - max(V.y, 0.0), 5.0);
-    iceCol += sky * Fi * 0.5 + keyL * ggxD(max(dot(vec3(0.0, 1.0, 0.0), Hs), 0.0), 0.12) * 0.04 * lightVis;
+    iceCol += sky * Fi * 0.35 + keyL * ggxD(max(dot(Ni, Hs), 0.0), 0.16) * 0.05 * lightVis * (1.0 - young);
     col = mix(col, iceCol, ice);
     a = mix(a, 1.0, ice);
-  }
-  if (berg > 0.0) {
-    // a berg with height: dome normal from the cell distance gradient (lit face vs
-    // shaded face), faceted by a fine cell layer, cool rim at the waterline
-    float eb = 0.6 / 150.0;
-    float gx = texture2D(uCells, bgUV + vec2(eb, 0.0)).r - texture2D(uCells, bgUV - vec2(eb, 0.0)).r;
-    float gz = texture2D(uCells, bgUV + vec2(0.0, eb)).r - texture2D(uCells, bgUV - vec2(0.0, eb)).r;
-    vec4 bf = texture2D(uCells, p * (1.0 / 5.0) + 0.21);
-    vec3 Nb = normalize(vec3(gx * 18.0 + (bf.b - 0.5) * 0.5, 1.0, gz * 18.0 + (bf.a - 0.5) * 0.5));
-    float topK = smoothstep(0.6, 0.0, bg.r / 0.11);
-    vec3 bAlb = mix(vec3(0.34, 0.42, 0.50), vec3(0.58, 0.64, 0.69), topK) * (0.9 + 0.2 * bf.b);
-    float ndlB = max(dot(Nb, L), 0.0);
-    vec3 bCol = bAlb * (keyL * ndlB * lightVis + uAmbCol * 0.6);
-    bCol = mix(bCol * 0.7, bCol, smoothstep(0.11, 0.095, bg.r)); // darker waterline rim
-    col = mix(col, bCol, berg);
-    a = mix(a, 1.0, berg);
   }
 
   // ---- distance fade into the horizon (never show the far-plane cut)
@@ -511,5 +443,5 @@ export function patchWaterMaterial(material, uniforms) {
       .replace('#include <fog_fragment>', WATER_FOG)
       .replace('#include <premultiplied_alpha_fragment>', '');
   };
-  material.customProgramCacheKey = () => 'worldseed-water-v7';
+  material.customProgramCacheKey = () => 'worldseed-water-v8';
 }

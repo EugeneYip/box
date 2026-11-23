@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { freezeLevel } from '../../world/seaIce.js';
 
 // Shared optics for the landscape shaders.
 //
@@ -47,7 +48,7 @@ export function landscapeUniforms(game) {
       uSeason: { value: 0.5 }, // game.time.season (0 spring .. 4), for crops
       uSnowT: { value: -1 }, // seasonal snow where temperature < uSnowT
       uMeltH: { value: 0 }, // snow tiles below this height melt (warm ages)
-      uFreezeT: { value: -1 }, // lakes / calm shallows freeze where temperature < uFreezeT
+      uFreezeT: { value: -1 }, // freeze level: water tiles whose sea-ice key is below it are frozen (seaIce.js)
       uDry: { value: 0 }, // sun-baked grass (warm ages)
       uDetail: { value: 1 }, // 1 = full close-up detail .. 0 = far / power-saver path
       uPower: { value: 0 }, // 1 = power saver: fewer texture taps, no triplanar
@@ -148,7 +149,8 @@ function updateSeasonUniforms(game, u, dt = 0.016) {
   const target = {
     snow: (winter * 0.3 + cold * 0.75) * frost - warm * 0.5 - (frost < 1 ? (1 - frost) * 0.12 : 0),
     melt: warm * 30 + Math.max(0, 1 - frost) * 10,
-    freeze: (winter * 0.2 + cold * 0.6) * frost - warm * 0.3,
+    // (the same level the fleet keeps its keels out of the ice by: seaIce.js)
+    freeze: freezeLevel(game),
     dry: Math.min(1, warm * 2),
   };
   // ease toward targets so snow builds in and melts out gradually (time based);
