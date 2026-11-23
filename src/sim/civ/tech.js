@@ -208,6 +208,13 @@ const LAG1_YEARS = 90;
 // up to BIG_LEAD times the harder (Vast had no Iron realm by Year 100.4).
 const LATE_YEARS = 22;
 const BIG_LEAD = 0.8;
+// (round 35) ...and that floor is the realm's own (_lateYears), between
+// LATE_MIN and LATE_MAX years: a scholarly or trading people, a realm of
+// many towns and one with many neighbors to learn from cross a late era
+// sooner, a lone small realm out of touch trails (every realm stood in the
+// same era at each century mark from Year 300 to 600).
+const LATE_MIN = 10,
+  LATE_MAX = 50;
 
 // Extra research on big maps (planner _bigMap: none on Medium): their realms
 // stay small and far apart, and on their own reached the Enlightened arts
@@ -706,7 +713,7 @@ export const tech = {
         // a follower past its own year: what is left of the era within
         // LATE_YEARS of that year (sooner at a higher research speed)
         if (!lead && left < 0) {
-          const due = Math.max(3, LATE_YEARS / ts + left);
+          const due = Math.max(3, this._lateYears(k, lore) / ts + left);
           const min = (this._eraNeed(k) / (due * YEAR)) * dt;
           if (gain < min) gain = min;
         }
@@ -758,6 +765,27 @@ export const tech = {
         this.learnTech(k, t.id);
       }
     }
+  },
+
+  // A follower's late floor in years (see LATE_MIN): its people's leanings,
+  // its size, how many realms it learns from and a temper of its own.
+  _lateYears(k, lore) {
+    // a court's own temper (0.8-1.6, fixed per realm)
+    let f = 0.8 + 0.8 * followShare(k.id, 99);
+    const traits = this.cultureDef(k.culture)?.traits || [];
+    if (traits.includes('Scholarly')) f *= 0.7;
+    if (traits.includes('Mercantile')) f *= 0.85;
+    if (traits.includes('Pastoral') || traits.includes('Wanderers')) f *= 1.2;
+    if (traits.includes('Martial')) f *= 1.1;
+    const n = k.villages.length;
+    f *= n <= 1 ? 1.3 : n === 2 ? 1.15 : n >= 5 ? 0.8 : 1;
+    // neighbors, allies and trade partners of the last ten years
+    let c = lore?.get(k.id)?.length || 0;
+    const now = this.game.time.total;
+    const tr = this._trade?.get(k.id);
+    if (tr) for (const t of tr.values()) if (now - t < YEAR * 10) c++;
+    f *= c <= 1 ? 1.3 : c >= 6 ? 0.9 : 1;
+    return Math.max(LATE_MIN, Math.min(LATE_MAX, LATE_YEARS * f));
   },
 
   // Would learning this art carry the realm into its next era (two arts of
