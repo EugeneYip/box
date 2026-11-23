@@ -76,18 +76,26 @@ export class SeaIce {
     this._dirty = true;
     this._ice = new Uint8Array(N); // ICE-ness of each water tile at the last build
     this._wet = new Uint8Array(N); // water tiles at the last build
+    this._hw = new Float32Array(N); // the heights at the last build (read under water only)
     const ev = world.events;
     if (ev?.on) {
-      // the keys follow the water: a dig or a raise on dry land changes nothing
+      // the keys follow the water: a dig or a raise on dry land changes
+      // nothing. Only water coming or going, or the bed under it moving,
+      // does. (round 35) The rect is the union of every height edit since the
+      // last flush, often half the map across when two towns far apart level
+      // a plot in the same frame: any water inside it used to rebuild the
+      // whole field (100-400 ms on the Vast World Map, several times a minute)
+      // though no water tile had changed.
       ev.on('world:height', (r) => {
         if (this._dirty) return;
         const W = this.w,
           hgt = world.height,
-          wet = this._wet;
+          wet = this._wet,
+          hw = this._hw;
         for (let y = Math.max(0, r.y0); y <= Math.min(this.h - 1, r.y1) && !this._dirty; y++)
-          for (let x = Math.max(0, r.x0); x <= Math.min(W - 1, r.x1); x++) {
-            const i = y * W + x;
-            if (wet[i] || hgt[i] < SEA_LEVEL) {
+          for (let x = Math.max(0, r.x0), i = y * W + x, e = y * W + Math.min(W - 1, r.x1); i <= e; i++) {
+            const h = hgt[i];
+            if (wet[i] ? h !== hw[i] : h < SEA_LEVEL) {
               this._dirty = true;
               break;
             }
@@ -147,6 +155,7 @@ export class SeaIce {
       wet[i] = isW(i) ? 1 : 0;
       ice[i] = wet[i] && ty[i] === TILE.ICE ? 1 : 0;
     }
+    this._hw.set(hgt);
     // tiles to the nearest land
     const dl = new Float32Array(N);
     for (let i = 0; i < N; i++) dl[i] = isW(i) ? INF : 0;
