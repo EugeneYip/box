@@ -295,8 +295,8 @@ export const missions = {
     const depthAt = (x, z) => this._depthAt(x, z);
     const tiers = deepOnly
       ? [
-          [6 + half, 3.4, 34],
-          [4 + half, 2.8, 34],
+          [6 + half, 5.0, 34],
+          [4 + half, 3.8, 34],
         ]
       : [
           [3 + half, 1.8, 24],
