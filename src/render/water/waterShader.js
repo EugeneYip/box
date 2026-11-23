@@ -140,6 +140,12 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   vec2 flow = dl > 1e-4 ? dn / dl : vec2(0.7071);
   vec2 perp = vec2(-flow.y, flow.x);
   float fu = dot(p, flow), fv = dot(p, perp);
+  // where the flow turns, these flow-aligned coordinates (which scale with
+  // the distance from the world origin) swing round fast and the fine streaks
+  // wheel into fingerprint whorls: they fade out where the coordinates
+  // stretch faster than the ground itself (screen-space derivatives)
+  vec2 fwUV = fwidth(vec2(fu, fv));
+  float unwhorl = 1.0 - smoothstep(1.25, 2.2, max(fwUV.x, fwUV.y) / max(fw * 0.75, 1e-5));
   bool fineW = uDetail > 0.001;
   vec4 st1 = fineW ? texture2D(uNoise, vec2(fu * 0.16 - t * 0.085, fv * 0.85)) : vec4(0.5);
   vec4 st2 = fineW ? texture2D(uNoise, vec2(fu * 0.42 - t * 0.21, fv * 1.9) + 0.37) : vec4(0.5);
@@ -149,9 +155,10 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   float riffle = smoothstep(0.62, 0.92, st2.r) * (1.0 - smoothstep(0.25, 0.7, depth)) * (1.0 - smoothstep(0.1, 0.4, fw));
   // bends: how fast the flow direction turns per world unit
   float bend = smoothstep(0.35, 0.95, length(fwidth(flow)) / max(fw, 1e-3));
-  streak *= 1.0 - 0.75 * bend;
+  streak *= (1.0 - 0.75 * bend) * unwhorl;
+  riffle *= unwhorl;
   // flow ripples tilt the surface along the current (gently)
-  sl += flow * (st1.g - 0.5) * 0.12 * narrow * (1.0 - 0.7 * bend) * (1.0 - smoothstep(0.1, 0.5, fw));
+  sl += flow * (st1.g - 0.5) * 0.12 * narrow * (1.0 - 0.7 * bend) * (1.0 - smoothstep(0.1, 0.5, fw)) * unwhorl;
 
   vec3 N = normalize(vec3(-sl.x, 1.0, -sl.y));
   float NdV = max(dot(N, V), 0.0);
@@ -305,7 +312,8 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
   float bands = 0.0;
   float lace = smoothstep(0.90, 0.98, 1.0 - fcl.g) * smoothstep(0.66, 0.84, fn.g) * open * 0.06 * (1.0 - smoothstep(0.4, 1.6, fw)) * (1.0 - gCold * 0.7);
   // river foam: flecks at bends and riffles, carried downstream
-  float rivFoam = narrow * clamp(bend * 0.8 * smoothstep(0.55, 0.85, st1.b) + riffle * 0.55 + (1.0 - smoothstep(0.05, 0.45, shoreD)) * 0.25 * st1.a, 0.0, 1.0);
+  vec4 st1w = mix(vec4(0.5), st1, unwhorl);
+  float rivFoam = narrow * clamp(bend * 0.8 * smoothstep(0.55, 0.85, st1w.b) + riffle * 0.55 + (1.0 - smoothstep(0.05, 0.45, shoreD)) * 0.25 * st1w.a, 0.0, 1.0);
   float foam = clamp(max(contact * 0.9, bands * 0.75) + lace + min(rivFoam, 0.5) * 0.6, 0.0, 1.0);
   foam = min(foam, mix(1.0, 0.35, narrow)); // steep narrow channels must never turn into a white slab
   foam *= mix(1.0, 0.45, (1.0 - smoothstep(0.06, 0.3, depth)) * smoothstep(1.2, 2.5, edt)); // shallow flats
