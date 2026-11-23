@@ -578,7 +578,10 @@ export const modern = {
   // (x, z): the rail bed (ground level: trains add their wheels) or the
   // guideway's deck (with a flyover's lift); null off the drawn network
   railDeckAt(kind, P, k, x, z) {
-    const M = this._railYMap?.[kind];
+    // (round 35: a steam or diesel train asks as 'train', its track is
+    // 'rail'; the lookup missed, so every train ran on the ground: under its
+    // viaducts, out of the cliffs its tunnels bore through, through piers)
+    const M = this._railYMap?.[kind === 'train' ? 'rail' : kind];
     if (!M || !P || P.length < 4) return null;
     const n = P.length / 2;
     const i = Math.max(0, Math.min(n - 2, k >> 1)),
