@@ -18,12 +18,56 @@ export function lightningStrike(ds, x, z, opts = {}) {
   const y = w.surfaceAt(x, z);
   const camY = g.cameraRig?.camera?.position?.y ?? y + 60;
   const top = y + Math.min(55, Math.max(14, camY * 0.72 - y));
-  fx.beams.bolt(x + rand(-5, 5), top, z + rand(-5, 5), x, y, z, { width: 0.3, life: 0.5, color: 0xc8dcff, branches: 5, intensity: 1.8 });
+  // (round 33) a natural strike draws its bolt and impact only while no other
+  // natural bolt is still showing on the drawn frames' clock: where frames
+  // lag (software GL), a calamity storm's strikes play in bursts between two
+  // drawn frames, and their bolts and glows piled up into a white frame. The
+  // damage, the scorch mark, the thunder and the (capped) sky flash still land.
+  const drawn = !opts.natural || ds.naturalBoltSlot?.() !== false;
   // the god power's bolt flashes the screen; a natural strike (a calamity
   // storm) only lights the sky, through the atmosphere's capped flash
   if (!opts.natural) fx.screenFlash(0xd8e4ff, 0.5);
   ds.flashSky(1, x, z);
-  // thin additive blue-white ring: expands and fades in under ~0.3 s
+  if (drawn) lightningVisuals(fx, x, y, z, top);
+  play(g, 'thunder', { x, z }, 1);
+  if (y <= SEA_LEVEL + 0.01 && w.heightAt(x, z) < SEA_LEVEL) {
+    if (drawn) {
+      fx.emit('splash', { x, y: SEA_LEVEL, z }, { scale: 1.2 });
+      fx.emit('steam', { x, y: SEA_LEVEL, z }, { scale: 1 });
+      fx.decal({ frame: DF.RIPPLE, x, z, size: 1.5, grow: 4, life: 1.6, additive: true, surface: 1, color: 0xd0e4ff, intensity: 1, fadeIn: 0.01, fadeOut: 0.2, grain: 0 });
+    }
+    hurt(g, x, z, 2.5, 40, 0, 'lightning');
+    return;
+  }
+  fx.decal({ frame: DF.SCORCH1, x, z, size: 2.6, life: 70, color: 0x120e0c, alpha: 0.9, fadeIn: 0.001, fadeOut: 0.8 });
+  if (drawn) {
+    fx.decal({ frame: DF.CRACK1, x, z, size: 3.2, life: 4, additive: true, color: 0x9cc4ff, intensity: 1.6, fadeIn: 0.005, fadeOut: 0.2, grain: 0.2 });
+    fx.decal({ frame: DF.GLOW, x, z, size: 2.2, life: 2.5, additive: true, color: 0xffa060, intensity: 1.3, cool: 1, fadeIn: 0.01, fadeOut: 0.3 });
+    for (let k = 0; k < 4; k++) dustPuff(fx, x, y, z, 0.5, { out: rand(1, 2.5), life: rand(1, 2) });
+  }
+  const tx = Math.floor(x),
+    ty = Math.floor(z);
+  // natural strikes ignite only while the calamityLightning law allows,
+  // even when the caller asks for a fire (opts.ignite: a dry-lightning
+  // wildfire); a storm strike's chance of a fire follows the age (lightning
+  // x fireRisk). The god power always ignites. The fire's lineage is the
+  // caller's opts.cause, or "lightning" for a natural strike.
+  const cause = opts.cause ?? (opts.natural ? FIRE_SKY : 0);
+  const canIgnite = !opts.natural || (law(g, 'calamityLightning', true) && (opts.ignite || Math.random() < Math.min(1, 0.7 * ageMod(g, 'lightning', 1) * fireFactor(g))));
+  const io = { cause };
+  if (canIgnite) ds.fire.ignite(tx, ty, 1, io);
+  if (canIgnite) for (let k = 0; k < 3; k++) if (Math.random() < 0.55) ds.fire.ignite(tx + Math.round(rand(-1, 1)), ty + Math.round(rand(-1, 1)), 0.8, io);
+  // the bolt sets buildings beside it alight: their sparks are this
+  // strike's fire (and obey the law like it)
+  ds.fire.markBuildings(x, z, 2.2, cause);
+  hurt(g, x, z, 1.8, 70, 45, 'lightning');
+}
+
+// The bolt and its impact: the channel from the top of the frame, a thin
+// blue-white ring (expands and fades in under ~0.3 s), the white-hot glow,
+// electric sparks and a brief pool of light.
+function lightningVisuals(fx, x, y, z, top) {
+  fx.beams.bolt(x + rand(-5, 5), top, z + rand(-5, 5), x, y, z, { width: 0.3, life: 0.5, color: 0xc8dcff, branches: 5, intensity: 1.8 });
   const P = fx.P.reset();
   P.x = x;
   P.y = y + 0.08;
@@ -44,34 +88,6 @@ export function lightningStrike(ds, x, z, opts = {}) {
   sparks(fx, x, y + 0.2, z, fx.k(22), { speed: 7, ramp: RAMP.ELECTRIC, bright: 4.5, up: true, size: 1.2 });
   fx.addLight({ x, y: y + 4, z }, 0xb8d0ff, 6, 0.45);
   fx.shake(x, z, 0.35);
-  play(g, 'thunder', { x, z }, 1);
-  if (y <= SEA_LEVEL + 0.01 && w.heightAt(x, z) < SEA_LEVEL) {
-    fx.emit('splash', { x, y: SEA_LEVEL, z }, { scale: 1.2 });
-    fx.emit('steam', { x, y: SEA_LEVEL, z }, { scale: 1 });
-    fx.decal({ frame: DF.RIPPLE, x, z, size: 1.5, grow: 4, life: 1.6, additive: true, surface: 1, color: 0xd0e4ff, intensity: 1, fadeIn: 0.01, fadeOut: 0.2, grain: 0 });
-    hurt(g, x, z, 2.5, 40, 0, 'lightning');
-    return;
-  }
-  fx.decal({ frame: DF.SCORCH1, x, z, size: 2.6, life: 70, color: 0x120e0c, alpha: 0.9, fadeIn: 0.001, fadeOut: 0.8 });
-  fx.decal({ frame: DF.CRACK1, x, z, size: 3.2, life: 4, additive: true, color: 0x9cc4ff, intensity: 1.6, fadeIn: 0.005, fadeOut: 0.2, grain: 0.2 });
-  fx.decal({ frame: DF.GLOW, x, z, size: 2.2, life: 2.5, additive: true, color: 0xffa060, intensity: 1.3, cool: 1, fadeIn: 0.01, fadeOut: 0.3 });
-  for (let k = 0; k < 4; k++) dustPuff(fx, x, y, z, 0.5, { out: rand(1, 2.5), life: rand(1, 2) });
-  const tx = Math.floor(x),
-    ty = Math.floor(z);
-  // natural strikes ignite only while the calamityLightning law allows,
-  // even when the caller asks for a fire (opts.ignite: a dry-lightning
-  // wildfire); a storm strike's chance of a fire follows the age (lightning
-  // x fireRisk). The god power always ignites. The fire's lineage is the
-  // caller's opts.cause, or "lightning" for a natural strike.
-  const cause = opts.cause ?? (opts.natural ? FIRE_SKY : 0);
-  const canIgnite = !opts.natural || (law(g, 'calamityLightning', true) && (opts.ignite || Math.random() < Math.min(1, 0.7 * ageMod(g, 'lightning', 1) * fireFactor(g))));
-  const io = { cause };
-  if (canIgnite) ds.fire.ignite(tx, ty, 1, io);
-  if (canIgnite) for (let k = 0; k < 3; k++) if (Math.random() < 0.55) ds.fire.ignite(tx + Math.round(rand(-1, 1)), ty + Math.round(rand(-1, 1)), 0.8, io);
-  // the bolt sets buildings beside it alight: their sparks are this
-  // strike's fire (and obey the law like it)
-  ds.fire.markBuildings(x, z, 2.2, cause);
-  hurt(g, x, z, 1.8, 70, 45, 'lightning');
 }
 
 // Divine smite: a rune circle blooms and a column of golden light slams

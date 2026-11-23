@@ -77,6 +77,8 @@ export class Disasters {
     this.active = [];
     this._sky = 0;
     this._skyWritten = 0;
+    this._vis = 0; // drawn frames' clock (frame dt)
+    this._natBoltVis = -1e9;
     this._plagueFx = 0;
   }
 
@@ -150,6 +152,7 @@ export class Disasters {
   // Visual clock: called every rendered frame by game.fx.update(dt).
   frame(dt) {
     const g = this.game;
+    this._vis += dt;
     const vs = g.paused ? 0 : visualSpeed(g);
     const vt = dt * vs;
     for (let i = this.active.length - 1; i >= 0; i--) {
@@ -239,6 +242,16 @@ export class Disasters {
   // (flashAt: real time, under 0.2 s, capped by zoom and by where it lands);
   // round 32's milky veil was this flash, uncapped and decaying with the
   // drawn frames.
+  // May a natural strike draw its bolt now? One at a time on the drawn
+  // frames' clock (half a second each): at a normal frame rate a calamity
+  // storm's strikes (1.2-3 s apart) all draw; where frames lag, a burst of
+  // strikes played between two frames draws one bolt, not a white pile.
+  naturalBoltSlot() {
+    if (this._vis - this._natBoltVis < 0.5) return false;
+    this._natBoltVis = this._vis;
+    return true;
+  }
+
   flashSky(v = 1, x = null, z = null) {
     const atm = this.game.atmosphere;
     if (atm?.flashAt) {
