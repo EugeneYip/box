@@ -10,7 +10,7 @@ import { KINDS } from './kinds.js';
 // the Modern era or later (era 5+, Combustion) with streets enough keeps a
 // few real vehicles on its own street grid, each one inspectable and
 // followable like any other vehicle:
-//   bus      runs a loop of three to five stops round the town all day,
+//   bus      runs a loop of two to five stops round the town all day,
 //            setting down and picking up riders at each (at night it stands
 //            at its first stop)
 //   van      a delivery van: loads up at the depot (the market, a granary, a
@@ -183,8 +183,10 @@ export const town = {
     }
     const nCurb = new Array(nc).fill(0);
     for (const i of curb) nCurb[comp.get(i)]++;
+    const nAll = new Array(nc).fill(0);
+    for (const i of all) nAll[comp.get(i)]++;
     let main = 0;
-    for (let c = 1; c < nc; c++) if (nCurb[c] > nCurb[main]) main = c;
+    for (let c = 1; c < nc; c++) if (nCurb[c] * 4 + nAll[c] > nCurb[main] * 4 + nAll[main]) main = c;
     return (t._townR = { t: now, all, curb, comp, main });
   },
   // The stretch of streets a vehicle stands on (the town's main one if it
@@ -236,7 +238,10 @@ export const town = {
   },
   _townSpawn(kind, k, t) {
     const R = this._townRoads(t);
-    const L = (R.curb.length ? R.curb : R.all).filter((i) => R.comp.get(i) === R.main);
+    let L = R.curb.filter((i) => R.comp.get(i) === R.main);
+    // (a young town's streets lie mostly round its square: too few curbs
+    // off it, so any street of the main stretch will do)
+    if (L.length < 4) L = R.all.filter((i) => R.comp.get(i) === R.main);
     if (L.length < 4) return null;
     const w = this.world;
     const i = L[(this.rng() * L.length) | 0];
@@ -371,7 +376,8 @@ export const town = {
     return { ...s, at: 'night' };
   },
   // A bus's loop: three to five curbs spread over the town (the first by the
-  // town hall), in order round its middle, each named for what it stands by.
+  // town hall), in order round its middle, each named for what it stands by
+  // (two, there and back, on a young town's short stretch of street).
   _townStops(t, cid) {
     const R = this._townRoads(t);
     const cur = R.curb.filter((i) => R.comp.get(i) === cid);
@@ -402,10 +408,11 @@ export const town = {
         }
         if (md > bs) (bs = md), (best = i);
       }
-      if (best < 0 || bs < 9) break;
+      if (best < 0 || bs < 4) break;
       pick.push(best);
     }
-    if (pick.length < 3) return null;
+    // (a young town's short stretch of street: two stops, there and back)
+    if (pick.length < 2) return null;
     const ang = (i) => {
       const [x, z] = P(i);
       return Math.atan2(z - t.cz, x - t.cx);
