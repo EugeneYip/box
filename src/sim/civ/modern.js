@@ -112,6 +112,10 @@ export const TUN_COVER = 0.26;
 export const HW_COVER = 0.32;
 // a cut becomes a tunnel where it reaches this deep (a shallower one is filled)
 const TUN_DEEP = 0.45;
+// the approach to a station's platform or a switch may be this much steeper
+// than the open line (rail about 1:8, as steep as a road), so towns a little
+// above or below the trunk are still reached; the open line keeps the cap
+const APPROACH = 1.5;
 // the longest covered way at a tunnel's mouth (tiles); the line comes up
 // to the ground beyond it
 const PORTAL_LEN = 1.2;
@@ -191,8 +195,11 @@ function gradeLevels(g, gc, f, lo, land, ds, G, clr, cover, y0, y1) {
     L = gradeEnv(f, ds, G, false);
   const y = new Float32Array(n);
   for (let i = 0; i < n; i++) y[i] = L[i] + CUT_BIAS * (U[i] - L[i]);
-  gradePin(y, ds, G, 0, y0);
-  gradePin(y, ds, G, n - 1, y1);
+  // (the ends: a station's platform or the trunk's switch, met by an
+  // approach ramp of up to APPROACH times the grade)
+  const Ga = G * APPROACH;
+  gradePin(y, ds, Ga, 0, y0);
+  gradePin(y, ds, Ga, n - 1, y1);
   gradeRaise(y, lo, ds, G);
   // a cut run deep enough is a tunnel; a shallow one is filled to the ground
   const lo2 = Float32Array.from(lo);
@@ -256,7 +263,7 @@ function gradeLevels(g, gc, f, lo, land, ds, G, clr, cover, y0, y1) {
   }
   let ex = 0,
     fill = 0;
-  for (let i = 1; i < n; i++) if (ds[i] < 40) ex += Math.max(0, Math.abs(y[i] - y[i - 1]) - G * ds[i] * 1.02);
+  for (let i = 1; i < n; i++) if (ds[i] < 40) ex += Math.max(0, Math.abs(y[i] - y[i - 1]) - Ga * ds[i] * 1.02);
   // (ends too far apart in height for the grade: the level cannot meet both,
   // and that counts as breaking it)
   ex += Math.max(0, Math.abs(y[0] - y0) - 0.08) + Math.max(0, Math.abs(y[n - 1] - y1) - 0.08);
@@ -1460,7 +1467,9 @@ export const modern = {
         // (round 31: a branch that cannot be laid is tried once more with
         // the last-resort rules, see _railBranch's retry; a quarter of the
         // lines had no track at Year 600 and stayed listed for good)
-        const seg = this._railBranch(kind, k, R, this.villages[t], tree, mask) || this._railBranch(kind, k, R, this.villages[t], tree, mask, true);
+        // (round 33: a town whose lines all run already is held to the looser limit)
+        const loose = lines.every((l) => (l.a !== t && l.b !== t) || !l.survey);
+        const seg = this._railBranch(kind, k, R, this.villages[t], tree, mask, false, loose) || this._railBranch(kind, k, R, this.villages[t], tree, mask, true, loose);
         if (!seg) continue;
         at.set(t, tree.length);
         tree.push(seg);
@@ -1918,7 +1927,7 @@ export const modern = {
   // line of its own from the root, or the other way round), short spans
   // over water for a rail line, and the curves drawn tighter, down to the
   // pulled path itself; still never across a square, a core or a building
-  _railBranch(kind, k, root, v, tree, mask, retry = false) {
+  _railBranch(kind, k, root, v, tree, mask, retry = false, loose = false) {
     const w = this.world;
     const W = w.w;
     const C = NET[kind];
@@ -2009,7 +2018,7 @@ export const modern = {
     const hs = this._railHS();
     const grid = sx !== gx || sy !== gy;
     let seg = null;
-    for (const kc of grid ? [1, 3] : [1]) {
+    for (const kc of grid ? [1, 4] : [1]) {
       const climb = { h: hs, g: GRADE[kind], k: CLIMB_K[kind] * kc };
       let mid = [];
       if (grid) {
@@ -2034,7 +2043,7 @@ export const modern = {
           q = civPath(w, sx, sy, gx, gy, (cost = wet), 16000, mc, null, null, climb);
         }
         if (!near(q)) return null;
-        mid = this._railPull(q, cost, hs)
+        mid = this._railPull(q, cost, hs, GRADE[kind] * APPROACH)
           .slice(0, -1)
           .map((i) => [(i % W) + 0.5, ((i / W) | 0) + 0.5]);
       }
@@ -2078,7 +2087,9 @@ export const modern = {
       seg.up = parent >= 0 ? tree[parent] : null;
       if (kind === 'rail') seg.core = this._railCoreRuns(seg);
       trackLevels(w, seg, seg.up);
-      if (seg.gradeX <= GRADE_SLACK[kind] && seg.fillMax <= FILL_MAX[kind]) break;
+      // (a line already running is held to a looser limit when its network
+      // is rebuilt, so one laid is not dropped for a hair's change)
+      if (seg.gradeX <= GRADE_SLACK[kind] * (loose ? 2 : 1) && seg.fillMax <= FILL_MAX[kind] * (loose ? 1.3 : 1)) break;
       // (a tally for the probes: routes refused, and why)
       const R = this._gradeRef || (this._gradeRef = { n: 0, ex: 0, fill: 0, last: [] });
       R.n++;
@@ -2171,7 +2182,7 @@ export const modern = {
   // to wind down a slope in a staircase of short zigzags); the curves are
   // rounded after. (round 33, hs: the smoothed ground, see _railHS: nor
   // over a rise or a dip the path went round)
-  _railPull(q, cost, hs = null) {
+  _railPull(q, cost, hs = null, gmax = Infinity) {
     const n = q.length;
     if (n < 3) return q;
     const cs = q.map((i) => cost(i));
@@ -2183,20 +2194,22 @@ export const modern = {
       const lim = Math.min(n - 1, i + 48);
       for (let j = i + 1; j <= lim; j++) {
         mx = Math.max(mx, cs[j]);
-        if (j >= i + 2 && this._railSight(q[i], q[j], Math.min(mx, 4.5) + 0.6, cost, hs)) best = j;
+        if (j >= i + 2 && this._railSight(q[i], q[j], Math.min(mx, 4.5) + 0.6, cost, hs, gmax)) best = j;
       }
       out.push(q[best]);
       i = best;
     }
     return out;
   },
-  _railSight(a, b, maxC, cost, hs = null) {
+  _railSight(a, b, maxC, cost, hs = null, gmax = Infinity) {
     const W = this.world.w;
     const ax = (a % W) + 0.5,
       az = ((a / W) | 0) + 0.5,
       bx = (b % W) + 0.5,
       bz = ((b / W) | 0) + 0.5;
     const k = Math.ceil(Math.hypot(bx - ax, bz - az) / 0.3);
+    // (round 33: nor straight up a slope the path wound its way up)
+    if (hs && Math.abs(hs[b] - hs[a]) > gmax * Math.hypot(bx - ax, bz - az)) return false;
     let last = -1;
     const ha = hs ? hs[a] : 0,
       hb = hs ? hs[b] : 0;
