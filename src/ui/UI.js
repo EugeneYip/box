@@ -1346,6 +1346,12 @@ export class UI {
       }, null, 'title labels');
     }
     for (const p of this.parts) safe(() => p.update(dt), null, p.constructor.name);
+    // (round 35) the first view frames the towns (no title screen: on the
+    // first frame, once the HUD is laid out and the towns are seeded)
+    if (!this._startFramed && !this.title?.active && !this.title && this.game.civ?.villages?.length) {
+      this._startFramed = true;
+      safe(() => this.frameStart(true), null, 'start view');
+    }
     // (round 29) touch screens: no desktop key names in tips or labels
     // ("Pause · Space", "1× speed · 1", "Overview (M)")
     // (round 31) dropped the moment a tip is written or a control is added
@@ -1379,6 +1385,106 @@ export class UI {
   // The part of the screen no HUD panel covers, in CSS px: below the top bar,
   // above the power tray (or a phone's bottom sheet), beside a side panel or
   // the desktop inspector.
+  // (round 35) The first view frames the populated land in the screen area
+  // the HUD leaves visible, at the usual starting distance and turn: of the
+  // spots that put a town (or the map's middle) at the centre, the one whose
+  // view holds the most towns, weighted by their people and capitals, then
+  // the middle of the towns it holds is brought to the middle of the
+  // visible area. (A phone in portrait started over empty wilderness with
+  // no realm or town in view; the map's middle is not where the towns are.)
+  // instant: jump there (a fresh world); else ease (after the title screen).
+  frameStart(instant = true) {
+    const g = this.game,
+      rig = g.cameraRig,
+      civ = g.civ,
+      wd = g.world;
+    if (g.params.cam || !rig || !civ) return false;
+    const towns = (civ.villages || []).filter((v) => v?.alive && Number.isFinite(v.cx));
+    if (!towns.length) return false;
+    const W = innerWidth,
+      H = innerHeight;
+    const vr = this.visibleRect();
+    const mx = (vr.right - vr.left) * 0.12,
+      my = (vr.bottom - vr.top) * 0.12;
+    const box = { l: vr.left + mx, r: vr.right - mx, t: vr.top + my, b: vr.bottom - my };
+    const d = rig.goal.dist,
+      yaw = rig.goal.yaw,
+      pitch = rig.pitchFor(d);
+    const cam = new THREE.PerspectiveCamera(rig.camera.fov, W / H, 0.5, 1e6);
+    const v = new THREE.Vector3();
+    const place = (tx, tz) => {
+      const horiz = Math.cos(pitch) * d;
+      cam.position.set(tx + Math.sin(yaw) * horiz, Math.sin(pitch) * d, tz + Math.cos(yaw) * horiz);
+      cam.lookAt(tx, 0, tz);
+      cam.updateMatrixWorld();
+    };
+    const items = towns.map((t) => ({ x: t.cx, z: t.cz, y: Math.max(0, wd.heightAt(t.cx, t.cz)), w: 1 + Math.sqrt(Math.max(0, t.pop || 0)) + (civ.kingdoms[t.kingdom]?.capital === t.id ? 2 : 0) }));
+    const view = (tx, tz) => {
+      place(tx, tz);
+      let s = 0;
+      const inside = [];
+      for (const it of items) {
+        v.set(it.x, it.y, it.z).project(cam);
+        const sx = (v.x * 0.5 + 0.5) * W,
+          sy = (-v.y * 0.5 + 0.5) * H;
+        if (v.z < 1 && sx >= box.l && sx <= box.r && sy >= box.t && sy <= box.b) {
+          s += it.w;
+          inside.push(it);
+        }
+      }
+      return { s, inside };
+    };
+    const cx0 = wd.w / 2,
+      cz0 = wd.h / 2;
+    let best = null;
+    const consider = (x, z) => {
+      const r = view(x, z);
+      const sc = r.s - Math.hypot(x - cx0, z - cz0) * 1e-4;
+      if (!best || sc > best.sc) best = { sc, s: r.s, x, z, inside: r.inside };
+    };
+    consider(cx0, cz0);
+    for (const it of items) consider(it.x, it.z);
+    if (!best.inside.length) return false;
+    // the middle of the towns in view, at the middle of the visible area: the
+    // ground under that screen point is moved onto the towns' middle
+    let ax = 0,
+      az = 0,
+      aw = 0;
+    for (const it of best.inside) (ax += it.x * it.w), (az += it.z * it.w), (aw += it.w);
+    ax /= aw;
+    az /= aw;
+    place(ax, az);
+    const qx = (vr.left + vr.right) / 2,
+      qy = (vr.top + vr.bottom) / 2;
+    v.set((qx / W) * 2 - 1, -((qy / H) * 2 - 1), 0.5).unproject(cam).sub(cam.position);
+    let tx = ax,
+      tz = az;
+    if (v.y < -1e-6) {
+      const t = -cam.position.y / v.y;
+      tx = ax + (ax - (cam.position.x + v.x * t));
+      tz = az + (az - (cam.position.z + v.z * t));
+    }
+    // (taken when it holds at least as many towns)
+    for (const [x, z] of [
+      [tx, tz],
+      [ax, az],
+    ]) {
+      const px = Math.max(0, Math.min(wd.w, x)),
+        pz = Math.max(0, Math.min(wd.h, z));
+      if (view(px, pz).s >= best.s - 1e-6) {
+        best.x = px;
+        best.z = pz;
+        break;
+      }
+    }
+    if (instant) rig.set(best.x, best.z, d, THREE.MathUtils.radToDeg(yaw), null);
+    else {
+      rig.goal.x = best.x;
+      rig.goal.z = best.z;
+    }
+    return true;
+  }
+
   visibleRect() {
     const W = innerWidth,
       H = innerHeight;
