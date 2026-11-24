@@ -26,17 +26,27 @@ import { KINDS } from './kinds.js';
 // where they must; and they stop only on a street clear of the square, by a
 // building. The world keeps at most _townCap() of them, given to
 // the towns nearest the camera first (a bus, then a van, then a garbage
-// truck); one whose town falls out of that share, out of the era or into
-// another realm's hands leaves when it is out of sight. They are outside the
-// world's land limit (Fleet.landTally), so intercity trucks and the civic
-// services keep their places.
+// truck). They are outside the world's land limit (Fleet.landTally), so
+// intercity trucks and the civic services keep their places.
+// (round 35) One no longer wanted (its town too small, out of that share,
+// out of the era, in another realm's hands, or gone; a spare of its kind; one
+// with no way through the streets) is never taken away under the player's
+// eyes: while it is followed, selected or in view it drives back to its depot
+// and parks there, its card saying why ("Off duty: parked at the depot", "No
+// longer needed: Elderley is too small"), and it leaves only once it is out
+// of view and not selected (back to work instead if its town wants it again
+// first). A followed delivery van was laid up on screen within 49 s and the
+// camera left over grass: the van had set out from its depot's own curb, asked
+// the way to where it stood, failed 21 times and was laid up for it.
 //
 // PUBLIC CONTRACT (additions to game.fleet)
 //   vehicle.town      the town (village id) a town vehicle serves
 //   vehicle.mission   {type: 'town', town: true, job: 'loop'|'deliver'|'refuse',
 //                      at (where it stands: 'stop', 'drop', 'depot', 'pickup',
-//                      'dump', 'night', 'start'), goal {x, z, at, label},
-//                      riders | parcels | load, stops (a bus's loop)}
+//                      'dump', 'night', 'start', 'off'), goal {x, z, at, label},
+//                      riders | parcels | load, stops (a bus's loop),
+//                      retire (why it is off duty: 'small', 'share', 'era',
+//                      'realm', 'lost', 'spare', 'stuck'; null at work)}
 //   townCount(vid?)   town vehicles (of one town)
 
 const JOB = { bus: 'loop', van: 'deliver', garbage: 'refuse' };
@@ -98,9 +108,19 @@ export const town = {
     const have = new Map();
     for (const v of this.list) {
       if (!v.alive || v.town == null) continue;
+      // (round 35) an off-duty vehicle leaves once no one can see it
+      if (v.mission?.retire && !this._townSeen(v)) {
+        this._ended(v, 'off duty');
+        continue;
+      }
       const key = `${v.town}|${v.kind}|${v.kingdom}`;
-      if (have.has(key)) this._ended(v, 'laid up');
-      else have.set(key, v);
+      const o = have.get(key);
+      if (o) {
+        // two of a kind in one town: the spare goes off duty (one already off duty first)
+        const spare = o.mission?.retire && !v.mission?.retire ? o : v;
+        if (spare === o) have.set(key, v);
+        this._townRetire(spare, 'spare');
+      } else have.set(key, v);
     }
     let room = this._townCap();
     let spawns = 2;
@@ -115,7 +135,71 @@ export const town = {
       }
       if (room <= 0) break;
     }
-    for (const [key, v] of have) if (!keep.has(key) && (off || !this._townSeen(v))) this._ended(v, 'laid up');
+    for (const [key, v] of have) {
+      if (!v.alive) continue;
+      if (keep.has(key)) {
+        // wanted again before it left: back to work
+        if (v.mission?.retire && v.mission.retire !== 'stuck') this._townResume(v);
+        continue;
+      }
+      // (World Laws: town traffic switched off by the player goes at once)
+      if (off) this._ended(v, 'off duty');
+      else this._townRetire(v, this._townWhy(v));
+    }
+  },
+  // Why a town vehicle is no longer wanted (see _townRetire)
+  _townWhy(v) {
+    const civ = this.game.civ;
+    const t = civ?.villages?.[v.town];
+    if (!t?.alive) return 'lost';
+    if (t.kingdom !== v.kingdom) return 'realm';
+    const k = civ.kingdoms?.[t.kingdom];
+    if (!k || (k.era || 0) < 5 || !k.techs?.has?.('combustion')) return 'era';
+    if (!this._townWants(t).includes(v.kind)) return 'small';
+    return 'share';
+  },
+  // (round 35) Off duty: a vehicle out of sight leaves now; one in view (or
+  // followed, or selected) drives back to its depot and parks there until no
+  // one can see it (Fleet.tick's _townPlan, _townWork).
+  _townRetire(v, why) {
+    const m = v.mission;
+    if (!v.alive || !m) return;
+    if (!this._townSeen(v)) return this._ended(v, 'off duty');
+    const was = m.retire;
+    m.retire = why;
+    if (was) return;
+    m.wait = null;
+    m.fail = 0;
+    const t = this.game.civ?.villages?.[m.vid];
+    const tgt = t ? this._townDepot(v, t) : null;
+    if (tgt && (Math.floor(tgt.x) !== Math.floor(v.x) || Math.floor(tgt.z) !== Math.floor(v.z))) {
+      const path = this._townLeg(t, v.x, v.z, tgt.x, tgt.z);
+      if (path) {
+        m.goal = { ...tgt, at: 'off' };
+        this.setPath(v, path);
+        v.state = 'move';
+        v.stateT = 0;
+        return;
+      }
+    } else if (tgt) m.goal = { ...tgt, at: 'off' };
+    else m.goal = null;
+    // (already at the depot, or no way there: it parks where it stands)
+    v.path = null;
+    v.state = 'work';
+    v.stateT = 0;
+    v.speed = 0;
+    m.at = 'off';
+    if (m.goal?.heading != null) this._settleTo(v, m.goal.heading);
+  },
+  // Wanted again while still in view: back on its rounds
+  _townResume(v) {
+    const m = v.mission;
+    m.retire = null;
+    if (m.goal?.at === 'off') m.goal = { ...m.goal, at: 'start' };
+    if (v.state === 'work' && m.at === 'off') {
+      m.at = 'start';
+      v.stateT = 0;
+    }
   },
   // Followed, selected or within the drawn radius of the camera
   _townSeen(v) {
@@ -200,8 +284,10 @@ export const town = {
   // The way along the town's streets from (x0, z0) to the street tile at
   // (x1, z1): road tiles only, never the square or the parade pad (the
   // streets round the square and the railway dear, the streets out of town
-  // a little dearer), or null when it cannot get there.
-  _townLeg(t, x0, z0, x1, z1) {
+  // a little dearer), or null when it cannot get there. (loose: a vehicle
+  // left standing off the streets drives over the square, and over the open
+  // ground right beside it, to get back to them.)
+  _townLeg(t, x0, z0, x1, z1, loose = false) {
     const w = this.world;
     const civ = this.game.civ;
     const use = civ.use;
@@ -215,6 +301,12 @@ export const town = {
       gz = Math.floor(z1);
     if (!w.inBounds(sx, sz) || !w.inBounds(gx, gz) || (sx === gx && sz === gz)) return null;
     const cost = (i) => {
+      if (loose && (use[i] !== USE.ROAD || kc?.[i])) {
+        if (kc?.[i] || pv[i]) return 6;
+        const ox = (i % w.w) + 0.5 - x0,
+          oz = ((i / w.w) | 0) + 0.5 - z0;
+        return use[i] === USE.FREE && ox * ox + oz * oz < 2.3 ? 8 : Infinity;
+      }
       if (use[i] !== USE.ROAD || kc?.[i]) return Infinity;
       if (pv[i]) return 8;
       if (rail?.[i]) return 9;
@@ -227,6 +319,70 @@ export const town = {
     const path = [x0, z0];
     for (const i of p) path.push((i % w.w) + 0.5, ((i / w.w) | 0) + 0.5);
     return path;
+  },
+  // (round 35) Standing off the streets: on a tile that is no longer a
+  // street, or on the town's square or a parade pad
+  _townOffStreet(v) {
+    const civ = this.game.civ;
+    const w = this.world;
+    const tx = Math.floor(v.x),
+      tz = Math.floor(v.z);
+    if (!w.inBounds(tx, tz)) return false;
+    const i = tz * w.w + tx;
+    const kc = civ.keepClear?.length === civ.use.length ? civ.keepClear : null;
+    return civ.use[i] !== USE.ROAD || !!kc?.[i];
+  },
+  // ...and back onto the nearest of the town's streets: out of view it is
+  // simply moved there; in view it drives there over the square or the open
+  // ground beside it. False when there is no way.
+  _townUnstick(v, t) {
+    const R = this._townRoads(t);
+    const w = this.world;
+    let best = -1,
+      bd = Infinity;
+    for (const i of R.all) {
+      const d = ((i % w.w) + 0.5 - v.x) ** 2 + (((i / w.w) | 0) + 0.5 - v.z) ** 2;
+      if (d < bd) (bd = d), (best = i);
+    }
+    if (best < 0) return false;
+    const st = this._townStop(best, 'start', null);
+    const m = v.mission;
+    if (!this._townSeen(v)) return this._townPlace(v, st);
+    const path = this._townLeg(t, v.x, v.z, st.x, st.z, true);
+    if (!path) return false;
+    m.goal = st;
+    m.wait = null;
+    this.setPath(v, path);
+    v.state = 'move';
+    v.stateT = 0;
+    return true;
+  },
+  // (round 35) Stuck out of view on a short stretch of street with nothing
+  // to do there: moved onto the town's main streets
+  _townRelocate(v, t) {
+    const R = this._townRoads(t);
+    let L = R.curb.filter((i) => R.comp.get(i) === R.main);
+    if (L.length < 4) L = R.all.filter((i) => R.comp.get(i) === R.main);
+    if (!L.length) return false;
+    return this._townPlace(v, this._townStop(L[(this.rng() * L.length) | 0], 'start', null));
+  },
+  // A town vehicle set down on a street tile (out of view), ready to set out
+  _townPlace(v, st) {
+    const m = v.mission;
+    v.x = v.px = st.x;
+    v.z = v.pz = st.z;
+    if (st.heading != null) v.heading = v.ph = st.heading;
+    v.path = null;
+    v.trail = v.trail ? [] : v.trail;
+    v.state = 'work';
+    v.stateT = 0;
+    v.speed = 0;
+    m.at = 'start';
+    m.goal = null;
+    m.wait = null;
+    m.fail = 0;
+    if (m.job === 'loop') m.si = -1;
+    return true;
   },
   // A stop on street tile i: its middle, the heading along the street there
   _townStop(i, at, label) {
@@ -264,9 +420,15 @@ export const town = {
   // parked for the night): it waits there its while, then sets out again.
   _townWork(v, step) {
     const m = v.mission;
-    const t = this.game.civ?.villages?.[m.vid];
-    if (!t?.alive) return this._ended(v, 'laid up');
     v.speed = 0;
+    // (round 35) off duty, parked: it leaves once no one can see it
+    if (m.retire) {
+      if (!this._townSeen(v)) this._ended(v, 'off duty');
+      return;
+    }
+    if (m.at === 'off') m.at = 'start';
+    const t = this.game.civ?.villages?.[m.vid];
+    if (!t?.alive) return this._townRetire(v, 'lost');
     const night = this._townNight(m.job);
     if (m.at === 'night') {
       if (night) return;
@@ -297,7 +459,10 @@ export const town = {
   _townNext(v) {
     const m = v.mission;
     const t = this.game.civ?.villages?.[m.vid];
-    if (!t?.alive) return this._ended(v, 'laid up');
+    if (!t?.alive) return this._townRetire(v, 'lost');
+    // (round 35) standing where the street is no longer (the square laid
+    // over it, a plot): off it first (a vehicle stood on the square all along)
+    if (this._townOffStreet(v) && this._townUnstick(v, t)) return;
     let tgt = null;
     if (this._townNight(m.job)) {
       tgt = this._townHome(v, t);
@@ -324,14 +489,29 @@ export const town = {
         m.si = (m.si + 1) % m.stops.length;
         tgt = m.stops[m.si];
       }
-    } else if (m.job === 'deliver') tgt = (m.parcels || 0) <= 0 ? this._townDepot(v, t) : this._townDrop(v, t);
-    else tgt = (m.load || 0) >= 0.98 ? this._townDump(v, t) : this._townPickup(v, t);
+    } else if (m.job === 'deliver') tgt = (m.parcels || 0) <= 0 ? this._townDepot(v, t) : this._townDrop(v, t) || this._townDepot(v, t);
+    else {
+      tgt = (m.load || 0) >= 0.98 ? this._townDump(v, t) : this._townPickup(v, t);
+      // (round 35) no more cans on this stretch: tip what it has, else back to the depot
+      if (!tgt) tgt = (m.load || 0) > 0.3 ? this._townDump(v, t) : this._townDepot(v, t);
+    }
+    // (round 35) already there (a van loading at the depot it set out from
+    // asked the way to its own curb, and was laid up after 21 tries)
+    if (tgt && Math.floor(tgt.x) === Math.floor(v.x) && Math.floor(tgt.z) === Math.floor(v.z)) {
+      m.fail = 0;
+      m.goal = tgt;
+      return this._townArrive(v);
+    }
     const path = tgt && this._townLeg(t, v.x, v.z, tgt.x, tgt.z);
     if (!path) {
       // (nowhere to go just now: it waits a moment and looks again)
       m.fail = (m.fail || 0) + 1;
       if (m.job === 'loop') m.stops = null;
-      if (m.fail > 20) return this._ended(v, 'laid up');
+      // (round 35) stuck on a short stretch of street out of view: it is
+      // moved onto the town's main streets; in view it keeps trying, and
+      // after a while goes off duty where it stands
+      if (m.fail >= 4 && !this._townSeen(v) && this._townRelocate(v, t)) return;
+      if (m.fail > 20) return this._townRetire(v, 'stuck');
       v.state = 'work';
       v.stateT = 0;
       m.wait = 2 + this.rng() * 2;
@@ -537,22 +717,49 @@ export const town = {
   _townDoing(v) {
     const m = v.mission;
     const g = m.goal;
+    // (round 35) off duty, in plain words (it was "Laid up")
+    if (m.retire) {
+      if (v.state === 'move') return 'Off duty: driving back to the depot';
+      return g?.at === 'off' && Math.hypot(g.x - v.x, g.z - v.z) < 0.9 ? 'Off duty: parked at the depot' : 'Off duty: parked by the curb';
+    }
     if (v.state === 'move') {
       if (g?.at === 'night') return m.job === 'loop' ? 'Heading to its stand for the night' : 'Heading back to the depot for the night';
       if (m.job === 'loop') return g?.label ? `Driving to the ${g.label} stop` : 'Running the town loop';
       if (m.job === 'deliver') return g?.at === 'depot' ? 'Driving back to the depot' : `Delivering a parcel to ${g?.label || 'a house'}`;
-      return g?.at === 'dump' ? 'Taking the trash to the dump' : 'Collecting the trash';
+      return g?.at === 'dump' ? 'Taking the trash to the dump' : g?.at === 'depot' ? 'Driving back to the depot' : 'Collecting the trash';
     }
     if (m.at === 'night') return 'Parked for the night';
-    if (m.at === 'start' || !m.at) return 'Setting out on its rounds';
+    if (m.at === 'start' || m.at === 'off' || !m.at) return 'Setting out on its rounds';
     if (m.job === 'loop') return `Picking up riders at the ${g?.label || 'next'} stop`;
     if (m.job === 'deliver') return m.at === 'depot' ? 'Loading parcels at the depot' : `Dropping off a parcel at ${g?.label || 'a house'}`;
-    return m.at === 'dump' ? 'Tipping its load at the dump' : 'Emptying the trash cans';
+    return m.at === 'dump' ? 'Tipping its load at the dump' : m.at === 'depot' ? 'Waiting at the depot for more rounds' : 'Emptying the trash cans';
+  },
+  // (round 35) Why a town vehicle is off duty, in the card's words
+  _townWhyText(v) {
+    const m = v.mission;
+    const name = this.game.civ?.villages?.[m.vid]?.name || 'the town';
+    switch (m.retire) {
+      case 'small':
+        return `No longer needed: ${name} is too small`;
+      case 'lost':
+        return `No longer needed: ${name} is gone`;
+      case 'realm':
+        return `No longer needed: ${name} changed hands`;
+      case 'era':
+        return `No longer needed: ${name} can no longer run motor vehicles`;
+      case 'spare':
+        return `No longer needed: ${name} has another one`;
+      case 'stuck':
+        return 'No way on through the streets';
+      default:
+        return 'Resting: only so many town vehicles run at once';
+    }
   },
   // The card's own rows for a town vehicle
   _townRows(v, stats) {
     const m = v.mission;
     if (!m?.town) return;
+    if (m.retire) stats.push(['Why', this._townWhyText(v)]);
     if (m.job === 'loop') {
       stats.push(['Riders', `${m.riders | 0} aboard`]);
       if (m.stops?.length) stats.push(['Route', `Loop of ${m.stops.length} stops`]);

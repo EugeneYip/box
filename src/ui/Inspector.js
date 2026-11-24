@@ -80,8 +80,9 @@ const roofOf = (b) => {
 const ARRIVED_WORD = { land: 'Arrived', sea: 'In port', air: 'Landed', space: 'In orbit' };
 const ARRIVED_TOAST = { land: 'reached its stop', sea: 'reached port', air: 'has landed', space: 'reached orbit' };
 // the fleet's reason for a trip's end (v.endedWhy), in the card's words
-const ENDED_WORD = { arrived: null, 'last stop': 'Last stop', 'back at the station': 'Back at the station', 'field done': 'Field done', 'laid up': 'Laid up', retired: 'Retired' };
-const ENDED_TOAST = { 'last stop': 'reached its last stop', 'back at the station': 'is back at the station', 'field done': 'finished its field', 'laid up': 'was laid up', retired: 'was retired' };
+// (round 35) a town's bus, van or garbage truck goes "Off duty", never "Laid up"
+const ENDED_WORD = { arrived: null, 'last stop': 'Last stop', 'back at the station': 'Back at the station', 'field done': 'Field done', 'laid up': 'Laid up', 'off duty': 'Off duty', retired: 'Retired' };
+const ENDED_TOAST = { 'last stop': 'reached its last stop', 'back at the station': 'is back at the station', 'field done': 'finished its field', 'laid up': 'was laid up', 'off duty': 'went off duty', retired: 'was retired' };
 // (round 33) a spent booster that flew back is "Landed", not "In orbit"
 const arrivedWord = (c) => ENDED_WORD[c.endedWhy] || (c.stageV === 2 ? 'Landed' : ARRIVED_WORD[c.def?.cls || c.cls]) || 'Arrived';
 // where a craft that ended its trip stopped, in words ("Arrived at Khaveh")
