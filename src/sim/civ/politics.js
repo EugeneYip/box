@@ -42,22 +42,23 @@ export const WOUND_YEARS = 5;
 // UNION_FIRM or more, and the two at peace for UNION_PEACE years)
 const UNION_FROM = 60,
   UNION_TO = 120,
-  UNION_P = 0.06,
+  UNION_P = 0.08,
   UNION_FIRM = 60,
-  UNION_ALLY = 20,
-  UNION_PEACE = 30;
+  UNION_ALLY = 15,
+  UNION_PEACE = 25;
 // A small realm (two towns or fewer) beaten in war, set upon by a greater
 // one or risen in rebellion keeps the peace SMALL_TRUCE years plus up to
 // SMALL_TRUCE_MORE (round 35: realms that fell lived a median of 45 years,
 // most of them small crowns taken town by town in wars a decade apart).
 // The last town of a one-town realm holds out LAST_HOLD of the time (less
 // after each stand: LAST_HOLD_FADE) and buys peace, and a crown weighs a war
-// on a one-town realm at LONE_WAR of the usual odds.
+// on a one-town realm at LONE_WAR of the usual odds (at half the time and 0.8,
+// with rarer unions, 24-26 realms stood at Year 600: a few too many).
 const SMALL_TRUCE = 25,
   SMALL_TRUCE_MORE = 10,
-  LAST_HOLD = 0.5,
-  LAST_HOLD_FADE = 0.6,
-  LONE_WAR = 0.8;
+  LAST_HOLD = 0.4,
+  LAST_HOLD_FADE = 0.5,
+  LONE_WAR = 0.85;
 
 export const politics = {
   // ---------------------------------------------------------------- kingdoms
