@@ -1049,12 +1049,11 @@ export class BuildingRenderer {
     qN.i = qF.i = 0;
   }
 
-  // (round 35) what lies right round the camera's target is drawn now,
-  // whatever the budget, and then, nearest first, the rest of the town
-  // nearest the target and whatever else stands about as far out as the
-  // view reaches (30 tiles at most), for up to 40 ms more: the stand-in for
-  // a world still filling in round it (a Future city's 300 buildings took
-  // 0.4 s at once)
+  // (round 35) the town nearest the camera's target and whatever else
+  // stands about as far out as the view reaches (30 tiles at most) is drawn
+  // now, nearest the target first, for up to 50 ms: the stand-in for a world
+  // still filling in round it (a Future city's 300 buildings took 0.4 s at
+  // once); the rest follows within the frame budget
   _focusTown() {
     const c = this.game.cameraRig?.cur;
     const civ = this.game.civ;
@@ -1066,24 +1065,16 @@ export class BuildingRenderer {
       const d = Math.hypot(v.cx - c.x, v.cz - c.z) - (v.buildRadius || 0);
       if (d < bd) (bd = d), (best = v);
     }
-    const near = Math.max(4, Math.min(10, c.dist * 0.25));
     const vid = best && bd < Math.max(12, c.dist * 0.6) ? best.id : -1;
-    const view = Math.max(near, Math.min(30, c.dist * 1.1));
-    let extra = 0;
+    const view = Math.max(8, Math.min(30, c.dist * 1.1));
+    const t0 = performance.now();
     const q = this._qN;
     let w = q.i;
     for (let i = q.i; i < q.a.length; i++) {
       const r = q.a[i];
-      if (r.dead || r.t !== 0) {
-        q.a[w++] = r;
-        continue;
-      }
-      const must = r.qd < near;
-      if (must || ((r.b.village === vid || r.qd < view) && extra < 40)) {
-        const t = must ? 0 : performance.now();
+      if (!r.dead && r.t === 0 && (r.b.village === vid || r.qd < view) && performance.now() - t0 < 50) {
         r.queued = false;
         this._buildRec(r);
-        if (!must) extra += performance.now() - t;
       } else q.a[w++] = r;
     }
     q.a.length = w;
