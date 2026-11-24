@@ -181,6 +181,7 @@ export class Civilization {
     this.armies.length = 0;
     this.expeditions.length = 0;
     this.relations.clear();
+    this._jobQ = null;
     this.__walkCost = null;
     this.__roadCost = null;
     this._wcDirty = true; // (the walkers' map of pieces: brain.js _walkComp)
@@ -770,6 +771,7 @@ export class Civilization {
         this._plan(v);
       }
     }
+    if (this._jobQ?.length) this._realmJobs();
     const T = this._timers;
     if ((T.b += step) >= (coarse ? 1 : 0.5)) {
       this._buildingsTick(T.b);
@@ -840,6 +842,26 @@ export class Civilization {
       T.land = 0;
       this._computeLand();
     }
+  }
+
+  // (round 35) A realm's rail survey (a trial route for a new line, and the
+  // network laid again) costs 7-20 ms on a Year 600 Medium map, and every
+  // realm with railways is due one each 20 s (the power grid each 15 s). The
+  // realms came due together on the same tick, every few seconds: Year 600
+  // ticks of 40-80 ms of which the surveys took 20-58. Each now waits in a
+  // queue and one runs a tick, at most a few ticks late, as often as before.
+  _realmJob(type, k) {
+    const q = this._jobQ || (this._jobQ = []);
+    if (globalThis.__realmJobsOff) return type === 'rail' ? this._surveyRail(k) : this._powerGrid(k);
+    for (const j of q) if (j.type === type && j.k === k.id) return;
+    q.push({ type, k: k.id });
+  }
+  _realmJobs() {
+    const j = this._jobQ.shift();
+    const k = this.kingdoms[j.k];
+    if (!k?.alive || !k.villages?.length || !k.techs?.has(j.type === 'rail' ? 'railways' : 'electricity')) return;
+    if (j.type === 'rail') this._surveyRail(k);
+    else this._powerGrid(k);
   }
 
   _updateVillageDerived(v) {
