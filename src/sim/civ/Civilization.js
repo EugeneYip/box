@@ -728,6 +728,16 @@ export class Civilization {
     // (job assignment keeps the big-map-only stretch: idle hands wait no longer on a smaller map)
     const jobRate = base * (coarseBig ? 1.5 : 1);
     this._planMul = rate;
+    // (round 35) at most a slice of the towns plan on any one tick: half as
+    // many again as the turns would bring on average, and never fewer than
+    // one. A big modern town's plan (its unlocks and modern works) costs a
+    // few milliseconds, and towns whose turns fell together planned in one
+    // tick (the Year 600 midday ticks of 16-21 ms). A town held back plans
+    // on a following tick and its next turn counts from then, so the turns
+    // spread out over the round instead of meeting again.
+    const planEvery = 3 * rate;
+    const planDue = this._planDue || (this._planDue = []);
+    planDue.length = 0;
     for (const v of this.villages) {
       if (!v.alive) continue;
       if ((v._acc += step) >= rate) {
@@ -739,13 +749,25 @@ export class Civilization {
         v._jobAcc -= 2.5 * jobRate;
         this._assignJobs(v);
       }
-      if ((v._planAcc += step) >= 3 * rate) {
-        v._planAcc -= 3 * rate;
-        this._plan(v);
-      }
+      if ((v._planAcc += step) >= planEvery) planDue.push(v);
       if ((v._loyAcc += step) >= 5) {
         v._loyAcc -= 5;
         this._loyalty(v);
+      }
+    }
+    if (planDue.length) {
+      // (those held back on an earlier tick first)
+      let planLeft = globalThis.__planCapOff ? Infinity : Math.max(1, Math.ceil(((nv * step) / planEvery) * 1.5));
+      if (planDue.length > planLeft) planDue.sort((a, b) => (b._planHeld ? 1 : 0) - (a._planHeld ? 1 : 0));
+      for (const v of planDue) {
+        if (!v.alive) continue;
+        if (planLeft-- <= 0) {
+          v._planHeld = true;
+          continue;
+        }
+        v._planAcc = v._planHeld ? 0 : v._planAcc - planEvery;
+        v._planHeld = false;
+        this._plan(v);
       }
     }
     const T = this._timers;
