@@ -926,7 +926,7 @@ export const modern = {
     let best = null,
       bd = Infinity;
     for (const l of lines) {
-      if (!l.pts || l.pts.length < 8 || l.kind !== kind) continue;
+      if (!l.pts || l.pts.length < 8 || l.kind !== kind || !this._trainFits(v.def, l.pts)) continue;
       const P = l.pts;
       for (let i = 0; i < P.length; i += 8) {
         const d = this.dist(P[i], P[i + 1], v.x, v.z) + (l.kingdom === v.kingdom ? 0 : 60);
