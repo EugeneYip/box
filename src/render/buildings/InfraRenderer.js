@@ -76,8 +76,10 @@ const COL = {
   edge: 0xd8b840,
   platform: 0xb4aea4,
   buffer: 0xb83a2a,
-  portal: 0xa8a39a,
-  mouth: 0x1e1c1a,
+  portal: 0x8c867c, // (round 35: a weathered stone, not round 33's cream)
+  coping: 0x6c675f,
+  ring: 0xa8a296,
+  mouth: 0x121110,
   pylon: 0x7a8288,
 };
 
@@ -482,23 +484,70 @@ export class InfraRenderer {
     }
   }
   // A tunnel's mouth at point Sm [x, z, tx, tz], the line's level y there,
-  // out: +1 when the open side faces along the line's direction
+  // out: +1 when the open side faces along the line's direction. Round 35:
+  // a stone headwall across the line with a coping along its top, a dark
+  // arched opening framed by a lighter ring of voussoirs, and two wing walls
+  // splayed out from its ends, their tops falling to the ground, holding
+  // back the hillside either side of the approach (round 33 drew a cream
+  // box with a square dark panel).
   _mouth(E, Sm, y, out, half, cover, kind) {
-    const [x, z, tx, tz] = Sm;
-    (this._partPortals || []).push({ x, z, y, tx: tx * out, tz: tz * out, kind });
-    const px = -tz,
-      pz = tx;
-    const T = 0.05;
-    const top = y + cover + T + 0.06;
-    const ox = tx * out * 0.03,
-      oz = tz * out * 0.03;
-    const W2 = half + T + 0.07;
-    E.bar(x - px * W2 + ox, z - pz * W2 + oz, x + px * W2 + ox, z + pz * W2 + oz, top, top, 0.07, top - (y - 0.06), COL.portal);
-    // the dark opening on its outer face
-    const fx = x + tx * out * 0.075,
-      fz = z + tz * out * 0.075;
-    const hw = half * 0.92;
-    E.quad([fx - px * hw, y - 0.02, fz - pz * hw], [fx + px * hw, y - 0.02, fz + pz * hw], [fx + px * hw, y + cover, fz + pz * hw], [fx - px * hw, y + cover, fz - pz * hw], COL.mouth);
+    const [x, z, tx0, tz0] = Sm;
+    const ox = tx0 * out,
+      oz = tz0 * out; // out of the bore
+    (this._partPortals || []).push({ x, z, y, tx: ox, tz: oz, kind });
+    const px = -oz,
+      pz = ox; // across the line
+    // the opening: straight sides up to the springing, then a half ellipse
+    const hw = half * 0.86,
+      hs = cover * 0.45,
+      ar = Math.min(hw * 0.8, cover * 0.75);
+    const top = y + Math.max(hs + ar + 0.1, cover + 0.08);
+    const W2 = hw + 0.16; // the headwall's half width
+    const TH = 0.08; // its thickness
+    const base = y - 0.18; // (its footing, in the ground)
+    // the face: on the hillside, a little out from the point
+    const fx = x + ox * 0.02,
+      fz = z + oz * 0.02;
+    E.bar(fx - px * W2, fz - pz * W2, fx + px * W2, fz + pz * W2, top, top, TH, top - base, COL.portal);
+    E.bar(fx - px * (W2 + 0.025), fz - pz * (W2 + 0.025), fx + px * (W2 + 0.025), fz + pz * (W2 + 0.025), top + 0.025, top + 0.025, TH + 0.04, 0.03, COL.coping);
+    // a point on the face, u across and v up from the line's level, d out
+    const F = (u, v, d) => [fx + px * u + ox * (TH / 2 + d), y + v, fz + pz * u + oz * (TH / 2 + d)];
+    const K = 8;
+    const curve = (r, k) => {
+      const t = (Math.PI * k) / K;
+      return [(hw + r) * Math.cos(t), hs + (ar + r) * Math.sin(t)];
+    };
+    // the ring of voussoirs round the arch and down its sides
+    const R = 0.055;
+    for (let k = 0; k < K; k++) {
+      const [u0, v0] = curve(0, k),
+        [u1, v1] = curve(0, k + 1),
+        [U0, V0] = curve(R, k),
+        [U1, V1] = curve(R, k + 1);
+      E.quad(F(u0, v0, 0.004), F(U0, V0, 0.004), F(U1, V1, 0.004), F(u1, v1, 0.004), COL.ring);
+    }
+    for (const sd of [1, -1]) E.quad(F(sd * hw, -0.02, 0.004), F(sd * (hw + R), -0.02, 0.004), F(sd * (hw + R), hs, 0.004), F(sd * hw, hs, 0.004), COL.ring);
+    // the dark opening: the sides, then a fan under the arch
+    E.quad(F(-hw, -0.03, 0.008), F(hw, -0.03, 0.008), F(hw, hs, 0.008), F(-hw, hs, 0.008), COL.mouth);
+    for (let k = 0; k < K; k++) {
+      const [u0, v0] = curve(0, k),
+        [u1, v1] = curve(0, k + 1);
+      E.quad(F(0, hs, 0.008), F(u0, v0, 0.008), F(u1, v1, 0.008), F(u1, v1, 0.008), COL.mouth);
+    }
+    // the wing walls: splayed out from the headwall's ends, falling to the
+    // ground at their far ends (buried below it)
+    const WL = kind === 'hw' ? 0.75 : 0.55,
+      SP = kind === 'hw' ? 0.38 : 0.28;
+    for (const sd of [1, -1]) {
+      const ax = fx + px * sd * (W2 - 0.03),
+        az = fz + pz * sd * (W2 - 0.03);
+      const bx = ax + px * sd * SP + ox * WL,
+        bz = az + pz * sd * SP + oz * WL;
+      const gb = Math.max(this._h(bx, bz), y);
+      const yb = Math.min(top - 0.05, gb + 0.05);
+      E.bar(ax, az, bx, bz, top - 0.01, yb, 0.06, top - 0.01 - base, COL.portal);
+      E.bar(ax, az, bx, bz, top + 0.01, yb + 0.015, 0.085, 0.025, COL.coping);
+    }
   }
   // which side a branch turns to (+1 right, -1 left of its first direction)
   _turnSide(P) {
