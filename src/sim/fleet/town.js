@@ -28,6 +28,10 @@ import { KINDS } from './kinds.js';
 // the towns nearest the camera first (a bus, then a van, then a garbage
 // truck). They are outside the world's land limit (Fleet.landTally), so
 // intercity trucks and the civic services keep their places.
+// (round 37) Every stop and every leg lies inside the town's paving (the
+// disc the terrain paves round an Industrial or later town, planner
+// _pavedRadius): Elderley's loop ran from the end of a paved street down a
+// dirt track into the trees to a "Granary" stop standing in the forest.
 // (round 35) One no longer wanted (its town too small, out of that share,
 // out of the era, in another realm's hands, or gone; a spare of its kind; one
 // with no way through the streets) is never taken away under the player's
@@ -214,13 +218,22 @@ export const town = {
     const R = cam.dist * 1.7 + 24;
     return Math.abs(v.x - cam.x) <= R && Math.abs(v.z - cam.z) <= R;
   },
+  // (round 37) How far from the town's middle its streets are paved (the
+  // planner's _pavedRadius, as Terrain._writeSettle draws it), less a margin
+  // so a vehicle never stands on the end of a street where the paving stops
+  _townPaved(t) {
+    return Math.max(5, (t.buildRadius || t.radius || 6) * 1.15 + 2) - 0.6;
+  },
+  _townInPave(t, x, z, pr = this._townPaved(t)) {
+    return (x - t.cx) ** 2 + (z - t.cz) ** 2 <= pr * pr;
+  },
   // A town's streets for its own vehicles (kept a few seconds on the town):
-  // `all` the street tiles inside the town where a vehicle may stop (off the
-  // square and the streets round it, Fleet._paveMask, and off the railway),
-  // `curb` those beside a building or a plot, `comp` which stretch of
-  // joined-up streets each street tile is on (joined without crossing the
-  // square or the parade pad, civ.keepClear; across the railway), `main` the
-  // stretch with the most curbs.
+  // `all` the street tiles inside the town's paving where a vehicle may stop
+  // (off the square and the streets round it, Fleet._paveMask, and off the
+  // railway), `curb` those beside a building or a plot, `comp` which stretch
+  // of joined-up paved streets each street tile is on (joined without
+  // crossing the square or the parade pad, civ.keepClear, or leaving the
+  // paving; across the railway), `main` the stretch with the most curbs.
   _townRoads(t) {
     const now = this.game.time.total;
     const c = t._townR;
@@ -230,7 +243,7 @@ export const town = {
     const use = civ.use;
     const rail = civ.railMask;
     const pv = this._paveMask();
-    const rr = (t.radius || 6) * 1.05 + 1;
+    const rr = this._townPaved(t);
     const all = [],
       curb = [];
     for (const i of t.roadTiles || []) {
@@ -245,7 +258,7 @@ export const town = {
     }
     const kc = civ.keepClear?.length === use.length ? civ.keepClear : null;
     const comp = new Map();
-    const R2 = (rr + 4) ** 2;
+    const R2 = rr * rr;
     let nc = 0;
     const Q = [];
     for (const i0 of all) {
@@ -286,11 +299,12 @@ export const town = {
     return c ?? R.main;
   },
   // The way along the town's streets from (x0, z0) to the street tile at
-  // (x1, z1): road tiles only, never the square or the parade pad (the
-  // streets round the square and the railway dear, the streets out of town
-  // a little dearer), or null when it cannot get there. (loose: a vehicle
-  // left standing off the streets drives over the square, and over the open
-  // ground right beside it, to get back to them.)
+  // (x1, z1): paved road tiles only, never the square or the parade pad (the
+  // streets round the square and the railway dear), never out past the
+  // paving (round 37: the bus drove a dirt track into the woods), or null
+  // when it cannot get there. (loose: a vehicle left standing off the
+  // streets drives over the square, the unpaved street, and the open ground
+  // right beside it, to get back to them.)
   _townLeg(t, x0, z0, x1, z1, loose = false) {
     const w = this.world;
     const civ = this.game.civ;
@@ -298,7 +312,7 @@ export const town = {
     const rail = civ.railMask;
     const pv = this._paveMask();
     const kc = civ.keepClear?.length === use.length ? civ.keepClear : null;
-    const rr = ((t.radius || 6) * 1.25 + 2) ** 2;
+    const rr = this._townPaved(t) ** 2;
     const sx = Math.floor(x0),
       sz = Math.floor(z0),
       gx = Math.floor(x1),
@@ -312,11 +326,12 @@ export const town = {
         return use[i] === USE.FREE && ox * ox + oz * oz < 2.3 ? 8 : Infinity;
       }
       if (use[i] !== USE.ROAD || kc?.[i]) return Infinity;
-      if (pv[i]) return 8;
-      if (rail?.[i]) return 9;
       const dx = (i % w.w) + 0.5 - t.cx,
         dz = ((i / w.w) | 0) + 0.5 - t.cz;
-      return dx * dx + dz * dz > rr ? 4 : 1;
+      if (dx * dx + dz * dz > rr) return loose ? 6 : Infinity;
+      if (pv[i]) return 8;
+      if (rail?.[i]) return 9;
+      return 1;
     };
     // (round 35: 4000 nodes, up from 1800, which a long leg past the dear
     // paving of the square ran out of, so the way was "not found")
@@ -327,8 +342,9 @@ export const town = {
     return path;
   },
   // (round 35) Standing off the streets: on a tile that is no longer a
-  // street, or on the town's square or a parade pad
-  _townOffStreet(v) {
+  // street, or on the town's square or a parade pad (round 37: or out past
+  // the paving, where the town's street runs on as a dirt track)
+  _townOffStreet(v, t = null) {
     const civ = this.game.civ;
     const w = this.world;
     const tx = Math.floor(v.x),
@@ -336,7 +352,7 @@ export const town = {
     if (!w.inBounds(tx, tz)) return false;
     const i = tz * w.w + tx;
     const kc = civ.keepClear?.length === civ.use.length ? civ.keepClear : null;
-    return civ.use[i] !== USE.ROAD || !!kc?.[i];
+    return civ.use[i] !== USE.ROAD || !!kc?.[i] || (!!t && !this._townInPave(t, tx + 0.5, tz + 0.5));
   },
   // ...and back onto the nearest of the town's streets: out of view it is
   // simply moved there; in view it drives there over the square or the open
@@ -468,7 +484,7 @@ export const town = {
     if (!t?.alive) return this._townRetire(v, 'lost');
     // (round 35) standing where the street is no longer (the square laid
     // over it, a plot): off it first (a vehicle stood on the square all along)
-    if (this._townOffStreet(v) && this._townUnstick(v, t)) return;
+    if (this._townOffStreet(v, t) && this._townUnstick(v, t)) return;
     let tgt = null;
     if (this._townNight(m.job)) {
       tgt = this._townHome(v, t);
@@ -483,7 +499,7 @@ export const town = {
       // the end of a round), so new streets and landmarks get their stops
       const now = this.game.time.total;
       const due = m.stops && m.si === m.stops.length - 1 && now - (m.stopsT || 0) > 120;
-      if (!m.stops || due || m.stops.some((s) => this.game.civ.use[s.i] !== USE.ROAD)) {
+      if (!m.stops || due || m.stops.some((s) => this.game.civ.use[s.i] !== USE.ROAD || !this._townInPave(t, s.x, s.z))) {
         // (on a short stretch the square cut off from the rest: the main streets' loop)
         m.stops = this._townStops(t, this._townComp(t, v)) || this._townStops(t, this._townRoads(t).main);
         m.stopsT = now;
@@ -600,6 +616,8 @@ export const town = {
   // stub in a field), are drawn to distinct landmarks (market, temple,
   // academy, depot...), and take a street's name where none stands near
   // ("Town Hall > Town Hall North > Town Hall Northeast" read as one place).
+  // (round 37) Only paved streets are candidates (_townRoads), and a stop
+  // stands a tile and more inside the paving's edge.
   _townStops(t, cid) {
     const R = this._townRoads(t);
     const w = this.world;
@@ -609,8 +627,8 @@ export const town = {
     const P = (i) => [(i % w.w) + 0.5, ((i / w.w) | 0) + 0.5];
     const road = (j) => use[j] === USE.ROAD && !kc?.[j];
     const bld = (j) => use[j] === USE.BUILDING;
-    // (the paving the terrain draws: planner _pavedRadius)
-    const pr = Math.max(5, (t.buildRadius || t.radius || 6) * 1.15 + 2) - 1;
+    // (the paving the terrain draws, less a tile: the ring and the bus stand clear of its edge)
+    const pr = this._townPaved(t) - 0.9;
     const inComp = R.all.filter((i) => R.comp.get(i) === cid);
     // a straight stretch of street (the way on and the way back both street,
     // nothing crossing) with a building on one side
@@ -633,8 +651,9 @@ export const town = {
     // how poor a place for a stop each street tile is: off the paving, a
     // dead end, a crossing or a bend, nothing built beside it
     const bad = (i) => (inside(i) ? 0 : 5) + (deg(i) < 2 ? 8 : 0) + (straight(i) ? 0 : curbs.has(i) ? 1.2 : 2.4);
-    // (a young town's few streets: any of them, dead ends too)
-    let L = inComp.filter((i) => bad(i) < 8);
+    // (a young town's few streets: any of them, dead ends too, out to the paving's edge)
+    let L = inComp.filter((i) => inside(i) && bad(i) < 8);
+    if (L.length < 4) L = inComp.filter((i) => bad(i) < 8);
     if (L.length < 4) L = inComp;
     const good = L.filter((i) => bad(i) < 2).length;
     const n = Math.max(3, Math.min(5, Math.round(good / 8)));
