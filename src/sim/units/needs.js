@@ -19,6 +19,7 @@ const NAP_GAIN = 0.012; // ...asleep where they stand
 const MEAT = { deer: 10, rabbit: 3, sheep: 8, cow: 14, pig: 9, chicken: 2, goat: 7 };
 const LEAN_MAX = 0.45; // most a hard time adds to the fed floor (0.12)
 const LEAN_EVERY = 4; // game seconds between a village's lean reckonings
+export const TODDLER_AGE = 5; // under this age a child keeps to its family's house (_homeOf)
 
 export function installNeeds(Units) {
   const P = Units.prototype;
@@ -228,7 +229,17 @@ export function installNeeds(Units) {
     return true;
   };
   // A home to sleep in: a house of their town (spread by id), else the hall.
+  // (round 35) A toddler's home is its family's house, the one the Civ brain
+  // keeps it near: the two were different houses, and toddlers spent a
+  // quarter of the day "Toddling home" between them.
   P._homeOf = function (u, v) {
+    if (u.age < TODDLER_AGE) {
+      const f = this.game.civ?._bById?.get(u.data?.civ?.home);
+      if (f && f.alive && !f.constructing && f.village === v.id && f.doorX != null) {
+        u._homeB = f.id;
+        return f;
+      }
+    }
     let b = u._homeB != null ? this.game.civ._bById?.get(u._homeB) : null;
     if (b && b.alive && !b.constructing && b.village === v.id) return b;
     const homes = [];

@@ -1031,7 +1031,12 @@ export class Civilization {
             }
           }
           const home = this._homeFor(v, u);
-          const child = this.spawnHuman(v, u.x + this.rng.float(-0.3, 0.3), u.z + this.rng.float(-0.3, 0.3), { age: 0, home: home ? home.id : -1, culture: u.data.culture });
+          // (round 35) born at home, at the family's door: a newborn appeared
+          // beside its mother in the fields or the mine and spent its first
+          // years "Toddling home" across town
+          const bx = home && home.doorX != null ? home.doorX : u.x,
+            bz = home && home.doorZ != null ? home.doorZ : u.z;
+          const child = this.spawnHuman(v, bx + this.rng.float(-0.3, 0.3), bz + this.rng.float(-0.3, 0.3), { age: 0, home: home ? home.id : -1, culture: u.data.culture });
           if (child) {
             child.job = 'child';
             // remember the family, so grief stays within it
@@ -1600,7 +1605,9 @@ export class Civilization {
 
   _homeFor(v, u) {
     const own = this._bById.get(u.data.civ?.home);
-    if (own && own.alive && own.type === 'house') return own;
+    // (round 35: a house of this town; a mother who had moved kept her old
+    // town's house, and her newborn was sent home across the realm)
+    if (own && own.alive && own.type === 'house' && own.village === v.id) return own;
     const houses = v.buildings.filter((b) => b.alive && b.type === 'house' && !b.constructing);
     if (!houses.length) return v.hall;
     const h = houses[(this.rng.next() * houses.length) | 0];

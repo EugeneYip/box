@@ -1,6 +1,7 @@
 import { simWeather } from '../disasters/util.js';
 import { SEA_LEVEL } from '../../world/constants.js';
 import { UNIT } from '../../core/scale.js';
+import { TODDLER_AGE } from './needs.js';
 
 // Daily life (Life module, docs/DAILY-LIFE.md): the everyday round of village
 // people on top of their work. A daily rhythm (sleep at night, three meals,
@@ -853,7 +854,8 @@ export function installDaily(Units) {
     // town's most common label.)
     const ce = v._cele;
     // (one chance per person per celebration, not a new roll every decision)
-    if (ce && now < ce.until && !guard && u._celeSeen !== ce && (ce.k === 'peace' || (!working && (ce.x - u.x) ** 2 + (ce.z - u.z) ** 2 < 36)) && ((u._celeSeen = ce), rng() < (ce.k === 'peace' ? 0.5 : 0.35))) {
+    // (round 35: a toddler joins only one at its door, not a trek across town)
+    if (ce && now < ce.until && !guard && u._celeSeen !== ce && (ce.k === 'peace' || (!working && (ce.x - u.x) ** 2 + (ce.z - u.z) ** 2 < 36)) && !(child && u.age < TODDLER_AGE && (ce.x - u.x) ** 2 + (ce.z - u.z) ** 2 >= 9) && ((u._celeSeen = ce), rng() < (ce.k === 'peace' ? 0.5 : 0.35))) {
       const lab = ce.k === 'birth' ? 'Celebrating a birth' : ce.k === 'wedding' ? 'Celebrating a wedding' : 'Celebrating the peace';
       this._dlStart(u, 'cheer', 6 + rng() * 6, { x: ce.x + (rng() - 0.5) * 2.4, z: ce.z + (rng() - 0.5) * 2.4, lab, go: 'Joining the celebration', fx: ce.x, fz: ce.z, act: 'cheer' });
       return true;

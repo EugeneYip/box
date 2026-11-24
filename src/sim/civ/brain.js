@@ -2140,7 +2140,9 @@ export const brain = {
   },
 
   _child(u, v, d, dt) {
-    const home = this._bById.get(d.home);
+    // (round 35) a toddler keeps to the house its day's routine calls home
+    // (units/needs.js _homeOf: its family's), not to the town's middle
+    const home = (u.age < 5 && this.game.units._homeOf?.(u, v)) || this._bById.get(d.home);
     const x = home && home.alive ? home.doorX : v.cx,
       z = home && home.alive ? home.doorZ : v.cz;
     if (Math.hypot(u.x - x, u.z - z) > 16) {
