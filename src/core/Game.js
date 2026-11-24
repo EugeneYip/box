@@ -389,6 +389,14 @@ export class Game {
         }
       }
       this.pipeline.warmPrograms?.();
+      // (round 35) and to the buildings still waiting to be drawn (after a
+      // fast-forward the world fills in while the GPU draws, not at 16 ms a
+      // drawn frame)
+      try {
+        this.buildings?.idle?.();
+      } catch (err) {
+        this._systemError(this.buildings, err);
+      }
       return;
     }
     const vdt = Math.min(0.1, dt + (this._heldDt || 0));

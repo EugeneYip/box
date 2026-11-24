@@ -1011,6 +1011,81 @@ export class BuildingRenderer {
     return n;
   }
 
+  // (round 35) The building queues in order of distance from the camera's
+  // target: after a jump in time or a camera move of more than a few tiles
+  // with records still waiting (each record goes near or far by where the
+  // camera was when it was queued).
+  _order(force) {
+    const c = this.game.cameraRig?.cur;
+    if (!c) return;
+    const qN = this._qN,
+      qF = this._qF;
+    const n = qN.a.length - qN.i + qF.a.length - qF.i;
+    if (!n) {
+      this._ordX = c.x;
+      this._ordZ = c.z;
+      return;
+    }
+    const moved = Math.hypot(c.x - (this._ordX ?? 1e9), c.z - (this._ordZ ?? 1e9));
+    if (!force && moved < Math.max(8, c.dist * 0.25)) return;
+    this._ordX = c.x;
+    this._ordZ = c.z;
+    const L = [];
+    for (const q of [qN, qF])
+      for (let i = q.i; i < q.a.length; i++) {
+        const r = q.a[i];
+        if (r.dead) continue;
+        const x = r.b ? r.b.x : r.v.cx,
+          z = r.b ? r.b.z : r.v.cz;
+        r.qd = Math.max(Math.abs(x - c.x), Math.abs(z - c.z));
+        L.push(r);
+      }
+    L.sort((a, b) => a.qd - b.qd);
+    const R = c.dist * 1.6 + 24;
+    let k = 0;
+    while (k < L.length && L[k].qd < R) k++;
+    qN.a = L.slice(0, k);
+    qF.a = L.slice(k);
+    qN.i = qF.i = 0;
+  }
+
+  // (round 35) the town nearest the camera's target (and anything within a
+  // few tiles of the target) is drawn now, whatever the budget: the stand-in
+  // for a world still filling in round it
+  _focusTown() {
+    const c = this.game.cameraRig?.cur;
+    const civ = this.game.civ;
+    if (!c || !civ) return;
+    let best = null,
+      bd = Infinity;
+    for (const v of civ.villages) {
+      if (!v?.alive) continue;
+      const d = Math.hypot(v.cx - c.x, v.cz - c.z) - (v.buildRadius || 0);
+      if (d < bd) (bd = d), (best = v);
+    }
+    const near = Math.max(6, Math.min(16, c.dist * 0.35));
+    const vid = best && bd < Math.max(12, c.dist * 0.6) ? best.id : -1;
+    const q = this._qN;
+    let w = q.i;
+    for (let i = q.i; i < q.a.length; i++) {
+      const r = q.a[i];
+      if (!r.dead && r.t === 0 && (r.b.village === vid || r.qd < near)) {
+        r.queued = false;
+        this._buildRec(r);
+      } else q.a[w++] = r;
+    }
+    q.a.length = w;
+  }
+
+  // (round 35) A held frame (the GPU still busy with the last one, as under
+  // software GL, where frames come seconds apart) lends its idle time to the
+  // backlog, nearest the camera first: the main thread would wait otherwise.
+  idle() {
+    if (!this.pending() || this._full) return;
+    this._order(false);
+    this._work(6);
+  }
+
   // backlog of records still to draw
   pending() {
     return this._qN.a.length - this._qN.i + this._qF.a.length - this._qF.i + this._qD.a.length - this._qD.i;
@@ -2035,8 +2110,15 @@ export class BuildingRenderer {
     const gapR = Math.max(0, now - (this._workR ?? now));
     this._workR = now;
     const budget = Math.min(16, this.budgetMs + 20 * Math.max(0, gapR - 0.05));
-    this._work(this._full ? Infinity : budget - (performance.now() - tw));
+    // (round 35) a jump in time used to draw the whole world in one frame
+    // (half a second after a fast-forward to Year 200, as the camera came to
+    // a town). Now the town before the camera is drawn at once, so the first
+    // look shows it whole, and the rest nearest the camera first within the
+    // frame's budget; the queue follows the camera when it moves on.
+    this._order(this._full);
+    if (this._full) this._focusTown();
     this._full = false;
+    this._work(budget - (performance.now() - tw));
     this._applyLod();
     if (this._far && this._proxyDirty && now - this._proxyT > 1) this._rebuildProxies();
     // the camera's view this frame, widened by two tiles (for the props and
