@@ -212,9 +212,12 @@ const BIG_LEAD = 0.8;
 // LATE_MIN and LATE_MAX years: a scholarly or trading people, a realm of
 // many towns and one with many neighbors to learn from cross a late era
 // sooner, a lone small realm out of touch trails (every realm stood in the
-// same era at each century mark from Year 300 to 600).
+// same era at each century mark from Year 300 to 600). From the Industrial
+// era on the same reckoning spreads the followers' own years, and no realm
+// enters later than LATE_TOTAL years after the era's year.
 const LATE_MIN = 10,
-  LATE_MAX = 50;
+  LATE_MAX = 50,
+  LATE_TOTAL = 100;
 
 // Extra research on big maps (planner _bigMap: none on Medium): their realms
 // stay small and far apart, and on their own reached the Enlightened arts
@@ -695,7 +698,13 @@ export const tech = {
         const lead = k === leader;
         // an overdue era no realm has entered: no follower's delay (no hold)
         const open = release && next === nextE;
-        const target = (ERA_YEAR[next] + (lead || open ? 0 : FOLLOW_YEARS * followShare(k.id, next))) / ts;
+        // (round 35) from the Industrial era on, a slow realm's own year lies
+        // further out and a quick one's nearer (the follower's delay times
+        // its late floor against the usual, 0.7-1.8), and what is left of its
+        // late floor shrinks so it is in within LATE_TOTAL years of the era
+        const lateY = this._lateYears(k, lore);
+        const delay = lead || open ? 0 : FOLLOW_YEARS * followShare(k.id, next) * (next >= 4 ? Math.max(0.7, Math.min(1.8, lateY / LATE_YEARS)) : 1);
+        const target = (ERA_YEAR[next] + delay) / ts;
         const eta = this._eraNeed(k) / ((Math.min(gain, eraGain) / dt) * YEAR);
         k.eraEta = eta;
         const left = target - year;
@@ -713,7 +722,7 @@ export const tech = {
         // a follower past its own year: what is left of the era within
         // LATE_YEARS of that year (sooner at a higher research speed)
         if (!lead && left < 0) {
-          const due = Math.max(3, this._lateYears(k, lore) / ts + left);
+          const due = Math.max(3, Math.max(5, Math.min(lateY, LATE_TOTAL - delay)) / ts + left);
           const min = (this._eraNeed(k) / (due * YEAR)) * dt;
           if (gain < min) gain = min;
         }
