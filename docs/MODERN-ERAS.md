@@ -146,6 +146,21 @@ dearer and refused if it fails (a line already running gets twice the
 slack on a rebuild). A survey's new line, or a move onto a guideway, is a
 trial: it is kept only when every line already running stays laid.
 
+Round 35, line ends. A bore's approach (below the ground with too little
+cover for a bore) is at most 0.6 tiles, so a mouth stands only at the foot
+of a slope steep enough that the ground is about a storey over the track
+within half a tile; on a gentler rise the line rides over on its bank or
+viaduct. The mouth is a stone headwall with a dark arched opening, a ring
+of voussoirs and two wing walls into the slope (no covered way, nothing
+drawn behind it), never over water. No switch stands in or beside a
+tunnel. A line end without a station keeps its buffer stop on dry land.
+Each highway run ends where its deck is close to the lowest ground under
+it and dips into the ground at a short ramp (or runs on into its trunk's
+highway at a switch). Trains take their level from the drawn track (rail
+and guideway alike) and run only on lines longer than themselves. A
+ground edit re-levels and redraws only the stretches it touches, at most
+every 2.5 seconds; each stretch and power line keeps its own geometry.
+
 ## Acceptance
 
 - A 600-year Medium run at default speed reaches the Future era in at least
