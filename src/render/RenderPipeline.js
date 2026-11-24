@@ -673,6 +673,8 @@ export class RenderPipeline {
     g.get('uShadowTint').value.copy(P.shadowTint);
     g.get('uHighTint').value.copy(P.highTint);
     if (P.midTint) g.get('uMidTint').value.copy(P.midTint);
+    if (P.ageMid) g.get('uAgeMid').value.copy(P.ageMid);
+    if (P.ageShd) g.get('uAgeShd').value.copy(P.ageShd);
     g.get('uGrade').value.copy(P.grade);
     g.get('uVignette').value.copy(P.vignette);
     g.get('uVignetteColor').value.copy(P.vignetteColor);

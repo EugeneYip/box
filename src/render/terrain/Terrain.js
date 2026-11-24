@@ -196,6 +196,10 @@ export class Terrain {
     this.uniforms.uEdgeFade.value = geo && geo.region && geo.region !== 'world' && !geo.wrap ? 1 : 0;
     const mt = g.atmosphere?.post?.midTint;
     if (mt) this.uniforms.uGradeMid.value.copy(mt);
+    // (the age's share of the grade is applied apart now: the far urban
+    // patch, a mid grey, takes the whole of it, so it is counted in)
+    const am = g.atmosphere?.post?.ageMid;
+    if (mt && am) this.uniforms.uGradeMid.value.add(am);
     this._updateDetail();
     this._updateLods();
     this._updateSeam();

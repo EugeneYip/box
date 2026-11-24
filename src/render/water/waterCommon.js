@@ -30,6 +30,9 @@ export function landscapeUniforms(game) {
       uKeyCol: { value: new THREE.Color(3.3, 3.2, 3.0) }, // current key light (sun or moon), intensity-scaled
       uKeyDir: { value: new THREE.Vector3(0.5, 0.8, 0.3).normalize() },
       uAmbCol: { value: new THREE.Color(0.4, 0.55, 0.78) },
+      // the tint the World Age lays on the key light (white when none): snow
+      // and ice take most of it back out (round 35)
+      uAgeKey: { value: new THREE.Color(1, 1, 1) },
       uMoonDirW: { value: new THREE.Vector3(-0.4, 0.7, -0.3).normalize() },
       uWorldSize: { value: new THREE.Vector2(game.world.w, game.world.h) },
       // Round world seam (Terrain): x = world width when travel wraps (else
@@ -87,9 +90,13 @@ export function refreshLandscapeUniforms(game, dt) {
   else if (scene?.fog?.color) _c.copy(scene.fog.color);
   else if (scene?.background?.isColor) _c.copy(scene.background);
   else _c.setRGB(0.62, 0.77, 0.91);
+  // (the water's own sky: a third of the age's tint, Atmosphere)
+  if (env.waterHorizon) _c.copy(env.waterHorizon);
   u.uSkyCol.value.copy(_c);
-  if (env.skyColor) u.uZenCol.value.copy(env.skyColor);
+  if (env.waterSky) u.uZenCol.value.copy(env.waterSky);
+  else if (env.skyColor) u.uZenCol.value.copy(env.skyColor);
   else u.uZenCol.value.copy(_c).multiply(_c.clone().setRGB(0.5, 0.68, 1.05));
+  if (env.ageKey) u.uAgeKey.value.copy(env.ageKey);
   if (env.ambientColor) u.uAmbCol.value.copy(env.ambientColor);
   else u.uAmbCol.value.copy(u.uSkyCol.value).multiplyScalar(0.3 + 0.5 * u.uDay.value);
   u.uCamDist.value = game.cameraRig?.cur?.dist ?? 100;
@@ -182,6 +189,7 @@ uniform vec3 uZenCol;
 uniform vec3 uKeyCol;
 uniform vec3 uKeyDir;
 uniform vec3 uAmbCol;
+uniform vec3 uAgeKey;
 uniform vec3 uMoonDirW;
 uniform vec2 uWorldSize;
 uniform vec3 uWrapBand;
@@ -203,6 +211,12 @@ uniform float uDry;
 
 // key light normalised so the noon sun is ~1
 const float KEYN = 0.30;
+// What lights snow and ice takes back two thirds of the World Age's tint on
+// the key light (at its own brightness): a warm age turned them beige.
+vec3 ageUntint() {
+  vec3 k = mix(vec3(1.0), clamp(uAgeKey, vec3(0.2), vec3(1.0)), 0.67);
+  return dot(k, vec3(0.2126, 0.7152, 0.0722)) / k;
+}
 // climate of the water being shaded: 0 temperate/tropical .. 1 polar (set by callers)
 float gCold = 0.0;
 

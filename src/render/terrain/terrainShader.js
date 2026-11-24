@@ -1638,6 +1638,14 @@ void terrainSurface() {
     albedo *= 1.0 - nightG * tPaveK * 0.45 * smoothstep(0.06, 0.30, lum(albedo));
   }
 
+  // (round 35) snow and glacier ice stay white under any World Age: two
+  // thirds of the age's tint on the key light are taken back out of them (a
+  // warm age turned the snowfields beige)
+  {
+    float whiteK = clamp(max(snowB, iceB), 0.0, 1.0);
+    if (whiteK > 0.001) albedo = min(albedo * mix(vec3(1.0), ageUntint(), whiteK), vec3(0.95));
+  }
+
   // ---- territory overlay
   applyOverlay(p, albedo, emit, clamp(snowB, 0.0, 1.0));
 

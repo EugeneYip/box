@@ -81,6 +81,14 @@ export class SkyModel {
     this.shadowTint = new THREE.Vector3();
     this.highTint = new THREE.Vector3();
     this.midTint = new THREE.Vector3();
+    // the age's own share of the grade (applied apart, so the grade can keep
+    // snow, ice and blue water out of it) and the tint it lays on the key
+    // light; the sky colours as they were before the age (for the water)
+    this.ageMid = new THREE.Vector3();
+    this.ageShd = new THREE.Vector3();
+    this.ageKey = new THREE.Color(1, 1, 1);
+    this.zenithN = new THREE.Color();
+    this.horizonN = new THREE.Color();
     this.keyIntensity = 1;
     this.hemiIntensity = 1;
     this.exposure = 1;
@@ -294,6 +302,11 @@ export class SkyModel {
     this.saturation = (1.06 + 0.06 * g) * (1 - 0.3 * nt) * (1 - 0.16 * oc - 0.08 * storm) * (1 - 0.1 * w.fog);
     this.vibrance = 0.16 * (1 - 0.5 * oc);
     this.contrast = 1.06 + 0.04 * g - 0.03 * w.fog + 0.04 * storm;
+    this.zenithN.copy(this.zenith);
+    this.horizonN.copy(this.horizon);
+    this.ageMid.set(0, 0, 0);
+    this.ageShd.set(0, 0, 0);
+    this.ageKey.setRGB(1, 1, 1);
     if (age) this.applyAge(age);
   }
 
@@ -303,13 +316,22 @@ export class SkyModel {
   // age.mapK (0 close .. 1 at the map zoom): from the map zoom the look eases
   // back to about a third, so the noon map reads as neutral, saturated
   // daylight (round 32: a warm age's orange sun, brown haze and warm grade
-  // turned the whole overview sepia); close and mid zoom keep the full look.
+  // turned the whole overview sepia).
+  // (round 35) The parts that act as a colour filter over the whole land (the
+  // tint on the key light and the sky fill, the grade's tint, saturation and
+  // contrast) stay a tint at every zoom: under half strength close in and at
+  // mid zoom, a third at the map zoom. At full strength an Embers age turned
+  // ice beige, cold seas near-black and a noon town sepia. The sky, haze and
+  // the light's strength keep the full look, so each age still reads.
   applyAge(age) {
     const L = age.look;
     this.ageHazeD = 0;
     this.ageVig = 0;
     if (L) {
-      const s = 1 - 0.65 * Math.min(1, Math.max(0, age.mapK || 0));
+      const mk = Math.min(1, Math.max(0, age.mapK || 0));
+      const s = 1 - 0.65 * mk;
+      const f = Math.min(s, 0.45 - 0.1 * mk),
+        fs = Math.min(s, 0.6);
       const dayK = 0.18 + 0.82 * this.daylight;
       // after dusk the age tint gives way to the night palette: a warm or
       // sickly age must not paint the night sky maroon or olive
@@ -324,8 +346,8 @@ export class SkyModel {
         this.groundHaze.lerp(t.copy(L.haze.c).multiplyScalar(dayK), L.haze.k * skyK);
         this.mistColor.lerp(t.copy(L.haze.c).multiplyScalar(dayK), L.haze.k * skyK);
       }
-      if (L.hemi.k > 0.001) this.hemiSky.lerp(L.hemi.c, L.hemi.k * s);
-      const key = (this._ageKey || (this._ageKey = new THREE.Color())).setRGB(1, 1, 1).lerp(L.key, s);
+      if (L.hemi.k > 0.001) this.hemiSky.lerp(L.hemi.c, L.hemi.k * f);
+      const key = this.ageKey.setRGB(1, 1, 1).lerp(L.key, f);
       this.sunLightColor.multiply(key);
       this.keyColor.multiply(key);
       const ease = (v) => 1 + (v - 1) * s;
@@ -338,10 +360,10 @@ export class SkyModel {
       this.keyIntensity *= this.keyIsMoon ? Math.max(keyI, 0.9) : keyI;
       this.hemiIntensity *= hemiI + (Math.max(hemiI, 0.95) - hemiI) * nk;
       this.exposure *= exp + (Math.max(exp, 0.9) - exp) * nk;
-      this.saturation *= ease(L.sat);
-      this.contrast += L.con * s;
-      this.midTint.addScaledVector(L.mid, s);
-      this.shadowTint.addScaledVector(L.shd, s);
+      this.saturation *= 1 + (L.sat - 1) * fs;
+      this.contrast += L.con * fs;
+      this.ageMid.copy(L.mid).multiplyScalar(f);
+      this.ageShd.copy(L.shd).multiplyScalar(f);
       this.ageHazeD = L.hazeD * s;
       this.ageVig = L.vig * s;
       this.ageVigC = L.vigC;

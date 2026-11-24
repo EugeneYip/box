@@ -15,6 +15,8 @@ uniform float uExposure;
 uniform vec3 uShadowTint;
 uniform vec3 uHighTint;
 uniform vec3 uMidTint;
+uniform vec3 uAgeMid;   // the World Age's midtone and shadow tint
+uniform vec3 uAgeShd;
 uniform vec3 uFlash;
 uniform vec4 uGrade;    // saturation, vibrance, contrast, pivot
 uniform vec4 uVignette; // strength, inner radius, outer radius, unused
@@ -60,7 +62,15 @@ void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor)
   // contrast (soft, pivoted)
   p = (p - uGrade.w) * uGrade.z + uGrade.w;
   // split toning
-  p += uShadowTint * (1.0 - smoothstep(0.0, 0.55, l)) + uHighTint * smoothstep(0.35, 1.0, l) + uMidTint * (4.0 * l * (1.0 - l));
+  float shW = 1.0 - smoothstep(0.0, 0.55, l), midW = 4.0 * l * (1.0 - l);
+  // the age's tint lands at a third on near-white (snow, ice, surf) and
+  // blue (sea, rivers, the sky) pixels: a warm age warms the land, it does
+  // not turn ice beige or the cold sea brown-black
+  float sat0 = max(p.r, max(p.g, p.b)) - min(p.r, min(p.g, p.b));
+  float whiteK = smoothstep(0.55, 0.80, l) * (1.0 - smoothstep(0.10, 0.30, sat0));
+  float blueK = smoothstep(0.015, 0.09, p.b - max(p.r, p.g));
+  float ageK = 1.0 - 0.67 * max(whiteK, blueK);
+  p += uShadowTint * shW + uHighTint * smoothstep(0.35, 1.0, l) + uMidTint * midW + (uAgeShd * shW + uAgeMid * midW) * ageK;
   // saturation + vibrance
   l = dot(p, vec3(0.2126, 0.7152, 0.0722));
   float mx = max(p.r, max(p.g, p.b));
@@ -86,6 +96,8 @@ export class GradeEffect extends Effect {
         ['uShadowTint', new THREE.Uniform(new THREE.Vector3())],
         ['uHighTint', new THREE.Uniform(new THREE.Vector3())],
         ['uMidTint', new THREE.Uniform(new THREE.Vector3())],
+        ['uAgeMid', new THREE.Uniform(new THREE.Vector3())],
+        ['uAgeShd', new THREE.Uniform(new THREE.Vector3())],
         ['uFlash', new THREE.Uniform(new THREE.Vector3())],
         ['uGrade', new THREE.Uniform(new THREE.Vector4(1.08, 0.15, 1.05, 0.45))],
         ['uVignette', new THREE.Uniform(new THREE.Vector4(0.32, 0.45, 1.05, 0))],

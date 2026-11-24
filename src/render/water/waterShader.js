@@ -419,7 +419,7 @@ export const WATER_FRAGMENT_MAIN = /* glsl */ `
       iceAlb = mix(iceAlb, mix(vec3(0.62, 0.72, 0.82), vec3(0.82, 0.87, 0.92), smoothstep(0.1, 1.2, Se)), bergF);
     }
     float ndl = max(dot(Ni, L), 0.0);
-    vec3 iceCol = iceAlb * (keyL * ndl * lightVis * 0.42 + uAmbCol * 0.50);
+    vec3 iceCol = iceAlb * (keyL * ageUntint() * ndl * lightVis * 0.42 + uAmbCol * 0.50);
     float Fi = 0.04 + 0.96 * pow(1.0 - max(V.y, 0.0), 5.0);
     iceCol += sky * Fi * 0.35 + keyL * ggxD(max(dot(Ni, Hs), 0.0), 0.16) * 0.05 * lightVis * (1.0 - young);
     col = mix(col, iceCol, ice);

@@ -126,6 +126,9 @@ export class Atmosphere {
       shadowTint: new THREE.Vector3(),
       highTint: new THREE.Vector3(),
       midTint: new THREE.Vector3(),
+      // the age's share of the grade, kept off snow, ice and blue water (GradeEffect)
+      ageMid: new THREE.Vector3(),
+      ageShd: new THREE.Vector3(),
       moonSea: new THREE.Color(),
       edgeFog: new THREE.Vector4(0, 22, 0, 0.5),
       wet: 0,
@@ -437,6 +440,12 @@ export class Atmosphere {
     env.lightColor.copy(M.keyColor).multiplyScalar(M.keyIntensity);
     env.skyColor.copy(M.zenith);
     env.horizonColor.copy(M.horizon);
+    // (round 35) what the water mirrors and scatters: the sky with a third of
+    // the age's tint (a warm age's brown sky turned cold seas near-black), and
+    // the tint the age lays on the key light, which ice and snow take out
+    (env.waterSky || (env.waterSky = new THREE.Color())).copy(M.zenithN).lerp(M.zenith, 0.33);
+    (env.waterHorizon || (env.waterHorizon = new THREE.Color())).copy(M.horizonN).lerp(M.horizon, 0.33);
+    (env.ageKey || (env.ageKey = new THREE.Color())).copy(M.ageKey);
     env.fogColor.copy(M.horizon).lerp(M.groundHaze, 0.3);
     // safe fallback for anything that samples the background colour
     if (game.scene.background?.isColor) game.scene.background.copy(env.fogColor);
@@ -691,6 +700,8 @@ export class Atmosphere {
     P.highTint.copy(M.highTint);
     P.grade.set(M.saturation, M.vibrance, M.contrast, 0.45);
     P.midTint.copy(M.midTint);
+    P.ageMid.copy(M.ageMid);
+    P.ageShd.copy(M.ageShd);
     // night sea floor: moonlight on water, never pure black (dark ages too)
     {
       const nk = M.night;
