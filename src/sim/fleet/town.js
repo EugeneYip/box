@@ -88,10 +88,35 @@ export const town = {
     const pop = t.pop || 0;
     if (roads < 10 || pop < 8) return [];
     const out = [];
-    if ((t.tier || 0) >= 1 || roads >= 24) out.push('bus');
+    // (round 37: and only where its paved streets hold a loop: a bus with
+    // none stood at its first stop until it went off duty)
+    if (((t.tier || 0) >= 1 || roads >= 24) && this._townLoopable(t)) out.push('bus');
     out.push('van');
     if (roads >= 16 && pop >= 12) out.push('garbage');
     return out;
+  },
+  // (round 37) Room on a town's paved streets for a bus loop: a main stretch
+  // of eight street tiles or more, reaching seven tiles or more across
+  _townLoopable(t) {
+    const R = this._townRoads(t);
+    if (R.loopable != null) return R.loopable;
+    const w = this.world;
+    let n = 0,
+      x0 = Infinity,
+      x1 = -Infinity,
+      z0 = Infinity,
+      z1 = -Infinity;
+    for (const i of R.all) {
+      if (R.comp.get(i) !== R.main) continue;
+      n++;
+      const x = i % w.w,
+        z = (i / w.w) | 0;
+      x0 = Math.min(x0, x);
+      x1 = Math.max(x1, x);
+      z0 = Math.min(z0, z);
+      z1 = Math.max(z1, z);
+    }
+    return (R.loopable = n >= 8 && Math.hypot(x1 - x0, z1 - z0) >= 7);
   },
   // Every couple of seconds (Fleet.tick): the towns that keep a town fleet,
   // nearest the camera first, up to the cap; a missing vehicle sets out (two
@@ -208,6 +233,11 @@ export const town = {
       m.at = 'start';
       v.stateT = 0;
     }
+  },
+  // (round 37) Followed or selected (its loop drawn on the map, its card open)
+  _townWatched(v) {
+    const g = this.game;
+    return g.cameraRig?.follow === v || g.selected?.ref === v;
   },
   // Followed, selected or within the drawn radius of the camera
   _townSeen(v) {
@@ -497,12 +527,28 @@ export const town = {
     } else if (m.job === 'loop') {
       // (round 35) and laid out afresh now and then as the town grows (at
       // the end of a round), so new streets and landmarks get their stops
+      // (round 37: only once the town's paving or its streets have grown
+      // noticeably, and never while the bus is selected or followed, its
+      // loop drawn on the map: the loop read "Town Hall > Well > Forge",
+      // then "Town Hall > Watchtower > Forge" a minute later)
       const now = this.game.time.total;
-      const due = m.stops && m.si === m.stops.length - 1 && now - (m.stopsT || 0) > 120;
-      if (!m.stops || due || m.stops.some((s) => this.game.civ.use[s.i] !== USE.ROAD || !this._townInPave(t, s.x, s.z))) {
+      const watched = this._townWatched(v);
+      const R = this._townRoads(t);
+      const grown = m.stopsK && (this._townPaved(t) - m.stopsK.pr >= 1 || Math.abs(R.all.length - m.stopsK.n) >= Math.max(6, m.stopsK.n * 0.25));
+      const due = m.stops && !watched && grown && m.si === m.stops.length - 1 && now - (m.stopsT || 0) > 150;
+      const bad = (s) => this.game.civ.use[s.i] !== USE.ROAD || !this._townInPave(t, s.x, s.z);
+      // (a stop whose street is gone, while watched: the loop drops it and keeps the rest)
+      if (m.stops && watched && m.stops.some(bad) && m.stops.filter((s) => !bad(s)).length >= 2) {
+        const keep = m.stops.filter((s) => !bad(s));
+        const cur = m.stops[m.si];
+        m.stops = keep;
+        m.si = cur && keep.includes(cur) ? keep.indexOf(cur) : -1;
+      }
+      if (!m.stops || due || m.stops.some(bad)) {
         // (on a short stretch the square cut off from the rest: the main streets' loop)
-        m.stops = this._townStops(t, this._townComp(t, v)) || this._townStops(t, this._townRoads(t).main);
+        m.stops = this._townStops(t, this._townComp(t, v)) || this._townStops(t, R.main);
         m.stopsT = now;
+        m.stopsK = { pr: this._townPaved(t), n: R.all.length };
         m.si = -1;
       }
       if (m.stops) {
@@ -541,7 +587,10 @@ export const town = {
     if (!path) {
       // (nowhere to go just now: it waits a moment and looks again)
       m.fail = (m.fail || 0) + 1;
-      if (m.job === 'loop') m.stops = null;
+      // (round 37: a loop is laid afresh only after a few failed tries, and
+      // not while the bus is selected or followed, when it goes on to the
+      // next stop, unless the loop is broken for good)
+      if (m.job === 'loop' && ((m.fail >= 3 && !this._townWatched(v)) || m.fail >= 8)) m.stops = null;
       // (round 35) stuck on a short stretch of street out of view: it is
       // moved onto the town's main streets; in view it keeps trying, and
       // after a while goes off duty where it stands
@@ -629,7 +678,13 @@ export const town = {
     const bld = (j) => use[j] === USE.BUILDING;
     // (the paving the terrain draws, less a tile: the ring and the bus stand clear of its edge)
     const pr = this._townPaved(t) - 0.9;
-    const inComp = R.all.filter((i) => R.comp.get(i) === cid);
+    let inComp = R.all.filter((i) => R.comp.get(i) === cid);
+    // (round 37) a short stretch the square cuts off makes a loop of a few
+    // tiles: the town's main streets instead, where they are much longer
+    if (cid !== R.main) {
+      const nMain = R.all.reduce((a, i) => a + (R.comp.get(i) === R.main ? 1 : 0), 0);
+      if (inComp.length < nMain * 0.5) inComp = R.all.filter((i) => R.comp.get(i) === R.main);
+    }
     // a straight stretch of street (the way on and the way back both street,
     // nothing crossing) with a building on one side
     const straight = (i) => {
@@ -650,7 +705,7 @@ export const town = {
     if (inComp.length < 6) return null;
     // how poor a place for a stop each street tile is: off the paving, a
     // dead end, a crossing or a bend, nothing built beside it
-    const bad = (i) => (inside(i) ? 0 : 5) + (deg(i) < 2 ? 8 : 0) + (straight(i) ? 0 : curbs.has(i) ? 1.2 : 2.4);
+    const bad = (i) => (inside(i) ? 0 : 5) + (deg(i) < 2 ? 4 : 0) + (straight(i) ? 0 : curbs.has(i) ? 1.2 : 2.4);
     // (a young town's few streets: any of them, dead ends too, out to the paving's edge)
     let L = inComp.filter((i) => inside(i) && bad(i) < 8);
     if (L.length < 4) L = inComp.filter((i) => bad(i) < 8);
@@ -680,20 +735,29 @@ export const town = {
     };
     const pick = [first];
     const usedB = new Set([STOP_NAME.hall]);
+    // (round 37) spread across the town: each stop as far as it can be from
+    // the ones already picked (three stood within 5 tiles of each other in a
+    // town 18 tiles across), at least about half the paving's radius apart
+    // where the streets allow, the edge kept off by the paving's margin;
+    // a short stretch of street gets two stops rather than three crowded ones
+    const sep = Math.max(3.2, pr * 0.6);
     while (pick.length < n) {
       let best = -1,
         bs = -Infinity;
-      for (const i of L) {
-        const [x, z] = P(i);
-        let md = Infinity;
-        for (const j of pick) {
-          const [px, pz] = P(j);
-          md = Math.min(md, Math.hypot(x - px, z - pz));
+      for (const gap of pick.length < 2 && sep > 3.2 ? [sep, 3.2] : [sep]) {
+        for (const i of L) {
+          const [x, z] = P(i);
+          let md = Infinity;
+          for (const j of pick) {
+            const [px, pz] = P(j);
+            md = Math.min(md, Math.hypot(x - px, z - pz));
+          }
+          if (md < gap) continue;
+          // spread out, by a landmark of its own, on a good street
+          const sc = Math.min(md, pr * 1.6) + (markOf(i, usedB) ? 2.5 : 0) - bad(i);
+          if (sc > bs) (bs = sc), (best = i);
         }
-        if (md < 3.2) continue;
-        // spread out, by a landmark of its own, on a good street, not out at the edge
-        const sc = Math.min(md, 7) + (markOf(i, usedB) ? 2.5 : 0) - bad(i) - 0.08 * Math.hypot(x - t.cx, z - t.cz);
-        if (sc > bs) (bs = sc), (best = i);
+        if (best >= 0) break;
       }
       if (best < 0) break;
       pick.push(best);
