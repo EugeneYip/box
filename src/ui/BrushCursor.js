@@ -117,12 +117,16 @@ function ringMaterial(occluded) {
 // noon, falling with the key and sky light (storm, dusk, night) to 0.3.
 // (round 33) The hover and selection outlines are unlit, unfogged lines: a
 // white frame round a hall glowed over the dark frame of a storm.
+// (round 35) It also gives back the exposure the night raises (about 1.8 at
+// night): a hall's white frame at 0.3 still read bright white over the dark
+// town at night. It now falls to about a sixth there.
 function markerLight(game) {
   const env = game.env || {};
   const lum = (c) => (c ? c.r * 0.2126 + c.g * 0.7152 + c.b * 0.0722 : null);
   const key = lum(env.lightColor) ?? 3.1;
   const sky = lum(env.ambientColor) ?? 0.7;
-  return Math.max(0.3, Math.min(1, Math.pow((key + sky) / 3.6, 0.75)));
+  const ex = Math.max(1, game.atmosphere?.post?.exposure ?? 1);
+  return Math.max(0.12, Math.min(1, Math.pow((key + sky) / 3.6, 0.75) / ex));
 }
 
 // A closed band laid on the ground along a loop of points.

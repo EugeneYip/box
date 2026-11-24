@@ -1636,6 +1636,11 @@ void terrainSurface() {
     float greenK = smoothstep(0.01, 0.07, albedo.g - max(albedo.r, albedo.b)) * step(0.0, s.p.y);
     albedo = mix(albedo, vec3(lum(albedo)) * vec3(0.42, 0.47, 0.52), greenK * nightG * 0.6);
     albedo *= 1.0 - nightG * tPaveK * 0.45 * smoothstep(0.06, 0.30, lum(albedo));
+    // (round 35) pale dry ground (beaches, dunes, bare sand) dims as well:
+    // under the night exposure the beaches glowed round every coast. Snow
+    // keeps its moonlit white.
+    float paleK = smoothstep(0.16, 0.36, lum(albedo)) * step(-0.05, s.p.y) * (1.0 - clamp(max(snowB, iceB), 0.0, 1.0));
+    albedo *= 1.0 - nightG * 0.45 * paleK;
   }
 
   // (round 35) snow and glacier ice stay white under any World Age: two
