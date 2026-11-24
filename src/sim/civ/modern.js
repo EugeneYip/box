@@ -110,6 +110,11 @@ export const EMB_MAX = 1.5 * STOREY;
 // a highway's deck needs a little more cover for its trucks
 export const TUN_COVER = 0.26;
 export const HW_COVER = 0.32;
+// a highway's run ends where its deck stands at most this over the lowest
+// ground under it, and its last stretch dips this far into the ground at a
+// ramp (round 35)
+const HW_END_RISE = 0.6 * EMB_MAX;
+const HW_RAMP_DIP = 0.06;
 // a cut becomes a tunnel where it reaches this deep (a shallower one is filled)
 const TUN_DEEP = 0.45;
 // the approach to a station's platform or a switch may be this much steeper
@@ -119,9 +124,13 @@ const APPROACH = 1.5;
 // inside a tunnel a line that must may climb this much steeper (out of
 // sight: its trains are too)
 const BORE = 5;
-// the longest covered way at a tunnel's mouth (tiles); the line comes up
-// to the ground beyond it
-const PORTAL_LEN = 1.2;
+// the longest approach to a bore (tiles): the stretch below the ground with
+// too little over it for a bore. Its mouth stands where the line goes under,
+// at the foot of a slope steep enough that the ground stands a storey over
+// the line within about half a tile; on a gentler rise the line is raised
+// to ride over it (round 33: 1.2, drawn as a covered way, a concrete box
+// that stood out of level fields at the foot of a hill)
+const PORTAL_LEN = 0.6;
 // where a level sits between the all-cut (0) and the all-fill (1) profile:
 // nearer the cut, since a tunnel is out of sight and a tall viaduct is not
 const CUT_BIAS = 0.3;
@@ -244,8 +253,8 @@ function gradeLevels1(g, gc, f, lo, land, ds, G, clr, cover, y0, y1, steep) {
   const tun = new Uint8Array(n);
   let anyTun = false;
   // (the last pass only marks the bores of the level it settled on)
-  for (let it = 0; it < 5; it++) {
-    const last = it === 4;
+  for (let it = 0; it < 8; it++) {
+    const last = it === 7;
     let raised = false;
     tun.fill(0);
     anyTun = false;
@@ -274,9 +283,10 @@ function gradeLevels1(g, gc, f, lo, land, ds, G, clr, cover, y0, y1, steep) {
         for (let m = a; m <= b; m++) tun[m] = 1;
         anyTun = true;
         // its approaches, below the ground with too little over them for a
-        // bore, are a short covered way at the mouth (InfraRenderer); past
-        // that the line comes up to the ground (round 33: a covered way ran
-        // for many tiles over a gentle hillside like a grey pipe)
+        // bore, are at most PORTAL_LEN long (the mouth stands at their outer
+        // end, InfraRenderer); past that the line comes up to the ground
+        // (round 33: a covered way ran for many tiles over a gentle hillside
+        // like a grey pipe)
         for (const [from, to, st] of [
           [a - 1, i - 1, -1],
           [b + 1, j, 1],
@@ -361,6 +371,9 @@ function hwLevels(w, seg) {
   const hy = new Float32Array(n).fill(NaN);
   let htun = null;
   const SO = 0.45; // the deck's half width, shoulders and all (InfraRenderer)
+  // (a branch whose road joins its trunk's at the switch)
+  let joins = false;
+  if (seg.junction && seg.up?.hw) for (let d = -6; d <= 6; d++) if (seg.up.hw[seg.at + d]) joins = true;
   const C = [],
     N = [];
   for (let i = 0; i < n; i++) {
@@ -382,13 +395,17 @@ function hwLevels(w, seg) {
         f = new Float32Array(m),
         lo = new Float32Array(m).fill(-Infinity),
         ds = new Float32Array(m),
-        land = new Uint8Array(m);
+        land = new Uint8Array(m),
+        glo = new Float32Array(m);
       for (let k = 0; k < m; k++) {
         const i = a + k;
         const [x, z] = C[i],
           [nx, nz] = N[i];
-        const hc = w.heightAt(x, z);
-        let hm = Math.max(hc, w.heightAt(x + nx * SO, z + nz * SO), w.heightAt(x - nx * SO, z - nz * SO));
+        const hc = w.heightAt(x, z),
+          hl = w.heightAt(x + nx * SO, z + nz * SO),
+          hr = w.heightAt(x - nx * SO, z - nz * SO);
+        glo[k] = Math.min(hc, hl, hr);
+        let hm = Math.max(hc, hl, hr);
         for (const j of [i - 1, i + 1]) {
           if (j < a || j >= b || Math.abs(C[j][0] - x) > 3) continue;
           const mx = (x + C[j][0]) / 2,
@@ -414,10 +431,45 @@ function hwLevels(w, seg) {
         a = b;
         continue;
       }
-      for (let k = 0; k < m; k++) hy[a + k] = r.y[k];
+      // (round 35) each end comes down to the ground: an end standing well
+      // over the ground beside it (on a side slope, its low edge on a fascia
+      // over the drop) is cut back, and the last stretch dips into the
+      // ground at a ramp (round 34: decks ended square in mid-air, or as a
+      // slab lying in a field). A branch's road that joins its trunk's at
+      // the switch runs on into it.
+      const y = Float32Array.from(r.y);
+      const joinA = a === 0 && joins;
+      let k0 = 0,
+        k1 = m - 1;
+      if (!joinA) while (k0 < k1 && y[k0] - glo[k0] > HW_END_RISE) k0++;
+      while (k1 > k0 && y[k1] - glo[k1] > HW_END_RISE) k1--;
+      if (k1 - k0 < 6 || (r.tun && (r.tun[k0] || r.tun[k1]))) {
+        for (let k = 0; k < m; k++) hw[a + k] = 0;
+        a = b;
+        continue;
+      }
+      const ramp = (e, dir) => {
+        const t = gc[e] - HW_RAMP_DIP;
+        let d = 0;
+        for (let k = e; k >= k0 && k <= k1; k += dir) {
+          if (k !== e) d += Math.min(ds[dir > 0 ? k : k + 1], 3);
+          const v = t + d * GRADE.road * 1.5;
+          if (v >= y[k]) break;
+          y[k] = v;
+        }
+      };
+      if (!joinA) ramp(k0, 1);
+      ramp(k1, -1);
+      for (let k = 0; k < m; k++) {
+        if (k < k0 || k > k1) {
+          hw[a + k] = 0;
+          continue;
+        }
+        hy[a + k] = y[k];
+      }
       if (r.tun) {
         if (!htun) htun = new Uint8Array(n);
-        for (let k = 0; k < m; k++) htun[a + k] = r.tun[k];
+        for (let k = k0; k <= k1; k++) htun[a + k] = r.tun[k];
       }
     }
     a = b;
@@ -578,7 +630,10 @@ export const modern = {
   // (x, z): the rail bed (ground level: trains add their wheels) or the
   // guideway's deck (with a flyover's lift); null off the drawn network
   railDeckAt(kind, P, k, x, z) {
-    const M = this._railYMap?.[kind];
+    // (round 35: a steam or diesel train asks as 'train', its track is
+    // 'rail'; the lookup missed, so every train ran on the ground: under its
+    // viaducts, out of the cliffs its tunnels bore through, through piers)
+    const M = this._railYMap?.[kind === 'train' ? 'rail' : kind];
     if (!M || !P || P.length < 4) return null;
     const n = P.length / 2;
     const i = Math.max(0, Math.min(n - 2, k >> 1)),
@@ -592,13 +647,30 @@ export const modern = {
     const t = L2 > 1e-9 ? clamp(((x - P[i * 2]) * dx + (z - P[i * 2 + 1]) * dz) / L2, 0, 1) : 0;
     return ya + (yb - ya) * t;
   },
-  // the ground under the tracks changed (terraforming, a crater): new levels
-  railRelevel() {
-    for (const s of this.railNet || []) {
+  // the ground under the tracks changed (terraforming, a crater, a plot
+  // levelled for a building): new levels for the stretches named (every
+  // stretch when none are) and the branches that leave them, which start at
+  // their trunk's level. Returns the set of stretches relevelled (or null).
+  railRelevel(segs = null) {
+    const net = this.railNet || [];
+    const set = segs ? new Set(segs) : null;
+    if (set)
+      for (let grew = true; grew; ) {
+        grew = false;
+        for (const s of net)
+          if (!set.has(s) && s.up && set.has(s.up)) {
+            set.add(s);
+            grew = true;
+          }
+      }
+    // (a realm's tree lists each trunk before its branches)
+    for (const s of net) {
+      if (set && !set.has(s)) continue;
       trackLevels(this.world, s, s.up);
       if (s.hw) hwLevels(this.world, s);
     }
     this._railYIndex();
+    return set;
   },
   _railYIndex() {
     const M = (this._railYMap = { rail: new Map(), maglev: new Map() });
@@ -1470,6 +1542,10 @@ export const modern = {
       if (k >= 10 || (u !== USE.ROAD && u !== USE.BUILDING && !(b >= 254))) break;
       st += 0.6;
     }
+    // (round 35) never out over the water: a town on a shore met from the
+    // sea side had its buffer stop and platform on a bridge stub in the
+    // strait; back toward the town to dry land
+    while (st > 0.4 && w.heightAt(T.x + ex * st, T.z + ez * st) < SEA_LEVEL + 0.05) st -= 0.4;
     const x = T.x + ex * st,
       z = T.z + ez * st;
     return { pts: [[x, z]], lead: [x + ex * lead * 0.6, z + ez * lead * 0.6] };
@@ -1989,7 +2065,16 @@ export const modern = {
     for (let si = 0; si < tree.length; si++) {
       const p = tree[si].pts;
       const n = p.length / 2;
+      const tun = tree[si].tun;
       for (let j = tree[si].lock0; j <= tree[si].lock1; j++) {
+        // (round 35) never a switch in or by a tunnel: a branch that left its
+        // trunk underground ran on under level fields until it could climb
+        // out, its mouths boxes on the flat
+        if (tun) {
+          let near = false;
+          for (let m = Math.max(0, j - 8); m <= Math.min(n - 1, j + 8) && !near; m++) near = !!tun[m];
+          if (near) continue;
+        }
         const tx = Math.floor(p[j * 2]),
           tz = Math.floor(p[j * 2 + 1]);
         if (Bk && w.inBounds(tx, tz)) {

@@ -16,9 +16,11 @@ import { pylonModel, PYLON_ARMS, substationModel, SUB_ARM_Y } from './modernMode
 //                the right of the track, where the sim laid its road
 //   powerLines() lattice pylons with sagging wires
 // One merged mesh for everything solid, one set of lines for the wires, and
-// at far zoom one set of thin lines instead of both. Rebuilt only when
-// civ.infraVersion changes (or the terrain is reshaped). On a world whose
-// edges join, no segment is drawn across the seam.
+// at far zoom one set of thin lines instead of both. Rebuilt when
+// civ.infraVersion changes, each stretch and power line from its own kept
+// part unless it changed; a ground edit re-levels and redraws only the
+// stretches it touches. On a world whose edges join, no segment is drawn
+// across the seam.
 
 const BS = BUILDING.scale;
 // the track itself (gauge, rails, sleepers, the ballast's width, the buffer
@@ -51,6 +53,9 @@ const WIRE_D = 75; // wires drawn up to here (past it: pylons only, no dark scra
 // 0.12, so the line rode red girders over every dip)
 const VIADUCT = EMB_MAX;
 const PIER_GAP = 1.6; // tiles between a bridge's piers
+// (round 35) ground edits are applied to the tracks they touch at most this
+// often (ms)
+const EDIT_GAP = 2500;
 
 const COL = {
   ballast: 0x6c6a66,
@@ -71,8 +76,10 @@ const COL = {
   edge: 0xd8b840,
   platform: 0xb4aea4,
   buffer: 0xb83a2a,
-  portal: 0xa8a39a,
-  mouth: 0x1e1c1a,
+  portal: 0x8c867c, // (round 35: a weathered stone, not round 33's cream)
+  coping: 0x6c675f,
+  ring: 0xa8a296,
+  mouth: 0x121110,
   pylon: 0x7a8288,
 };
 
@@ -163,15 +170,24 @@ class Emit {
       this.G.push(0);
     }
   }
-  build() {
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(this.P, 3));
-    g.setAttribute('normal', new THREE.Float32BufferAttribute(this.N, 3));
-    g.setAttribute('color', new THREE.Float32BufferAttribute(this.C, 3));
-    g.setAttribute('aGlow', new THREE.Float32BufferAttribute(this.G, 1));
-    g.computeBoundingSphere();
-    return g;
+  // (round 35) the emitted arrays, kept per stretch of track so a rebuild
+  // re-emits only what changed
+  pack() {
+    return { P: Float32Array.from(this.P), N: Float32Array.from(this.N), C: Float32Array.from(this.C), G: Float32Array.from(this.G) };
   }
+}
+
+// concatenate the typed arrays of many parts into one
+function joinArrays(parts, key) {
+  let n = 0;
+  for (const p of parts) n += p[key].length;
+  const out = new Float32Array(n);
+  let o = 0;
+  for (const p of parts) {
+    out.set(p[key], o);
+    o += p[key].length;
+  }
+  return out;
 }
 
 function infraMaterial(uniforms) {
@@ -216,13 +232,59 @@ export class InfraRenderer {
     this.wires = null;
     this.far = null;
     this._ver = -1;
-    this._hver = 0;
     this._pylon = null;
-    game.events.on('world:height', () => this._hver++);
+    this.portals = [];
+    // (round 35) each stretch's and each power line's geometry, kept until
+    // it changes; the ground edits not yet applied ([x0, z0, x1, z1] tiles)
+    this._segGeo = new Map();
+    this._powGeo = new Map();
+    this._edits = [];
+    this._editT = -1e9;
+    game.events.on('world:height', (r) => this._edit(r));
   }
 
   reset() {
     this._ver = -1;
+    this._segGeo.clear();
+    this._powGeo.clear();
+    this._edits.length = 0;
+  }
+
+  // A building levelled its plot, or the gods reshaped the ground: noted
+  // here, applied (to the tracks it touches only) at most every EDIT_GAP
+  // (round 34: every such edit anywhere re-levelled and redrew the whole
+  // network, about 45 ms a drawn frame at Year 600)
+  _edit(r) {
+    const E = this._edits;
+    E.push([r.x0, r.y0, r.x1, r.y1]);
+    if (E.length > 48) {
+      // (many small edits: one rectangle round them all)
+      const u = [Infinity, Infinity, -Infinity, -Infinity];
+      for (const e of E) (u[0] = Math.min(u[0], e[0])), (u[1] = Math.min(u[1], e[1])), (u[2] = Math.max(u[2], e[2])), (u[3] = Math.max(u[3], e[3]));
+      E.length = 0;
+      E.push(u);
+    }
+  }
+  // the box round a stretch's track and highway, or a power line (tiles)
+  _bounds(o, pts, extra, pad) {
+    if (o._bb && o._bbN === pts.length) return o._bb;
+    let x0 = Infinity,
+      z0 = Infinity,
+      x1 = -Infinity,
+      z1 = -Infinity;
+    for (const P of [pts, extra])
+      for (let i = 0; P && i + 1 < P.length; i += 2) {
+        x0 = Math.min(x0, P[i]);
+        x1 = Math.max(x1, P[i]);
+        z0 = Math.min(z0, P[i + 1]);
+        z1 = Math.max(z1, P[i + 1]);
+      }
+    o._bbN = pts.length;
+    return (o._bb = [x0 - pad, z0 - pad, x1 + pad, z1 + pad]);
+  }
+  _touched(bb, edits) {
+    for (const e of edits) if (e[0] <= bb[2] && e[2] + 1 >= bb[0] && e[1] <= bb[3] && e[3] + 1 >= bb[1]) return true;
+    return false;
   }
 
   _h(x, z) {
@@ -256,6 +318,21 @@ export class InfraRenderer {
       return { g: h, wet: h < SEA_LEVEL, y, deck: ys ? ys[i] : Math.max(h, SEA_LEVEL) + MAG_Y };
     });
     if (elevated) seg._deck = [Y[0].deck, Y[Y.length - 1].deck];
+    // (round 35) the mouths first: they mark the points behind them, whose
+    // track is out of sight under the hill and not drawn
+    const hide = tun ? new Uint8Array(n) : null;
+    if (tun)
+      this._portals(
+        E,
+        S,
+        Y.map((o) => (elevated ? o.deck : o.y)),
+        Y.map((o) => o.g),
+        tun,
+        (elevated ? GUIDE_W : BAL_B * 2) * 0.5 + 0.08,
+        TUN_COVER,
+        hide,
+        elevated ? 'maglev' : 'rail',
+      );
     let arc = 0,
       lastPier = -1e9,
       lastPillar = -1e9;
@@ -267,7 +344,7 @@ export class InfraRenderer {
       const a0 = arc;
       arc += L;
       if (Math.abs(bx - ax) > 40 || L < 1e-4) continue; // the seam of a round world
-      if (tun && tun[i] && tun[i + 1]) continue;
+      if (hide && hide[i] && hide[i + 1]) continue;
       const ya = Y[i].y,
         yb = Y[i + 1].y;
       const px = -(bz - az) / L,
@@ -348,16 +425,6 @@ export class InfraRenderer {
         rz = pz * (GAUGE / 2);
       for (const s of [1, -1]) E.bar(ax + rx * s, az + rz * s, bx + rx * s, bz + rz * s, ya + SLEEPER_H + RAIL_H, yb + SLEEPER_H + RAIL_H, RAIL_W, RAIL_H, COL.rail);
     }
-    if (tun)
-      this._portals(
-        E,
-        S,
-        Y.map((o) => (elevated ? o.deck : o.y)),
-        Y.map((o) => o.g),
-        tun,
-        (elevated ? GUIDE_W : BAL_B * 2) * 0.5 + 0.08,
-        TUN_COVER,
-      );
     // a diamond where two tracks cross: a steel crossing plate
     for (const [x, z, a1, a2] of seg.xing || []) {
       const y = Math.max(this._h(x, z), SEA_LEVEL) + 0.02 + SLEEPER_H + 0.002;
@@ -377,46 +444,20 @@ export class InfraRenderer {
       E.post(bx, bz, y, y + 0.05 * BS * 2, 0.07 * BS * 2, COL.buffer);
     }
   }
-  // (round 33) A tunnel's mouths: at each end of a run of points in a
-  // tunnel (tun), the stretch where the line is already below the ground
-  // but not yet deep in it is a covered way (a concrete box on its walls,
-  // its roof cover over the level y), and its outer end a headwall round a
-  // dark mouth. S: the points [x, z, tx, tz], g: the ground at each, half:
-  // the half width inside.
-  _portals(E, S, y, g, tun, half, cover) {
+  // (round 35) A tunnel's mouths. The sim keeps a bore's approach short
+  // (modern.js PORTAL_LEN): the line runs on the surface up to the foot of
+  // a hillside steep enough that the ground stands a storey over it within
+  // half a tile, and goes under it there. At each end of a run of points in
+  // a tunnel (tun), out along the approach while the line is still below the
+  // ground, the mouth stands where it goes under: a headwall facing out,
+  // never over the water. The points behind it are marked in hide (their
+  // track is not drawn). S: the points [x, z, tx, tz], y: the line's level,
+  // g: the ground at each, half: the half width inside, cover: the cover a
+  // bore needs, kind: 'rail', 'maglev' or 'hw'. Round 33 drew the approach
+  // as a covered way, a concrete box over the line up to 1.2 tiles long,
+  // which stood on level fields and out in the water as cream slabs.
+  _portals(E, S, y, g, tun, half, cover, hide, kind) {
     const n = S.length;
-    const T = 0.05; // the walls' and the roof's thickness
-    const box = (i, j) => {
-      const [ax, az] = S[i],
-        [bx, bz] = S[j];
-      if (Math.hypot(bx - ax, bz - az) > 3) return;
-      const L = Math.hypot(bx - ax, bz - az) || 1;
-      const px = -(bz - az) / L,
-        pz = (bx - ax) / L;
-      const ra = y[i] + cover + T,
-        rb = y[j] + cover + T;
-      E.bar(ax, az, bx, bz, ra, rb, half * 2 + T * 2, T, COL.portal);
-      for (const sd of [1, -1]) {
-        const o = half + T / 2;
-        E.bar(ax + px * o * sd, az + pz * o * sd, bx + px * o * sd, bz + pz * o * sd, ra - T, rb - T, T, cover + 0.04, COL.portal);
-      }
-    };
-    const mouth = (i, out) => {
-      // out: +1 when the open side faces along the line's direction
-      const [x, z, tx, tz] = S[i];
-      const px = -tz,
-        pz = tx;
-      const top = Math.max(y[i] + cover + T, g[i]) + 0.06;
-      const ox = tx * out * 0.03,
-        oz = tz * out * 0.03;
-      const W2 = half + T + 0.07;
-      E.bar(x - px * W2 + ox, z - pz * W2 + oz, x + px * W2 + ox, z + pz * W2 + oz, top, top, 0.07, top - (y[i] - 0.06), COL.portal);
-      // the dark opening on its outer face
-      const fx = x + tx * out * 0.075,
-        fz = z + tz * out * 0.075;
-      const hw = half * 0.92;
-      E.quad([fx - px * hw, y[i] - 0.02, fz - pz * hw], [fx + px * hw, y[i] - 0.02, fz + pz * hw], [fx + px * hw, y[i] + cover, fz + pz * hw], [fx - px * hw, y[i] + cover, fz - pz * hw], COL.mouth);
-    };
     for (let i = 0; i < n; ) {
       if (!tun[i]) {
         i++;
@@ -424,17 +465,88 @@ export class InfraRenderer {
       }
       let j = i;
       while (j < n && tun[j]) j++;
-      // the way in before i, and the way out after j - 1
+      for (let m = i; m < j; m++) hide[m] = 1;
       for (const [edge, step] of [
         [i, -1],
         [j - 1, 1],
       ]) {
         let m = edge;
-        while (m + step >= 0 && m + step < n && !tun[m + step] && g[m + step] - y[m + step] > -0.02 && Math.abs(m + step - edge) < 30) m += step;
-        for (let a = edge; a !== m; a += step) box(Math.min(a, a + step), Math.max(a, a + step));
-        mouth(m, step);
+        while (m + step >= 0 && m + step < n && !tun[m + step] && g[m + step] - y[m + step] > 0.01 && Math.abs(m + step - edge) < 6) {
+          m += step;
+          hide[m] = 1;
+        }
+        // (a bore that runs on to the end of the stretch opens on the next)
+        if (m + step < 0 || m + step >= n) continue;
+        if (g[m] < SEA_LEVEL + 0.02 || g[m + step] < SEA_LEVEL + 0.02) continue;
+        this._mouth(E, S[m], y[m], step, half, cover, kind);
       }
       i = j;
+    }
+  }
+  // A tunnel's mouth at point Sm [x, z, tx, tz], the line's level y there,
+  // out: +1 when the open side faces along the line's direction. Round 35:
+  // a stone headwall across the line with a coping along its top, a dark
+  // arched opening framed by a lighter ring of voussoirs, and two wing walls
+  // splayed out from its ends, their tops falling to the ground, holding
+  // back the hillside either side of the approach (round 33 drew a cream
+  // box with a square dark panel).
+  _mouth(E, Sm, y, out, half, cover, kind) {
+    const [x, z, tx0, tz0] = Sm;
+    const ox = tx0 * out,
+      oz = tz0 * out; // out of the bore
+    (this._partPortals || []).push({ x, z, y, tx: ox, tz: oz, kind });
+    const px = -oz,
+      pz = ox; // across the line
+    // the opening: straight sides up to the springing, then a half ellipse
+    const hw = half * 0.86,
+      hs = cover * 0.45,
+      ar = Math.min(hw * 0.8, cover * 0.75);
+    const top = y + Math.max(hs + ar + 0.1, cover + 0.08);
+    const W2 = hw + 0.16; // the headwall's half width
+    const TH = 0.08; // its thickness
+    const base = y - 0.18; // (its footing, in the ground)
+    // the face: on the hillside, a little out from the point
+    const fx = x + ox * 0.02,
+      fz = z + oz * 0.02;
+    E.bar(fx - px * W2, fz - pz * W2, fx + px * W2, fz + pz * W2, top, top, TH, top - base, COL.portal);
+    E.bar(fx - px * (W2 + 0.025), fz - pz * (W2 + 0.025), fx + px * (W2 + 0.025), fz + pz * (W2 + 0.025), top + 0.025, top + 0.025, TH + 0.04, 0.03, COL.coping);
+    // a point on the face, u across and v up from the line's level, d out
+    const F = (u, v, d) => [fx + px * u + ox * (TH / 2 + d), y + v, fz + pz * u + oz * (TH / 2 + d)];
+    const K = 8;
+    const curve = (r, k) => {
+      const t = (Math.PI * k) / K;
+      return [(hw + r) * Math.cos(t), hs + (ar + r) * Math.sin(t)];
+    };
+    // the ring of voussoirs round the arch and down its sides
+    const R = 0.055;
+    for (let k = 0; k < K; k++) {
+      const [u0, v0] = curve(0, k),
+        [u1, v1] = curve(0, k + 1),
+        [U0, V0] = curve(R, k),
+        [U1, V1] = curve(R, k + 1);
+      E.quad(F(u0, v0, 0.004), F(U0, V0, 0.004), F(U1, V1, 0.004), F(u1, v1, 0.004), COL.ring);
+    }
+    for (const sd of [1, -1]) E.quad(F(sd * hw, -0.02, 0.004), F(sd * (hw + R), -0.02, 0.004), F(sd * (hw + R), hs, 0.004), F(sd * hw, hs, 0.004), COL.ring);
+    // the dark opening: the sides, then a fan under the arch
+    E.quad(F(-hw, -0.03, 0.008), F(hw, -0.03, 0.008), F(hw, hs, 0.008), F(-hw, hs, 0.008), COL.mouth);
+    for (let k = 0; k < K; k++) {
+      const [u0, v0] = curve(0, k),
+        [u1, v1] = curve(0, k + 1);
+      E.quad(F(0, hs, 0.008), F(u0, v0, 0.008), F(u1, v1, 0.008), F(u1, v1, 0.008), COL.mouth);
+    }
+    // the wing walls: splayed out from the headwall's ends, falling to the
+    // ground at their far ends (buried below it)
+    const WL = kind === 'hw' ? 0.75 : 0.55,
+      SP = kind === 'hw' ? 0.38 : 0.28;
+    for (const sd of [1, -1]) {
+      const ax = fx + px * sd * (W2 - 0.03),
+        az = fz + pz * sd * (W2 - 0.03);
+      const bx = ax + px * sd * SP + ox * WL,
+        bz = az + pz * sd * SP + oz * WL;
+      const gb = Math.max(this._h(bx, bz), y);
+      const yb = Math.min(top - 0.05, gb + 0.05);
+      E.bar(ax, az, bx, bz, top - 0.01, yb, 0.06, top - 0.01 - base, COL.portal);
+      E.bar(ax, az, bx, bz, top + 0.01, yb + 0.015, 0.085, 0.025, COL.coping);
     }
   }
   // which side a branch turns to (+1 right, -1 left of its first direction)
@@ -582,6 +694,16 @@ export class InfraRenderer {
     // a hair higher there, so the two decks never flicker into each other)
     if (seg.junction)
       for (let i = 0; i < Math.min(n, 10); i++) Yh[i] += 0.006 * (1 - i / 10);
+    // the tunnels' mouths (marking the points behind them, not drawn)
+    const hide = tun ? new Uint8Array(n) : null;
+    if (tun) {
+      // (the deck's own points, its centre line, for the portals)
+      const S = C.map(([x, z], i) => [x, z, Nz[i], -Nx[i]]);
+      // (only the drawn runs: a point off them never opens a mouth)
+      const t2 = new Uint8Array(n);
+      for (let i = 0; i < n; i++) t2[i] = tun[i] && hw[i] ? 1 : 0;
+      this._portals(E, S, Array.from(Yh), Array.from(Gmax), t2, SO + 0.04, HW_COVER, hide, 'hw');
+    }
     // the cross-section at point i, o across (+ left), at height y
     const X = (i, o, y) => [C[i][0] + Nx[i] * o * Mi[i], y, C[i][1] + Nz[i] * o * Mi[i]];
     const wet = (i) => hw[i] === 2 || G[i] < SEA_LEVEL;
@@ -603,7 +725,7 @@ export class InfraRenderer {
     const tall = (i, side) => Yh[i] - (side > 0 ? GL[i] : GR[i]) > EMB_MAX;
     for (let i = 0; i + 1 < n; i++) {
       if (!draw[i] || !draw[i + 1]) continue;
-      if (tun && tun[i] && tun[i + 1]) continue;
+      if (hide && hide[i] && hide[i + 1]) continue;
       const [ax, az] = C[i],
         [bx, bz] = C[i + 1];
       const L = Math.hypot(bx - ax, bz - az);
@@ -655,15 +777,6 @@ export class InfraRenderer {
         E.post(ax, az, G[i] - 0.2, ya - 0.14, PIER_W, COL.pier);
       }
     }
-    if (tun) {
-      // (the deck's own points, its centre line, for the portals)
-      const S = C.map(([x, z], i) => [x, z, Nz[i], -Nx[i]]);
-      const gm = Array.from(Gmax);
-      // (only the drawn runs: a point off them never opens a mouth)
-      const t2 = new Uint8Array(n);
-      for (let i = 0; i < n; i++) t2[i] = tun[i] && hw[i] ? 1 : 0;
-      this._portals(E, S, Array.from(Yh), gm, t2, SO + 0.04, HW_COVER);
-    }
   }
   _subGeo() {
     if (this._sub) return this._sub;
@@ -680,7 +793,66 @@ export class InfraRenderer {
     return this._pylon;
   }
 
+  // One stretch of the network: its track, termini and highway, emitted on
+  // their own (kept until the stretch changes)
+  _segPart(seg) {
+    const E = new Emit();
+    const portals = (this._partPortals = []);
+    const far = [],
+      farC = [];
+    const farCol = (from, hex) => {
+      const c = new THREE.Color(hex);
+      for (let i = from; i < far.length / 3; i++) farC.push(c.r, c.g, c.b);
+    };
+    let len = 0;
+    for (let i = 2; i < seg.pts.length; i += 2) len += Math.min(3, Math.hypot(seg.pts[i] - seg.pts[i - 2], seg.pts[i + 1] - seg.pts[i - 1]));
+    seg.len = len;
+    this._track(E, seg, far);
+    farCol(0, seg.kind === 'maglev' ? 0x3a4148 : 0x2e2a26);
+    if (seg.start) this._terminus(E, seg, true);
+    if (seg.end) this._terminus(E, seg, false);
+    if (seg.hw) {
+      const n1 = far.length / 3;
+      this._highway(E, seg, far);
+      farCol(n1, 0x34373c);
+    }
+    this._partPortals = null;
+    return { ...E.pack(), far: Float32Array.from(far), farC: Float32Array.from(farC), wire: new Float32Array(0), portals };
+  }
+
+  // Rebuild the merged geometry: every stretch and power line whose part is
+  // missing (new, or dropped from the cache because the ground under it or
+  // its levels changed) is emitted again; the rest are reused.
   _rebuild() {
+    const civ = this.game.civ;
+    const parts = [];
+    const live = new Set();
+    for (const seg of civ.railSegs?.() || []) {
+      if (!seg.pts || seg.pts.length < 4) continue;
+      live.add(seg);
+      let p = this._segGeo.get(seg);
+      if (!p) this._segGeo.set(seg, (p = this._segPart(seg)));
+      parts.push(p);
+    }
+    for (const s of this._segGeo.keys()) if (!live.has(s)) this._segGeo.delete(s);
+    // power lines: pylons and sagging wires
+    // (round 29: a pair of wires crossed a town at 55 tiles: a span over a
+    // town's built ground runs underground, so no wire is drawn there; the
+    // towns are read once per rebuild)
+    this._towns = null;
+    const liveP = new Set();
+    for (const l of civ.powerLines?.() || []) {
+      liveP.add(l);
+      let p = this._powGeo.get(l);
+      if (!p) this._powGeo.set(l, (p = this._powerPart(l)));
+      parts.push(p);
+    }
+    for (const l of this._powGeo.keys()) if (!liveP.has(l)) this._powGeo.delete(l);
+    this._swap(parts);
+  }
+
+  // One power line: its pylons (the town end on its substation) and wires
+  _powerPart(l) {
     const civ = this.game.civ;
     const W = this.game.world.w;
     const E = new Emit();
@@ -691,30 +863,11 @@ export class InfraRenderer {
       const c = new THREE.Color(hex);
       for (let i = from; i < far.length / 3; i++) farC.push(c.r, c.g, c.b);
     };
-    for (const seg of civ.railSegs?.() || []) {
-      if (!seg.pts || seg.pts.length < 4) continue;
-      let len = 0;
-      for (let i = 2; i < seg.pts.length; i += 2) len += Math.min(3, Math.hypot(seg.pts[i] - seg.pts[i - 2], seg.pts[i + 1] - seg.pts[i - 1]));
-      seg.len = len;
-      const n0 = far.length / 3;
-      this._track(E, seg, far);
-      farCol(n0, seg.kind === 'maglev' ? 0x3a4148 : 0x2e2a26);
-      if (seg.start) this._terminus(E, seg, true);
-      if (seg.end) this._terminus(E, seg, false);
-      if (seg.hw) {
-        const n1 = far.length / 3;
-        this._highway(E, seg, far);
-        farCol(n1, 0x34373c);
-      }
-    }
-    // power lines: pylons and sagging wires
     const pg = this._pylonGeo();
     const m = new THREE.Matrix4(),
       sm = new THREE.Matrix4().makeScale(BS, BS, BS);
     const arm = new THREE.Vector3();
-    // (round 29: a pair of wires crossed a town at 55 tiles: a span over a
-    // town's built ground runs underground, so no wire is drawn there)
-    const towns = (civ.villages || []).filter((v) => v?.alive && Number.isFinite(v.cx)).map((v) => [v.cx, v.cz, Math.max(v.radius || 6, (v.buildRadius || 0) + 1)]);
+    const towns = (this._towns ||= (civ.villages || []).filter((v) => v?.alive && Number.isFinite(v.cx)).map((v) => [v.cx, v.cz, Math.max(v.radius || 6, (v.buildRadius || 0) + 1)]));
     const overTown = (a, b) => {
       for (const [cx, cz, r] of towns) {
         if (Math.abs(cx - (a[0] + b[0]) / 2) > r + Math.abs(a[0] - b[0]) / 2 + 1 || Math.abs(cz - (a[2] + b[2]) / 2) > r + Math.abs(a[2] - b[2]) / 2 + 1) continue;
@@ -722,7 +875,7 @@ export class InfraRenderer {
       }
       return false;
     };
-    for (const l of civ.powerLines?.() || []) {
+    {
       const P = [l.pts[0], l.pts[1], ...(l.pylons || []), l.pts[2], l.pts[3]];
       const tips = [];
       for (let i = 0; i + 1 < P.length; i += 2) {
@@ -777,7 +930,14 @@ export class InfraRenderer {
         }
       }
     }
-    // swap in the new geometry
+    return { ...E.pack(), far: Float32Array.from(far), farC: Float32Array.from(farC), wire: Float32Array.from(wire) };
+  }
+
+  // swap in the merged geometry of all the parts
+  _swap(parts) {
+    // (every tunnel mouth drawn: the inspector and the probes read these)
+    this.portals = [];
+    for (const p of parts) if (p.portals) for (const q of p.portals) this.portals.push(q);
     const set = (key, geo, make) => {
       let o = this[key];
       if (!geo) {
@@ -794,7 +954,17 @@ export class InfraRenderer {
       o.userData.has = true;
     };
     for (const k of ['mesh', 'wires', 'far']) if (this[k]) this[k].userData.has = false;
-    set('mesh', E.P.length ? E.build() : null, (g) => {
+    const P = joinArrays(parts, 'P');
+    let mesh = null;
+    if (P.length) {
+      mesh = new THREE.BufferGeometry();
+      mesh.setAttribute('position', new THREE.BufferAttribute(P, 3));
+      mesh.setAttribute('normal', new THREE.BufferAttribute(joinArrays(parts, 'N'), 3));
+      mesh.setAttribute('color', new THREE.BufferAttribute(joinArrays(parts, 'C'), 3));
+      mesh.setAttribute('aGlow', new THREE.BufferAttribute(joinArrays(parts, 'G'), 1));
+      mesh.computeBoundingSphere();
+    }
+    set('mesh', mesh, (g) => {
       const o = new THREE.Mesh(g, this.mat);
       o.receiveShadow = true;
       o.castShadow = false;
@@ -802,13 +972,15 @@ export class InfraRenderer {
     });
     const lines = (pts, cols) => {
       const g = new THREE.BufferGeometry();
-      g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
-      if (cols) g.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
+      g.setAttribute('position', new THREE.BufferAttribute(pts, 3));
+      if (cols) g.setAttribute('color', new THREE.BufferAttribute(cols, 3));
       g.computeBoundingSphere();
       return g;
     };
+    const wire = joinArrays(parts, 'wire'),
+      far = joinArrays(parts, 'far');
     set('wires', wire.length ? lines(wire) : null, (g) => new THREE.LineSegments(g, this.wireMat));
-    set('far', far.length ? lines(far, farC) : null, (g) => new THREE.LineSegments(g, this.farMat));
+    set('far', far.length ? lines(far, joinArrays(parts, 'farC')) : null, (g) => new THREE.LineSegments(g, this.farMat));
     this._lod(true);
   }
 
@@ -827,14 +999,31 @@ export class InfraRenderer {
   update() {
     const civ = this.game.civ;
     if (!civ) return;
-    const v = (civ.infraVersion || 0) * 1000 + this._hver;
-    if (v !== this._ver) {
-      this._ver = v;
-      // the ground moved: the sim works out the tracks' levels again
-      if (this._hver !== this._hSeen) {
-        this._hSeen = this._hver;
-        civ.railRelevel?.();
+    const ver = civ.infraVersion || 0;
+    const now = performance.now();
+    const edits = this._edits;
+    // the ground moved under some tracks: their levels are worked out again
+    // and they alone are drawn again (batched: at most every EDIT_GAP, or
+    // with the next change to the network)
+    let dirty = false;
+    if (edits.length && (ver !== this._ver || now - this._editT > EDIT_GAP)) {
+      this._editT = now;
+      const segs = [];
+      for (const s of civ.railSegs?.() || []) if (s.pts && s.pts.length >= 4 && this._touched(this._bounds(s, s.pts, null, 2.5), edits)) segs.push(s);
+      if (segs.length) {
+        const set = civ.railRelevel?.(segs) || segs;
+        for (const s of set) this._segGeo.delete(s);
+        dirty = true;
       }
+      for (const l of this._powGeo.keys())
+        if (this._touched(this._bounds(l, l.pts, l.pylons, 1.5), edits)) {
+          this._powGeo.delete(l);
+          dirty = true;
+        }
+      edits.length = 0;
+    }
+    if (ver !== this._ver || dirty) {
+      this._ver = ver;
       this._rebuild();
     }
     this._lod();

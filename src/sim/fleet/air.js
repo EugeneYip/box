@@ -1,4 +1,4 @@
-import { AIR_KINDS } from './kinds.js';
+import { AIR_KINDS, KINDS } from './kinds.js';
 import { geoDelta } from '../../world/geo.js';
 import { BUILDING, VEHICLE } from '../../core/scale.js';
 import { civPath } from '../civ/pathing.js';
@@ -9,6 +9,20 @@ const AIRLINER_KEEP = 2; // places in the sky kept for airliners (_airFull)
 const YEAR = 30;
 const COUNT = 6; // a rocket's countdown on the pad (seconds) before it lifts off
 const TRAIN_SPELL = 75; // a realm's train keeps to its line this long (seconds: _trainAgain)
+// (round 35) a train runs only on a line longer than itself: on the short
+// spurs between neighbouring towns its cars stood off the end of the track,
+// out over the grass past the buffer stop
+function trainFits(def, P) {
+  if (!def || !P || P.length < 4) return false;
+  const need = Math.max(0, (def.cars || 1) - 1) * def.length + 0.3;
+  let L = 0;
+  for (let k = 2; k < P.length; k += 2) {
+    const d = Math.hypot(P[k] - P[k - 2], P[k + 1] - P[k - 1]);
+    if (d < 40) L += d; // (the seam of a round world)
+    if (L >= need) return true;
+  }
+  return false;
+}
 
 // Modern and future vehicles (docs/MODERN-ERAS.md), mixed into Fleet. STUBS:
 // trains, trucks, cars and the modern warships and guns run as the nearest
@@ -99,6 +113,7 @@ export const air = {
     const civ = this.game.civ;
     const line = typeof o.line === 'object' ? o.line : civ?.railLine?.(o.line);
     if (!line || !line.pts || line.pts.length < 4) return null;
+    if (!trainFits(KINDS[line.kind === 'maglev' ? 'maglev' : 'train'], line.pts)) return null;
     if (!this.landRoom(line.kind === 'maglev' ? 'maglev' : 'train')) return null;
     const a = civ.villages[line.a],
       b = civ.villages[line.b];
@@ -143,6 +158,10 @@ export const air = {
     this.totals.trains = (this.totals.trains || 0) + 1;
     return v;
   },
+  // (for Fleet's other train routines: does the line hold the whole train)
+  _trainFits(def, P) {
+    return trainFits(def, P);
+  },
   // Set a train on its route with its whole length on the rails: the engine
   // a train's length along from the start (its cars behind it to the buffer).
   _trainOnto(v, P) {
@@ -178,7 +197,7 @@ export const air = {
     const line = this.game.civ?.railLine?.(m.rail);
     const LP = line?.pts || null;
     if (LP === v._lineP) return;
-    if (!LP || LP.length < 8) {
+    if (!LP || LP.length < 8 || !trainFits(v.def, LP)) {
       v._lineP = undefined;
       v.path = null;
       v.donePath = null;
@@ -228,7 +247,7 @@ export const air = {
     v.cargo = null;
     m.phase = 'home';
     const line = civ.railLine?.(m.rail);
-    if (!line?.pts) return this.remove(v);
+    if (!line?.pts || !trainFits(v.def, line.pts)) return this.remove(v);
     // the engine runs round to the other end of its train for the way home
     this._trainOnto(v, line.a === m.from ? reversePts(line.pts) : line.pts);
     v.state = 'rest';
@@ -245,7 +264,7 @@ export const air = {
     if (m.t0 == null) m.t0 = now;
     if (now - m.t0 > TRAIN_SPELL) return false;
     const line = civ?.railLine?.(m.rail);
-    if (!line?.pts || line.pts.length < 4) return false;
+    if (!line?.pts || line.pts.length < 4 || !trainFits(v.def, line.pts)) return false;
     const from = civ.villages[m.from],
       to = civ.villages[m.to];
     if (!from?.alive || !to?.alive) return false; // (already counted in the rail quota)
