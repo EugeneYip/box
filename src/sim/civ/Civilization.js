@@ -184,6 +184,7 @@ export class Civilization {
     this.armies.length = 0;
     this.expeditions.length = 0;
     this.relations.clear();
+    this._jobQ = null;
     this.__walkCost = null;
     this.__roadCost = null;
     this._wcDirty = true; // (the walkers' map of pieces: brain.js _walkComp)
@@ -731,6 +732,16 @@ export class Civilization {
     // (job assignment keeps the big-map-only stretch: idle hands wait no longer on a smaller map)
     const jobRate = base * (coarseBig ? 1.5 : 1);
     this._planMul = rate;
+    // (round 35) at most a slice of the towns plan on any one tick: half as
+    // many again as the turns would bring on average, and never fewer than
+    // one. A big modern town's plan (its unlocks and modern works) costs a
+    // few milliseconds, and towns whose turns fell together planned in one
+    // tick (the Year 600 midday ticks of 16-21 ms). A town held back plans
+    // on a following tick and its next turn counts from then, so the turns
+    // spread out over the round instead of meeting again.
+    const planEvery = 3 * rate;
+    const planDue = this._planDue || (this._planDue = []);
+    planDue.length = 0;
     for (const v of this.villages) {
       if (!v.alive) continue;
       if ((v._acc += step) >= rate) {
@@ -742,15 +753,28 @@ export class Civilization {
         v._jobAcc -= 2.5 * jobRate;
         this._assignJobs(v);
       }
-      if ((v._planAcc += step) >= 3 * rate) {
-        v._planAcc -= 3 * rate;
-        this._plan(v);
-      }
+      if ((v._planAcc += step) >= planEvery) planDue.push(v);
       if ((v._loyAcc += step) >= 5) {
         v._loyAcc -= 5;
         this._loyalty(v);
       }
     }
+    if (planDue.length) {
+      // (those held back on an earlier tick first)
+      let planLeft = globalThis.__planCapOff ? Infinity : Math.max(1, Math.ceil(((nv * step) / planEvery) * 1.5));
+      if (planDue.length > planLeft) planDue.sort((a, b) => (b._planHeld ? 1 : 0) - (a._planHeld ? 1 : 0));
+      for (const v of planDue) {
+        if (!v.alive) continue;
+        if (planLeft-- <= 0) {
+          v._planHeld = true;
+          continue;
+        }
+        v._planAcc = v._planHeld ? 0 : v._planAcc - planEvery;
+        v._planHeld = false;
+        this._plan(v);
+      }
+    }
+    if (this._jobQ?.length) this._realmJobs();
     const T = this._timers;
     if ((T.b += step) >= (coarse ? 1 : 0.5)) {
       this._buildingsTick(T.b);
@@ -821,6 +845,26 @@ export class Civilization {
       T.land = 0;
       this._computeLand();
     }
+  }
+
+  // (round 35) A realm's rail survey (a trial route for a new line, and the
+  // network laid again) costs 7-20 ms on a Year 600 Medium map, and every
+  // realm with railways is due one each 20 s (the power grid each 15 s). The
+  // realms came due together on the same tick, every few seconds: Year 600
+  // ticks of 40-80 ms of which the surveys took 20-58. Each now waits in a
+  // queue and one runs a tick, at most a few ticks late, as often as before.
+  _realmJob(type, k) {
+    const q = this._jobQ || (this._jobQ = []);
+    if (globalThis.__realmJobsOff) return type === 'rail' ? this._surveyRail(k) : this._powerGrid(k);
+    for (const j of q) if (j.type === type && j.k === k.id) return;
+    q.push({ type, k: k.id });
+  }
+  _realmJobs() {
+    const j = this._jobQ.shift();
+    const k = this.kingdoms[j.k];
+    if (!k?.alive || !k.villages?.length || !k.techs?.has(j.type === 'rail' ? 'railways' : 'electricity')) return;
+    if (j.type === 'rail') this._surveyRail(k);
+    else this._powerGrid(k);
   }
 
   _updateVillageDerived(v) {

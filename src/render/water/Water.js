@@ -104,7 +104,13 @@ export class Water {
 
     this._shoreDirty = true;
     this._shoreTimer = 0;
-    game.events.on('world:height', () => {
+    // (round 35) the field follows the coastline only: a plot levelled on dry
+    // land leaves it as it was. Every height edit used to redo it over the
+    // whole map (55-100 ms on the Vast World Map, about once a second in live
+    // play as the towns level their plots).
+    this._wetSnap = new Uint8Array(W * H);
+    game.events.on('world:height', (r) => {
+      if (this._shoreDirty || !this._wetChanged(r)) return;
       this._shoreDirty = true;
       this._shoreTimer = Math.max(this._shoreTimer, 0.15);
     });
@@ -160,6 +166,17 @@ export class Water {
     this._syncIce(false, dt);
   }
 
+  // did any tile in the rect turn from land to water or back since the field
+  // was last worked out?
+  _wetChanged(r) {
+    const W = this.w,
+      hgt = this.game.world.height,
+      s = this._wetSnap;
+    for (let y = Math.max(0, r.y0); y <= Math.min(this.h - 1, r.y1); y++)
+      for (let i = y * W + Math.max(0, r.x0), e = y * W + Math.min(W - 1, r.x1); i <= e; i++) if ((hgt[i] < SEA_LEVEL ? 1 : 0) !== s[i]) return true;
+    return false;
+  }
+
   // Euclidean distance (tiles) from water tiles to the nearest land tile, and
   // a dilated copy ("how wide is the water here").
   _computeShore() {
@@ -169,7 +186,12 @@ export class Water {
       H = this.h;
     const INF = 1e9;
     const f = this._dist;
-    for (let i = 0; i < W * H; i++) f[i] = world.height[i] < SEA_LEVEL ? INF : 0;
+    const snap = this._wetSnap;
+    for (let i = 0; i < W * H; i++) {
+      const wet = world.height[i] < SEA_LEVEL;
+      snap[i] = wet ? 1 : 0;
+      f[i] = wet ? INF : 0;
+    }
     edt2d(f, W, H, this._tmp);
     const d = this._dist;
     // dilate (max filter) radius 4, separable

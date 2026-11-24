@@ -158,7 +158,10 @@ export class ShadowCache {
         // maps) is a draw call in every refresh; relief comes from its
         // shading instead (docs/WORLD-SCALE.md: shadows only near the camera)
         off(g.terrain?.group || g.scene.getObjectByName('terrain'));
-      } else if (!ps) this._cullTerrain();
+      } else if (!ps) {
+        this._cullTerrain();
+        this._takeTerrain();
+      }
     } else {
       sh.needsUpdate = false;
       this.phase = sizeOk ? 'cached' : null;
@@ -194,6 +197,95 @@ export class ShadowCache {
     };
     for (const c of T.chunks) test(c.mesh, c.box);
     for (const b of T.blocks || []) test(b.mesh, b.box);
+  }
+
+  // (round 35) The terrain chunks still casting after the cull (25-30 at mid
+  // zoom on Medium, each a draw call in every refresh) are left out of
+  // three's shadow pass and drawn into the map as one merged mesh of their
+  // own geometry (composite), so the shadows are exactly as before. Chunks
+  // drawn through a transform (none today) stay with three's pass.
+  _takeTerrain() {
+    const T = this.game.terrain;
+    const list = (this.mergeList = this.mergeList || []);
+    list.length = 0;
+    if (!T?.chunks || this.noMerge) return;
+    const take = (m) => {
+      if (!m || !m.visible || !m.castShadow || !m.geometry?.index || !m.geometry.attributes.position) return;
+      for (let p = m.parent; p; p = p.parent) if (!p.visible) return;
+      const e = m.matrixWorld.elements;
+      if (e[0] !== 1 || e[5] !== 1 || e[10] !== 1 || e[12] !== 0 || e[13] !== 0 || e[14] !== 0 || e[1] || e[2] || e[4] || e[6] || e[8] || e[9]) return;
+      m.castShadow = false;
+      this.dyn.push(m); // (restored after the capture, with the units)
+      list.push(m);
+    };
+    for (const c of T.chunks) take(c.mesh);
+    for (const b of T.blocks || []) take(b.mesh);
+  }
+
+  // the merged terrain caster: the taken chunks inside the shadow window,
+  // their positions and indices copied into one geometry, drawn with the
+  // same depth material and culling side as three's pass
+  _drawTerrain(renderer, sh, map) {
+    const list = this.mergeList;
+    if (!list || !list.length) return;
+    const cam = sh.camera;
+    _pm.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
+    _fr.setFromProjectionMatrix(_pm);
+    let nv = 0,
+      ni = 0;
+    const use = [];
+    for (const m of list) {
+      const geo = m.geometry;
+      if (!geo.boundingSphere) geo.computeBoundingSphere();
+      if (!_fr.intersectsSphere(geo.boundingSphere)) continue;
+      use.push(m);
+      nv += geo.attributes.position.count;
+      ni += geo.index.count;
+    }
+    list.length = 0;
+    if (!use.length) return;
+    let mg = this.mergeGeo;
+    if (!mg || mg.userData.nv < nv || mg.userData.ni < ni) {
+      mg?.dispose();
+      mg = this.mergeGeo = new THREE.BufferGeometry();
+      const cv = Math.ceil(nv * 1.25),
+        ci = Math.ceil(ni * 1.25);
+      mg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(cv * 3), 3));
+      mg.setIndex(new THREE.BufferAttribute(new Uint32Array(ci), 1));
+      mg.userData = { nv: cv, ni: ci };
+      if (!this.mergeMesh) {
+        this.mergeScene = Object.assign(new THREE.Scene(), { matrixWorldAutoUpdate: false });
+        this.mergeScene.overrideMaterial = this.dynScene.overrideMaterial;
+        this.mergeMesh = new THREE.Mesh(mg, this.dynScene.overrideMaterial);
+        this.mergeMesh.frustumCulled = false;
+        this.mergeMesh.matrixAutoUpdate = false;
+        this.mergeScene.add(this.mergeMesh);
+      } else this.mergeMesh.geometry = mg;
+    }
+    const P = mg.attributes.position.array,
+      I = mg.index.array;
+    let ov = 0,
+      oi = 0;
+    for (const m of use) {
+      const geo = m.geometry;
+      const src = geo.attributes.position.array,
+        cnt = geo.attributes.position.count;
+      P.set(cnt * 3 === src.length ? src : src.subarray(0, cnt * 3), ov * 3);
+      const idx = geo.index.array,
+        n = geo.index.count;
+      for (let k = 0; k < n; k++) I[oi + k] = idx[k] + ov;
+      ov += cnt;
+      oi += n;
+    }
+    mg.attributes.position.needsUpdate = true;
+    mg.attributes.position.updateRanges.length = 0;
+    mg.attributes.position.addUpdateRange(0, ov * 3);
+    mg.index.needsUpdate = true;
+    mg.index.updateRanges.length = 0;
+    mg.index.addUpdateRange(0, oi);
+    mg.setDrawRange(0, oi);
+    renderer.setRenderTarget(map);
+    renderer.render(this.mergeScene, cam);
   }
 
   // the camera's view frustum, widened by `slack` of the shadow window's
@@ -248,6 +340,7 @@ export class ShadowCache {
       if (phase === 'capture') {
         for (const o of this.dyn) o.castShadow = true;
         this.dyn.length = 0;
+        this._drawTerrain(renderer, sh, map);
         if (!this.rt || this.rt.width !== map.width || this.rt.height !== map.height) {
           this.rt?.dispose();
           this.rt = new THREE.WebGLRenderTarget(map.width, map.height, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: false });

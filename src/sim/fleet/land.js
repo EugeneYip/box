@@ -388,6 +388,10 @@ export const land = {
     if (v.def.siege && mt !== 'drive' && mt !== 'park' && mt !== 'rounds' && v.state !== 'parked') this._siegeMove(v, step);
     else if (v.state === 'move' && v.path) {
       v.settleH = null;
+      if (v.mission?.town) {
+        this._townDriveCheck(v, step);
+        if (!v.alive || v.state !== 'move' || !v.path) return;
+      }
       // (round 25) a vehicle updated every second or fourth tick (far from
       // the camera, see Fleet.tick) covers the time in tick-sized strides, so
       // it keeps its pace along a winding road instead of stopping at each

@@ -1266,13 +1266,15 @@ export const modern = {
       const T = k.modT || (k.modT = { rail: now - 10, power: 0, train: 0, car: 0, air: 0, space: 0 });
       this._gearUp(k);
       if (has('fusion') && k.fusionAt == null) k.fusionAt = now;
+      // (round 35) the rail survey and the power grid wait their turn: one
+      // realm's a tick (Civilization._realmJobs)
       if (has('railways') && now - T.rail > 20) {
         T.rail = now;
-        this._surveyRail(k);
+        this._realmJob('rail', k);
       }
       if (has('electricity') && now - T.power > 15) {
         T.power = now;
-        this._powerGrid(k);
+        this._realmJob('power', k);
       }
       if (F?.requestTrain && now - T.train > 8) {
         T.train = now;

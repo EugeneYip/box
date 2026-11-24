@@ -958,7 +958,10 @@ export class Fleet {
     const key = si.ensure();
     const level = freezeLevel(this.game);
     const rebuilt = si.version !== this._iceVer;
-    if (!rebuilt && Math.abs(level - this._iceLevel) < 0.002) return null;
+    // (round 35) a step of 0.004 still leaves the ships two thirds of their
+    // pad clear of the drawn edge, and halves the re-plans as the season turns
+    if (!rebuilt && Math.abs(level - this._iceLevel) < 0.004) return null;
+    const was = this._iceLevel + NAV_PAD;
     this._iceVer = si.version;
     this._iceLevel = level;
     const thr = level + NAV_PAD;
@@ -982,15 +985,29 @@ export class Fleet {
       if (y > b[3]) b[3] = y;
     };
     if (rebuilt || !this._iceCand) {
-      // every tile once; then only those any age could ever freeze
+      // every tile once; then only those any age could ever freeze, in order
+      // of their keys
       const cand = [];
       const top = LEVEL_MAX + NAV_PAD;
       for (let i = 0; i < M.length; i++) {
         look(i);
         if (h[i] < SEA_LEVEL && key[i] < top) cand.push(i);
       }
-      this._iceCand = Int32Array.from(cand);
-    } else for (const i of this._iceCand) look(i);
+      const C = Int32Array.from(cand).sort((a, b) => key[a] - key[b]);
+      const K = new Float32Array(C.length);
+      for (let j = 0; j < C.length; j++) K[j] = key[C[j]];
+      this._iceCand = C;
+      this._iceKeys = K;
+    } else {
+      // (round 35) the level moved from one threshold to another: only the
+      // tiles keyed between the two can have frozen or thawed. Walking every
+      // candidate (80 000 on the Vast World Map) took 15-60 ms a look.
+      const C = this._iceCand,
+        K = this._iceKeys;
+      const lo = lowerBound(K, Math.min(was, thr)),
+        hi = lowerBound(K, Math.max(was, thr));
+      for (let j = lo; j < hi; j++) look(C[j]);
+    }
     return B;
   }
 
@@ -1906,6 +1923,17 @@ export function angDiff(a, b) {
   return d;
 }
 
+// the first index of the sorted array a whose value is not below x
+function lowerBound(a, x) {
+  let lo = 0,
+    hi = a.length;
+  while (lo < hi) {
+    const m = (lo + hi) >> 1;
+    if (a[m] < x) lo = m + 1;
+    else hi = m;
+  }
+  return lo;
+}
 
 Object.assign(Fleet.prototype, missions, land, war, air, modern, traffic, town);
 export { KINDS, SEA_KINDS, pathLength, SEA_LEVEL };

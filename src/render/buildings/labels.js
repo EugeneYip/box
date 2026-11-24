@@ -741,18 +741,26 @@ export class Labels {
       const root = document.getElementById('ui-root') || document.body;
       if (root.classList?.contains('is-photo')) return out;
       const shown = [];
+      // (round 35) each element's opacity down from the root, worked out once
+      // a read: every panel used to walk and restyle all its ancestors, 70-180
+      // ms a read (every 0.4 s) with a Year 600 HUD
+      const opOf = new Map();
+      const opacity = (a) => {
+        if (!a || a === root) return 1;
+        let op = opOf.get(a);
+        if (op === undefined) {
+          const cs = getComputedStyle(a);
+          op = cs.visibility === 'hidden' || cs.display === 'none' ? 0 : +cs.opacity * opacity(a.parentElement);
+          opOf.set(a, op);
+        }
+        return op;
+      };
       for (const el of root.querySelectorAll('.ws-glass, .ws-feed__item, .ws-campad, .ws-coach, .ws-map, .ws-insp.is-open, .hud-panel, [class*="panel"], [class*="toolbar"], [class*="feed"], [class*="minimap"], [class*="chip"], [class*="badge"], [class*="topbar"], [class*="dock"]')) {
         if (el.closest('.ws-ovlabels')) continue;
         const r = el.getBoundingClientRect();
         if (!(r.width > 4 && r.height > 4 && r.width < W * 0.95 && r.height < H * 0.95)) continue;
         if (r.right < 0 || r.left > W || r.bottom < 0 || r.top > H) continue;
-        let op = 1;
-        for (let a = el; a && a !== root && op > 0.05; a = a.parentElement) {
-          const cs = getComputedStyle(a);
-          if (cs.visibility === 'hidden' || cs.display === 'none') op = 0;
-          else op *= +cs.opacity;
-        }
-        if (op > 0.05) shown.push([el, r]);
+        if (opacity(el) > 0.05) shown.push([el, r]);
       }
       // (a glass panel always counts whole: the toolbar's glass is its
       // ws-dock__panel, and its inner rows leave gaps a ribbon slid into)
