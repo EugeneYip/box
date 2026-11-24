@@ -1075,7 +1075,7 @@ export class Modals {
       );
     }
     body.append(el('p', { class: 'ws-note ws-help__tip', html: `${uiIcon('sparkle')}<span>Click anything in the world with no power selected to inspect it. Click a chronicle entry to fly there.</span>` }));
-    return { title: 'Controls', icon: 'keyboard', body, wide: true };
+    return { title: 'Help', icon: 'keyboard', body, wide: true };
   }
 }
 

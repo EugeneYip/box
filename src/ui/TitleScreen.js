@@ -70,7 +70,7 @@ export class TitleScreen {
           el(
             'div',
             { class: 'ws-title__links' },
-            el('button', { class: 'ws-link', type: 'button', onclick: () => ui.modals.open('help'), html: `${uiIcon('keyboard')}<span>Controls</span>` }),
+            el('button', { class: 'ws-link', type: 'button', onclick: () => ui.modals.open('help'), html: `${uiIcon('keyboard')}<span>Help</span>` }),
             el('span', { class: 'ws-title__dot' }),
             el('button', { class: 'ws-link', type: 'button', onclick: () => ui.modals.open('settings'), html: `${uiIcon('settings')}<span>Settings</span>` }),
           ),
