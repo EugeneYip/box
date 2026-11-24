@@ -647,13 +647,30 @@ export const modern = {
     const t = L2 > 1e-9 ? clamp(((x - P[i * 2]) * dx + (z - P[i * 2 + 1]) * dz) / L2, 0, 1) : 0;
     return ya + (yb - ya) * t;
   },
-  // the ground under the tracks changed (terraforming, a crater): new levels
-  railRelevel() {
-    for (const s of this.railNet || []) {
+  // the ground under the tracks changed (terraforming, a crater, a plot
+  // levelled for a building): new levels for the stretches named (every
+  // stretch when none are) and the branches that leave them, which start at
+  // their trunk's level. Returns the set of stretches relevelled (or null).
+  railRelevel(segs = null) {
+    const net = this.railNet || [];
+    const set = segs ? new Set(segs) : null;
+    if (set)
+      for (let grew = true; grew; ) {
+        grew = false;
+        for (const s of net)
+          if (!set.has(s) && s.up && set.has(s.up)) {
+            set.add(s);
+            grew = true;
+          }
+      }
+    // (a realm's tree lists each trunk before its branches)
+    for (const s of net) {
+      if (set && !set.has(s)) continue;
       trackLevels(this.world, s, s.up);
       if (s.hw) hwLevels(this.world, s);
     }
     this._railYIndex();
+    return set;
   },
   _railYIndex() {
     const M = (this._railYMap = { rail: new Map(), maglev: new Map() });
