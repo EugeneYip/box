@@ -168,6 +168,13 @@ class GroundLoop {
   get visible() {
     return this.front.visible;
   }
+  dispose() {
+    for (const m of [this.front, this.back]) {
+      m.removeFromParent();
+      m.material.dispose();
+    }
+    this.geo.dispose();
+  }
   style(color, opacity, time, dash = 0, dashSpeed = 0, duty = 0.6, backOpacity = 0.28) {
     const lk = this.lit ? markerLight(this.game) : 1;
     for (const [m, o] of [
@@ -381,6 +388,40 @@ function dotTexture() {
   return t;
 }
 
+// (round 35) A bus stop's name tag on the map while its bus is selected: a
+// small dark plate with the name, the next stop's in gold.
+function stopTagTexture(text, next) {
+  const c = document.createElement('canvas');
+  const fs = 30;
+  const x = c.getContext('2d');
+  const font = `600 ${fs}px system-ui, -apple-system, "Segoe UI", sans-serif`;
+  x.font = font;
+  const tw = Math.ceil(x.measureText(text).width);
+  c.width = tw + 34 + 24;
+  c.height = fs + 22;
+  x.font = font;
+  const r = c.height / 2;
+  x.beginPath();
+  x.roundRect(1, 1, c.width - 2, c.height - 2, r - 1);
+  x.fillStyle = 'rgba(16,14,10,0.82)';
+  x.fill();
+  x.lineWidth = 2;
+  x.strokeStyle = next ? 'rgba(251,227,166,0.95)' : 'rgba(251,227,166,0.45)';
+  x.stroke();
+  // the bus-stop disc
+  x.beginPath();
+  x.arc(r + 2, r, 8, 0, Math.PI * 2);
+  x.fillStyle = next ? '#f2c35a' : '#fbe3a6';
+  x.fill();
+  x.fillStyle = next ? '#fbe3a6' : '#f4efe4';
+  x.textBaseline = 'middle';
+  x.fillText(text, r + 18, r + 1);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.userData = { w: c.width, h: c.height };
+  return t;
+}
+
 export class BrushCursor {
   constructor(game) {
     this.game = game;
@@ -409,6 +450,11 @@ export class BrushCursor {
     this.dot.visible = false;
     this.dot.frustumCulled = false;
     game.scene.add(this.dot);
+    // (round 35) a selected town bus's loop and its stops on the map
+    this.route = null;
+    this.stopRings = [];
+    this.stopTags = [];
+    this._tagTex = new Map();
     this._tgt = null;
     this._tgtKey = '';
     this._tgtT = 0;
@@ -458,6 +504,83 @@ export class BrushCursor {
     const o = this._tgt?.ref;
     if (o && (o.alive === false || o.state === 'sinking')) this._tgt = null;
     return this._tgt;
+  }
+
+  // (round 35) While a town bus is selected: its loop along the streets as a
+  // dashed gold line running the way the bus goes, a ring at each stop and
+  // each stop's name over it (the next stop's in gold), so the route reads on
+  // the map as well as on the card.
+  busLoop(bus, lineW, lift) {
+    const g = this.game;
+    const pts = bus && bus.alive !== false && !g.ui?.root?.classList.contains('is-photo') ? g.fleet?.townLoopPath?.(bus) : null;
+    const stops = pts ? bus.mission.stops : null;
+    const n = pts ? pts.length / 2 : 0;
+    if (n >= 2) {
+      if (!this.route || this.route.n !== n) {
+        this.route?.dispose();
+        this.route = new GroundLoop(g, n, 989);
+        this.route.lit = true;
+      }
+      const R = this.route;
+      for (let i = 0; i < n; i++) {
+        R.px[i] = pts[i * 2];
+        R.pz[i] = pts[i * 2 + 1];
+      }
+      R.build(Math.max(0.07, lineW * 1.15), lift * 0.9);
+      R.style(this.gold, 0.95, this.t, n / 1.2, 0.25, 0.6, 0.4);
+      R.visible = true;
+    } else if (this.route) this.route.visible = false;
+    const next = stops && bus.mission.goal?.at === 'stop' ? bus.mission.goal.i : null;
+    const cam = g.cameraRig.camera;
+    for (let j = 0; j < Math.max(this.stopRings.length, stops?.length || 0); j++) {
+      const st = stops?.[j];
+      let ring = this.stopRings[j],
+        tag = this.stopTags[j];
+      if (!st) {
+        if (ring) ring.visible = false;
+        if (tag) tag.visible = false;
+        continue;
+      }
+      if (!ring) {
+        ring = this.stopRings[j] = new GroundLoop(g, 40, 990);
+        ring.lit = true;
+        tag = this.stopTags[j] = new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true, depthWrite: false, depthTest: false, fog: false, toneMapped: false }));
+        tag.renderOrder = 998;
+        tag.frustumCulled = false;
+        tag.center.set(0.5, 0);
+        g.scene.add(tag);
+      }
+      const isNext = st.i === next;
+      const y0 = g.world.surfaceAt(st.x, st.z);
+      const ppx = this.pxAt(st.x, y0, st.z);
+      ring.circle(st.x, st.z, Math.max(0.22, 7 * ppx));
+      ring.build(Math.max(0.05, lineW * 0.8), lift, y0, 0.25);
+      ring.style(this.gold, isNext ? 1 : 0.75, this.t, 0, 0, 0.6, 0.5);
+      ring.visible = true;
+      const key = `${st.label || 'Stop'}|${isNext ? 1 : 0}`;
+      let tex = this._tagTex.get(key);
+      if (!tex) {
+        tex = stopTagTexture(st.label || 'Stop', isNext);
+        this._tagTex.set(key, tex);
+        if (this._tagTex.size > 40) {
+          const [k0, t0] = this._tagTex.entries().next().value;
+          if (k0 !== key) {
+            t0.dispose();
+            this._tagTex.delete(k0);
+          }
+        }
+      }
+      if (tag.material.map !== tex) {
+        tag.material.map = tex;
+        tag.material.needsUpdate = true;
+      }
+      // about 17 px tall on screen, standing just over the stop
+      const hpx = 17;
+      tag.scale.set(hpx * ppx * (tex.userData.w / tex.userData.h), hpx * ppx, 1);
+      tag.position.set(st.x, y0 + 10 * ppx, st.z);
+      tag.visible = true;
+      void cam;
+    }
   }
 
   update(dt) {
@@ -613,6 +736,7 @@ export class BrushCursor {
       }
     }
     this.dot.visible = dotOn;
+    this.busLoop(uiOn && (s?.kind === 'vessel' || s?.kind === 'vehicle') ? ref : null, lineW, lift);
     // x-ray figure (only rendered where something occludes the creature)
     const showX = uiOn && s?.kind === 'unit' && ref && ref.alive !== false && ref.x != null;
     const humanoid = ref?.def?.kind === 'humanoid';

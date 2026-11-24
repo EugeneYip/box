@@ -48,6 +48,8 @@ import { KINDS } from './kinds.js';
 //                      retire (why it is off duty: 'small', 'share', 'era',
 //                      'realm', 'lost', 'spare', 'stuck'; null at work)}
 //   townCount(vid?)   town vehicles (of one town)
+//   townLoopPath(v)   a town bus's loop along the streets, [x, z, ...] round
+//                     its stops (closed), or null; kept on the bus
 
 const JOB = { bus: 'loop', van: 'deliver', garbage: 'refuse' };
 // seconds at each kind of stop
@@ -55,7 +57,9 @@ const WAIT = { stop: 3.2, drop: 4.5, pickup: 2.4, depot: 6, dump: 5, start: 0.5 
 // a town bus at town pace (the transit buses' 2.0 outran every car on the street)
 const BUS_DEF = Object.freeze({ ...KINDS.bus, capacity: 0, speed: 1.15 });
 // a bus stop is named for the building it stands by
-const STOP_NAME = { hall: 'Town Hall', market: 'Market', temple: 'Temple', library: 'Library', academy: 'Academy', campus: 'Campus', clinic: 'Clinic', hospital: 'Hospital', station: 'Station', factory: 'Factory', workshop: 'Workshops', park: 'Park', firestation: 'Fire Station', skyscraper: 'Towers', docks: 'Harbor', granary: 'Granary', barracks: 'Barracks', forum: 'Forum', statue: 'Statue', waterworks: 'Waterworks', powerstation: 'Power Station', airfield: 'Airfield', airport: 'Airport', observatory: 'Observatory', healer: 'Clinic', apartment: 'Apartments', rowhouse: 'Terrace' };
+const STOP_NAME = { hall: 'Town Hall', market: 'Market', temple: 'Temple', library: 'Library', academy: 'Academy', campus: 'Campus', clinic: 'Clinic', hospital: 'Hospital', station: 'Station', factory: 'Factory', workshop: 'Workshops', park: 'Park', firestation: 'Fire Station', skyscraper: 'Towers', docks: 'Harbor', granary: 'Granary', barracks: 'Barracks', forum: 'Forum', statue: 'Statue', waterworks: 'Waterworks', powerstation: 'Power Station', airfield: 'Airfield', airport: 'Airport', observatory: 'Observatory', healer: 'Clinic', apartment: 'Apartments', rowhouse: 'Terrace', silo: 'Silos', cannery: 'Cannery', smokehouse: 'Smokehouse', foundry: 'Foundry', bloomery: 'Forge', kiln: 'Kilns', windmill: 'Windmill', watermill: 'Mill', waterwheel: 'Mill', stables: 'Stables', well: 'Well', nursery: 'Nursery', greenhouse: 'Greenhouses', watchtower: 'Watchtower', shipyard: 'Shipyard', lazaretto: 'Lazaretto', radiomast: 'Radio Mast' };
+// (round 35) a street's name, for a stop with no landmark beside it
+const STREETS = ['High Street', 'Mill Lane', 'Elm Street', 'Station Road', 'Park Lane', 'Bridge Street', 'Oak Avenue', 'King Street', 'Queen Street', 'Garden Row', 'Water Street', 'Orchard Lane', 'Chapel Street', 'Main Street', 'Baker Street', 'Cedar Avenue', 'Willow Lane', 'Market Street'];
 // where a parcel goes, in the card's words
 const DROP_NAME = { house: 'a house', rowhouse: 'a row house', apartment: 'an apartment block', market: 'the market', workshop: 'a workshop', factory: 'the factory', granary: 'the granary', clinic: 'the clinic', hospital: 'the hospital', library: 'the library', academy: 'the academy', campus: 'the campus', temple: 'the temple', hall: 'the town hall', skyscraper: 'an office tower', firestation: 'the fire station', cannery: 'the cannery', smokehouse: 'the smokehouse', foundry: 'the foundry', station: 'the station', barracks: 'the barracks', healer: 'the clinic', observatory: 'the observatory', forum: 'the forum', kiln: 'the kiln', bloomery: 'the forge' };
 const HOMES = new Set(['house', 'rowhouse', 'apartment']);
@@ -314,7 +318,9 @@ export const town = {
         dz = ((i / w.w) | 0) + 0.5 - t.cz;
       return dx * dx + dz * dz > rr ? 4 : 1;
     };
-    const p = civPath(w, sx, sz, gx, gz, cost, 1800, 1);
+    // (round 35: 4000 nodes, up from 1800, which a long leg past the dear
+    // paving of the square ran out of, so the way was "not found")
+    const p = civPath(w, sx, sz, gx, gz, cost, 4000, 1);
     if (!p || !p.length || p[p.length - 1] !== gz * w.w + gx) return null;
     const path = [x0, z0];
     for (const i of p) path.push((i % w.w) + 0.5, ((i / w.w) | 0) + 0.5);
@@ -473,8 +479,14 @@ export const town = {
         return;
       }
     } else if (m.job === 'loop') {
-      if (!m.stops || m.stops.some((s) => this.game.civ.use[s.i] !== USE.ROAD)) {
-        m.stops = this._townStops(t, this._townComp(t, v));
+      // (round 35) and laid out afresh now and then as the town grows (at
+      // the end of a round), so new streets and landmarks get their stops
+      const now = this.game.time.total;
+      const due = m.stops && m.si === m.stops.length - 1 && now - (m.stopsT || 0) > 120;
+      if (!m.stops || due || m.stops.some((s) => this.game.civ.use[s.i] !== USE.ROAD)) {
+        // (on a short stretch the square cut off from the rest: the main streets' loop)
+        m.stops = this._townStops(t, this._townComp(t, v)) || this._townStops(t, this._townRoads(t).main);
+        m.stopsT = now;
         m.si = -1;
       }
       if (m.stops) {
@@ -502,7 +514,14 @@ export const town = {
       m.goal = tgt;
       return this._townArrive(v);
     }
-    const path = tgt && this._townLeg(t, v.x, v.z, tgt.x, tgt.z);
+    let path = tgt && this._townLeg(t, v.x, v.z, tgt.x, tgt.z);
+    // (round 35) the square laid down across its street since it set out
+    // (it stands on a stretch cut off from its goal's): after a few tries it
+    // crosses the square, slowly, to get there
+    if (!path && tgt && (m.fail || 0) >= 4) {
+      const R = this._townRoads(t);
+      if (R.comp.get(Math.floor(v.z) * this.world.w + Math.floor(v.x)) !== R.comp.get(tgt.i)) path = this._townLeg(t, v.x, v.z, tgt.x, tgt.z, true);
+    }
     if (!path) {
       // (nowhere to go just now: it waits a moment and looks again)
       m.fail = (m.fail || 0) + 1;
@@ -555,43 +574,94 @@ export const town = {
     }
     return { ...s, at: 'night' };
   },
-  // A bus's loop: three to five curbs spread over the town (the first by the
-  // town hall), in order round its middle, each named for what it stands by
-  // (two, there and back, on a young town's short stretch of street).
+  // A bus's loop: three to five stops spread over the town (the first by the
+  // town hall), in order round its middle, each named for what it stands by.
+  // (round 35) Stops stand on through streets inside the town's paving, by a
+  // building (a farthest-apart pick put "Town Hall Northeast" on a dead-end
+  // stub in a field), are drawn to distinct landmarks (market, temple,
+  // academy, depot...), and take a street's name where none stands near
+  // ("Town Hall > Town Hall North > Town Hall Northeast" read as one place).
   _townStops(t, cid) {
     const R = this._townRoads(t);
-    const cur = R.curb.filter((i) => R.comp.get(i) === cid);
-    const L = cur.length >= 6 ? cur : R.all.filter((i) => R.comp.get(i) === cid);
-    if (L.length < 6) return null;
     const w = this.world;
-    const n = Math.max(3, Math.min(5, Math.round(L.length / 12)));
+    const civ = this.game.civ;
+    const use = civ.use;
+    const kc = civ.keepClear?.length === use.length ? civ.keepClear : null;
     const P = (i) => [(i % w.w) + 0.5, ((i / w.w) | 0) + 0.5];
+    const road = (j) => use[j] === USE.ROAD && !kc?.[j];
+    const bld = (j) => use[j] === USE.BUILDING;
+    // (the paving the terrain draws: planner _pavedRadius)
+    const pr = Math.max(5, (t.buildRadius || t.radius || 6) * 1.15 + 2) - 1;
+    const inComp = R.all.filter((i) => R.comp.get(i) === cid);
+    // a straight stretch of street (the way on and the way back both street,
+    // nothing crossing) with a building on one side
+    const straight = (i) => {
+      const e = road(i + 1),
+        o = road(i - 1),
+        s2 = road(i + w.w),
+        n = road(i - w.w);
+      if (e && o && !s2 && !n) return bld(i + w.w) || bld(i - w.w);
+      if (s2 && n && !e && !o) return bld(i + 1) || bld(i - 1);
+      return false;
+    };
+    const inside = (i) => {
+      const [x, z] = P(i);
+      return (x - t.cx) ** 2 + (z - t.cz) ** 2 <= pr * pr;
+    };
+    const curbs = new Set(R.curb);
+    const deg = (i) => (road(i + 1) ? 1 : 0) + (road(i - 1) ? 1 : 0) + (road(i + w.w) ? 1 : 0) + (road(i - w.w) ? 1 : 0);
+    if (inComp.length < 6) return null;
+    // how poor a place for a stop each street tile is: off the paving, a
+    // dead end, a crossing or a bend, nothing built beside it
+    const bad = (i) => (inside(i) ? 0 : 5) + (deg(i) < 2 ? 8 : 0) + (straight(i) ? 0 : curbs.has(i) ? 1.2 : 2.4);
+    // (a young town's few streets: any of them, dead ends too)
+    let L = inComp.filter((i) => bad(i) < 8);
+    if (L.length < 4) L = inComp;
+    const good = L.filter((i) => bad(i) < 2).length;
+    const n = Math.max(3, Math.min(5, Math.round(good / 8)));
     const hx = t.hall?.doorX ?? t.cx,
       hz = t.hall?.doorZ ?? t.cz;
     let first = L[0],
       bd = Infinity;
     for (const i of L) {
       const [x, z] = P(i);
-      const d = (x - hx) ** 2 + (z - hz) ** 2;
+      const d = Math.hypot(x - hx, z - hz) + bad(i) * 0.6;
       if (d < bd) (bd = d), (first = i);
     }
+    const marks = this._stopMarks(t);
+    const markOf = (i, avoid) => {
+      const [x, z] = P(i);
+      let best = null,
+        bd2 = 2.6;
+      for (const mk of marks) {
+        if (avoid && avoid.has(mk.name)) continue;
+        const d = mk.d(x, z);
+        if (d < bd2) (bd2 = d), (best = mk);
+      }
+      return best;
+    };
     const pick = [first];
+    const usedB = new Set([STOP_NAME.hall]);
     while (pick.length < n) {
       let best = -1,
-        bs = -1;
+        bs = -Infinity;
       for (const i of L) {
         const [x, z] = P(i);
         let md = Infinity;
         for (const j of pick) {
           const [px, pz] = P(j);
-          md = Math.min(md, (x - px) ** 2 + (z - pz) ** 2);
+          md = Math.min(md, Math.hypot(x - px, z - pz));
         }
-        if (md > bs) (bs = md), (best = i);
+        if (md < 3.2) continue;
+        // spread out, by a landmark of its own, on a good street, not out at the edge
+        const sc = Math.min(md, 7) + (markOf(i, usedB) ? 2.5 : 0) - bad(i) - 0.08 * Math.hypot(x - t.cx, z - t.cz);
+        if (sc > bs) (bs = sc), (best = i);
       }
-      if (best < 0 || bs < 4) break;
+      if (best < 0) break;
       pick.push(best);
+      const mk = markOf(best, usedB);
+      if (mk) usedB.add(mk.name);
     }
-    // (a young town's short stretch of street: two stops, there and back)
     if (pick.length < 2) return null;
     const ang = (i) => {
       const [x, z] = P(i);
@@ -599,30 +669,70 @@ export const town = {
     };
     const a0 = ang(first);
     pick.sort((a, b) => ((ang(a) - a0 + Math.PI * 4) % (Math.PI * 2)) - ((ang(b) - a0 + Math.PI * 4) % (Math.PI * 2)));
+    // names: each its own landmark, else the street it stands on
+    // (the first, by the hall door, is the Town Hall stop; no other takes that name)
     const used = new Set();
     return pick.map((i) => {
-      const [x, z] = P(i);
-      let label = this._stopName(t, x, z);
-      if (used.has(label)) label = `${label} ${COMPASS[Math.round(((Math.atan2(z - t.cz, x - t.cx) + Math.PI * 2) % (Math.PI * 2)) / (Math.PI / 4)) % 8]}`;
+      let mk = i === first ? marks.find((o) => o.name === STOP_NAME.hall && o.d(...P(i)) < 3.5) || null : null;
+      if (!mk) mk = markOf(i, new Set([...used, STOP_NAME.hall]));
+      const label = mk ? mk.name : this._streetName(t, i, used);
       used.add(label);
       return this._townStop(i, 'stop', label);
     });
   },
-  // A stop's name: the notable building beside it, else its side of town
-  _stopName(t, x, z) {
-    let best = null,
-      bd = 3.6;
-    for (const b of t.buildings || []) {
-      if (!b.alive || b.constructing || !STOP_NAME[b.type]) continue;
-      const cx = Math.max(b.tx, Math.min(b.tx + (b.w || 1), x)),
-        cz = Math.max(b.ty, Math.min(b.ty + (b.h || 1), z));
-      const d = Math.hypot(cx - x, cz - z) + (HOMES.has(b.type) ? 1.2 : 0);
-      if (d < bd) (bd = d), (best = b);
+  // The landmarks a bus stop may be named for: the town's notable buildings,
+  // each with its distance from a point to its footprint
+  _stopMarks(t) {
+    const out = [];
+    const add = (b, name) => {
+      const x0 = b.tx,
+        z0 = b.ty,
+        x1 = b.tx + (b.w || 1),
+        z1 = b.ty + (b.h || 1);
+      const extra = HOMES.has(b.type) ? 0.8 : 0;
+      out.push({ name, d: (x, z) => Math.hypot(x - Math.max(x0, Math.min(x1, x)), z - Math.max(z0, Math.min(z1, z))) + extra });
+    };
+    for (const b of t.buildings || []) if (b.alive && !b.constructing && STOP_NAME[b.type] && b.tx != null) add(b, STOP_NAME[b.type]);
+    const h = t.hall;
+    if (h && h.alive !== false && h.tx != null && !(t.buildings || []).includes(h)) add(h, STOP_NAME.hall);
+    return out;
+  },
+  // A street's name for a stop with no landmark beside it: the same name all
+  // along one street of a town (by the street's line), never one the loop
+  // has already used
+  _streetName(t, i, used) {
+    const w = this.world;
+    const use = this.game.civ.use;
+    const x = i % w.w,
+      z = (i / w.w) | 0;
+    const ew = use[i + 1] === USE.ROAD || use[i - 1] === USE.ROAD;
+    const h = (((t.id + 1) * 2654435761) ^ (ew ? z * 40503 : x * 69069 + 17)) >>> 0;
+    for (let k = 0; k < STREETS.length; k++) {
+      const name = STREETS[(h + k) % STREETS.length];
+      if (!used.has(name)) return name;
     }
-    if (best) return STOP_NAME[best.type];
-    const a = Math.atan2(z - t.cz, x - t.cx);
-    if (Math.hypot(x - t.cx, z - t.cz) < 3) return 'Main Street';
-    return `${COMPASS[Math.round(((a + Math.PI * 2) % (Math.PI * 2)) / (Math.PI / 4)) % 8]} End`;
+    return `${COMPASS[Math.round(((Math.atan2(z + 0.5 - t.cz, x + 0.5 - t.cx) + Math.PI * 2) % (Math.PI * 2)) / (Math.PI / 4)) % 8]} End`;
+  },
+  // (round 35) A town bus's loop along the streets round its stops, for the
+  // map while the bus is selected: [x, z, ...] (closed), kept on the bus
+  // until its stops change
+  townLoopPath(v) {
+    const m = v?.mission;
+    if (!v?.alive || !m?.town || m.job !== 'loop' || !m.stops || m.stops.length < 2) return null;
+    const key = m.stops.map((s) => s.i).join(',');
+    if (m._loop?.key === key) return m._loop.pts;
+    const t = this.game.civ?.villages?.[m.vid];
+    if (!t) return null;
+    const pts = [];
+    for (let j = 0; j < m.stops.length; j++) {
+      const a = m.stops[j],
+        b = m.stops[(j + 1) % m.stops.length];
+      const leg = this._townLeg(t, a.x, a.z, b.x, b.z);
+      if (!leg) pts.push(a.x, a.z);
+      else for (let k = 0; k < leg.length - 2; k += 2) pts.push(leg[k], leg[k + 1]);
+    }
+    m._loop = { key, pts };
+    return pts;
   },
   // The street tile nearest a building's door, beside its footprint (within
   // a tile and a half of it), on the stretch of streets cid
@@ -762,7 +872,8 @@ export const town = {
     if (m.retire) stats.push(['Why', this._townWhyText(v)]);
     if (m.job === 'loop') {
       stats.push(['Riders', `${m.riders | 0} aboard`]);
-      if (m.stops?.length) stats.push(['Route', `Loop of ${m.stops.length} stops`]);
+      // (round 35) the loop by its stops' names, not a bare count
+      if (m.stops?.length) stats.push(['Route', m.stops.map((st) => st.label || 'Stop').join(' › ')]);
     } else if (m.job === 'deliver') stats.push(['Parcels', `${m.parcels | 0} left`]);
     else stats.push(['Load', `${Math.round((m.load || 0) * 100)}%`]);
   },
