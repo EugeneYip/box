@@ -1065,13 +1065,25 @@ export class BuildingRenderer {
     }
     const near = Math.max(6, Math.min(16, c.dist * 0.35));
     const vid = best && bd < Math.max(12, c.dist * 0.6) ? best.id : -1;
+    // (and, nearest first, what else stands about as far out as the view
+    // reaches round the target, for up to 25 ms more: a neighbouring town at
+    // the edge of the screen)
+    const view = Math.max(near, Math.min(30, c.dist * 1.1));
+    let extra = 0;
     const q = this._qN;
     let w = q.i;
     for (let i = q.i; i < q.a.length; i++) {
       const r = q.a[i];
-      if (!r.dead && r.t === 0 && (r.b.village === vid || r.qd < near)) {
+      if (r.dead || r.t !== 0) {
+        q.a[w++] = r;
+        continue;
+      }
+      const must = r.b.village === vid || r.qd < near;
+      if (must || (r.qd < view && extra < 25)) {
+        const t = must ? 0 : performance.now();
         r.queued = false;
         this._buildRec(r);
+        if (!must) extra += performance.now() - t;
       } else q.a[w++] = r;
     }
     q.a.length = w;
