@@ -253,3 +253,24 @@
   border-right-width: 1px;
   clip-path: polygon(0 0, 100% 0, 100% 100%);
 }
+
+/* ---- (round 35) phones: the age dial's letters are 10 px (about 7.6 px
+   before) in the same 19 px badge at the same spot; its progress ring runs
+   thinner at the badge's edge, in place of the edge line, to make room */
+@media (max-width: 720px), (max-height: 500px) {
+  .ws-agedot {
+    box-shadow: 0 0 8px color-mix(in srgb, var(--age) 40%, transparent);
+  }
+  .ws-agedot__bg,
+  .ws-agedot__fg {
+    stroke-width: 1.7;
+  }
+  .ws-agedot__bg {
+    stroke: color-mix(in srgb, var(--age) 38%, transparent);
+  }
+  .ws-agedot b {
+    font: 750 10px/1 var(--ws-font);
+    letter-spacing: -0.04em;
+    transform: scaleX(0.92);
+  }
+}
