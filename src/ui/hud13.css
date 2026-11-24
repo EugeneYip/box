@@ -180,3 +180,17 @@
 .ws-chron__frow[hidden] {
   display: none;
 }
+
+/* ---- (round 35) onboarding: the coach card appears at once, with no fade
+   from nothing; only its contents fade in. On a slow frame rate the first
+   card's 0.3 s fade was unfinished when Next was pressed, and steps 2 and 3
+   read opacity 0 for 0.7 s. Hiding the card still fades it out. */
+.ws-coach.is-shown {
+  transition-property: top, box-shadow;
+}
+.ws-coach.is-shown.is-placing {
+  transition-property: none;
+}
+.ws-coach.is-shown > * {
+  animation: ws-coach-swap 0.28s ease-out both;
+}
