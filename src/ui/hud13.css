@@ -161,3 +161,22 @@
   vertical-align: 1px;
   opacity: 0.78;
 }
+
+/* ---- (round 35) Chronicle: the chips sit on up to two rows, the fullest
+   filters first (one row showed 3 of 7 and hid Technology); the whole block
+   still scrolls sideways if even two rows are too wide */
+.ws-chron__filters {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+.ws-chron__frow {
+  display: flex;
+  flex: none;
+  gap: 4px;
+  width: max-content;
+}
+.ws-chron__frow[hidden] {
+  display: none;
+}

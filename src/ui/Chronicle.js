@@ -134,6 +134,10 @@ export class ChroniclePanel {
     this.countEl = el('span', { class: 'ws-side__count', text: '0' });
     this.pills = new Map();
     const pills = el('div', { class: 'ws-chron__filters', role: 'tablist' });
+    // (round 35) the chips sit on up to two rows, the fullest filters first
+    // (one sideways row showed 3 of 7 and hid Technology, 18 entries)
+    this.frows = [el('div', { class: 'ws-chron__frow' }), el('div', { class: 'ws-chron__frow' })];
+    pills.append(...this.frows);
     for (const f of FILTERS) {
       const b = el(
         'button',
@@ -148,7 +152,7 @@ export class ChroniclePanel {
         el('b', { text: '0' }),
       );
       this.pills.set(f.id, b);
-      pills.append(b);
+      this.frows[0].append(b);
     }
     // (round 33) the filters are one sideways row that never shrinks (as a
     // flex item with overflow hidden it was squeezed to 6 px by a full book),
@@ -261,7 +265,60 @@ export class ChroniclePanel {
       b.querySelector('b').textContent = counts[id] || 0;
       b.hidden = id !== 'all' && id !== this.filter && !counts[id];
     }
+    this.counts = counts;
+    this.layoutPills();
     this.syncFilterEdges();
+  }
+
+  // (round 35) All first, then the filters with the most entries, on one row
+  // when they fit and else on two rows split where the longer row is
+  // shortest; on a short screen (phone landscape) one sideways row
+  layoutPills() {
+    if (!this.open || !this.frows) return;
+    const counts = this.counts || {};
+    const order = FILTERS.map((f, i) => [f.id, i])
+      .filter(([id]) => !this.pills.get(id).hidden)
+      .sort((a, b) => (a[0] === 'all' ? -1 : b[0] === 'all' ? 1 : (counts[b[0]] || 0) - (counts[a[0]] || 0) || a[1] - b[1]))
+      .map(([id]) => id);
+    const box = this.pillRow.clientWidth;
+    const twoRows = innerHeight > 500;
+    const key = `${order.join(',')}|${order.map((id) => String(counts[id] || 0).length).join('')}|${box}|${twoRows}`;
+    if (key === this._pillKey) return;
+    this._pillKey = key;
+    const chips = order.map((id) => this.pills.get(id));
+    // measured on one row, in this order
+    this.frows[0].append(...chips);
+    const gap = 4;
+    const w = chips.map((b) => b.offsetWidth);
+    const n = chips.length;
+    const total = w.reduce((s, x) => s + x, 0) + gap * Math.max(0, n - 1);
+    // the second row's chips, as a bit mask (All always on the first row);
+    // each row keeps the count order, and of the splits whose longer row is
+    // shortest the one keeping the fuller filters on the first row wins
+    let mask = 0;
+    if (twoRows && total > box && n > 1) {
+      let best = Infinity;
+      // (bit 0 is All: odd masks would move it, so they are skipped)
+      for (let m = 2; m < 1 << n; m += 2) {
+        let a = 0,
+          b = 0,
+          na = 0,
+          nb = 0,
+          rank = 0;
+        for (let i = 0; i < n; i++)
+          if (m & (1 << i)) (b += w[i]), nb++, (rank += n - i);
+          else (a += w[i]), na++;
+        const longer = Math.max(a + gap * Math.max(0, na - 1), b + gap * Math.max(0, nb - 1));
+        // past the box a row scrolls: a fit comes first, then the fuller
+        // filters up top, then the shorter longer row
+        const cost = (longer > box ? 1e6 + longer * 100 : 0) + rank * 10 + longer * 0.01;
+        if (cost < best) (best = cost), (mask = m);
+      }
+    }
+    const second = chips.filter((_, i) => mask & (1 << i));
+    this.frows[0].append(...chips.filter((_, i) => !(mask & (1 << i))));
+    this.frows[1].append(...second);
+    this.frows[1].hidden = !second.length;
   }
 
   // which ends of the filter row hide more chips (arrow and fade on that side)
