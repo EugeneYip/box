@@ -169,7 +169,25 @@ function render() {
   };
   row.before(more);
   const opts = [...row.querySelectorAll('.ws-vehpick__opt')];
+  const grps = [...row.querySelectorAll('.ws-vehpick__grp')];
+  // (round 35) an era's pinned heading steps aside while only a sliver of its
+  // group is left in view (scrolled to the Steamship, the Sea tab opened with
+  // "IRON" pinned at its left edge over an empty strip)
+  const headings = () => {
+    const rr = row.getBoundingClientRect();
+    const vertical = row.scrollHeight > row.clientHeight + 2 && row.scrollWidth <= row.clientWidth + 2;
+    for (const g of grps) {
+      const lb = g.querySelector('.ws-vehpick__glbl');
+      if (!lb) continue;
+      const gr = g.getBoundingClientRect();
+      const lr = lb.getBoundingClientRect();
+      const left = vertical ? gr.bottom - rr.top : gr.right - rr.left;
+      const need = vertical ? lr.height + 30 : lr.width + 30;
+      lb.classList.toggle('is-cut', left > 0 && left < need && (vertical ? gr.top < rr.top : gr.left < rr.left));
+    }
+  };
   const edges = () => {
+    headings();
     row.classList.toggle('at-start', row.scrollLeft <= 2 && row.scrollTop <= 2);
     row.classList.toggle('at-end', row.scrollLeft + row.clientWidth >= row.scrollWidth - 2 && row.scrollTop + row.clientHeight >= row.scrollHeight - 2);
     const vertical = row.scrollHeight > row.clientHeight + 2 && row.scrollWidth <= row.clientWidth + 2;
@@ -201,6 +219,31 @@ function render() {
     const or = on.getBoundingClientRect();
     row.scrollLeft = Math.max(0, row.scrollLeft + or.left - rr.left - row.clientWidth / 2 + or.width / 2);
     if (row.scrollHeight > row.clientHeight + 2) row.scrollTop = Math.max(0, row.scrollTop + or.top - rr.top - row.clientHeight / 2 + or.height / 2);
+    // (round 35) then the strip starts on an era's first column (or row),
+    // so no heading sits over a group cut in two, as long as the chosen
+    // kind stays in view
+    const vertical = row.scrollHeight > row.clientHeight + 2 && row.scrollWidth <= row.clientWidth + 2;
+    const r2 = row.getBoundingClientRect();
+    const edge = vertical ? r2.top : r2.left;
+    const g = grps.find((q) => {
+      const b = q.getBoundingClientRect();
+      return vertical ? b.top < edge - 1 && b.bottom > edge + 1 : b.left < edge - 1 && b.right > edge + 1;
+    });
+    if (g) {
+      const b = g.getBoundingClientRect();
+      const o = on.getBoundingClientRect();
+      const lo = vertical ? b.top : b.left,
+        hi = vertical ? b.bottom : b.right;
+      // to the start of this era when more than half of it is in view, else to the next
+      const delta = hi - edge > (hi - lo) / 2 ? lo - edge : hi - edge;
+      const size = vertical ? row.clientHeight : row.clientWidth;
+      const oLo = (vertical ? o.top : o.left) - delta,
+        oHi = (vertical ? o.bottom : o.right) - delta;
+      if (oLo >= edge - 1 && oHi <= edge + size + 1) {
+        if (vertical) row.scrollTop = Math.max(0, row.scrollTop + delta);
+        else row.scrollLeft = Math.max(0, row.scrollLeft + delta);
+      }
+    }
   }
   edges();
 }

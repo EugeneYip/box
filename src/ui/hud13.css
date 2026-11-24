@@ -274,3 +274,12 @@
     transform: scaleX(0.92);
   }
 }
+
+/* ---- (round 35) vehicle chooser: an era's pinned heading steps aside while
+   only a sliver of its group is left in view */
+.ws-vehpick__glbl {
+  transition: opacity 0.15s;
+}
+.ws-vehpick__glbl.is-cut {
+  opacity: 0;
+}
