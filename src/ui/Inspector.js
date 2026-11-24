@@ -246,12 +246,30 @@ export class Inspector {
       const o = list[i];
       const m = o.unit || (isCraft(o) ? o.vessel || o.building : null);
       if (!m) continue;
-      if (pk.moverPx(m, hit.sx, hit.sy) <= MOVER_PX) {
+      if (pk.moverPx(m, hit.sx, hit.sy) <= (pk.moverRadius?.() ?? MOVER_PX)) {
         if (i > 0) list.unshift(list.splice(i, 1)[0]);
         return;
       }
     }
     list.unshift(list.splice(bi, 1)[0]);
+  }
+  // (round 35) When the click opened a building, a village or the land but
+  // a person or vehicle stands within the touch radius of it on screen
+  // (Picker.moverRadius: 16 px with a mouse, 26 on touch), that comes first:
+  // on a phone a tap 8 px off a person opened the house behind them, and a
+  // click on a walking person at 25 tiles opened the village.
+  preferMover(list, hit) {
+    const pk = this.game.picker;
+    if (hit?.sx == null || !pk?.moverAt || !list.length) return;
+    const top = list[0];
+    if (top.unit || isCraft(top)) return;
+    const m = pk.moverAt(hit);
+    if (!m) return;
+    const i = list.findIndex((o) => o.unit === m.ref || (isCraft(o) && (o.vessel === m.ref || o.building === m.ref)));
+    if (i > 0) return void list.unshift(list.splice(i, 1)[0]);
+    const F = this.game.fleet;
+    const r = m.kind === 'unit' ? this.unitResult(m.ref) : m.ref.streetCar ? F?.describeCar?.(m.ref) : F?.describe?.(m.ref);
+    if (r) list.unshift(r);
   }
   // (round 23) A building site says who is at work on it and, when urban
   // renewal raises it, what it replaces.
@@ -331,6 +349,9 @@ export class Inspector {
     // pixels, and the building-versus-creature tie-break is measured on screen
     this.hit = { x: hit.x, z: hit.z, tx: hit.tx ?? Math.floor(hit.x), ty: hit.ty ?? Math.floor(hit.z), px: hit.px, sx: hit.sx, sy: hit.sy };
     this.results = this.collect(this.hit);
+    // (round 35) a person or vehicle within the touch radius of the click
+    // comes before a building, village or patch of land
+    if (!keepIndex) safe(() => this.preferMover(this.results, this.hit), null, 'prefer mover');
     if (!keepIndex) this.index = 0;
     this.track = this.results[this.index];
     this._deadShown = false;

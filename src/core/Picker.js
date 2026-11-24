@@ -5,7 +5,12 @@ import { KINDS } from '../sim/fleet/kinds.js';
 
 // (round 25) Inside a building's footprint a creature or vehicle takes the
 // click only when its body is within this many CSS pixels of the cursor.
+// (round 35) Picker.moverRadius() is the live figure: 16 px with a mouse, 26
+// px on a touch screen (a tap 8 px off a person at 30 tiles opened the house
+// behind them; a click on a walking person at 25 tiles opened the village).
 export const MOVER_PX = 7;
+const MOVER_PX_MOUSE = 16;
+const MOVER_PX_TOUCH = 26;
 const _v = new THREE.Vector3();
 
 // Ray / heightfield intersection against the CPU world data.
@@ -49,14 +54,59 @@ export class Picker {
     if (o.def?.cls || o.cls) return 0.5 * VEHICLE.rel * Math.max(0.6, o.def?.size || 1);
     return (o.def?.height ?? 0.6) * UNIT.scale * (o.scale || 1) * (o.def?.size || 1);
   }
+  // (round 35) How near (CSS px) to a person's or vehicle's body on screen a
+  // click or tap still takes it before a building or a village does: a finger
+  // needs more room than a mouse.
+  moverRadius() {
+    const root = this.game.ui?.root;
+    const touch = !!root?.classList?.contains('is-touch') || (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches);
+    return touch ? MOVER_PX_TOUCH : MOVER_PX_MOUSE;
+  }
+  // (round 35) The creature or craft whose body on screen lies nearest the
+  // cursor, within rPx: {kind, ref, px}, or null. People, the fleet's land
+  // and sea craft and the street cars, where they are drawn this frame.
+  moverAt(hit, rPx = this.moverRadius()) {
+    if (!hit || hit.sx == null) return null;
+    const g = this.game;
+    const R = Math.min(4, (hit.px || 0.05) * rPx * 1.6 + 0.8);
+    let best = null,
+      bd = rPx;
+    const consider = (o, kind) => {
+      const d = this.moverPx(o, hit.sx, hit.sy);
+      if (d < bd) {
+        bd = d;
+        best = { kind, ref: o, px: d };
+      }
+    };
+    const F = g.fleet;
+    for (const v of F?.list || []) {
+      if (!v.alive || v.state === 'sinking' || v.cls === 'air' || v.cls === 'space' || v.garaged) continue;
+      if (Math.abs(v.x - hit.x) > R || Math.abs(v.z - hit.z) > R) continue;
+      consider(v, 'vessel');
+    }
+    for (const c of F?.traffic || []) {
+      if (c.gone || Math.abs(c.x - hit.x) > R || Math.abs(c.z - hit.z) > R) continue;
+      consider(F.carHandle(c), 'vessel');
+    }
+    g.units?.forEachNear?.(hit.x, hit.z, R, (o) => {
+      if (o.alive === false || o._hid || (o.data && (o.data.inside || o.data.aboard != null))) return;
+      consider(o, 'unit');
+    });
+    return best;
+  }
   // Distance in CSS px from the cursor (sx, sy) to a creature's or craft's
-  // upright body (the segment from its feet to its head on screen).
+  // upright body (the segment from its feet to its head on screen), where
+  // it is drawn this frame (round 35: a walking person's tick position lags
+  // or leads the drawn one by a few pixels).
   moverPx(o, sx, sy) {
     if (o?.x == null || sx == null) return Infinity;
     const W = this.game.world;
-    const y0 = o.y ?? W.surfaceAt(o.x, o.z);
-    const a = this.project(o.x, y0, o.z);
-    const b = this.project(o.x, y0 + this.bodyHeight(o), o.z);
+    const dp = this.game.cameraRig?._drawnAt ? this.game.cameraRig._drawnAt(o) : o;
+    const ox = dp.x,
+      oz = dp.z;
+    const y0 = o.y ?? W.surfaceAt(ox, oz);
+    const a = this.project(ox, y0, oz);
+    const b = this.project(ox, y0 + this.bodyHeight(o), oz);
     if (!a || !b) return Infinity;
     const dx = b[0] - a[0],
       dy = b[1] - a[1];
@@ -122,8 +172,12 @@ export class Picker {
       });
     }
     const b = this.buildingAt(hit.x, hit.z);
-    if (mover && b && this.moverPx(mover, hit.sx, hit.sy) > MOVER_PX) mover = null;
+    if (mover && b && this.moverPx(mover, hit.sx, hit.sy) > this.moverRadius()) mover = null;
     if (mover) return { kind, ref: mover };
+    // (round 35) a person or vehicle within the touch radius of the cursor
+    // on screen comes before the building under it
+    const near = this.moverAt(hit);
+    if (near) return { kind: near.kind, ref: near.ref };
     if (b) return { kind: 'building', ref: b };
     return null;
   }
