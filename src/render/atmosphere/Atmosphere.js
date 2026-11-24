@@ -806,6 +806,11 @@ export class Atmosphere {
     const wide = 1 - smoothstep(3.5, 7, dist);
     P.dof.focus = this._focus;
     P.dof.band = 0.2 + 0.03 * (1 - s) + 0.24 * wide;
+    // (round 35) following a creature or craft, the sharp band is about 0.6
+    // times the focus distance deep (+-30%) out to 10 tiles, easing back by
+    // 20: at a 7-tile follow only the person and a sliver round them were
+    // sharp, and the street they walked was a blur a step away
+    if (fol) P.dof.band = Math.max(P.dof.band, 0.3 - 0.1 * smoothstep(10, 20, dist));
     P.dof.ramp = 0.42 + 0.2 * wide;
     P.dof.maxCoc = 4.5 * s * (1 - 0.3 * wide);
     P.dof.nearBoost = 0.8;
