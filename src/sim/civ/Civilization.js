@@ -49,6 +49,9 @@ const TIER_POP = [40, 70, 115]; // village, town, city (capitals and ports grow 
 // A town under this many people is small: births and newcomers favor it in a
 // full world (_villageTick).
 const SMALL_TOWN = 20;
+// A town in want (on rations, not in famine) has children at this share of
+// the usual rate (_villageTick).
+const WANT_BIRTH = 0.35;
 // What each finished monument gives its realm (techMod / techAdd keys).
 const MONUMENT_FX = {
   vale: { mods: { 'loyalty+': 6, build: 1.15 }, text: 'its provinces hold fast to the crown' },
@@ -1010,7 +1013,12 @@ export class Civilization {
     // in a full world every death was refilled by a birth in a big town, and
     // a lone hamlet of a dozen dwindled away (round 23)
     const tiny = pop < SMALL_TOWN;
-    if (pop < v.housing && pop < this._popCap(v) && !(fullWorld && pop > this._fullWorldRoom(v)) && v.food > pop * 1.2 + (tiny ? 4 : 8) && !v.starving && humans < this._humanCap() * (tiny ? 1 : 0.97) && this.rng.chance(Math.min(1, (1 - popCrowd * 0.85) * this._kLaw(v.kingdom, 'civGrowth', 1) * (v.policy?.growth ?? 1)))) {
+    // (round 35) a town in want, on rations but not in famine, still sees a
+    // child now and then (WANT_BIRTH of the usual rate): births stopped with
+    // the stores below a year's worth, and a canning town in want through a
+    // long drought lost a quarter of its people to old age alone
+    const fed = v.food > pop * 1.2 + (tiny ? 4 : 8);
+    if (pop < v.housing && pop < this._popCap(v) && !(fullWorld && pop > this._fullWorldRoom(v)) && (fed || v.food > pop * 0.2) && !v.starving && humans < this._humanCap() * (tiny ? 1 : 0.97) && this.rng.chance(Math.min(1, (1 - popCrowd * 0.85) * this._kLaw(v.kingdom, 'civGrowth', 1) * (v.policy?.growth ?? 1) * (fed ? 1 : WANT_BIRTH)))) {
       let father = false;
       for (const u of v.members) if (u.sex === 'm' && u.age >= 18 && u.age < 60) father = true;
       if (father) {
