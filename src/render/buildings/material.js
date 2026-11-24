@@ -201,7 +201,9 @@ if (vRoof.x > 0.5) {
     float flick = mix(0.88 + 0.12 * sin(uTime * 2.7 + vState.z * 40.0 + wid), 1.0, powered);
     float cool = step(0.62, fract(wr * 17.3)) * powered;
     vec3 wc = mix(vec3(1.0, 0.6, 0.26), mix(vec3(1.0, 0.8, 0.52), vec3(0.72, 0.86, 1.0), cool), powered);
-    totalEmissiveRadiance += vGlow * wc * (night * mix(1.4, 1.0, powered) * lit * pane * flick + 0.02);
+    // (round 35: no glow by day; a faint warm floor on every window cell
+    // read, on the shaded side of a dark tower, as lit windows at 11:00)
+    totalEmissiveRadiance += vGlow * wc * night * (mix(1.4, 1.0, powered) * lit * pane * flick + 0.02);
   } else if (vGlow < 2.5) {
     // a red beacon blinking on a mast or tower
     float blink = step(0.55, fract(uTime * 0.7 + vState.z * 3.0));
@@ -210,7 +212,7 @@ if (vRoof.x > 0.5) {
     // screens behind the glass: cool blue-white, each window its own
     float lit = step(0.62, wr);
     float sc = 0.8 + 0.2 * sin(uTime * 1.3 + wid * 2.1);
-    totalEmissiveRadiance += vec3(0.5, 0.78, 1.0) * (night * 1.3 * lit * sc + 0.08 * lit);
+    totalEmissiveRadiance += vec3(0.5, 0.78, 1.0) * night * (1.3 * sc + 0.08) * lit;
   } else if (vGlow < 4.5) {
     // the steady cyan light of the future (fusion rings, crowns)
     totalEmissiveRadiance += vec3(0.4, 0.95, 1.0) * (0.5 + night * 1.0) * (0.88 + 0.12 * sin(uTime * 2.0 + vLocal.y * 4.0 + vLocal.x * 2.0));
