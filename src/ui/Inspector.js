@@ -783,7 +783,9 @@ export class Inspector {
     // (round 35) a vehicle's state ("Lost", "Arrived", "Back home") is a chip
     // at the start of the line under the name: in the kind row beside the
     // star and close buttons it wrapped ("DELIVERY SERVICE / LAID UP")
-    const stateChip = craft && dead ? '<em class="ws-insp__dead ws-insp__state">Lost</em>' : ended ? `<em class="ws-insp__dead ws-insp__state is-arrived${stop?.chip ? ' is-home' : ''}">${esc(ENDED_WORD[craft.endedWhy] || stop?.chip || arrivedWord(craft))}</em>` : '';
+    // (round 37) a town vehicle no longer wanted, parked or driving back to
+    // its depot until it is out of sight, is "Off duty" there too
+    const stateChip = craft && dead ? '<em class="ws-insp__dead ws-insp__state">Lost</em>' : ended ? `<em class="ws-insp__dead ws-insp__state is-arrived${stop?.chip ? ' is-home' : ''}">${esc(ENDED_WORD[craft.endedWhy] || stop?.chip || arrivedWord(craft))}</em>` : craft?.mission?.town && craft.mission.retire ? '<em class="ws-insp__dead ws-insp__state is-off">Off duty</em>' : '';
     const realmK = !u && !isSite && (k === 'village' || k === 'kingdom' || k === 'building') ? (typeof r.kingdom === 'object' && r.kingdom) || kingdomOf(this.game, (r.village || this.game.civ?.villages?.[r.building?.village])?.kingdom) : null;
     if (realmK) actions.unshift(`<button class="ws-btn ws-btn--sm" type="button" data-act="tech" data-k="${realmK.id}">${uiIcon('chronicle')}<span>Technology</span></button>`);
     // a building may be marked or unmarked as heritage (never replaced by renewal)

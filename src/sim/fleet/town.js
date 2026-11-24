@@ -820,7 +820,8 @@ export const town = {
   // until its stops change
   townLoopPath(v) {
     const m = v?.mission;
-    if (!v?.alive || !m?.town || m.job !== 'loop' || !m.stops || m.stops.length < 2) return null;
+    // (round 37: an off-duty bus runs no loop, so none is drawn)
+    if (!v?.alive || !m?.town || m.job !== 'loop' || m.retire || !m.stops || m.stops.length < 2) return null;
     const key = m.stops.map((s) => s.i).join(',');
     if (m._loop?.key === key) return m._loop.pts;
     const t = this.game.civ?.villages?.[m.vid];
@@ -930,9 +931,10 @@ export const town = {
     const m = v.mission;
     const g = m.goal;
     // (round 35) off duty, in plain words (it was "Laid up")
+    // (round 37: the card's "Off duty" chip under the name says so once)
     if (m.retire) {
-      if (v.state === 'move') return 'Off duty: driving back to the depot';
-      return g?.at === 'off' && Math.hypot(g.x - v.x, g.z - v.z) < 0.9 ? 'Off duty: parked at the depot' : 'Off duty: parked by the curb';
+      if (v.state === 'move') return 'Driving back to the depot';
+      return g?.at === 'off' && Math.hypot(g.x - v.x, g.z - v.z) < 0.9 ? 'Parked at the depot' : 'Parked by the curb';
     }
     if (v.state === 'move') {
       if (g?.at === 'night') return m.job === 'loop' ? 'Heading to its stand for the night' : 'Heading back to the depot for the night';
@@ -962,16 +964,18 @@ export const town = {
       case 'spare':
         return `No longer needed: ${name} has another one`;
       case 'stuck':
-        return 'No way on through the streets';
+        return "Can't find a way through the streets";
       default:
         return 'Resting: only so many town vehicles run at once';
     }
   },
   // The card's own rows for a town vehicle
+  // (round 37: off duty, only why: no riders, route, parcels or load; the
+  // card read "Parcels 6 left" on a van parked at the depot for good)
   _townRows(v, stats) {
     const m = v.mission;
     if (!m?.town) return;
-    if (m.retire) stats.push(['Why', this._townWhyText(v)]);
+    if (m.retire) return void stats.push(['Why', this._townWhyText(v)]);
     if (m.job === 'loop') {
       stats.push(['Riders', `${m.riders | 0} aboard`]);
       // (round 35) the loop by its stops' names, not a bare count
