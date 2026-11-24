@@ -358,6 +358,20 @@ export class Minimap {
     if (sel && sel.x != null && sel.alive !== false) {
       const x = sel.x * sx,
         y = sel.z * sy;
+      // (round 35) a selected town bus: its loop round the town's streets
+      const loop = sel.mission?.town ? safe(() => g.fleet?.townLoopPath?.(sel), null) : null;
+      if (loop && loop.length >= 4) {
+        ctx.beginPath();
+        for (let i = 0; i < loop.length; i += 2) (i ? ctx.lineTo : ctx.moveTo).call(ctx, loop[i] * sx, loop[i + 1] * sy);
+        ctx.closePath();
+        ctx.lineJoin = 'round';
+        ctx.lineWidth = 2.4 * dpr;
+        ctx.strokeStyle = 'rgba(10,10,14,0.55)';
+        ctx.stroke();
+        ctx.lineWidth = 1.2 * dpr;
+        ctx.strokeStyle = 'rgba(251,227,166,0.95)';
+        ctx.stroke();
+      }
       const pulse = (now * 1.4) % 1;
       ctx.beginPath();
       ctx.arc(x, y, (3 + pulse * 7) * dpr, 0, Math.PI * 2);

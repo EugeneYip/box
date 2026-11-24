@@ -53,22 +53,31 @@ const CAR_DEF = Object.freeze({ ...KINDS.car, name: 'Town car', capacity: 0 });
 const TAXI_DEF = Object.freeze({ ...KINDS.car, kind: 'taxi', name: 'Taxi', capacity: 0 });
 const BODY = ['Red', 'Blue', 'White', 'Yellow'];
 // What a car is out for, by the hour (the errand seed and the trips made
-// pick one from each list, so it changes through the day)
+// pick one from each list, so it changes through the day). (round 35) The
+// day is cut finer and each list holds only what fits its hours: a car said
+// "Commuting home" on a card read at half past noon; commuting is for the
+// rush hours, lunch for midday, the school run for its hours.
 const ERRAND = {
-  dawn: ['Commuting to work', 'Commuting to work', 'Taking the children to school', 'Making an early delivery'],
-  day: ['Going shopping', 'Making a delivery', 'Running errands', 'Visiting family', 'Delivering groceries', 'Driving to a meeting'],
-  dusk: ['Commuting home', 'Commuting home', 'Going shopping', 'Picking up the children'],
+  early: ['Making an early delivery', 'Coming off the night shift', 'Driving to an early shift', 'Making an early delivery'],
+  rush: ['Commuting to work', 'Commuting to work', 'Taking the children to school', 'Driving to work'],
+  morning: ['Going shopping', 'Making a delivery', 'Running errands', 'Visiting family', 'Driving to a meeting', 'Delivering groceries'],
+  noon: ['Going out for lunch', 'Making a delivery', 'Running errands', 'Delivering groceries', 'Driving to a lunch meeting', 'Going shopping'],
+  after: ['Running errands', 'Making a delivery', 'Visiting family', 'Driving to a meeting', 'Picking up the children', 'Going shopping'],
+  home: ['Commuting home', 'Commuting home', 'Going shopping', 'Picking up the children'],
   eve: ['Going out to eat', 'Visiting friends', 'Driving home', 'Going to the theater'],
-  night: ['Driving home', 'Driving home late', 'Coming off the night shift', 'Driving home'],
+  night: ['Driving home late', 'Coming off the late shift', 'Driving home late', 'Taking a friend home'],
 };
 const PARKED = {
-  dawn: ['Parked outside a house', 'Parked while its driver works', 'Parked at the school gate', 'Parked at the curb'],
-  day: ['Parked while its driver shops', 'Parked while its driver works', 'Parked at the curb', 'Parked outside a house', 'Parked while its driver delivers', 'Parked outside an office'],
-  dusk: ['Parked outside a house', 'Parked while its driver shops', 'Parked at the curb', 'Parked at the school gate'],
+  early: ['Parked for the night', 'Parked outside a house', 'Parked at the curb', 'Parked outside a bakery'],
+  rush: ['Parked outside a house', 'Parked while its driver works', 'Parked at the school gate', 'Parked at the curb'],
+  morning: ['Parked while its driver shops', 'Parked while its driver works', 'Parked at the curb', 'Parked outside a house', 'Parked while its driver delivers', 'Parked outside an office'],
+  noon: ['Parked outside a diner', 'Parked while its driver works', 'Parked at the curb', 'Parked while its driver shops', 'Parked while its driver delivers', 'Parked outside an office'],
+  after: ['Parked while its driver works', 'Parked while its driver shops', 'Parked at the curb', 'Parked at the school gate', 'Parked outside a house', 'Parked outside an office'],
+  home: ['Parked outside a house', 'Parked while its driver shops', 'Parked at the curb', 'Parked outside a house'],
   eve: ['Parked outside a diner', 'Parked outside a house', 'Parked for the night', 'Parked outside the theater'],
   night: ['Parked for the night', 'Parked for the night', 'Parked at the curb', 'Parked for the night'],
 };
-const partOfDay = (h) => (h < 5 || h >= 23 ? 'night' : h < 9.5 ? 'dawn' : h < 16 ? 'day' : h < 19 ? 'dusk' : 'eve');
+const partOfDay = (h) => (h < 5 || h >= 23 ? 'night' : h < 7 ? 'early' : h < 9.5 ? 'rush' : h < 11.5 ? 'morning' : h < 14 ? 'noon' : h < 16.5 ? 'after' : h < 19 ? 'home' : 'eve');
 
 // A street car as the picker, the inspector and the camera see it: where
 // it is drawn (in its lane), whether it is still in the streets, its kind
@@ -187,7 +196,7 @@ export const traffic = {
     const stats = [['Doing', this.carDoing(c)]];
     if (t) stats.push(['Town', t.name]);
     const sp = h.speed;
-    if (sp > 0.05 && !c.gone) stats.push(['Speed', `${Math.max(1, Math.round(sp * 10))} paces`]);
+    if (sp > 0.05 && !c.gone) stats.push(['Speed', `${Math.max(1, Math.round(sp * 10))} paces/s`]);
     return {
       priority: 27,
       kind: 'vehicle',
@@ -261,12 +270,16 @@ export const traffic = {
     const use = this.game.civ.use;
     const R = v.roadTiles;
     const sq = this._sqOf?.(v);
-    for (let tries = 0; tries < 4; tries++) {
+    for (let tries = 0; tries < 8; tries++) {
       const i = R[(this.rng() * R.length) | 0];
       if (use[i] !== USE.ROAD) continue;
       const x = i % w.w,
         z = (i / w.w) | 0;
       if (sq && sq(x, z)) continue;
+      // (round 35) inside the town's paving, on a street that runs on
+      const pr = Math.max(5, (v.buildRadius || v.radius || 6) * 1.15 + 2) - 0.75;
+      if ((x + 0.5 - v.cx) ** 2 + (z + 0.5 - v.cz) ** 2 > pr * pr) continue;
+      if ([1, -1, w.w, -w.w].filter((d) => use[i + d] === USE.ROAD).length < 2) continue;
       const c = { x: x + 0.5, z: z + 0.5, px: 0, pz: 0, h: 0, ph: 0, tx: 0, tz: 0, fx: -1, fz: -1, vid: v.id, kingdom: k.id, v: (this.rng() * 4) | 0, s: SPEED * (0.92 + this.rng() * 0.16), r2: ((v.radius || 6) * 1.25 + 2) ** 2, cx: v.cx, cz: v.cz, k: (this.rng() * 4) | 0, acc: 0 };
       // (round 33) who it is to the inspector: an id, when it joined, and
       // an errand seed (what it is out for changes with each stop it makes)
@@ -306,6 +319,45 @@ export const traffic = {
       sqSum = 0;
     const fx = c.fx,
       fz = c.fz;
+    // (round 35) inside its town's paving (the planner's _pavedRadius, as
+    // the terrain draws it), less a margin: three cars sat queued on an
+    // unpaved stub at the town's edge. A car already out on the dirt heads
+    // back in.
+    const vt = civ.villages?.[c.vid];
+    const pcx = vt?.cx ?? c.cx,
+      pcz = vt?.cz ?? c.cz;
+    const pr = vt ? Math.max(5, (vt.buildRadius || vt.radius || 6) * 1.15 + 2) - 0.75 : Math.sqrt(c.r2);
+    const pr2 = pr * pr;
+    const d2At = (tx, tz) => (tx + 0.5 - pcx) ** 2 + (tz + 0.5 - pcz) ** 2;
+    const dHere = d2At(x, z);
+    // ...and on through streets: a dead-end stub (the street runs on without
+    // a crossing to an end within a few tiles) is taken only now and then
+    const road = (tx, tz) => tx >= 0 && tz >= 0 && tx < w.w && tz < w.h && use[tz * w.w + tx] === USE.ROAD;
+    const stub = (sx0, sz0, px0, pz0) => {
+      let cx = sx0,
+        cz = sz0,
+        bx = px0,
+        bz = pz0;
+      for (let k = 0; k < 5; k++) {
+        let n = 0,
+          ox = -1,
+          oz = -1;
+        for (let d = 0; d < 4; d++) {
+          const ax = cx + (d === 0 ? 1 : d === 1 ? -1 : 0),
+            az = cz + (d === 2 ? 1 : d === 3 ? -1 : 0);
+          if (!road(ax, az)) continue;
+          n++;
+          if (ax !== bx || az !== bz) (ox = ax), (oz = az);
+        }
+        if (n <= 1) return true;
+        if (n >= 3) return false;
+        bx = cx;
+        bz = cz;
+        cx = ox;
+        cz = oz;
+      }
+      return false;
+    };
     // straight on is the way the car came in (from fx, fz to x, z)
     const sx = fx < 0 ? 0 : x - fx,
       sz = fx < 0 ? 0 : z - fz;
@@ -319,9 +371,9 @@ export const traffic = {
         back = i;
         continue;
       }
-      const ox = nx + 0.5 - c.cx,
-        oz = nz + 0.5 - c.cz;
-      let wt = ox * ox + oz * oz > c.r2 ? 0.08 : 1;
+      const dn = d2At(nx, nz);
+      let wt = dn <= pr2 ? 1 : dHere > pr2 && dn < dHere ? 1 : 0;
+      if (wt > 0 && stub(nx, nz, x, z)) wt *= 0.06;
       if (nx - x === sx && nz - z === sz) wt *= 3;
       if (rail?.[i]) wt *= 0.15;
       if (sq && sq(nx, nz)) {

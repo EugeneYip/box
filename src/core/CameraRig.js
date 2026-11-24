@@ -388,9 +388,21 @@ export class CameraRig {
       const p = this._drawnAt(f);
       const L = this._fLast;
       if (L && L.ref === f) {
-        const dx = p.x - L.x,
+        let dx = p.x - L.x,
           dz = p.z - L.z;
         if (Math.abs(dx) + Math.abs(dz) < 2) {
+          // (round 35) a craft moves the view by no more than it can drive
+          // in the frame: a street car squaring up at the curb (or turning
+          // into its lane) jumped up to 56 px at the closest zoom; the rest
+          // of such a step is eased in below
+          if (typeof f.speed === 'number' && (f.cls != null || f.def?.cls != null)) {
+            const d = Math.hypot(dx, dz);
+            const cap = Math.abs(f.speed) * dt * (this.game.paused ? 0 : this.game.speed || 1) * 1.5 + 0.004;
+            if (d > cap) {
+              dx *= cap / d;
+              dz *= cap / d;
+            }
+          }
           this.cur.x += dx;
           this.cur.z += dz;
         }

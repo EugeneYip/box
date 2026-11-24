@@ -63,7 +63,9 @@ const KIND_LABEL = { unit: 'Creature', building: 'Building', plot: 'Building plo
 // Fleets (game.fleet.inspect): cargo lines with an icon each
 const CARGO_ICON = { settlers: 'found-village', army: 'job-soldier', fish: 'spawn-fish', food: 'plant-wheat', wood: 'plant-tree', stone: 'mountain', ore: 'job-miner', gold: 'gold', goods: 'trade' };
 // (round 31) a land craft whose title already names its kind gets its purpose
-const CRAFT_ROLE = { truck: 'Freight truck', car: 'Town car', taxi: 'Taxi service', van: 'Delivery service', garbage: 'Sanitation service', bus: 'City bus', tram: 'Streetcar', fireengine: 'Fire service', ambulance: 'Medical service', tractor: 'Farm vehicle', oxcart: 'Goods cart', caravan: 'Trade convoy', train: 'Railway', maglev: 'Railway', tank: 'Armor', cannon: 'Siege gun', artillery: 'Siege gun' };
+// (round 35: "Sanitation" and "Deliveries", short enough for the kind row
+// beside the star and close buttons, which set "SANITATION / SERVICE")
+const CRAFT_ROLE = { truck: 'Freight truck', car: 'Town car', taxi: 'Taxi service', van: 'Deliveries', garbage: 'Sanitation', bus: 'City bus', tram: 'Streetcar', fireengine: 'Fire service', ambulance: 'Medical service', tractor: 'Farm vehicle', oxcart: 'Goods cart', caravan: 'Trade convoy', train: 'Railway', maglev: 'Railway', tank: 'Armor', cannon: 'Siege gun', artillery: 'Siege gun' };
 // (round 31) about how tall a building stands (world units, for the pin):
 // a one-tile hut is under a unit, towers and monuments keep the old 3.2
 const roofOf = (b) => {
@@ -80,8 +82,9 @@ const roofOf = (b) => {
 const ARRIVED_WORD = { land: 'Arrived', sea: 'In port', air: 'Landed', space: 'In orbit' };
 const ARRIVED_TOAST = { land: 'reached its stop', sea: 'reached port', air: 'has landed', space: 'reached orbit' };
 // the fleet's reason for a trip's end (v.endedWhy), in the card's words
-const ENDED_WORD = { arrived: null, 'last stop': 'Last stop', 'back at the station': 'Back at the station', 'field done': 'Field done', 'laid up': 'Laid up', retired: 'Retired' };
-const ENDED_TOAST = { 'last stop': 'reached its last stop', 'back at the station': 'is back at the station', 'field done': 'finished its field', 'laid up': 'was laid up', retired: 'was retired' };
+// (round 35) a town's bus, van or garbage truck goes "Off duty", never "Laid up"
+const ENDED_WORD = { arrived: null, 'last stop': 'Last stop', 'back at the station': 'Back at the station', 'field done': 'Field done', 'laid up': 'Laid up', 'off duty': 'Off duty', retired: 'Retired' };
+const ENDED_TOAST = { 'last stop': 'reached its last stop', 'back at the station': 'is back at the station', 'field done': 'finished its field', 'laid up': 'was laid up', 'off duty': 'went off duty', retired: 'was retired' };
 // (round 33) a spent booster that flew back is "Landed", not "In orbit"
 const arrivedWord = (c) => ENDED_WORD[c.endedWhy] || (c.stageV === 2 ? 'Landed' : ARRIVED_WORD[c.def?.cls || c.cls]) || 'Arrived';
 // where a craft that ended its trip stopped, in words ("Arrived at Khaveh")
@@ -243,12 +246,30 @@ export class Inspector {
       const o = list[i];
       const m = o.unit || (isCraft(o) ? o.vessel || o.building : null);
       if (!m) continue;
-      if (pk.moverPx(m, hit.sx, hit.sy) <= MOVER_PX) {
+      if (pk.moverPx(m, hit.sx, hit.sy) <= (pk.moverRadius?.() ?? MOVER_PX)) {
         if (i > 0) list.unshift(list.splice(i, 1)[0]);
         return;
       }
     }
     list.unshift(list.splice(bi, 1)[0]);
+  }
+  // (round 35) When the click opened a building, a village or the land but
+  // a person or vehicle stands within the touch radius of it on screen
+  // (Picker.moverRadius: 16 px with a mouse, 26 on touch), that comes first:
+  // on a phone a tap 8 px off a person opened the house behind them, and a
+  // click on a walking person at 25 tiles opened the village.
+  preferMover(list, hit) {
+    const pk = this.game.picker;
+    if (hit?.sx == null || !pk?.moverAt || !list.length) return;
+    const top = list[0];
+    if (top.unit || isCraft(top)) return;
+    const m = pk.moverAt(hit);
+    if (!m) return;
+    const i = list.findIndex((o) => o.unit === m.ref || (isCraft(o) && (o.vessel === m.ref || o.building === m.ref)));
+    if (i > 0) return void list.unshift(list.splice(i, 1)[0]);
+    const F = this.game.fleet;
+    const r = m.kind === 'unit' ? this.unitResult(m.ref) : m.ref.streetCar ? F?.describeCar?.(m.ref) : F?.describe?.(m.ref);
+    if (r) list.unshift(r);
   }
   // (round 23) A building site says who is at work on it and, when urban
   // renewal raises it, what it replaces.
@@ -328,6 +349,9 @@ export class Inspector {
     // pixels, and the building-versus-creature tie-break is measured on screen
     this.hit = { x: hit.x, z: hit.z, tx: hit.tx ?? Math.floor(hit.x), ty: hit.ty ?? Math.floor(hit.z), px: hit.px, sx: hit.sx, sy: hit.sy };
     this.results = this.collect(this.hit);
+    // (round 35) a person or vehicle within the touch radius of the click
+    // comes before a building, village or patch of land
+    if (!keepIndex) safe(() => this.preferMover(this.results, this.hit), null, 'prefer mover');
     if (!keepIndex) this.index = 0;
     this.track = this.results[this.index];
     this._deadShown = false;
@@ -680,6 +704,9 @@ export class Inspector {
         if (occIds && o.unit && occIds.has(o.unit.id)) return false;
         // a cart's realm and home town are not things standing here
         if (craft && (kindOf(o) === 'kingdom' || kindOf(o) === 'village')) return false;
+        // (round 35) nor a sheep or a house it drives past: a vehicle's card
+        // lists only other vehicles ("Here: Sheep" on a followed bus)
+        if (craft && !isCraft(o)) return false;
         if (!onGround && (kindOf(o) === 'tile' || (kindOf(o) === 'info' && terrainNames.has(nameKey(o))))) return false;
         seen.add(key);
         return true;
@@ -753,6 +780,10 @@ export class Inspector {
     // chip on the line under the name: in the kind row beside the edit, star
     // and close buttons it wrapped to three lines ("BUILDER · / POLICE / OFFICER")
     const duty = u && roleBase && ic.label && roleBase.toLowerCase() !== String(ic.label).toLowerCase() ? roleBase : null;
+    // (round 35) a vehicle's state ("Lost", "Arrived", "Back home") is a chip
+    // at the start of the line under the name: in the kind row beside the
+    // star and close buttons it wrapped ("DELIVERY SERVICE / LAID UP")
+    const stateChip = craft && dead ? '<em class="ws-insp__dead ws-insp__state">Lost</em>' : ended ? `<em class="ws-insp__dead ws-insp__state is-arrived${stop?.chip ? ' is-home' : ''}">${esc(ENDED_WORD[craft.endedWhy] || stop?.chip || arrivedWord(craft))}</em>` : '';
     const realmK = !u && !isSite && (k === 'village' || k === 'kingdom' || k === 'building') ? (typeof r.kingdom === 'object' && r.kingdom) || kingdomOf(this.game, (r.village || this.game.civ?.villages?.[r.building?.village])?.kingdom) : null;
     if (realmK) actions.unshift(`<button class="ws-btn ws-btn--sm" type="button" data-act="tech" data-k="${realmK.id}">${uiIcon('chronicle')}<span>Technology</span></button>`);
     // a building may be marked or unmarked as heritage (never replaced by renewal)
@@ -766,10 +797,10 @@ export class Inspector {
       <header class="ws-insp__head">
         <span class="ws-insp__badge${portrait ? ' has-portrait' : ''}${kObj?.banner ? ' has-banner' : ''}">${level != null ? `<i class="ws-lvl" title="Level ${level} of 10" data-tip="Level ${level} of 10: experience from work, fights and the years" aria-label="Level ${level}"><small>Lv</small>${level}</i>` : ''}${portrait ? `<img class="ws-insp__portrait" src="${portrait}" alt=""><span class="ws-insp__glyph">${ic.svg}</span>` : ic.svg}${kTint ? `<i class="ws-insp__kdot" style="--k:${kTint}"></i>` : ''}</span>
         <div class="ws-insp__titles">
-          <div class="ws-insp__kind">${esc(kindLabel)}${dead ? ` <em class="ws-insp__dead">${craft ? 'Lost' : 'Fallen'}</em>` : ended ? ` <em class="ws-insp__dead is-arrived${stop?.chip ? ' is-home' : ''}">${esc(ENDED_WORD[craft.endedWhy] || stop?.chip || arrivedWord(craft))}</em>` : ''}</div>
+          <div class="ws-insp__kind">${esc(kindLabel)}${dead && !craft ? ` <em class="ws-insp__dead">Fallen</em>` : ''}</div>
           <h3 class="ws-insp__title">${esc(this.titleOf(r) || 'Unknown')}${epithet ? ` <span class="ws-insp__epithet">${esc(epithet)}</span>` : ''}</h3>
           <div class="ws-insp__fact" data-fact>${esc(this.factLine(r))}</div>
-          ${subShown || duty ? `<div class="ws-insp__sub" data-sub>${subShown ? `${craft && ownerK?.banner ? `<img class="ws-crest ws-crest--banner" alt="" src="${bannerURL(ownerK.banner, ownerK.color, 28)}">` : kTint ? `<i class="ws-crest" style="--k:${kTint}"></i>` : ''}<span>${esc(subShown)}</span>` : ''}${duty ? `<em class="ws-insp__duty" data-tip="${esc(`Side duty: also serves as ${/^[aeiou]/i.test(duty) ? 'an' : 'a'} ${duty.toLowerCase()}`)}">${esc(duty)}</em>` : ''}</div>` : ''}
+          ${subShown || duty || stateChip ? `<div class="ws-insp__sub" data-sub>${stateChip}${subShown ? `${craft && ownerK?.banner ? `<img class="ws-crest ws-crest--banner" alt="" src="${bannerURL(ownerK.banner, ownerK.color, 28)}">` : kTint ? `<i class="ws-crest" style="--k:${kTint}"></i>` : ''}<span>${esc(subShown)}</span>` : ''}${duty ? `<em class="ws-insp__duty" data-tip="${esc(`Side duty: also serves as ${/^[aeiou]/i.test(duty) ? 'an' : 'a'} ${duty.toLowerCase()}`)}">${esc(duty)}</em>` : ''}</div>` : ''}
         </div>
         ${editable ? `<button class="ws-iconbtn ws-iconbtn--sm ws-insp__edit${editing ? ' is-on' : ''}" type="button" aria-label="${editing ? 'Done editing' : 'Edit'}" data-tip="${editing ? 'Done editing' : 'Edit name, colors and more'}" data-act="${editing ? 'edit-done' : 'edit'}">${uiIcon(editing ? 'check' : 'edit')}</button>` : ''}
         ${starBtn}

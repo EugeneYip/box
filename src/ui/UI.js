@@ -1307,10 +1307,16 @@ export class UI {
     const r = { left: 0, top: 0, right: W, bottom: H };
     const q = (sel) => [...this.root.querySelectorAll(sel)].map((e) => e.getBoundingClientRect()).filter((b) => b.width > 0 && b.height > 0);
     for (const b of q('.ws-brand, .ws-clock, .ws-stats, .ws-agechip, .ws-top')) if (b.top < H * 0.2 && b.bottom < H * 0.35) r.top = Math.max(r.top, b.bottom);
+    // (round 35) the inspector card at the side counts whatever its height:
+    // a street car's short card (under 40% of the screen) was left out, so a
+    // followed car sat at the screen's middle beside the card while a bus or
+    // a garbage truck, with taller cards, sat in the free area left of it
+    const ib = q('.ws-insp.is-open')[0];
+    const isInsp = (b) => !!ib && b.left === ib.left && b.top === ib.top && b.width === ib.width && b.height === ib.height;
     for (const b of q('.ws-dock__panel, .ws-insp.is-open, .ws-side.is-open')) {
       const wide = b.width > W * 0.6;
       if (wide && b.top > H * 0.3) r.bottom = Math.min(r.bottom, b.top);
-      else if (!wide && b.height > H * 0.4) {
+      else if (!wide && (b.height > H * 0.4 || (isInsp(b) && b.height > 80))) {
         if (b.left > W * 0.5) r.right = Math.min(r.right, b.left);
         else if (b.right < W * 0.5) r.left = Math.max(r.left, b.right);
       } else if (b.top > H * 0.55 && b.left < W * 0.6 && b.right > W * 0.4) r.bottom = Math.min(r.bottom, b.top);
