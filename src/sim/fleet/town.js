@@ -345,6 +345,15 @@ export const town = {
     v.state = 'move';
     v.stateT = 0;
   },
+  // (round 35) A bus still on its way to a stop when the last run ends
+  // (11:30 pm) turns for the nearest stand at once instead of finishing the
+  // leg first (Fleet land.js, while it drives; looked at once a second).
+  _townDriveCheck(v, step) {
+    const m = v.mission;
+    if (m.job !== 'loop' || m.goal?.at === 'night' || (v._tnT = (v._tnT || 0) + step) < 1) return;
+    v._tnT = 0;
+    if (this._townNight(m.job)) this._townNext(v);
+  },
   // At the end of its way (Fleet land.js _landArrive): it stands there.
   _townArrive(v) {
     const m = v.mission;
@@ -360,14 +369,24 @@ export const town = {
       if (m.seen.length > 6) m.seen.shift();
     }
   },
-  // Where it spends the night: a bus at its first stop, the others at the depot
+  // Where it spends the night: a bus at the nearest of its stops (round 35:
+  // its first stop, by the hall, was often a long drive across town, and
+  // 28% of the buses were still on their way three hours after the last
+  // run), the others at the depot
   _townHome(v, t) {
     const m = v.mission;
     let s = null;
-    if (m.job === 'loop') s = (m.stops || this._townStops(t, this._townComp(t, v)))?.[0];
-    else s = this._townDepot(v, t);
+    if (m.job === 'loop') {
+      const S = m.stops || this._townStops(t, this._townComp(t, v));
+      let bd = Infinity;
+      if (S) for (const o of S) {
+        const d = this.dist(o.x, o.z, v.x, v.z);
+        if (d < bd) (bd = d), (s = o);
+      }
+    } else s = this._townDepot(v, t);
     if (!s) return null;
-    if (this.dist(s.x, s.z, v.x, v.z) < 0.6) {
+    // (on the stand's own tile the street search has nowhere to go)
+    if (this.dist(s.x, s.z, v.x, v.z) < 0.6 || (Math.floor(s.x) === Math.floor(v.x) && Math.floor(s.z) === Math.floor(v.z))) {
       // (already there: it parks where it stands)
       m.at = 'night';
       m.goal = { ...s, at: 'night' };
