@@ -34,9 +34,12 @@ export const CAM_CUT = {
   // buildings are cut
   uCutT: { value: new THREE.Vector3() },
 };
-// cut range: full at CUT_NEAR, gone by CUT_FAR
-const CUT_NEAR = 10,
-  CUT_FAR = 14;
+// cut range: full at CUT_NEAR, gone by CUT_FAR (round 35: from 10 and 14; a
+// big building on the sight line at 12 tiles was only half cut)
+const CUT_NEAR = 12,
+  CUT_FAR = 17;
+// (round 35) the tall modern buildings, for the cut's height estimate
+const TALL = new Set(['skyscraper', 'arcology', 'vertfarm', 'climatetower', 'controlspire', 'radiomast', 'skyshield']);
 
 // (round 35) The close camera's lift over rough ground keeps a slanting
 // view: it adds at most LIFT_MAX to the zoom's own pitch and never takes the
@@ -841,6 +844,41 @@ export class CameraRig {
           }
         }
       }
+      // (round 35) and, as trees are, any building whose box comes within
+      // about two fifths of the target's distance of the eye, anywhere in
+      // front of it, is cut down to its footing: a huge tower close beside
+      // the camera filled a corner of the frame uncut, and a big building
+      // in the foreground filled the frame, blurred
+      {
+        const nearR = Math.max(1.2, CAM_CUT.uCutD.value * 0.42);
+        const fw = new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld, 2).negate();
+        const seen = new Set();
+        const r = Math.ceil(nearR) + 1;
+        const ex = Math.floor(E.x),
+          ez = Math.floor(E.z);
+        for (let dz = -r; dz <= r; dz++)
+          for (let dx = -r; dx <= r; dx++) {
+            const b = this._bAt(ex + dx + 0.5, ez + dz + 0.5);
+            if (!b || b === tb || seen.has(b.id)) continue;
+            seen.add(b.id);
+            const y0 = b.y || 0,
+              y1 = y0 + this._bHeight(b);
+            // the nearest point of its box to the eye
+            const px = Math.min(Math.max(E.x, b.tx), b.tx + (b.w || 1)),
+              py = Math.min(Math.max(E.y, y0), y1),
+              pz = Math.min(Math.max(E.z, b.ty), b.ty + (b.h || 1));
+            const qx = px - E.x,
+              qy = py - E.y,
+              qz = pz - E.z;
+            if (Math.hypot(qx, qy, qz) > nearR) continue;
+            // (in front of the eye: its box's middle ahead of it)
+            const mx = b.tx + (b.w || 1) / 2 - E.x,
+              my = (y0 + y1) / 2 - E.y,
+              mz = b.ty + (b.h || 1) / 2 - E.z;
+            if (mx * fw.x + my * fw.y + mz * fw.z <= 0) continue;
+            hitNow.set(b.id, y0);
+          }
+      }
     }
     const kin = 1 - Math.exp(-dt * 7),
       kout = 1 - Math.exp(-dt * 4);
@@ -903,7 +941,9 @@ export class CameraRig {
     const def = BUILDING_TYPES[b.type] || {};
     if (def.wall) return 1.2 * BUILDING.scale;
     const t = b.type;
-    const h = t === 'skyscraper' || t === 'arcology' ? 14 : def.monument ? 9 : def.modern ? 7 : 3.4;
+    // (round 35: the vertical farm, the climate tower and the other spires
+    // stand as tall as a skyscraper; a monument was set too low at 9)
+    const h = TALL.has(t) ? 14 : def.monument ? 11 : def.modern ? 7 : 3.4;
     // (round 33) a building site's frame and scaffold stand up to three
     // design units however far the walls have risen inside them
     // (BuildingRenderer 'frame'): a site judged by its progress alone was
