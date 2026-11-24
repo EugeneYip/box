@@ -34,17 +34,19 @@ import { loadRegistries } from './depth.js';
 import { lawDef } from '../core/laws.js';
 import { earthLabel, earthChoice } from '../core/params.js';
 import { earthRegion } from '../world/data/regions.js';
+import { geoWrapX } from '../world/geo.js';
 import { uiIcon } from './icons.js';
 
-// Overview name spots, in label widths (x) and heights (y) from the realm's
-// centre, nearest first: first those that still touch the centre, then (for
-// a crowded corner such as Western Europe) one row further out.
-const OV_SPOTS = [
-  [0, 0], [0, -1.12], [0, 1.12], [-0.3, 0], [0.3, 0], [-0.3, -1.12], [0.3, -1.12], [-0.3, 1.12], [0.3, 1.12],
-  [-0.5, 0], [0.5, 0], [-0.5, -1.12], [0.5, -1.12], [-0.5, 1.12], [0.5, 1.12],
-  [0, -2.24], [0, 2.24], [-0.3, -2.24], [0.3, -2.24], [-0.3, 2.24], [0.3, 2.24],
+// Overview name spots for a name placed with no leader line, in label widths
+// (x) and heights (y) from the realm's centre, nearest first. (round 35) Its
+// plate always covers its realm's centre: round 34 let SOUTH KOREA rest a
+// full line below the peninsula, over the sea and China's coast.
+const OV_NEAR = [
+  [0, 0], [-0.3, 0], [0.3, 0], [0, -0.3], [0, 0.3], [-0.3, -0.3], [0.3, -0.3], [-0.3, 0.3], [0.3, 0.3], [-0.4, 0], [0.4, 0],
 ];
-const OV_ORDER = OV_SPOTS.map((_, i) => i);
+// ... or its banner sits on its realm's centre and the name runs east of it
+// (a small realm whose land is narrower than its name)
+const OV_FLAG = [0, -0.3, 0.3];
 // Where a name with no room beside its realm may go instead (joined by a
 // leader line): rings in label heights from the centre, and directions.
 const OV_RINGS = [2.2, 3.2, 4.4, 6, 8];
@@ -746,7 +748,7 @@ export class UI {
       }
       let pop = 0;
       for (const vid of k.villages || []) pop += g.civ.villages?.[vid]?.pop || 0;
-      items.push({ e, sx: (v.x * 0.5 + 0.5) * W, sy: (-v.y * 0.5 + 0.5) * H, prio: (k.villages?.length || 0) * 1000 + pop });
+      items.push({ e, kid: k.id, sx: (v.x * 0.5 + 0.5) * W, sy: (-v.y * 0.5 + 0.5) * H, prio: (k.villages?.length || 0) * 1000 + pop });
     }
     this.layoutOverviewLabels(items, W, H);
     for (const [id, e] of this._ovLab) if (!seen.has(id)) (e.remove(), this._ovLab.delete(id));
@@ -825,32 +827,105 @@ export class UI {
       it.mode = mode;
       placed.push({ l: hit.x - hit.w / 2, t: hit.y - hit.h / 2, r: hit.x + hit.w / 2, b: hit.y + hit.h / 2 });
     };
-    // 1. names that fit on or just beside their realm's centre, largest
-    // realms first, each on its own side of its neighbours
+    // (round 35) who holds the ground under a point of the screen: a realm
+    // id, -1 the sea, -2 unclaimed land, -3 off the map. Names are placed so
+    // that they lie over their own land and the sea, not a neighbor's land.
+    const g = this.game,
+      wd = g.world,
+      cam = g.cameraRig.camera;
+    const camP = cam.position;
+    const ray = (this._ovRay ||= new THREE.Vector3());
+    const memo = new Map();
+    const ownerAt = (x, y) => {
+      const key = Math.round(x / 3) * 4096 + Math.round(y / 3);
+      const m = memo.get(key);
+      if (m !== undefined) return m;
+      let o = -3;
+      ray.set((x / W) * 2 - 1, -((y / H) * 2 - 1), 0.5).unproject(cam).sub(camP);
+      if (ray.y < -1e-6 && wd?.owner) {
+        let t = (0 - camP.y) / ray.y;
+        for (let i = 0; i < 2; i++) {
+          const hx = geoWrapX(wd, camP.x + ray.x * t),
+            hz = camP.z + ray.z * t;
+          if (!wd.inBounds?.(Math.floor(hx), Math.floor(hz))) break;
+          t = (Math.max(0, wd.surfaceAt(hx, hz)) - camP.y) / ray.y;
+        }
+        const tx = Math.floor(geoWrapX(wd, camP.x + ray.x * t)),
+          tz = Math.floor(camP.z + ray.z * t);
+        if (wd.inBounds?.(tx, tz)) {
+          const id = wd.owner[tz * wd.w + tx];
+          // (unclaimed land counts as the nearest town's realm's: at the start
+          // most of the land is unclaimed, and VIETNAM rested over China)
+          o = id >= 0 ? id : wd.isWater?.(tx, tz) ? -1 : (g.buildings?.labels?.nearRealm?.(tx, tz) ?? -2);
+        }
+      }
+      memo.set(key, o);
+      return o;
+    };
+    // how many sevenths of a name's middle line lie over another realm's land
+    const overOthers = (it, x, y, w) => {
+      let n = 0;
+      for (let i = 0; i < 7; i++) {
+        const o = ownerAt(x - w / 2 + (w * (i + 0.5)) / 7, y);
+        if (o >= 0 && o !== it.kid) n++;
+      }
+      return n;
+    };
+    // 1. names on their realm's centre (the plate covers it), or pinned there
+    // by their banner with the name running east; largest realms first. Each
+    // spot is scored and the best taken: 3 for each seventh of the name over
+    // a neighbor's land, 2 for the banner over the sea (4 over a neighbor), 1
+    // for a pinned spot, 1 for the smaller size, 5 for covering another
+    // realm's centre; past 7 the name goes out with a leader line instead
     for (const it of items) {
       const e = it.e;
       it.hit = null;
-      const order = e._mode === 'near' && e._spot != null ? [e._spot, ...OV_ORDER.filter((i) => i !== e._spot)] : OV_ORDER;
+      let best = null;
+      // the spot held last frame is tried first and kept while it scores
+      // about as well as it did
+      const prev = e._mode === 'near' ? e._spot : null;
       for (const sc of [1, 0.84]) {
         const w = e._w * sc,
           h = e._h * sc;
-        for (const i of order) {
-          const [dx, dy] = OV_SPOTS[i];
-          // a name at a screen edge slides inward rather than vanishing
+        // the banner's middle from the name's left edge (padding 7 px, 10 px wide)
+        const bi = 12 * sc;
+        const cand = [];
+        for (let i = 0; i < OV_NEAR.length; i++) {
+          const [dx, dy] = OV_NEAR[i];
+          // a name at a screen edge slides inward, still over its centre
           const x = Math.min(W - M - w / 2, Math.max(M + w / 2, it.sx + dx * w));
-          const y = it.sy + dy * h;
-          if (Math.abs(x - it.sx) > w * 0.62) continue;
-          if (i !== 0 && !ownNearest(it, x, y)) continue;
-          if (free(x - w / 2, y - h / 2, x + w / 2, y + h / 2)) {
-            put(it, { x, y, w, h, sc, i }, 'near');
-            break;
-          }
+          if (Math.abs(x - it.sx) > w / 2 - 8) continue;
+          cand.push({ x, y: it.sy + dy * h, i, flag: false });
         }
-        if (it.hit) break;
+        for (let j = 0; j < OV_FLAG.length; j++) cand.push({ x: it.sx + w / 2 - bi, y: it.sy + OV_FLAG[j] * h, i: 50 + j, flag: true });
+        const pi = prev != null && e._sc === sc ? cand.findIndex((c) => c.i === prev) : -1;
+        if (pi > 0) cand.unshift(cand.splice(pi, 1)[0]);
+        for (let ci = 0; ci < cand.length; ci++) {
+          const c = cand[ci];
+          const l = c.x - w / 2,
+            t = c.y - h / 2,
+            r = c.x + w / 2,
+            b = c.y + h / 2;
+          if (!free(l, t, r, b)) continue;
+          const cov = coversOther(it, l, t, r, b);
+          if (c.flag && cov) continue;
+          let cost = (sc === 1 ? 0 : 1) + (c.flag ? 1 : 0) + (cov ? 5 : 0) + ci * 0.01;
+          const bo = ownerAt(l + bi, c.y);
+          if (c.flag && bo !== it.kid && Math.hypot(l + bi - it.sx, c.y - it.sy) > 6) continue;
+          if (bo !== it.kid) cost += bo >= 0 ? 4 : 2;
+          if (best && cost >= best.cost) continue;
+          cost += 3 * overOthers(it, c.x, c.y, w);
+          const keep = ci === 0 && pi >= 0 && cost <= (e._cost ?? 0) + 1.5;
+          if (!best || cost < best.cost || keep) best = { x: c.x, y: c.y, w, h, sc, i: c.i, cost };
+          if (keep || cost < 0.5) break;
+        }
+        if (best && best.cost < 0.5) break;
       }
+      if (best && best.cost <= 7) put(it, best, 'near');
     }
     // 2. the rest go out into open ground or sea nearby, joined to their
     // realm's centre by a thin leader line; never over another realm's centre
+    // and, where it can be helped, not over a neighbor's land
     for (const it of items) {
       if (it.hit) continue;
       const e = it.e;
@@ -873,6 +948,8 @@ export class UI {
             // and the spot held last frame is kept unless clearly beaten
             let cost = r + (ownNearest(it, x, y) ? 0 : 40) + (sc === 1 ? 0 : 6);
             if (e._mode === 'far' && e._spot === ri * 100 + ai && e._sc === sc) cost -= 12;
+            if (best && cost >= best.cost) continue;
+            cost += 10 * overOthers(it, x, y, w);
             if (!best || cost < best.cost) best = { x, y, w, h, sc, i: ri * 100 + ai, cost };
           }
           if (best && best.cost < OV_RINGS[Math.min(ri + 1, OV_RINGS.length - 1)] * h) break;
@@ -910,6 +987,7 @@ export class UI {
       if (e.classList.contains('is-pin') !== pin) e.classList.toggle('is-pin', pin);
       e._spot = hit.i;
       e._sc = hit.sc;
+      e._cost = hit.cost ?? 0;
       e._mode = it.mode;
       e.style.transform = `translate(${Math.round(hit.x)}px, ${Math.round(hit.y)}px) translate(-50%, -50%)${hit.sc !== 1 ? ` scale(${hit.sc})` : ''}`;
       if (it.mode === 'far') {

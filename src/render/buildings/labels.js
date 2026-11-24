@@ -148,6 +148,9 @@ function makeLabel(text, color, kind, banner = null) {
     /* no text metrics */
   }
   sp.userData.capK = capPx / c.height;
+  // (round 35) where the banner's middle sits, as a share of the sprite's
+  // width from its left: a small realm's ribbon is pinned by its banner
+  sp.userData.flagX = bw ? 43 / c.width : null;
   sp.userData.text = text;
   sp.userData.color = color;
   sp.userData.banner = banner ? banner.symbol + '|' + banner.field : '';
@@ -539,6 +542,18 @@ export class Labels {
       tot = this._landTot;
     const nLand = Math.max(1, this._landN || 0),
       maxTot = Math.max(1, this._landMax || 0);
+    // (round 35) names are ranked by the land each realm holds in view, and
+    // the realm with the most of it is always placed first (the realm under
+    // the camera only breaks near ties): at 60 tiles Khaveh, the largest
+    // realm in view with its capital on screen, was left unnamed
+    let topK = -1,
+      topN = 0;
+    if (cnt)
+      for (const [id, n] of cnt) {
+        const k = civ.kingdoms[id];
+        if (n > topN && k?.alive && k.villages.length && civ.villages[k.capital]?.alive) (topN = n), (topK = id);
+      }
+    this._topK = topK;
     for (const [id, s] of this.kLabels) {
       const k = civ.kingdoms[id];
       const v = k && k.alive && k.villages.length ? civ.villages[k.capital] : null; // no names for fallen realms
@@ -570,7 +585,7 @@ export class Labels {
       const h = Math.max(1.4, dist * 0.032);
       s.scale.set(h * s.userData.aspect, h, 1);
       const focus = id === this._focusK;
-      const rank = (focus ? 2 : 0) + (cnt?.get(id) || 0) / nLand + (0.25 * (tot?.get(id) || 0)) / maxTot + Math.min(0.05, (k.population || 0) * 1e-5) + (s.userData.fade > 0.5 ? 0.03 : 0);
+      const rank = (id === topK ? 3 : 0) + (focus ? 0.25 : 0) + (cnt?.get(id) || 0) / nLand + (0.25 * (tot?.get(id) || 0)) / maxTot + Math.min(0.05, (k.population || 0) * 1e-5) + (s.userData.fade > 0.5 ? 0.03 : 0);
       cand.push({ s, a: kAk, kind: 'realm', key: 10 + rank, kid: id, focus });
     }
     const townK = townScreenK(innerWidth, innerHeight);
@@ -640,8 +655,10 @@ export class Labels {
     const pts = (this._landPts = this._landPts || new Map());
     pts.clear();
     // (round 33: a finer grid, 19 x 11; the counts also rank the names)
-    const NX = 19,
-      NY = 11;
+    // (round 35: 27 x 15, so a narrow country such as Italy or Vietnam has
+    // land samples to hang its name from and is ranked by what it holds)
+    const NX = 27,
+      NY = 15;
     // the open inspector card hides the screen right of its left edge
     let x1 = 0.97;
     try {
@@ -751,6 +768,41 @@ export class Labels {
     return out;
   }
 
+  // (round 35) The realm whose town is nearest a tile (-2 when there is no
+  // town): unclaimed land counts as the nearest realm's when names are
+  // placed, so a name never rests over a neighbor's country before its
+  // borders have grown (at the start most of the land is unclaimed). Cells
+  // of 4 tiles, remembered for 2 s.
+  nearRealm(tx, tz) {
+    const civ = this.game.civ,
+      w = this.game.world;
+    const now = performance.now();
+    if (!this._nr || now - this._nrT > 2000) {
+      this._nrT = now;
+      this._nr = new Map();
+      const vs = (this._nrV = []);
+      for (const v of civ?.villages || []) if (v?.alive && v.kingdom >= 0 && civ.kingdoms[v.kingdom]?.alive) vs.push(v.cx, v.cz, v.kingdom);
+    }
+    const key = (tx >> 2) * 65536 + (tz >> 2);
+    let r = this._nr.get(key);
+    if (r !== undefined) return r;
+    const vs = this._nrV,
+      W = w.w,
+      wrap = !!w.meta?.geo?.wrap;
+    const x = (tx & ~3) + 2,
+      z = (tz & ~3) + 2;
+    let bd = Infinity;
+    r = -2;
+    for (let i = 0; i < vs.length; i += 3) {
+      let dx = Math.abs(vs[i] - x);
+      if (wrap && dx > W / 2) dx = W - dx;
+      const d = dx * dx + (vs[i + 1] - z) ** 2;
+      if (d < bd) (bd = d), (r = vs[i + 2]);
+    }
+    this._nr.set(key, r);
+    return r;
+  }
+
   // Every realm's land in the whole world (tiles it owns), read every 3 s:
   // ranks the names of realms with little or none of the land in view.
   _landTotals() {
@@ -851,6 +903,9 @@ export class Labels {
     this._fadeAt = now;
     const ribOn = (this._ribOn = this._ribOn || new Set());
     ribOn.clear();
+    // tests of the ground under the screen allowed this frame (see the realm
+    // names' spot search)
+    this._gBudget = 6000;
     for (const c of cand) {
       const sp = c.s;
       v.copy(sp.position).project(cam);
@@ -949,7 +1004,8 @@ export class Labels {
           if (!world.inBounds?.(tx, tz)) return -3;
           const o = world.owner[tz * world.w + tx];
           if (o >= 0) return o;
-          return world.isWater?.(tx, tz) ? -1 : -2;
+          // (round 35) unclaimed land is the nearest town's realm's
+          return world.isWater?.(tx, tz) ? -1 : this.nearRealm(tx, tz);
         };
         const toScreen = (x, y, z) => {
           v2.set(x, y, z).project(cam);
@@ -967,7 +1023,7 @@ export class Labels {
           const gy = world.surfaceAt(seat.cx, seat.cz);
           const a = toScreen(seat.cx, gy, seat.cz);
           if (a) {
-            anchors.push({ kind: 'seat', x: a[0], y: a[1], gy });
+            anchors.push({ kind: 'seat', x: a[0], y: a[1], gy, wx: seat.cx, wz: seat.cz });
             // the top of the capital's houses on screen (its four sides projected)
             const R = Math.max(1.5, (seat.radius || 4) * 0.5);
             for (const [ox, oz] of [[-R, 0], [R, 0], [0, -R], [0, R], [0, 0]]) {
@@ -982,23 +1038,43 @@ export class Labels {
           const gy = world.surfaceAt(k.labelX, k.labelZ);
           const a = toScreen(k.labelX, gy, k.labelZ);
           if (a && !anchors.some((o) => Math.hypot(o.x - a[0], o.y - a[1]) < 24)) {
-            const m = { kind: 'mid', x: a[0], y: a[1], gy };
+            const m = { kind: 'mid', x: a[0], y: a[1], gy, wx: k.labelX, wz: k.labelZ };
             // on the overview the middle of the land comes first
             if (!this._midOnly) anchors.unshift(m);
             else anchors.push(m);
           }
         }
-        // its land in view (the sample nearest its middle, then a few more)
+        // (round 35) its land in view: the samples nearest the middle of what
+        // it holds on screen first, spread at least 36 px apart, up to ten
+        // (round 33 tried the middle and a few more: MAINLAND REGION was left
+        // out at 54 tiles on the whole Earth though its land filled half the
+        // view)
         const lp = this._landPts?.get(c.kid);
-        const la = this._landAt?.get(c.kid);
         if (lp) {
-          const pts = la ? [la.x, la.z] : [];
-          const step = Math.max(2, Math.floor(lp.length / 6 / 2) * 2);
-          for (let i = 0; i < lp.length && pts.length < 8; i += step) pts.push(lp[i], lp[i + 1]);
-          for (let i = 0; i < pts.length; i += 2) {
-            const gy = world.surfaceAt(pts[i], pts[i + 1]);
-            const a = toScreen(pts[i], gy, pts[i + 1]);
-            if (a && !anchors.some((o) => Math.hypot(o.x - a[0], o.y - a[1]) < 24)) anchors.push({ kind: 'land' + i, x: a[0], y: a[1], gy });
+          const scr = [];
+          let mx = 0,
+            my = 0;
+          for (let i = 0; i < lp.length; i += 2) {
+            const gy = world.surfaceAt(lp[i], lp[i + 1]);
+            const a = toScreen(lp[i], gy, lp[i + 1]);
+            if (!a) continue;
+            scr.push({ x: a[0], y: a[1], gy, wx: lp[i], wz: lp[i + 1] });
+            mx += a[0];
+            my += a[1];
+          }
+          if (scr.length) {
+            mx /= scr.length;
+            my /= scr.length;
+            for (const p of scr) p.d = (p.x - mx) ** 2 + (p.y - my) ** 2;
+            scr.sort((p, q) => p.d - q.d);
+            let n = 0;
+            for (const p of scr) {
+              if (n >= 10) break;
+              if (anchors.some((o) => Math.hypot(o.x - p.x, o.y - p.y) < 36)) continue;
+              p.kind = 'land';
+              anchors.push(p);
+              n++;
+            }
           }
         }
         let placed = false,
@@ -1012,66 +1088,128 @@ export class Labels {
         // a name left out looks for a spot again only every 0.25 s (the full
         // search is the costly part of a frame with many realms in view)
         if (sp.userData.dropAt && now - sp.userData.dropAt < 250) tries.length = 0;
+        // (each test of the ground under a point of the screen counts toward
+        // a budget for the frame; past it the names still unplaced wait for
+        // the next search)
+        if (this._gBudget <= 0) tries.length = 0;
         const last = sp.userData.fade > 0.5 ? sp.userData.spot : null;
+        const fK = sp.userData.flagX;
+        const kid = c.kid;
+        const owner = (x, y, gy) => {
+          this._gBudget--;
+          return groundOwner(x, y, gy);
+        };
+        // (round 35) every spot is scored, lower is better, and the first
+        // spot scoring 0 is taken: the name's middle and its banner on the
+        // realm's own land, and none of its plate over another realm's land
+        // (MAINLAND REGION's plate lay over the top of Korea). A small realm
+        // whose land is narrower than its name is pinned by its banner, the
+        // name running east over the sea, rather than drifting into the sea
+        // or a neighbor (both Korea flags sat 60-70 px into the Yellow Sea).
+        //   3 for each seventh of the plate over another realm's land
+        //   2 for the banner over the sea or unclaimed land, 4 over a neighbor
+        //   1 for the middle off the realm's land (allowed only when pinned
+        //     by the banner, or over unclaimed land near the point), 1 for a
+        //     banner-pinned spot, 1 for each tenth the name is shrunk
+        const MAX_SCORE = 8;
+        let best = null;
+        const score = (px, py, a, dx, dy, mode, pw2, fx) => {
+          const off = Math.hypot(dx, dy);
+          const bx = px + fx;
+          let s = mode === 'flag' ? 1 : 0;
+          if (mode === 'flag') {
+            const ob = owner(bx, py, a.gy);
+            if (ob !== kid && !(a.kind === 'seat' && Math.abs(dy) <= 14 && Math.abs(bx - a.x) <= 14)) return -1;
+            if (ob !== kid) s += 2;
+            if (owner(px, py, a.gy) !== kid) s += 1;
+          } else {
+            const oc = owner(px, py, a.gy);
+            if (oc !== kid && !(oc === -2 && off <= 41) && !(a.kind === 'seat' && off <= 14)) return -1;
+            if (oc !== kid) s += 1;
+            const ob = owner(bx, py, a.gy);
+            if (ob !== kid) s += ob >= 0 ? 4 : 2;
+          }
+          if (s > MAX_SCORE || (best && s >= best.s)) return s;
+          for (let i = 0; i < 7; i++) {
+            const o = owner(px - pw2 / 2 + (pw2 * (i + 0.5)) / 7, py, a.gy);
+            if (o >= 0 && o !== kid) {
+              s += 3;
+              if (s > MAX_SCORE || (best && s >= best.s)) break;
+            }
+          }
+          return s;
+        };
         for (const q of tries) {
           const w2 = pw * q,
             h2 = ph * q;
           // the plate's size and where the sprite's centre sits below the
           // plate's middle
-          const pw2 = w2 * (pl ? pl.r - pl.l : 1),
+          const pw2 = w2 * plW,
             ph2 = h2 * (pl ? pl.b - pl.t : 1),
             oy = pl ? (0.5 - (pl.t + pl.b) / 2) * h2 : 0;
+          // the banner's middle from the name's middle (it is drawn at the
+          // plate's left end)
+          const fx = fK != null ? (fK - 0.5) * w2 : -pw2 / 2 + Math.min(16, pw2 * 0.12);
           const d1 = ph2 * 0.85;
           const offs = [[0, 0], [0, -d1], [0, d1], [-20, 0], [20, 0], [-20, -d1], [20, -d1], [-20, d1], [20, d1], [-38, 0], [38, 0], [0, -2 * d1], [0, 2 * d1]].filter(([dx, dy]) => Math.hypot(dx, dy) <= 41);
+          const flags = [0, -d1 * 0.45, d1 * 0.45];
           // a name already shown tries its own spot first, so it does not
-          // hop about as the camera moves
+          // hop about as the camera moves, and keeps it unless it scores
+          // clearly worse than before
           const spots = [];
-          if (last && !last.free) {
-            const a = anchors.find((o) => o.kind === last.kind);
-            if (a) spots.push([a, last.dx, last.dy, false]);
-          }
-          if (last?.free && townTop != null) {
-            const a = anchors.find((o) => o.kind === 'seat');
-            if (a) spots.push([a, 0, townTop - 4 - ph2 / 2 - a.y, true]);
+          let keepS = -1;
+          if (last && last.q === q) {
+            const gy = world.surfaceAt(last.wx, last.wz);
+            const p = toScreen(last.wx, gy, last.wz);
+            if (p) {
+              const a = { kind: last.kind, x: p[0], y: p[1], gy, wx: last.wx, wz: last.wz };
+              const dy = last.mode === 'top' && townTop != null ? townTop - 4 - ph2 / 2 - a.y : last.dy;
+              spots.push([a, last.mode === 'flag' ? -fx : last.dx, dy, last.mode]);
+              keepS = last.s + 1;
+            }
           }
           for (const a of anchors) {
             // (round 31) the first try on the capital sits just above its
             // houses (centred on its seat the ribbon hid the town at 68 tiles)
             if (a.kind === 'seat' && townTop != null) {
               const dy = townTop - 4 - ph2 / 2 - a.y;
-              if (dy < -2) spots.push([a, 0, dy, true]);
+              if (dy < -2) spots.push([a, 0, dy, 'top']);
             }
-            for (const [dx, dy] of offs) spots.push([a, dx, dy, false]);
+            for (const [dx, dy] of offs) spots.push([a, dx, dy, 'c']);
+            for (const dy of flags) spots.push([a, -fx, dy, 'flag']);
           }
-          for (const [a, dx, dy, free] of spots) {
+          let kept = false;
+          for (let si = 0; si < spots.length; si++) {
+            const [a, dx, dy, mode] = spots[si];
+            if (this._gBudget <= 0) break;
             const px = a.x + dx,
               py = a.y + dy;
             const pr = { l: px - pw2 / 2, r: px + pw2 / 2, t: py - ph2 / 2, b: py + ph2 / 2 };
             if (pr.l < mLeft || pr.r > right || pr.t < top || pr.b > bot) continue;
             const r = { l: px - w2 / 2, r: px + w2 / 2, t: py + oy - h2 / 2, b: py + oy + h2 / 2 };
             if (hits(r)) continue;
-            // its middle over its own land, or over unclaimed land within
-            // about 40 px of the point (a young realm owns little round its
-            // towns), never over another realm or the sea; only right on the
-            // capital may it lie over the water round a small island
-            const o = groundOwner(px, py, a.gy);
-            const off = Math.hypot(dx, dy);
-            if (o !== c.kid && !(o === -2 && off <= 41) && !(a.kind === 'seat' && off <= 14)) continue;
-            rect.l = r.l;
-            rect.r = r.r;
-            rect.t = r.t;
-            rect.b = r.b;
-            cx = px;
-            cy = py + oy;
-            placed = true;
-            sp.userData.spot = { kind: a.kind, dx, dy, free };
-            sp.userData.dropAt = 0;
-            break;
+            let s = score(px, py, a, dx, dy, mode, pw2, fx);
+            if (s < 0) continue;
+            s += Math.round((1 - q) * 10);
+            if (best && s >= best.s) continue;
+            best = { s, q, r, px, py: py + oy, spot: { kind: a.kind, wx: a.wx, wz: a.wz, dx, dy, mode, q, s } };
+            // the spot held last frame is kept while it scores about as well
+            if (si === 0 && keepS >= 0 && s <= keepS) kept = true;
+            if (s === 0 || kept) break;
           }
-          if (placed) {
-            shrink = q;
-            break;
-          }
+          if (best && (best.s === 0 || kept)) break;
+        }
+        if (best && best.s <= MAX_SCORE) {
+          rect.l = best.r.l;
+          rect.r = best.r.r;
+          rect.t = best.r.t;
+          rect.b = best.r.b;
+          cx = best.px;
+          cy = best.py;
+          placed = true;
+          shrink = best.q;
+          sp.userData.spot = best.spot;
+          sp.userData.dropAt = 0;
         }
         if (placed && shrink !== 1) {
           sp.scale.x *= shrink;
