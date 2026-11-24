@@ -202,6 +202,27 @@ export class Popover {
       }
     }
     this.el.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
+    // (round 35) a tech card's tip has its own lighter, gold-edged look and a
+    // caret pointing at the card it explains: drawn like a card, a tip above
+    // Combustion Engine read as the Electricity card's text having changed
+    this.el.classList.toggle('is-tech', !!side);
+    delete this.el.dataset.caret;
+    if (side) {
+      const tw = this.el.offsetWidth,
+        th = this.el.offsetHeight;
+      const ccx = (r.left + r.right) / 2,
+        ccy = (r.top + r.bottom) / 2;
+      let caret = null;
+      if (y >= r.bottom - 1) caret = 'up';
+      else if (y + th <= r.top + 1) caret = 'down';
+      else if (x >= r.right - 1) caret = 'left';
+      else if (x + tw <= r.left + 1) caret = 'right';
+      if (caret) {
+        this.el.dataset.caret = caret;
+        this.el.style.setProperty('--cx', `${Math.round(Math.max(14, Math.min(tw - 14, ccx - x)))}px`);
+        this.el.style.setProperty('--cy', `${Math.round(Math.max(12, Math.min(th - 12, ccy - y)))}px`);
+      }
+    }
     clearTimeout(this._hide);
     if (ms) this._hide = setTimeout(() => this.hide(), ms);
     // watchdog: a tip never outlives its target (dialog closed, panel re-rendered, hidden)
@@ -234,15 +255,17 @@ export class Popover {
     };
     const sideW = Math.min(w, 260),
       [sw, sh] = size(sideW);
-    const colW = Math.max(200, Math.round(r.width)),
+    // (round 35) a little narrower than the card and set in from its edges,
+    // with room for the caret that points at it
+    const colW = Math.max(200, Math.round(r.width) - 28),
       [cw, ch] = size(colW);
-    const cx = Math.max(8, Math.min(vw - cw - 8, r.left)),
+    const cx = Math.max(8, Math.min(vw - cw - 8, r.left + 14)),
       sy = Math.max(ceil, Math.min(floor - sh, r.top));
     const spots = [
-      { x: cx, y: r.bottom + 6, w: cw, h: ch, maxW: colW, pref: 0 },
-      { x: r.right + 8, y: sy, w: sw, h: sh, maxW: sideW, pref: 1 },
-      { x: cx, y: r.top - 6 - ch, w: cw, h: ch, maxW: colW, pref: 2 },
-      { x: r.left - sw - 8, y: sy, w: sw, h: sh, maxW: sideW, pref: 3 },
+      { x: cx, y: r.bottom + 9, w: cw, h: ch, maxW: colW, pref: 0 },
+      { x: r.right + 10, y: sy, w: sw, h: sh, maxW: sideW, pref: 1 },
+      { x: cx, y: r.top - 9 - ch, w: cw, h: ch, maxW: colW, pref: 2 },
+      { x: r.left - sw - 10, y: sy, w: sw, h: sh, maxW: sideW, pref: 3 },
     ];
     let best = null;
     for (const s of spots) {

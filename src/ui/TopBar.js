@@ -69,7 +69,7 @@ const STAT_DEFS = [
 export const PRESET_NAMES = { continent: 'Continent', pangaea: 'Pangaea', archipelago: 'Archipelago', islands: 'Islands', earth: 'World Map' };
 
 // short captions for the phone rail (the full name is the long-press tip)
-const NAV_CAPTION = { 'World Laws': 'Laws', 'World Ages': 'Ages', Controls: 'Help', 'New World': 'New' };
+const NAV_CAPTION = { 'World Laws': 'Laws', 'World Ages': 'Ages', 'New World': 'New' };
 
 export class TopBar {
   constructor(ui) {
@@ -106,7 +106,7 @@ export class TopBar {
           return b;
         })(),
         this.navBtn('settings', 'Settings', 'O', () => ui.modals.toggle('settings')),
-        this.navBtn('help', 'Controls', 'H', () => ui.modals.toggle('help')),
+        this.navBtn('help', 'Help', 'H', () => ui.modals.toggle('help')),
       ),
     );
 
@@ -250,7 +250,7 @@ export class TopBar {
         item('trade', 'World Laws', () => ui.modals.open('laws')),
         item('eclipse', 'World Ages', () => ui.modals.open('ages')),
         item('settings', 'Settings', () => ui.modals.open('settings')),
-        item('help', 'Controls', () => ui.modals.open('help')),
+        item('help', 'Help', () => ui.modals.open('help')),
       );
       ui.layer.append(this.menu);
       addEventListener('pointerdown', (e) => {
@@ -263,7 +263,9 @@ export class TopBar {
 
   navBtn(icon, label, key, fn) {
     // (round 25) a caption under each rail icon (phones in portrait show it)
-    // (round 27) touch screens have no keys to name: "Controls", not "Controls · H"
+    // (round 27) touch screens have no keys to name: "Help", not "Help · H"
+    // (round 35: one word for help everywhere: the rail said "Help" and its
+    // tip and name "Controls")
     const touch = this.ui.root?.classList.contains('is-touch') || matchMedia('(pointer: coarse)').matches;
     return el('button', {
       class: 'ws-iconbtn',

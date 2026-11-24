@@ -171,3 +171,125 @@
   vertical-align: 1px;
   opacity: 0.78;
 }
+
+/* ---- (round 35) Chronicle: the chips sit on up to two rows, the fullest
+   filters first (one row showed 3 of 7 and hid Technology); the whole block
+   still scrolls sideways if even two rows are too wide */
+.ws-chron__filters {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+.ws-chron__frow {
+  display: flex;
+  flex: none;
+  gap: 4px;
+  width: max-content;
+}
+.ws-chron__frow[hidden] {
+  display: none;
+}
+
+/* ---- (round 35) onboarding: the coach card appears at once, with no fade
+   from nothing; only its contents fade in. On a slow frame rate the first
+   card's 0.3 s fade was unfinished when Next was pressed, and steps 2 and 3
+   read opacity 0 for 0.7 s. Hiding the card still fades it out. */
+.ws-coach.is-shown {
+  transition-property: top, box-shadow;
+}
+.ws-coach.is-shown.is-placing {
+  transition-property: none;
+}
+/* (the words rise into place without fading: on a slow frame rate a fade
+   held them at a third of their strength for most of a second) */
+.ws-coach.is-shown > *,
+.ws-coach.is-swap > * {
+  animation: ws-coach-rise 0.28s ease-out both;
+}
+@keyframes ws-coach-rise {
+  from {
+    transform: translateY(3px);
+  }
+  to {
+    transform: none;
+  }
+}
+
+/* ---- (round 35) a tech card's tip is not drawn like a card: a lighter warm
+   plate with a gold edge and a caret pointing at the card it explains */
+.ws-pop.is-tech {
+  background: #2c2619;
+  color: #f4ead2;
+  box-shadow:
+    0 0 0 1px rgba(235, 201, 119, 0.78),
+    0 10px 26px rgba(0, 0, 0, 0.55);
+}
+.ws-pop.is-tech[data-caret]::before {
+  content: '';
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  box-sizing: border-box;
+  background: #2c2619;
+  border: 0 solid rgba(235, 201, 119, 0.78);
+  transform: rotate(45deg);
+}
+.ws-pop.is-tech[data-caret='up']::before {
+  top: -6px;
+  left: calc(var(--cx, 50%) - 6px);
+  border-top-width: 1px;
+  border-left-width: 1px;
+  clip-path: polygon(0 0, 100% 0, 0 100%);
+}
+.ws-pop.is-tech[data-caret='down']::before {
+  bottom: -6px;
+  left: calc(var(--cx, 50%) - 6px);
+  border-bottom-width: 1px;
+  border-right-width: 1px;
+  clip-path: polygon(100% 0, 100% 100%, 0 100%);
+}
+.ws-pop.is-tech[data-caret='left']::before {
+  left: -6px;
+  top: calc(var(--cy, 50%) - 6px);
+  border-bottom-width: 1px;
+  border-left-width: 1px;
+  clip-path: polygon(0 0, 100% 100%, 0 100%);
+}
+.ws-pop.is-tech[data-caret='right']::before {
+  right: -6px;
+  top: calc(var(--cy, 50%) - 6px);
+  border-top-width: 1px;
+  border-right-width: 1px;
+  clip-path: polygon(0 0, 100% 0, 100% 100%);
+}
+
+/* ---- (round 35) phones: the age dial's letters are 10 px (about 7.6 px
+   before) in the same 19 px badge at the same spot; its progress ring runs
+   thinner at the badge's edge, in place of the edge line, to make room */
+@media (max-width: 720px), (max-height: 500px) {
+  .ws-agedot {
+    box-shadow: 0 0 8px color-mix(in srgb, var(--age) 40%, transparent);
+  }
+  .ws-agedot__bg,
+  .ws-agedot__fg {
+    stroke-width: 1.7;
+  }
+  .ws-agedot__bg {
+    stroke: color-mix(in srgb, var(--age) 38%, transparent);
+  }
+  .ws-agedot b {
+    font: 750 10px/1 var(--ws-font);
+    letter-spacing: -0.04em;
+    transform: scaleX(0.92);
+  }
+}
+
+/* ---- (round 35) vehicle chooser: an era's pinned heading steps aside while
+   only a sliver of its group is left in view */
+.ws-vehpick__glbl {
+  transition: opacity 0.15s;
+}
+.ws-vehpick__glbl.is-cut {
+  opacity: 0;
+}

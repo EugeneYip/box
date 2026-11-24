@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { powerIcon } from './icons.js';
 import { UNIT, VEHICLE } from '../core/scale.js';
 import { roadBoost } from '../sim/fleet/traffic.js';
+import { BUILDING_TYPES } from '../sim/civ/catalog.js';
 
 // a craft's drawn length in world units: its kind's length is already at the
 // world's craft scale (kinds.js), and a road vehicle grows a little as the
@@ -127,6 +128,63 @@ function markerLight(game) {
   const sky = lum(env.ambientColor) ?? 0.7;
   const ex = Math.max(1, game.atmosphere?.post?.exposure ?? 1);
   return Math.max(0.12, Math.min(1, Math.pow((key + sky) / 3.6, 0.75) / ex));
+}
+
+// (round 35) A faint outline of the building that rises next on a cleared
+// plot: its footprint and height as a glass box with bright edges (the plot
+// showed only the gold corner marks, though its card already said "Next:
+// Apartment Block").
+class PlotGhost {
+  constructor(game) {
+    this.game = game;
+    const box = new THREE.BoxGeometry(1, 1, 1);
+    box.translate(0, 0.5, 0);
+    this.fill = new THREE.Mesh(box, new THREE.MeshBasicMaterial({ color: 0xfbe3a6, transparent: true, opacity: 0.07, depthWrite: false, side: THREE.DoubleSide, fog: false, toneMapped: false }));
+    this.edges = new THREE.LineSegments(new THREE.EdgesGeometry(box), new THREE.LineBasicMaterial({ color: 0xfbe3a6, transparent: true, opacity: 0.6, depthWrite: false, fog: false, toneMapped: false }));
+    this.group = new THREE.Group();
+    this.group.name = 'plot-ghost';
+    this.group.add(this.fill, this.edges);
+    this.fill.renderOrder = 990;
+    this.edges.renderOrder = 991;
+    this.group.visible = false;
+    this.group.frustumCulled = false;
+    for (const m of [this.fill, this.edges]) m.frustumCulled = false;
+    game.scene.add(this.group);
+    this._key = '';
+    this._h = 1;
+  }
+  // P: the town's pending renewal ({ tx, ty, rot, type, level, was }), v its town
+  show(P, v, plot, t) {
+    const g = this.game;
+    const def = BUILDING_TYPES[P?.type];
+    if (!def) return this.hide();
+    const fw = P.rot & 1 ? def.h : def.w,
+      fh = P.rot & 1 ? def.w : def.h;
+    const cx = P.tx + fw / 2,
+      cz = P.ty + fh / 2;
+    const key = `${P.type}|${P.level}|${P.tx}|${P.ty}|${P.rot}`;
+    if (key !== this._key) {
+      this._key = key;
+      let h = 0;
+      try {
+        h = g.buildings?.previewHeight?.({ type: P.type, level: P.level, style: P.was?.style ?? plot?.style, era: g.civ?.kingdoms?.[v?.kingdom]?.era ?? plot?.era ?? 1, kingdom: v?.kingdom, village: v?.id, x: cx, z: cz, id: plot?.id || 0 }) || 0;
+      } catch {
+        h = 0;
+      }
+      this._h = h > 0.05 ? h : 1.5;
+    }
+    const gy = g.world.surfaceAt(cx, cz);
+    this.group.position.set(cx, gy + 0.02, cz);
+    this.group.scale.set(fw * 0.86, this._h, fh * 0.86);
+    const lk = markerLight(g);
+    const pulse = 0.85 + Math.sin(t * 2.4) * 0.15;
+    this.edges.material.opacity = 0.62 * pulse * lk;
+    this.fill.material.opacity = 0.075 * pulse * lk;
+    this.group.visible = true;
+  }
+  hide() {
+    this.group.visible = false;
+  }
 }
 
 // A closed band laid on the ground along a loop of points.
@@ -435,6 +493,7 @@ export class BrushCursor {
     this.hover = new GroundLoop(game, 64, 991);
     this.sel = new GroundLoop(game, 72, 993);
     this.hover.lit = this.sel.lit = true; // outlines take the scene's light (the power brush keeps its own)
+    this.ghost = new PlotGhost(game);
     this.color = new THREE.Color();
     this.white = new THREE.Color(1, 1, 1);
     this.gold = new THREE.Color('#fbe3a6');
@@ -722,6 +781,15 @@ export class BrushCursor {
       this.sel.style(this.gold, 1, this.t, 3, 0.18, 0.72, 0.75 + Math.sin(this.t * 4) * 0.2);
       this.sel.visible = true;
     } else this.sel.visible = false;
+    // (round 35) a cleared plot held for a new building shows that building's
+    // footprint and height
+    {
+      const tr = uiOn && !ref && g.ui?.inspector?.open ? g.ui.inspector.track : null;
+      const pv = tr?.plotOf?.tx != null ? tr.village : null;
+      const P = pv?.renewPend && pv.renewPend.home === tr.plotOf.id ? pv.renewPend : null;
+      if (P) this.ghost.show(P, pv, tr.plotOf, this.t);
+      else this.ghost.hide();
+    }
     // (round 25) a selected or followed creature or car drawn under ~5 px
     // gets a small bright mark of at least that size over its body
     const fo = g.cameraRig?.follow;

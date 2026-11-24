@@ -639,6 +639,21 @@ export class BuildingRenderer {
     return nm;
   }
 
+  // (round 35) The height in world units of the building a plan describes
+  // ({ type, level, style, era, kingdom, village, x, z, id }), as it would be
+  // drawn: the cleared plot's card names the next building, and the plot
+  // shows a faint outline of its footprint and height.
+  previewHeight(p) {
+    const def = BUILDING_TYPES[p?.type];
+    if (!def) return 0;
+    const civ = this.game.civ;
+    const b = { id: 0, seed: 0, era: 1, ...p };
+    const lvl = Math.min(b.level || 1, def.levels || 1);
+    const a = this._arch(archKey(b, def, lvl, civ?.kingdoms?.[b.kingdom]?.era ?? 0));
+    const ups = civ ? this._upscale(b, def, a, civ) : null;
+    return (a.maxY || 1) * BS * (ups ? ups[1] : 1);
+  }
+
   // ------------------------------------------------------------------ archetypes
   _arch(key) {
     let a = this.arche.get(key);

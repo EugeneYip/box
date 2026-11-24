@@ -70,7 +70,7 @@ export class TitleScreen {
           el(
             'div',
             { class: 'ws-title__links' },
-            el('button', { class: 'ws-link', type: 'button', onclick: () => ui.modals.open('help'), html: `${uiIcon('keyboard')}<span>Controls</span>` }),
+            el('button', { class: 'ws-link', type: 'button', onclick: () => ui.modals.open('help'), html: `${uiIcon('keyboard')}<span>Help</span>` }),
             el('span', { class: 'ws-title__dot' }),
             el('button', { class: 'ws-link', type: 'button', onclick: () => ui.modals.open('settings'), html: `${uiIcon('settings')}<span>Settings</span>` }),
           ),
@@ -259,6 +259,12 @@ export class TitleScreen {
     this.ui.reveal();
     const rig = g.cameraRig;
     rig.goal.dist = rig.maxDist * 0.5;
+    // (round 35) and glides over to where the towns are
+    try {
+      this.ui.frameStart?.(false);
+    } catch {
+      /* keep the plain dive */
+    }
     g.audio?.play?.('ui-open', { volume: 0.8 });
     g.audio?.play?.('magic', { volume: 0.4 });
     setTimeout(() => this.el.remove(), 1400);
