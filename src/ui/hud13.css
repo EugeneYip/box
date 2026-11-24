@@ -191,6 +191,18 @@
 .ws-coach.is-shown.is-placing {
   transition-property: none;
 }
-.ws-coach.is-shown > * {
-  animation: ws-coach-swap 0.28s ease-out both;
+/* (the words rise into place without fading: on a slow frame rate a fade
+   held them at a third of their strength for most of a second) */
+.ws-coach.is-shown > *,
+.ws-coach.is-swap > * {
+  animation: ws-coach-rise 0.28s ease-out both;
 }
+@keyframes ws-coach-rise {
+  from {
+    transform: translateY(3px);
+  }
+  to {
+    transform: none;
+  }
+}
+
