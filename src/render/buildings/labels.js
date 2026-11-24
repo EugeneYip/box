@@ -846,6 +846,17 @@ export class Labels {
       this._hudW = W;
       this._hudH = H;
       this._hud = this._readHud(W, H);
+      // (round 35) realm names also keep out of the tray's whole box (the
+      // strip over its glass is where the power bar and the vehicle
+      // chooser open; ITALY sat in it, 13 px over the glass)
+      this._dockBox = null;
+      try {
+        const d = document.querySelector('#ui-root:not(.is-photo) .ws-dock');
+        const r = d?.getBoundingClientRect();
+        if (r && r.width > 4 && r.height > 4 && r.width < W * 0.95 && getComputedStyle(d).visibility !== 'hidden' && +getComputedStyle(d).opacity > 0.05) this._dockBox = { l: r.left, r: r.right, t: r.top, b: r.bottom };
+      } catch {
+        /* no DOM */
+      }
     }
     const uiOn = this.game.params?.ui !== false;
     // HUD-safe margins that scale with the screen (phones and tablets in portrait)
@@ -1107,7 +1118,9 @@ export class Labels {
         // name running east over the sea, rather than drifting into the sea
         // or a neighbor (both Korea flags sat 60-70 px into the Yellow Sea).
         //   3 for each seventh of the plate over another realm's land
-        //   2 for the banner over the sea or unclaimed land, 4 over a neighbor
+        //   3 for the banner over the sea or unclaimed land, 4 over a neighbor
+        //     (so a banner on the land, the name running out over the sea,
+        //     beats a name centred on a narrow realm with its banner at sea)
         //   1 for the middle off the realm's land (allowed only when pinned
         //     by the banner, or over unclaimed land near the point), 1 for a
         //     banner-pinned spot, 1 for each tenth the name is shrunk
@@ -1120,14 +1133,14 @@ export class Labels {
           if (mode === 'flag') {
             const ob = owner(bx, py, a.gy);
             if (ob !== kid && !(a.kind === 'seat' && Math.abs(dy) <= 14 && Math.abs(bx - a.x) <= 14)) return -1;
-            if (ob !== kid) s += 2;
+            if (ob !== kid) s += 3;
             if (owner(px, py, a.gy) !== kid) s += 1;
           } else {
             const oc = owner(px, py, a.gy);
             if (oc !== kid && !(oc === -2 && off <= 41) && !(a.kind === 'seat' && off <= 14)) return -1;
             if (oc !== kid) s += 1;
             const ob = owner(bx, py, a.gy);
-            if (ob !== kid) s += ob >= 0 ? 4 : 2;
+            if (ob !== kid) s += ob >= 0 ? 4 : 3;
           }
           if (s > MAX_SCORE || (best && s >= best.s)) return s;
           for (let i = 0; i < 7; i++) {
@@ -1152,7 +1165,9 @@ export class Labels {
           const fx = fK != null ? (fK - 0.5) * w2 : -pw2 / 2 + Math.min(16, pw2 * 0.12);
           const d1 = ph2 * 0.85;
           const offs = [[0, 0], [0, -d1], [0, d1], [-20, 0], [20, 0], [-20, -d1], [20, -d1], [-20, d1], [20, d1], [-38, 0], [38, 0], [0, -2 * d1], [0, 2 * d1]].filter(([dx, dy]) => Math.hypot(dx, dy) <= 41);
-          const flags = [0, -d1 * 0.45, d1 * 0.45];
+          // (a pinned name may sit a line above or below, its banner still
+          // on the land, and slide its banner a little along the land)
+          const flags = [[0, 0], [0, -d1], [0, d1], [-10, 0], [10, 0], [0, -d1 * 0.45], [0, d1 * 0.45], [-10, -d1], [10, -d1], [-10, d1], [10, d1]];
           // a name already shown tries its own spot first, so it does not
           // hop about as the camera moves, and keeps it unless it scores
           // clearly worse than before
@@ -1164,7 +1179,7 @@ export class Labels {
             if (p) {
               const a = { kind: last.kind, x: p[0], y: p[1], gy, wx: last.wx, wz: last.wz };
               const dy = last.mode === 'top' && townTop != null ? townTop - 4 - ph2 / 2 - a.y : last.dy;
-              spots.push([a, last.mode === 'flag' ? -fx : last.dx, dy, last.mode]);
+              spots.push([a, last.mode === 'flag' ? (last.fb || 0) - fx : last.dx, dy, last.mode]);
               keepS = last.s + 1;
             }
           }
@@ -1176,7 +1191,7 @@ export class Labels {
               if (dy < -2) spots.push([a, 0, dy, 'top']);
             }
             for (const [dx, dy] of offs) spots.push([a, dx, dy, 'c']);
-            for (const dy of flags) spots.push([a, -fx, dy, 'flag']);
+            for (const [bx, dy] of flags) if (!bx || a.kind !== 'land') spots.push([a, bx - fx, dy, 'flag']);
           }
           let kept = false;
           for (let si = 0; si < spots.length; si++) {
@@ -1188,11 +1203,18 @@ export class Labels {
             if (pr.l < mLeft || pr.r > right || pr.t < top || pr.b > bot) continue;
             const r = { l: px - w2 / 2, r: px + w2 / 2, t: py + oy - h2 / 2, b: py + oy + h2 / 2 };
             if (hits(r)) continue;
+            const db = uiOn ? this._dockBox : null;
+            if (db && pr.l - 5 < db.r && pr.r + 5 > db.l && pr.t - 5 < db.b && pr.b + 5 > db.t) continue;
+            // (a point of its land away from the capital and the middle of its
+            // land costs 2: at the start the Mainland Region took the
+            // Himalaya near Lhasa over Beijing)
+            const pre = Math.round((1 - q) * 10) + (a.kind === 'land' && anchors[0]?.kind !== 'land' ? 2 : 0);
+            if (best && pre >= best.s) continue;
             let s = score(px, py, a, dx, dy, mode, pw2, fx);
             if (s < 0) continue;
-            s += Math.round((1 - q) * 10);
+            s += pre;
             if (best && s >= best.s) continue;
-            best = { s, q, r, px, py: py + oy, spot: { kind: a.kind, wx: a.wx, wz: a.wz, dx, dy, mode, q, s } };
+            best = { s, q, r, px, py: py + oy, spot: { kind: a.kind, wx: a.wx, wz: a.wz, dx, dy, mode, q, s, fb: dx + fx } };
             // the spot held last frame is kept while it scores about as well
             if (si === 0 && keepS >= 0 && s <= keepS) kept = true;
             if (s === 0 || kept) break;
