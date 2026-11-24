@@ -206,3 +206,50 @@
   }
 }
 
+/* ---- (round 35) a tech card's tip is not drawn like a card: a lighter warm
+   plate with a gold edge and a caret pointing at the card it explains */
+.ws-pop.is-tech {
+  background: #2c2619;
+  color: #f4ead2;
+  box-shadow:
+    0 0 0 1px rgba(235, 201, 119, 0.78),
+    0 10px 26px rgba(0, 0, 0, 0.55);
+}
+.ws-pop.is-tech[data-caret]::before {
+  content: '';
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  box-sizing: border-box;
+  background: #2c2619;
+  border: 0 solid rgba(235, 201, 119, 0.78);
+  transform: rotate(45deg);
+}
+.ws-pop.is-tech[data-caret='up']::before {
+  top: -6px;
+  left: calc(var(--cx, 50%) - 6px);
+  border-top-width: 1px;
+  border-left-width: 1px;
+  clip-path: polygon(0 0, 100% 0, 0 100%);
+}
+.ws-pop.is-tech[data-caret='down']::before {
+  bottom: -6px;
+  left: calc(var(--cx, 50%) - 6px);
+  border-bottom-width: 1px;
+  border-right-width: 1px;
+  clip-path: polygon(100% 0, 100% 100%, 0 100%);
+}
+.ws-pop.is-tech[data-caret='left']::before {
+  left: -6px;
+  top: calc(var(--cy, 50%) - 6px);
+  border-bottom-width: 1px;
+  border-left-width: 1px;
+  clip-path: polygon(0 0, 100% 100%, 0 100%);
+}
+.ws-pop.is-tech[data-caret='right']::before {
+  right: -6px;
+  top: calc(var(--cy, 50%) - 6px);
+  border-top-width: 1px;
+  border-right-width: 1px;
+  clip-path: polygon(0 0, 100% 0, 100% 100%);
+}
