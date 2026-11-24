@@ -1654,7 +1654,9 @@ export class Inspector {
     lab.style.transform = `translateX(calc(-50% + ${shift.toFixed(0)}px))`;
     pin.classList.add('is-shown');
     // a followed or hidden creature keeps its name tag; otherwise show the marker only
-    pin.classList.toggle('has-label', this.game.cameraRig.follow === ref || kind === 'building');
+    // (round 37: a selected vehicle keeps its name tag too: at 26-30 tiles a
+    // selected bus was a 12 px ring among its loop's stop rings)
+    pin.classList.toggle('has-label', this.game.cameraRig.follow === ref || kind === 'building' || kind === 'vessel');
   }
 
   update(dt) {
