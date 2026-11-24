@@ -1798,7 +1798,8 @@ export class Fleet {
     if (v.voyage && v.state !== 'moored') stats.push(['Voyage', homeward ? `${v.voyage.toName || 'abroad'} → ${homeName}` : `${v.voyage.fromName || '—'} → ${v.voyage.toName || 'open sea'}`]);
     if (home) stats.push([v.cls === 'sea' ? 'Home port' : 'Home', home.name]);
     // speed only when it is really moving (a ship turning or waiting at anchor shows none)
-    if (v.speed > 0.05) stats.push(['Speed', `${Math.max(1, Math.round(v.speed * 10))} ${v.cls === 'sea' ? 'knots' : 'paces'}`]);
+    // (round 35: "paces/s"; a bare "15 paces" had no time in it)
+    if (v.speed > 0.05 && v.alive) stats.push(['Speed', `${Math.max(1, Math.round(v.speed * 10))} ${v.cls === 'sea' ? 'knots' : 'paces/s'}`]);
     if (v.town != null) this._townRows(v, stats);
     stats.push(['Built', `year ${Math.floor(v.born / YEAR) + 1}`]);
     if (v.cls === 'sea' && this.hasTech(v.kingdom, 'astronomy')) stats.push(['Charts', 'sails by the stars, day and night']);

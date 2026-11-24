@@ -53,22 +53,31 @@ const CAR_DEF = Object.freeze({ ...KINDS.car, name: 'Town car', capacity: 0 });
 const TAXI_DEF = Object.freeze({ ...KINDS.car, kind: 'taxi', name: 'Taxi', capacity: 0 });
 const BODY = ['Red', 'Blue', 'White', 'Yellow'];
 // What a car is out for, by the hour (the errand seed and the trips made
-// pick one from each list, so it changes through the day)
+// pick one from each list, so it changes through the day). (round 35) The
+// day is cut finer and each list holds only what fits its hours: a car said
+// "Commuting home" on a card read at half past noon; commuting is for the
+// rush hours, lunch for midday, the school run for its hours.
 const ERRAND = {
-  dawn: ['Commuting to work', 'Commuting to work', 'Taking the children to school', 'Making an early delivery'],
-  day: ['Going shopping', 'Making a delivery', 'Running errands', 'Visiting family', 'Delivering groceries', 'Driving to a meeting'],
-  dusk: ['Commuting home', 'Commuting home', 'Going shopping', 'Picking up the children'],
+  early: ['Making an early delivery', 'Coming off the night shift', 'Driving to an early shift', 'Making an early delivery'],
+  rush: ['Commuting to work', 'Commuting to work', 'Taking the children to school', 'Driving to work'],
+  morning: ['Going shopping', 'Making a delivery', 'Running errands', 'Visiting family', 'Driving to a meeting', 'Delivering groceries'],
+  noon: ['Going out for lunch', 'Making a delivery', 'Running errands', 'Delivering groceries', 'Driving to a lunch meeting', 'Going shopping'],
+  after: ['Running errands', 'Making a delivery', 'Visiting family', 'Driving to a meeting', 'Picking up the children', 'Going shopping'],
+  home: ['Commuting home', 'Commuting home', 'Going shopping', 'Picking up the children'],
   eve: ['Going out to eat', 'Visiting friends', 'Driving home', 'Going to the theater'],
-  night: ['Driving home', 'Driving home late', 'Coming off the night shift', 'Driving home'],
+  night: ['Driving home late', 'Coming off the late shift', 'Driving home late', 'Taking a friend home'],
 };
 const PARKED = {
-  dawn: ['Parked outside a house', 'Parked while its driver works', 'Parked at the school gate', 'Parked at the curb'],
-  day: ['Parked while its driver shops', 'Parked while its driver works', 'Parked at the curb', 'Parked outside a house', 'Parked while its driver delivers', 'Parked outside an office'],
-  dusk: ['Parked outside a house', 'Parked while its driver shops', 'Parked at the curb', 'Parked at the school gate'],
+  early: ['Parked for the night', 'Parked outside a house', 'Parked at the curb', 'Parked outside a bakery'],
+  rush: ['Parked outside a house', 'Parked while its driver works', 'Parked at the school gate', 'Parked at the curb'],
+  morning: ['Parked while its driver shops', 'Parked while its driver works', 'Parked at the curb', 'Parked outside a house', 'Parked while its driver delivers', 'Parked outside an office'],
+  noon: ['Parked outside a diner', 'Parked while its driver works', 'Parked at the curb', 'Parked while its driver shops', 'Parked while its driver delivers', 'Parked outside an office'],
+  after: ['Parked while its driver works', 'Parked while its driver shops', 'Parked at the curb', 'Parked at the school gate', 'Parked outside a house', 'Parked outside an office'],
+  home: ['Parked outside a house', 'Parked while its driver shops', 'Parked at the curb', 'Parked outside a house'],
   eve: ['Parked outside a diner', 'Parked outside a house', 'Parked for the night', 'Parked outside the theater'],
   night: ['Parked for the night', 'Parked for the night', 'Parked at the curb', 'Parked for the night'],
 };
-const partOfDay = (h) => (h < 5 || h >= 23 ? 'night' : h < 9.5 ? 'dawn' : h < 16 ? 'day' : h < 19 ? 'dusk' : 'eve');
+const partOfDay = (h) => (h < 5 || h >= 23 ? 'night' : h < 7 ? 'early' : h < 9.5 ? 'rush' : h < 11.5 ? 'morning' : h < 14 ? 'noon' : h < 16.5 ? 'after' : h < 19 ? 'home' : 'eve');
 
 // A street car as the picker, the inspector and the camera see it: where
 // it is drawn (in its lane), whether it is still in the streets, its kind
@@ -187,7 +196,7 @@ export const traffic = {
     const stats = [['Doing', this.carDoing(c)]];
     if (t) stats.push(['Town', t.name]);
     const sp = h.speed;
-    if (sp > 0.05 && !c.gone) stats.push(['Speed', `${Math.max(1, Math.round(sp * 10))} paces`]);
+    if (sp > 0.05 && !c.gone) stats.push(['Speed', `${Math.max(1, Math.round(sp * 10))} paces/s`]);
     return {
       priority: 27,
       kind: 'vehicle',
