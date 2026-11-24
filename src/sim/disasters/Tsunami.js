@@ -15,6 +15,12 @@ import { WaveMesh } from '../../render/fx/WaveMesh.js';
 const N = 44;
 const LEVEE_CROWN = 1.0; // wave crest (world units) a levee holds back in full
 const TARGET_E = 0.45; // least strength the wave keeps until it reaches the middle of an unguarded town it was sent at
+// One wave takes at most about two in five of a town's people (KEEP_PEOPLE
+// stay: they cling to roofs and high ground) and about three fifths of its
+// building health (KEEP_BUILDINGS of it stands). Round 34: an unguarded low
+// town lost 66% of its people and 96% of its building health.
+const KEEP_PEOPLE = 0.6;
+const KEEP_BUILDINGS = 0.45;
 
 function findDeep(w, x, z, dx, dz, max) {
   for (let d = 2; d < max; d += 1) {
@@ -73,7 +79,8 @@ export class Tsunami {
     this.mesh = new WaveMesh(this.game.fx, N);
     this._sound = 0;
     this._low = new Map();
-    this._pop0 = new Map(); // town id -> its people when the wave first struck (_flood)
+    this._pop0 = new Map(); // town id -> its people when the wave first struck (_spare)
+    this._hp0 = new Map(); // town id -> its building health when the wave first struck (_standing)
     play(this.game, 'splash', { x, z }, 1, 0.5);
   }
 
@@ -245,15 +252,72 @@ export class Tsunami {
     // one wave takes at most about two in five of a town's people: the
     // rest cling to roofs and high ground (round 22: a town of 41 kept 1;
     // round 31: an unguarded low town lost 62% of its people and 92% of its
-    // buildings, while a drought barely touched a town)
-    let uDmg = 15 * e * (1 + low * 1.2);
-    if (town) {
-      const n = town.v.members?.size ?? town.v.pop ?? 0;
-      const pop0 = this._pop0.get(town.v.id) ?? (this._pop0.set(town.v.id, n), n);
-      if (n <= Math.ceil(pop0 * 0.6)) uDmg = 0;
-    }
-    hurt(g, x, z, 1.6 + low * 0.6, uDmg, 30 * e * (1 + low * 1.8), 'tsunami');
+    // buildings, while a drought barely touched a town). Each person's own
+    // town is checked (round 34: its people in the fields and on the shore
+    // beyond the town's edge were struck past the cap, 66% in all), and its
+    // buildings stop taking harm at KEEP_BUILDINGS of their health
+    const r = 1.6 + low * 0.6;
+    this._hurtPeople(x, z, r, 15 * e * (1 + low * 1.2));
+    const near = town?.v || this._nearTown(x, z);
+    if (!near || this._standing(near)) hurt(g, x, z, r, 0, 30 * e * (1 + low * 1.8), 'tsunami');
     return town ? town.levee : 0;
+  }
+
+  // People within r of (x, z) take the wave's harm, except those of a town
+  // that has already lost its share (KEEP_PEOPLE); a protected town's people
+  // take shelter (Civ shelterAt).
+  _hurtPeople(x, z, r, dmg) {
+    const g = this.game;
+    const U = g.units;
+    if (!U?.query || !(dmg > 0)) return;
+    try {
+      dmg *= g.civ?.shelterAt?.(x, z, 'tsunami') ?? 1;
+    } catch (err) {
+      console.error('[disasters] civ.shelterAt', err);
+    }
+    if (!(dmg > 0)) return;
+    for (const u of U.query(x, z, r + 0.5)) {
+      if (!u.alive) continue;
+      const dx = u.x - x,
+        dz = u.z - z;
+      const dd = Math.hypot(dx, dz);
+      if (dd > r + (u.def?.radius || 0)) continue;
+      if (u.village >= 0 && !this._spare(u.village)) continue;
+      const l = dd || 1;
+      U.damage(u, dmg * (1 - Math.min(1, dd / r) * 0.7), null, { cause: 'tsunami', knock: Math.min(1.5, dmg * 0.02), dirX: dx / l, dirZ: dz / l });
+    }
+  }
+
+  // May the wave still take people of this town? (more than KEEP_PEOPLE of
+  // those it had when first struck are left)
+  _spare(vid) {
+    const v = this.game.civ?.villages?.[vid];
+    if (!v || v.alive === false || !v.members) return true;
+    const n = v.members.size;
+    let p0 = this._pop0.get(vid);
+    if (p0 == null) this._pop0.set(vid, (p0 = n));
+    return n > Math.ceil(p0 * KEEP_PEOPLE);
+  }
+
+  // Does this town still have more than KEEP_BUILDINGS of the building
+  // health it had when first struck?
+  _standing(v) {
+    let hp = 0;
+    for (const b of v.buildings || []) if (b.alive) hp += b.hp || 0;
+    let h0 = this._hp0.get(v.id);
+    if (h0 == null) this._hp0.set(v.id, (h0 = hp));
+    return hp > h0 * KEEP_BUILDINGS;
+  }
+
+  // The town whose buildings may stand within reach of (x, z), if any.
+  _nearTown(x, z) {
+    let v = null;
+    try {
+      v = this.game.civ?.villageAt?.(x, z, 16) || null;
+    } catch (err) {
+      v = null;
+    }
+    return v && Math.hypot(v.cx - x, v.cz - z) <= (v.radius || 6) + 4.5 ? v : null;
   }
 
   dispose() {

@@ -35,9 +35,30 @@ const TREATY_YEARS = 10,
 export const WOUND_YEARS = 5;
 // (round 29: 0.16 to 0.09; unions rose to 30 of 47 falls by Year 600 and
 // took most of the small realms)
-const UNION_FROM = 45,
-  UNION_TO = 90,
-  UNION_P = 0.09;
+// (round 35: a union is the small crown's own choice, made only after long
+// peace in a firm alliance: 19 of 39 falls by Year 600 were unions, six a
+// century in the 200s and 400s, and only 16 realms were left. The crown must
+// be UNION_FROM years old, its alliance UNION_ALLY years old and at opinion
+// UNION_FIRM or more, and the two at peace for UNION_PEACE years)
+const UNION_FROM = 60,
+  UNION_TO = 120,
+  UNION_P = 0.08,
+  UNION_FIRM = 60,
+  UNION_ALLY = 15,
+  UNION_PEACE = 25;
+// A small realm (two towns or fewer) beaten in war, set upon by a greater
+// one or risen in rebellion keeps the peace SMALL_TRUCE years plus up to
+// SMALL_TRUCE_MORE (round 35: realms that fell lived a median of 45 years,
+// most of them small crowns taken town by town in wars a decade apart).
+// The last town of a one-town realm holds out LAST_HOLD of the time (less
+// after each stand: LAST_HOLD_FADE) and buys peace, and a crown weighs a war
+// on a one-town realm at LONE_WAR of the usual odds (at half the time and 0.8,
+// with rarer unions, 24-26 realms stood at Year 600: a few too many).
+const SMALL_TRUCE = 25,
+  SMALL_TRUCE_MORE = 10,
+  LAST_HOLD = 0.4,
+  LAST_HOLD_FADE = 0.5,
+  LONE_WAR = 0.85;
 
 export const politics = {
   // ---------------------------------------------------------------- kingdoms
@@ -432,15 +453,16 @@ export const politics = {
         // moment it lifts)
         if (small.realm < 0) chance = 0.4 * clamp((now - small.founded - YEAR * 30) / (YEAR * 15), 0.25, 1);
       } else {
-        if (!r.ally || r.opinion < 30 || baseCulture(A.culture) !== baseCulture(B.culture)) continue;
+        if (!r.ally || r.opinion < UNION_FIRM || baseCulture(A.culture) !== baseCulture(B.culture)) continue;
         [small, big] = A.villages.length <= B.villages.length ? [A, B] : [B, A];
         if (small.villages.length > 2 || big.villages.length < small.villages.length + 1) continue;
         // a young crown keeps its freedom a while (unions were half of all
         // fallen realms, most of them at 25-30 years; round 23: still two
         // thirds of them, at 40-60 years; round 24: three quarters of all
         // falls, a quarter of them in the years just after a bar at 60).
-        // Union is now a chance that rises from 45 to 90 years of age, the
-        // more so the warmer the alliance and the greater the partner
+        // Union is now a chance that rises from UNION_FROM to UNION_TO years
+        // of age, the more so the warmer the alliance and the greater the
+        // partner, and only after long peace in a firm, old alliance
         chance = this._unionChance(small, big, r, now);
         if (chance <= 0) continue;
       }
@@ -464,15 +486,16 @@ export const politics = {
   },
 
   // The chance (each two-yearly look) that a small allied crown joins a
-  // greater one: nothing before UNION_FROM years, rising to its full by
-  // UNION_TO, times the warmth of the alliance (opinion 30 counts a fifth,
-  // 100 in full) and the partner's weight (three times the people or more in
-  // full, a near equal a quarter).
+  // greater one: nothing before UNION_FROM years, nor before UNION_PEACE
+  // years of peace between the two and UNION_ALLY years of alliance, rising
+  // to its full by UNION_TO, times the warmth of the alliance (opinion
+  // UNION_FIRM counts a quarter, 100 in full) and the partner's weight (three
+  // times the people or more in full, a near equal a quarter).
   _unionChance(small, big, r, now) {
     const age = (now - small.founded) / YEAR;
-    if (age < UNION_FROM) return 0;
+    if (age < UNION_FROM || (r.peaceT || 0) < YEAR * UNION_PEACE || now - (r.allyT ?? now) < YEAR * UNION_ALLY) return 0;
     const ramp = Math.min(1, (age - UNION_FROM) / (UNION_TO - UNION_FROM));
-    const warm = clamp((r.opinion - 20) / 80, 0.1, 1);
+    const warm = clamp((r.opinion - UNION_FIRM) / (100 - UNION_FIRM), 0.25, 1);
     const ratio = Math.max(big.population || 0, 1) / Math.max(small.population || 0, 1);
     const weight = clamp((ratio - 1) / 2, 0.25, 1);
     return UNION_P * ramp * ramp * warm * weight;
@@ -574,6 +597,7 @@ export const politics = {
         sd = Infinity;
       for (const o of this.villages) {
         if (!o.alive || o.kingdom === k.id || o.landId !== v.landId || o.pop < 30 || o.starving || this.atWar(o.kingdom, k.id)) continue;
+        if (this._moveReach && !this._moveReach(o, v)) continue; // (World Map: a neighbor's town only)
         const d = geoDist(this.world, o.cx, o.cz, v.cx, v.cz);
         if (d < sd) (sd = d), (src = o);
       }
@@ -661,14 +685,17 @@ export const politics = {
           this._considerPeace(A, B, r, now);
           continue;
         }
+        if (r.ally && r.allyT == null) r.allyT = now; // (an alliance made by a god or the player)
         if (r.ally && r.opinion < 5) {
           r.ally = false;
+          r.allyT = null;
           this._note(`${this._kn(A)}–${this._kn(B)} alliance ends`, 'info', this._kingdomPos(A));
         }
         // alliance
         const charm = this._rulerTrait(A, 'gentle', 'silver-tongued', 'silvertongued') || this._rulerTrait(B, 'gentle', 'silver-tongued', 'silvertongued');
         if (this.law('civDiplomacy') && !r.ally && r.opinion > (charm ? 18 : 25) && (A.culture === B.culture || ea.some((e) => eb.includes(e)) || r.opinion > 32) && rng.chance(0.08)) {
           r.ally = true;
+          r.allyT = now;
           this._note(`🤝 ${this._kn(A)} and ${this._kn(B)} ally`, 'good', this._kingdomPos(A));
           continue;
         }
@@ -712,6 +739,7 @@ export const politics = {
           if (def.seeded && this.warCount(def.id) >= (def.villages.length <= 1 ? 1 : 2)) continue;
           let p = 0.02 + att.aggression * 0.045 + (ambitious ? 0.025 : 0) + (hungry ? 0.02 + crowd * 0.025 : 0);
           if (def.seeded) p *= (youngReal ? 0.85 : 1) * (def.villages.length <= 1 ? 0.85 : 1);
+          else if (def.villages.length <= 1) p *= LONE_WAR;
           p *= Math.pow(wl, 1.7) * (g.age?.mods?.warlike ?? 1);
           if (this._rulerTrait(att, 'cruel', 'valiant')) p *= 1.6;
           if (this._rulerTrait(att, 'gentle', 'silver-tongued', 'silvertongued')) p *= 0.55;
@@ -809,6 +837,7 @@ export const politics = {
     r.warSince = this.game.time.total;
     r.sieged = false;
     r.conquests = 0;
+    r.lost = null;
     r.reason = reason;
     r.attacker = a;
     r.losses = [0, 0];
@@ -857,14 +886,18 @@ export const politics = {
     const r = this.relations.get(relKey(a, b));
     if (!r || !r.war) return false;
     r.war = false;
-    r.truceUntil = this.game.time.total + YEAR * (TREATY_YEARS + this.rng.next() * TREATY_MORE);
+    const A = this.kingdoms[a],
+      B = this.kingdoms[b];
+    // a small realm beaten (a town lost), set upon by a greater one, or risen
+    // in rebellion keeps a long peace with its foe
+    const beaten = (k, o) => k?.alive && o && k.villages.length <= 2 && o.villages.length > k.villages.length && ((r.lost?.[k.id] || 0) > 0 || r.attacker === o.id || r.reason === 'rebellion');
+    const long = beaten(A, B) || beaten(B, A);
+    r.truceUntil = this.game.time.total + YEAR * (long ? SMALL_TRUCE + this.rng.next() * SMALL_TRUCE_MORE : TREATY_YEARS + this.rng.next() * TREATY_MORE);
     r.grievance = Math.min(60, r.grievance + 15);
     r.opinion = Math.max(r.opinion, -10);
     for (const army of this.armies) {
       if ((army.kingdom === a && army.enemy === b) || (army.kingdom === b && army.enemy === a)) this._disbandArmy(army);
     }
-    const A = this.kingdoms[a],
-      B = this.kingdoms[b];
     if (A) A.lastPeace = this.game.time.total;
     if (B) B.lastPeace = this.game.time.total;
     if (!silent && A && B) this._note(`🕊 Peace between ${this._kn(A)} and ${this._kn(B)}`, 'good', this._kingdomPos(A));
@@ -1163,8 +1196,30 @@ export const politics = {
       r.truceUntil = Math.max(r.truceUntil || 0, this.game.time.total + YEAR * 12);
       return;
     }
+    // the last town of a one-town realm: its people hold the walls more often
+    // than not, and the crown buys a long peace (round 35: most fallen realms
+    // were small crowns finished off in their forties)
+    if (K !== old && old.villages.length <= 1 && rw?.reason !== 'god' && !K.player?.name && this.rng.chance(LAST_HOLD * Math.pow(LAST_HOLD_FADE, old.holdouts || 0))) {
+      old.holdouts = (old.holdouts || 0) + 1;
+      const inv = old.inventory || {};
+      const gold = Math.floor((inv.gold || 0) * 0.5),
+        food = Math.floor((inv.food || 0) * 0.3);
+      if (inv.gold != null) inv.gold -= gold;
+      if (inv.food != null) inv.food -= food;
+      if (K.inventory) {
+        K.inventory.gold = (K.inventory.gold || 0) + gold;
+        K.inventory.food = (K.inventory.food || 0) + food;
+      }
+      const r = this.rel(K.id, old.id);
+      r.grievance = Math.min(80, r.grievance + 10);
+      this._note(`🛡 ${v.name} holds out; ${this._kn(old)} buys peace from ${this._kn(K)}`, 'war', { x: v.cx, z: v.cz });
+      if (!this.makePeace(K.id, old.id, true)) this._disbandArmy(a);
+      r.truceUntil = Math.max(r.truceUntil || 0, now0 + YEAR * (SMALL_TRUCE + this.rng.next() * SMALL_TRUCE_MORE));
+      return;
+    }
     const raze = K.culture !== old.culture && K.aggression > 0.7 && this.rng.chance(0.35) && v.id !== old.capital && !this._keyCity?.(v);
     const r = this.rel(K.id, old.id);
+    (r.lost || (r.lost = {}))[old.id] = (r.lost[old.id] || 0) + 1;
     r.grievance = Math.min(80, r.grievance + 25);
     r.conquests = (r.conquests || 0) + 1;
     if (raze) {
@@ -1240,6 +1295,8 @@ export const politics = {
     for (const vid of kingdom.villages) {
       const v = this.villages[vid];
       if (!v?.alive || v.id === u.village || v.razed) continue;
+      // (World Map: a town of the realm within reach, else they take to the road)
+      if (this._moveReach && !this._moveReach(this.villages[u.village], v, kingdom.id)) continue;
       const d = geoDist(this.world, v.cx, v.cz, u.x, u.z);
       if (d < bd) {
         bd = d;
@@ -1326,7 +1383,8 @@ export const politics = {
     }
     if (this.atWar(K.id, k.id)) {
       this.makePeace(K.id, k.id, true);
-      this.rel(K.id, k.id).truceUntil = this.game.time.total + YEAR * 12;
+      const r = this.rel(K.id, k.id);
+      r.truceUntil = Math.max(r.truceUntil || 0, this.game.time.total + YEAR * 12);
     }
     for (const e of this.enemiesOf(k.id)) {
       const r = this.rel(e, k.id);

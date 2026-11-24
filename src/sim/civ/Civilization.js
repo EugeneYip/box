@@ -49,6 +49,9 @@ const TIER_POP = [40, 70, 115]; // village, town, city (capitals and ports grow 
 // A town under this many people is small: births and newcomers favor it in a
 // full world (_villageTick).
 const SMALL_TOWN = 20;
+// A town in want (on rations, not in famine) has children at this share of
+// the usual rate (_villageTick).
+const WANT_BIRTH = 0.35;
 // What each finished monument gives its realm (techMod / techAdd keys).
 const MONUMENT_FX = {
   vale: { mods: { 'loyalty+': 6, build: 1.15 }, text: 'its provinces hold fast to the crown' },
@@ -1010,7 +1013,12 @@ export class Civilization {
     // in a full world every death was refilled by a birth in a big town, and
     // a lone hamlet of a dozen dwindled away (round 23)
     const tiny = pop < SMALL_TOWN;
-    if (pop < v.housing && pop < this._popCap(v) && !(fullWorld && pop > this._fullWorldRoom(v)) && v.food > pop * 1.2 + (tiny ? 4 : 8) && !v.starving && humans < this._humanCap() * (tiny ? 1 : 0.97) && this.rng.chance(Math.min(1, (1 - popCrowd * 0.85) * this._kLaw(v.kingdom, 'civGrowth', 1) * (v.policy?.growth ?? 1)))) {
+    // (round 35) a town in want, on rations but not in famine, still sees a
+    // child now and then (WANT_BIRTH of the usual rate): births stopped with
+    // the stores below a year's worth, and a canning town in want through a
+    // long drought lost a quarter of its people to old age alone
+    const fed = v.food > pop * 1.2 + (tiny ? 4 : 8);
+    if (pop < v.housing && pop < this._popCap(v) && !(fullWorld && pop > this._fullWorldRoom(v)) && (fed || v.food > pop * 0.2) && !v.starving && humans < this._humanCap() * (tiny ? 1 : 0.97) && this.rng.chance(Math.min(1, (1 - popCrowd * 0.85) * this._kLaw(v.kingdom, 'civGrowth', 1) * (v.policy?.growth ?? 1) * (fed ? 1 : WANT_BIRTH)))) {
       let father = false;
       for (const u of v.members) if (u.sex === 'm' && u.age >= 18 && u.age < 60) father = true;
       if (father) {
@@ -1031,7 +1039,12 @@ export class Civilization {
             }
           }
           const home = this._homeFor(v, u);
-          const child = this.spawnHuman(v, u.x + this.rng.float(-0.3, 0.3), u.z + this.rng.float(-0.3, 0.3), { age: 0, home: home ? home.id : -1, culture: u.data.culture });
+          // (round 35) born at home, at the family's door: a newborn appeared
+          // beside its mother in the fields or the mine and spent its first
+          // years "Toddling home" across town
+          const bx = home && home.doorX != null ? home.doorX : u.x,
+            bz = home && home.doorZ != null ? home.doorZ : u.z;
+          const child = this.spawnHuman(v, bx + this.rng.float(-0.3, 0.3), bz + this.rng.float(-0.3, 0.3), { age: 0, home: home ? home.id : -1, culture: u.data.culture });
           if (child) {
             child.job = 'child';
             // remember the family, so grief stays within it
@@ -1053,7 +1066,7 @@ export class Civilization {
       let src = null;
       for (const vid of this.kingdoms[v.kingdom]?.villages || []) {
         const o = this.villages[vid];
-        if (o?.alive && o !== v && o.pop > (this.budget.area > 1.5 ? 90 : 40) && o.landId === v.landId && (!src || o.pop > src.pop)) src = o;
+        if (o?.alive && o !== v && o.pop > (this.budget.area > 1.5 ? 90 : 40) && o.landId === v.landId && (!src || o.pop > src.pop) && this._moveReach(o, v)) src = o;
       }
       if (src) {
         let moved = 0;
@@ -1076,7 +1089,7 @@ export class Civilization {
         td = 70 * Math.sqrt(this.budget.area);
       for (const vid of this.kingdoms[v.kingdom]?.villages || []) {
         const o = this.villages[vid];
-        if (!o?.alive || o === v || o.landId !== v.landId || o.pop < 12 || o.starving) continue;
+        if (!o?.alive || o === v || o.landId !== v.landId || o.pop < 12 || o.starving || !this._moveReach(v, o)) continue;
         const d = geoDist(this.world, o.cx, o.cz, v.cx, v.cz);
         if (d < td) (td = d), (to = o);
       }
@@ -1600,7 +1613,9 @@ export class Civilization {
 
   _homeFor(v, u) {
     const own = this._bById.get(u.data.civ?.home);
-    if (own && own.alive && own.type === 'house') return own;
+    // (round 35: a house of this town; a mother who had moved kept her old
+    // town's house, and her newborn was sent home across the realm)
+    if (own && own.alive && own.type === 'house' && own.village === v.id) return own;
     const houses = v.buildings.filter((b) => b.alive && b.type === 'house' && !b.constructing);
     if (!houses.length) return v.hall;
     const h = houses[(this.rng.next() * houses.length) | 0];
