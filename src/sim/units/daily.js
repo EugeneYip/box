@@ -33,12 +33,13 @@ const DAY_EP = new Set(['inside', 'chore', 'shop', 'wait', 'school', 'hold']);
 // episodes a soldier keeps when the drill begins
 const SOLDIER_KEEP = new Set(['drill', 'guard', 'privy', 'eat', 'mourn', 'cheer']);
 // (round 37) the school day: class from SCHOOL_H0, the last pupils sent in
-// before SCHOOL_LAST, out at SCHOOL_END; a pupil's game or light chore begun
-// before the bell ends at it (SCHOOL_CUT), and celebrations wait till after
+// before SCHOOL_LAST, out at SCHOOL_END; a pupil's game, light chore or
+// morning at home begun before the bell (or before it turned five) ends at
+// it (SCHOOL_CUT), and celebrations wait till after
 const SCHOOL_H0 = 7.5,
   SCHOOL_LAST = 14.8,
   SCHOOL_END = 15.2;
-const SCHOOL_CUT = new Set(['play', 'help', 'chore', 'goto']);
+const SCHOOL_CUT = new Set(['play', 'help', 'chore', 'goto', 'inside']);
 const DAY_S = 360; // game seconds per day (src/core/Game.js DAY_SECONDS)
 const H = DAY_S / 24; // game seconds per hour
 const MEAL = [
@@ -540,6 +541,7 @@ export function installDaily(Units) {
       tries: 0,
       t0: now,
       h0: this.game.time.hour ?? 12,
+      a0: u.age,
     });
     if (opts.x != null) {
       const s = opts.free ? { x: opts.x, z: opts.z } : this._dlSpot(u, opts.x, opts.z);
@@ -650,10 +652,12 @@ export function installDaily(Units) {
     }
     // (round 37) the school bell: a pupil still at a game or a light chore
     // begun before the school day breaks off and goes to class (a game begun
-    // at 7:20 ran on to 9, and pupils spent a third of the school day in class)
+    // at 7:20 ran on to 9, and pupils spent a third of the school day in class);
+    // so does a child who turned five at play (a year is a twelfth of a day,
+    // and such children were most of the pupils at play in school hours)
     if (u._dl && child && u.age >= 5 && SCHOOL_CUT.has(u._dl.k) && this.game.settings?.dayNight) {
       const h = this.game.time.hour ?? 12;
-      if (h >= SCHOOL_H0 && h < SCHOOL_LAST && u._dl.h0 < SCHOOL_H0 && u._schoolDay !== (this.game.time.day | 0) && this._dlSchool(v)) {
+      if (h >= SCHOOL_H0 && h < SCHOOL_LAST && (u._dl.h0 < SCHOOL_H0 || u._dl.a0 < 5) && u._schoolDay !== (this.game.time.day | 0) && this._dlSchool(v)) {
         this._dlEnd(u);
         u._dlNext = now;
       }
