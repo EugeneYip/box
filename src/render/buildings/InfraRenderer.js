@@ -61,6 +61,10 @@ const EDIT_GAP = 2500;
 // (ms) is spent a drawn frame emitting the parts that changed
 const CHUNK = 64;
 const EMIT_MS = 10;
+// (round 37) mouths facing the same way closer than this across and along
+// (tiles) share one headwall
+const MOUTH_LAT = 1.8,
+  MOUTH_ALONG = 0.5;
 
 const COL = {
   ballast: 0x6c6a66,
@@ -81,8 +85,11 @@ const COL = {
   edge: 0xd8b840,
   platform: 0xb4aea4,
   buffer: 0xb83a2a,
-  portal: 0x8c867c, // (round 35: a weathered stone, not round 33's cream)
-  coping: 0x6c675f,
+  // (round 35: a weathered stone, not round 33's cream; round 37: a shade
+  // lighter, and a pale stone coping, so the headwalls and wing walls read
+  // against a brown hillside)
+  portal: 0x958f84,
+  coping: 0xb4ada1,
   ring: 0xa8a296,
   mouth: 0x121110,
   pylon: 0x7a8288,
@@ -282,6 +289,7 @@ export class InfraRenderer {
     this.farMat = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.6, fog: false, depthWrite: false });
     this.wires = null;
     this.far = null;
+    this.mouthMesh = null;
     this._ver = -1;
     this._pylon = null;
     this.portals = [];
@@ -543,69 +551,195 @@ export class InfraRenderer {
     }
   }
   // A tunnel's mouth at point Sm [x, z, tx, tz], the line's level y there,
-  // out: +1 when the open side faces along the line's direction. Round 35:
-  // a stone headwall across the line with a coping along its top, a dark
-  // arched opening framed by a lighter ring of voussoirs, and two wing walls
-  // splayed out from its ends, their tops falling to the ground, holding
-  // back the hillside either side of the approach (round 33 drew a cream
-  // box with a square dark panel).
+  // out: +1 when the open side faces along the line's direction: noted in
+  // the stretch's part (round 37: the mouths of all the parts drawn are
+  // emitted together, _mouths, so two lines going under side by side share
+  // one headwall)
   _mouth(E, Sm, y, out, half, cover, kind) {
     const [x, z, tx0, tz0] = Sm;
-    const ox = tx0 * out,
-      oz = tz0 * out; // out of the bore
-    (this._partPortals || []).push({ x, z, y, tx: ox, tz: oz, kind });
-    const px = -oz,
-      pz = ox; // across the line
-    // the opening: straight sides up to the springing, then a half ellipse
-    const hw = half * 0.86,
-      hs = cover * 0.45,
-      ar = Math.min(hw * 0.8, cover * 0.75);
-    const top = y + Math.max(hs + ar + 0.1, cover + 0.08);
-    const W2 = hw + 0.16; // the headwall's half width
-    const TH = 0.08; // its thickness
-    const base = y - 0.18; // (its footing, in the ground)
-    // the face: on the hillside, a little out from the point
-    const fx = x + ox * 0.02,
-      fz = z + oz * 0.02;
-    E.bar(fx - px * W2, fz - pz * W2, fx + px * W2, fz + pz * W2, top, top, TH, top - base, COL.portal);
-    E.bar(fx - px * (W2 + 0.025), fz - pz * (W2 + 0.025), fx + px * (W2 + 0.025), fz + pz * (W2 + 0.025), top + 0.025, top + 0.025, TH + 0.04, 0.03, COL.coping);
-    // a point on the face, u across and v up from the line's level, d out
-    const F = (u, v, d) => [fx + px * u + ox * (TH / 2 + d), y + v, fz + pz * u + oz * (TH / 2 + d)];
-    const K = 8;
-    const curve = (r, k) => {
-      const t = (Math.PI * k) / K;
-      return [(hw + r) * Math.cos(t), hs + (ar + r) * Math.sin(t)];
+    (this._partPortals || []).push({ x, z, y, tx: tx0 * out, tz: tz0 * out, kind, half, cover });
+  }
+  // Every tunnel mouth of the parts drawn, as one mesh. Mouths that face the
+  // same way side by side (within MOUTH_LAT across and MOUTH_ALONG along:
+  // two lines into one hillside, or two stretches sharing one track) share
+  // one headwall with an opening for each (round 36: two headwalls a tile
+  // apart, their wing walls crossing, the open track between them).
+  _mouths(parts) {
+    const D = [];
+    for (const p of parts) if (p.portals) for (const q of p.portals) if (q.half) D.push(q);
+    const n = D.length;
+    const par = D.map((_, i) => i);
+    const find = (i) => {
+      while (par[i] !== i) i = par[i] = par[par[i]];
+      return i;
     };
-    // the ring of voussoirs round the arch and down its sides
-    const R = 0.055;
-    for (let k = 0; k < K; k++) {
-      const [u0, v0] = curve(0, k),
-        [u1, v1] = curve(0, k + 1),
-        [U0, V0] = curve(R, k),
-        [U1, V1] = curve(R, k + 1);
-      E.quad(F(u0, v0, 0.004), F(U0, V0, 0.004), F(U1, V1, 0.004), F(u1, v1, 0.004), COL.ring);
+    for (let i = 0; i < n; i++)
+      for (let j = i + 1; j < n; j++) {
+        const A = D[i],
+          B = D[j];
+        const dx = B.x - A.x,
+          dz = B.z - A.z;
+        if (Math.abs(dx) > 3 || Math.abs(dz) > 3) continue;
+        if (A.tx * B.tx + A.tz * B.tz < 0.85) continue;
+        if (Math.abs(dx * A.tx + dz * A.tz) > MOUTH_ALONG || Math.abs(dx * -A.tz + dz * A.tx) > MOUTH_LAT) continue;
+        par[find(j)] = find(i);
+      }
+    const G = new Map();
+    for (let i = 0; i < n; i++) {
+      const r = find(i);
+      if (!G.has(r)) G.set(r, []);
+      G.get(r).push(D[i]);
     }
-    for (const sd of [1, -1]) E.quad(F(sd * hw, -0.02, 0.004), F(sd * (hw + R), -0.02, 0.004), F(sd * (hw + R), hs, 0.004), F(sd * hw, hs, 0.004), COL.ring);
-    // the dark opening: the sides, then a fan under the arch
-    E.quad(F(-hw, -0.03, 0.008), F(hw, -0.03, 0.008), F(hw, hs, 0.008), F(-hw, hs, 0.008), COL.mouth);
-    for (let k = 0; k < K; k++) {
-      const [u0, v0] = curve(0, k),
-        [u1, v1] = curve(0, k + 1);
-      E.quad(F(0, hs, 0.008), F(u0, v0, 0.008), F(u1, v1, 0.008), F(u1, v1, 0.008), COL.mouth);
+    const E = new Emit();
+    this.headwalls = []; // (the probes read these)
+    for (const M of G.values()) this._mouthGroup(E, M);
+    return E.P.length ? E.pack() : null;
+  }
+  // One headwall for the mouths M (each {x, z, y, tx, tz, kind, half,
+  // cover}). Round 35: a stone headwall across the line with a coping along
+  // its top, a dark arched opening framed by a lighter ring of voussoirs,
+  // and two wing walls splayed out from its ends, their tops falling to the
+  // ground, holding back the hillside either side of the approach (round 33
+  // drew a cream box with a square dark panel).
+  _mouthGroup(E, M) {
+    let ox = 0,
+      oz = 0;
+    for (const m of M) (ox += m.tx), (oz += m.tz);
+    const oL = Math.hypot(ox, oz) || 1;
+    ox /= oL;
+    oz /= oL; // out of the bores
+    const px = -oz,
+      pz = ox; // across the lines
+    // the openings, across the face (u) from the first mouth; the face
+    // stands at the outermost mouth, a little out from its point
+    const c = M[0];
+    let amax = -Infinity;
+    const O = [];
+    const seen = [];
+    for (const m of M) {
+      const u = (m.x - c.x) * px + (m.z - c.z) * pz;
+      amax = Math.max(amax, (m.x - c.x) * ox + (m.z - c.z) * oz);
+      // (two stretches on one track: one opening)
+      if (seen.some((v) => Math.abs(v - u) < 0.1)) continue;
+      seen.push(u);
+      // the opening: straight sides up to the springing, then a half ellipse
+      const hw = m.half * 0.86;
+      O.push({ u, y: m.y, hw, hs: m.cover * 0.45, ar: Math.min(hw * 0.8, m.cover * 0.75), cover: m.cover });
+    }
+    O.sort((a, b) => a.u - b.u);
+    const kind = M.some((m) => m.kind === 'hw') ? 'hw' : 'rail';
+    const fx = c.x + ox * (amax + 0.02),
+      fz = c.z + oz * (amax + 0.02);
+    this.headwalls?.push({ x: fx, z: fz, tx: ox, tz: oz, n: O.length });
+    const TH = 0.12; // the headwall's thickness
+    const R = 0.055; // (the ring of voussoirs)
+    const uL = O[0].u - O[0].hw,
+      uR = O[O.length - 1].u + O[O.length - 1].hw;
+    let y0 = Infinity,
+      top = -Infinity;
+    for (const o of O) {
+      y0 = Math.min(y0, o.y);
+      top = Math.max(top, o.y + Math.max(o.hs + o.ar + 0.1, o.cover + 0.08));
+    }
+    const base = y0 - 0.18; // (its footing, in the ground)
+    // (round 37) the wall stands a little over the slope across its whole
+    // width: on a side slope the hill rose over its top on the high side
+    // and only the dark opening showed, a board over the end of the track
+    let gmax = -Infinity;
+    for (let t = 0; t <= 4; t++) {
+      const u = uL - 0.16 + ((uR - uL + 0.32) * t) / 4;
+      for (const d of [-0.12, 0.06]) gmax = Math.max(gmax, this._h(fx + px * u + ox * d, fz + pz * u + oz * d));
+    }
+    top = Math.min(y0 + 0.95, Math.max(top, gmax + 0.07));
+    // the wing walls' thickness and where they stand across (clear of the
+    // rings round the openings); the headwall runs out to their outer faces
+    const WT = Math.min(0.3, Math.max(0.18, (top - base) / 3));
+    const uWl = Math.min(uL - 0.16 + WT * 0.5, uL - R - 0.02 - WT * 0.5),
+      uWr = Math.max(uR + 0.16 - WT * 0.5, uR + R + 0.02 + WT * 0.5);
+    const hA = uWl - WT * 0.5,
+      hB = uWr + WT * 0.5;
+    E.bar(fx + px * hA, fz + pz * hA, fx + px * hB, fz + pz * hB, top, top, TH, top - base, COL.portal);
+    E.bar(fx + px * (hA - 0.025), fz + pz * (hA - 0.025), fx + px * (hB + 0.025), fz + pz * (hB + 0.025), top + 0.025, top + 0.025, TH + 0.04, 0.03, COL.coping);
+    const K = 8;
+    for (const o of O) {
+      const { hw, hs, ar } = o;
+      // a point on the face, u across and v up from the line's level, d out
+      const F = (u, v, d) => [fx + px * (o.u + u) + ox * (TH / 2 + d), o.y + v, fz + pz * (o.u + u) + oz * (TH / 2 + d)];
+      const curve = (r, k) => {
+        const t = (Math.PI * k) / K;
+        return [(hw + r) * Math.cos(t), hs + (ar + r) * Math.sin(t)];
+      };
+      // the ring of voussoirs round the arch and down its sides
+      for (let k = 0; k < K; k++) {
+        const [u0, v0] = curve(0, k),
+          [u1, v1] = curve(0, k + 1),
+          [U0, V0] = curve(R, k),
+          [U1, V1] = curve(R, k + 1);
+        E.quad(F(u0, v0, 0.004), F(U0, V0, 0.004), F(U1, V1, 0.004), F(u1, v1, 0.004), COL.ring);
+      }
+      for (const sd of [1, -1]) E.quad(F(sd * hw, -0.02, 0.004), F(sd * (hw + R), -0.02, 0.004), F(sd * (hw + R), hs, 0.004), F(sd * hw, hs, 0.004), COL.ring);
+      // the dark opening: the sides, then a fan under the arch
+      E.quad(F(-hw, -0.03, 0.008), F(hw, -0.03, 0.008), F(hw, hs, 0.008), F(-hw, hs, 0.008), COL.mouth);
+      for (let k = 0; k < K; k++) {
+        const [u0, v0] = curve(0, k),
+          [u1, v1] = curve(0, k + 1);
+        E.quad(F(0, hs, 0.008), F(u0, v0, 0.008), F(u1, v1, 0.008), F(u1, v1, 0.008), COL.mouth);
+      }
     }
     // the wing walls: splayed out from the headwall's ends, falling to the
-    // ground at their far ends (buried below it)
+    // ground at their far ends (buried below it). Round 37: solid stone, a
+    // third of the headwall's height thick, with a flat stone top and an
+    // end face (round 35's were 0.06 thick and read as fanned planks from
+    // above)
     const WL = kind === 'hw' ? 0.75 : 0.55,
       SP = kind === 'hw' ? 0.38 : 0.28;
-    for (const sd of [1, -1]) {
-      const ax = fx + px * sd * (W2 - 0.03),
-        az = fz + pz * sd * (W2 - 0.03);
-      const bx = ax + px * sd * SP + ox * WL,
-        bz = az + pz * sd * SP + oz * WL;
-      const gb = Math.max(this._h(bx, bz), y);
-      const yb = Math.min(top - 0.05, gb + 0.05);
-      E.bar(ax, az, bx, bz, top - 0.01, yb, 0.06, top - 0.01 - base, COL.portal);
-      E.bar(ax, az, bx, bz, top + 0.01, yb + 0.015, 0.085, 0.025, COL.coping);
+    for (const [sd, uw] of [
+      [-1, uWl],
+      [1, uWr],
+    ]) {
+      const ax = fx + px * uw,
+        az = fz + pz * uw;
+      const dx = px * sd * SP + ox * WL,
+        dz = pz * sd * SP + oz * WL;
+      const ya = top - 0.01;
+      // (round 37) the wall runs out only as far as it holds anything back:
+      // where the ground falls away below the line it ends (on a cliff it
+      // hung far down in the air); a wall the hillside would bury over
+      // most of its length is left out (its coping stuck out of the slope
+      // like a plank)
+      let f = 1;
+      for (const t of [1, 0.75, 0.5]) {
+        f = t;
+        if (this._h(ax + dx * t, az + dz * t) >= y0 - 0.1) break;
+      }
+      const bx = ax + dx * f,
+        bz = az + dz * f;
+      const gb = this._h(bx, bz);
+      const yb = Math.min(top - 0.05, Math.max(gb, y0) + 0.06);
+      let buried = 0;
+      for (const t of [0.35, 0.65, 1]) if (this._h(ax + dx * f * t, az + dz * f * t) > ya + (yb - ya) * t - 0.03) buried++;
+      if (buried >= 2) continue;
+      const L = Math.hypot(bx - ax, bz - az) || 1,
+        nx = (-(bz - az) / L) * WT * 0.5,
+        nz = ((bx - ax) / L) * WT * 0.5;
+      // its foot: in the ground at each end
+      const fa = Math.min(this._h(ax, az), y0) - 0.2,
+        fb = Math.min(gb, y0) - 0.12;
+      const A1 = [ax + nx, ya, az + nz],
+        A2 = [ax - nx, ya, az - nz],
+        B1 = [bx + nx, yb, bz + nz],
+        B2 = [bx - nx, yb, bz - nz];
+      const a1 = [ax + nx, fa, az + nz],
+        a2 = [ax - nx, fa, az - nz],
+        b1 = [bx + nx, fb, bz + nz],
+        b2 = [bx - nx, fb, bz - nz];
+      E.quad(a1, b1, B1, A1, COL.portal);
+      E.quad(a2, b2, B2, A2, COL.portal);
+      E.quad(A1, B1, B2, A2, COL.portal);
+      // (its end face, down into the ground)
+      E.quad(b1, b2, B2, B1, COL.portal);
+      // the coping: a flat stone top a little wider than the wall
+      E.bar(ax, az, bx + (bx - ax) * (0.02 / L), bz + (bz - az) * (0.02 / L), ya + 0.025, yb + 0.025, WT + 0.03, 0.03, COL.coping);
     }
   }
   // which side a branch turns to (+1 right, -1 left of its first direction)
@@ -1139,6 +1273,23 @@ export class InfraRenderer {
     };
     const wire = joinArrays(parts, 'wire'),
       far = joinArrays(parts, 'far');
+    // (round 37) the tunnel mouths, merged where they stand side by side
+    const mp = this._mouths(parts);
+    let mg = null;
+    if (mp) {
+      mg = new THREE.BufferGeometry();
+      mg.setAttribute('position', new THREE.BufferAttribute(mp.P, 3));
+      mg.setAttribute('normal', new THREE.BufferAttribute(mp.N, 3));
+      mg.setAttribute('color', new THREE.BufferAttribute(mp.C, 3));
+      mg.setAttribute('aGlow', new THREE.BufferAttribute(mp.G, 1));
+      mg.computeBoundingSphere();
+    }
+    set('mouthMesh', mg, (g) => {
+      const o = new THREE.Mesh(g, this.mat);
+      o.receiveShadow = true;
+      o.name = 'infra-mouths';
+      return o;
+    });
     set('wires', wire.length ? lines(wire) : null, (g) => new THREE.LineSegments(g, this.wireMat));
     set('far', far.length ? lines(far, joinArrays(parts, 'farC')) : null, (g) => new THREE.LineSegments(g, this.farMat));
     this._lod(true);
@@ -1152,6 +1303,7 @@ export class InfraRenderer {
     this._isFar = isFar;
     this._wiresOn = wires;
     for (const c of this._chunks.values()) if (c.mesh) c.mesh.visible = !isFar && c.mesh.userData.has;
+    if (this.mouthMesh) this.mouthMesh.visible = !isFar && this.mouthMesh.userData.has;
     if (this.wires) this.wires.visible = !isFar && wires && this.wires.userData.has;
     if (this.far) this.far.visible = isFar && this.far.userData.has;
   }

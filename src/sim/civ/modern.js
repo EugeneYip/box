@@ -140,6 +140,8 @@ const BORE = 5;
 // to ride over it (round 33: 1.2, drawn as a covered way, a concrete box
 // that stood out of level fields at the foot of a hill)
 const PORTAL_LEN = 0.6;
+// (round 37) the shortest bore (tiles under cover); a shorter one is filled
+const BORE_MIN = 2;
 // where a level sits between the all-cut (0) and the all-fill (1) profile:
 // nearer the cut, since a tunnel is out of sight and a tall viaduct is not
 const CUT_BIAS = 0.3;
@@ -282,13 +284,21 @@ function gradeLevels1(g, gc, f, lo, land, ds, G, clr, cover, y0, y1, steep) {
       }
       // (round 33: a deep cut through a narrow ridge too: filled, the line
       // rode over its crest and stood on piers as tall as the cliff past it)
+      // the bore: from the first point with cover over it to the last
+      // (a shallow stretch between two deep ones stays in the bore)
+      let a = i,
+        b = j - 1,
+        bl = 0;
       if (deep >= TUN_DEEP && arc >= 0.5) {
-        // the bore: from the first point with cover over it to the last
-        // (a shallow stretch between two deep ones stays in the bore)
-        let a = i,
-          b = j - 1;
         while (gc[a] - y[a] < cover) a++;
         while (gc[b] - y[b] < cover) b--;
+        for (let m = a + 1; m <= b; m++) bl += Math.min(ds[m], 3);
+      }
+      // (round 37) a bore shorter than BORE_MIN is filled like a shallow
+      // cut: its two headwalls stood back to back a tile apart on a narrow
+      // ridge (the last pass keeps it a bore rather than leave the line
+      // under the ground)
+      if (bl >= BORE_MIN || (last && bl > 0)) {
         for (let m = a; m <= b; m++) tun[m] = 1;
         anyTun = true;
         // its approaches, below the ground with too little over them for a
@@ -2234,9 +2244,13 @@ export const modern = {
         // (round 35) never a switch in or by a tunnel: a branch that left its
         // trunk underground ran on under level fields until it could climb
         // out, its mouths boxes on the flat
+        // (round 37: nor where the trunk goes under while the branch still
+        // runs beside it, out along the trunk from the switch and curving
+        // away: two mouths side by side a tile apart, the branch's open
+        // track between them, round 36)
         if (tun) {
           let near = false;
-          for (let m = Math.max(0, j - 8); m <= Math.min(n - 1, j + 8) && !near; m++) near = !!tun[m];
+          for (let m = Math.max(0, j - 10); m <= Math.min(n - 1, j + 16) && !near; m++) near = !!tun[m];
           if (near) continue;
         }
         const tx = Math.floor(p[j * 2]),
