@@ -415,34 +415,65 @@ export class Labels {
       };
     const seenK = new Set(),
       seenV = new Set();
+    // (round 37) new and renamed labels are drawn a few at a time, nearest
+    // the camera first: at least one a pass, then until 5 ms have gone, and the
+    // rest on the next frames (after a fast-forward one pass drew every new
+    // realm's and town's label at once, 91 ms)
+    const t0 = performance.now();
+    let made = 0;
+    this._syncMore = false;
+    const room = () => made < 1 || performance.now() - t0 < 5;
     for (const k of civ.kingdoms) {
       if (!k.alive || !k.villages.length) continue;
       seenK.add(k.id);
-      let s = this.kLabels.get(k.id);
+      const s = this.kLabels.get(k.id);
       const bkey = k.banner ? k.banner.symbol + '|' + k.banner.field : '';
-      if (s && (s.userData.text !== k.name || s.userData.color !== k.color || s.userData.banner !== bkey)) s = null;
-      if (!s) {
-        s = makeLabel(k.name, k.color, 'kingdom', k.banner);
-        this.kLabels.set(k.id, s);
-        this._pack(s);
+      if (s && s.userData.text === k.name && s.userData.color === k.color && s.userData.banner === bkey) continue;
+      if (!room()) {
+        this._syncMore = true;
+        continue;
       }
+      const n = makeLabel(k.name, k.color, 'kingdom', k.banner);
+      made++;
+      this.kLabels.set(k.id, n);
+      this._pack(n);
     }
+    const todo = [];
     for (const v of civ.villages) {
       if (!v.alive) continue;
       seenV.add(v.id);
       const col = civ.kingdomColor(v.kingdom);
-      let s = this.vLabels.get(v.id);
-      if (s && (s.userData.text !== v.name || s.userData.color !== col)) s = null;
-      if (!s) {
-        s = makeLabel(v.name, col, 'village');
-        this.vLabels.set(v.id, s);
-        this._pack(s);
-      }
+      const s = this.vLabels.get(v.id);
+      if (!s || s.userData.text !== v.name || s.userData.color !== col) todo.push(v);
     }
-    for (const [id, s] of this.kLabels)
-      if (!seenK.has(id)) this.kLabels.delete(id);
-    for (const [id, s] of this.vLabels)
-      if (!seenV.has(id)) this.vLabels.delete(id);
+    if (todo.length > 3) {
+      const rig = this.game.cameraRig;
+      const cx = rig?.cur?.x ?? 0,
+        cz = rig?.cur?.z ?? 0;
+      todo.sort((a, b) => (a.cx - cx) ** 2 + (a.cz - cz) ** 2 - ((b.cx - cx) ** 2 + (b.cz - cz) ** 2));
+    }
+    for (const v of todo) {
+      if (!room()) {
+        this._syncMore = true;
+        break;
+      }
+      const n = makeLabel(v.name, civ.kingdomColor(v.kingdom), 'village');
+      made++;
+      this.vLabels.set(v.id, n);
+      this._pack(n);
+    }
+    for (const id of this.kLabels.keys()) if (!seenK.has(id)) this.kLabels.delete(id);
+    for (const id of this.vLabels.keys()) if (!seenV.has(id)) this.vLabels.delete(id);
+  }
+
+  _syncLater() {
+    if (this._syncTask) return;
+    this._syncTask = setTimeout(() => {
+      this._syncTask = 0;
+      if (!this.game.civ || this.game.disposed) return;
+      this._sync();
+      if (this._syncMore) this._syncLater();
+    }, 0);
   }
 
   update(dt) {
@@ -460,6 +491,12 @@ export class Labels {
     if (this._syncT <= 0) {
       this._syncT = 0.75;
       this._sync();
+      // (round 37: labels still to draw are drawn between frames, in short
+      // tasks while the main thread is free, else on the next frame)
+      if (this._syncMore) {
+        this._syncT = 0;
+        this._syncLater();
+      }
     }
     // (round 31) in the Overview the HTML realm names stand in for these: the
     // sprites are not drawn at all (they showed under the HTML names there)
@@ -676,14 +713,9 @@ export class Labels {
     const NX = 27,
       NY = 15;
     // the open inspector card hides the screen right of its left edge
+    // (round 37: its edge as last read with the interface's boxes)
     let x1 = 0.97;
-    try {
-      const ins = document.querySelector('.ws-insp.is-open');
-      const r = ins?.getBoundingClientRect();
-      if (r && r.width > 0 && r.left > innerWidth * 0.3) x1 = Math.min(x1, r.left / innerWidth - 0.01);
-    } catch {
-      /* no DOM */
-    }
+    if (this._inspL != null) x1 = Math.min(x1, this._inspL / innerWidth - 0.01);
     // (round 37) and each realm's claim in view: what it owns, and on a World
     // Map world the unclaimed land of its real country (ranks the names at
     // the overview, where a realm's own ground is a sample or none)
@@ -963,6 +995,82 @@ export class Labels {
     return data[k.realm].must?.length ? Math.max(0.95, imp) : imp;
   }
 
+  // (round 37) The interface's boxes are read again only after it changed:
+  // a panel or card added, removed, shown or hidden (a class, hidden or
+  // style change), a transition ended, or the window resized; while it
+  // changes they are read every 0.4 s for a second more (panels slide and
+  // fade in), and every 3 s at most otherwise.
+  _watchHud() {
+    if (this._hudMO !== undefined) return;
+    this._hudMO = null;
+    this._hudDirtyAt = performance.now();
+    try {
+      const root = document.getElementById('ui-root');
+      if (!root || typeof MutationObserver === 'undefined') return;
+      const mark = () => (this._hudDirtyAt = performance.now());
+      this._hudMO = new MutationObserver((recs) => {
+        for (const r of recs) {
+          const t = r.target.nodeType === 1 ? r.target : r.target.parentElement;
+          // the Overview's names, text changes inside a panel, and the top
+          // bar's clock, season bar and counters (several times a second)
+          // do not move a panel; a panel that grows with its text is seen
+          // by the size watch below
+          if (!t || t.closest('.ws-ovlabels, .ws-clock__txt')) continue;
+          if (r.type === 'attributes' && r.attributeName === 'class' && t.classList.contains('ws-stat')) continue;
+          if (r.type === 'childList' && ![...r.addedNodes, ...r.removedNodes].some((n) => n.nodeType === 1)) continue;
+          mark();
+          return;
+        }
+      });
+      this._hudMO.observe(root, { subtree: true, childList: true, attributes: true, attributeFilter: ['class', 'hidden', 'style', 'open'] });
+      if (typeof ResizeObserver !== 'undefined') {
+        let first = true;
+        this._hudRO = new ResizeObserver(() => (first ? (first = false) : mark()));
+        for (const el of root.querySelectorAll('.ws-top, .ws-top .ws-glass')) this._hudRO.observe(el);
+      }
+      root.addEventListener('transitionend', mark);
+      root.addEventListener('animationend', mark);
+      window.addEventListener('resize', mark);
+    } catch {
+      /* no DOM */
+    }
+  }
+
+  // reads the interface's boxes now (a forced layout if the page changed
+  // since it was last laid out)
+  _readHudNow(W, H) {
+    this._watchHud();
+    this._hudAt = performance.now();
+    this._hudW = W;
+    this._hudH = H;
+    this._hud = this._readHud(W, H);
+    // (round 35) realm names also keep out of the tray's whole box (the
+    // strip over its glass is where the power bar and the vehicle
+    // chooser open; ITALY sat in it, 13 px over the glass)
+    this._dockBox = null;
+    // (round 31: the right margin is the open inspector's own edge, else
+    // small: the panels themselves are in the HUD list)
+    this._inspL = null;
+    try {
+      const d = document.querySelector('#ui-root:not(.is-photo) .ws-dock');
+      const r = d?.getBoundingClientRect();
+      if (r && r.width > 4 && r.height > 4 && r.width < W * 0.95 && getComputedStyle(d).visibility !== 'hidden' && +getComputedStyle(d).opacity > 0.05) this._dockBox = { l: r.left, r: r.right, t: r.top, b: r.bottom };
+      const ri = document.querySelector('.ws-insp.is-open')?.getBoundingClientRect();
+      if (ri && ri.width > 0 && ri.left > W * 0.3) this._inspL = ri.left;
+    } catch {
+      /* no DOM */
+    }
+  }
+
+  // ... or in a task of its own after this frame, once the page is laid out
+  _readHudLater() {
+    if (this._hudTask) return;
+    this._hudTask = setTimeout(() => {
+      this._hudTask = 0;
+      if (!this.game.disposed) this._readHudNow(innerWidth, innerHeight);
+    }, 0);
+  }
+
   // Hide labels that collide with a higher-priority label or with the HUD.
   _declutter(cand, dt) {
     const rig = this.game.cameraRig;
@@ -973,38 +1081,16 @@ export class Labels {
     // time: on drawn-frame time (capped at 0.1 s a frame) a slow GPU read
     // them once a minute, so a ribbon placed before the feed's cards came in
     // stayed under them (MAINLAND REGION under the feed on the whole Earth)
+    // (round 37) ... but only while the interface is changing (see
+    // _watchHud), and between frames, where the page's layout is already
+    // done: read in the frame, after a fast-forward had changed the feed and
+    // the panels, it forced a layout of the whole page (29-58 ms). The first
+    // read and a read after the window is resized are made at once.
     const now = performance.now();
-    const fresh = !this._hud || now - (this._hudAt || 0) > 400 || this._hudW !== W || this._hudH !== H;
-    if (fresh) {
-      this._hudAt = now;
-      this._hudW = W;
-      this._hudH = H;
-      this._hud = this._readHud(W, H);
-      // (round 35) realm names also keep out of the tray's whole box (the
-      // strip over its glass is where the power bar and the vehicle
-      // chooser open; ITALY sat in it, 13 px over the glass)
-      this._dockBox = null;
-      try {
-        const d = document.querySelector('#ui-root:not(.is-photo) .ws-dock');
-        const r = d?.getBoundingClientRect();
-        if (r && r.width > 4 && r.height > 4 && r.width < W * 0.95 && getComputedStyle(d).visibility !== 'hidden' && +getComputedStyle(d).opacity > 0.05) this._dockBox = { l: r.left, r: r.right, t: r.top, b: r.bottom };
-      } catch {
-        /* no DOM */
-      }
-    }
+    if (!this._hud || this._hudW !== W || this._hudH !== H) this._readHudNow(W, H);
+    else if (now - this._hudAt > (this._hudDirtyAt >= this._hudAt - 1000 ? 400 : 3000)) this._readHudLater();
     const uiOn = this.game.params?.ui !== false;
     // HUD-safe margins that scale with the screen (phones and tablets in portrait)
-    // (round 31: the right margin is the open inspector's own edge, else
-    // small: the panels themselves are in the HUD list)
-    if (fresh || this._inspL === undefined) {
-      this._inspL = null;
-      try {
-        const r = document.querySelector('.ws-insp.is-open')?.getBoundingClientRect();
-        if (r && r.width > 0 && r.left > W * 0.3) this._inspL = r.left;
-      } catch {
-        /* no DOM */
-      }
-    }
     const mTop = uiOn ? Math.min(90, H * 0.1) : 8,
       mBot = uiOn ? Math.min(90, H * 0.12) : 8,
       mRight = uiOn ? (this._inspL != null ? Math.max(12, W - this._inspL + 8) : 12) : 8,
