@@ -836,6 +836,9 @@ export class UI {
     const camP = cam.position;
     const ray = (this._ovRay ||= new THREE.Vector3());
     const memo = new Map();
+    // (round 37) the points whose answer is unclaimed land that counts as
+    // the nearest town's realm's
+    const unowned = new Set();
     const ownerAt = (x, y) => {
       const key = Math.round(x / 3) * 4096 + Math.round(y / 3);
       const m = memo.get(key);
@@ -857,26 +860,35 @@ export class UI {
           // (unclaimed land counts as the nearest town's realm's: at the start
           // most of the land is unclaimed, and VIETNAM rested over China)
           o = id >= 0 ? id : wd.isWater?.(tx, tz) ? -1 : (g.buildings?.labels?.nearRealm?.(tx, tz) ?? -2);
+          if (id < 0 && o >= 0) unowned.add(key);
         }
       }
       memo.set(key, o);
       return o;
     };
+    const isUnowned = (x, y) => unowned.has(Math.round(x / 3) * 4096 + Math.round(y / 3));
     // how many sevenths of a name's middle line lie over another realm's land
+    // (round 37: a seventh over its unclaimed land counts a third: at the
+    // start most of the land is unclaimed, and NORTH KOREA centred on the
+    // peninsula, its ends over the Liaodong coast, lost to a name pinned by
+    // its banner and running out over the Sea of Japan)
     const overOthers = (it, x, y, w) => {
       let n = 0;
       for (let i = 0; i < 7; i++) {
-        const o = ownerAt(x - w / 2 + (w * (i + 0.5)) / 7, y);
-        if (o >= 0 && o !== it.kid) n++;
+        const px = x - w / 2 + (w * (i + 0.5)) / 7;
+        const o = ownerAt(px, y);
+        if (o >= 0 && o !== it.kid) n += isUnowned(px, y) ? 1 / 3 : 1;
       }
       return n;
     };
-    // 1. names on their realm's centre (the plate covers it), or pinned there
-    // by their banner with the name running east; largest realms first. Each
+    // 1. names on their realm's centre (the plate covers it, its middle over
+    // the realm's own land), or pinned there by their banner with the name
+    // running east; largest realms first. Each
     // spot is scored and the best taken: 3 for each seventh of the name over
-    // a neighbor's land, 2 for the banner over the sea (4 over a neighbor), 1
-    // for a pinned spot, 1 for the smaller size, 5 for covering another
-    // realm's centre; past 7 the name goes out with a leader line instead
+    // a neighbor's land (1 over its unclaimed land), 2 for the banner over the
+    // sea or a neighbor's unclaimed land (4 over its own), 4 for a pinned
+    // spot, 1 for the smaller size, 5 for covering another realm's centre;
+    // past 7 the name goes out with a leader line instead
     for (const it of items) {
       const e = it.e;
       it.hit = null;
@@ -907,12 +919,19 @@ export class UI {
             r = c.x + w / 2,
             b = c.y + h / 2;
           if (!free(l, t, r, b)) continue;
+          // (round 37) a name moved off its realm's centre keeps its middle
+          // over the realm's own land: SOUTH KOREA slid west over the Yellow
+          // Sea, its right end just touching the peninsula; with no such spot
+          // free it goes out with a leader line
+          if (!c.flag && c.i > 0 && ownerAt(c.x, c.y) !== it.kid) continue;
           const cov = coversOther(it, l, t, r, b);
           if (c.flag && cov) continue;
-          let cost = (sc === 1 ? 0 : 1) + (c.flag ? 1 : 0) + (cov ? 5 : 0) + ci * 0.01;
+          // (round 37: a pinned spot costs 4, so a name centred on its land
+          // with its ends over the sea or a neighbor's unclaimed land wins)
+          let cost = (sc === 1 ? 0 : 1) + (c.flag ? 4 : 0) + (cov ? 5 : 0) + ci * 0.01;
           const bo = ownerAt(l + bi, c.y);
           if (c.flag && bo !== it.kid && Math.hypot(l + bi - it.sx, c.y - it.sy) > 6) continue;
-          if (bo !== it.kid) cost += bo >= 0 ? 4 : 2;
+          if (bo !== it.kid) cost += bo >= 0 && !isUnowned(l + bi, c.y) ? 4 : 2;
           if (best && cost >= best.cost) continue;
           cost += 3 * overOthers(it, c.x, c.y, w);
           const keep = ci === 0 && pi >= 0 && cost <= (e._cost ?? 0) + 1.5;
