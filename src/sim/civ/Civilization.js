@@ -1061,7 +1061,11 @@ export class Civilization {
     // child now and then (WANT_BIRTH of the usual rate): births stopped with
     // the stores below a year's worth, and a canning town in want through a
     // long drought lost a quarter of its people to old age alone
-    const fed = v.food > pop * 1.2 + (tiny ? 4 : 8);
+    // (round 37) ...and one the realm's tinned food has reached within the
+    // year has children as a fed town does: an old canning town in want had
+    // none in eight years of drought and lost 39% of its people to old age,
+    // while towns of its size outside the drought held their numbers
+    const fed = v.food > pop * 1.2 + (tiny ? 4 : 8) || now - (v._tinT ?? -1e9) < YEAR;
     if (pop < v.housing && pop < this._popCap(v) && !(fullWorld && pop > this._fullWorldRoom(v)) && (fed || v.food > pop * 0.2) && !v.starving && humans < this._humanCap() * (tiny ? 1 : 0.97) && this.rng.chance(Math.min(1, (1 - popCrowd * 0.85) * this._kLaw(v.kingdom, 'civGrowth', 1) * (v.policy?.growth ?? 1) * (fed ? 1 : WANT_BIRTH)))) {
       let father = false;
       for (const u of v.members) if (u.sex === 'm' && u.age >= 18 && u.age < 60) father = true;
