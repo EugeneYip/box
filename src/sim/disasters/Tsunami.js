@@ -2,6 +2,7 @@ import { FLORA, FLORA_INFO, SEA_LEVEL } from '../../world/constants.js';
 import { hurt, play, rand } from './util.js';
 import { PF, RAMP, TRAIL } from '../../render/fx/Effects.js';
 import { WaveMesh } from '../../render/fx/WaveMesh.js';
+import { BUILDING_TYPES } from '../civ/catalog.js';
 
 // Great wave: a long breaking crest rolls in from open water, steepening as
 // it reaches the shallows, then surges inland, stripping vegetation,
@@ -258,9 +259,40 @@ export class Tsunami {
     // buildings stop taking harm at KEEP_BUILDINGS of their health
     const r = 1.6 + low * 0.6;
     this._hurtPeople(x, z, r, 15 * e * (1 + low * 1.2));
+    // (round 37: each blow is cut to what the town has left above that
+    // floor, _keepScale; the blows of one tick's columns, each let through
+    // whole while the town still stood above it, took 56-58%)
     const near = town?.v || this._nearTown(x, z);
-    if (!near || this._standing(near)) hurt(g, x, z, r, 0, 30 * e * (1 + low * 1.8), 'tsunami');
+    const bd = 30 * e * (1 + low * 1.8);
+    const s = near ? this._keepScale(near, x, z, r, bd) : 1;
+    if (s > 0) hurt(g, x, z, r, 0, bd * s, 'tsunami');
     return town ? town.levee : 0;
+  }
+
+  // (round 37) The share of a blow of `amt` within r of (x, z) that town v's
+  // buildings may still take without falling below KEEP_BUILDINGS of the
+  // health they had when first struck (1: all of it; 0: none). It reckons the
+  // blow as Civ damageArea deals it, each building's loss no more than its
+  // health.
+  _keepScale(v, x, z, r, amt) {
+    if (!this._standing(v)) return 0;
+    const civ = this.game.civ;
+    let hp = 0;
+    for (const b of v.buildings || []) if (b.alive) hp += b.hp || 0;
+    const left = hp - this._hp0.get(v.id) * KEEP_BUILDINGS;
+    if (!(left > 0)) return 0;
+    let loss = 0;
+    for (const b of v.buildings || []) {
+      if (!b.alive) continue;
+      const nx = Math.max(b.tx, Math.min(b.tx + b.w, x)),
+        nz = Math.max(b.ty, Math.min(b.ty + b.h, z));
+      const d = Math.hypot(nx - x, nz - z);
+      if (d > r) continue;
+      const k = 1 - (d / Math.max(r, 0.001)) * 0.6;
+      const g = civ?._bGuard ? civ._bGuard(b, 'tsunami') : 1;
+      loss += Math.min(b.hp || 0, amt * k * (BUILDING_TYPES[b.type]?.wall ? 0.5 : 1) * g);
+    }
+    return loss > left ? left / loss : 1;
   }
 
   // People within r of (x, z) take the wave's harm, except those of a town
