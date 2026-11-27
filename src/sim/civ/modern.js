@@ -115,6 +115,15 @@ export const HW_COVER = 0.32;
 // ramp (round 35)
 const HW_END_RISE = 0.6 * EMB_MAX;
 const HW_RAMP_DIP = 0.06;
+// (round 37) a line's end stands at most this far off its level over the
+// ground (the bed on the ground, a guideway at its usual height): a line
+// end with no station is pulled back along the line to dry land at grade,
+// and a station's end must meet its platform (round 36: a platform and
+// buffer stop on a viaduct stub over the surf, a tile off a bluff, and
+// line ends lifted over a town's core on a stub of viaduct)
+const END_RISE = 0.5 * STOREY;
+// the stretch behind a line end without a station that holds its platform
+const END_PLAT = 1.2;
 // a cut becomes a tunnel where it reaches this deep (a shallower one is filled)
 const TUN_DEEP = 0.45;
 // the approach to a station's platform or a switch may be this much steeper
@@ -2015,9 +2024,11 @@ export const modern = {
     // (round 27: the platform, then the ramp at the bed's grade, stays at
     // ground level: a deck met a station's canopy at deck height over
     // tracks at grade)
+    // (round 37: a line end with no station too: the core was lifted out to
+    // its buffer stop, which stood on a stub of viaduct over the streets)
     const ramp = ST_HALF * 2 * BUILDING.scale + CORE_LIFT / GRADE.rail + 1.2;
-    const keepS = s.start?.station ? ramp : s.junction ? 1.5 : 0,
-      keepE = s.end?.station ? ramp : 0;
+    const keepS = s.start ? ramp : s.junction ? 1.5 : 0,
+      keepE = s.end ? ramp : 0;
     const out = new Uint8Array(n);
     let any = false;
     for (let i = 0; i < n; ) {
@@ -2215,12 +2226,14 @@ export const modern = {
       trackLevels(w, seg, seg.up);
       // (a line already running is held to a looser limit when its network
       // is rebuilt, so one laid is not dropped for a hair's change)
-      if (seg.gradeX <= GRADE_SLACK[kind] * (loose ? 2 : 1) && seg.fillMax <= FILL_MAX[kind] * (loose ? 1.3 : 1)) break;
+      // (round 37) and its ends come down to the ground: see _railEndsFit
+      if (seg.gradeX <= GRADE_SLACK[kind] * (loose ? 2 : 1) && seg.fillMax <= FILL_MAX[kind] * (loose ? 1.3 : 1) && this._railEndsFit(seg, loose)) break;
       // (a tally for the probes: routes refused, and why)
       const R = this._gradeRef || (this._gradeRef = { n: 0, ex: 0, fill: 0, last: [] });
       R.n++;
       if (seg.gradeX > GRADE_SLACK[kind]) R.ex++;
-      else R.fill++;
+      else if (seg.fillMax > FILL_MAX[kind]) R.fill++;
+      else R.end = (R.end || 0) + 1;
       R.last.push([+seg.gradeX.toFixed(2), +seg.fillMax.toFixed(2), n]);
       if (R.last.length > 40) R.last.shift();
       seg = null;
@@ -2278,6 +2291,89 @@ export const modern = {
         }
     }
     return seg;
+  },
+  // (round 37) A new stretch's ends, once its levels are set: a line end at
+  // a station must meet the platform (within END_RISE, twice that for a
+  // line already running); a line end with no station is pulled back along
+  // the line to the first point over dry land at grade, its platform's
+  // length behind it at grade too, out of any tunnel (round 36: a buffer
+  // stop on a viaduct stub over the surf, a tile off a bluff). False when
+  // an end cannot be met (the route is refused like one that breaks the
+  // grade).
+  _railEndsFit(seg, loose) {
+    for (const atStart of [false, true]) {
+      const info = atStart ? seg.start : seg.end;
+      if (!info) continue;
+      if (!info.station) {
+        if (!this._railTrim(seg, atStart)) return false;
+        continue;
+      }
+      const n = seg.pts.length / 2,
+        e = atStart ? 0 : n - 1;
+      if (Math.abs(this._railEndOff(seg, e)) > END_RISE * (loose ? 2 : 1)) return false;
+    }
+    return true;
+  },
+  // how far point i of a stretch rides off its usual level over the ground
+  // (+ over it); Infinity over the water
+  _railEndOff(seg, i) {
+    const h = this.world.heightAt(seg.pts[i * 2], seg.pts[i * 2 + 1]);
+    if (h < SEA_LEVEL + 0.05) return Infinity;
+    return seg.ys[i] - (h + (seg.kind === 'maglev' ? MAG_CLEAR : 0.02));
+  },
+  // Pull the end of a stretch with no station (atStart: its start) back
+  // along it to the first point fit for a buffer stop (_railEndsFit), and
+  // level it again. False when no such point is left past its switch or
+  // its other end's platform.
+  _railTrim(seg, atStart) {
+    const w = this.world;
+    for (let pass = 0; pass < 4; pass++) {
+      const P = seg.pts,
+        n = P.length / 2,
+        tun = seg.tun;
+      const arc = new Float32Array(n);
+      for (let i = 1; i < n; i++) arc[i] = arc[i - 1] + Math.min(3, Math.hypot(P[i * 2] - P[i * 2 - 2], P[i * 2 + 1] - P[i * 2 - 1]));
+      const fit = (m) => !tun?.[m] && Math.abs(this._railEndOff(seg, m)) <= END_RISE;
+      const st = atStart ? 1 : -1,
+        e = atStart ? 0 : n - 1;
+      // (never past the switch, nor into the last 2 tiles of the stretch)
+      const ok = (m) => (atStart ? m <= seg.lock1 && arc[n - 1] - arc[m] >= 2 : m >= seg.lock0 && arc[m] >= 2);
+      let m = e,
+        found = -1;
+      for (; m >= 0 && m < n && ok(m); m += st) {
+        if (!fit(m)) continue;
+        let good = true;
+        for (let q = m + st; good && q >= 0 && q < n && Math.abs(arc[q] - arc[m]) <= END_PLAT; q += st) good = fit(q);
+        if (good) {
+          found = m;
+          break;
+        }
+      }
+      if (found < 0) return false;
+      if (found === e) return true;
+      if (atStart) {
+        const keepS = arc[seg.lock0];
+        seg.pts = P.slice(found * 2);
+        let l0 = found;
+        while (l0 < n - 1 && arc[l0] - arc[found] < keepS) l0++;
+        seg.lock0 = l0 - found;
+        seg.lock1 = Math.max(seg.lock0, seg.lock1 - found);
+        seg.start.x = seg.pts[0];
+        seg.start.z = seg.pts[1];
+      } else {
+        const keepE = arc[n - 1] - arc[seg.lock1];
+        seg.pts = P.slice(0, (found + 1) * 2);
+        let l1 = found;
+        while (l1 > seg.lock0 && arc[found] - arc[l1] < keepE) l1--;
+        seg.lock1 = l1;
+        seg.end.x = seg.pts[found * 2];
+        seg.end.z = seg.pts[found * 2 + 1];
+      }
+      if (seg.kind === 'rail') seg.core = this._railCoreRuns(seg);
+      trackLevels(w, seg, seg.up);
+    }
+    const n = seg.pts.length / 2;
+    return Math.abs(this._railEndOff(seg, atStart ? 0 : n - 1)) <= END_RISE;
   },
   // a drawn line over a town's square (255) or a single town's core (2)
   // away from its own ends (_railBlocks)
