@@ -120,6 +120,20 @@
     transform: translateY(-50%);
   }
 }
+/* (round 37) phone landscape: the leaf sits inside the speed button's top
+   right corner, a little smaller (it straddled the button's border and the
+   bar's top edge) */
+@media (max-height: 500px) and (min-width: 721px) {
+  .ws-clock .ws-speed__flags {
+    top: 4px;
+    right: 4px;
+  }
+  .ws-clock .ws-leaf {
+    width: 14px;
+    height: 14px;
+    font-size: 9px;
+  }
+}
 
 /* ---- onboarding: a pulsing ring on the control each step names */
 .ws-coach__ring {

@@ -210,18 +210,26 @@
   color: var(--ws-ink-3);
 }
 
-/* ---- phone landscape inspector: the chips wrap (the realm's long name was
-   cut and the village chip fell off the end of one scrolling row) */
+/* ---- phone landscape inspector: one sideways row of chips, as in portrait
+   (round 37: wrapped, "Stonestead" stood alone on a second row of the 390 px
+   tall screen); the row fades at its right edge until scrolled to the end,
+   and a chip keeps a long realm name whole up to 210 px */
 @media (max-height: 500px) and (min-width: 721px) {
   .ws-insp__also {
-    flex-wrap: wrap;
-    overflow: visible;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
+    mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
+    padding-right: 24px;
+  }
+  .ws-insp__also.is-end {
     -webkit-mask-image: none;
     mask-image: none;
-    padding-right: 0;
   }
   .ws-insp__also .ws-chip2 {
-    max-width: 100%;
+    flex: none;
+    max-width: 210px;
   }
 }
 
