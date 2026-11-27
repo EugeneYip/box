@@ -861,7 +861,7 @@ export class Inspector {
         for (const c of cells.slice(4)) g2.append(c);
         more.append(g2);
       }
-      for (const sec of [...sc.querySelectorAll('.ws-dsec')]) if (!/inside|traits|conditions|learning|realm|voyage|hold/i.test(sec.querySelector('h5')?.textContent || '')) more.append(sec);
+      for (const sec of [...sc.querySelectorAll('.ws-dsec')]) if (!/inside|traits|conditions|learning|realm|^era$|voyage|hold/i.test(sec.querySelector('h5')?.textContent || '')) more.append(sec);
       if (more.childElementCount) {
         more.hidden = !this.moreOpen;
         const btn = document.createElement('button');
@@ -1182,7 +1182,10 @@ export class Inspector {
     if (isKingdom && k.motto && !(r.stats || []).some((s) => /motto/i.test(String(s[0])))) html += `<p class="ws-motto">“${esc(String(k.motto))}”</p>`;
     if (k && !isKingdom) {
       const era = eraOf(g, k);
-      html += `<section class="ws-dsec"><h5>Realm</h5><div class="ws-realm__line"><span class="ws-era is-era${era}">${uiIcon(ERA_ICON[era] || 'chronicle')}<span>${esc(eraNames()[era] || '')} era</span></span>${this._chipNames?.has(String(k.name || '').toLowerCase()) ? '' : `<span class="ws-realm__of">${esc(String(k.name || ''))}</span>`}</div></section>`;
+      // (round 37) with the realm's name already a chip above, the row is
+      // its "Era" (a building's card read "REALM · HEARTH ERA", no realm)
+      const named = !this._chipNames?.has(String(k.name || '').toLowerCase());
+      html += `<section class="ws-dsec"><h5>${named ? 'Realm' : 'Era'}</h5><div class="ws-realm__line"><span class="ws-era is-era${era}">${uiIcon(ERA_ICON[era] || 'chronicle')}<span>${esc(eraNames()[era] || '')} era</span></span>${named ? `<span class="ws-realm__of">${esc(String(k.name || ''))}</span>` : ''}</div></section>`;
     }
     if (k && isKingdom) {
       const era = eraOf(g, k);
