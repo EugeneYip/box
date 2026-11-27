@@ -106,14 +106,17 @@ export const land = {
     const use = civ.use;
     const [dx0, dz0] = this._door(v);
     const sq = this._squareTest?.(v);
+    // (round 37) on a street that leads on away from the square, not on a
+    // stub whose only way on is across it (an ox cart cut over the lawn)
+    const off = (x, z) => w.inBounds(x, z) && use[z * w.w + x] === USE.ROAD && !(sq && sq(x, z));
     let best = null,
       bd = Infinity;
     for (let dz = -9; dz <= 9; dz++)
       for (let dx = -9; dx <= 9; dx++) {
         const x = dx0 + dx,
           z = dz0 + dz;
-        if (!w.inBounds(x, z) || use[z * w.w + x] !== USE.ROAD || (sq && sq(x, z))) continue;
-        const d = dx * dx + dz * dz;
+        if (!off(x, z)) continue;
+        const d = dx * dx + dz * dz + (off(x + 1, z) || off(x - 1, z) || off(x, z + 1) || off(x, z - 1) ? 0 : 60);
         if (d < bd) (bd = d), (best = [x, z]);
       }
     v._depot = best || [dx0, dz0];
@@ -142,8 +145,12 @@ export const land = {
     // one long road search per tick at most
     if (this._roadBudget <= 0) return null;
     this._roadBudget--;
-    const [sx, sy] = motor ? this._depot(a) : this._door(a),
-      [gx, gy] = motor ? this._depot(b) : this._door(b);
+    // (round 37) an ox cart sets out from (and draws up at) the street
+    // beside the square too, as a truck does: carts left from the hall door
+    // and crossed the paved square at a trot among the people (24 of 67
+    // samples of carts on a haul were on a village square)
+    const [sx, sy] = this._depot(a),
+      [gx, gy] = this._depot(b);
     if (!w.inBounds(sx, sy) || !w.inBounds(gx, gy)) return null;
     // first along the laid roads only (cheap: few tiles), then across country
     const use = civ.use;
@@ -155,11 +162,20 @@ export const land = {
         y = (i / w.w) | 0;
       return Math.abs(x - sx) + Math.abs(y - sy) <= 3 || Math.abs(x - gx) + Math.abs(y - gy) <= 3;
     };
-    // (a town's square and parade pad only where there is no other way)
+    // (a town's square and parade pad only where there is no other way:
+    // round 37, a hundred road tiles round it rather than one across it;
+    // the streets beside it, inside the paving round the hall door, a little
+    // dear; the open ground by either end dear, so a cart keeps to the
+    // streets out of town instead of cutting over the lawns beside them)
+    const SQ = 40;
+    const sqr = civ.keepClear?.length === use?.length ? civ.keepClear : null;
+    const street = (i) => (sqr && sqr[i] ? SQ : kc && kc[i] ? 3 : 0.4);
     const roadsOnly = use
       ? (i) => {
-          if (use[i] === USE.ROAD) return kc && kc[i] ? 6 : 0.4;
-          return nearEnds(i) ? base(i) : Infinity;
+          if (use[i] === USE.ROAD) return street(i);
+          if (!nearEnds(i)) return Infinity;
+          const c = base(i);
+          return c === Infinity ? c : c + 12 + (kc && kc[i] ? SQ : 0);
         }
       : null;
     const reaches = (q) => {
@@ -175,7 +191,7 @@ export const land = {
       // short gap in the roads is found and closed with new road; a route
       // needing more than a few tiles of new road is not driven
       const motorCost = (i) => {
-        if (use[i] === USE.ROAD) return kc && kc[i] ? 6 : 0.4;
+        if (use[i] === USE.ROAD) return street(i);
         const c = base(i);
         if (c === Infinity) return c;
         return use[i] === USE.FREE ? c + 12 : 60;
@@ -196,7 +212,13 @@ export const land = {
       p = roadsOnly ? civPath(w, sx, sy, gx, gy, roadsOnly, 9000, 0.4) : null;
       if (!reaches(p)) p = null;
     }
-    if (!p && !motor && Math.hypot(gx - sx, gy - sy) < maxNodes / 60) p = civPath(w, sx, sy, gx, gy, base, maxNodes, 0.75);
+    // (across country, round 37: round a town's square and the paving by its
+    // hall door too, as on the roads; carts took the straight line over them)
+    const country = (i) => {
+      const c = base(i);
+      return c === Infinity ? c : c + (sqr && sqr[i] ? SQ : kc && kc[i] ? 3 : 0);
+    };
+    if (!p && !motor && Math.hypot(gx - sx, gy - sy) < maxNodes / 60) p = civPath(w, sx, sy, gx, gy, country, maxNodes, 0.75);
     let path = null;
     if (p && p.length > 3 && reaches(p)) {
       path = [sx + 0.5, sy + 0.5];
