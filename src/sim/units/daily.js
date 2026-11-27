@@ -285,8 +285,81 @@ export function installDaily(Units) {
     return { sx: sq.x, sz: sq.z, era, stall, benches, y: w.heightAt(sq.x, sq.z) };
   };
 
+  // ---- the kerb (round 37) ---------------------------------------------------
+  // A spot (x, z) in a street's roadway, moved to its sidewalk: to the edge
+  // of the same street tile beside a lawn, a plot or a building (the nearest
+  // such edge, a little along it by person, so a few do not stand on one
+  // point), else to the nearest such edge of a street tile beside it. null
+  // when the spot is not in a roadway (on the square, a railway, a bridge,
+  // off the streets, or already on the sidewalk). Four people stood "Resting"
+  // in the middle of a street.
+  const KERB_EDGES = [
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1],
+  ];
+  P._kerbSpot = function (x, z, seed = 0) {
+    const g = this.game;
+    const w = g.world;
+    const civ = g.civ;
+    const use = civ?.use;
+    if (!use || use.length !== w.size) return null;
+    const tx = Math.floor(x),
+      tz = Math.floor(z);
+    if (!w.inBounds(tx, tz)) return null;
+    const i = tz * w.w + tx;
+    const ROAD = 2; // civ USE.ROAD
+    if (use[i] !== ROAD) return null;
+    const kc = civ.keepClear?.length === w.size ? civ.keepClear : null;
+    const rm = civ.railMask?.length === w.size ? civ.railMask : null;
+    const street = (j) => use[j] === ROAD && !(kc && kc[j]) && !(rm && rm[j]) && w.height[j] > SEA_LEVEL;
+    if (!street(i)) return null;
+    // the edge of a street tile is a kerb where the tile beside it is dry
+    // ground that is not a street (a lawn, a plot, a building)
+    const kerb = (ax, az, ex, ez) => {
+      const nx = ax + ex,
+        nz = az + ez;
+      if (!w.inBounds(nx, nz)) return false;
+      const n = nz * w.w + nx;
+      return use[n] !== ROAD && w.height[n] > SEA_LEVEL;
+    };
+    // (already on the sidewalk: the modern one is 0.2 of a tile wide)
+    const fx = x - tx,
+      fz = z - tz;
+    for (const [ex, ez] of KERB_EDGES) {
+      const dE = ex > 0 ? 1 - fx : ex < 0 ? fx : ez > 0 ? 1 - fz : fz;
+      if (dE <= 0.22 && kerb(tx, tz, ex, ez)) return null;
+    }
+    const SW = 0.12;
+    const along = (hash(seed, 11) - 0.5) * 0.5;
+    let best = null,
+      bd = Infinity;
+    for (let dz = -1; dz <= 1; dz++)
+      for (let dx = -1; dx <= 1; dx++) {
+        const ax = tx + dx,
+          az = tz + dz;
+        if (!w.inBounds(ax, az) || !street(az * w.w + ax)) continue;
+        for (const [ex, ez] of KERB_EDGES) {
+          if (!kerb(ax, az, ex, ez)) continue;
+          const px = ax + 0.5 + ex * (0.5 - SW) + (ez ? along : 0),
+            pz = az + 0.5 + ez * (0.5 - SW) + (ex ? along : 0);
+          const d = (px - x) ** 2 + (pz - z) ** 2 + (dx || dz ? 0.35 : 0);
+          if (d < bd) (bd = d), (best = { x: px, z: pz });
+        }
+      }
+    return best;
+  };
+
   // A free standing spot near (x, z) for this person (not in a building or the water).
-  P._dlSpot = function (u, x, z, r = 3) {
+  // (round 37: a spot in a street's roadway is moved to its sidewalk, unless
+  // kerb is false: a group in a ring keeps its ring)
+  P._dlSpot = function (u, x, z, r = 3, kerb = true) {
+    const s = this._dlSpot0(u, x, z, r);
+    const k = s && kerb ? this._kerbSpot(s.x, s.z, u.id) : null;
+    return k || s;
+  };
+  P._dlSpot0 = function (u, x, z, r = 3) {
     const w = this.game.world;
     const tx = Math.floor(x),
       tz = Math.floor(z);
@@ -527,8 +600,14 @@ export function installDaily(Units) {
       t0: now,
       h0: this.game.time.hour ?? 12,
     });
+    // (round 37) a person on their own who would eat, think or play where
+    // they stand in a street's roadway steps onto its sidewalk first
+    if (opts.x == null && !opts.g && k !== 'drill') {
+      const kb = this._kerbSpot(u.x, u.z, u.id);
+      if (kb) opts = { ...opts, x: kb.x, z: kb.z, free: true };
+    }
     if (opts.x != null) {
-      const s = opts.free ? { x: opts.x, z: opts.z } : this._dlSpot(u, opts.x, opts.z);
+      const s = opts.free ? { x: opts.x, z: opts.z } : this._dlSpot(u, opts.x, opts.z, 3, !opts.g);
       if (s && (s.x - u.x) ** 2 + (s.z - u.z) ** 2 > 0.3) {
         dl.x = s.x;
         dl.z = s.z;
