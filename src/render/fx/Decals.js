@@ -131,6 +131,18 @@ void main() {
 }
 `;
 
+// An attribute's update ranges as one span covering them all.
+function collapseRanges(at) {
+  let lo = Infinity,
+    hi = -1;
+  for (const r of at.updateRanges) {
+    lo = Math.min(lo, r.start);
+    hi = Math.max(hi, r.start + r.count);
+  }
+  at.clearUpdateRanges();
+  at.addUpdateRange(lo, hi - lo);
+}
+
 class DecalBatch {
   constructor(fx, capacity, multiply, renderOrder, depthTest = true) {
     this.fx = fx;
@@ -215,6 +227,10 @@ class DecalBatch {
     for (const k in this.attrs) {
       const at = this.attrs[k];
       at.addUpdateRange(o, 4);
+      // (round 37) collapsed here too: decals left while the world runs on
+      // without a frame drawn (a fast-forward) kept every range, 39 000 per
+      // attribute by Year 600, about a sixth of the live heap
+      if (at.updateRanges.length > 64) collapseRanges(at);
       at.needsUpdate = true;
     }
     this.used = Math.max(this.used, slot + 1);
@@ -235,18 +251,8 @@ class DecalBatch {
     this.mesh.visible = hi > 0;
   }
   flushRanges() {
-    for (const k in this.attrs) if (this.attrs[k].updateRanges.length > 32) {
-      // collapse many tiny ranges into one span to keep uploads cheap
-      const at = this.attrs[k];
-      let lo = Infinity,
-        hi = -1;
-      for (const r of at.updateRanges) {
-        lo = Math.min(lo, r.start);
-        hi = Math.max(hi, r.start + r.count);
-      }
-      at.clearUpdateRanges();
-      at.addUpdateRange(lo, hi - lo);
-    }
+    // collapse many tiny ranges into one span to keep uploads cheap
+    for (const k in this.attrs) if (this.attrs[k].updateRanges.length > 32) collapseRanges(this.attrs[k]);
   }
   clear() {
     this.death.fill(-1);
