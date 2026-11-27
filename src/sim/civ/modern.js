@@ -378,10 +378,12 @@ function trackLevels(w, seg, up) {
     const ys = new Float32Array(n);
     ys.set(sh.y.subarray(0, k));
     ys.set(r.y, k);
+    // (in the other's bore where it runs in one: one bore, one mouth)
     let tun = null;
-    if (r.tun) {
+    if (r.tun || sh.any) {
       tun = new Uint8Array(n);
-      tun.set(r.tun, k);
+      tun.set(sh.t.subarray(0, k));
+      if (r.tun) tun.set(r.tun, k);
     }
     seg.ys = ys;
     seg.tun = tun;
@@ -396,9 +398,9 @@ function trackLevels(w, seg, up) {
   seg.fillMax = r.fill;
 }
 // (round 37) how far a stretch starts along another of its network's
-// (seg.share: its trunk, or the lines already out of its first platform)
-// with its track within SHARE of the other's, and the other's level at
-// each of those points: {m, y} (the longest such run), or null
+// (seg.share: the stretches laid before it) with its track within SHARE of
+// the other's, and the other's level and bore at each of those points:
+// {m, y, t, any (a bore among them)} (the longest such run), or null
 const SHARE = 0.4;
 function shareLevels(seg, up) {
   const list = seg.share || (up ? [up] : null);
@@ -421,8 +423,10 @@ function shareLevels(seg, up) {
       }
       if (bd > SHARE * SHARE) continue;
     }
-    const y = new Float32Array(n);
-    let m = 0;
+    const y = new Float32Array(n),
+      t = new Uint8Array(n);
+    let m = 0,
+      any = false;
     for (; m < n; m++) {
       const x = P[m * 2],
         z = P[m * 2 + 1];
@@ -440,11 +444,12 @@ function shareLevels(seg, up) {
         const d = Math.hypot(ax + dx * t - x, az + dz * t - z);
         if (d < bd) (bd = d), (by = o.ys[q] + (o.ys[q + 1] - o.ys[q]) * t), (bj = q);
       }
-      if (bd > SHARE || o.tun?.[bj] || o.tun?.[bj + 1]) break;
+      if (bd > SHARE) break;
       y[m] = by;
+      if (o.tun?.[bj] && o.tun?.[bj + 1]) (t[m] = 1), (any = true);
       j = bj;
     }
-    if (m >= 2 && (!best || m > best.m)) best = { m, y };
+    if (m >= 2 && (!best || m > best.m)) best = { m, y, t, any };
   }
   return best;
 }
@@ -2368,8 +2373,10 @@ export const modern = {
         hw: null,
       };
       seg.up = parent >= 0 ? tree[parent] : null;
-      // (round 37: the stretches it may start along, see shareLevels)
-      seg.share = parent >= 0 ? [tree[parent]] : tree.filter((o) => o.parent < 0);
+      // (round 37: the stretches it may start along, see shareLevels: its
+      // trunk, a line out of the same platform, or a branch that left the
+      // trunk just before it the same way)
+      seg.share = tree.slice();
       if (kind === 'rail') seg.core = this._railCoreRuns(seg);
       trackLevels(w, seg, seg.up);
       // (a line already running is held to a looser limit when its network
