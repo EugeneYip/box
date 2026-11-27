@@ -8,8 +8,9 @@ import { CAM_CUT, CUT_N } from '../../core/CameraRig.js';
 //
 // On a THREE.BatchedMesh (one draw call for every building model, see
 // BuildingRenderer DetailBatch) the per-instance colour and state come from
-// a float texture instead (`inst`: { value: DataTexture }, two RGBA texels
-// per instance: colour, state), indexed by the batch's instance id.
+// a float texture instead (`inst`: { value: DataTexture }, INST_TEXELS RGBA
+// texels per instance: colour, state, cut), indexed by the batch's instance id.
+export const INST_TEXELS = 3;
 export function createBuildingMaterial(uniforms, { clip = false, inst = null } = {}) {
   const mat = new THREE.MeshStandardMaterial({
     vertexColors: true,
@@ -21,14 +22,9 @@ export function createBuildingMaterial(uniforms, { clip = false, inst = null } =
     sh.uniforms.uTime = uniforms.uTime;
     sh.uniforms.uNight = uniforms.uNight;
     sh.uniforms.uSnow = uniforms.uSnow || { value: 0 };
-    // the close-zoom cutaway (CameraRig CAM_CUT, round 25)
+    // the close-zoom cutaway (CameraRig CAM_CUT): its overall strength; each
+    // instance's own share is texel 2 of its instance data
     sh.uniforms.uCut = CAM_CUT.uCut;
-    sh.uniforms.uCutD = CAM_CUT.uCutD;
-    sh.uniforms.uCutTan = CAM_CUT.uCutTan;
-    sh.uniforms.uCutBox = CAM_CUT.uCutBox;
-    sh.uniforms.uCutA = CAM_CUT.uCutA;
-    sh.uniforms.uCutY = CAM_CUT.uCutY;
-    sh.uniforms.uCamW = CAM_CUT.uCamW;
     if (inst) sh.uniforms.uBInst = inst;
     sh.vertexShader = sh.vertexShader
       .replace(
@@ -37,11 +33,12 @@ export function createBuildingMaterial(uniforms, { clip = false, inst = null } =
 attribute float aTint;
 attribute float aGlow;
 attribute vec2 aRoof;
+uniform float uCut;
 #ifdef USE_BATCHING
 uniform highp sampler2D uBInst;
 vec4 wsInst(const in float i, const in int k) {
   int size = textureSize(uBInst, 0).x;
-  int j = int(i) * 2 + k;
+  int j = int(i) * ${INST_TEXELS} + k;
   return texelFetch(uBInst, ivec2(j % size, j / size), 0);
 }
 #else
@@ -54,7 +51,8 @@ varying float vGlow;
 varying vec3 vKCol;
 varying vec4 vState;
 varying vec3 vLocal;
-varying float vFlags;`,
+varying float vFlags;
+varying float vCut;`,
       )
       .replace(
         '#include <begin_vertex>',
@@ -63,8 +61,9 @@ varying float vFlags;`,
 float wsBi = getIndirectIndex(gl_DrawID);
 vec4 wsC0 = wsInst(wsBi, 0);
 vKCol = wsC0.rgb; vFlags = wsC0.a; vState = wsInst(wsBi, 1);
+vCut = wsInst(wsBi, 2).x * uCut;
 #else
-vKCol = iColor; vState = iState; vFlags = 0.0;
+vKCol = iColor; vState = iState; vFlags = 0.0; vCut = 0.0;
 #endif
 vTint = aTint; vGlow = aGlow; vLocal = position; vRoof = aRoof;`,
       );
@@ -75,13 +74,6 @@ vTint = aTint; vGlow = aGlow; vLocal = position; vRoof = aRoof;`,
 uniform float uTime;
 uniform float uNight;
 uniform float uSnow;
-uniform float uCut;
-uniform float uCutD;
-uniform float uCutTan;
-uniform vec4 uCutBox[${CUT_N}];
-uniform float uCutA[${CUT_N}];
-uniform float uCutY[${CUT_N}];
-uniform mat4 uCamW;
 varying float vTint;
 varying float vGlow;
 varying vec3 vKCol;
@@ -89,27 +81,31 @@ varying vec4 vState;
 varying vec3 vLocal;
 varying vec2 vRoof;
 varying float vFlags;
+varying float vCut;
 float wsHash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }`,
+      )
+      .replace(
+        '#include <clipping_planes_fragment>',
+        `#include <clipping_planes_fragment>
+// (round 37) The close-zoom cutaway: a building the camera flagged (on the
+// sight line to the target, or close in front of the eye) fades out whole,
+// every piece of it at once (walls, roof, plinth, rods, balconies, panels:
+// the cut is written per instance, so nothing of a neighbour is touched),
+// through an even ordered dither, and is gone when the fade is done; the
+// renderer draws a faint outline of its plot on the ground instead. (Round
+// 29's level cut at the sight line was judged by world boxes that reached
+// into the neighbours, left their glass open round a cage of frame rods,
+// showed the open walls' insides and darkened the plinths into slabs.)
+if (vCut > 0.001) {
+  const float wsBayer[16] = float[16](0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
+  float wsTh = (wsBayer[int(mod(gl_FragCoord.x, 4.0)) + 4 * int(mod(gl_FragCoord.y, 4.0))] + 0.5) / 16.0;
+  if (vCut > wsTh || vCut > 0.9) discard;
+}`,
       )
       .replace(
         '#include <color_fragment>',
         `#include <color_fragment>
-// close-zoom cutaway (round 29): a building the camera flagged as standing
-// between the eye and the target (CameraRig CAM_CUT: footprint boxes in world
-// space) is cut level just under the lowest sight line through it: nothing
-// above the cut is drawn, and a dark rim runs along the cut edge (the old
-// screen-door ghost read as a muddy see-through block under depth of field)
-if (uCut > 0.001) {
-  vec3 wsWp = (uCamW * vec4(-vViewPosition, 1.0)).xyz;
-  float wsCy = 1e4;
-  for (int i = 0; i < ${CUT_N}; i++) {
-    vec4 bx = uCutBox[i];
-    if (uCutA[i] > 0.01 && wsWp.x > bx.x && wsWp.x < bx.z && wsWp.z > bx.y && wsWp.z < bx.w) wsCy = min(wsCy, uCutY[i]);
-  }
-  if (wsWp.y > wsCy) discard;
-  if (wsWp.y > wsCy - 0.035) diffuseColor.rgb *= 0.32;
-}
-${clip ? 'if (vLocal.y > vState.w) discard; if (!gl_FrontFacing) diffuseColor.rgb = vec3(0.5, 0.47, 0.42) * (0.75 + 0.25 * clamp(vLocal.y / max(vState.w, 0.1), 0.0, 1.0));' : ''}
+${clip ?'if (vLocal.y > vState.w) discard; if (!gl_FrontFacing) diffuseColor.rgb = vec3(0.5, 0.47, 0.42) * (0.75 + 0.25 * clamp(vLocal.y / max(vState.w, 0.1), 0.0, 1.0));' : ''}
 // roof surface detail: courses, tiles, slate, turf, eave shadow, weathering
 if (vRoof.x > 0.5) {
   float kind = vRoof.x;
@@ -247,8 +243,9 @@ export function createPropMaterial() {
 // (round 33) The close-zoom cutaway (CameraRig CAM_CUT) for the things that
 // stand with the buildings but are drawn with materials of their own: the
 // realm's standards and their staffs, banners, fences, windmill sails and
-// the like. Inside a building's cut box they are cut at the same height as
-// the building (its flagpoles and posts were left standing above the cut).
+// the like. Inside a cut building's plot (CameraRig uCutBox) they fade out
+// with it, through the same dither (round 37: they were cut level at the
+// building's cut height, and the boxes reached into the neighbours).
 export function withCutaway(mat) {
   const prev = mat.onBeforeCompile;
   mat.onBeforeCompile = (sh, renderer) => {
@@ -256,7 +253,6 @@ export function withCutaway(mat) {
     sh.uniforms.uCut = CAM_CUT.uCut;
     sh.uniforms.uCutBox = CAM_CUT.uCutBox;
     sh.uniforms.uCutA = CAM_CUT.uCutA;
-    sh.uniforms.uCutY = CAM_CUT.uCutY;
     sh.uniforms.uCamW = CAM_CUT.uCamW;
     sh.fragmentShader = sh.fragmentShader
       .replace(
@@ -265,7 +261,6 @@ export function withCutaway(mat) {
 uniform float uCut;
 uniform vec4 uCutBox[${CUT_N}];
 uniform float uCutA[${CUT_N}];
-uniform float uCutY[${CUT_N}];
 uniform mat4 uCamW;`,
       )
       .replace(
@@ -273,9 +268,16 @@ uniform mat4 uCamW;`,
         `#include <clipping_planes_fragment>
 if (uCut > 0.001) {
   vec3 wsCp = (uCamW * vec4(-vViewPosition, 1.0)).xyz;
+  float wsCa = 0.0;
   for (int i = 0; i < ${CUT_N}; i++) {
     vec4 bx = uCutBox[i];
-    if (uCutA[i] > 0.01 && wsCp.x > bx.x && wsCp.x < bx.z && wsCp.z > bx.y && wsCp.z < bx.w && wsCp.y > uCutY[i]) discard;
+    if (wsCp.x > bx.x && wsCp.x < bx.z && wsCp.z > bx.y && wsCp.z < bx.w) wsCa = max(wsCa, uCutA[i]);
+  }
+  wsCa *= uCut;
+  if (wsCa > 0.001) {
+    const float wsBayer[16] = float[16](0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
+    float wsTh = (wsBayer[int(mod(gl_FragCoord.x, 4.0)) + 4 * int(mod(gl_FragCoord.y, 4.0))] + 0.5) / 16.0;
+    if (wsCa > wsTh || wsCa > 0.9) discard;
   }
 }`,
       );

@@ -4,30 +4,29 @@ import { SEA_LEVEL } from '../world/constants.js';
 import { BUILDING_TYPES } from '../sim/civ/catalog.js';
 import { BUILDING } from './scale.js';
 
-// The close-zoom cutaway (round 25, reworked round 27): at distance 10 or
-// closer (fading out by 14) a building whose box stands on the line from the
-// eye to the target fades, whole, to a sparse screen-door ghost, so a roof
-// never hides the followed person and no floating slab is left. The camera
-// works out on the CPU which buildings cross that line (never the one that
-// holds the target) and hands their footprints to the building material
-// (src/render/buildings/material.js), which reads these uniforms:
-//   uCut     overall strength 0..1 (1 under distance 10, none past 14)
-//   uCutBox  up to CUT_N footprints (minX, minZ, maxX, maxZ) in world units
-//   uCutA    each footprint's own strength 0..1 (eased, so it fades in and out)
-//   uCutY    each footprint's cut height in world units (round 29): the
-//            building is drawn up to just under the lowest sight line through
-//            it, with a dark rim along the cut, and nothing above (the old
-//            screen-door ghost turned to a muddy see-through block under the
-//            depth of field); the cut slides down from the roof as it fades in
+// The close-zoom cutaway (round 25, reworked rounds 27, 29 and 37): at
+// distance 12 or closer (fading out by 17) a building whose box stands on the
+// line from the eye to the target, or close in front of the eye, fades out
+// whole, so a roof never hides the followed person. The camera works out on
+// the CPU which buildings to cut (never the one that holds the target):
+//   on       building id -> its own strength 0..1 (eased, so it fades in and
+//            out), every cut building, read by the BuildingRenderer, which
+//            writes it into each of that building's instances (its models,
+//            footing and site pieces) and outlines its plot on the ground
+//   uCut     overall strength 0..1 (1 under distance 12, none past 17)
+// and, for the things drawn with materials of their own (banners, staffs,
+// sails, fences: material.js withCutaway), the strongest CUT_N plots:
+//   uCutBox  footprints (minX, minZ, maxX, maxZ) in world units
+//   uCutA    each footprint's own strength 0..1
 //   uCamW    the camera's world matrix (view space -> world space)
-export const CUT_N = 6;
+export const CUT_N = 12;
 export const CAM_CUT = {
+  on: new Map(),
   uCut: { value: 0 },
   uCutD: { value: 10 },
   uCutTan: { value: 0.34 },
   uCutBox: { value: Array.from({ length: CUT_N }, () => new THREE.Vector4(0, 0, -1, -1)) },
   uCutA: { value: new Array(CUT_N).fill(0) },
-  uCutY: { value: new Array(CUT_N).fill(1e4) },
   uCamW: { value: new THREE.Matrix4() },
   // (round 31) the point the camera looks at, in world units: trees between
   // the eye and it fade out (src/render/nature/floraMaterial.js), as
@@ -76,8 +75,8 @@ export class CameraRig {
     // to date): a followed unit is framed at its middle, not behind the tray
     this.viewRect = null;
     this._vOff = { x: 0, y: 0 };
-    this._cutA = new Map(); // building id -> eased cut strength
-    this._cutY = new Map(); // building id -> the lowest sight line through it
+    // building id -> eased cut strength (shared with the renderer: CAM_CUT.on)
+    this._cutA = CAM_CUT.on;
     this._dt = 1 / 60;
     // a wide (2:1) map is framed by its width on a landscape screen; squares
     // are unchanged (the height wins). This is the reference distance: the
@@ -207,7 +206,6 @@ export class CameraRig {
       this._lift = null; // nor from its line-of-sight pitch
       this._dolly = null; // nor from its slide in off a hillside
       this._cutA.clear();
-      this._cutY.clear();
       this._dt = 1; // (settle everything eased at once)
     }
     this.apply();
@@ -894,47 +892,31 @@ export class CameraRig {
     }
     const kin = 1 - Math.exp(-dt * 7),
       kout = 1 - Math.exp(-dt * 4);
-    const Y = this._cutY;
-    for (const [id, y] of hitNow) {
-      if (!A.has(id)) A.set(id, 0);
-      // (the lowest sight line, eased as the camera moves)
-      const o = Y.get(id);
-      Y.set(id, o === undefined ? y : o + (y - o) * Math.min(1, kin * 2));
-    }
+    for (const id of hitNow.keys()) if (!A.has(id)) A.set(id, 0);
     for (const [id, a] of A) {
       const goal = hitNow.has(id) ? 1 : 0;
       const na = a + (goal - a) * (goal > a ? kin : kout);
-      if (na < 0.01 && !goal) {
-        A.delete(id);
-        Y.delete(id);
-      } else A.set(id, na);
+      if (na < 0.01 && !goal) A.delete(id);
+      else A.set(id, na);
     }
-    // the strongest CUT_N go to the material
+    // the strongest CUT_N plots go to the materials of the banners, staffs,
+    // sails and fences (the building models read CAM_CUT.on, every one)
     const list = A.size ? [...A.entries()].sort((p, q) => q[1] - p[1]) : [];
     const boxes = CAM_CUT.uCutBox.value,
-      als = CAM_CUT.uCutA.value,
-      ys = CAM_CUT.uCutY.value;
-    const cut = CAM_CUT.uCut.value;
+      als = CAM_CUT.uCutA.value;
     for (let i = 0; i < CUT_N; i++) {
       const e = list[i];
       const b = e && civ?._bById?.get(e[0]);
       if (!b || b.alive === false) {
         als[i] = 0;
-        ys[i] = 1e4;
         boxes[i].set(0, 0, -1, -1);
         continue;
       }
-      // eaves, porches, balconies and the flagpoles and posts before a
-      // building reach a little past the plot (round 33: 0.35 left some
-      // standing outside the cut)
-      const m = 0.45;
+      // (the flagpoles and posts before a building stand on its plot; round
+      // 37: 0.45 past it reached into the neighbours)
+      const m = 0.2;
       boxes[i].set(b.tx - m, b.ty - m, b.tx + (b.w || 1) + m, b.ty + (b.h || 1) + m);
       als[i] = e[1];
-      // the cut: from over the roof down to just under the lowest sight line
-      // (a sliver of wall is always left, so the plot still reads)
-      const top = (b.y || 0) + this._bHeight(b) * 1.6 + 0.3;
-      const low = Math.max((b.y || 0) + 0.05, (Y.get(e[0]) ?? top) - 0.06);
-      ys[i] = top - (top - low) * e[1] * cut;
     }
   }
   _bAt(x, z) {
