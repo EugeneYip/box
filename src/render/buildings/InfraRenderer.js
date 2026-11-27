@@ -649,6 +649,14 @@ export class InfraRenderer {
       return;
     }
     const y = seg.ys ? seg.ys[i] : g + 0.02;
+    // (round 37) a line ending on a low bank: the bank's end face, down to
+    // the ground (it stood open, a hollow trough seen end on)
+    const hb = y - Math.max(this._h(x, z), SEA_LEVEL);
+    if (hb > 0.02 && !(seg.tun && seg.tun[i])) {
+      const da = Math.max(BAL_H, hb + 0.03),
+        wa = BAL_B + (da - BAL_H) * 1.2;
+      E.quad([x + px * BAL_T, y, z + pz * BAL_T], [x - px * BAL_T, y, z - pz * BAL_T], [x - px * wa, y - da, z - pz * wa], [x + px * wa, y - da, z + pz * wa], COL.ballast2);
+    }
     if (!info?.station) {
       const po = BAL_T + 0.1; // (beside the ballast)
       const cx = x - tx * 0.6 + px * po,

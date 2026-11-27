@@ -2441,13 +2441,14 @@ export const modern = {
     return seg;
   },
   // (round 37) A new stretch's ends, once its levels are set: a line end at
-  // a station must meet the platform (within END_RISE, twice that for a
-  // line already running); a line end with no station is pulled back along
-  // the line to the first point over dry land at grade, its platform's
-  // length behind it at grade too, out of any tunnel (round 36: a buffer
-  // stop on a viaduct stub over the surf, a tile off a bluff). False when
-  // an end cannot be met (the route is refused like one that breaks the
-  // grade).
+  // a station must meet the platform (within a storey, two for a line
+  // already running); a line end with no station is pulled back along the
+  // line to the first point over dry land at grade (within END_RISE), its
+  // platform's length behind it too, out of any tunnel (round 36: a buffer
+  // stop on a viaduct stub over the surf, a tile off a bluff); where there
+  // is none within a few tiles, to the nearest on no more than a low bank.
+  // False when an end cannot be met (the route is refused like one that
+  // breaks the grade).
   _railEndsFit(seg, loose) {
     for (const atStart of [false, true]) {
       const info = atStart ? seg.start : seg.end;
@@ -2458,7 +2459,7 @@ export const modern = {
       }
       const n = seg.pts.length / 2,
         e = atStart ? 0 : n - 1;
-      if (Math.abs(this._railEndOff(seg, e)) > END_RISE * (loose ? 2 : 1)) return false;
+      if (Math.abs(this._railEndOff(seg, e)) > END_RISE * (loose ? 4 : 2)) return false;
     }
     return true;
   },
@@ -2481,22 +2482,32 @@ export const modern = {
         tun = seg.tun;
       const arc = new Float32Array(n);
       for (let i = 1; i < n; i++) arc[i] = arc[i - 1] + Math.min(3, Math.hypot(P[i * 2] - P[i * 2 - 2], P[i * 2 + 1] - P[i * 2 - 1]));
-      const fit = (m) => !tun?.[m] && Math.abs(this._railEndOff(seg, m)) <= END_RISE;
+      // (the buffer stop: over dry land, out of a tunnel, at most `up` over
+      // the ground and not deep in a cut; the platform's stretch behind it
+      // over dry land and at most `up` over the ground, a cutting or the
+      // mouth of a bore there being no matter)
+      const off = (m) => this._railEndOff(seg, m);
+      const fitEnd = (m, up) => !tun?.[m] && off(m) <= up && off(m) >= -2 * END_RISE;
+      const fitPlat = (m, up) => off(m) <= up;
       const st = atStart ? 1 : -1,
         e = atStart ? 0 : n - 1;
       // (never past the switch, nor into the last 2 tiles of the stretch)
       const ok = (m) => (atStart ? m <= seg.lock1 && arc[n - 1] - arc[m] >= 2 : m >= seg.lock0 && arc[m] >= 2);
-      let m = e,
-        found = -1;
-      for (; m >= 0 && m < n && ok(m); m += st) {
-        if (!fit(m)) continue;
-        let good = true;
-        for (let q = m + st; good && q >= 0 && q < n && Math.abs(arc[q] - arc[m]) <= END_PLAT; q += st) good = fit(q);
-        if (good) {
-          found = m;
-          break;
+      const find = (up, reach) => {
+        for (let m = e; m >= 0 && m < n && ok(m) && Math.abs(arc[m] - arc[e]) <= reach; m += st) {
+          if (!fitEnd(m, up)) continue;
+          let good = true;
+          for (let q = m + st; good && q >= 0 && q < n && Math.abs(arc[q] - arc[m]) <= END_PLAT; q += st) good = fitPlat(q, up);
+          if (good) return m;
         }
-      }
+        return -1;
+      };
+      // at grade within a few tiles back; else the nearest end on no more
+      // than a low bank (EMB_MAX: never a viaduct's end in mid-air nor over
+      // the water); else at grade however far back
+      let found = find(END_RISE, 4);
+      if (found < 0) found = find(EMB_MAX, Infinity);
+      if (found < 0) found = find(END_RISE, Infinity);
       if (found < 0) return false;
       if (found === e) return true;
       if (atStart) {
@@ -2520,8 +2531,9 @@ export const modern = {
       if (seg.kind === 'rail') seg.core = this._railCoreRuns(seg);
       trackLevels(w, seg, seg.up);
     }
-    const n = seg.pts.length / 2;
-    return Math.abs(this._railEndOff(seg, atStart ? 0 : n - 1)) <= END_RISE;
+    const n = seg.pts.length / 2,
+      e = atStart ? 0 : n - 1;
+    return !seg.tun?.[e] && this._railEndOff(seg, e) <= EMB_MAX;
   },
   // a drawn line over a town's square (255) or a single town's core (2)
   // away from its own ends (_railBlocks)
