@@ -36,10 +36,13 @@ const RIBBON_CAP_CROWD = 12;
 const townScreenK = (W, H) => Math.min(1, (1.35 * W) / Math.max(1, H));
 // (round 33) how many realm names one screen may hold, by land share: 13
 // ribbons covered the 256 map at dusk; real countries have shorter names
-function ribbonCap(W, H, wm) {
+// (round 37) at the overview zoom of a World Map world, where the ribbons are
+// at their smallest, one per 32000 px (16 on a 960 x 540 screen): with 13 the
+// Vast overview could name its largest realms or Europe and Africa, not both
+function ribbonCap(W, H, wm, ov = false) {
   const phone = Math.min(W, H) < 500;
   if (phone) return wm ? 4 : 3;
-  const n = Math.round((W * H) / (wm ? 40000 : 70000));
+  const n = Math.round((W * H) / (wm ? (ov ? 32000 : 40000) : 70000));
   return wm ? Math.max(6, Math.min(16, n)) : Math.max(5, Math.min(8, n));
 }
 // a realm is named at mid zoom when it holds at least this share of the land in view
@@ -546,10 +549,21 @@ export class Labels {
     // the realm with the most of it is always placed first (the realm under
     // the camera only breaks near ties): at 60 tiles Khaveh, the largest
     // realm in view with its capital on screen, was left unnamed
+    // (round 37) at the overview zoom (where every realm is named) they are
+    // ranked by their claim on the land: the whole of it and what is in view,
+    // so the largest realms always place before the small ones (Russia and
+    // Australia went unnamed on the Vast overview: they owned no sample of
+    // the land in view and too little of the whole). The map's own order of
+    // importance breaks near ties among the small realms.
+    const ov = !midOnly;
+    const ccnt = this._claimCnt,
+      claim = this._landClaim;
+    const maxClaim = Math.max(1, this._claimMax || 0);
+    const inView = ov ? ccnt : cnt;
     let topK = -1,
       topN = 0;
-    if (cnt)
-      for (const [id, n] of cnt) {
+    if (inView)
+      for (const [id, n] of inView) {
         const k = civ.kingdoms[id];
         if (n > topN && k?.alive && k.villages.length && civ.villages[k.capital]?.alive) (topN = n), (topK = id);
       }
@@ -585,7 +599,9 @@ export class Labels {
       const h = Math.max(1.4, dist * 0.032);
       s.scale.set(h * s.userData.aspect, h, 1);
       const focus = id === this._focusK;
-      const rank = (id === topK ? 3 : 0) + (focus ? 0.25 : 0) + (cnt?.get(id) || 0) / nLand + (0.25 * (tot?.get(id) || 0)) / maxTot + Math.min(0.05, (k.population || 0) * 1e-5) + (s.userData.fade > 0.5 ? 0.03 : 0);
+      const rank = ov
+        ? (id === topK ? 3 : 0) + (claim?.get(id) || 0) / maxClaim + (0.5 * (ccnt?.get(id) || 0)) / nLand + 0.6 * this._importance(k) + Math.min(0.05, (k.population || 0) * 1e-5) + (s.userData.fade > 0.5 ? 0.03 : 0)
+        : (id === topK ? 3 : 0) + (focus ? 0.25 : 0) + (cnt?.get(id) || 0) / nLand + (0.25 * (tot?.get(id) || 0)) / maxTot + Math.min(0.05, (k.population || 0) * 1e-5) + (s.userData.fade > 0.5 ? 0.03 : 0);
       cand.push({ s, a: kAk, kind: 'realm', key: 10 + rank, kid: id, focus });
     }
     const townK = townScreenK(innerWidth, innerHeight);
@@ -668,6 +684,13 @@ export class Labels {
     } catch {
       /* no DOM */
     }
+    // (round 37) and each realm's claim in view: what it owns, and on a World
+    // Map world the unclaimed land of its real country (ranks the names at
+    // the overview, where a realm's own ground is a sample or none)
+    const ccnt = (this._claimCnt = this._claimCnt || new Map());
+    ccnt.clear();
+    const rg = this._realGrid();
+    const kOf = rg ? this._realKingdoms() : null;
     let land = 0;
     for (let j = 0; j < NY; j++)
       for (let i = 0; i < NX; i++) {
@@ -683,8 +706,12 @@ export class Labels {
         const o = w.owner[z * w.w + x];
         if (o >= 0) {
           cnt.set(o, (cnt.get(o) || 0) + 1);
+          ccnt.set(o, (ccnt.get(o) || 0) + 1);
           if (!pts.has(o)) pts.set(o, []);
           pts.get(o).push(x + 0.5, z + 0.5);
+        } else if (rg) {
+          const kid = kOf.get(rg.a[Math.floor(z / rg.S) * rg.gw + Math.floor(x / rg.S)]);
+          if (kid !== undefined && !w.isWater(x, z)) ccnt.set(kid, (ccnt.get(kid) || 0) + 1);
         }
         if (o >= 0 || (w.height && w.height[z * w.w + x] >= SEA_LEVEL)) land++;
       }
@@ -835,6 +862,105 @@ export class Labels {
         tot.set(k, a[k]);
         if (a[k] > this._landMax) this._landMax = a[k];
       }
+    // (round 37) each realm's claim on the land: the tiles it owns and, on a
+    // World Map world, the unclaimed land of its real country. At the start a
+    // realm owns only the ground round its towns (Russia 131 tiles round
+    // Moscow, Australia 84), so owned tiles alone ranked Russia twelfth and
+    // Australia nineteenth of 22 on the Vast overview, behind its 13 ribbons
+    const claim = (this._landClaim = this._landClaim || new Map());
+    claim.clear();
+    for (const [k, c] of tot) claim.set(k, c);
+    const rg = this._realGrid();
+    const kOf = rg ? this._realKingdoms() : null;
+    if (rg && kOf.size) {
+      const W = this.game.world.w,
+        S2 = rg.S * rg.S;
+      for (let j = 0; j < rg.gh; j++)
+        for (let i = 0; i < rg.gw; i++) {
+          const r = rg.a[j * rg.gw + i];
+          if (r < 0 || o[rg.z[j] * W + rg.x[i]] >= 0) continue;
+          const kid = kOf.get(r);
+          if (kid !== undefined) claim.set(kid, (claim.get(kid) || 0) + S2);
+        }
+    }
+    this._claimMax = 0;
+    for (const c of claim.values()) if (c > this._claimMax) this._claimMax = c;
+  }
+
+  // (round 37) On a World Map world, the real country of the land on a coarse
+  // grid over the map (the place data's realm index of the nearest real
+  // place, as the civ reads it; -1 for water and land far from any place).
+  // Built once per world; null on other worlds.
+  _realGrid() {
+    const civ = this.game.civ,
+      w = this.game.world;
+    const places = civ?._places;
+    if (this._rgKey === places && this._rgW === w) return this._rg;
+    this._rgKey = places;
+    this._rgW = w;
+    this._rg = null;
+    if (!places?.length || !w?.owner || !w.isWater) return null;
+    const S = w.w >= 512 ? 8 : 4;
+    const gw = Math.ceil(w.w / S),
+      gh = Math.ceil(w.h / S);
+    const xs = new Int32Array(gw),
+      zs = new Int32Array(gh);
+    for (let i = 0; i < gw; i++) xs[i] = Math.min(w.w - 1, i * S + (S >> 1));
+    for (let j = 0; j < gh; j++) zs[j] = Math.min(w.h - 1, j * S + (S >> 1));
+    const a = new Int16Array(gw * gh).fill(-1);
+    const reach = civ._placeReach?.any ? (civ._placeReach.any * 2) ** 2 : Infinity;
+    const n = places.length;
+    const px = new Float32Array(n),
+      pz = new Float32Array(n),
+      pr = new Int16Array(n);
+    for (let i = 0; i < n; i++) (px[i] = places[i].x), (pz[i] = places[i].z), (pr[i] = places[i].realm);
+    for (let j = 0; j < gh; j++)
+      for (let i = 0; i < gw; i++) {
+        const x = xs[i],
+          z = zs[j];
+        if (w.isWater(x, z)) continue;
+        let bd = reach,
+          br = -1;
+        for (let p = 0; p < n; p++) {
+          const dx = px[p] - x,
+            dz = pz[p] - z;
+          const d = dx * dx + dz * dz;
+          if (d < bd) (bd = d), (br = pr[p]);
+        }
+        a[j * gw + i] = br;
+      }
+    return (this._rg = { S, gw, gh, a, x: xs, z: zs });
+  }
+
+  // (round 37) The living realm of each real country (place data's realm
+  // index -> kingdom id), the one with the most towns; read every second.
+  _realKingdoms() {
+    const now = performance.now();
+    if (this._rkm && now - this._rkT < 1000) return this._rkm;
+    this._rkT = now;
+    const m = (this._rkm = this._rkm || new Map());
+    m.clear();
+    const civ = this.game.civ;
+    const nv = new Map();
+    for (const k of civ?.kingdoms || []) {
+      if (!k?.alive || !k.villages.length || !(k.realm >= 0) || !civ.villages[k.capital]?.alive) continue;
+      if ((nv.get(k.realm) || 0) >= k.villages.length) continue;
+      nv.set(k.realm, k.villages.length);
+      m.set(k.realm, k.id);
+    }
+    return m;
+  }
+
+  // (round 37) A real realm's standing in its map's list of realms (most
+  // important first): 1 for the first, 0 past the last, and at least 0.95
+  // for a realm whose cities must exist at the start (docs/REGIONS.md
+  // section 4); 0 for a realm that is no real country.
+  _importance(k) {
+    if (!(k?.realm >= 0)) return 0;
+    const data = this.game.civ?._realmData?.();
+    if (!data?.length || !data[k.realm]) return 0;
+    const imp = 1 - k.realm / Math.max(1, data.length);
+    return data[k.realm].must?.length ? Math.max(0.95, imp) : imp;
   }
 
   // Hide labels that collide with a higher-priority label or with the HUD.
@@ -888,10 +1014,21 @@ export class Labels {
     // realms counted for the ribbon size are the ones whose seat is in view
     const vp = this._v3 || (this._v3 = new (cam.position.constructor)());
     let nView = 0;
+    // (round 37) and where each realm's capital is on screen: a ribbon over
+    // another realm's capital costs more (MAINLAND REGION over Beijing ran
+    // out to the Korean peninsula on the Great East Asia overview and left no
+    // room for either Korea's name)
+    const civ = this.game.civ;
+    const seats = (this._seatScr = this._seatScr || []);
+    seats.length = 0;
     for (const c of cand)
       if (c.kind === 'realm' && c.a > 0.01) {
         vp.copy(c.s.position).project(cam);
         if (vp.z <= 1 && vp.z >= -1 && Math.abs(vp.x) <= 1 && Math.abs(vp.y) <= 1) nView++;
+        const cap = civ.villages[civ.kingdoms[c.kid]?.capital];
+        if (!cap) continue;
+        vp.set(cap.cx, world.surfaceAt(cap.cx, cap.cz), cap.cz).project(cam);
+        if (vp.z <= 1 && vp.z >= -1 && Math.abs(vp.x) <= 1.1 && Math.abs(vp.y) <= 1.1) seats.push((vp.x * 0.5 + 0.5) * W, (-vp.y * 0.5 + 0.5) * H, c.kid);
       }
     this._nView = nView;
     // (round 29) while towns are named, the cap on a ribbon's height stays
@@ -907,7 +1044,7 @@ export class Labels {
     // (round 33) fewer and smaller names on a crowded screen and on phones:
     // at most ribbonCap() names, by land share; 12 px capitals once more than
     // six are in view (11 px past nine), and near 12 px on a phone
-    const maxRib = ribbonCap(W, H, this.game.params?.preset === 'earth');
+    const maxRib = ribbonCap(W, H, this.game.params?.preset === 'earth', !this._midOnly);
     const nRib = Math.min(maxRib, nView);
     if (nRib > RIBBON_CROWD || Math.min(W, H) < 500) ribCap = Math.min(ribCap, Math.max(nRib > 9 ? 11 : RIBBON_CAP_CROWD, townFloor));
     this._ribCap = ribCap;
@@ -1006,7 +1143,11 @@ export class Labels {
         const camP = cam.position;
         // the owner of the ground under a point of the screen (the plane at
         // height gy): a realm id, -1 open water, -2 unowned land, -3 off the map
+        // (round 37: `unowned` is set when the answer is unclaimed land that
+        // counts as the nearest town's realm's)
+        let unowned = false;
         const groundOwner = (x, y, gy) => {
+          unowned = false;
           v2.set((x / W) * 2 - 1, -((y / H) * 2 - 1), 0.5).unproject(cam).sub(camP);
           if (v2.y >= -1e-6) return -3;
           let t = (gy - camP.y) / v2.y;
@@ -1024,7 +1165,9 @@ export class Labels {
           const o = world.owner[tz * world.w + tx];
           if (o >= 0) return o;
           // (round 35) unclaimed land is the nearest town's realm's
-          return world.isWater?.(tx, tz) ? -1 : this.nearRealm(tx, tz);
+          if (world.isWater?.(tx, tz)) return -1;
+          unowned = true;
+          return this.nearRealm(tx, tz);
         };
         const toScreen = (x, y, z) => {
           v2.set(x, y, z).project(cam);
@@ -1132,9 +1275,19 @@ export class Labels {
         //   1 for the middle off the realm's land (allowed only when pinned
         //     by the banner, or over unclaimed land near the point), 1 for a
         //     banner-pinned spot, 1 for each tenth the name is shrunk
+        // (round 37) at the overview zoom a seventh over a neighbor's
+        // unclaimed land costs 1, not 3 (borders there are a few pixels and
+        // most of the land is still unclaimed: NORTH KOREA running east over
+        // the sea toward Honshu scored 10 and was left out), and the plate
+        // over another realm's capital costs 3
         const MAX_SCORE = 8;
+        const ovZ = !this._midOnly;
         let best = null;
-        const score = (px, py, a, dx, dy, mode, pw2, fx) => {
+        // (the cost for another realm's capital under the plate steers the
+        // choice but does not count toward MAX_SCORE: a crowded view still
+        // names its largest realm)
+        let lastBase = 0;
+        const score = (px, py, a, dx, dy, mode, pw2, fx, ph2) => {
           const off = Math.hypot(dx, dy);
           const bx = px + fx;
           let s = mode === 'flag' ? 1 : 0;
@@ -1150,15 +1303,26 @@ export class Labels {
             const ob = owner(bx, py, a.gy);
             if (ob !== kid) s += ob >= 0 ? 4 : 3;
           }
+          lastBase = s;
           if (s > MAX_SCORE || (best && s >= best.s)) return s;
+          let tp = 0;
+          {
+            const l = px - pw2 / 2 - 3,
+              r = px + pw2 / 2 + 3,
+              t = py - ph2 / 2 - 3,
+              b = py + ph2 / 2 + 3;
+            for (let i = 0; i < seats.length; i += 3) if (seats[i + 2] !== kid && seats[i] > l && seats[i] < r && seats[i + 1] > t && seats[i + 1] < b) tp += 3;
+            if (best && s + tp >= best.s) return s + tp;
+          }
           for (let i = 0; i < 7; i++) {
             const o = owner(px - pw2 / 2 + (pw2 * (i + 0.5)) / 7, py, a.gy);
             if (o >= 0 && o !== kid) {
-              s += 3;
-              if (s > MAX_SCORE || (best && s >= best.s)) break;
+              s += ovZ && unowned ? 1 : 3;
+              if (s > MAX_SCORE || (best && s + tp >= best.s)) break;
             }
           }
-          return s;
+          lastBase = s;
+          return s + tp;
         };
         for (const q of tries) {
           const w2 = pw * q,
@@ -1218,18 +1382,18 @@ export class Labels {
             // Himalaya near Lhasa over Beijing)
             const pre = Math.round((1 - q) * 10) + (a.kind === 'land' && anchors[0]?.kind !== 'land' ? 2 : 0);
             if (best && pre >= best.s) continue;
-            let s = score(px, py, a, dx, dy, mode, pw2, fx);
+            let s = score(px, py, a, dx, dy, mode, pw2, fx, ph2);
             if (s < 0) continue;
             s += pre;
             if (best && s >= best.s) continue;
-            best = { s, q, r, px, py: py + oy, spot: { kind: a.kind, wx: a.wx, wz: a.wz, dx, dy, mode, q, s, fb: dx + fx } };
+            best = { s, base: lastBase + pre, q, r, px, py: py + oy, spot: { kind: a.kind, wx: a.wx, wz: a.wz, dx, dy, mode, q, s, fb: dx + fx } };
             // the spot held last frame is kept while it scores about as well
             if (si === 0 && keepS >= 0 && s <= keepS) kept = true;
             if (s === 0 || kept) break;
           }
           if (best && (best.s === 0 || kept)) break;
         }
-        if (best && best.s <= MAX_SCORE) {
+        if (best && best.base <= MAX_SCORE) {
           rect.l = best.r.l;
           rect.r = best.r.r;
           rect.t = best.r.t;
@@ -1275,8 +1439,11 @@ export class Labels {
       // under the ROC's on the whole Earth)
       // (round 33: a ribbon or town name is shown fully or not at all; one
       // that collides with a higher-ranked name is dropped, not dimmed)
+      // (round 37: 8 px at the overview zoom, where the ribbons are smallest
+      // and the names many; SOUTH KOREA missed its place between NORTH KOREA
+      // and JAPAN on the Great East Asia overview by a pixel)
       if (target > 0.3) {
-        const gx = c.kind === 'realm' ? 12 : 5,
+        const gx = c.kind === 'realm' ? (this._midOnly ? 12 : 8) : 5,
           gy = c.kind === 'realm' ? 6 : 2;
         const q = plateOf(rect);
         taken.push({ l: q.l - gx, r: q.r + gx, t: q.t - gy, b: q.b + gy });
