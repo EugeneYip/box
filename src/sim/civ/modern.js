@@ -1388,18 +1388,18 @@ export const modern = {
       }
     }
     // lines whose towns are gone are taken up
-    let gone = false;
+    let gone = null;
     for (const l of this.rails) {
       const a = this.villages[l.a],
         b = this.villages[l.b];
       if (!a?.alive || !b?.alive) {
         l.dead = true;
-        gone = true;
+        (gone || (gone = new Set())).add(l.kingdom);
       } else if (a.kingdom === b.kingdom && a.kingdom !== l.kingdom) l.kingdom = a.kingdom; // conquered with its towns
     }
     if (gone) {
       this.rails = this.rails.filter((l) => !l.dead);
-      this._railEnds();
+      this._railEnds(gone);
       this.infraVersion++;
     }
     this._breadthTick(dt);
@@ -1454,7 +1454,11 @@ export const modern = {
   _surveyRail(k) {
     const cap = this.villages[k.capital];
     if (!cap?.alive) return;
-    this._railNetCheck(k);
+    // (round 37) at most one network build a survey: a realm whose network
+    // had to be laid again first tries its new line on its next turn, a few
+    // ticks on (round 35: a survey could lay the network three times in one
+    // tick, and every realm's again in the next frame)
+    if (this._railNetCheck(k) && this._railAgain(k)) return;
     const reach = 90 * Math.sqrt(Math.max(1, this.budget.area));
     // 1. a new line
     let best = null,
@@ -1475,6 +1479,10 @@ export const modern = {
         // realm already runs is still laid with it (round 32: a new line's
         // track took the corridor of an old one, which was dropped as dead,
         // and the network shrank to half its size as pairs traded places)
+        // (round 37: the network as it stood is put back as it was when
+        // the trial fails, not laid again; when it holds, the trial's network
+        // is the realm's, and no other realm's is laid again)
+        const saved = this._railSave(k);
         const broke = this._railTry(k);
         l.survey = false;
         if (l.pts && !broke) {
@@ -1484,8 +1492,9 @@ export const modern = {
           return;
         }
         this.rails = this.rails.filter((x) => x !== l);
-        this._railNetBuild(k);
+        this._railRestore(k, saved);
         fails[best.id] = this.game.time.total;
+        if (this._railAgain(k)) return;
       }
     }
     // 2. Maglev: a line between cities moves onto a guideway
@@ -1502,6 +1511,7 @@ export const modern = {
         if (d > ld) (ld = d), (l = x);
       }
       if (l) {
+        const saved = this._railSave(k);
         l.kind = 'maglev';
         l.maglevAt = this.game.time.total;
         // (round 33: a trial, as a new line: a guideway that could not be
@@ -1510,7 +1520,7 @@ export const modern = {
         if (this._railTry(k) || !l.pts) {
           l.kind = 'rail';
           l.noMaglev = true;
-          this._railNetBuild(k);
+          this._railRestore(k, saved);
         }
         this.infraVersion++;
         if (l.kind === 'maglev') this._firstUse(k, 'maglev', { x: l.pts?.[0] ?? cap.cx, z: l.pts?.[1] ?? cap.cz });
@@ -1529,8 +1539,10 @@ export const modern = {
       }
     }
   },
-  // the number of lines ending in each town (a station rises where one does)
-  _railEnds() {
+  // the number of lines ending in each town (a station rises where one
+  // does); dirty: the realms (ids) whose networks are laid again before
+  // they are next drawn (round 37: every realm's was, on any change)
+  _railEnds(dirty = null) {
     for (const v of this.villages) v.railEnds = 0;
     for (const l of this.rails) {
       const a = this.villages[l.a],
@@ -1538,7 +1550,28 @@ export const modern = {
       if (a) a.railEnds++;
       if (b) b.railEnds++;
     }
+    const D = this._netDirtyK || (this._netDirtyK = new Set());
+    for (const kid of dirty || []) D.add(kid);
     this._netDirty = true;
+  },
+  // (round 37) a survey that did its network build this turn carries on in
+  // a later tick (Civilization._realmJob); false when the realms do not
+  // take turns
+  _railAgain(k) {
+    if (globalThis.__realmJobsOff || !this._realmJob) return false;
+    this._realmJob('rail', k);
+    return true;
+  },
+  // (round 37) the realm's network as it stands, to put back after a trial
+  _railSave(k) {
+    return { net: this.railNet || [], sig: this._netSig?.[k.id], pts: this.rails.filter((l) => l.kingdom === k.id).map((l) => [l, l.pts]) };
+  },
+  _railRestore(k, S) {
+    this.railNet = S.net;
+    for (const [l, p] of S.pts) l.pts = p;
+    (this._netSig || (this._netSig = {}))[k.id] = S.sig;
+    this._railYIndex();
+    this._railMaskBuild();
   },
   // The drawn network: [{kind, kingdom, pts [x, z, ...] (track centre, a
   // point every 0.4 tiles), junction (leaves its parent at a switch),
@@ -1550,18 +1583,29 @@ export const modern = {
     if (this._netDirty) {
       this._netDirty = false;
       const ks = new Set(this.rails.map((l) => l.kingdom));
+      const n0 = (this.railNet || []).length;
       this.railNet = (this.railNet || []).filter((s) => ks.has(s.kingdom));
-      for (const kid of ks) if (this.kingdoms[kid]) this._railNetBuild(this.kingdoms[kid]);
+      const D = this._netDirtyK;
+      if (D?.size) {
+        for (const kid of D) if (ks.has(kid) && this.kingdoms[kid]) this._railNetBuild(this.kingdoms[kid]);
+        D.clear();
+      } else if (this.railNet.length !== n0) {
+        this._railYIndex();
+        this._railMaskBuild();
+      }
     }
     return this.railNet || [];
   },
   // rebuild a realm's network when its lines or their stations change
+  // (true when it did)
   _railNetCheck(k) {
     if (this._conurbTidy(k)) this.infraVersion++;
     if ((this._netSig || {})[k.id] !== this._railSig(k)) {
       this._railNetBuild(k);
       this.infraVersion++;
+      return true;
     }
+    return false;
   },
   _railSig(k) {
     // (and the size of the realm's towns: a town that grows out over a
@@ -1723,8 +1767,21 @@ export const modern = {
     }
     this.railNet = out;
     this._railYIndex();
-    if (depth < 3 && this._railDrop(k)) return this._railNetBuild(k, depth + 1);
-    // the tiles under the tracks (trams and buses keep to other streets)
+    if (depth < 3 && this._railDrop(k)) {
+      // (round 37) the lines dropped had no track of their own: when no
+      // guideway went back to rail and every stretch laid still serves a
+      // line, the network stands as laid (round 35 laid it again, up to
+      // three more times in one tick)
+      if (this._railDropMag || !this._railNetServes(k)) return this._railNetBuild(k, depth + 1);
+      this._netSig[k.id] = this._railSig(k);
+    }
+    this._railMaskBuild();
+  },
+  // the tiles under the tracks (trams and buses keep to other streets)
+  _railMaskBuild() {
+    const w = this.world;
+    const N = w.w * w.h;
+    const out = this.railNet || [];
     if (!this.railMask || this.railMask.length !== N) this.railMask = new Uint8Array(N);
     this.railMask.fill(0);
     // (8: the rail rides over this tile on a bridge or a viaduct: people
@@ -1790,6 +1847,7 @@ export const modern = {
       return false;
     }
     let changed = false;
+    this._railDropMag = false;
     const now = this.game.time.total;
     for (const l of this.rails) {
       if (l.kingdom !== k.id || l.survey || (l.pts && l.pts.length >= 4)) continue;
@@ -1800,6 +1858,7 @@ export const modern = {
       if (l.kind === 'maglev') {
         l.kind = 'rail';
         l.noMaglev = true;
+        this._railDropMag = true;
         continue;
       }
       l.dead = true;
@@ -1824,6 +1883,14 @@ export const modern = {
         }
     }
     this.infraVersion++;
+    return true;
+  },
+  // (round 37) every stretch of the realm's network still leads to a town
+  // with a line of its kind
+  _railNetServes(k) {
+    const T = { rail: new Set(), maglev: new Set() };
+    for (const l of this.rails) if (l.kingdom === k.id) T[l.kind].add(l.a).add(l.b);
+    for (const s of this.railNet || []) if (s.kingdom === k.id && !T[s.kind].has(s.town)) return false;
     return true;
   },
   // Round 27: towns whose built footprints touch form one conurbation:

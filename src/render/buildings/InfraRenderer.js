@@ -56,6 +56,11 @@ const PIER_GAP = 1.6; // tiles between a bridge's piers
 // (round 35) ground edits are applied to the tracks they touch at most this
 // often (ms)
 const EDIT_GAP = 2500;
+// (round 37) the solid geometry is drawn in square chunks this many tiles
+// across (a change re-uploads its own chunk only), and at most this long
+// (ms) is spent a drawn frame emitting the parts that changed
+const CHUNK = 64;
+const EMIT_MS = 10;
 
 const COL = {
   ballast: 0x6c6a66,
@@ -177,6 +182,53 @@ class Emit {
   }
 }
 
+// (round 37) A stretch's content key: its kind, points, levels, tunnels,
+// highway, flyover lifts, core runs, crossings and ends, so the same stretch
+// laid again by a network rebuild (a new object each time) finds the part
+// emitted for it. Two 32-bit FNV-1a style hashes over the values in
+// millimetres.
+function hashInto(H, a, q) {
+  let h1 = H[0],
+    h2 = H[1];
+  const n = a ? a.length : -1;
+  h1 = Math.imul(h1 ^ n, 16777619);
+  h2 = Math.imul(h2 ^ n, 0x85ebca6b);
+  for (let i = 0; i < n; i++) {
+    const v = a[i];
+    const k = v === v ? Math.round(v * q) | 0 : -7777777; // (NaN off a highway's runs)
+    h1 = Math.imul(h1 ^ (k & 0xffff), 16777619);
+    h1 = Math.imul(h1 ^ (k >>> 16), 16777619);
+    h2 = Math.imul(h2 ^ k, 0x85ebca6b);
+    h2 ^= h2 >>> 13;
+  }
+  H[0] = h1;
+  H[1] = h2;
+}
+const _H = [0, 0];
+function segKey(s) {
+  _H[0] = 0x811c9dc5 | 0;
+  _H[1] = 374761393;
+  hashInto(_H, s.pts, 1000);
+  hashInto(_H, s.ys, 1000);
+  hashInto(_H, s.tun, 1);
+  hashInto(_H, s.lift, 1000);
+  hashInto(_H, s.hw, 1);
+  hashInto(_H, s.hy, 1000);
+  hashInto(_H, s.htun, 1);
+  hashInto(_H, s.core, 1);
+  hashInto(_H, s.xing ? s.xing.flat() : null, 1000);
+  const f = (s.kind === 'maglev' ? 1 : 0) | (s.junction ? 2 : 0) | (s.start ? 4 : 0) | (s.start?.station ? 8 : 0) | (s.start?.through ? 16 : 0) | (s.end ? 32 : 0) | (s.end?.station ? 64 : 0) | (s.end?.through ? 128 : 0);
+  return f + ':' + (_H[0] >>> 0).toString(36) + ':' + (_H[1] >>> 0).toString(36);
+}
+// a power line's: its ends, pylons and substation
+function powKey(l) {
+  _H[0] = 0x811c9dc5 | 0;
+  _H[1] = 374761393;
+  hashInto(_H, l.pts, 1000);
+  hashInto(_H, l.pylons, 1000);
+  return l.id + ':' + (l.sub ? 1 : 0) + ':' + (_H[0] >>> 0).toString(36) + ':' + (_H[1] >>> 0).toString(36);
+}
+
 // concatenate the typed arrays of many parts into one
 function joinArrays(parts, key) {
   let n = 0;
@@ -228,16 +280,20 @@ export class InfraRenderer {
     // overview, so the rail read as grey-white scribbles; thin dark lines at
     // about 60% instead, unfogged)
     this.farMat = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.6, fog: false, depthWrite: false });
-    this.mesh = null;
     this.wires = null;
     this.far = null;
     this._ver = -1;
     this._pylon = null;
     this.portals = [];
     // (round 35) each stretch's and each power line's geometry, kept until
-    // it changes; the ground edits not yet applied ([x0, z0, x1, z1] tiles)
+    // it changes (round 37: by its content, segKey / powKey); the ground
+    // edits not yet applied ([x0, z0, x1, z1] tiles)
     this._segGeo = new Map();
     this._powGeo = new Map();
+    this._pid = 0;
+    this._pend = false;
+    // (round 37) the solid geometry in square chunks: key -> {mesh, parts, sig}
+    this._chunks = new Map();
     this._edits = [];
     this._editT = -1e9;
     game.events.on('world:height', (r) => this._edit(r));
@@ -247,6 +303,9 @@ export class InfraRenderer {
     this._ver = -1;
     this._segGeo.clear();
     this._powGeo.clear();
+    for (const ck of [...this._chunks.keys()]) this._setChunk(ck, null);
+    this._swapLines();
+    this._pend = false;
     this._edits.length = 0;
   }
 
@@ -820,35 +879,142 @@ export class InfraRenderer {
     return { ...E.pack(), far: Float32Array.from(far), farC: Float32Array.from(farC), wire: new Float32Array(0), portals };
   }
 
-  // Rebuild the merged geometry: every stretch and power line whose part is
-  // missing (new, or dropped from the cache because the ground under it or
-  // its levels changed) is emitted again; the rest are reused.
-  _rebuild() {
+  // Rebuild the drawn geometry. Round 37: each stretch's and power line's
+  // part is kept by its content (a key over its points, levels and flags),
+  // so a network laid again (every rebuild of a realm's network makes new
+  // stretch objects) reuses every stretch that did not change; the parts
+  // missing are emitted nearest the camera first, all of those in its view
+  // and then at most EMIT_MS more a drawn frame (the rest on the frames
+  // after); and the solid geometry is
+  // held in square chunks of CHUNK tiles, each joined and uploaded again
+  // only when its own parts change (round 36: a change anywhere re-emitted
+  // and re-uploaded the whole network, 0.8-1.4 s in the first frame after
+  // a jump at Year 800). A chunk still waiting for a part keeps what it
+  // drew until the part is ready.
+  _rebuild(force = false) {
     const civ = this.game.civ;
-    const parts = [];
-    const live = new Set();
+    const t0 = performance.now();
+    const cam = this.game.cameraRig?.cur;
+    const cx = cam?.x ?? 0,
+      cz = cam?.z ?? 0;
+    const W = this.game.world.w;
+    const want = new Map(); // chunk -> [part]
+    const wait = new Set(); // chunks with a part not yet emitted
+    const missing = [];
+    const used = new Set();
+    const chunkOf = (x, z) => Math.floor(x / CHUNK) * 4096 + Math.floor(z / CHUNK);
+    const add = (ck, p) => {
+      let L = want.get(ck);
+      if (!L) want.set(ck, (L = []));
+      L.push(p);
+    };
+    // (the camera's own view is drawn at once whatever the budget: within
+    // this far of the point it looks at, tiles)
+    const near = (cam?.dist ?? 60) * 1.25 + 16;
+    const take = (key, map, obj, x, z, make, pts) => {
+      if (used.has(key)) return;
+      used.add(key);
+      const ck = chunkOf(x, z);
+      const p = map.get(key);
+      if (p && !obj._redraw) return add(ck, p);
+      // (the nearest of every eighth point to the camera)
+      let d = Infinity;
+      for (let i = 0; i + 1 < pts.length; i += 16) {
+        let dx = Math.abs(pts[i] - cx);
+        if (dx > W / 2) dx = W - dx; // (a round world)
+        d = Math.min(d, dx * dx + (pts[i + 1] - cz) ** 2);
+      }
+      missing.push({ key, map, obj, ck, make, d, now: d < near * near });
+    };
     for (const seg of civ.railSegs?.() || []) {
       if (!seg.pts || seg.pts.length < 4) continue;
-      live.add(seg);
-      let p = this._segGeo.get(seg);
-      if (!p) this._segGeo.set(seg, (p = this._segPart(seg)));
-      parts.push(p);
+      const P = seg.pts,
+        m = (P.length >> 2) << 1;
+      take(seg._gk || (seg._gk = 's' + segKey(seg)), this._segGeo, seg, P[m], P[m + 1], () => this._segPart(seg), P);
     }
-    for (const s of this._segGeo.keys()) if (!live.has(s)) this._segGeo.delete(s);
     // power lines: pylons and sagging wires
     // (round 29: a pair of wires crossed a town at 55 tiles: a span over a
     // town's built ground runs underground, so no wire is drawn there; the
     // towns are read once per rebuild)
     this._towns = null;
-    const liveP = new Set();
-    for (const l of civ.powerLines?.() || []) {
-      liveP.add(l);
-      let p = this._powGeo.get(l);
-      if (!p) this._powGeo.set(l, (p = this._powerPart(l)));
-      parts.push(p);
+    for (const l of civ.powerLines?.() || []) take(l._gk || (l._gk = 'p' + powKey(l)), this._powGeo, l, l.pts[0], l.pts[1], () => this._powerPart(l), l.pts);
+    missing.sort((a, b) => a.d - b.d);
+    let emitted = 0;
+    this._pend = false;
+    for (const m of missing) {
+      if (!force && !m.now && emitted > 0 && performance.now() - t0 > EMIT_MS) {
+        this._pend = true;
+        wait.add(m.ck);
+        continue;
+      }
+      const p = m.make();
+      p.id = ++this._pid;
+      m.map.set(m.key, p);
+      m.obj._redraw = false;
+      emitted++;
+      add(m.ck, p);
     }
-    for (const l of this._powGeo.keys()) if (!liveP.has(l)) this._powGeo.delete(l);
-    this._swap(parts);
+    this._stat = { parts: used.size, emitted, waiting: missing.length - emitted, chunks: 0, ms: 0 };
+    // (parts no longer wanted are dropped, unless a waiting chunk still draws them)
+    const keep = new Set();
+    for (const ck of wait) for (const p of this._chunks.get(ck)?.parts || []) keep.add(p);
+    for (const map of [this._segGeo, this._powGeo]) for (const [k, p] of map) if (!used.has(k) && !keep.has(p)) map.delete(k);
+    // the chunks whose parts changed are joined again
+    let changed = 0;
+    for (const [ck, L] of want) {
+      if (wait.has(ck)) continue;
+      const c = this._chunks.get(ck);
+      const sig = L.map((p) => p.id).join(',');
+      if (c && c.sig === sig) continue;
+      this._setChunk(ck, L, sig);
+      changed++;
+    }
+    for (const ck of [...this._chunks.keys()])
+      if (!want.has(ck) && !wait.has(ck)) {
+        this._setChunk(ck, null);
+        changed++;
+      }
+    if (changed) this._swapLines();
+    this._stat.chunks = changed;
+    this._stat.ms = +(performance.now() - t0).toFixed(1);
+  }
+  // one chunk's solid geometry from its parts (null: the chunk is gone)
+  _setChunk(ck, parts, sig = '') {
+    let c = this._chunks.get(ck);
+    if (!parts) {
+      if (c?.mesh) {
+        this.group.remove(c.mesh);
+        c.mesh.geometry.dispose();
+      }
+      this._chunks.delete(ck);
+      return;
+    }
+    if (!c) this._chunks.set(ck, (c = { mesh: null, parts: [], sig: '' }));
+    c.parts = parts;
+    c.sig = sig;
+    const P = joinArrays(parts, 'P');
+    if (!P.length) {
+      if (c.mesh) c.mesh.visible = c.mesh.userData.has = false;
+      return;
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(P, 3));
+    g.setAttribute('normal', new THREE.BufferAttribute(joinArrays(parts, 'N'), 3));
+    g.setAttribute('color', new THREE.BufferAttribute(joinArrays(parts, 'C'), 3));
+    g.setAttribute('aGlow', new THREE.BufferAttribute(joinArrays(parts, 'G'), 1));
+    g.computeBoundingSphere();
+    if (!c.mesh) {
+      c.mesh = new THREE.Mesh(g, this.mat);
+      c.mesh.receiveShadow = true;
+      c.mesh.castShadow = false;
+      c.mesh.name = 'infra-chunk';
+      this.group.add(c.mesh);
+    } else {
+      c.mesh.geometry.dispose();
+      c.mesh.geometry = g;
+    }
+    c.mesh.userData.has = true;
+    c.mesh.visible = !this._isFar;
   }
 
   // One power line: its pylons (the town end on its substation) and wires
@@ -933,15 +1099,18 @@ export class InfraRenderer {
     return { ...E.pack(), far: Float32Array.from(far), farC: Float32Array.from(farC), wire: Float32Array.from(wire) };
   }
 
-  // swap in the merged geometry of all the parts
-  _swap(parts) {
+  // the wires and the far-zoom lines of every part drawn (thin lines, one
+  // set each over the whole map), and the list of tunnel mouths drawn
+  _swapLines() {
+    const parts = [];
+    for (const c of this._chunks.values()) for (const p of c.parts) parts.push(p);
     // (every tunnel mouth drawn: the inspector and the probes read these)
     this.portals = [];
     for (const p of parts) if (p.portals) for (const q of p.portals) this.portals.push(q);
     const set = (key, geo, make) => {
       let o = this[key];
       if (!geo) {
-        if (o) o.visible = false;
+        if (o) o.visible = o.userData.has = false;
         return;
       }
       if (!o) {
@@ -953,23 +1122,6 @@ export class InfraRenderer {
       }
       o.userData.has = true;
     };
-    for (const k of ['mesh', 'wires', 'far']) if (this[k]) this[k].userData.has = false;
-    const P = joinArrays(parts, 'P');
-    let mesh = null;
-    if (P.length) {
-      mesh = new THREE.BufferGeometry();
-      mesh.setAttribute('position', new THREE.BufferAttribute(P, 3));
-      mesh.setAttribute('normal', new THREE.BufferAttribute(joinArrays(parts, 'N'), 3));
-      mesh.setAttribute('color', new THREE.BufferAttribute(joinArrays(parts, 'C'), 3));
-      mesh.setAttribute('aGlow', new THREE.BufferAttribute(joinArrays(parts, 'G'), 1));
-      mesh.computeBoundingSphere();
-    }
-    set('mesh', mesh, (g) => {
-      const o = new THREE.Mesh(g, this.mat);
-      o.receiveShadow = true;
-      o.castShadow = false;
-      return o;
-    });
     const lines = (pts, cols) => {
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.BufferAttribute(pts, 3));
@@ -991,7 +1143,7 @@ export class InfraRenderer {
     if (!force && isFar === this._isFar && wires === this._wiresOn) return;
     this._isFar = isFar;
     this._wiresOn = wires;
-    if (this.mesh) this.mesh.visible = !isFar && this.mesh.userData.has;
+    for (const c of this._chunks.values()) if (c.mesh) c.mesh.visible = !isFar && c.mesh.userData.has;
     if (this.wires) this.wires.visible = !isFar && wires && this.wires.userData.has;
     if (this.far) this.far.visible = isFar && this.far.userData.has;
   }
@@ -1012,17 +1164,18 @@ export class InfraRenderer {
       for (const s of civ.railSegs?.() || []) if (s.pts && s.pts.length >= 4 && this._touched(this._bounds(s, s.pts, null, 2.5), edits)) segs.push(s);
       if (segs.length) {
         const set = civ.railRelevel?.(segs) || segs;
-        for (const s of set) this._segGeo.delete(s);
+        for (const s of set) (s._redraw = true), (s._gk = null);
         dirty = true;
       }
-      for (const l of this._powGeo.keys())
+      for (const l of civ.powerLines?.() || [])
         if (this._touched(this._bounds(l, l.pts, l.pylons, 1.5), edits)) {
-          this._powGeo.delete(l);
+          l._redraw = true;
           dirty = true;
         }
       edits.length = 0;
     }
-    if (ver !== this._ver || dirty) {
+    // (round 37: or parts still waiting to be emitted)
+    if (ver !== this._ver || dirty || this._pend) {
       this._ver = ver;
       this._rebuild();
     }
