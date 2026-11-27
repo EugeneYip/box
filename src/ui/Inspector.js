@@ -258,18 +258,34 @@ export class Inspector {
   // (Picker.moverRadius: 16 px with a mouse, 26 on touch), that comes first:
   // on a phone a tap 8 px off a person opened the house behind them, and a
   // click on a walking person at 25 tiles opened the village.
+  // (round 37) Over a village, a realm or the land (not a building), a
+  // person drawn within that radius in the last few frames counts too.
   preferMover(list, hit) {
     const pk = this.game.picker;
     if (hit?.sx == null || !pk?.moverAt || !list.length) return;
     const top = list[0];
     if (top.unit || isCraft(top)) return;
-    const m = pk.moverAt(hit);
+    const m = pk.moverAt(hit, undefined, kindOf(top) !== 'building' && kindOf(top) !== 'plot');
     if (!m) return;
     const i = list.findIndex((o) => o.unit === m.ref || (isCraft(o) && (o.vessel === m.ref || o.building === m.ref)));
     if (i > 0) return void list.unshift(list.splice(i, 1)[0]);
     const F = this.game.fleet;
     const r = m.kind === 'unit' ? this.unitResult(m.ref) : m.ref.streetCar ? F?.describeCar?.(m.ref) : F?.describe?.(m.ref);
     if (r) list.unshift(r);
+  }
+  // (round 37) When a person wins a tap or click inside a building's
+  // footprint, that building stays among the person's "Here" chips while the
+  // card is on them: the card is re-collected round the person as they walk
+  // (refresh), and on a phone a tap on a building site in a busy town opened
+  // a farmer whose chips no longer held the site, which could not be reached.
+  noteHere() {
+    const r = this.track;
+    const h = this.hit;
+    if (!r?.unit || !h) return;
+    const b = this.game.picker?.buildingAt?.(h.x, h.z);
+    if (!b) return;
+    const br = this.results.find((o) => kindOf(o) === 'building' && o.building === b && !isCraft(o));
+    if (br) this._hereB = { unit: r.unit, r: br };
   }
   // (round 23) A building site says who is at work on it and, when urban
   // renewal raises it, what it replaces.
@@ -354,6 +370,10 @@ export class Inspector {
     if (!keepIndex) safe(() => this.preferMover(this.results, this.hit), null, 'prefer mover');
     if (!keepIndex) this.index = 0;
     this.track = this.results[this.index];
+    if (!keepIndex) {
+      this._hereB = null;
+      safe(() => this.noteHere(), null, 'here chip');
+    }
     this._deadShown = false;
     this._scrollTop = 0;
     this.editing = null;
@@ -466,6 +486,7 @@ export class Inspector {
     if (fu && rig.follow === fu) rig.follow = null;
     this.track = null;
     this.hit = null;
+    this._hereB = null;
     this.setSelected(null);
     this.pin.classList.remove('is-shown');
   }
@@ -1584,6 +1605,9 @@ export class Inspector {
       }
       idx = 0;
     }
+    // (round 37) the building first tapped stays a chip on this person's card (noteHere)
+    const hb = this._hereB;
+    if (u && hb && hb.unit === u && hb.r.building?.alive !== false && !hb.r.building?.gone && !list.some((o) => o.building === hb.r.building)) list.splice(idx + 1, 0, hb.r);
     this._deadShown = false;
     this.results = list;
     this.index = idx;
