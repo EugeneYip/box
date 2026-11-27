@@ -1062,6 +1062,32 @@ export class Labels {
     // tests of the ground under the screen allowed this frame (see the realm
     // names' spot search)
     this._gBudget = 6000;
+    // (round 37) the town names that will be on screen, as plates: a ribbon
+    // over one costs more, so it moves aside when it can (the United States'
+    // ribbon covered Denver's name on the North America map at 60 tiles)
+    const towns = (this._townScr = this._townScr || []);
+    towns.length = 0;
+    if (townOn > 0.5)
+      for (const c of cand) {
+        if (c.kind !== 'town' || c.a < 0.01) continue;
+        const P = c.s.position;
+        v.copy(P).project(cam);
+        if (v.z > 1 || v.z < -1) continue;
+        const me = cam.matrixWorldInverse.elements;
+        const dist = Math.max(0.01, -(me[2] * P.x + me[6] * P.y + me[10] * P.z + me[14]));
+        let ph = (c.s.scale.y / dist) * fovK,
+          pw = (c.s.scale.x / dist) * fovK;
+        if (ph > 52) (pw *= 52 / ph), (ph = 52);
+        const sx = (v.x * 0.5 + 0.5) * W,
+          sy = (-v.y * 0.5 + 0.5) * H;
+        const pl = c.s.userData.plate || { l: 0, r: 1, t: 0, b: 1 };
+        const l = sx - pw / 2 + pl.l * pw,
+          r = sx - pw / 2 + pl.r * pw,
+          t = sy - ph / 2 + pl.t * ph,
+          b = sy - ph / 2 + pl.b * ph;
+        if (r < 0 || l > W || b < 0 || t > H) continue;
+        towns.push(l, t, r, b, c.capOf);
+      }
     for (const c of cand) {
       const sp = c.s;
       v.copy(sp.position).project(cam);
@@ -1283,8 +1309,8 @@ export class Labels {
         const MAX_SCORE = 8;
         const ovZ = !this._midOnly;
         let best = null;
-        // (the cost for another realm's capital under the plate steers the
-        // choice but does not count toward MAX_SCORE: a crowded view still
+        // (the costs for capitals and town names under the plate steer the
+        // choice but do not count toward MAX_SCORE: a crowded view still
         // names its largest realm)
         let lastBase = 0;
         const score = (px, py, a, dx, dy, mode, pw2, fx, ph2) => {
@@ -1312,6 +1338,9 @@ export class Labels {
               t = py - ph2 / 2 - 3,
               b = py + ph2 / 2 + 3;
             for (let i = 0; i < seats.length; i += 3) if (seats[i + 2] !== kid && seats[i] > l && seats[i] < r && seats[i + 1] > t && seats[i + 1] < b) tp += 3;
+            // 2 for each town name under the plate (its own capital's name
+            // gives way to it, as before)
+            for (let i = 0; i < towns.length; i += 5) if (towns[i + 4] !== kid && towns[i] < r && towns[i + 2] > l && towns[i + 1] < b && towns[i + 3] > t) tp += 2;
             if (best && s + tp >= best.s) return s + tp;
           }
           for (let i = 0; i < 7; i++) {
