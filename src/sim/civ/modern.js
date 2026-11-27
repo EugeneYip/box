@@ -362,12 +362,91 @@ function trackLevels(w, seg, up) {
     }
   }
   // (a branch starts at its trunk's level)
-  const y0 = up?.ys && seg.at < up.ys.length ? up.ys[seg.at] : f[0];
+  let y0 = up?.ys && seg.at < up.ys.length ? up.ys[seg.at] : f[0];
+  // (round 37) where it starts along another stretch of its network (its
+  // trunk past the switch, or an earlier line out of the same platform) it
+  // keeps that one's level until its bed is clear of the other's: round
+  // 36's twin decks crossed through each other at an angle at a junction
+  const sh = shareLevels(seg, up);
+  const m0 = sh ? Math.min(sh.m, n - 2) : 0;
+  if (m0 >= 2) {
+    const k = m0 - 1,
+      sub = (a) => a.subarray(k);
+    const ds2 = Float32Array.from(sub(ds));
+    ds2[0] = 0;
+    const r = gradeLevels(sub(g), sub(g), sub(f), sub(lo), sub(land), ds2, G, mag ? MAG_MIN : 0.02, TUN_COVER, sh.y[k], f[n - 1]);
+    const ys = new Float32Array(n);
+    ys.set(sh.y.subarray(0, k));
+    ys.set(r.y, k);
+    let tun = null;
+    if (r.tun) {
+      tun = new Uint8Array(n);
+      tun.set(r.tun, k);
+    }
+    seg.ys = ys;
+    seg.tun = tun;
+    seg.gradeX = r.ex;
+    seg.fillMax = r.fill;
+    return;
+  }
   const r = gradeLevels(g, g, f, lo, land, ds, G, mag ? MAG_MIN : 0.02, TUN_COVER, y0, f[n - 1]);
   seg.ys = r.y;
   seg.tun = r.tun;
   seg.gradeX = r.ex;
   seg.fillMax = r.fill;
+}
+// (round 37) how far a stretch starts along another of its network's
+// (seg.share: its trunk, or the lines already out of its first platform)
+// with its track within SHARE of the other's, and the other's level at
+// each of those points: {m, y} (the longest such run), or null
+const SHARE = 0.4;
+function shareLevels(seg, up) {
+  const list = seg.share || (up ? [up] : null);
+  if (!list?.length) return null;
+  const P = seg.pts,
+    n = P.length / 2;
+  let best = null;
+  for (const o of list) {
+    if (!o?.ys || o === seg) continue;
+    const Q = o.pts,
+      nq = Q.length / 2;
+    // (the point of the other nearest the stretch's first)
+    let j = 0;
+    if (o === up && seg.at < nq) j = seg.at;
+    else {
+      let bd = Infinity;
+      for (let q = 0; q < nq; q++) {
+        const d = (Q[q * 2] - P[0]) ** 2 + (Q[q * 2 + 1] - P[1]) ** 2;
+        if (d < bd) (bd = d), (j = q);
+      }
+      if (bd > SHARE * SHARE) continue;
+    }
+    const y = new Float32Array(n);
+    let m = 0;
+    for (; m < n; m++) {
+      const x = P[m * 2],
+        z = P[m * 2 + 1];
+      let bd = Infinity,
+        by = 0,
+        bj = j;
+      for (let q = Math.max(0, j - 4); q < Math.min(nq - 1, j + 8); q++) {
+        const ax = Q[q * 2],
+          az = Q[q * 2 + 1],
+          dx = Q[q * 2 + 2] - ax,
+          dz = Q[q * 2 + 3] - az;
+        if (Math.abs(dx) > 3) continue;
+        const L2 = dx * dx + dz * dz;
+        const t = L2 > 1e-9 ? clamp(((x - ax) * dx + (z - az) * dz) / L2, 0, 1) : 0;
+        const d = Math.hypot(ax + dx * t - x, az + dz * t - z);
+        if (d < bd) (bd = d), (by = o.ys[q] + (o.ys[q + 1] - o.ys[q]) * t), (bj = q);
+      }
+      if (bd > SHARE || o.tun?.[bj] || o.tun?.[bj + 1]) break;
+      y[m] = by;
+      j = bj;
+    }
+    if (m >= 2 && (!best || m > best.m)) best = { m, y };
+  }
+  return best;
 }
 // The highway's deck beside a track (round 33): level across at the highest
 // ground under it, under the road's grade cap along it, each run starting
@@ -667,7 +746,7 @@ export const modern = {
       for (let grew = true; grew; ) {
         grew = false;
         for (const s of net)
-          if (!set.has(s) && s.up && set.has(s.up)) {
+          if (!set.has(s) && ((s.up && set.has(s.up)) || s.share?.some((o) => set.has(o)))) {
             set.add(s);
             grew = true;
           }
@@ -2222,6 +2301,8 @@ export const modern = {
         hw: null,
       };
       seg.up = parent >= 0 ? tree[parent] : null;
+      // (round 37: the stretches it may start along, see shareLevels)
+      seg.share = parent >= 0 ? [tree[parent]] : tree.filter((o) => o.parent < 0);
       if (kind === 'rail') seg.core = this._railCoreRuns(seg);
       trackLevels(w, seg, seg.up);
       // (a line already running is held to a looser limit when its network
