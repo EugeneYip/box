@@ -1478,10 +1478,14 @@ export const modern = {
     // 1. a new line
     let best = null,
       bd = Infinity;
+    // (round 37: a town whose line was refused lately is passed over for
+    // the next nearest; it held up every other line of its realm for good)
+    const fails0 = k.railFail || {};
     for (const vid of k.villages) {
       const v = this.villages[vid];
       if (!v?.alive || v === cap || v.landId !== cap.landId || this.railBetween(cap.id, v.id) || this._sameConurb(cap.id, v.id)) continue;
       if (v.pop < 14 && !k.roadLinks?.has(vid)) continue;
+      if (this.game.time.total - (fails0[vid] ?? -1e9) < YEAR * 8) continue;
       const d = Math.hypot(v.cx - cap.cx, v.cz - cap.cz) - (k.roadLinks?.has(vid) ? 20 : 0);
       if (d < bd && d < reach) (bd = d), (best = v);
     }
@@ -2462,25 +2466,33 @@ export const modern = {
     return seg;
   },
   // (round 37) A new stretch's ends, once its levels are set: a line end at
-  // a station must meet the platform (within a storey, two for a line
-  // already running); a line end with no station is pulled back along the
-  // line to the first point over dry land at grade (within END_RISE), its
-  // platform's length behind it too, out of any tunnel (round 36: a buffer
-  // stop on a viaduct stub over the surf, a tile off a bluff); where there
-  // is none within a few tiles, to the nearest on no more than a low bank.
+  // a station must meet the platform (within an embankment's height,
+  // EMB_MAX, twice that for a line already running); a line end with no
+  // station is pulled back along the line to the first point over dry land
+  // at grade (within END_RISE), its platform's length behind it too, out
+  // of any tunnel (round 36: a buffer stop on a viaduct stub over the surf,
+  // a tile off a bluff); where there is none within a few tiles, to the
+  // nearest on no more than a low bank.
   // False when an end cannot be met (the route is refused like one that
   // breaks the grade).
   _railEndsFit(seg, loose) {
     for (const atStart of [false, true]) {
       const info = atStart ? seg.start : seg.end;
       if (!info) continue;
+      const R = this._gradeRef || (this._gradeRef = { n: 0, ex: 0, fill: 0, last: [] });
       if (!info.station) {
-        if (!this._railTrim(seg, atStart)) return false;
+        if (!this._railTrim(seg, atStart)) {
+          R.endTrim = (R.endTrim || 0) + 1;
+          return false;
+        }
         continue;
       }
       const n = seg.pts.length / 2,
         e = atStart ? 0 : n - 1;
-      if (Math.abs(this._railEndOff(seg, e)) > END_RISE * (loose ? 4 : 2)) return false;
+      if (Math.abs(this._railEndOff(seg, e)) > EMB_MAX * (loose ? 2 : 1)) {
+        R.endSt = (R.endSt || 0) + 1;
+        return false;
+      }
     }
     return true;
   },
@@ -2505,11 +2517,11 @@ export const modern = {
       for (let i = 1; i < n; i++) arc[i] = arc[i - 1] + Math.min(3, Math.hypot(P[i * 2] - P[i * 2 - 2], P[i * 2 + 1] - P[i * 2 - 1]));
       // (the buffer stop: over dry land, out of a tunnel, at most `up` over
       // the ground and not deep in a cut; the platform's stretch behind it
-      // over dry land and at most `up` over the ground, a cutting or the
-      // mouth of a bore there being no matter)
+      // at most `up` over the ground, a cutting, the mouth of a bore or the
+      // end of a bridge over the water there being no matter)
       const off = (m) => this._railEndOff(seg, m);
       const fitEnd = (m, up) => !tun?.[m] && off(m) <= up && off(m) >= -2 * END_RISE;
-      const fitPlat = (m, up) => off(m) <= up;
+      const fitPlat = (m, up) => off(m) <= up || off(m) === Infinity;
       const st = atStart ? 1 : -1,
         e = atStart ? 0 : n - 1;
       // (never past the switch, nor into the last 2 tiles of the stretch)
