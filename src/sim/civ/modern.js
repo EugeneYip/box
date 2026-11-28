@@ -115,6 +115,15 @@ export const HW_COVER = 0.32;
 // ramp (round 35)
 const HW_END_RISE = 0.6 * EMB_MAX;
 const HW_RAMP_DIP = 0.06;
+// (round 37) a line's end stands at most this far off its level over the
+// ground (the bed on the ground, a guideway at its usual height): a line
+// end with no station is pulled back along the line to dry land at grade,
+// and a station's end must meet its platform (round 36: a platform and
+// buffer stop on a viaduct stub over the surf, a tile off a bluff, and
+// line ends lifted over a town's core on a stub of viaduct)
+const END_RISE = 0.5 * STOREY;
+// the stretch behind a line end without a station that holds its platform
+const END_PLAT = 1.2;
 // a cut becomes a tunnel where it reaches this deep (a shallower one is filled)
 const TUN_DEEP = 0.45;
 // the approach to a station's platform or a switch may be this much steeper
@@ -131,6 +140,8 @@ const BORE = 5;
 // to ride over it (round 33: 1.2, drawn as a covered way, a concrete box
 // that stood out of level fields at the foot of a hill)
 const PORTAL_LEN = 0.6;
+// (round 37) the shortest bore (tiles under cover); a shorter one is filled
+const BORE_MIN = 2;
 // where a level sits between the all-cut (0) and the all-fill (1) profile:
 // nearer the cut, since a tunnel is out of sight and a tall viaduct is not
 const CUT_BIAS = 0.3;
@@ -273,13 +284,21 @@ function gradeLevels1(g, gc, f, lo, land, ds, G, clr, cover, y0, y1, steep) {
       }
       // (round 33: a deep cut through a narrow ridge too: filled, the line
       // rode over its crest and stood on piers as tall as the cliff past it)
+      // the bore: from the first point with cover over it to the last
+      // (a shallow stretch between two deep ones stays in the bore)
+      let a = i,
+        b = j - 1,
+        bl = 0;
       if (deep >= TUN_DEEP && arc >= 0.5) {
-        // the bore: from the first point with cover over it to the last
-        // (a shallow stretch between two deep ones stays in the bore)
-        let a = i,
-          b = j - 1;
         while (gc[a] - y[a] < cover) a++;
         while (gc[b] - y[b] < cover) b--;
+        for (let m = a + 1; m <= b; m++) bl += Math.min(ds[m], 3);
+      }
+      // (round 37) a bore shorter than BORE_MIN is filled like a shallow
+      // cut: its two headwalls stood back to back a tile apart on a narrow
+      // ridge (the last pass keeps it a bore rather than leave the line
+      // under the ground)
+      if (bl >= BORE_MIN || (last && bl > 0)) {
         for (let m = a; m <= b; m++) tun[m] = 1;
         anyTun = true;
         // its approaches, below the ground with too little over them for a
@@ -353,12 +372,103 @@ function trackLevels(w, seg, up) {
     }
   }
   // (a branch starts at its trunk's level)
-  const y0 = up?.ys && seg.at < up.ys.length ? up.ys[seg.at] : f[0];
-  const r = gradeLevels(g, g, f, lo, land, ds, G, mag ? MAG_MIN : 0.02, TUN_COVER, y0, f[n - 1]);
+  let y0 = up?.ys && seg.at < up.ys.length ? up.ys[seg.at] : f[0];
+  // (round 37) where it starts along another stretch of its network (its
+  // trunk past the switch, or an earlier line out of the same platform) it
+  // keeps that one's level until its bed is clear of the other's: round
+  // 36's twin decks crossed through each other at an angle at a junction
+  const sh = shareLevels(seg, up);
+  const m0 = sh ? Math.min(sh.m, n - 2) : 0;
+  let r = null;
+  const k = m0 - 1;
+  if (m0 >= 2) {
+    const sub = (a) => a.subarray(k);
+    const ds2 = Float32Array.from(sub(ds));
+    ds2[0] = 0;
+    r = gradeLevels(sub(g), sub(g), sub(f), sub(lo), sub(land), ds2, G, mag ? MAG_MIN : 0.02, TUN_COVER, sh.y[k], f[n - 1]);
+    // (where its own level cannot start from the other's, a bridge's deck
+    // or a bank lifting it there, it keeps its own level all along: it
+    // stepped up from one to the other between two points)
+    if (Math.abs(r.y[0] - sh.y[k]) > 0.03) r = null;
+  }
+  if (r) {
+    const ys = new Float32Array(n);
+    ys.set(sh.y.subarray(0, k));
+    ys.set(r.y, k);
+    // (in the other's bore where it runs in one: one bore, one mouth)
+    let tun = null;
+    if (r.tun || sh.any) {
+      tun = new Uint8Array(n);
+      tun.set(sh.t.subarray(0, k));
+      if (r.tun) tun.set(r.tun, k);
+    }
+    seg.ys = ys;
+    seg.tun = tun;
+    seg.gradeX = r.ex;
+    seg.fillMax = r.fill;
+    return;
+  }
+  r = gradeLevels(g, g, f, lo, land, ds, G, mag ? MAG_MIN : 0.02, TUN_COVER, y0, f[n - 1]);
   seg.ys = r.y;
   seg.tun = r.tun;
   seg.gradeX = r.ex;
   seg.fillMax = r.fill;
+}
+// (round 37) how far a stretch starts along another of its network's
+// (seg.share: the stretches laid before it) with its track within SHARE of
+// the other's, and the other's level and bore at each of those points:
+// {m, y, t, any (a bore among them)} (the longest such run), or null
+const SHARE = 0.4;
+function shareLevels(seg, up) {
+  const list = seg.share || (up ? [up] : null);
+  if (!list?.length) return null;
+  const P = seg.pts,
+    n = P.length / 2;
+  let best = null;
+  for (const o of list) {
+    if (!o?.ys || o === seg) continue;
+    const Q = o.pts,
+      nq = Q.length / 2;
+    // (the point of the other nearest the stretch's first)
+    let j = 0;
+    if (o === up && seg.at < nq) j = seg.at;
+    else {
+      let bd = Infinity;
+      for (let q = 0; q < nq; q++) {
+        const d = (Q[q * 2] - P[0]) ** 2 + (Q[q * 2 + 1] - P[1]) ** 2;
+        if (d < bd) (bd = d), (j = q);
+      }
+      if (bd > SHARE * SHARE) continue;
+    }
+    const y = new Float32Array(n),
+      t = new Uint8Array(n);
+    let m = 0,
+      any = false;
+    for (; m < n; m++) {
+      const x = P[m * 2],
+        z = P[m * 2 + 1];
+      let bd = Infinity,
+        by = 0,
+        bj = j;
+      for (let q = Math.max(0, j - 4); q < Math.min(nq - 1, j + 8); q++) {
+        const ax = Q[q * 2],
+          az = Q[q * 2 + 1],
+          dx = Q[q * 2 + 2] - ax,
+          dz = Q[q * 2 + 3] - az;
+        if (Math.abs(dx) > 3) continue;
+        const L2 = dx * dx + dz * dz;
+        const t = L2 > 1e-9 ? clamp(((x - ax) * dx + (z - az) * dz) / L2, 0, 1) : 0;
+        const d = Math.hypot(ax + dx * t - x, az + dz * t - z);
+        if (d < bd) (bd = d), (by = o.ys[q] + (o.ys[q + 1] - o.ys[q]) * t), (bj = q);
+      }
+      if (bd > SHARE) break;
+      y[m] = by;
+      if (o.tun?.[bj] && o.tun?.[bj + 1]) (t[m] = 1), (any = true);
+      j = bj;
+    }
+    if (m >= 2 && (!best || m > best.m)) best = { m, y, t, any };
+  }
+  return best;
 }
 // The highway's deck beside a track (round 33): level across at the highest
 // ground under it, under the road's grade cap along it, each run starting
@@ -658,7 +768,7 @@ export const modern = {
       for (let grew = true; grew; ) {
         grew = false;
         for (const s of net)
-          if (!set.has(s) && s.up && set.has(s.up)) {
+          if (!set.has(s) && ((s.up && set.has(s.up)) || s.share?.some((o) => set.has(o)))) {
             set.add(s);
             grew = true;
           }
@@ -1300,18 +1410,18 @@ export const modern = {
       }
     }
     // lines whose towns are gone are taken up
-    let gone = false;
+    let gone = null;
     for (const l of this.rails) {
       const a = this.villages[l.a],
         b = this.villages[l.b];
       if (!a?.alive || !b?.alive) {
         l.dead = true;
-        gone = true;
+        (gone || (gone = new Set())).add(l.kingdom);
       } else if (a.kingdom === b.kingdom && a.kingdom !== l.kingdom) l.kingdom = a.kingdom; // conquered with its towns
     }
     if (gone) {
       this.rails = this.rails.filter((l) => !l.dead);
-      this._railEnds();
+      this._railEnds(gone);
       this.infraVersion++;
     }
     this._breadthTick(dt);
@@ -1366,15 +1476,23 @@ export const modern = {
   _surveyRail(k) {
     const cap = this.villages[k.capital];
     if (!cap?.alive) return;
-    this._railNetCheck(k);
+    // (round 37) at most one network build a survey: a realm whose network
+    // had to be laid again first tries its new line on its next turn, a few
+    // ticks on (round 35: a survey could lay the network three times in one
+    // tick, and every realm's again in the next frame)
+    if (this._railNetCheck(k) && this._railAgain(k)) return;
     const reach = 90 * Math.sqrt(Math.max(1, this.budget.area));
     // 1. a new line
     let best = null,
       bd = Infinity;
+    // (round 37: a town whose line was refused lately is passed over for
+    // the next nearest; it held up every other line of its realm for good)
+    const fails0 = k.railFail || {};
     for (const vid of k.villages) {
       const v = this.villages[vid];
       if (!v?.alive || v === cap || v.landId !== cap.landId || this.railBetween(cap.id, v.id) || this._sameConurb(cap.id, v.id)) continue;
       if (v.pop < 14 && !k.roadLinks?.has(vid)) continue;
+      if (this.game.time.total - (fails0[vid] ?? -1e9) < YEAR * 8) continue;
       const d = Math.hypot(v.cx - cap.cx, v.cz - cap.cz) - (k.roadLinks?.has(vid) ? 20 : 0);
       if (d < bd && d < reach) (bd = d), (best = v);
     }
@@ -1387,6 +1505,10 @@ export const modern = {
         // realm already runs is still laid with it (round 32: a new line's
         // track took the corridor of an old one, which was dropped as dead,
         // and the network shrank to half its size as pairs traded places)
+        // (round 37: the network as it stood is put back as it was when
+        // the trial fails, not laid again; when it holds, the trial's network
+        // is the realm's, and no other realm's is laid again)
+        const saved = this._railSave(k);
         const broke = this._railTry(k);
         l.survey = false;
         if (l.pts && !broke) {
@@ -1396,8 +1518,9 @@ export const modern = {
           return;
         }
         this.rails = this.rails.filter((x) => x !== l);
-        this._railNetBuild(k);
+        this._railRestore(k, saved);
         fails[best.id] = this.game.time.total;
+        if (this._railAgain(k)) return;
       }
     }
     // 2. Maglev: a line between cities moves onto a guideway
@@ -1414,6 +1537,7 @@ export const modern = {
         if (d > ld) (ld = d), (l = x);
       }
       if (l) {
+        const saved = this._railSave(k);
         l.kind = 'maglev';
         l.maglevAt = this.game.time.total;
         // (round 33: a trial, as a new line: a guideway that could not be
@@ -1422,7 +1546,7 @@ export const modern = {
         if (this._railTry(k) || !l.pts) {
           l.kind = 'rail';
           l.noMaglev = true;
-          this._railNetBuild(k);
+          this._railRestore(k, saved);
         }
         this.infraVersion++;
         if (l.kind === 'maglev') this._firstUse(k, 'maglev', { x: l.pts?.[0] ?? cap.cx, z: l.pts?.[1] ?? cap.cz });
@@ -1441,8 +1565,10 @@ export const modern = {
       }
     }
   },
-  // the number of lines ending in each town (a station rises where one does)
-  _railEnds() {
+  // the number of lines ending in each town (a station rises where one
+  // does); dirty: the realms (ids) whose networks are laid again before
+  // they are next drawn (round 37: every realm's was, on any change)
+  _railEnds(dirty = null) {
     for (const v of this.villages) v.railEnds = 0;
     for (const l of this.rails) {
       const a = this.villages[l.a],
@@ -1450,7 +1576,28 @@ export const modern = {
       if (a) a.railEnds++;
       if (b) b.railEnds++;
     }
+    const D = this._netDirtyK || (this._netDirtyK = new Set());
+    for (const kid of dirty || []) D.add(kid);
     this._netDirty = true;
+  },
+  // (round 37) a survey that did its network build this turn carries on in
+  // a later tick (Civilization._realmJob); false when the realms do not
+  // take turns
+  _railAgain(k) {
+    if (globalThis.__realmJobsOff || !this._realmJob) return false;
+    this._realmJob('rail', k);
+    return true;
+  },
+  // (round 37) the realm's network as it stands, to put back after a trial
+  _railSave(k) {
+    return { net: this.railNet || [], sig: this._netSig?.[k.id], pts: this.rails.filter((l) => l.kingdom === k.id).map((l) => [l, l.pts]) };
+  },
+  _railRestore(k, S) {
+    this.railNet = S.net;
+    for (const [l, p] of S.pts) l.pts = p;
+    (this._netSig || (this._netSig = {}))[k.id] = S.sig;
+    this._railYIndex();
+    this._railMaskBuild();
   },
   // The drawn network: [{kind, kingdom, pts [x, z, ...] (track centre, a
   // point every 0.4 tiles), junction (leaves its parent at a switch),
@@ -1462,18 +1609,29 @@ export const modern = {
     if (this._netDirty) {
       this._netDirty = false;
       const ks = new Set(this.rails.map((l) => l.kingdom));
+      const n0 = (this.railNet || []).length;
       this.railNet = (this.railNet || []).filter((s) => ks.has(s.kingdom));
-      for (const kid of ks) if (this.kingdoms[kid]) this._railNetBuild(this.kingdoms[kid]);
+      const D = this._netDirtyK;
+      if (D?.size) {
+        for (const kid of D) if (ks.has(kid) && this.kingdoms[kid]) this._railNetBuild(this.kingdoms[kid]);
+        D.clear();
+      } else if (this.railNet.length !== n0) {
+        this._railYIndex();
+        this._railMaskBuild();
+      }
     }
     return this.railNet || [];
   },
   // rebuild a realm's network when its lines or their stations change
+  // (true when it did)
   _railNetCheck(k) {
     if (this._conurbTidy(k)) this.infraVersion++;
     if ((this._netSig || {})[k.id] !== this._railSig(k)) {
       this._railNetBuild(k);
       this.infraVersion++;
+      return true;
     }
+    return false;
   },
   _railSig(k) {
     // (and the size of the realm's towns: a town that grows out over a
@@ -1635,8 +1793,21 @@ export const modern = {
     }
     this.railNet = out;
     this._railYIndex();
-    if (depth < 3 && this._railDrop(k)) return this._railNetBuild(k, depth + 1);
-    // the tiles under the tracks (trams and buses keep to other streets)
+    if (depth < 3 && this._railDrop(k)) {
+      // (round 37) the lines dropped had no track of their own: when no
+      // guideway went back to rail and every stretch laid still serves a
+      // line, the network stands as laid (round 35 laid it again, up to
+      // three more times in one tick)
+      if (this._railDropMag || !this._railNetServes(k)) return this._railNetBuild(k, depth + 1);
+      this._netSig[k.id] = this._railSig(k);
+    }
+    this._railMaskBuild();
+  },
+  // the tiles under the tracks (trams and buses keep to other streets)
+  _railMaskBuild() {
+    const w = this.world;
+    const N = w.w * w.h;
+    const out = this.railNet || [];
     if (!this.railMask || this.railMask.length !== N) this.railMask = new Uint8Array(N);
     this.railMask.fill(0);
     // (8: the rail rides over this tile on a bridge or a viaduct: people
@@ -1702,6 +1873,7 @@ export const modern = {
       return false;
     }
     let changed = false;
+    this._railDropMag = false;
     const now = this.game.time.total;
     for (const l of this.rails) {
       if (l.kingdom !== k.id || l.survey || (l.pts && l.pts.length >= 4)) continue;
@@ -1712,6 +1884,7 @@ export const modern = {
       if (l.kind === 'maglev') {
         l.kind = 'rail';
         l.noMaglev = true;
+        this._railDropMag = true;
         continue;
       }
       l.dead = true;
@@ -1736,6 +1909,14 @@ export const modern = {
         }
     }
     this.infraVersion++;
+    return true;
+  },
+  // (round 37) every stretch of the realm's network still leads to a town
+  // with a line of its kind
+  _railNetServes(k) {
+    const T = { rail: new Set(), maglev: new Set() };
+    for (const l of this.rails) if (l.kingdom === k.id) T[l.kind].add(l.a).add(l.b);
+    for (const s of this.railNet || []) if (s.kingdom === k.id && !T[s.kind].has(s.town)) return false;
     return true;
   },
   // Round 27: towns whose built footprints touch form one conurbation:
@@ -2015,9 +2196,11 @@ export const modern = {
     // (round 27: the platform, then the ramp at the bed's grade, stays at
     // ground level: a deck met a station's canopy at deck height over
     // tracks at grade)
+    // (round 37: a line end with no station too: the core was lifted out to
+    // its buffer stop, which stood on a stub of viaduct over the streets)
     const ramp = ST_HALF * 2 * BUILDING.scale + CORE_LIFT / GRADE.rail + 1.2;
-    const keepS = s.start?.station ? ramp : s.junction ? 1.5 : 0,
-      keepE = s.end?.station ? ramp : 0;
+    const keepS = s.start ? ramp : s.junction ? 1.5 : 0,
+      keepE = s.end ? ramp : 0;
     const out = new Uint8Array(n);
     let any = false;
     for (let i = 0; i < n; ) {
@@ -2072,9 +2255,13 @@ export const modern = {
         // (round 35) never a switch in or by a tunnel: a branch that left its
         // trunk underground ran on under level fields until it could climb
         // out, its mouths boxes on the flat
+        // (round 37: nor where the trunk goes under while the branch still
+        // runs beside it, out along the trunk from the switch and curving
+        // away: two mouths side by side a tile apart, the branch's open
+        // track between them, round 36)
         if (tun) {
           let near = false;
-          for (let m = Math.max(0, j - 8); m <= Math.min(n - 1, j + 8) && !near; m++) near = !!tun[m];
+          for (let m = Math.max(0, j - 10); m <= Math.min(n - 1, j + 16) && !near; m++) near = !!tun[m];
           if (near) continue;
         }
         const tx = Math.floor(p[j * 2]),
@@ -2211,16 +2398,22 @@ export const modern = {
         hw: null,
       };
       seg.up = parent >= 0 ? tree[parent] : null;
+      // (round 37: the stretches it may start along, see shareLevels: its
+      // trunk, a line out of the same platform, or a branch that left the
+      // trunk just before it the same way)
+      seg.share = tree.slice();
       if (kind === 'rail') seg.core = this._railCoreRuns(seg);
       trackLevels(w, seg, seg.up);
       // (a line already running is held to a looser limit when its network
       // is rebuilt, so one laid is not dropped for a hair's change)
-      if (seg.gradeX <= GRADE_SLACK[kind] * (loose ? 2 : 1) && seg.fillMax <= FILL_MAX[kind] * (loose ? 1.3 : 1)) break;
+      // (round 37) and its ends come down to the ground: see _railEndsFit
+      if (seg.gradeX <= GRADE_SLACK[kind] * (loose ? 2 : 1) && seg.fillMax <= FILL_MAX[kind] * (loose ? 1.3 : 1) && this._railEndsFit(seg, loose)) break;
       // (a tally for the probes: routes refused, and why)
       const R = this._gradeRef || (this._gradeRef = { n: 0, ex: 0, fill: 0, last: [] });
       R.n++;
       if (seg.gradeX > GRADE_SLACK[kind]) R.ex++;
-      else R.fill++;
+      else if (seg.fillMax > FILL_MAX[kind]) R.fill++;
+      else R.end = (R.end || 0) + 1;
       R.last.push([+seg.gradeX.toFixed(2), +seg.fillMax.toFixed(2), n]);
       if (R.last.length > 40) R.last.shift();
       seg = null;
@@ -2278,6 +2471,109 @@ export const modern = {
         }
     }
     return seg;
+  },
+  // (round 37) A new stretch's ends, once its levels are set: a line end at
+  // a station must meet the platform (within an embankment's height,
+  // EMB_MAX, twice that for a line already running); a line end with no
+  // station is pulled back along the line to the first point over dry land
+  // at grade (within END_RISE), its platform's length behind it too, out
+  // of any tunnel (round 36: a buffer stop on a viaduct stub over the surf,
+  // a tile off a bluff); where there is none within a few tiles, to the
+  // nearest on no more than a low bank.
+  // False when an end cannot be met (the route is refused like one that
+  // breaks the grade).
+  _railEndsFit(seg, loose) {
+    for (const atStart of [false, true]) {
+      const info = atStart ? seg.start : seg.end;
+      if (!info) continue;
+      const R = this._gradeRef || (this._gradeRef = { n: 0, ex: 0, fill: 0, last: [] });
+      if (!info.station) {
+        if (!this._railTrim(seg, atStart)) {
+          R.endTrim = (R.endTrim || 0) + 1;
+          return false;
+        }
+        continue;
+      }
+      const n = seg.pts.length / 2,
+        e = atStart ? 0 : n - 1;
+      if (Math.abs(this._railEndOff(seg, e)) > EMB_MAX * (loose ? 2 : 1)) {
+        R.endSt = (R.endSt || 0) + 1;
+        return false;
+      }
+    }
+    return true;
+  },
+  // how far point i of a stretch rides off its usual level over the ground
+  // (+ over it); Infinity over the water
+  _railEndOff(seg, i) {
+    const h = this.world.heightAt(seg.pts[i * 2], seg.pts[i * 2 + 1]);
+    if (h < SEA_LEVEL + 0.05) return Infinity;
+    return seg.ys[i] - (h + (seg.kind === 'maglev' ? MAG_CLEAR : 0.02));
+  },
+  // Pull the end of a stretch with no station (atStart: its start) back
+  // along it to the first point fit for a buffer stop (_railEndsFit), and
+  // level it again. False when no such point is left past its switch or
+  // its other end's platform.
+  _railTrim(seg, atStart) {
+    const w = this.world;
+    for (let pass = 0; pass < 4; pass++) {
+      const P = seg.pts,
+        n = P.length / 2,
+        tun = seg.tun;
+      const arc = new Float32Array(n);
+      for (let i = 1; i < n; i++) arc[i] = arc[i - 1] + Math.min(3, Math.hypot(P[i * 2] - P[i * 2 - 2], P[i * 2 + 1] - P[i * 2 - 1]));
+      // (the buffer stop: over dry land, out of a tunnel, at most `up` over
+      // the ground and not deep in a cut; the platform's stretch behind it
+      // at most `up` over the ground, a cutting, the mouth of a bore or the
+      // end of a bridge over the water there being no matter)
+      const off = (m) => this._railEndOff(seg, m);
+      const fitEnd = (m, up) => !tun?.[m] && off(m) <= up && off(m) >= -2 * END_RISE;
+      const fitPlat = (m, up) => off(m) <= up || off(m) === Infinity;
+      const st = atStart ? 1 : -1,
+        e = atStart ? 0 : n - 1;
+      // (never past the switch, nor into the last 2 tiles of the stretch)
+      const ok = (m) => (atStart ? m <= seg.lock1 && arc[n - 1] - arc[m] >= 2 : m >= seg.lock0 && arc[m] >= 2);
+      const find = (up, reach) => {
+        for (let m = e; m >= 0 && m < n && ok(m) && Math.abs(arc[m] - arc[e]) <= reach; m += st) {
+          if (!fitEnd(m, up)) continue;
+          let good = true;
+          for (let q = m + st; good && q >= 0 && q < n && Math.abs(arc[q] - arc[m]) <= END_PLAT; q += st) good = fitPlat(q, up);
+          if (good) return m;
+        }
+        return -1;
+      };
+      // at grade within a few tiles back; else the nearest end on no more
+      // than a low bank (EMB_MAX: never a viaduct's end in mid-air nor over
+      // the water); else at grade however far back
+      let found = find(END_RISE, 4);
+      if (found < 0) found = find(EMB_MAX, Infinity);
+      if (found < 0) found = find(END_RISE, Infinity);
+      if (found < 0) return false;
+      if (found === e) return true;
+      if (atStart) {
+        const keepS = arc[seg.lock0];
+        seg.pts = P.slice(found * 2);
+        let l0 = found;
+        while (l0 < n - 1 && arc[l0] - arc[found] < keepS) l0++;
+        seg.lock0 = l0 - found;
+        seg.lock1 = Math.max(seg.lock0, seg.lock1 - found);
+        seg.start.x = seg.pts[0];
+        seg.start.z = seg.pts[1];
+      } else {
+        const keepE = arc[n - 1] - arc[seg.lock1];
+        seg.pts = P.slice(0, (found + 1) * 2);
+        let l1 = found;
+        while (l1 > seg.lock0 && arc[found] - arc[l1] < keepE) l1--;
+        seg.lock1 = l1;
+        seg.end.x = seg.pts[found * 2];
+        seg.end.z = seg.pts[found * 2 + 1];
+      }
+      if (seg.kind === 'rail') seg.core = this._railCoreRuns(seg);
+      trackLevels(w, seg, seg.up);
+    }
+    const n = seg.pts.length / 2,
+      e = atStart ? 0 : n - 1;
+    return !seg.tun?.[e] && this._railEndOff(seg, e) <= EMB_MAX;
   },
   // a drawn line over a town's square (255) or a single town's core (2)
   // away from its own ends (_railBlocks)

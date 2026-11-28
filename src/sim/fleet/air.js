@@ -195,8 +195,12 @@ export const air = {
     const m = v.mission;
     if (!m || m.type !== 'train' || v._lineP === undefined) return;
     const line = this.game.civ?.railLine?.(m.rail);
-    const LP = line?.pts || null;
-    if (LP === v._lineP) return;
+    let LP = line?.pts || null;
+    // (round 37) a line moved onto a guideway, or back to rail, under its
+    // train: a steam train ran on along the guideway's route on the ground
+    // under it, a maglev beside the new rail track
+    if (line && (line.kind === 'maglev') !== (v.kind === 'maglev')) LP = null;
+    else if (LP === v._lineP) return;
     if (!LP || LP.length < 8 || !trainFits(v.def, LP)) {
       v._lineP = undefined;
       v.path = null;
@@ -229,6 +233,28 @@ export const air = {
       const t = L2 > 1e-9 ? Math.max(0, Math.min(1, ((v.x - ax) * dx + (v.z - az) * dz) / L2)) : 0;
       const d = (ax + dx * t - v.x) ** 2 + (az + dz * t - v.z) ** 2;
       if (d < bd) (bd = d), (bi = k), (bt = t);
+    }
+    // (round 37) the engine a train's length along at least, so its cars are
+    // on the rails behind it (set nearer the start, they ran on straight
+    // back past the buffer stop, off the track)
+    {
+      let back = Math.max(0, (v.def.cars || 1) - 1) * v.def.length + 0.1;
+      for (let k = 0; k < bi && back > 0; k += 2) back -= Math.hypot(P[k + 2] - P[k], P[k + 3] - P[k + 1]);
+      back -= bt * Math.hypot(P[bi + 2] - P[bi], P[bi + 3] - P[bi + 1]);
+      for (let k = bi; back > 0 && k + 3 < P.length; k += 2) {
+        const L = Math.hypot(P[k + 2] - P[k], P[k + 3] - P[k + 1]);
+        const left = (k === bi ? 1 - bt : 1) * L;
+        if (left >= back) {
+          bi = k;
+          bt = 1 - (left - back) / (L || 1);
+          back = 0;
+          break;
+        }
+        back -= left;
+        bi = k + 2;
+        bt = 0;
+      }
+      if (bi + 3 >= P.length) (bi = P.length - 4), (bt = 1);
     }
     v._lineP = LP;
     const hadPath = !!v.path;

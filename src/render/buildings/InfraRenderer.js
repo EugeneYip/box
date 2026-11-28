@@ -56,6 +56,19 @@ const PIER_GAP = 1.6; // tiles between a bridge's piers
 // (round 35) ground edits are applied to the tracks they touch at most this
 // often (ms)
 const EDIT_GAP = 2500;
+// (round 37) edits are noted as the cells they touch: this many tiles
+// square, and this far round each edit (a stretch's highway and piers)
+const EDIT_CELL = 2,
+  EDIT_PAD = 2;
+// (round 37) the solid geometry is drawn in square chunks this many tiles
+// across (a change re-uploads its own chunk only), and at most this long
+// (ms) is spent a drawn frame emitting the parts that changed
+const CHUNK = 64;
+const EMIT_MS = 10;
+// (round 37) mouths facing the same way closer than this across and along
+// (tiles) share one headwall
+const MOUTH_LAT = 1.8,
+  MOUTH_ALONG = 0.5;
 
 const COL = {
   ballast: 0x6c6a66,
@@ -76,8 +89,11 @@ const COL = {
   edge: 0xd8b840,
   platform: 0xb4aea4,
   buffer: 0xb83a2a,
-  portal: 0x8c867c, // (round 35: a weathered stone, not round 33's cream)
-  coping: 0x6c675f,
+  // (round 35: a weathered stone, not round 33's cream; round 37: a shade
+  // lighter, and a pale stone coping, so the headwalls and wing walls read
+  // against a brown hillside)
+  portal: 0x958f84,
+  coping: 0xb4ada1,
   ring: 0xa8a296,
   mouth: 0x121110,
   pylon: 0x7a8288,
@@ -177,6 +193,53 @@ class Emit {
   }
 }
 
+// (round 37) A stretch's content key: its kind, points, levels, tunnels,
+// highway, flyover lifts, core runs, crossings and ends, so the same stretch
+// laid again by a network rebuild (a new object each time) finds the part
+// emitted for it. Two 32-bit FNV-1a style hashes over the values in
+// millimetres.
+function hashInto(H, a, q) {
+  let h1 = H[0],
+    h2 = H[1];
+  const n = a ? a.length : -1;
+  h1 = Math.imul(h1 ^ n, 16777619);
+  h2 = Math.imul(h2 ^ n, 0x85ebca6b);
+  for (let i = 0; i < n; i++) {
+    const v = a[i];
+    const k = v === v ? Math.round(v * q) | 0 : -7777777; // (NaN off a highway's runs)
+    h1 = Math.imul(h1 ^ (k & 0xffff), 16777619);
+    h1 = Math.imul(h1 ^ (k >>> 16), 16777619);
+    h2 = Math.imul(h2 ^ k, 0x85ebca6b);
+    h2 ^= h2 >>> 13;
+  }
+  H[0] = h1;
+  H[1] = h2;
+}
+const _H = [0, 0];
+function segKey(s) {
+  _H[0] = 0x811c9dc5 | 0;
+  _H[1] = 374761393;
+  hashInto(_H, s.pts, 1000);
+  hashInto(_H, s.ys, 1000);
+  hashInto(_H, s.tun, 1);
+  hashInto(_H, s.lift, 1000);
+  hashInto(_H, s.hw, 1);
+  hashInto(_H, s.hy, 1000);
+  hashInto(_H, s.htun, 1);
+  hashInto(_H, s.core, 1);
+  hashInto(_H, s.xing ? s.xing.flat() : null, 1000);
+  const f = (s.kind === 'maglev' ? 1 : 0) | (s.junction ? 2 : 0) | (s.start ? 4 : 0) | (s.start?.station ? 8 : 0) | (s.start?.through ? 16 : 0) | (s.end ? 32 : 0) | (s.end?.station ? 64 : 0) | (s.end?.through ? 128 : 0);
+  return f + ':' + (_H[0] >>> 0).toString(36) + ':' + (_H[1] >>> 0).toString(36);
+}
+// a power line's: its ends, pylons and substation
+function powKey(l) {
+  _H[0] = 0x811c9dc5 | 0;
+  _H[1] = 374761393;
+  hashInto(_H, l.pts, 1000);
+  hashInto(_H, l.pylons, 1000);
+  return l.id + ':' + (l.sub ? 1 : 0) + ':' + (_H[0] >>> 0).toString(36) + ':' + (_H[1] >>> 0).toString(36);
+}
+
 // concatenate the typed arrays of many parts into one
 function joinArrays(parts, key) {
   let n = 0;
@@ -228,17 +291,22 @@ export class InfraRenderer {
     // overview, so the rail read as grey-white scribbles; thin dark lines at
     // about 60% instead, unfogged)
     this.farMat = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.6, fog: false, depthWrite: false });
-    this.mesh = null;
     this.wires = null;
     this.far = null;
+    this.mouthMesh = null;
     this._ver = -1;
     this._pylon = null;
     this.portals = [];
     // (round 35) each stretch's and each power line's geometry, kept until
-    // it changes; the ground edits not yet applied ([x0, z0, x1, z1] tiles)
+    // it changes (round 37: by its content, segKey / powKey); the ground
+    // edits not yet applied ([x0, z0, x1, z1] tiles)
     this._segGeo = new Map();
     this._powGeo = new Map();
-    this._edits = [];
+    this._pid = 0;
+    this._pend = false;
+    // (round 37) the solid geometry in square chunks: key -> {mesh, parts, sig}
+    this._chunks = new Map();
+    this._editCells = new Set();
     this._editT = -1e9;
     game.events.on('world:height', (r) => this._edit(r));
   }
@@ -247,43 +315,30 @@ export class InfraRenderer {
     this._ver = -1;
     this._segGeo.clear();
     this._powGeo.clear();
-    this._edits.length = 0;
+    for (const ck of [...this._chunks.keys()]) this._setChunk(ck, null);
+    this._swapLines();
+    this._pend = false;
+    this._editCells.clear();
   }
 
   // A building levelled its plot, or the gods reshaped the ground: noted
   // here, applied (to the tracks it touches only) at most every EDIT_GAP
   // (round 34: every such edit anywhere re-levelled and redrew the whole
-  // network, about 45 ms a drawn frame at Year 600)
+  // network, about 45 ms a drawn frame at Year 600). Round 37: as the
+  // square cells (EDIT_CELL tiles, padded EDIT_PAD round the edit) it
+  // touches; round 35 merged more than 48 edits into one rectangle round
+  // them all, which after a jump covered the map and redrew everything.
   _edit(r) {
-    const E = this._edits;
-    E.push([r.x0, r.y0, r.x1, r.y1]);
-    if (E.length > 48) {
-      // (many small edits: one rectangle round them all)
-      const u = [Infinity, Infinity, -Infinity, -Infinity];
-      for (const e of E) (u[0] = Math.min(u[0], e[0])), (u[1] = Math.min(u[1], e[1])), (u[2] = Math.max(u[2], e[2])), (u[3] = Math.max(u[3], e[3]));
-      E.length = 0;
-      E.push(u);
-    }
+    const C = this._editCells;
+    const x0 = Math.floor((r.x0 - EDIT_PAD) / EDIT_CELL),
+      x1 = Math.floor((r.x1 + 1 + EDIT_PAD) / EDIT_CELL),
+      z0 = Math.floor((r.y0 - EDIT_PAD) / EDIT_CELL),
+      z1 = Math.floor((r.y1 + 1 + EDIT_PAD) / EDIT_CELL);
+    for (let cx = x0; cx <= x1; cx++) for (let cz = z0; cz <= z1; cz++) C.add(cx * 65536 + cz);
   }
-  // the box round a stretch's track and highway, or a power line (tiles)
-  _bounds(o, pts, extra, pad) {
-    if (o._bb && o._bbN === pts.length) return o._bb;
-    let x0 = Infinity,
-      z0 = Infinity,
-      x1 = -Infinity,
-      z1 = -Infinity;
-    for (const P of [pts, extra])
-      for (let i = 0; P && i + 1 < P.length; i += 2) {
-        x0 = Math.min(x0, P[i]);
-        x1 = Math.max(x1, P[i]);
-        z0 = Math.min(z0, P[i + 1]);
-        z1 = Math.max(z1, P[i + 1]);
-      }
-    o._bbN = pts.length;
-    return (o._bb = [x0 - pad, z0 - pad, x1 + pad, z1 + pad]);
-  }
-  _touched(bb, edits) {
-    for (const e of edits) if (e[0] <= bb[2] && e[2] + 1 >= bb[0] && e[1] <= bb[3] && e[3] + 1 >= bb[1]) return true;
+  // a run of points [x, z, ...] with one in an edited cell
+  _touchedPts(P, C) {
+    for (let i = 0; P && i + 1 < P.length; i += 2) if (C.has(Math.floor(P[i] / EDIT_CELL) * 65536 + Math.floor(P[i + 1] / EDIT_CELL))) return true;
     return false;
   }
 
@@ -484,69 +539,195 @@ export class InfraRenderer {
     }
   }
   // A tunnel's mouth at point Sm [x, z, tx, tz], the line's level y there,
-  // out: +1 when the open side faces along the line's direction. Round 35:
-  // a stone headwall across the line with a coping along its top, a dark
-  // arched opening framed by a lighter ring of voussoirs, and two wing walls
-  // splayed out from its ends, their tops falling to the ground, holding
-  // back the hillside either side of the approach (round 33 drew a cream
-  // box with a square dark panel).
+  // out: +1 when the open side faces along the line's direction: noted in
+  // the stretch's part (round 37: the mouths of all the parts drawn are
+  // emitted together, _mouths, so two lines going under side by side share
+  // one headwall)
   _mouth(E, Sm, y, out, half, cover, kind) {
     const [x, z, tx0, tz0] = Sm;
-    const ox = tx0 * out,
-      oz = tz0 * out; // out of the bore
-    (this._partPortals || []).push({ x, z, y, tx: ox, tz: oz, kind });
-    const px = -oz,
-      pz = ox; // across the line
-    // the opening: straight sides up to the springing, then a half ellipse
-    const hw = half * 0.86,
-      hs = cover * 0.45,
-      ar = Math.min(hw * 0.8, cover * 0.75);
-    const top = y + Math.max(hs + ar + 0.1, cover + 0.08);
-    const W2 = hw + 0.16; // the headwall's half width
-    const TH = 0.08; // its thickness
-    const base = y - 0.18; // (its footing, in the ground)
-    // the face: on the hillside, a little out from the point
-    const fx = x + ox * 0.02,
-      fz = z + oz * 0.02;
-    E.bar(fx - px * W2, fz - pz * W2, fx + px * W2, fz + pz * W2, top, top, TH, top - base, COL.portal);
-    E.bar(fx - px * (W2 + 0.025), fz - pz * (W2 + 0.025), fx + px * (W2 + 0.025), fz + pz * (W2 + 0.025), top + 0.025, top + 0.025, TH + 0.04, 0.03, COL.coping);
-    // a point on the face, u across and v up from the line's level, d out
-    const F = (u, v, d) => [fx + px * u + ox * (TH / 2 + d), y + v, fz + pz * u + oz * (TH / 2 + d)];
-    const K = 8;
-    const curve = (r, k) => {
-      const t = (Math.PI * k) / K;
-      return [(hw + r) * Math.cos(t), hs + (ar + r) * Math.sin(t)];
+    (this._partPortals || []).push({ x, z, y, tx: tx0 * out, tz: tz0 * out, kind, half, cover });
+  }
+  // Every tunnel mouth of the parts drawn, as one mesh. Mouths that face the
+  // same way side by side (within MOUTH_LAT across and MOUTH_ALONG along:
+  // two lines into one hillside, or two stretches sharing one track) share
+  // one headwall with an opening for each (round 36: two headwalls a tile
+  // apart, their wing walls crossing, the open track between them).
+  _mouths(parts) {
+    const D = [];
+    for (const p of parts) if (p.portals) for (const q of p.portals) if (q.half) D.push(q);
+    const n = D.length;
+    const par = D.map((_, i) => i);
+    const find = (i) => {
+      while (par[i] !== i) i = par[i] = par[par[i]];
+      return i;
     };
-    // the ring of voussoirs round the arch and down its sides
-    const R = 0.055;
-    for (let k = 0; k < K; k++) {
-      const [u0, v0] = curve(0, k),
-        [u1, v1] = curve(0, k + 1),
-        [U0, V0] = curve(R, k),
-        [U1, V1] = curve(R, k + 1);
-      E.quad(F(u0, v0, 0.004), F(U0, V0, 0.004), F(U1, V1, 0.004), F(u1, v1, 0.004), COL.ring);
+    for (let i = 0; i < n; i++)
+      for (let j = i + 1; j < n; j++) {
+        const A = D[i],
+          B = D[j];
+        const dx = B.x - A.x,
+          dz = B.z - A.z;
+        if (Math.abs(dx) > 3 || Math.abs(dz) > 3) continue;
+        if (A.tx * B.tx + A.tz * B.tz < 0.85) continue;
+        if (Math.abs(dx * A.tx + dz * A.tz) > MOUTH_ALONG || Math.abs(dx * -A.tz + dz * A.tx) > MOUTH_LAT) continue;
+        par[find(j)] = find(i);
+      }
+    const G = new Map();
+    for (let i = 0; i < n; i++) {
+      const r = find(i);
+      if (!G.has(r)) G.set(r, []);
+      G.get(r).push(D[i]);
     }
-    for (const sd of [1, -1]) E.quad(F(sd * hw, -0.02, 0.004), F(sd * (hw + R), -0.02, 0.004), F(sd * (hw + R), hs, 0.004), F(sd * hw, hs, 0.004), COL.ring);
-    // the dark opening: the sides, then a fan under the arch
-    E.quad(F(-hw, -0.03, 0.008), F(hw, -0.03, 0.008), F(hw, hs, 0.008), F(-hw, hs, 0.008), COL.mouth);
-    for (let k = 0; k < K; k++) {
-      const [u0, v0] = curve(0, k),
-        [u1, v1] = curve(0, k + 1);
-      E.quad(F(0, hs, 0.008), F(u0, v0, 0.008), F(u1, v1, 0.008), F(u1, v1, 0.008), COL.mouth);
+    const E = new Emit();
+    this.headwalls = []; // (the probes read these)
+    for (const M of G.values()) this._mouthGroup(E, M);
+    return E.P.length ? E.pack() : null;
+  }
+  // One headwall for the mouths M (each {x, z, y, tx, tz, kind, half,
+  // cover}). Round 35: a stone headwall across the line with a coping along
+  // its top, a dark arched opening framed by a lighter ring of voussoirs,
+  // and two wing walls splayed out from its ends, their tops falling to the
+  // ground, holding back the hillside either side of the approach (round 33
+  // drew a cream box with a square dark panel).
+  _mouthGroup(E, M) {
+    let ox = 0,
+      oz = 0;
+    for (const m of M) (ox += m.tx), (oz += m.tz);
+    const oL = Math.hypot(ox, oz) || 1;
+    ox /= oL;
+    oz /= oL; // out of the bores
+    const px = -oz,
+      pz = ox; // across the lines
+    // the openings, across the face (u) from the first mouth; the face
+    // stands at the outermost mouth, a little out from its point
+    const c = M[0];
+    let amax = -Infinity;
+    const O = [];
+    const seen = [];
+    for (const m of M) {
+      const u = (m.x - c.x) * px + (m.z - c.z) * pz;
+      amax = Math.max(amax, (m.x - c.x) * ox + (m.z - c.z) * oz);
+      // (two stretches on one track: one opening)
+      if (seen.some((v) => Math.abs(v - u) < 0.1)) continue;
+      seen.push(u);
+      // the opening: straight sides up to the springing, then a half ellipse
+      const hw = m.half * 0.86;
+      O.push({ u, y: m.y, hw, hs: m.cover * 0.45, ar: Math.min(hw * 0.8, m.cover * 0.75), cover: m.cover });
+    }
+    O.sort((a, b) => a.u - b.u);
+    const kind = M.some((m) => m.kind === 'hw') ? 'hw' : 'rail';
+    const fx = c.x + ox * (amax + 0.02),
+      fz = c.z + oz * (amax + 0.02);
+    this.headwalls?.push({ x: fx, z: fz, tx: ox, tz: oz, n: O.length });
+    const TH = 0.12; // the headwall's thickness
+    const R = 0.055; // (the ring of voussoirs)
+    const uL = O[0].u - O[0].hw,
+      uR = O[O.length - 1].u + O[O.length - 1].hw;
+    let y0 = Infinity,
+      top = -Infinity;
+    for (const o of O) {
+      y0 = Math.min(y0, o.y);
+      top = Math.max(top, o.y + Math.max(o.hs + o.ar + 0.1, o.cover + 0.08));
+    }
+    const base = y0 - 0.18; // (its footing, in the ground)
+    // (round 37) the wall stands a little over the slope across its whole
+    // width: on a side slope the hill rose over its top on the high side
+    // and only the dark opening showed, a board over the end of the track
+    let gmax = -Infinity;
+    for (let t = 0; t <= 4; t++) {
+      const u = uL - 0.16 + ((uR - uL + 0.32) * t) / 4;
+      for (const d of [-0.12, 0.06]) gmax = Math.max(gmax, this._h(fx + px * u + ox * d, fz + pz * u + oz * d));
+    }
+    top = Math.min(y0 + 0.95, Math.max(top, gmax + 0.07));
+    // the wing walls' thickness and where they stand across (clear of the
+    // rings round the openings); the headwall runs out to their outer faces
+    const WT = Math.min(0.3, Math.max(0.18, (top - base) / 3));
+    const uWl = Math.min(uL - 0.16 + WT * 0.5, uL - R - 0.02 - WT * 0.5),
+      uWr = Math.max(uR + 0.16 - WT * 0.5, uR + R + 0.02 + WT * 0.5);
+    const hA = uWl - WT * 0.5,
+      hB = uWr + WT * 0.5;
+    E.bar(fx + px * hA, fz + pz * hA, fx + px * hB, fz + pz * hB, top, top, TH, top - base, COL.portal);
+    E.bar(fx + px * (hA - 0.025), fz + pz * (hA - 0.025), fx + px * (hB + 0.025), fz + pz * (hB + 0.025), top + 0.025, top + 0.025, TH + 0.04, 0.03, COL.coping);
+    const K = 8;
+    for (const o of O) {
+      const { hw, hs, ar } = o;
+      // a point on the face, u across and v up from the line's level, d out
+      const F = (u, v, d) => [fx + px * (o.u + u) + ox * (TH / 2 + d), o.y + v, fz + pz * (o.u + u) + oz * (TH / 2 + d)];
+      const curve = (r, k) => {
+        const t = (Math.PI * k) / K;
+        return [(hw + r) * Math.cos(t), hs + (ar + r) * Math.sin(t)];
+      };
+      // the ring of voussoirs round the arch and down its sides
+      for (let k = 0; k < K; k++) {
+        const [u0, v0] = curve(0, k),
+          [u1, v1] = curve(0, k + 1),
+          [U0, V0] = curve(R, k),
+          [U1, V1] = curve(R, k + 1);
+        E.quad(F(u0, v0, 0.004), F(U0, V0, 0.004), F(U1, V1, 0.004), F(u1, v1, 0.004), COL.ring);
+      }
+      for (const sd of [1, -1]) E.quad(F(sd * hw, -0.02, 0.004), F(sd * (hw + R), -0.02, 0.004), F(sd * (hw + R), hs, 0.004), F(sd * hw, hs, 0.004), COL.ring);
+      // the dark opening: the sides, then a fan under the arch
+      E.quad(F(-hw, -0.03, 0.008), F(hw, -0.03, 0.008), F(hw, hs, 0.008), F(-hw, hs, 0.008), COL.mouth);
+      for (let k = 0; k < K; k++) {
+        const [u0, v0] = curve(0, k),
+          [u1, v1] = curve(0, k + 1);
+        E.quad(F(0, hs, 0.008), F(u0, v0, 0.008), F(u1, v1, 0.008), F(u1, v1, 0.008), COL.mouth);
+      }
     }
     // the wing walls: splayed out from the headwall's ends, falling to the
-    // ground at their far ends (buried below it)
+    // ground at their far ends (buried below it). Round 37: solid stone, a
+    // third of the headwall's height thick, with a flat stone top and an
+    // end face (round 35's were 0.06 thick and read as fanned planks from
+    // above)
     const WL = kind === 'hw' ? 0.75 : 0.55,
       SP = kind === 'hw' ? 0.38 : 0.28;
-    for (const sd of [1, -1]) {
-      const ax = fx + px * sd * (W2 - 0.03),
-        az = fz + pz * sd * (W2 - 0.03);
-      const bx = ax + px * sd * SP + ox * WL,
-        bz = az + pz * sd * SP + oz * WL;
-      const gb = Math.max(this._h(bx, bz), y);
-      const yb = Math.min(top - 0.05, gb + 0.05);
-      E.bar(ax, az, bx, bz, top - 0.01, yb, 0.06, top - 0.01 - base, COL.portal);
-      E.bar(ax, az, bx, bz, top + 0.01, yb + 0.015, 0.085, 0.025, COL.coping);
+    for (const [sd, uw] of [
+      [-1, uWl],
+      [1, uWr],
+    ]) {
+      const ax = fx + px * uw,
+        az = fz + pz * uw;
+      const dx = px * sd * SP + ox * WL,
+        dz = pz * sd * SP + oz * WL;
+      const ya = top - 0.01;
+      // (round 37) the wall runs out only as far as it holds anything back:
+      // where the ground falls away below the line it ends (on a cliff it
+      // hung far down in the air); a wall the hillside would bury over
+      // most of its length is left out (its coping stuck out of the slope
+      // like a plank)
+      let f = 1;
+      for (const t of [1, 0.75, 0.5]) {
+        f = t;
+        if (this._h(ax + dx * t, az + dz * t) >= y0 - 0.1) break;
+      }
+      const bx = ax + dx * f,
+        bz = az + dz * f;
+      const gb = this._h(bx, bz);
+      const yb = Math.min(top - 0.05, Math.max(gb, y0) + 0.06);
+      let buried = 0;
+      for (const t of [0.35, 0.65, 1]) if (this._h(ax + dx * f * t, az + dz * f * t) > ya + (yb - ya) * t - 0.03) buried++;
+      if (buried >= 2) continue;
+      const L = Math.hypot(bx - ax, bz - az) || 1,
+        nx = (-(bz - az) / L) * WT * 0.5,
+        nz = ((bx - ax) / L) * WT * 0.5;
+      // its foot: in the ground at each end
+      const fa = Math.min(this._h(ax, az), y0) - 0.2,
+        fb = Math.min(gb, y0) - 0.12;
+      const A1 = [ax + nx, ya, az + nz],
+        A2 = [ax - nx, ya, az - nz],
+        B1 = [bx + nx, yb, bz + nz],
+        B2 = [bx - nx, yb, bz - nz];
+      const a1 = [ax + nx, fa, az + nz],
+        a2 = [ax - nx, fa, az - nz],
+        b1 = [bx + nx, fb, bz + nz],
+        b2 = [bx - nx, fb, bz - nz];
+      E.quad(a1, b1, B1, A1, COL.portal);
+      E.quad(a2, b2, B2, A2, COL.portal);
+      E.quad(A1, B1, B2, A2, COL.portal);
+      // (its end face, down into the ground)
+      E.quad(b1, b2, B2, B1, COL.portal);
+      // the coping: a flat stone top a little wider than the wall
+      E.bar(ax, az, bx + (bx - ax) * (0.02 / L), bz + (bz - az) * (0.02 / L), ya + 0.025, yb + 0.025, WT + 0.03, 0.03, COL.coping);
     }
   }
   // which side a branch turns to (+1 right, -1 left of its first direction)
@@ -590,6 +771,14 @@ export class InfraRenderer {
       return;
     }
     const y = seg.ys ? seg.ys[i] : g + 0.02;
+    // (round 37) a line ending on a low bank: the bank's end face, down to
+    // the ground (it stood open, a hollow trough seen end on)
+    const hb = y - Math.max(this._h(x, z), SEA_LEVEL);
+    if (hb > 0.02 && !(seg.tun && seg.tun[i])) {
+      const da = Math.max(BAL_H, hb + 0.03),
+        wa = BAL_B + (da - BAL_H) * 1.2;
+      E.quad([x + px * BAL_T, y, z + pz * BAL_T], [x - px * BAL_T, y, z - pz * BAL_T], [x - px * wa, y - da, z - pz * wa], [x + px * wa, y - da, z + pz * wa], COL.ballast2);
+    }
     if (!info?.station) {
       const po = BAL_T + 0.1; // (beside the ballast)
       const cx = x - tx * 0.6 + px * po,
@@ -820,35 +1009,144 @@ export class InfraRenderer {
     return { ...E.pack(), far: Float32Array.from(far), farC: Float32Array.from(farC), wire: new Float32Array(0), portals };
   }
 
-  // Rebuild the merged geometry: every stretch and power line whose part is
-  // missing (new, or dropped from the cache because the ground under it or
-  // its levels changed) is emitted again; the rest are reused.
-  _rebuild() {
+  // Rebuild the drawn geometry. Round 37: each stretch's and power line's
+  // part is kept by its content (a key over its points, levels and flags),
+  // so a network laid again (every rebuild of a realm's network makes new
+  // stretch objects) reuses every stretch that did not change; the parts
+  // missing are emitted nearest the camera first, all of those in its view
+  // and then at most EMIT_MS more a drawn frame (the rest on the frames
+  // after); and the solid geometry is
+  // held in square chunks of CHUNK tiles, each joined and uploaded again
+  // only when its own parts change (round 36: a change anywhere re-emitted
+  // and re-uploaded the whole network, 0.8-1.4 s in the first frame after
+  // a jump at Year 800). A chunk still waiting for a part keeps what it
+  // drew until the part is ready.
+  _rebuild(force = false) {
     const civ = this.game.civ;
-    const parts = [];
-    const live = new Set();
+    const t0 = performance.now();
+    const cam = this.game.cameraRig?.cur;
+    const cx = cam?.x ?? 0,
+      cz = cam?.z ?? 0;
+    const W = this.game.world.w;
+    const want = new Map(); // chunk -> [part]
+    const wait = new Set(); // chunks with a part not yet emitted
+    const missing = [];
+    const used = new Set();
+    const chunkOf = (x, z) => Math.floor(x / CHUNK) * 4096 + Math.floor(z / CHUNK);
+    const add = (ck, p) => {
+      let L = want.get(ck);
+      if (!L) want.set(ck, (L = []));
+      L.push(p);
+    };
+    // (the camera's own view is drawn at once whatever the budget: within
+    // this far of the point it looks at, tiles; none at far zoom, where the
+    // thin lines are drawn instead)
+    const far = (cam?.dist ?? 60) > FAR || !!this.game.view?.far;
+    const near = far ? -1 : (cam?.dist ?? 60) * 1.25 + 16;
+    const take = (key, map, obj, x, z, make, pts) => {
+      if (used.has(key)) return;
+      used.add(key);
+      const ck = chunkOf(x, z);
+      const p = map.get(key);
+      if (p && !obj._redraw) return add(ck, p);
+      // (the nearest of every eighth point to the camera)
+      let d = Infinity;
+      for (let i = 0; i + 1 < pts.length; i += 16) {
+        let dx = Math.abs(pts[i] - cx);
+        if (dx > W / 2) dx = W - dx; // (a round world)
+        d = Math.min(d, dx * dx + (pts[i + 1] - cz) ** 2);
+      }
+      missing.push({ key, map, obj, ck, make, d, now: near > 0 && d < near * near });
+    };
     for (const seg of civ.railSegs?.() || []) {
       if (!seg.pts || seg.pts.length < 4) continue;
-      live.add(seg);
-      let p = this._segGeo.get(seg);
-      if (!p) this._segGeo.set(seg, (p = this._segPart(seg)));
-      parts.push(p);
+      const P = seg.pts,
+        m = (P.length >> 2) << 1;
+      take(seg._gk || (seg._gk = 's' + segKey(seg)), this._segGeo, seg, P[m], P[m + 1], () => this._segPart(seg), P);
     }
-    for (const s of this._segGeo.keys()) if (!live.has(s)) this._segGeo.delete(s);
     // power lines: pylons and sagging wires
     // (round 29: a pair of wires crossed a town at 55 tiles: a span over a
     // town's built ground runs underground, so no wire is drawn there; the
     // towns are read once per rebuild)
     this._towns = null;
-    const liveP = new Set();
-    for (const l of civ.powerLines?.() || []) {
-      liveP.add(l);
-      let p = this._powGeo.get(l);
-      if (!p) this._powGeo.set(l, (p = this._powerPart(l)));
-      parts.push(p);
+    for (const l of civ.powerLines?.() || []) take(l._gk || (l._gk = 'p' + powKey(l)), this._powGeo, l, l.pts[0], l.pts[1], () => this._powerPart(l), l.pts);
+    missing.sort((a, b) => a.d - b.d);
+    let emitted = 0;
+    this._pend = false;
+    for (const m of missing) {
+      if (!force && !m.now && emitted > 0 && performance.now() - t0 > EMIT_MS) {
+        this._pend = true;
+        wait.add(m.ck);
+        continue;
+      }
+      const p = m.make();
+      p.id = ++this._pid;
+      m.map.set(m.key, p);
+      m.obj._redraw = false;
+      emitted++;
+      add(m.ck, p);
     }
-    for (const l of this._powGeo.keys()) if (!liveP.has(l)) this._powGeo.delete(l);
-    this._swap(parts);
+    this._stat = { parts: used.size, emitted, waiting: missing.length - emitted, chunks: 0, ms: 0 };
+    // (parts no longer wanted are dropped, unless a waiting chunk still draws them)
+    const keep = new Set();
+    for (const ck of wait) for (const p of this._chunks.get(ck)?.parts || []) keep.add(p);
+    for (const map of [this._segGeo, this._powGeo]) for (const [k, p] of map) if (!used.has(k) && !keep.has(p)) map.delete(k);
+    // the chunks whose parts changed are joined again
+    let changed = 0;
+    for (const [ck, L] of want) {
+      if (wait.has(ck)) continue;
+      const c = this._chunks.get(ck);
+      const sig = L.map((p) => p.id).join(',');
+      if (c && c.sig === sig) continue;
+      this._setChunk(ck, L, sig);
+      changed++;
+    }
+    for (const ck of [...this._chunks.keys()])
+      if (!want.has(ck) && !wait.has(ck)) {
+        this._setChunk(ck, null);
+        changed++;
+      }
+    if (changed) this._swapLines();
+    this._stat.chunks = changed;
+    this._stat.ms = +(performance.now() - t0).toFixed(1);
+  }
+  // one chunk's solid geometry from its parts (null: the chunk is gone)
+  _setChunk(ck, parts, sig = '') {
+    let c = this._chunks.get(ck);
+    if (!parts) {
+      if (c?.mesh) {
+        this.group.remove(c.mesh);
+        c.mesh.geometry.dispose();
+      }
+      this._chunks.delete(ck);
+      return;
+    }
+    if (!c) this._chunks.set(ck, (c = { mesh: null, parts: [], sig: '' }));
+    c.parts = parts;
+    c.sig = sig;
+    const P = joinArrays(parts, 'P');
+    if (!P.length) {
+      if (c.mesh) c.mesh.visible = c.mesh.userData.has = false;
+      return;
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(P, 3));
+    g.setAttribute('normal', new THREE.BufferAttribute(joinArrays(parts, 'N'), 3));
+    g.setAttribute('color', new THREE.BufferAttribute(joinArrays(parts, 'C'), 3));
+    g.setAttribute('aGlow', new THREE.BufferAttribute(joinArrays(parts, 'G'), 1));
+    g.computeBoundingSphere();
+    if (!c.mesh) {
+      c.mesh = new THREE.Mesh(g, this.mat);
+      c.mesh.receiveShadow = true;
+      c.mesh.castShadow = false;
+      c.mesh.name = 'infra-chunk';
+      this.group.add(c.mesh);
+    } else {
+      c.mesh.geometry.dispose();
+      c.mesh.geometry = g;
+    }
+    c.mesh.userData.has = true;
+    c.mesh.visible = !this._isFar;
   }
 
   // One power line: its pylons (the town end on its substation) and wires
@@ -933,15 +1231,18 @@ export class InfraRenderer {
     return { ...E.pack(), far: Float32Array.from(far), farC: Float32Array.from(farC), wire: Float32Array.from(wire) };
   }
 
-  // swap in the merged geometry of all the parts
-  _swap(parts) {
+  // the wires and the far-zoom lines of every part drawn (thin lines, one
+  // set each over the whole map), and the list of tunnel mouths drawn
+  _swapLines() {
+    const parts = [];
+    for (const c of this._chunks.values()) for (const p of c.parts) parts.push(p);
     // (every tunnel mouth drawn: the inspector and the probes read these)
     this.portals = [];
     for (const p of parts) if (p.portals) for (const q of p.portals) this.portals.push(q);
     const set = (key, geo, make) => {
       let o = this[key];
       if (!geo) {
-        if (o) o.visible = false;
+        if (o) o.visible = o.userData.has = false;
         return;
       }
       if (!o) {
@@ -953,23 +1254,6 @@ export class InfraRenderer {
       }
       o.userData.has = true;
     };
-    for (const k of ['mesh', 'wires', 'far']) if (this[k]) this[k].userData.has = false;
-    const P = joinArrays(parts, 'P');
-    let mesh = null;
-    if (P.length) {
-      mesh = new THREE.BufferGeometry();
-      mesh.setAttribute('position', new THREE.BufferAttribute(P, 3));
-      mesh.setAttribute('normal', new THREE.BufferAttribute(joinArrays(parts, 'N'), 3));
-      mesh.setAttribute('color', new THREE.BufferAttribute(joinArrays(parts, 'C'), 3));
-      mesh.setAttribute('aGlow', new THREE.BufferAttribute(joinArrays(parts, 'G'), 1));
-      mesh.computeBoundingSphere();
-    }
-    set('mesh', mesh, (g) => {
-      const o = new THREE.Mesh(g, this.mat);
-      o.receiveShadow = true;
-      o.castShadow = false;
-      return o;
-    });
     const lines = (pts, cols) => {
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.BufferAttribute(pts, 3));
@@ -979,6 +1263,23 @@ export class InfraRenderer {
     };
     const wire = joinArrays(parts, 'wire'),
       far = joinArrays(parts, 'far');
+    // (round 37) the tunnel mouths, merged where they stand side by side
+    const mp = this._mouths(parts);
+    let mg = null;
+    if (mp) {
+      mg = new THREE.BufferGeometry();
+      mg.setAttribute('position', new THREE.BufferAttribute(mp.P, 3));
+      mg.setAttribute('normal', new THREE.BufferAttribute(mp.N, 3));
+      mg.setAttribute('color', new THREE.BufferAttribute(mp.C, 3));
+      mg.setAttribute('aGlow', new THREE.BufferAttribute(mp.G, 1));
+      mg.computeBoundingSphere();
+    }
+    set('mouthMesh', mg, (g) => {
+      const o = new THREE.Mesh(g, this.mat);
+      o.receiveShadow = true;
+      o.name = 'infra-mouths';
+      return o;
+    });
     set('wires', wire.length ? lines(wire) : null, (g) => new THREE.LineSegments(g, this.wireMat));
     set('far', far.length ? lines(far, joinArrays(parts, 'farC')) : null, (g) => new THREE.LineSegments(g, this.farMat));
     this._lod(true);
@@ -991,7 +1292,8 @@ export class InfraRenderer {
     if (!force && isFar === this._isFar && wires === this._wiresOn) return;
     this._isFar = isFar;
     this._wiresOn = wires;
-    if (this.mesh) this.mesh.visible = !isFar && this.mesh.userData.has;
+    for (const c of this._chunks.values()) if (c.mesh) c.mesh.visible = !isFar && c.mesh.userData.has;
+    if (this.mouthMesh) this.mouthMesh.visible = !isFar && this.mouthMesh.userData.has;
     if (this.wires) this.wires.visible = !isFar && wires && this.wires.userData.has;
     if (this.far) this.far.visible = isFar && this.far.userData.has;
   }
@@ -1001,28 +1303,29 @@ export class InfraRenderer {
     if (!civ) return;
     const ver = civ.infraVersion || 0;
     const now = performance.now();
-    const edits = this._edits;
+    const C = this._editCells;
     // the ground moved under some tracks: their levels are worked out again
     // and they alone are drawn again (batched: at most every EDIT_GAP, or
     // with the next change to the network)
     let dirty = false;
-    if (edits.length && (ver !== this._ver || now - this._editT > EDIT_GAP)) {
+    if (C.size && (ver !== this._ver || now - this._editT > EDIT_GAP)) {
       this._editT = now;
       const segs = [];
-      for (const s of civ.railSegs?.() || []) if (s.pts && s.pts.length >= 4 && this._touched(this._bounds(s, s.pts, null, 2.5), edits)) segs.push(s);
+      for (const s of civ.railSegs?.() || []) if (s.pts && s.pts.length >= 4 && this._touchedPts(s.pts, C)) segs.push(s);
       if (segs.length) {
         const set = civ.railRelevel?.(segs) || segs;
-        for (const s of set) this._segGeo.delete(s);
+        for (const s of set) (s._redraw = true), (s._gk = null);
         dirty = true;
       }
-      for (const l of this._powGeo.keys())
-        if (this._touched(this._bounds(l, l.pts, l.pylons, 1.5), edits)) {
-          this._powGeo.delete(l);
+      for (const l of civ.powerLines?.() || [])
+        if (this._touchedPts(l.pts, C) || this._touchedPts(l.pylons, C)) {
+          l._redraw = true;
           dirty = true;
         }
-      edits.length = 0;
+      C.clear();
     }
-    if (ver !== this._ver || dirty) {
+    // (round 37: or parts still waiting to be emitted)
+    if (ver !== this._ver || dirty || this._pend) {
       this._ver = ver;
       this._rebuild();
     }

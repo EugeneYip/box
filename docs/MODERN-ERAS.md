@@ -161,6 +161,33 @@ and guideway alike) and run only on lines longer than themselves. A
 ground edit re-levels and redraws only the stretches it touches, at most
 every 2.5 seconds; each stretch and power line keeps its own geometry.
 
+Round 37, ends, bores, junctions and redraws. A line end without a station
+is pulled back along its line to the first point over dry land with the
+bed within half a storey of the ground (its platform's length behind it
+too) when there is one within 4 tiles, else to the nearest on no more
+than a low bank (an embankment's end face is drawn down to the ground),
+never a viaduct's end in mid-air or over the water; a line end at a
+station must meet the platform within a storey (two for a line already
+running). A route whose ends cannot be met is refused like one that
+breaks the grade. A town's core is never lifted onto a viaduct within a
+ramp's length of a line end. A bore shorter than 2 tiles under cover is
+filled like a shallow cut, and no switch stands where the trunk goes under
+within about 6 tiles ahead of it. A stretch that starts along another (a
+branch past its switch, a second line out of the same platform) keeps the
+other's level until its bed is clear of it, so the two decks are one
+surface. Tunnel mouths that face the same way side by side share one
+headwall; wing walls are solid stone a third of the headwall's height
+thick with a pale coping, and a headwall stands a little over the slope
+across its width. The renderer keeps each stretch's geometry by its
+content, so a network laid again reuses every stretch that did not change;
+it emits at most about 10 ms of changed stretches a drawn frame, nearest
+the camera first; and the solid geometry is held in 64-tile chunks, each
+joined and uploaded again only when its own stretches change. A survey
+lays its realm's network at most once a turn: a failed trial puts the
+network back as it was, and only the realms whose lines changed are laid
+again. A train on a line that moved to a guideway, or back to rail, is
+taken off it.
+
 ## Acceptance
 
 - A 600-year Medium run at default speed reaches the Future era in at least
