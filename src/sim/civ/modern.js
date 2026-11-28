@@ -379,12 +379,19 @@ function trackLevels(w, seg, up) {
   // 36's twin decks crossed through each other at an angle at a junction
   const sh = shareLevels(seg, up);
   const m0 = sh ? Math.min(sh.m, n - 2) : 0;
+  let r = null;
+  const k = m0 - 1;
   if (m0 >= 2) {
-    const k = m0 - 1,
-      sub = (a) => a.subarray(k);
+    const sub = (a) => a.subarray(k);
     const ds2 = Float32Array.from(sub(ds));
     ds2[0] = 0;
-    const r = gradeLevels(sub(g), sub(g), sub(f), sub(lo), sub(land), ds2, G, mag ? MAG_MIN : 0.02, TUN_COVER, sh.y[k], f[n - 1]);
+    r = gradeLevels(sub(g), sub(g), sub(f), sub(lo), sub(land), ds2, G, mag ? MAG_MIN : 0.02, TUN_COVER, sh.y[k], f[n - 1]);
+    // (where its own level cannot start from the other's, a bridge's deck
+    // or a bank lifting it there, it keeps its own level all along: it
+    // stepped up from one to the other between two points)
+    if (Math.abs(r.y[0] - sh.y[k]) > 0.03) r = null;
+  }
+  if (r) {
     const ys = new Float32Array(n);
     ys.set(sh.y.subarray(0, k));
     ys.set(r.y, k);
@@ -401,7 +408,7 @@ function trackLevels(w, seg, up) {
     seg.fillMax = r.fill;
     return;
   }
-  const r = gradeLevels(g, g, f, lo, land, ds, G, mag ? MAG_MIN : 0.02, TUN_COVER, y0, f[n - 1]);
+  r = gradeLevels(g, g, f, lo, land, ds, G, mag ? MAG_MIN : 0.02, TUN_COVER, y0, f[n - 1]);
   seg.ys = r.y;
   seg.tun = r.tun;
   seg.gradeX = r.ex;
