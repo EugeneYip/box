@@ -218,12 +218,33 @@ export const war = {
   },
 
   // (round 37) A great hull in the shallows stands out to the nearest open
-  // water as wide as her beam asks (deep: clearance in tiles), straight when
-  // the way is clear, else along the water graph; false when there is none.
+  // water of her own sea as wide as her beam asks (deep: clearance in
+  // tiles; else at least two tiles clear), straight when the way is clear,
+  // else along the water graph; false when there is none (looked for again
+  // a few seconds on).
   _standOut(v, deep) {
     const nav = this.nav;
-    const p = nav.waterNear(v.x, v.z, 16, deep);
-    if (!p || nav.comp(p.x, p.z) !== nav.comp(v.x, v.z)) return false;
+    const m = v.mission;
+    const now = this.game.time.total;
+    if (m.standT > now) return false;
+    m.standT = now + 4;
+    const comp = nav.comp(v.x, v.z);
+    let p = null;
+    for (const c of [deep, 2]) {
+      const L = [];
+      const cx = Math.floor(v.x),
+        cz = Math.floor(v.z);
+      for (let dz = -20; dz <= 20; dz++)
+        for (let dx = -20; dx <= 20; dx++) {
+          const d2 = dx * dx + dz * dz;
+          if (d2 > 400 || nav.clearAt(cx + dx + 0.5, cz + dz + 0.5) < c) continue;
+          L.push([d2, cx + dx + 0.5, cz + dz + 0.5]);
+        }
+      L.sort((a, b) => a[0] - b[0]);
+      for (let i = 0; i < L.length && i < 24 && !p; i++) if (nav.comp(L[i][1], L[i][2]) === comp) p = { x: L[i][1], z: L[i][2] };
+      if (p) break;
+    }
+    if (!p) return false;
     const path = nav.los(v.x, v.z, p.x, p.z, 0) ? [v.x, v.z, p.x, p.z] : nav.findPath(v.x, v.z, p.x, p.z, { big: false });
     if (!path) return false;
     v.target = null;
