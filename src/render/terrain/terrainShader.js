@@ -867,6 +867,14 @@ vec3 bumpPerturb(vec3 pos, vec3 n, float H) {
   vec3 dpy = dFdy(pos);
   float dhx = dFdx(H);
   float dhy = dFdy(H);
+  // (round 37) the bump height steps at the edge of a paved tile, a square
+  // or a lawn plot (per-tile masks): in a pixel quad across that tile line
+  // the step read as a steep slope and drew a dotted dark seam along every
+  // square, street and plot edge (and round the light plot patches on the
+  // hillsides). Across a tile line the slope is capped to a gentle one.
+  vec2 tcx = abs(dFdx(floor(pos.xz))), tcy = abs(dFdy(floor(pos.xz)));
+  if (tcx.x + tcx.y > 0.5) dhx = clamp(dhx, -0.3 * length(dpx), 0.3 * length(dpx));
+  if (tcy.x + tcy.y > 0.5) dhy = clamp(dhy, -0.3 * length(dpy), 0.3 * length(dpy));
   vec3 r1 = cross(dpy, n);
   vec3 r2 = cross(n, dpx);
   float det = dot(dpx, r1);
