@@ -163,11 +163,12 @@ export const land = {
       return Math.abs(x - sx) + Math.abs(y - sy) <= 3 || Math.abs(x - gx) + Math.abs(y - gy) <= 3;
     };
     // (a town's square and parade pad only where there is no other way:
-    // round 37, a hundred road tiles round it rather than one across it;
-    // the streets beside it, inside the paving round the hall door, a little
+    // round 37, closed on the first search, and open at a hundred road tiles
+    // a tile on a second only when the first finds no way round; the
+    // streets beside it, inside the paving round the hall door, a little
     // dear; the open ground by either end dear, so a cart keeps to the
     // streets out of town instead of cutting over the lawns beside them)
-    const SQ = 40;
+    let SQ = Infinity;
     const sqr = civ.keepClear?.length === use?.length ? civ.keepClear : null;
     const street = (i) => (sqr && sqr[i] ? SQ : kc && kc[i] ? 3 : 0.4);
     const roadsOnly = use
@@ -198,7 +199,11 @@ export const land = {
       };
       // (5000 nodes: a realm's road network and a little round it; a pair
       // with no road between them is refused, and remembered a while)
-      const q = civPath(w, sx, sy, gx, gy, motorCost, 5000, 0.4);
+      let q = civPath(w, sx, sy, gx, gy, motorCost, 5000, 0.4);
+      if (!reaches(q) && sqr) {
+        SQ = 40;
+        q = civPath(w, sx, sy, gx, gy, motorCost, 5000, 0.4);
+      }
       const open = (r) => r.some((i) => use[i] !== USE.ROAD && !nearEnds(i));
       if (reaches(q) && this._closeGaps(q, sy * w.w + sx)) {
         p = q;
@@ -210,13 +215,21 @@ export const land = {
       }
     } else {
       p = roadsOnly ? civPath(w, sx, sy, gx, gy, roadsOnly, 9000, 0.4) : null;
+      if (!reaches(p) && roadsOnly && sqr) {
+        SQ = 40;
+        p = civPath(w, sx, sy, gx, gy, roadsOnly, 9000, 0.4);
+      }
       if (!reaches(p)) p = null;
+      // (round 37) the few open tiles it crosses by either end (between the
+      // street beside the square and the road out) are laid as road, where
+      // they may be, as a truck's are: carts cut over the lawn there
+      else this._closeGaps(p, sy * w.w + sx);
     }
     // (across country, round 37: round a town's square and the paving by its
     // hall door too, as on the roads; carts took the straight line over them)
     const country = (i) => {
       const c = base(i);
-      return c === Infinity ? c : c + (sqr && sqr[i] ? SQ : kc && kc[i] ? 3 : 0);
+      return c === Infinity ? c : c + (sqr && sqr[i] ? 40 : kc && kc[i] ? 3 : 0);
     };
     if (!p && !motor && Math.hypot(gx - sx, gy - sy) < maxNodes / 60) p = civPath(w, sx, sy, gx, gy, country, maxNodes, 0.75);
     let path = null;
