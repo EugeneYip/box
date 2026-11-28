@@ -41,18 +41,21 @@ uniform float uTime;
 uniform float uDash;
 uniform float uDashSpeed;
 uniform float uDuty;
+uniform vec4 uBand;
 varying float vSide;
 varying float vU;
 void main() {
+  // the band's profile across: a solid core (uBand.xy: where it starts and
+  // ends fading), a soft glow (uBand.z), the core whitened by uBand.w
   float s = abs(vSide);
-  float core = 1.0 - smoothstep(0.18, 0.5, s);
-  float glow = (1.0 - smoothstep(0.3, 1.0, s)) * 0.42;
+  float core = 1.0 - smoothstep(uBand.x, uBand.y, s);
+  float glow = (1.0 - smoothstep(0.3, 1.0, s)) * uBand.z;
   float a = max(core, glow);
   if (uDash > 0.0) {
     float f = fract(vU * uDash - uTime * uDashSpeed);
     a *= smoothstep(0.0, 0.04, f) * (1.0 - smoothstep(uDuty - 0.04, uDuty, f));
   }
-  vec3 col = mix(uColor, vec3(1.0), core * 0.35);
+  vec3 col = mix(uColor, vec3(1.0), core * uBand.w);
   gl_FragColor = vec4(col, a * uOpacity);
   if (gl_FragColor.a < 0.003) discard;
   #include <colorspace_fragment>
@@ -103,6 +106,7 @@ function ringMaterial(occluded) {
       uDash: { value: 0 },
       uDashSpeed: { value: 0 },
       uDuty: { value: 0.6 },
+      uBand: { value: new THREE.Vector4(0.18, 0.5, 0.42, 0.35) },
     },
     transparent: true,
     depthWrite: false,
@@ -223,9 +227,19 @@ class GroundLoop {
     this.px = new Float32Array(n);
     this.pz = new Float32Array(n);
     this.lit = false; // dims with the scene's light (markerLight)
+    this.over = false; // drawn over everything (no faint hidden part)
+  }
+  // (round 37) drawn over buildings and hills, whole, in its own profile
+  // (band: core start, core end, glow, whitening; see RING_FS)
+  overlay(band) {
+    this.over = true;
+    this.front.material.depthTest = false;
+    this.front.material.uniforms.uBand.value.set(...band);
+    this.back.visible = false;
   }
   set visible(v) {
-    this.front.visible = this.back.visible = v;
+    this.front.visible = v;
+    this.back.visible = v && !this.over;
   }
   get visible() {
     return this.front.visible;
@@ -497,6 +511,10 @@ export class BrushCursor {
     this.color = new THREE.Color();
     this.white = new THREE.Color(1, 1, 1);
     this.gold = new THREE.Color('#fbe3a6');
+    // (round 37) a bus route: saturated amber gold over a dark casing (the
+    // pale gold read as the cream centre line of the streets it runs along)
+    this.routeGold = new THREE.Color('#ffb21a');
+    this.routeCase = new THREE.Color('#2a1c08');
     this._tintFor = null;
     this.xray = {};
     for (const k of ['figure', 'beast']) {
@@ -579,20 +597,39 @@ export class BrushCursor {
     const stops = pts ? bus.mission.stops : null;
     const n = pts ? pts.length / 2 : 0;
     if (n >= 2) {
+      // (round 37) a solid amber line on a dark casing, drawn over the
+      // buildings and hills along it, about 7 and 13 px wide
       if (!this.route || this.route.n !== n) {
         this.route?.dispose();
+        this.routeBack?.dispose();
+        this.routeBack = new GroundLoop(g, n, 987);
+        this.routeBack.lit = true;
+        this.routeBack.overlay([0.72, 0.96, 0, 0]);
         this.route = new GroundLoop(g, n, 989);
         this.route.lit = true;
+        this.route.overlay([0.5, 0.8, 0.22, 0.06]);
       }
-      const R = this.route;
-      for (let i = 0; i < n; i++) {
-        R.px[i] = pts[i * 2];
-        R.pz[i] = pts[i * 2 + 1];
+      const T = g.cameraRig.target;
+      const ppx = this.pxAt(T.x, T.y, T.z);
+      for (const R of [this.routeBack, this.route]) {
+        for (let i = 0; i < n; i++) {
+          R.px[i] = pts[i * 2];
+          R.pz[i] = pts[i * 2 + 1];
+        }
       }
-      R.build(Math.max(0.07, lineW * 1.15), lift * 0.9);
-      R.style(this.gold, 0.95, this.t, n / 1.2, 0.25, 0.6, 0.4);
-      R.visible = true;
-    } else if (this.route) this.route.visible = false;
+      this.routeBack.build(Math.max(0.12, 13 * ppx), lift * 0.85);
+      this.routeBack.style(this.routeCase, 0.8, this.t);
+      this.route.build(Math.max(0.07, 7 * ppx), lift * 0.9);
+      this.route.style(this.routeGold, 1, this.t);
+      this.routeBack.visible = this.route.visible = true;
+    } else if (this.route) this.routeBack.visible = this.route.visible = false;
+    // (round 37) a bus newly picked: the camera takes in its whole loop and
+    // every stop (2 of 5 stop names were in view), once, and never while it
+    // follows something (the follow camera keeps its own framing)
+    if (bus !== this._loopBus) {
+      this._loopBus = bus;
+      if (n >= 2 && !g.cameraRig.follow) this._frameLoop(pts);
+    }
     const next = stops && bus.mission.goal?.at === 'stop' ? bus.mission.goal.i : null;
     const cam = g.cameraRig.camera;
     for (let j = 0; j < Math.max(this.stopRings.length, stops?.length || 0); j++) {
@@ -651,6 +688,28 @@ export class BrushCursor {
       tag.visible = true;
       void cam;
     }
+  }
+
+  // ease the camera to take in a loop of points [x, z, ...] (its yaw kept)
+  _frameLoop(pts) {
+    const rig = this.game.cameraRig;
+    let x0 = Infinity,
+      x1 = -Infinity,
+      z0 = Infinity,
+      z1 = -Infinity;
+    for (let i = 0; i < pts.length; i += 2) {
+      x0 = Math.min(x0, pts[i]);
+      x1 = Math.max(x1, pts[i]);
+      z0 = Math.min(z0, pts[i + 1]);
+      z1 = Math.max(z1, pts[i + 1]);
+    }
+    const cam = rig.camera;
+    const tanH = Math.tan(((cam.fov || 38) * Math.PI) / 360);
+    const asp = cam.aspect || 1;
+    // the loop's radius, with room for the stop names over it
+    const R = Math.hypot(x1 - x0, z1 - z0) / 2 + 1.5;
+    const d = THREE.MathUtils.clamp((R / (tanH * Math.min(1, asp))) * 1.05, 14, 70);
+    rig.set((x0 + x1) / 2, (z0 + z1) / 2, d, THREE.MathUtils.radToDeg(rig.goal.yaw), null, false);
   }
 
   update(dt) {

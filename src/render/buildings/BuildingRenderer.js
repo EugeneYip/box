@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import { craneGeometry } from './archetypes.js';
 import { buildArchetype, foundation, scaffold, ruin, wallPost, wallArm, lampPost, streetLamp, bastionGeometry, frameFor, materialPile, proxyGeometry, PAL, WALL_H } from './archetypes.js';
 import { Labels } from './labels.js';
-import { createBuildingMaterial, createPropMaterial, withCutaway } from './material.js';
+import { createBuildingMaterial, createPropMaterial, withCutaway, INST_TEXELS, CUT_SHARE } from './material.js';
+import { CAM_CUT } from '../../core/CameraRig.js';
 import { emblemAtlas, EMBLEM_IDS, FIELD_IDS } from './emblems.js';
 import { bannerGeometry, bannerMaterial, bladesGeometry, turbineBladesGeometry, boatGeometry, FENCE, scarecrowGeometry, glowTexture, PuffSystem } from './props.js';
 import { TerritoryOverlay } from './TerritoryOverlay.js';
@@ -21,6 +22,8 @@ import { padFlagSpot } from '../units/SquareProps.js';
 // proportions. Design footprints (def.dw x def.dh) size frames, footings,
 // ruins and proxies under the same matrix; def.w x def.h are tiles.
 const BS = BUILDING.scale;
+// floats per instance in a DetailBatch's instance texture
+const IF = INST_TEXELS * 4;
 const PS = PROP.scale;
 // (round 31) street lights stand beside the half-size people: a powered
 // street light about two and a half people tall, a lantern post under two
@@ -164,7 +167,7 @@ class DetailBatch {
     this.nInst = 0; // instance ids handed out (some may be hidden)
     this.n = 0; // instances in use
     this.mesh = null;
-    this.data = null; // 8 floats per instance: colour (rgb_), state
+    this.data = null; // IF floats per instance: colour (rgb_), state, cut (r___)
     this.items = [];
     this.extra = [];
     this.keys = [];
@@ -176,7 +179,7 @@ class DetailBatch {
     this._dDirty = false;
   }
   _texFor(cap) {
-    const size = Math.max(4, Math.ceil(Math.sqrt(cap * 2)));
+    const size = Math.max(4, Math.ceil(Math.sqrt(cap * INST_TEXELS)));
     const data = new Float32Array(size * size * 4);
     if (this.data) data.set(this.data.subarray(0, Math.min(this.data.length, data.length)));
     const tex = new THREE.DataTexture(data, size, size, THREE.RGBAFormat, THREE.FloatType);
@@ -239,9 +242,10 @@ class DetailBatch {
     const mats = m._matricesTexture.image.data;
     for (let q = 0; q < 16; q++) mats[id * 16 + q] = e[q];
     const data = this.data;
-    data[id * 8] = col.r;
-    data[id * 8 + 1] = col.g;
-    data[id * 8 + 2] = col.b;
+    data[id * IF] = col.r;
+    data[id * IF + 1] = col.g;
+    data[id * IF + 2] = col.b;
+    data[id * IF + 8] = 0; // (not cut: a slot handed out again may have been)
     this.items[id] = item;
     this.extra[id] = extra;
     this.keys[id] = key;
@@ -252,6 +256,14 @@ class DetailBatch {
     this._mDirty = true;
     this._dDirty = true;
     return id;
+  }
+  // (round 37) how far one instance is faded out by the close-zoom cutaway
+  // (0..1, sharpened in the shader: material.js CUT_SHARE)
+  setCut(id, c) {
+    const j = id * IF + 8;
+    if (this.data[j] === c) return;
+    this.data[j] = c;
+    this._dDirty = true;
   }
   release(id) {
     if (this.mesh.getVisibleAt(id)) this.mesh.setVisibleAt(id, false);
@@ -530,14 +542,27 @@ export class BuildingRenderer {
     // footing on a slope reads as a retaining wall of stone, not a brown slab
     const fmat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95 });
     fmat.onBeforeCompile = (sh) => {
+      // (round 37) a cut building's footing fades out with it (aCut, see
+      // _applyCut), through the building material's dither
       sh.vertexShader = sh.vertexShader
-        .replace('#include <common>', '#include <common>\nvarying vec3 vFtW;\nvarying vec3 vFtN;\nvarying float vFtTop;')
+        .replace('#include <common>', '#include <common>\n' + CUT_SHARE + '\nattribute float aCut;\nvarying float vFtCut;\nvarying vec3 vFtW;\nvarying vec3 vFtN;\nvarying float vFtTop;')
         .replace(
           '#include <worldpos_vertex>',
-          '#include <worldpos_vertex>\nvFtW = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;\nvFtN = normalize(mat3(modelMatrix * instanceMatrix) * objectNormal);\nvFtTop = (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).y;',
+          '#include <worldpos_vertex>\nvFtCut = cutShare(aCut);\nvFtW = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;\nvFtN = normalize(mat3(modelMatrix * instanceMatrix) * objectNormal);\nvFtTop = (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).y;',
         );
-      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vFtW;\nvarying vec3 vFtN;\nvarying float vFtTop;').replace(
-        '#include <color_fragment>',
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', '#include <common>\nvarying float vFtCut;\nvarying vec3 vFtW;\nvarying vec3 vFtN;\nvarying float vFtTop;')
+        .replace(
+          '#include <clipping_planes_fragment>',
+          `#include <clipping_planes_fragment>
+        if (vFtCut > 0.001) {
+          const float ftBayer[16] = float[16](0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
+          float ftTh = (ftBayer[int(mod(gl_FragCoord.x, 4.0)) + 4 * int(mod(gl_FragCoord.y, 4.0))] + 0.5) / 16.0;
+          if (vFtCut > ftTh || vFtCut > 0.9) discard;
+        }`,
+        )
+        .replace(
+          '#include <color_fragment>',
         `#include <color_fragment>
         {
           float dy = vFtTop - vFtW.y;
@@ -554,7 +579,8 @@ export class BuildingRenderer {
         }`,
       );
     };
-    fmat.customProgramCacheKey = () => 'footing-courses';
+    fmat.customProgramCacheKey = () => 'footing-courses-cut';
+    fgeo.setAttribute('aCut', new THREE.InstancedBufferAttribute(new Float32Array(64), 1));
     this.footing = new THREE.InstancedMesh(fgeo, fmat, 64);
     this.footing.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(64 * 3), 3);
     this.footing.castShadow = false;
@@ -1386,6 +1412,10 @@ export class BuildingRenderer {
         nm.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(cap * 3), 3);
         nm.instanceMatrix.array.set(old.instanceMatrix.array);
         if (old.instanceColor) nm.instanceColor.array.set(old.instanceColor.array);
+        const oc = old.geometry.attributes.aCut;
+        const ncut = new THREE.InstancedBufferAttribute(new Float32Array(cap), 1);
+        ncut.array.set(oc.array.subarray(0, Math.min(oc.array.length, cap)));
+        old.geometry.setAttribute('aCut', ncut);
         nm.castShadow = false;
         nm.receiveShadow = true;
         nm.frustumCulled = false;
@@ -1401,11 +1431,122 @@ export class BuildingRenderer {
     // (round 31) a grey dressed stone, only tinged by the style's own
     this._c.setHex(PAL[style]?.stone2 ?? 0x847c70).lerp(this._fg || (this._fg = new THREE.Color(0x8d8a84)), 0.65);
     this.footing.setColorAt(i, this._c);
+    this._setFootCut(i, 0);
     this._footDirty = true;
     return i;
   }
 
+  // (round 37) The close-zoom cutaway: each building the camera cut
+  // (CAM_CUT.on, eased 0..1) fades out whole: its share is written into every
+  // instance it fills (its models, site pieces and crane) and its footing, so
+  // nothing of it is left standing and nothing of a neighbour is touched; a
+  // faint outline of its plot lies on the ground while it is gone.
+  _applyCut() {
+    const civ = this.game.civ;
+    const prev = this._cutPrev || (this._cutPrev = new Map()); // rec -> share
+    const now = this._cutNow || (this._cutNow = new Map());
+    now.clear();
+    if (civ?._bById)
+      for (const [id, a] of CAM_CUT.on) {
+        const b = civ._bById.get(id);
+        const rec = b && this._recs.get(b);
+        if (rec && !rec.dead) now.set(rec, a);
+      }
+    if (!now.size && !prev.size) {
+      if (this.cutLines) this.cutLines.visible = false;
+      return;
+    }
+    for (const rec of prev.keys()) if (!now.has(rec)) this._cutRec(rec, 0);
+    for (const [rec, a] of now) this._cutRec(rec, a);
+    this._cutPrev = now;
+    this._cutNow = prev;
+    for (const d of this.details) d.flush();
+    this._cutOutline(now);
+  }
+  _cutRec(rec, a) {
+    const L = rec.inst;
+    for (let i = 0; i < L.length; i += 2) L[i].setCut(L[i + 1], a);
+    if (rec.foot >= 0) this._setFootCut(rec.foot, a);
+  }
+  // the faint plot outlines (one line set, draped on the ground)
+  _cutOutline(now) {
+    const world = this.game.world;
+    let L = this.cutLines;
+    const segs = [];
+    for (const [rec, a] of now) {
+      const b = rec.b;
+      // (as sharpened in the shaders: material.js CUT_SHARE)
+      const t = Math.min(1, Math.max(0, (a - 0.25) / 0.5));
+      const k = t * t * (3 - 2 * t);
+      if (!b || k < 0.02) continue;
+      const ins = 0.07;
+      const x0 = b.tx + ins,
+        z0 = b.ty + ins,
+        x1 = b.tx + (b.w || 1) - ins,
+        z1 = b.ty + (b.h || 1) - ins;
+      segs.push([x0, z0, x1, z0, k], [x1, z0, x1, z1, k], [x1, z1, x0, z1, k], [x0, z1, x0, z0, k]);
+    }
+    let nv = 0;
+    for (const s of segs) nv += 2 * Math.max(1, Math.ceil(Math.hypot(s[2] - s[0], s[3] - s[1]) / 0.25));
+    if (!nv) {
+      if (L) L.visible = false;
+      return;
+    }
+    if (!L || L.userData.cap < nv) {
+      const cap = Math.max(512, Math.ceil(nv * 1.5));
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(cap * 3), 3).setUsage(THREE.DynamicDrawUsage));
+      geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(cap * 4), 4).setUsage(THREE.DynamicDrawUsage));
+      if (L) {
+        L.geometry.dispose();
+        L.geometry = geo;
+      } else {
+        L = this.cutLines = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, fog: false }));
+        L.name = 'buildings:cut-outline';
+        L.frustumCulled = false;
+        L.renderOrder = 4;
+        this.group.add(L);
+      }
+      L.userData.cap = cap;
+    }
+    const P = L.geometry.attributes.position.array,
+      C = L.geometry.attributes.color.array;
+    // a pale warm line, dimmer at night
+    const lum = 1 - 0.75 * this.uniforms.uNight.value;
+    let v = 0;
+    const put = (x, z, al) => {
+      P[v * 3] = x;
+      P[v * 3 + 1] = world.surfaceAt(x, z) + 0.03;
+      P[v * 3 + 2] = z;
+      C[v * 4] = 0.98 * lum;
+      C[v * 4 + 1] = 0.9 * lum;
+      C[v * 4 + 2] = 0.72 * lum;
+      C[v * 4 + 3] = al;
+      v++;
+    };
+    for (const [ax, az, bx, bz, k] of segs) {
+      const n = Math.max(1, Math.ceil(Math.hypot(bx - ax, bz - az) / 0.25));
+      const al = 0.4 * k;
+      for (let i = 0; i < n; i++) {
+        put(ax + ((bx - ax) * i) / n, az + ((bz - az) * i) / n, al);
+        put(ax + ((bx - ax) * (i + 1)) / n, az + ((bz - az) * (i + 1)) / n, al);
+      }
+    }
+    L.geometry.setDrawRange(0, v);
+    L.geometry.attributes.position.needsUpdate = true;
+    L.geometry.attributes.color.needsUpdate = true;
+    L.visible = true;
+  }
+
+  _setFootCut(i, c) {
+    const a = this.footing.geometry.attributes.aCut;
+    if (a.array[i] === c) return;
+    a.array[i] = c;
+    a.needsUpdate = true;
+  }
+
   _footRelease(i) {
+    this._setFootCut(i, 0);
     this.footing.setMatrixAt(i, _zeroM);
     this._footSlots.push(i);
     this._footDirty = true;
@@ -1452,14 +1593,14 @@ export class BuildingRenderer {
 
   // Per-instance state: damage, burning, seed and the clip height of a
   // building rising in its scaffolding, and the shader flags. A DetailBatch
-  // keeps it in its instance texture (texel 1 of 2).
+  // keeps it in its instance texture (texel 1 of INST_TEXELS).
   _writeState(d, id) {
     const arr = d.data;
     const b = d.items[id];
-    const k = id * 8 + 4;
+    const k = id * IF + 4;
     d._dDirty = true;
     if (!b) {
-      arr[id * 8 + 3] = 0;
+      arr[id * IF + 3] = 0;
       arr[k] = 0;
       arr[k + 1] = 0;
       arr[k + 2] = 0.37;
@@ -1480,7 +1621,7 @@ export class BuildingRenderer {
       clipY = ex?.wall ? -0.5 + (WALL_H + 0.65) * b.progress : -0.1 + (maxY + 0.15) * t;
     } else if (b.constructing && ex?.wall) clipY = -0.5 + (WALL_H + 0.65) * b.progress;
     arr[k + 3] = clipY;
-    arr[id * 8 + 3] = this._flags(b);
+    arr[id * IF + 3] = this._flags(b);
   }
 
   // the same state for a far-zoom proxy Batch (its iState attribute)
@@ -2069,7 +2210,12 @@ export class BuildingRenderer {
     this.uniforms.uTime.value = this.t;
     const day = env.daylight ?? 1;
     const night = 1 - THREE.MathUtils.smoothstep(day, 0.12, 0.62);
-    this.uniforms.uNight.value += (night - this.uniforms.uNight.value) * Math.min(1, dt * 3 + (this._first ? 0 : 1));
+    // (round 37) a jump in the time of day (the clock set from 22:00 to
+    // 11:00, a skip) takes the windows with it at once: easing over a few
+    // slow frames left Atomic towers at noon with night-dark walls and lit
+    // window cells; dusk and dawn still ease
+    const jump = Math.abs(night - this.uniforms.uNight.value) > 0.25;
+    this.uniforms.uNight.value += (night - this.uniforms.uNight.value) * Math.min(1, dt * 3 + (this._first && !jump ? 0 : 1));
     this._first = true;
     this.uniforms.uWind.value = env.wind?.strength ?? 0.35;
     // roofs whiten through the winter (and in a snowfall), as the fields do
@@ -2137,6 +2283,7 @@ export class BuildingRenderer {
     if (this._full) this._focusTown();
     this._full = false;
     this._work(budget - (performance.now() - tw));
+    this._applyCut();
     this._applyLod();
     if (this._far && this._proxyDirty && now - this._proxyT > 1) this._rebuildProxies();
     // the camera's view this frame, widened by two tiles (for the props and

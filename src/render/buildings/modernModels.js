@@ -572,8 +572,12 @@ const BUILD = {
   },
   _tower(g, P, level, v) {
     const e = P.era;
-    const glassC = e >= 7 ? [0x7cc4d4, 0x9ad4b8, 0xb4c4cc, 0x74b8cc, 0xa8d8c4, 0xd4c8a4][v] : e >= 6 ? [0x5f8fb8, 0x8a6e4e, 0x4c5a66, 0x4f8c8a, 0x9aa8b4, 0x6a7c58][v] : [0x6a8aa4, 0x8a7a64, 0x6a7e8e, 0x7894a8, 0x8c8478, 0x5e7488][v];
-    const frameC = e >= 7 ? [0xf2f4f0, 0xf2f4f0, 0xe8ece8, 0xf2f4f0, 0xf6f4ec, 0xe4dccb][v] : e >= 6 ? [0x9aa4ac, 0x3e3a36, 0xb8bec4, 0xd8d4cc, 0x6e767e, P.trim][v] : [0xb4ab98, 0x9a8e7a, 0xc4bcaa, 0xa49a88, 0xc8b89a, P.trim][v];
+    // (round 37: the Atomic slender tower's bronze glass between its near-
+    // black frame read at noon, on the shaded side, as rows of lit windows;
+    // it is dark smoked blue glass in a bronze frame now: dark panes between
+    // lighter mullions, which read as glass by day)
+    const glassC = e >= 7 ? [0x7cc4d4, 0x9ad4b8, 0xb4c4cc, 0x74b8cc, 0xa8d8c4, 0xd4c8a4][v] : e >= 6 ? [0x5f8fb8, 0x4a5e72, 0x4c5a66, 0x4f8c8a, 0x9aa8b4, 0x6a7c58][v] : [0x6a8aa4, 0x8a7a64, 0x6a7e8e, 0x7894a8, 0x8c8478, 0x5e7488][v];
+    const frameC = e >= 7 ? [0xf2f4f0, 0xf2f4f0, 0xe8ece8, 0xf2f4f0, 0xf6f4ec, 0xe4dccb][v] : e >= 6 ? [0x9aa4ac, 0x7a6450, 0xb8bec4, 0xd8d4cc, 0x6e767e, P.trim][v] : [0xb4ab98, 0x9a8e7a, 0xc4bcaa, 0xa49a88, 0xc8b89a, P.trim][v];
     const shaft = (s, sd, y0, h) => {
       g.box(0, y0, 0, s, h, sd, glassC, { glow: 1, top: frameC });
       mullions(g, 0, y0, 0, s, sd, h, v === 2 ? 0.22 : 0.16, frameC, 0.03);

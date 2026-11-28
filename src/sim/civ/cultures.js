@@ -107,16 +107,24 @@ export function personName(culture, sex, rng) {
   return joinName(pick(rng, s[0]), pick(rng, s[1]));
 }
 
+// Joined names that are places in well-known fiction (books, films, games):
+// the generator never hands them out, so every town name stays our own
+// ("Isengard" came up in a Hrimfolk realm).
+const FICTIONAL = new Set(['Isengard', 'Kaldheim', 'Stormheim', 'Oakvale', 'Thornfield', 'Wrenhaven', 'Cloverfield', 'Millhaven']);
+
 export function placeName(culture, rng, used = null) {
   const c = CULTURES[baseCulture(culture)];
   for (let k = 0; k < 30; k++) {
     const n = joinName(pick(rng, c.syl.place[0]), pick(rng, c.syl.place[1]));
+    if (FICTIONAL.has(n)) continue;
     if (!used || !used.has(n)) {
       used?.add(n);
       return n;
     }
   }
-  return joinName(pick(rng, c.syl.place[0]), pick(rng, c.syl.place[1])) + ' ' + rng.int(2, 9);
+  let n = joinName(pick(rng, c.syl.place[0]), pick(rng, c.syl.place[1]));
+  while (FICTIONAL.has(n)) n = joinName(pick(rng, c.syl.place[0]), pick(rng, c.syl.place[1]));
+  return n + ' ' + rng.int(2, 9);
 }
 
 // World Map worlds: when no real place name is left near a new village, a

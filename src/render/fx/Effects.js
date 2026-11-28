@@ -72,6 +72,11 @@ void main() {
 #include <colorspace_fragment>
 }`;
 
+// everyday effects raised by the simulation (see emit) and how many of them
+// a second of the fx clock may show
+const ROUTINE = new Set(['dust', 'death', 'hit', 'blood', 'heal', 'leaves', 'build', 'snowpuff']);
+const ROUTINE_RATE = 24;
+
 export class Effects {
   constructor(game) {
     this.game = game;
@@ -80,6 +85,7 @@ export class Effects {
     this.fireBudget = 1;
     this.saver = false;
     this.tinyOK = true;
+    this._routine = ROUTINE_RATE; // everyday puffs left this second (see emit)
     this.P = new ParticleSpec();
     this.wind = { x: 0, z: 0 };
     this._tmpC = new THREE.Color();
@@ -135,6 +141,18 @@ export class Effects {
   emit(type, pos, opts = {}) {
     const fn = this.presets[type];
     if (!fn || !pos) return;
+    // (round 37) the small puffs of everyday life (a step's or a tilled
+    // row's dust, a hit, a death, a heal, a few leaves) share a budget that
+    // refills on the fx clock (ROUTINE_RATE a second). The simulation raises
+    // them at its own pace, in real time, while the particles age on the fx
+    // clock, which moves at most 0.1 s a drawn frame: under slow frames (one
+    // in five seconds under software GL) fifty times the dust piled up over
+    // the streets and roofs as brown smudges (an Embers age tints them
+    // orange). At a normal frame rate the budget is never reached.
+    if (ROUTINE.has(type) && (opts.scale ?? 1) < 1 && !(opts.duration > 0)) {
+      if (this._routine < 1) return;
+      this._routine -= 1;
+    }
     try {
       const p = { x: pos.x, y: pos.y ?? this.game.world.surfaceAt(pos.x, pos.z), z: pos.z };
       if (opts.duration > 0) {
@@ -330,6 +348,7 @@ export class Effects {
       dt *= 0.04;
     }
     this.time += dt;
+    this._routine = Math.min(ROUTINE_RATE, this._routine + dt * ROUTINE_RATE);
     const U = this.uniforms;
     U.uTime.value = this.time;
     const w = g.env.wind || { x: 0, z: 0, strength: 0 };
