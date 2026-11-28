@@ -1145,7 +1145,12 @@ export const missions = {
     const kid = v.kingdom;
     const nav = this.nav;
     let set = this.charts.get(kid);
-    if (!set) this.charts.set(kid, (set = new Set()));
+    if (!set) {
+      // (round 37) a fallen realm's charts go with it (by Year 600 thirty
+      // realms' sets held 41 000 cells, most of them for realms long gone)
+      for (const k of this.charts.keys()) if (!this.kingdom(k)?.alive) this.charts.delete(k);
+      this.charts.set(kid, (set = new Set()));
+    }
     const before = set.size;
     const R = 6;
     const c0 = nav.cellAt(v.x, v.z);
