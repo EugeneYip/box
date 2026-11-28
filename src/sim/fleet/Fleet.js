@@ -494,7 +494,11 @@ export class Fleet {
     // outside the road limit (round 28: rail and the trucks shared three
     // quarters of the limit, the trucks and road units held 30 of its 46
     // places and 12 trains ran on 31 lines at Year 600)
-    if (g === 'rail') return t.rail < Math.min(this._railQuota(), Math.max(4, Math.round(L0 * 0.4)));
+    // (round 37) the quota alone (within the whole land limit, as a last
+    // bound): two fifths of the land limit capped it below the quota on a
+    // long network (24 trains against a quota of 27 on 36 lines at Year 600,
+    // and 183 of 313 requests refused for land room)
+    if (g === 'rail') return t.rail < Math.min(this._railQuota(), Math.max(4, L0));
     const road = t.all - t.rail;
     const over = road >= Math.ceil(L * 1.06);
     if (g === 'aid') return !over && t.aid < Math.max(4, Math.round(L0 * 0.12));
