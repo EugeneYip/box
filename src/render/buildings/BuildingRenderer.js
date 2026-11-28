@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { craneGeometry } from './archetypes.js';
 import { buildArchetype, foundation, scaffold, ruin, wallPost, wallArm, lampPost, streetLamp, bastionGeometry, frameFor, materialPile, proxyGeometry, PAL, WALL_H } from './archetypes.js';
 import { Labels } from './labels.js';
-import { createBuildingMaterial, createPropMaterial, withCutaway, INST_TEXELS } from './material.js';
+import { createBuildingMaterial, createPropMaterial, withCutaway, INST_TEXELS, CUT_SHARE } from './material.js';
 import { CAM_CUT } from '../../core/CameraRig.js';
 import { emblemAtlas, EMBLEM_IDS, FIELD_IDS } from './emblems.js';
 import { bannerGeometry, bannerMaterial, bladesGeometry, turbineBladesGeometry, boatGeometry, FENCE, scarecrowGeometry, glowTexture, PuffSystem } from './props.js';
@@ -546,10 +546,10 @@ export class BuildingRenderer {
       // _applyCut), through the building material's dither
       sh.uniforms.uCut = CAM_CUT.uCut;
       sh.vertexShader = sh.vertexShader
-        .replace('#include <common>', '#include <common>\nuniform float uCut;\nattribute float aCut;\nvarying float vFtCut;\nvarying vec3 vFtW;\nvarying vec3 vFtN;\nvarying float vFtTop;')
+        .replace('#include <common>', '#include <common>\nuniform float uCut;\n' + CUT_SHARE + '\nattribute float aCut;\nvarying float vFtCut;\nvarying vec3 vFtW;\nvarying vec3 vFtN;\nvarying float vFtTop;')
         .replace(
           '#include <worldpos_vertex>',
-          '#include <worldpos_vertex>\nvFtCut = aCut * uCut;\nvFtW = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;\nvFtN = normalize(mat3(modelMatrix * instanceMatrix) * objectNormal);\nvFtTop = (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).y;',
+          '#include <worldpos_vertex>\nvFtCut = cutShare(aCut * uCut);\nvFtW = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;\nvFtN = normalize(mat3(modelMatrix * instanceMatrix) * objectNormal);\nvFtTop = (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).y;',
         );
       sh.fragmentShader = sh.fragmentShader
         .replace('#include <common>', '#include <common>\nvarying float vFtCut;\nvarying vec3 vFtW;\nvarying vec3 vFtN;\nvarying float vFtTop;')
@@ -1477,7 +1477,9 @@ export class BuildingRenderer {
     const segs = [];
     for (const [rec, a] of now) {
       const b = rec.b;
-      const k = a * cut;
+      // (as sharpened in the shaders: material.js CUT_SHARE)
+      const t = Math.min(1, Math.max(0, (a * cut - 0.25) / 0.5));
+      const k = t * t * (3 - 2 * t);
       if (!b || k < 0.02) continue;
       const ins = 0.07;
       const x0 = b.tx + ins,
