@@ -36,6 +36,10 @@ const ICE = TILE.ICE; // frozen water: no keel crosses it
 
 const DMAX = 12;
 const SQ2 = Math.SQRT2;
+// (round 37) cells a voyage search may expand before it is made again along
+// a coarse corridor (_coarseRoute); the answer of a search that ran out
+const VOY_CAP = 4000;
+const CAPPED = -1;
 const DIRS = [
   [1, 0],
   [1, 1],
@@ -150,26 +154,35 @@ export class WaterNav {
     this._dirty = null;
   }
 
+  // (round 37) Patches are kept apart unless they overlap or nearly touch:
+  // the sea ice of the two poles, marked together, made one box the height
+  // of the map, and the graph was built again from scratch (85-95 ms of
+  // work on the Vast World Map). Each update() makes one patch.
   markDirty(r) {
     if (!r) return;
-    const d = this._dirty;
-    if (!d) this._dirty = { x0: r.x0, y0: r.y0, x1: r.x1, y1: r.y1 };
-    else {
-      d.x0 = Math.min(d.x0, r.x0);
-      d.y0 = Math.min(d.y0, r.y0);
-      d.x1 = Math.max(d.x1, r.x1);
-      d.y1 = Math.max(d.y1, r.y1);
+    const L = this._dirty || (this._dirty = []);
+    let m = { x0: r.x0, y0: r.y0, x1: r.x1, y1: r.y1 };
+    const pad = DMAX * 2;
+    for (let merged = true; merged; ) {
+      merged = false;
+      for (let i = L.length - 1; i >= 0; i--) {
+        const d = L[i];
+        if (m.x0 > d.x1 + pad || d.x0 > m.x1 + pad || m.y0 > d.y1 + pad || d.y0 > m.y1 + pad) continue;
+        m = { x0: Math.min(m.x0, d.x0), y0: Math.min(m.y0, d.y0), x1: Math.max(m.x1, d.x1), y1: Math.max(m.y1, d.y1) };
+        L.splice(i, 1);
+        merged = true;
+      }
     }
+    L.push(m);
   }
   get dirty() {
-    return !!this._dirty;
+    return !!(this._dirty && this._dirty.length);
   }
 
   // Patch the graph around the last terrain edits. Returns the touched rect.
   update() {
-    const r = this._dirty;
+    const r = this._dirty?.shift();
     if (!r) return null;
-    this._dirty = null;
     const W = this.W,
       H = this.H,
       C = this.C;
@@ -182,17 +195,60 @@ export class WaterNav {
       y0 = Math.max(0, r.y0 - DMAX),
       x1 = Math.min(W - 1, r.x1 + DMAX),
       y1 = Math.min(H - 1, r.y1 + DMAX);
+    // (round 37) cells where water came or went, or a node moved: links are
+    // made again only next to them (a whole band of the Vast World Map's sea
+    // ice re-made every link across the map: up to 0.9 s in one update)
+    const n = this.cw * this.ch;
+    if (!this._chgAll || this._chgAll.length !== n) this._chgAll = new Uint8Array(n);
+    this._chg = globalThis.__navEdgesAll ? null : this._chgAll;
+    if (this._chg) this._chg.fill(0);
     this._distRect(x0, y0, x1, y1, r);
     const cx0 = Math.max(0, Math.floor(x0 / C) - 1),
       cy0 = Math.max(0, Math.floor(y0 / C) - 1),
       cx1 = Math.min(this.cw - 1, Math.floor(x1 / C) + 1),
       cy1 = Math.min(this.ch - 1, Math.floor(y1 / C) + 1);
+    // the cells whose links are made again (the touched cells and their neighbours)
+    const E = { x0: Math.max(0, cx0 - 1), y0: Math.max(0, cy0 - 1), x1: Math.min(this.cw - 1, cx1 + 1), y1: Math.min(this.ch - 1, cy1 + 1) };
+    const snap = globalThis.__navFullComp ? null : this._snapEdges(E);
     this._cells(cx0, cy0, cx1, cy1);
-    // edges of the touched cells and their neighbours
-    this._edgesIn(Math.max(0, cx0 - 1), Math.max(0, cy0 - 1), Math.min(this.cw - 1, cx1 + 1), Math.min(this.ch - 1, cy1 + 1));
-    this._components();
+    this._edgesIn(E.x0, E.y0, E.x1, E.y1, this._chg);
+    this._chg = null;
+    // (round 37) the water bodies are labelled again only round the patch
+    // (a whole relabel took 50-60 ms on Medium and up to half a second on
+    // the Vast World Map in the round-36 profiles, every few seconds while
+    // the sea ice formed); a body the patch may have cut in two, where a
+    // short search cannot tell, is labelled again whole
+    if (!snap || !this._componentsPatch(E, snap)) this._components();
+    this._dropRoutes(E);
     this.version++;
     return { x0, y0, x1, y1 };
+  }
+
+  // The links and water nodes of a cell window, kept before it is patched.
+  _snapEdges(E) {
+    const cw = this.cw;
+    const bw = E.x1 - E.x0 + 1,
+      bh = E.y1 - E.y0 + 1;
+    const e = new Uint8Array(bw * bh),
+      wet = new Uint8Array(bw * bh);
+    for (let y = 0; y < bh; y++)
+      for (let x = 0; x < bw; x++) {
+        const c = (E.y0 + y) * cw + E.x0 + x;
+        e[y * bw + x] = this.edges[c];
+        wet[y * bw + x] = this.ntile[c] >= 0 ? 1 : 0;
+      }
+    return { e, wet, bw };
+  }
+
+  // Cached routes that pass through a patched window (or found no way) are
+  // dropped; the rest stand (round 37: every patch threw all of them away,
+  // and on the Vast World Map the sea ice patches the graph every few
+  // seconds, so ships searched the same oceans again and again).
+  _dropRoutes(E) {
+    const AC = this._acache;
+    if (!AC || this._acacheV !== this.version) return;
+    for (const [k, r] of AC) if (!r || (r.bx1 >= E.x0 && r.bx0 <= E.x1 && r.by1 >= E.y0 && r.by0 <= E.y1)) AC.delete(k);
+    this._acacheV = this.version + 1;
   }
 
   // Chamfer distance to land (tiles), capped at DMAX. With `inner`, the pass
@@ -249,8 +305,18 @@ export class WaterNav {
       iy1 = Math.min(y1, inner.y1 + DMAX);
     }
     const d = this.dist;
+    const chg = this._chg;
+    const C = this.C,
+      cw = this.cw;
     for (let y = iy0; y <= iy1; y++)
-      for (let x = ix0; x <= ix1; x++) d[y * W + x] = f[(y - y0) * bw + x - x0];
+      for (let x = ix0; x <= ix1; x++) {
+        const i = y * W + x;
+        const v = f[(y - y0) * bw + x - x0];
+        // (round 37) the cells where a tile turned to water or to land: only
+        // links near them can have changed (_edgesIn)
+        if (chg && d[i] > 0 !== v > 0) chg[((y / C) | 0) * cw + ((x / C) | 0)] = 1;
+        d[i] = v;
+      }
   }
 
   // One node per cell, on the most open tile of its largest water patch.
@@ -311,6 +377,7 @@ export class WaterNav {
             }
           }
         void label;
+        if (this._chg && this.ntile[c] !== bestTile) this._chg[c] = 1;
         this.ntile[c] = bestTile;
         if (bestTile >= 0) {
           this.nx[c] = (bestTile % W) + 0.5;
@@ -320,7 +387,11 @@ export class WaterNav {
       }
   }
 
-  _edgesIn(cx0, cy0, cx1, cy1) {
+  // chg (round 37): only the links of a cell pair where either cell, or for
+  // a diagonal link either cell it passes between, is marked are made again;
+  // the rest keep their bits (nothing they run over changed)
+  _edgesIn(cx0, cy0, cx1, cy1, chg = null) {
+    if (chg) return this._edgesChanged(cx0, cy0, cx1, cy1, chg);
     const cw = this.cw,
       ch = this.ch;
     void ch;
@@ -355,16 +426,66 @@ export class WaterNav {
       }
   }
 
+  _edgesChanged(cx0, cy0, cx1, cy1, chg) {
+    const cw = this.cw;
+    const edges = this.edges,
+      ntile = this.ntile;
+    for (let cy = cy0; cy <= cy1; cy++)
+      for (let cx = cx0; cx <= cx1; cx++) {
+        const c = cy * cw + cx;
+        for (let k = 0; k < 8; k++) {
+          const o = this._nb(cx, cy, k);
+          if (o < 0) continue;
+          // a pair inside the window is seen from both ends: take it once
+          const ox = o % cw,
+            oy = (o / cw) | 0;
+          const oIn = ox >= cx0 && ox <= cx1 && oy >= cy0 && oy <= cy1;
+          if (oIn && o < c) continue;
+          let hit = chg[c] || chg[o];
+          if (!hit && k & 1) {
+            // a diagonal link runs between the two other cells of its square
+            const a = this._nb(cx, cy, (k + 1) & 7),
+              b = this._nb(cx, cy, (k + 7) & 7);
+            hit = (a >= 0 && chg[a]) || (b >= 0 && chg[b]);
+          }
+          if (!hit) continue;
+          const bit = 1 << k,
+            back = 1 << ((k + 4) & 7);
+          const on = ntile[c] >= 0 && ntile[o] >= 0 && this.los(this.nx[c], this.nz[c], this.nx[o], this.nz[o], 0);
+          if (on) {
+            edges[c] |= bit;
+            edges[o] |= back;
+          } else {
+            edges[c] &= ~bit;
+            edges[o] &= ~back;
+          }
+        }
+      }
+  }
+
+  // the cell linked to cell c in direction k (the link bit is set, so the
+  // neighbour exists; across the seam when the world wraps)
+  _lk(c, k) {
+    const cw = this.cw;
+    const cx = c % cw;
+    let nx = cx + DIRS[k][0];
+    if (nx < 0) nx += cw;
+    else if (nx >= cw) nx -= cw;
+    return c + DIRS[k][1] * cw + nx - cx;
+  }
+
   _components() {
     const n = this.cw * this.ch;
     const cw = this.cw;
     const comp = this.compOf;
+    const edges = this.edges,
+      ntile = this.ntile;
     comp.fill(-1);
     this.compSize = new Map();
     const stack = this._compStack && this._compStack.length >= n ? this._compStack : (this._compStack = new Int32Array(n));
     let next = 0;
     for (let s = 0; s < n; s++) {
-      if (comp[s] !== -1 || this.ntile[s] < 0) continue;
+      if (comp[s] !== -1 || ntile[s] < 0) continue;
       let sp = 0,
         size = 0;
       stack[sp++] = s;
@@ -372,14 +493,17 @@ export class WaterNav {
       while (sp) {
         const c = stack[--sp];
         size++;
-        const e = this.edges[c];
+        const e = edges[c];
         if (!e) continue;
-        const cx = c % cw,
-          cy = (c / cw) | 0;
+        const cx = c % cw;
         for (let k = 0; k < 8; k++) {
           if (!(e & (1 << k))) continue;
-          const o = this._nb(cx, cy, k);
-          if (o >= 0 && comp[o] === -1) {
+          // (a set bit always has a neighbour: off the side only with the seam)
+          let nx = cx + DIRS[k][0];
+          if (nx < 0) nx += cw;
+          else if (nx >= cw) nx -= cw;
+          const o = c + DIRS[k][1] * cw + nx - cx;
+          if (comp[o] === -1) {
             comp[o] = next;
             stack[sp++] = o;
           }
@@ -388,6 +512,234 @@ export class WaterNav {
       this.compSize.set(next, size);
       next++;
     }
+    this._nextComp = next;
+  }
+
+  // Water bodies after a patch of the cell window E, from the old labels and
+  // the links the window had before (snap). Links that went (and water
+  // nodes that froze or dried) are checked with a short search: if the two
+  // sides still meet, nothing changed; if one side turns out to be a small
+  // body of its own, it gets a new label. New links join the bodies they
+  // touch (the smaller is relabelled). Returns false when a search runs out
+  // before it can tell (a big body may have been cut in two): the caller
+  // then labels everything again.
+  _componentsPatch(E, snap) {
+    if (this._nextComp == null) return false;
+    const cw = this.cw;
+    const n = cw * this.ch;
+    const comp = this.compOf,
+      edges = this.edges,
+      ntile = this.ntile,
+      size = this.compSize;
+    const { e: oldE, wet: oldWet, bw } = snap;
+    const inE = (c) => {
+      const x = c % cw,
+        y = (c / cw) | 0;
+      return x >= E.x0 && x <= E.x1 && y >= E.y0 && y <= E.y1;
+    };
+    const sz = (l) => size.get(l) || 0;
+    const addSize = (l, d) => {
+      const s = sz(l) + d;
+      if (s > 0) size.set(l, s);
+      else size.delete(l);
+    };
+    // 1. groups of cells that must still meet: the two ends of a link that
+    // went, and the remaining water neighbours of a node that went
+    const groups = [];
+    const gone = new Map(); // nodes that went -> their old links
+    for (let y = E.y0; y <= E.y1; y++)
+      for (let x = E.x0; x <= E.x1; x++) {
+        const c = y * cw + x;
+        const j = (y - E.y0) * bw + x - E.x0;
+        if (oldWet[j] && ntile[c] < 0) {
+          gone.set(c, oldE[j]);
+          if (comp[c] >= 0) addSize(comp[c], -1);
+          comp[c] = -1;
+        }
+      }
+    // nodes that went, in clusters linked before: the water each cluster
+    // touched must still meet (a route through the cluster went round it)
+    if (gone.size) {
+      const done = new Set();
+      for (const r0 of gone.keys()) {
+        if (done.has(r0)) continue;
+        done.add(r0);
+        const st = [r0],
+          g = new Set();
+        while (st.length) {
+          const r = st.pop();
+          const was = gone.get(r);
+          for (let k = 0; k < 8; k++) {
+            if (!(was & (1 << k))) continue;
+            const o = this._lk(r, k);
+            if (gone.has(o)) {
+              if (!done.has(o)) done.add(o), st.push(o);
+            } else if (ntile[o] >= 0) g.add(o);
+          }
+        }
+        if (g.size > 1) groups.push([...g]);
+      }
+    }
+    for (let y = E.y0; y <= E.y1; y++)
+      for (let x = E.x0; x <= E.x1; x++) {
+        const c = y * cw + x;
+        const j = (y - E.y0) * bw + x - E.x0;
+        const was = oldE[j];
+        const wetNow = ntile[c] >= 0;
+        if (!wetNow || !oldWet[j]) continue;
+        const gone = was & ~edges[c];
+        if (!gone) continue;
+        for (let k = 0; k < 8; k++) {
+          if (!(gone & (1 << k))) continue;
+          const o = this._lk(c, k);
+          if (ntile[o] < 0) continue; // (that node went: its own group)
+          if (inE(o) && o < c) continue; // (seen from the other end)
+          groups.push([c, o]);
+        }
+      }
+    // 2. check each group with bounded searches over the links as they are now
+    const LIM = 3000;
+    const mark = this._pmark && this._pmark.length >= n ? this._pmark : (this._pmark = new Uint32Array(n));
+    const q = this._pq && this._pq.length >= n ? this._pq : (this._pq = new Int32Array(n));
+    let stamp = this._pstamp || 0;
+    // breadth-first from s until every target is reached (1), the body is
+    // exhausted (0: q[0..qn) holds it), or the limit (-1)
+    let qn = 0;
+    const search = (s, targets) => {
+      if (++stamp >= 0xfffffff0) {
+        mark.fill(0);
+        stamp = 1;
+      }
+      const want = new Set(targets);
+      want.delete(s);
+      let left = want.size;
+      qn = 0;
+      if (!left) return 1;
+      q[qn++] = s;
+      mark[s] = stamp;
+      let h = 0;
+      while (h < qn) {
+        const c = q[h++];
+        const e = edges[c];
+        if (!e) continue;
+        for (let k = 0; k < 8; k++) {
+          if (!(e & (1 << k))) continue;
+          const o = this._lk(c, k);
+          if (mark[o] === stamp) continue;
+          mark[o] = stamp;
+          if (want.has(o) && --left === 0) return 1;
+          if (qn >= LIM) return -1;
+          q[qn++] = o;
+        }
+      }
+      return 0;
+    };
+    // Each group: the members still meet, or some lie in small bodies of
+    // their own (split off with new labels) and the rest still meet. A route
+    // that ran through a split-off body went on to the water beyond it on
+    // other sides: the remaining members of every group that split a body
+    // off must all still meet as well (else the patch gives up).
+    const firstNew = this._nextComp;
+    const reps = [];
+    const check = (g, final) => {
+      g = g.filter((c) => ntile[c] >= 0);
+      let tried = 0,
+        split = false;
+      while (g.length > 1 && tried < g.length) {
+        const s = g[tried];
+        const r = search(s, g);
+        if (r === 1) break; // all still meet
+        if (r === -1) {
+          tried++; // too big to tell from here: try from another member
+          continue;
+        }
+        if (final) return false;
+        // s lies in a small body of its own now: it takes a new label (once)
+        split = true;
+        if (comp[s] < firstNew) {
+          const L = this._nextComp++;
+          for (let i = 0; i < qn; i++) {
+            const c = q[i];
+            if (comp[c] >= 0) addSize(comp[c], -1);
+            comp[c] = L;
+          }
+          size.set(L, qn);
+        }
+        const rest = [];
+        for (const c of g) if (mark[c] !== stamp) rest.push(c);
+        g = rest;
+        tried = 0;
+      }
+      if (g.length > 1 && tried >= g.length) return false;
+      if (split && g.length) reps.push(g[0]);
+      return true;
+    };
+    let ok = true;
+    for (const g of groups) if (!(ok = check(g, false))) break;
+    if (ok && reps.length > 1) ok = check(reps, true);
+    if (!ok) {
+      this._pstamp = stamp;
+      return false;
+    }
+    // 3. new water nodes and new links: join the bodies they touch
+    const relabel = (s, from, to) => {
+      // every cell of body `from` that meets s through cells of `from`
+      let sp = 0,
+        cnt = 0;
+      q[sp++] = s;
+      comp[s] = to;
+      while (sp) {
+        const c = q[--sp];
+        cnt++;
+        const e = edges[c];
+        if (!e) continue;
+        for (let k = 0; k < 8; k++) {
+          if (!(e & (1 << k))) continue;
+          const o = this._lk(c, k);
+          if (comp[o] !== from) continue;
+          comp[o] = to;
+          q[sp++] = o;
+        }
+      }
+      return cnt;
+    };
+    const added = [];
+    for (let y = E.y0; y <= E.y1; y++)
+      for (let x = E.x0; x <= E.x1; x++) {
+        const c = y * cw + x;
+        if (ntile[c] < 0) continue;
+        if (comp[c] < 0) {
+          const L = this._nextComp++;
+          comp[c] = L;
+          size.set(L, 1);
+        }
+        const j = (y - E.y0) * bw + x - E.x0;
+        const add = edges[c] & ~(oldWet[j] ? oldE[j] : 0);
+        if (!add) continue;
+        for (let k = 0; k < 8; k++) if (add & (1 << k)) added.push(c, this._lk(c, k));
+      }
+    // (until every new link joins one label: a body whose cells meet only
+    // through another may need more than one pass)
+    for (let changed = true; changed; ) {
+      changed = false;
+      for (let i = 0; i < added.length; i += 2) {
+        const c = added[i],
+          o = added[i + 1];
+        const A = comp[c],
+          B = comp[o];
+        if (A === B || A < 0 || B < 0) continue;
+        // the smaller body takes the larger's label
+        const big = sz(A) >= sz(B);
+        const keep = big ? A : B,
+          lose = big ? B : A;
+        const cnt = relabel(big ? o : c, lose, keep);
+        addSize(lose, -cnt);
+        addSize(keep, cnt);
+        changed = true;
+      }
+    }
+    this._pstamp = stamp;
+    return true;
   }
 
   // ------------------------------------------------------------------ queries
@@ -564,12 +916,18 @@ export class WaterNav {
       this._acacheV = this.version;
     }
     const ak = a.cell + ',' + b.cell + (big ? ',b,' : ',s,') + mc;
-    let cells = AC.get(ak);
-    if (cells === undefined) {
-      cells = this._astar(a.cell, b.cell, big, mc);
-      AC.set(ak, cells);
+    let hit = AC.get(ak);
+    if (hit === undefined) {
+      // (round 37) a search may expand only so many cells (one voyage search
+      // took 107 ms on the Vast World Map); one that runs out is made again
+      // along a corridor of the route found on a coarser grid
+      let found = this._astar(a.cell, b.cell, big, mc, globalThis.__navCapOff ? 0 : VOY_CAP);
+      if (found === CAPPED) found = this._coarseRoute(a.cell, b.cell, big, mc);
+      hit = found ? this._routeEntry(found) : null;
+      AC.set(ak, hit);
     }
-    if (!cells) return null;
+    if (!hit) return null;
+    const cells = hit.cells;
     const raw = [sx, sz, ...a.pts];
     for (const c of cells) raw.push(this.nx[c], this.nz[c]);
     // b.pts runs goal -> node: append reversed (node -> goal)
@@ -605,7 +963,9 @@ export class WaterNav {
     return clean;
   }
 
-  _astar(s, g, big, minClear = 0) {
+  // cap > 0: give up after expanding that many cells, returning CAPPED.
+  // corr: only cells in the marked blocks of a coarse corridor are searched.
+  _astar(s, g, big, minClear = 0, cap = 0, corr = null) {
     const cw = this.cw;
     const sx0 = s % cw,
       sy0 = (s / cw) | 0,
@@ -694,6 +1054,7 @@ export class WaterNav {
         break;
       }
       if (++expanded > (minClear > 0 ? 24000 : 60000)) break;
+      if (cap && expanded > cap) return CAPPED;
       const e = this.edges[c];
       if (!e) continue;
       const cx = c % cw,
@@ -703,6 +1064,7 @@ export class WaterNav {
         if (!(e & (1 << k))) continue;
         const o = wrap ? this._nb(cx, cy, k) : (cy + DIRS[k][1]) * cw + cx + DIRS[k][0];
         if (o < 0 || done[o] === stamp) continue;
+        if (corr && corr.mark[(((o / cw) | 0) >> 2) * corr.bw + ((o % cw) >> 2)] !== corr.stamp) continue;
         const len = Math.hypot(wrap ? this._sdx(this.nx[o] - this.nx[c]) : this.nx[o] - this.nx[c], this.nz[o] - this.nz[c]);
         const md = Math.min(dc, this.nd[o]);
         // keep off the coasts; big ships avoid rivers and narrows
@@ -723,6 +1085,174 @@ export class WaterNav {
     for (let c = g; c !== -1; c = from[c]) out.push(c);
     out.reverse();
     return out;
+  }
+
+  // A cached route: its cells and the box of cells it passes through (a
+  // patch inside the box drops it; a route across the seam spans the map)
+  _routeEntry(cells) {
+    const cw = this.cw;
+    let x0 = Infinity,
+      y0 = Infinity,
+      x1 = -1,
+      y1 = -1;
+    for (const c of cells) {
+      const x = c % cw,
+        y = (c / cw) | 0;
+      if (x < x0) x0 = x;
+      if (x > x1) x1 = x;
+      if (y < y0) y0 = y;
+      if (y > y1) y1 = y;
+    }
+    return { cells, bx0: x0, by0: y0, bx1: x1, by1: y1 };
+  }
+
+  // A long voyage whose search ran out of cells: the route on a grid of 4 x 4
+  // cell blocks (two blocks meet where a link of the water graph runs
+  // between them), then the full search again inside that route's blocks
+  // and their neighbours. Falls back to the whole search (as before round
+  // 37) if the corridor holds no way.
+  _coarseRoute(s, g, big, mc) {
+    const cw = this.cw,
+      ch = this.ch;
+    const B = 4;
+    const bw = Math.ceil(cw / B),
+      bh = Math.ceil(ch / B);
+    const wrapB = this.wrap;
+    if (wrapB && cw % B !== 0) return this._astar(s, g, big, mc);
+    const nb = bw * bh;
+    if (!this._cb || this._cb.n !== nb) this._cb = { n: nb, G: new Float32Array(nb), from: new Int32Array(nb), seen: new Uint32Array(nb), done: new Uint32Array(nb), mark: new Uint32Array(nb), stamp: 0, hi: new Int32Array(256), hf: new Float32Array(256) };
+    const S = this._cb;
+    const stamp = ++S.stamp;
+    const blk = (c) => (((c / cw) | 0) >> 2) * bw + ((c % cw) >> 2);
+    const sb = blk(s),
+      gb = blk(g);
+    const gbx = gb % bw,
+      gby = (gb / bw) | 0,
+      sbx = sb % bw,
+      sby = (sb / bw) | 0;
+    const bdx = (a, b) => {
+      const d = Math.abs(a - b);
+      return wrapB ? Math.min(d, bw - d) : d;
+    };
+    const nearEnd = (b) => {
+      const x = b % bw,
+        y = (b / bw) | 0;
+      return (bdx(x, sbx) <= 1 && Math.abs(y - sby) <= 1) || (bdx(x, gbx) <= 1 && Math.abs(y - gby) <= 1);
+    };
+    const hfn = (b) => {
+      const dx = bdx(b % bw, gbx),
+        dy = Math.abs(((b / bw) | 0) - gby);
+      return dx + dy + (SQ2 - 2) * Math.min(dx, dy);
+    };
+    let hn = 0;
+    const push = (i, f) => {
+      if (hn >= S.hi.length) {
+        const ni = new Int32Array(S.hi.length * 2);
+        ni.set(S.hi);
+        S.hi = ni;
+        const nf = new Float32Array(S.hf.length * 2);
+        nf.set(S.hf);
+        S.hf = nf;
+      }
+      const HI = S.hi,
+        HF = S.hf;
+      let c = hn++;
+      while (c > 0) {
+        const p = (c - 1) >> 1;
+        if (HF[p] <= f) break;
+        HI[c] = HI[p];
+        HF[c] = HF[p];
+        c = p;
+      }
+      HI[c] = i;
+      HF[c] = f;
+    };
+    const pop = () => {
+      const HI = S.hi,
+        HF = S.hf;
+      const top = HI[0];
+      const li = HI[--hn],
+        lf = HF[hn];
+      let c = 0;
+      for (;;) {
+        const l = c * 2 + 1;
+        if (l >= hn) break;
+        let m = l;
+        if (l + 1 < hn && HF[l + 1] < HF[l]) m = l + 1;
+        if (HF[m] >= lf) break;
+        HI[c] = HI[m];
+        HF[c] = HF[m];
+        c = m;
+      }
+      HI[c] = li;
+      HF[c] = lf;
+      return top;
+    };
+    const { G, from, seen, done } = S;
+    seen[sb] = stamp;
+    G[sb] = 0;
+    from[sb] = -1;
+    push(sb, hfn(sb));
+    let found = false;
+    const nbs = [];
+    while (hn) {
+      const b = pop();
+      if (done[b] === stamp) continue;
+      done[b] = stamp;
+      if (b === gb) {
+        found = true;
+        break;
+      }
+      // the blocks this one links to: every link out of its cells
+      const bx = b % bw,
+        by = (b / bw) | 0;
+      const ne = nearEnd(b);
+      nbs.length = 0;
+      for (let y = by * B; y < Math.min(ch, by * B + B); y++)
+        for (let x = bx * B; x < Math.min(cw, bx * B + B); x++) {
+          const c = y * cw + x;
+          const e = this.edges[c];
+          if (!e) continue;
+          for (let k = 0; k < 8; k++) {
+            if (!(e & (1 << k))) continue;
+            const o = this._lk(c, k);
+            const ob = blk(o);
+            if (ob === b || done[ob] === stamp || nbs.includes(ob)) continue;
+            if (mc > 0 && Math.min(this.nd[c], this.nd[o]) < mc && !(ne && nearEnd(ob))) continue;
+            nbs.push(ob);
+          }
+        }
+      for (const ob of nbs) {
+        const dx = bdx(ob % bw, bx),
+          dy = Math.abs(((ob / bw) | 0) - by);
+        const ng = G[b] + (dx && dy ? SQ2 : 1);
+        if (seen[ob] !== stamp || ng < G[ob]) {
+          seen[ob] = stamp;
+          G[ob] = ng;
+          from[ob] = b;
+          push(ob, ng + hfn(ob));
+        }
+      }
+    }
+    if (!found) return null;
+    // the corridor: the route's blocks and their neighbours
+    const mark = S.mark;
+    for (let b = gb; b !== -1; b = from[b]) {
+      const bx = b % bw,
+        by = (b / bw) | 0;
+      for (let dy = -1; dy <= 1; dy++)
+        for (let dx = -1; dx <= 1; dx++) {
+          let x = bx + dx;
+          const y = by + dy;
+          if (y < 0 || y >= bh) continue;
+          if (x < 0 || x >= bw) {
+            if (!wrapB) continue;
+            x = (x + bw) % bw;
+          }
+          mark[y * bw + x] = stamp;
+        }
+    }
+    return this._astar(s, g, big, mc, 0, { mark, stamp, bw }) || this._astar(s, g, big, mc);
   }
 
   // Nearest water point beside the shore near a land point (a landing), on

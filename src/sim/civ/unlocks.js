@@ -171,15 +171,24 @@ export const unlocks = {
   // Every 2 s: roads, roles, healers' reach, fleets; towers shoot every second.
   _unlockTick(dt) {
     const now = this.game.time.total;
+    // (round 37) the realms survey their roads and send out their ships in
+    // turn: each realm on its own call of this pass, about as often as before
+    // (every 25 s and 12 s). They used to come due together on one call, as
+    // their timers all started on the same tick (up to five voyage searches
+    // in one tick on the Vast World Map).
+    const n = (this._unlN = (this._unlN || 0) + 1);
+    const roadEvery = Math.max(1, Math.round(25 / dt)),
+      fleetEvery = Math.max(1, Math.round(12 / dt));
+    const turns = !globalThis.__realmTurnsOff;
     for (const k of this.kingdoms) {
       if (!k.alive || !k.villages.length) continue;
-      if (this.hasTech(k.id, 'mathematics') && now - (k.roadT || 0) > 25) {
+      if (this.hasTech(k.id, 'mathematics') && (turns ? (n + k.id) % roadEvery === 0 || now - (k.roadT || 0) > 50 : now - (k.roadT || 0) > 25)) {
         k.roadT = now;
         this._surveyRoad(k);
       }
       if (this.hasTech(k.id, 'horsemanship')) this._riders(k);
       this._supplyColonies(k, now);
-      if (this.hasTech(k.id, 'sailing') && now - (k.fleetT || 0) > 12) {
+      if (this.hasTech(k.id, 'sailing') && (turns ? (n + k.id * 7) % fleetEvery === 0 || now - (k.fleetT || 0) > 24 : now - (k.fleetT || 0) > 12)) {
         k.fleetT = now;
         this._fleetDecisions(k);
       }

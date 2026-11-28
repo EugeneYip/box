@@ -43,6 +43,11 @@ import { FOOTPRINT } from '../../core/scale.js';
 // 900 people and 900 buildings.
 const VILLAGE_MAX_POP = 64; // legacy reference size (a town)
 // the eight neighbours of a tile, in the order the territory fill visits them
+// (round 37) milliseconds of town planning on any one tick (at least one
+// town plans, and more when planning has cost more of late: see tick)
+const PLAN_MS = 3;
+// (round 37) milliseconds of a territory refresh on any one tick
+const TERR_SLICE_MS = 2.5;
 const TERR_DX = [1, -1, 0, 0, 1, 1, -1, -1];
 const TERR_DY = [0, 0, 1, -1, 1, -1, 1, -1];
 const TIER_POP = [40, 70, 115]; // village, town, city (capitals and ports grow larger)
@@ -151,6 +156,7 @@ export class Civilization {
     this._terrBest = new Float32Array(w.size);
     this._terrOwner = new Int16Array(w.size);
     this._tPrevN = -1; // the next territory fill sweeps the whole map
+    this._tFill = null; // (a territory fill under way, in slices)
     this._borders = new Map();
     this._bById = new Map();
     this.rockHits = new Map();
@@ -759,21 +765,33 @@ export class Civilization {
         this._loyalty(v);
       }
     }
+    // (round 37) The slice is a budget in milliseconds, not a count of
+    // towns: a tick plans towns until PLAN_MS have gone, or half as much
+    // again as planning has cost a tick of late if that is more (so over the
+    // round every town plans as often as before), and always at least one.
+    // A count let three big modern towns plan in one tick (single plans of
+    // up to 40 ms, Year 600 ticks of 16-20 ms).
+    let planMs = 0;
     if (planDue.length) {
+      const budget = globalThis.__planCapOff ? Infinity : Math.max(PLAN_MS, (this._planAvg || 0) * 1.5);
       // (those held back on an earlier tick first)
-      let planLeft = globalThis.__planCapOff ? Infinity : Math.max(1, Math.ceil(((nv * step) / planEvery) * 1.5));
-      if (planDue.length > planLeft) planDue.sort((a, b) => (b._planHeld ? 1 : 0) - (a._planHeld ? 1 : 0));
+      if (planDue.length > 1) planDue.sort((a, b) => (b._planHeld ? 1 : 0) - (a._planHeld ? 1 : 0));
+      const t0 = performance.now();
+      let planned = 0;
       for (const v of planDue) {
         if (!v.alive) continue;
-        if (planLeft-- <= 0) {
+        if (planned && performance.now() - t0 >= budget) {
           v._planHeld = true;
           continue;
         }
         v._planAcc = v._planHeld ? 0 : v._planAcc - planEvery;
         v._planHeld = false;
         this._plan(v);
+        planned++;
       }
+      planMs = performance.now() - t0;
     }
+    this._planAvg = (this._planAvg || 0) * 0.97 + planMs * 0.03;
     if (this._jobQ?.length) this._realmJobs();
     const T = this._timers;
     if ((T.b += step) >= (coarse ? 1 : 0.5)) {
@@ -783,7 +801,9 @@ export class Civilization {
     // (bigger maps refresh territory less often: the fill grows with the map,
     // about as fast as its area; at most every 12 s, under half a year)
     // (round 23: at the coarse steps a Medium map looks every 4 s instead of 2)
-    if ((T.terr += step) >= 2 * Math.min(6, Math.max(coarse ? 2 : 1, this.world.size / 65536))) {
+    // (round 37) a refresh under way goes on by a slice a tick
+    if (this._tFill && !globalThis.__terrSliceOff) this._tFillRun(this._tFill, TERR_SLICE_MS);
+    else if ((T.terr += step) >= 2 * Math.min(6, Math.max(coarse ? 2 : 1, this.world.size / 65536))) {
       T.terr = 0;
       // the full flood fill is costly on big maps: only when the realms changed
       // (round 25: at the coarse steps a change redraws at most every 8 s, a
@@ -823,9 +843,25 @@ export class Civilization {
     // coarse steps every 6 s (a few tenths of a second of real time at 16x),
     // covering the interval (the smiths' work accrues by it), on a phase
     // apart from research and the unlocks
-    if ((T.inv = (T.inv ?? 1.5) + step) >= (coarse ? 6 : techEvery)) {
-      this._inventoryTick(T.inv);
-      T.inv = 0;
+    // (round 37) each realm on a phase of its own (they all came due on one
+    // tick: 16 ms calls on a Year 600 Medium map), as often as before, each
+    // pass covering the time since that realm's last
+    const invEvery = coarse ? 6 : techEvery;
+    if (globalThis.__invTurnsOff) {
+      if ((T.inv = (T.inv ?? 1.5) + step) >= invEvery) {
+        this._inventoryTick(T.inv);
+        T.inv = 0;
+      }
+    } else {
+      const now = g.time.total;
+      for (const k of this.kingdoms) {
+        if (!k.alive) continue;
+        if (k._invT == null) k._invT = now - 1.5 - ((k.id * 0.618034) % 1) * invEvery;
+        const due = now - k._invT;
+        if (due < invEvery) continue;
+        k._invT = now;
+        this._inventoryRealm(k, Math.min(due, invEvery * 3));
+      }
     }
     if ((T.unl = (T.unl ?? 1) + step) >= techEvery) {
       this._wonderFx();
@@ -1290,12 +1326,16 @@ export class Civilization {
   // knows; soldiers are armed and armoured first, workers get tools, and gear
   // recovered from the fallen is reissued (legendary pieces keep their story).
   _inventoryTick(dt) {
+    for (const k of this.kingdoms) if (k.alive) this._inventoryRealm(k, dt);
+  }
+  // (round 37) One realm's stores and gear, covering dt seconds (the tick
+  // calls each realm in turn: see tick)
+  _inventoryRealm(k, dt) {
     const g = this.game;
     const U = g.units;
     const real = typeof U.makeItem === 'function' && typeof U.equip === 'function';
     const gearOK = g.laws?.lifeEquipment !== false;
-    for (const k of this.kingdoms) {
-      if (!k.alive) continue;
+    {
       const inv = k.inventory || (k.inventory = { food: 0, wood: 0, stone: 0, ore: 0, gold: 0, tools: 0, weapons: 0, armor: 0, trinkets: 0 });
       const armory = k.armory || (k.armory = []);
       let food = 0,
@@ -2618,15 +2658,33 @@ export class Civilization {
     this._terrSig = sig;
     this._terrDirty = false;
     this._terrT = now;
-    this._territory();
+    this._territory(null, globalThis.__terrSliceOff ? Infinity : TERR_SLICE_MS);
   }
 
   // addV: a village just founded. Its claim is spread into the last fill's
   // map at once (the rest stands until the next scheduled refresh, which the
   // new village's arrival triggers within seconds) instead of a whole new fill.
-  _territory(addV = null) {
+  // budgetMs (round 37): a scheduled refresh runs in slices of about that
+  // many milliseconds, one a tick, and the realms' borders change when the
+  // fill is done (a whole fill took about 53 ms on a Year 600 Medium map).
+  // A village founded meanwhile joins the fill under way.
+  _territory(addV = null, budgetMs = Infinity) {
     const w = this.world;
-    const W = w.w;
+    const F0 = this._tFill;
+    if (F0) {
+      if (addV) {
+        this._tSeedVillage(F0, addV);
+        return;
+      }
+      // a whole fill asked for at once: the one under way is dropped (the
+      // tiles it reached are reset; the last fill's list stands)
+      for (let k = 0; k < F0.nt; k++) {
+        const i = F0.touch[k];
+        this._terrBest[i] = 1e9;
+        this._terrOwner[i] = -1;
+      }
+      this._tFill = null;
+    }
     const best = this._terrBest; // normalised cost (cost / strength)
     const own = this._terrOwner;
     // Only the tiles the last fill reached can hold a cost or an owner: reset
@@ -2644,7 +2702,6 @@ export class Civilization {
     const full = prevN < 0 || this._tWorld !== w.owner;
     if (addV && full) addV = null; // (no fill to add to yet: a whole one)
     const add = !!addV;
-    const chg = add ? [] : null;
     if (!add && full) {
       best.fill(1e9);
       own.fill(-1);
@@ -2654,18 +2711,84 @@ export class Civilization {
         best[i] = 1e9;
         own[i] = -1;
       }
-    // (adding: newly reached tiles join the last fill's list, reset next time)
-    const touch = add ? prev : this._tTouch;
-    let nt = add ? prevN : 0;
     if (!this._tq || this._tq.length < w.size * 2) {
       this._tq = new Int32Array(w.size * 2);
       this._tqf = new Float32Array(w.size * 2);
       this._tlim = new Float32Array(w.size);
     }
+    // per-source strength lives in a parallel array keyed by tile
+    if (!this._tstr || this._tstr.length !== w.size) this._tstr = new Float32Array(w.size);
+    // (adding: newly reached tiles join the last fill's list, reset next time)
+    const F = {
+      add,
+      full,
+      chg: add ? [] : null,
+      touch: add ? prev : this._tTouch,
+      nt: add ? prevN : 0,
+      prevN,
+      n: 0,
+      // (on a big map the same number of villages holds wider country)
+      reach: this._territoryReach(),
+    };
+    for (const v of add ? [addV] : this.villages) this._tSeedVillage(F, v);
+    if (!add) this._tFill = F;
+    this._tFillRun(F, add ? Infinity : budgetMs);
+  }
+
+  // a village's claim as sources of a fill: the town and its towers
+  _tSeedVillage(F, v) {
+    if (!v.alive) return;
+    const k = this.kingdoms[v.kingdom];
+    if (!k || !k.alive) return;
+    const strength = 1 + v.tier * 0.25 + (k.capital === v.id ? 0.15 : 0);
+    this._tSeed(F, v.cx, v.cz, (v.radius * 1.05 + v.tier * 4) * F.reach, v.kingdom, strength); // towns and cities hold the countryside around them
+    for (const b of v.buildings) if (b.alive && !b.constructing && (b.type === 'watchtower' || b.type === 'tower')) this._tSeed(F, b.x, b.z, b.type === 'watchtower' ? 7 : 4, v.kingdom, 0.9);
+  }
+  _tSeed(F, cx, cz, R, kid, strength) {
+    const w = this.world;
+    const best = this._terrBest;
+    const tx = Math.floor(cx),
+      ty = Math.floor(cz);
+    if (!w.inBounds(tx, ty)) return;
+    const i = ty * w.w + tx;
+    if (best[i] <= 0) return;
+    if (best[i] === 1e9) F.touch[F.nt++] = i;
+    if (F.add) F.chg.push(i);
+    best[i] = 0;
+    this._terrOwner[i] = kid;
+    this._tstr[i] = strength;
+    this._tlim[i] = R;
+    // into the queue at cost 0
+    const qi = this._tq,
+      qf = this._tqf;
+    if (F.n >= qi.length) return;
+    let c = F.n++;
+    while (c > 0) {
+      const pp = (c - 1) >> 1;
+      if (qf[pp] <= 0) break;
+      qi[c] = qi[pp];
+      qf[c] = qf[pp];
+      c = pp;
+    }
+    qi[c] = i;
+    qf[c] = 0;
+  }
+
+  // Spread the fill's claims for about budgetMs; publish when it is done.
+  _tFillRun(F, budgetMs = Infinity) {
+    const w = this.world;
+    const W = w.w;
+    const best = this._terrBest,
+      own = this._terrOwner;
+    const add = F.add,
+      chg = F.chg,
+      touch = F.touch;
+    let nt = F.nt;
     const qi = this._tq,
       qf = this._tqf,
-      lim = this._tlim;
-    let n = 0;
+      lim = this._tlim,
+      str = this._tstr;
+    let n = F.n;
     const push = (i, f) => {
       if (n >= qi.length) return;
       let c = n++;
@@ -2698,39 +2821,16 @@ export class Civilization {
       qf[c] = lf;
       return top;
     };
-    const kOf = new Int16Array(0);
-    void kOf;
-    // per-source strength lives in a parallel array keyed by queue entry via `str`
-    const str = this._tstr || (this._tstr = new Float32Array(w.size));
-    const seed = (cx, cz, R, kid, strength) => {
-      const tx = Math.floor(cx),
-        ty = Math.floor(cz);
-      if (!w.inBounds(tx, ty)) return;
-      const i = ty * W + tx;
-      if (best[i] <= 0) return;
-      if (best[i] === 1e9) touch[nt++] = i;
-      if (add) chg.push(i);
-      best[i] = 0;
-      own[i] = kid;
-      str[i] = strength;
-      lim[i] = R;
-      push(i, 0);
-    };
-    // (on a big map the same number of villages holds wider country)
-    const reach = this._territoryReach();
-    for (const v of add ? [addV] : this.villages) {
-      if (!v.alive) continue;
-      const k = this.kingdoms[v.kingdom];
-      if (!k || !k.alive) continue;
-      const strength = 1 + v.tier * 0.25 + (k.capital === v.id ? 0.15 : 0);
-      seed(v.cx, v.cz, (v.radius * 1.05 + v.tier * 4) * reach, v.kingdom, strength); // towns and cities hold the countryside around them
-      for (const b of v.buildings) if (b.alive && !b.constructing && (b.type === 'watchtower' || b.type === 'tower')) seed(b.x, b.z, b.type === 'watchtower' ? 7 : 4, v.kingdom, 0.9);
-    }
     const H = w.height,
       type = w.type,
       owner0 = w.owner,
       Hh = w.h;
+    const timed = budgetMs < Infinity;
+    const t0 = timed ? performance.now() : 0;
+    let pops = 0;
     while (n) {
+      // (the clock is read every few hundred tiles)
+      if (timed && (++pops & 511) === 0 && performance.now() - t0 > budgetMs) break;
       const f0 = qf[0];
       const i = pop();
       const ci = best[i];
@@ -2773,6 +2873,29 @@ export class Civilization {
         push(j, nc);
       }
     }
+    F.n = n;
+    F.nt = nt;
+    if (n) return false; // (more on the next tick)
+    if (this._tFill === F) this._tFill = null;
+    this._tPublish(F);
+    return true;
+  }
+
+  // The fill is done: publish the owners (only what changed), the label
+  // anchors and the border lengths.
+  _tPublish(F) {
+    const w = this.world;
+    const W = w.w;
+    const best = this._terrBest,
+      own = this._terrOwner;
+    const H = w.height;
+    const add = F.add,
+      chg = F.chg,
+      touch = F.touch,
+      nt = F.nt,
+      full = F.full;
+    const prev = this._tPrev,
+      prevN = F.prevN;
     if (add) {
       // publish only what the newcomer took; labels and border lengths wait
       // for the next refresh
