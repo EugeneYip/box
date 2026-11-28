@@ -258,7 +258,7 @@ class DetailBatch {
     return id;
   }
   // (round 37) how far one instance is faded out by the close-zoom cutaway
-  // (0..1, times CAM_CUT.uCut in the shader)
+  // (0..1, sharpened in the shader: material.js CUT_SHARE)
   setCut(id, c) {
     const j = id * IF + 8;
     if (this.data[j] === c) return;
@@ -544,12 +544,11 @@ export class BuildingRenderer {
     fmat.onBeforeCompile = (sh) => {
       // (round 37) a cut building's footing fades out with it (aCut, see
       // _applyCut), through the building material's dither
-      sh.uniforms.uCut = CAM_CUT.uCut;
       sh.vertexShader = sh.vertexShader
-        .replace('#include <common>', '#include <common>\nuniform float uCut;\n' + CUT_SHARE + '\nattribute float aCut;\nvarying float vFtCut;\nvarying vec3 vFtW;\nvarying vec3 vFtN;\nvarying float vFtTop;')
+        .replace('#include <common>', '#include <common>\n' + CUT_SHARE + '\nattribute float aCut;\nvarying float vFtCut;\nvarying vec3 vFtW;\nvarying vec3 vFtN;\nvarying float vFtTop;')
         .replace(
           '#include <worldpos_vertex>',
-          '#include <worldpos_vertex>\nvFtCut = cutShare(aCut * uCut);\nvFtW = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;\nvFtN = normalize(mat3(modelMatrix * instanceMatrix) * objectNormal);\nvFtTop = (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).y;',
+          '#include <worldpos_vertex>\nvFtCut = cutShare(aCut);\nvFtW = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;\nvFtN = normalize(mat3(modelMatrix * instanceMatrix) * objectNormal);\nvFtTop = (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).y;',
         );
       sh.fragmentShader = sh.fragmentShader
         .replace('#include <common>', '#include <common>\nvarying float vFtCut;\nvarying vec3 vFtW;\nvarying vec3 vFtN;\nvarying float vFtTop;')
@@ -1447,7 +1446,7 @@ export class BuildingRenderer {
     const prev = this._cutPrev || (this._cutPrev = new Map()); // rec -> share
     const now = this._cutNow || (this._cutNow = new Map());
     now.clear();
-    if (CAM_CUT.uCut.value > 0.001 && civ?._bById)
+    if (civ?._bById)
       for (const [id, a] of CAM_CUT.on) {
         const b = civ._bById.get(id);
         const rec = b && this._recs.get(b);
@@ -1473,12 +1472,11 @@ export class BuildingRenderer {
   _cutOutline(now) {
     const world = this.game.world;
     let L = this.cutLines;
-    const cut = CAM_CUT.uCut.value;
     const segs = [];
     for (const [rec, a] of now) {
       const b = rec.b;
       // (as sharpened in the shaders: material.js CUT_SHARE)
-      const t = Math.min(1, Math.max(0, (a * cut - 0.25) / 0.5));
+      const t = Math.min(1, Math.max(0, (a - 0.25) / 0.5));
       const k = t * t * (3 - 2 * t);
       if (!b || k < 0.02) continue;
       const ins = 0.07;

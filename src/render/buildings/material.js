@@ -11,11 +11,10 @@ import { CAM_CUT, CUT_N } from '../../core/CameraRig.js';
 // a float texture instead (`inst`: { value: DataTexture }, INST_TEXELS RGBA
 // texels per instance: colour, state, cut), indexed by the batch's instance id.
 export const INST_TEXELS = 3;
-// (round 37) how far a cut piece is faded, from its building's eased share
-// times the overall strength: sharpened, so between 12 and 17 tiles (the
-// overall strength part way) and on slow frames (the share part way for a
-// frame or two) a building is either whole or gone, never left standing as
-// a screen-door ghost; it passes through the dither in a moment
+// (round 37) how far a cut piece is faded, from its building's eased share:
+// sharpened, so on slow frames (the share part way for a frame or two) a
+// building is either whole or gone, never left standing as a screen-door
+// ghost; it passes through the dither in a moment
 export const CUT_SHARE = 'float cutShare(float s) { return smoothstep(0.25, 0.75, s); }';
 export function createBuildingMaterial(uniforms, { clip = false, inst = null } = {}) {
   const mat = new THREE.MeshStandardMaterial({
@@ -28,9 +27,6 @@ export function createBuildingMaterial(uniforms, { clip = false, inst = null } =
     sh.uniforms.uTime = uniforms.uTime;
     sh.uniforms.uNight = uniforms.uNight;
     sh.uniforms.uSnow = uniforms.uSnow || { value: 0 };
-    // the close-zoom cutaway (CameraRig CAM_CUT): its overall strength; each
-    // instance's own share is texel 2 of its instance data
-    sh.uniforms.uCut = CAM_CUT.uCut;
     if (inst) sh.uniforms.uBInst = inst;
     sh.vertexShader = sh.vertexShader
       .replace(
@@ -39,7 +35,6 @@ export function createBuildingMaterial(uniforms, { clip = false, inst = null } =
 attribute float aTint;
 attribute float aGlow;
 attribute vec2 aRoof;
-uniform float uCut;
 ${CUT_SHARE}
 #ifdef USE_BATCHING
 uniform highp sampler2D uBInst;
@@ -68,7 +63,8 @@ varying float vCut;`,
 float wsBi = getIndirectIndex(gl_DrawID);
 vec4 wsC0 = wsInst(wsBi, 0);
 vKCol = wsC0.rgb; vFlags = wsC0.a; vState = wsInst(wsBi, 1);
-vCut = cutShare(wsInst(wsBi, 2).x * uCut);
+// the close-zoom cutaway: the instance's share (texel 2, see CameraRig CAM_CUT)
+vCut = cutShare(wsInst(wsBi, 2).x);
 #else
 vKCol = iColor; vState = iState; vFlags = 0.0; vCut = 0.0;
 #endif
@@ -281,7 +277,7 @@ if (uCut > 0.001) {
     vec4 bx = uCutBox[i];
     if (wsCp.x > bx.x && wsCp.x < bx.z && wsCp.z > bx.y && wsCp.z < bx.w) wsCa = max(wsCa, uCutA[i]);
   }
-  wsCa = cutShare(wsCa * uCut);
+  wsCa = cutShare(wsCa);
   if (wsCa > 0.001) {
     const float wsBayer[16] = float[16](0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
     float wsTh = (wsBayer[int(mod(gl_FragCoord.x, 4.0)) + 4 * int(mod(gl_FragCoord.y, 4.0))] + 0.5) / 16.0;

@@ -4,8 +4,8 @@ import { SEA_LEVEL } from '../world/constants.js';
 import { BUILDING_TYPES } from '../sim/civ/catalog.js';
 import { BUILDING } from './scale.js';
 
-// The close-zoom cutaway (round 25, reworked rounds 27, 29 and 37): at
-// distance 12 or closer (fading out by 17) a building whose box stands on the
+// The close-zoom cutaway (round 25, reworked rounds 27, 29 and 37): within
+// about 14.5 tiles (half of uCut, below) a building whose box stands on the
 // line from the eye to the target, or close in front of the eye, fades out
 // whole, so a roof never hides the followed person. The camera works out on
 // the CPU which buildings to cut (never the one that holds the target):
@@ -790,7 +790,10 @@ export class CameraRig {
   // estimated height) holds a step is cut, unless it holds the target itself.
   _cutaway(cam, dt, f) {
     const A = this._cutA;
-    const on = CAM_CUT.uCut.value > 0.001;
+    // (round 37) buildings are cut only past half the overall strength (14.5
+    // tiles), whole: a building's own share eases in and out, so a camera
+    // held between 12 and 17 tiles never leaves one part faded
+    const on = CAM_CUT.uCut.value > 0.5;
     // building id -> the lowest point of a sight line inside its box
     const hitNow = new Map();
     const g = this.game;
