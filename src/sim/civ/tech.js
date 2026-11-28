@@ -218,6 +218,19 @@ const BIG_LEAD = 0.8;
 const LATE_MIN = 10,
   LATE_MAX = 50,
   LATE_TOTAL = 100;
+// (round 37) ...and the slowest quarter of the realms by that same
+// reckoning (_lateRank: the living realms ranked by their share for the era
+// times their late reckoning) trail further: their own years lie from 15
+// years before the century mark after the era's year (Years 300, 400, 500
+// and 600) to LATE_TOTAL - 5 years after the era's year, so two or three
+// realms still trail at each mark (on seed 7 every realm stood in the
+// Industrial era at Year 300 and in the Future at 600, the old realms'
+// shares happening to be small for those two eras; spreading every follower
+// by rank put the strongest courts' own years later too, and no realm could
+// finish the Atomic arts by Year 425). The followers' own years count from
+// the year the first realm actually entered when that was late (a leader 31
+// years late into the Industrial era had every follower in within 30 years).
+const LATE_TAIL = 0.75;
 
 // Extra research on big maps (planner _bigMap: none on Medium): their realms
 // stay small and far apart, and on their own reached the Enlightened arts
@@ -577,7 +590,10 @@ export const tech = {
     // on time keeps its followers' own years: a burst of held realms would
     // enter with it)
     const release = overdue > 2 / tsp;
-    if (ERA_YEAR[nextE] != null && (nextE >= 5 || overdue > 0)) {
+    // (round 37: from the Industrial era on, too; the realm with the most
+    // arts could not finish the Industrial ones in time, and the era came at
+    // 246 and 256 while the realm nearest to it was held to its own year)
+    if (ERA_YEAR[nextE] != null && (nextE >= 4 || overdue > 0)) {
       let best = null,
         be = Infinity;
       for (const k of this.kingdoms) {
@@ -586,6 +602,7 @@ export const tech = {
       }
       if (best) leader = best;
     }
+    const ranks = new Map(); // (era -> the realms' ranks for it, _lateRank)
     for (const k of this.kingdoms) {
       if (!k.alive || !k.villages.length) continue;
       if (!this._kLaw(k.id, 'civTechnology')) continue;
@@ -702,9 +719,20 @@ export const tech = {
         // further out and a quick one's nearer (the follower's delay times
         // its late floor against the usual, 0.7-1.8), and what is left of its
         // late floor shrinks so it is in within LATE_TOTAL years of the era
+        // (round 37) ...the slowest quarter by rank trail past the century
+        // mark, counted from the first realm's entry when that came late
         const lateY = this._lateYears(k, lore);
-        const delay = lead || open ? 0 : FOLLOW_YEARS * followShare(k.id, next) * (next >= 4 ? Math.max(0.7, Math.min(1.8, lateY / LATE_YEARS)) : 1);
-        const target = (ERA_YEAR[next] + delay) / ts;
+        let delay = lead || open ? 0 : FOLLOW_YEARS * followShare(k.id, next) * (next >= 4 ? Math.max(0.7, Math.min(1.8, lateY / LATE_YEARS)) : 1);
+        if (!(lead || open) && next >= 4) {
+          const q = this._lateRank(k, next, lore, ranks);
+          if (q > LATE_TAIL) {
+            const lo = Math.ceil((ERA_YEAR[next] + 1) / 100) * 100 - ERA_YEAR[next] - 15,
+              hi = LATE_TOTAL - 5;
+            delay = Math.max(delay, lo + ((hi - lo) * (q - LATE_TAIL)) / (1 - LATE_TAIL));
+          }
+        }
+        const first = lead ? null : this._eraFirstY?.[next];
+        const target = Math.max(ERA_YEAR[next] / ts, first ?? 0) + delay / ts;
         const eta = this._eraNeed(k) / ((Math.min(gain, eraGain) / dt) * YEAR);
         k.eraEta = eta;
         const left = target - year;
@@ -797,6 +825,27 @@ export const tech = {
     return Math.max(LATE_MIN, Math.min(LATE_MAX, LATE_YEARS * f));
   },
 
+  // (round 37) A realm's place among the living realms for a late era, 0
+  // (first of the followers) to 1 (last): ranked by its share for that era
+  // times its late reckoning (0.7-1.8, as _lateYears), worked out once a
+  // research tick per era (R: era -> Map of kingdom id -> rank).
+  _lateRank(k, era, lore, R) {
+    let m = R.get(era);
+    if (!m) {
+      const sc = [];
+      for (const o of this.kingdoms) {
+        if (!o.alive || !o.villages.length || !o.techs) continue;
+        const f = Math.max(0.7, Math.min(1.8, this._lateYears(o, lore) / LATE_YEARS));
+        sc.push([o.id, followShare(o.id, era) * f]);
+      }
+      sc.sort((a, b) => a[1] - b[1] || a[0] - b[0]);
+      m = new Map();
+      sc.forEach(([id], i) => m.set(id, sc.length > 1 ? i / (sc.length - 1) : 0));
+      R.set(era, m);
+    }
+    return m.get(k.id) ?? 0;
+  },
+
   // Would learning this art carry the realm into its next era (two arts of
   // that era known, its key art among them)?
   _entersEra(k, t) {
@@ -833,6 +882,9 @@ export const tech = {
     const cap = Math.max(k.era, this.eraCap());
     while (k.era < cap && inEra(k.era + 1) >= 2 && (!ERA_KEY[k.era + 1] || k.techs.has(ERA_KEY[k.era + 1]))) {
       k.era++;
+      // (round 37) the year the first realm entered (the followers' own years count from it when late)
+      const fy = this._eraFirstY || (this._eraFirstY = {});
+      if (fy[k.era] == null) fy[k.era] = this.game.time.total / YEAR;
       if (!silent) {
         const icon = ['🏛', '🏛', '🏛', '🏛', '🏭', '💡', '⚛', '🌌'][k.era] || '🏛';
         this._note(`${icon} ${this._kn(k)} enters the ${ERAS[k.era].name} era`, 'good', this._kingdomPos(k), 'era' + k.id + k.era, 1);

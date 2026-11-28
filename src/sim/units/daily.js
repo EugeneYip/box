@@ -32,6 +32,14 @@ const ADULT = 16;
 const DAY_EP = new Set(['inside', 'chore', 'shop', 'wait', 'school', 'hold']);
 // episodes a soldier keeps when the drill begins
 const SOLDIER_KEEP = new Set(['drill', 'guard', 'privy', 'eat', 'mourn', 'cheer']);
+// (round 37) the school day: class from SCHOOL_H0, the last pupils sent in
+// before SCHOOL_LAST, out at SCHOOL_END; a pupil's game, light chore or
+// morning at home begun before the bell (or before it turned five) ends at
+// it (SCHOOL_CUT), and celebrations wait till after
+const SCHOOL_H0 = 7.5,
+  SCHOOL_LAST = 14.8,
+  SCHOOL_END = 15.2;
+const SCHOOL_CUT = new Set(['play', 'help', 'chore', 'goto', 'inside']);
 const DAY_S = 360; // game seconds per day (src/core/Game.js DAY_SECONDS)
 const H = DAY_S / 24; // game seconds per hour
 const MEAL = [
@@ -151,6 +159,13 @@ export function installDaily(Units) {
     if (!c.live) return this.daylight() < 0.16;
     const { bed, wake } = this._sleepHours(u);
     return c.h >= bed || c.h < wake;
+  };
+
+  // The town's school, if it keeps one: the library, else from the
+  // Enlightened era the town hall's schoolroom (null: no school)
+  P._dlSchool = function (v) {
+    const pl = this._dlPlaces(v);
+    return pl.library || (pl.era >= 3 ? pl.hallB : null) || null;
   };
 
   // ---- village places (cached per village per game day) ---------------------
@@ -599,6 +614,7 @@ export function installDaily(Units) {
       tries: 0,
       t0: now,
       h0: this.game.time.hour ?? 12,
+      a0: u.age,
     });
     // (round 37) a person on their own who would eat, think or play where
     // they stand in a street's roadway steps onto its sidewalk first
@@ -709,6 +725,18 @@ export function installDaily(Units) {
       const h = this.game.time.hour ?? 12;
       const e0 = 16.9 + hash(u.id, 6) * 0.6;
       if (h >= e0 && u._dl.h0 < e0 - 0.05 && h < 23) {
+        this._dlEnd(u);
+        u._dlNext = now;
+      }
+    }
+    // (round 37) the school bell: a pupil still at a game or a light chore
+    // begun before the school day breaks off and goes to class (a game begun
+    // at 7:20 ran on to 9, and pupils spent a third of the school day in class);
+    // so does a child who turned five at play (a year is a twelfth of a day,
+    // and such children were most of the pupils at play in school hours)
+    if (u._dl && child && u.age >= 5 && SCHOOL_CUT.has(u._dl.k) && this.game.settings?.dayNight) {
+      const h = this.game.time.hour ?? 12;
+      if (h >= SCHOOL_H0 && h < SCHOOL_LAST && (u._dl.h0 < SCHOOL_H0 || u._dl.a0 < 5) && u._schoolDay !== (this.game.time.day | 0) && this._dlSchool(v)) {
         this._dlEnd(u);
         u._dlNext = now;
       }
@@ -932,9 +960,13 @@ export function installDaily(Units) {
     // drop everything for every birth, and "Celebrating" became a growing
     // town's most common label.)
     const ce = v._cele;
+    // (round 37) a pupil keeps to school in school hours: celebrations draw
+    // the children only before and after it (births, now at the family's
+    // door, drew 8% of the pupils' school day)
+    const pupil = child && u.age >= 5 && h >= SCHOOL_H0 && h < SCHOOL_END && !!this._dlSchool(v);
     // (one chance per person per celebration, not a new roll every decision)
     // (round 35: a toddler joins only one at its door, not a trek across town)
-    if (ce && now < ce.until && !guard && u._celeSeen !== ce && (ce.k === 'peace' || (!working && (ce.x - u.x) ** 2 + (ce.z - u.z) ** 2 < 36)) && !(child && u.age < TODDLER_AGE && (ce.x - u.x) ** 2 + (ce.z - u.z) ** 2 >= 9) && ((u._celeSeen = ce), rng() < (ce.k === 'peace' ? 0.5 : 0.35))) {
+    if (ce && now < ce.until && !guard && !pupil && u._celeSeen !== ce && (ce.k === 'peace' || (!working && (ce.x - u.x) ** 2 + (ce.z - u.z) ** 2 < 36)) && !(child && u.age < TODDLER_AGE && (ce.x - u.x) ** 2 + (ce.z - u.z) ** 2 >= 9) && ((u._celeSeen = ce), rng() < (ce.k === 'peace' ? 0.5 : 0.35))) {
       const lab = ce.k === 'birth' ? 'Celebrating a birth' : ce.k === 'wedding' ? 'Celebrating a wedding' : 'Celebrating the peace';
       this._dlStart(u, 'cheer', 6 + rng() * 6, { x: ce.x + (rng() - 0.5) * 2.4, z: ce.z + (rng() - 0.5) * 2.4, lab, go: 'Joining the celebration', fx: ce.x, fz: ce.z, act: 'cheer' });
       return true;
@@ -973,7 +1005,7 @@ export function installDaily(Units) {
     if (evening && !guard) return this._dlEvening(u, now, v, pl, child, bed, h);
     // children by day: play with the others, now and then
     if (child) {
-      const school = pl.library || pl.era >= 3 ? pl.library || pl.hallB : null;
+      const school = this._dlSchool(v);
       // (round 23) a longer school day, more of it spent in class than on the
       // walk there (7% of the children were at school by day, 5% walking)
       // (round 27) the class lasts to the end of the school day: children
@@ -983,9 +1015,9 @@ export function installDaily(Units) {
       // (round 31) from five, and nine days in ten: the toddlers under four
       // were a third of the children and stood "Resting" by the door all day
       // (21% of the children by day), and school fell to 9% of their day
-      if (u.age >= 5 && school && h >= 7.5 && h < 14.8 && rng() < 0.9) {
+      if (u.age >= 5 && school && h >= SCHOOL_H0 && h < SCHOOL_LAST && rng() < 0.9) {
         // (morning class to lunch, eaten at school; afternoon class to 15:12)
-        const end = h < 11.6 ? 11.8 : 15.2;
+        const end = h < 11.6 ? 11.8 : SCHOOL_END;
         const dur = Math.max(12, (end - h) * H + rng() * 0.3 * H);
         u._schoolDay = c.day;
         this._dlStart(u, 'school', dur, { x: school.doorX, z: school.doorZ, lab: 'At school', go: 'Walking to school', free: true });

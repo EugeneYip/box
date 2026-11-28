@@ -56,7 +56,20 @@ export const war = {
     // within sight there: no ship was sunk on the World Map in a century)
     const look = this.seaScale();
     const m = v.mission;
+    // (round 37) the great hulls (battleship, carrier) keep to deep water on
+    // patrol as on every course: one found in the shallows (launched at the
+    // galleys' moorings by the quay, or left there by a fight) first stands
+    // out to open water, and they neither chase a ship into the shallows nor
+    // row in on a raid (60% of the battleships on patrol lay under two tiles
+    // from the shore)
+    const deep = DEEP_WATER.has(v.kind) ? Math.max(3, (v.def.beam || 0) * 0.5 + 2.5) : 0;
+    if (deep && v.state === 'patrol') {
+      m.standOut = false;
+      if (nav.clearAt(v.x, v.z) < 2 && this._standOut(v, deep)) return;
+    }
+    if (m.standOut && v.state === 'sail') return;
     let tgt = v.target != null ? this.byId.get(v.target) : null;
+    if (tgt && deep && nav.clearAt(tgt.x, tgt.z) < 2) tgt = null;
     // a raid on a ship moored in a blockaded harbour (below) is given up after a while
     if (tgt && m.raid === tgt.id && (now - m.raidAt > 30 || !tgt.alive || tgt.state === 'sinking' || !enemies.includes(tgt.kingdom))) {
       m.raid = null;
@@ -76,7 +89,7 @@ export const war = {
           tgt = o;
         }
       });
-      if (tgt && (nav.comp(tgt.x, tgt.z) !== nav.comp(v.x, v.z) || nav.clearAt(tgt.x, tgt.z) < 1.8)) tgt = null;
+      if (tgt && (nav.comp(tgt.x, tgt.z) !== nav.comp(v.x, v.z) || nav.clearAt(tgt.x, tgt.z) < (deep ? 2.5 : 1.8))) tgt = null;
     }
     if (tgt) {
       v.target = tgt.id;
@@ -105,7 +118,7 @@ export const war = {
         // close in, straight when the water allows
         const ax = v.x + D.dx - Math.cos(tgt.heading) * 0.5,
           az = v.z + D.dz - Math.sin(tgt.heading) * 0.5;
-        if (nav.los(v.x, v.z, ax, az, 1.2)) {
+        if (nav.los(v.x, v.z, ax, az, deep || 1.2)) {
           v.dest = { x: ax, z: az };
           this.setPath(v, [v.x, v.z, ax, az]);
           v.state = 'sail';
@@ -136,18 +149,22 @@ export const war = {
     // (round 31: a carrier patrolled the shallows beside a beach) the great
     // hulls keep station further out, in open water as wide as their beam
     // allows (they keep to deep water on every course: Fleet.seaPath)
-    const deep = DEEP_WATER.has(v.kind) ? Math.max(3, (v.def.beam || 0) * 0.5 + 2.5) : 0;
+    // (round 37: further afield before a station in the shallows will do)
     const out = (h, d, R, c) => nav.waterNear(h.berth.x + h.dirX * d, h.berth.z + h.dirZ * d, R, c);
+    const wide = (h) => {
+      const p = nav.waterNear(h.berth.x, h.berth.z, 22, deep);
+      return p && nav.comp(p.x, p.z) === nav.comp(h.berth.x, h.berth.z) ? p : null;
+    };
     if (bh) {
       m.blockade = bh.id;
-      const sp = (deep && (out(bh, 10, 7, deep) || out(bh, 14, 9, deep))) || out(bh, 6, 5, 2.5) || out(bh, 5, 4, 1.5) || bh.berth;
+      const sp = (deep && (out(bh, 10, 7, deep) || out(bh, 14, 9, deep) || wide(bh))) || out(bh, 6, 5, 2.5) || out(bh, 5, 4, 1.5) || bh.berth;
       px = sp.x;
       pz = sp.z;
     } else {
       // guard the home waters
       const home = v.harbour != null ? this.harbourInfo(v.harbour) : null;
       if (!home) return;
-      const sp = (deep && (out(home, 10, 7, deep) || out(home, 14, 9, deep))) || out(home, 6, 4, 1.5) || home.berth;
+      const sp = (deep && (out(home, 10, 7, deep) || out(home, 14, 9, deep) || wide(home))) || out(home, 6, 4, 1.5) || home.berth;
       px = sp.x;
       pz = sp.z;
     }
@@ -171,7 +188,7 @@ export const war = {
         // holding the blockade a while, the galley rows in to burn a ship
         // moored in the harbour (never a fishing boat): on a big map's wide
         // seas enemy sail seldom passes a blockade, and none leaves port
-        if ((m.raidWait = (m.raidWait ?? 20) - dt) <= 0) {
+        if (!deep && (m.raidWait = (m.raidWait ?? 20) - dt) <= 0) {
           m.raidWait = 30;
           let prey = null,
             pd = 14;
@@ -198,6 +215,46 @@ export const war = {
         }
       }
     }
+  },
+
+  // (round 37) A great hull in the shallows stands out to the nearest open
+  // water of her own sea as wide as her beam asks (deep: clearance in
+  // tiles; else at least two tiles clear), straight when the way is clear,
+  // else along the water graph; false when there is none (looked for again
+  // a few seconds on).
+  _standOut(v, deep) {
+    const nav = this.nav;
+    const m = v.mission;
+    const now = this.game.time.total;
+    if (m.standT > now) return false;
+    m.standT = now + 4;
+    const comp = nav.comp(v.x, v.z);
+    let p = null;
+    for (const c of [deep, 2]) {
+      const L = [];
+      const cx = Math.floor(v.x),
+        cz = Math.floor(v.z);
+      for (let dz = -20; dz <= 20; dz++)
+        for (let dx = -20; dx <= 20; dx++) {
+          const d2 = dx * dx + dz * dz;
+          if (d2 > 400 || nav.clearAt(cx + dx + 0.5, cz + dz + 0.5) < c) continue;
+          L.push([d2, cx + dx + 0.5, cz + dz + 0.5]);
+        }
+      L.sort((a, b) => a[0] - b[0]);
+      for (let i = 0; i < L.length && i < 24 && !p; i++) if (nav.comp(L[i][1], L[i][2]) === comp) p = { x: L[i][1], z: L[i][2] };
+      if (p) break;
+    }
+    if (!p) return false;
+    const path = nav.los(v.x, v.z, p.x, p.z, 0) ? [v.x, v.z, p.x, p.z] : nav.findPath(v.x, v.z, p.x, p.z, { big: false });
+    if (!path) return false;
+    v.target = null;
+    v.chase = false;
+    v.dest = { x: p.x, z: p.z };
+    this.setPath(v, path);
+    v.state = 'sail';
+    v.mission.phase = 'out';
+    v.mission.standOut = true;
+    return true;
   },
 
   // A galley's own station off a harbour: its squadron (the realm's galleys

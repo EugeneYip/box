@@ -468,6 +468,35 @@ export const town = {
     const h = this.game.time?.hour ?? 12;
     return job === 'loop' ? h < 5.5 || h >= 23.5 : h < 6.5 || h >= 20.5;
   },
+  // (round 37) Past the vans' cut-off (10 pm) a delivery van or garbage truck
+  // not yet back at its depot pulls over at the nearest curb for the night,
+  // as a bus parks at its nearest stop: one set down or freed in the small
+  // hours drove across town to the depot (8% were moving at 2:50 am, "Heading
+  // back to the depot for the night")
+  _townLate(job) {
+    const h = this.game.time?.hour ?? 12;
+    return job !== 'loop' && (h < 6.5 || h >= 22);
+  },
+  // The curb it pulls over at: the street it stands on when a vehicle may
+  // stop there, else the nearest curb of its stretch of streets
+  _townCurbNear(v, t) {
+    const R = this._townRoads(t);
+    const w = this.world;
+    const here = Math.floor(v.z) * w.w + Math.floor(v.x);
+    if (R.all.includes(here)) return { ...this._townStop(here, 'night', null), curb: true };
+    const cid = R.comp.get(here) ?? R.main;
+    let best = -1,
+      bd = Infinity;
+    for (const L of [R.curb, R.all]) {
+      for (const i of L) {
+        if (R.comp.get(i) !== cid) continue;
+        const d = ((i % w.w) + 0.5 - v.x) ** 2 + (((i / w.w) | 0) + 0.5 - v.z) ** 2;
+        if (d < bd) (bd = d), (best = i);
+      }
+      if (best >= 0) break;
+    }
+    return best >= 0 ? { ...this._townStop(best, 'night', null), curb: true } : null;
+  },
   // A town vehicle standing (at a stop, a door, the depot, the dump, or
   // parked for the night): it waits there its while, then sets out again.
   _townWork(v, step) {
@@ -522,6 +551,8 @@ export const town = {
       if (!tgt && m.at === 'night') {
         v.state = 'work';
         v.stateT = 0;
+        v.path = null;
+        v.speed = 0;
         return;
       }
     } else if (m.job === 'loop') {
@@ -612,11 +643,16 @@ export const town = {
   // (round 35) A bus still on its way to a stop when the last run ends
   // (11:30 pm) turns for the nearest stand at once instead of finishing the
   // leg first (Fleet land.js, while it drives; looked at once a second).
+  // (round 37) ...and a van or garbage truck still driving at its cut-off
+  // (10 pm), to the depot or on a round, pulls over at the nearest curb
   _townDriveCheck(v, step) {
     const m = v.mission;
-    if (m.job !== 'loop' || m.goal?.at === 'night' || (v._tnT = (v._tnT || 0) + step) < 1) return;
+    if (m.retire) return;
+    const loop = m.job === 'loop';
+    if (loop ? m.goal?.at === 'night' : m.goal?.at === 'night' && m.goal.curb) return;
+    if ((v._tnT = (v._tnT || 0) + step) < 1) return;
     v._tnT = 0;
-    if (this._townNight(m.job)) this._townNext(v);
+    if (loop ? this._townNight(m.job) : this._townLate(m.job)) this._townNext(v);
   },
   // At the end of its way (Fleet land.js _landArrive): it stands there.
   _townArrive(v) {
@@ -647,7 +683,7 @@ export const town = {
         const d = this.dist(o.x, o.z, v.x, v.z);
         if (d < bd) (bd = d), (s = o);
       }
-    } else s = this._townDepot(v, t);
+    } else s = this._townLate(m.job) ? this._townCurbNear(v, t) : this._townDepot(v, t);
     if (!s) return null;
     // (on the stand's own tile the street search has nowhere to go)
     if (this.dist(s.x, s.z, v.x, v.z) < 0.6 || (Math.floor(s.x) === Math.floor(v.x) && Math.floor(s.z) === Math.floor(v.z))) {

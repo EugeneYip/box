@@ -884,8 +884,19 @@ export const realms = {
     if (!this._realMapOn?.() || !o || !v) return true;
     return geoDist(this.world, o.cx, o.cz, v.cx, v.cz) <= (kid === v.kingdom ? MOVE_OWN : MOVE_CROSS);
   },
+  // (round 37) Another town of the realm holding key city v, within reach of
+  // it and big enough to send families (as _refillKey and _refillBySea ask:
+  // 16 people, a key city 24, not in famine)
+  _realmTownNear(v) {
+    for (const vid of this.kingdoms[v.kingdom]?.villages || []) {
+      const o = this.villages[vid];
+      if (!o?.alive || o === v || o.starving || o.pop < 16 || (this._keyCity(o) && o.pop < KEY_SEAT_POP + 9)) continue;
+      if (this._moveReach(o, v)) return true;
+    }
+    return false;
+  },
   // Move up to n settlers into key city v; returns how many came.
-  _refillKey(v, n) {
+  _refillKey(v, n, urgent = false) {
     let src = null,
       sd = Infinity;
     for (const o of this.villages) {
@@ -917,11 +928,17 @@ export const realms = {
     // must-exist city never stands empty), while the world has room for them
     // (round 35: with moves held to MOVE_OWN / MOVE_CROSS tiles, a remote key
     // city such as Anchorage is kept by newcomers up to KEY_MIN_POP)
-    const room = v.pop < KEY_MIN_POP || this.game.units.count('human') < this._humanCap();
-    if (!moved && room && this.game.time.total < YEAR * KEY_YEARS && !(this.game.time.total - (v._newT ?? -1e9) < 8)) {
+    // (round 37) ...and no further (while the world had room they came up to
+    // the seat's floor of 15), and only to a city with no town of its
+    // holder's realm within reach that could send families (they come by
+    // land or on the next crossing instead: newcomers stood in for a crossing
+    // twelve seconds off); a city about to stand empty (urgent: _holdKeyCity)
+    // is kept by them all the same
+    const want = Math.min(4, n, KEY_MIN_POP - v.pop);
+    if (!moved && want > 0 && (urgent || !this._realmTownNear(v)) && this.game.time.total < YEAR * KEY_YEARS && !(this.game.time.total - (v._newT ?? -1e9) < 8)) {
       v._newT = this.game.time.total;
       const w = this.world;
-      for (let i = 0; i < Math.min(4, n); i++) {
+      for (let i = 0; i < want; i++) {
         const a = this.rng.next() * Math.PI * 2;
         const x = v.cx + Math.cos(a) * 2.5,
           z = v.cz + Math.sin(a) * 2.5;
@@ -993,7 +1010,7 @@ export const realms = {
   // peopled again instead (true: keep it).
   _holdKeyCity(v) {
     if (!this._keyCity(v) || v.razed) return false;
-    return this._refillKey(v, KEY_MIN_POP) > 0;
+    return this._refillKey(v, KEY_MIN_POP, true) > 0;
   },
 
   // Does a town stand in its real country's own land? (the place data's
