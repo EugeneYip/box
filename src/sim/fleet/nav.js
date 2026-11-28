@@ -154,26 +154,35 @@ export class WaterNav {
     this._dirty = null;
   }
 
+  // (round 37) Patches are kept apart unless they overlap or nearly touch:
+  // the sea ice of the two poles, marked together, made one box the height
+  // of the map, and the graph was built again from scratch (85-95 ms of
+  // work on the Vast World Map). Each update() makes one patch.
   markDirty(r) {
     if (!r) return;
-    const d = this._dirty;
-    if (!d) this._dirty = { x0: r.x0, y0: r.y0, x1: r.x1, y1: r.y1 };
-    else {
-      d.x0 = Math.min(d.x0, r.x0);
-      d.y0 = Math.min(d.y0, r.y0);
-      d.x1 = Math.max(d.x1, r.x1);
-      d.y1 = Math.max(d.y1, r.y1);
+    const L = this._dirty || (this._dirty = []);
+    let m = { x0: r.x0, y0: r.y0, x1: r.x1, y1: r.y1 };
+    const pad = DMAX * 2;
+    for (let merged = true; merged; ) {
+      merged = false;
+      for (let i = L.length - 1; i >= 0; i--) {
+        const d = L[i];
+        if (m.x0 > d.x1 + pad || d.x0 > m.x1 + pad || m.y0 > d.y1 + pad || d.y0 > m.y1 + pad) continue;
+        m = { x0: Math.min(m.x0, d.x0), y0: Math.min(m.y0, d.y0), x1: Math.max(m.x1, d.x1), y1: Math.max(m.y1, d.y1) };
+        L.splice(i, 1);
+        merged = true;
+      }
     }
+    L.push(m);
   }
   get dirty() {
-    return !!this._dirty;
+    return !!(this._dirty && this._dirty.length);
   }
 
   // Patch the graph around the last terrain edits. Returns the touched rect.
   update() {
-    const r = this._dirty;
+    const r = this._dirty?.shift();
     if (!r) return null;
-    this._dirty = null;
     const W = this.W,
       H = this.H,
       C = this.C;
