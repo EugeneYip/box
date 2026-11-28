@@ -47,9 +47,35 @@ export class Onboarding {
     this._t = 0;
   }
 
+  // (round 37) The first hint waits for the top bar's reveal to finish (its
+  // panels' transitionend), then a moment more: on a slow machine the bar
+  // was still sliding in, the stats box unseen, five seconds after Begin
+  // while step 1 already showed. With no reveal to wait for (reduced motion)
+  // it shows at once; a reveal that never reports its end is given 6 s.
   start() {
-    if (this.ui.prefs.onboarded || this.step >= 0) return;
-    setTimeout(() => this.show(0), 1600);
+    if (this.ui.prefs.onboarded || this.step >= 0 || this._waiting) return;
+    this._waiting = true;
+    const top = this.ui.root?.querySelector('.ws-hud .ws-top');
+    const left = new Set(top ? [...top.children].filter((e) => e.getBoundingClientRect().width > 0 && parseFloat(getComputedStyle(e).transitionDuration) > 0) : []);
+    let done = false;
+    const go = () => {
+      if (done) return;
+      done = true;
+      top?.removeEventListener('transitionend', onEnd);
+      clearTimeout(this._startT);
+      this._startT = setTimeout(() => {
+        this._waiting = false;
+        if (this.step < 0 && !this.ui.prefs.onboarded) this.show(0);
+      }, 450);
+    };
+    const onEnd = (e) => {
+      if (e.propertyName !== 'transform' || !left.has(e.target)) return;
+      left.delete(e.target);
+      if (!left.size) go();
+    };
+    if (!left.size) return go();
+    top.addEventListener('transitionend', onEnd);
+    this._startT = setTimeout(go, 6000);
   }
 
   show(i) {

@@ -11,6 +11,15 @@ import { KINDS } from '../sim/fleet/kinds.js';
 export const MOVER_PX = 7;
 const MOVER_PX_MOUSE = 16;
 const MOVER_PX_TOUCH = 26;
+// (round 37) where people were in the last moments: a click on a walking
+// person at 25 tiles opened the village three rounds running (the person had
+// walked on from where the player saw them by the time the click came): the
+// people round the camera's target every 60 ms over the last RECENT_MS, and
+// as they were in the last RECENT_DRAWN drawn frames however old (software
+// GL draws a frame every few seconds while the simulation runs on)
+const RECENT_MS = 1200;
+const RECENT_DRAWN = 2;
+const RECENT_MAX = 24;
 const _v = new THREE.Vector3();
 
 // Ray / heightfield intersection against the CPU world data.
@@ -19,6 +28,45 @@ export class Picker {
     this.game = game;
     this.ray = new THREE.Raycaster();
     this.ndc = new THREE.Vector2();
+    this._recent = [];
+    this._recentAt = 0;
+  }
+  // (round 37) Called on every frame step (Game.frameStep; drawn: the frame
+  // is drawn): notes where the people round the camera's target stand as
+  // drawn (at most every 60 ms), for moverAt(..., recent).
+  noteFrame(drawn = true) {
+    const g = this.game;
+    const now = performance.now();
+    if ((!drawn && now - this._recentAt < 60) || !g.units?.forEachNear) return;
+    this._recentAt = now;
+    const rig = g.cameraRig;
+    const c = rig?.cur;
+    if (!c || c.dist > 80) {
+      this._recent.length = 0;
+      return;
+    }
+    // (old snapshots go, but never one of the last RECENT_DRAWN drawn frames)
+    let nd = 0;
+    const keep = [];
+    for (let k = this._recent.length - 1; k >= 0; k--) {
+      const s = this._recent[k];
+      const isDrawn = s.drawn && nd < RECENT_DRAWN;
+      if (s.drawn) nd++;
+      if ((isDrawn || now - s.t <= RECENT_MS) && keep.length < RECENT_MAX) keep.push(s);
+    }
+    keep.reverse();
+    this._recent = keep;
+    const snap = { refs: [], xs: [], zs: [] };
+    snap.t = now;
+    snap.drawn = drawn;
+    g.units.forEachNear(c.x, c.z, Math.min(70, c.dist * 1.3 + 10), (o) => {
+      if (o.alive === false || o._hid || o.def?.kind !== 'humanoid' || (o.data && (o.data.inside || o.data.aboard != null)) || snap.refs.length >= 600) return;
+      const p = rig._drawnAt ? rig._drawnAt(o) : o;
+      snap.refs.push(o);
+      snap.xs.push(p.x);
+      snap.zs.push(p.z);
+    });
+    this._recent.push(snap);
   }
   // clientX/clientY in CSS pixels. Returns {x, y, z, tx, ty, water} or null.
   // includeWater: if true, the water surface stops the ray.
@@ -65,7 +113,9 @@ export class Picker {
   // (round 35) The creature or craft whose body on screen lies nearest the
   // cursor, within rPx: {kind, ref, px}, or null. People, the fleet's land
   // and sea craft and the street cars, where they are drawn this frame.
-  moverAt(hit, rPx = this.moverRadius()) {
+  // (round 37) recent: with none there now, a person drawn within rPx of the
+  // cursor in the last few frames (noteFrame) still counts.
+  moverAt(hit, rPx = this.moverRadius(), recent = false) {
     if (!hit || hit.sx == null) return null;
     const g = this.game;
     const R = Math.min(4, (hit.px || 0.05) * rPx * 1.6 + 0.8);
@@ -92,7 +142,44 @@ export class Picker {
       if (o.alive === false || o._hid || (o.data && (o.data.inside || o.data.aboard != null))) return;
       consider(o, 'unit');
     });
+    if (!best && recent) best = this._recentAt_(hit, rPx, R + 1.5);
     return best;
+  }
+  // A person drawn within rPx of the cursor in the last few frames, still
+  // out and about: {kind: 'unit', ref, px} or null (the newest frame first).
+  _recentAt_(hit, rPx, R) {
+    const now = performance.now();
+    const W = this.game.world;
+    let best = null,
+      bd = rPx;
+    let nd = 0;
+    for (let k = this._recent.length - 1; k >= 0; k--) {
+      const s = this._recent[k];
+      const isDrawn = s.drawn && nd++ < RECENT_DRAWN;
+      if (!isDrawn && now - s.t > RECENT_MS) continue;
+      for (let j = 0; j < s.refs.length; j++) {
+        const o = s.refs[j];
+        const x = s.xs[j],
+          z = s.zs[j];
+        if (Math.abs(x - hit.x) > R || Math.abs(z - hit.z) > R) continue;
+        if (o.alive === false || o._hid || (o.data && (o.data.inside || o.data.aboard != null))) continue;
+        const y0 = W.surfaceAt(x, z);
+        const a = this.project(x, y0, z);
+        const b = this.project(x, y0 + this.bodyHeight(o), z);
+        if (!a || !b) continue;
+        const dx = b[0] - a[0],
+          dy = b[1] - a[1];
+        const l2 = dx * dx + dy * dy;
+        const t = l2 > 1e-6 ? Math.max(0, Math.min(1, ((hit.sx - a[0]) * dx + (hit.sy - a[1]) * dy) / l2)) : 0;
+        const d = Math.hypot(hit.sx - (a[0] + dx * t), hit.sy - (a[1] + dy * t));
+        if (d < bd) {
+          bd = d;
+          best = { kind: 'unit', ref: o, px: d };
+        }
+      }
+      if (best) return best;
+    }
+    return null;
   }
   // Distance in CSS px from the cursor (sx, sy) to a creature's or craft's
   // upright body (the segment from its feet to its head on screen), where

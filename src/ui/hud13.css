@@ -118,6 +118,11 @@
   color: #f6e2a8;
   background: rgba(235, 201, 119, 0.17);
 }
+/* (round 37) a town vehicle off duty: a calm slate chip, neither "Lost" nor "Arrived" */
+.ws-insp__dead.ws-insp__state.is-off {
+  color: #cdd8ec;
+  background: rgba(150, 172, 214, 0.17);
+}
 
 /* ---- inspector header: a side duty is a chip on the line under the name,
    and the level badge on a portrait says what it counts ("Lv 2") */

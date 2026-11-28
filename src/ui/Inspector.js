@@ -258,18 +258,34 @@ export class Inspector {
   // (Picker.moverRadius: 16 px with a mouse, 26 on touch), that comes first:
   // on a phone a tap 8 px off a person opened the house behind them, and a
   // click on a walking person at 25 tiles opened the village.
+  // (round 37) Over a village, a realm or the land (not a building), a
+  // person drawn within that radius in the last few frames counts too.
   preferMover(list, hit) {
     const pk = this.game.picker;
     if (hit?.sx == null || !pk?.moverAt || !list.length) return;
     const top = list[0];
     if (top.unit || isCraft(top)) return;
-    const m = pk.moverAt(hit);
+    const m = pk.moverAt(hit, undefined, kindOf(top) !== 'building' && kindOf(top) !== 'plot');
     if (!m) return;
     const i = list.findIndex((o) => o.unit === m.ref || (isCraft(o) && (o.vessel === m.ref || o.building === m.ref)));
     if (i > 0) return void list.unshift(list.splice(i, 1)[0]);
     const F = this.game.fleet;
     const r = m.kind === 'unit' ? this.unitResult(m.ref) : m.ref.streetCar ? F?.describeCar?.(m.ref) : F?.describe?.(m.ref);
     if (r) list.unshift(r);
+  }
+  // (round 37) When a person wins a tap or click inside a building's
+  // footprint, that building stays among the person's "Here" chips while the
+  // card is on them: the card is re-collected round the person as they walk
+  // (refresh), and on a phone a tap on a building site in a busy town opened
+  // a farmer whose chips no longer held the site, which could not be reached.
+  noteHere() {
+    const r = this.track;
+    const h = this.hit;
+    if (!r?.unit || !h) return;
+    const b = this.game.picker?.buildingAt?.(h.x, h.z);
+    if (!b) return;
+    const br = this.results.find((o) => kindOf(o) === 'building' && o.building === b && !isCraft(o));
+    if (br) this._hereB = { unit: r.unit, r: br };
   }
   // (round 23) A building site says who is at work on it and, when urban
   // renewal raises it, what it replaces.
@@ -354,6 +370,10 @@ export class Inspector {
     if (!keepIndex) safe(() => this.preferMover(this.results, this.hit), null, 'prefer mover');
     if (!keepIndex) this.index = 0;
     this.track = this.results[this.index];
+    if (!keepIndex) {
+      this._hereB = null;
+      safe(() => this.noteHere(), null, 'here chip');
+    }
     this._deadShown = false;
     this._scrollTop = 0;
     this.editing = null;
@@ -466,6 +486,7 @@ export class Inspector {
     if (fu && rig.follow === fu) rig.follow = null;
     this.track = null;
     this.hit = null;
+    this._hereB = null;
     this.setSelected(null);
     this.pin.classList.remove('is-shown');
   }
@@ -783,7 +804,9 @@ export class Inspector {
     // (round 35) a vehicle's state ("Lost", "Arrived", "Back home") is a chip
     // at the start of the line under the name: in the kind row beside the
     // star and close buttons it wrapped ("DELIVERY SERVICE / LAID UP")
-    const stateChip = craft && dead ? '<em class="ws-insp__dead ws-insp__state">Lost</em>' : ended ? `<em class="ws-insp__dead ws-insp__state is-arrived${stop?.chip ? ' is-home' : ''}">${esc(ENDED_WORD[craft.endedWhy] || stop?.chip || arrivedWord(craft))}</em>` : '';
+    // (round 37) a town vehicle no longer wanted, parked or driving back to
+    // its depot until it is out of sight, is "Off duty" there too
+    const stateChip = craft && dead ? '<em class="ws-insp__dead ws-insp__state">Lost</em>' : ended ? `<em class="ws-insp__dead ws-insp__state is-arrived${stop?.chip ? ' is-home' : ''}">${esc(ENDED_WORD[craft.endedWhy] || stop?.chip || arrivedWord(craft))}</em>` : craft?.mission?.town && craft.mission.retire ? '<em class="ws-insp__dead ws-insp__state is-off">Off duty</em>' : '';
     const realmK = !u && !isSite && (k === 'village' || k === 'kingdom' || k === 'building') ? (typeof r.kingdom === 'object' && r.kingdom) || kingdomOf(this.game, (r.village || this.game.civ?.villages?.[r.building?.village])?.kingdom) : null;
     if (realmK) actions.unshift(`<button class="ws-btn ws-btn--sm" type="button" data-act="tech" data-k="${realmK.id}">${uiIcon('chronicle')}<span>Technology</span></button>`);
     // a building may be marked or unmarked as heritage (never replaced by renewal)
@@ -838,7 +861,7 @@ export class Inspector {
         for (const c of cells.slice(4)) g2.append(c);
         more.append(g2);
       }
-      for (const sec of [...sc.querySelectorAll('.ws-dsec')]) if (!/inside|traits|conditions|learning|realm|voyage|hold/i.test(sec.querySelector('h5')?.textContent || '')) more.append(sec);
+      for (const sec of [...sc.querySelectorAll('.ws-dsec')]) if (!/inside|traits|conditions|learning|realm|^era$|voyage|hold/i.test(sec.querySelector('h5')?.textContent || '')) more.append(sec);
       if (more.childElementCount) {
         more.hidden = !this.moreOpen;
         const btn = document.createElement('button');
@@ -1159,7 +1182,10 @@ export class Inspector {
     if (isKingdom && k.motto && !(r.stats || []).some((s) => /motto/i.test(String(s[0])))) html += `<p class="ws-motto">“${esc(String(k.motto))}”</p>`;
     if (k && !isKingdom) {
       const era = eraOf(g, k);
-      html += `<section class="ws-dsec"><h5>Realm</h5><div class="ws-realm__line"><span class="ws-era is-era${era}">${uiIcon(ERA_ICON[era] || 'chronicle')}<span>${esc(eraNames()[era] || '')} era</span></span>${this._chipNames?.has(String(k.name || '').toLowerCase()) ? '' : `<span class="ws-realm__of">${esc(String(k.name || ''))}</span>`}</div></section>`;
+      // (round 37) with the realm's name already a chip above, the row is
+      // its "Era" (a building's card read "REALM · HEARTH ERA", no realm)
+      const named = !this._chipNames?.has(String(k.name || '').toLowerCase());
+      html += `<section class="ws-dsec"><h5>${named ? 'Realm' : 'Era'}</h5><div class="ws-realm__line"><span class="ws-era is-era${era}">${uiIcon(ERA_ICON[era] || 'chronicle')}<span>${esc(eraNames()[era] || '')} era</span></span>${named ? `<span class="ws-realm__of">${esc(String(k.name || ''))}</span>` : ''}</div></section>`;
     }
     if (k && isKingdom) {
       const era = eraOf(g, k);
@@ -1582,6 +1608,9 @@ export class Inspector {
       }
       idx = 0;
     }
+    // (round 37) the building first tapped stays a chip on this person's card (noteHere)
+    const hb = this._hereB;
+    if (u && hb && hb.unit === u && hb.r.building?.alive !== false && !hb.r.building?.gone && !list.some((o) => o.building === hb.r.building)) list.splice(idx + 1, 0, hb.r);
     this._deadShown = false;
     this.results = list;
     this.index = idx;
@@ -1654,7 +1683,9 @@ export class Inspector {
     lab.style.transform = `translateX(calc(-50% + ${shift.toFixed(0)}px))`;
     pin.classList.add('is-shown');
     // a followed or hidden creature keeps its name tag; otherwise show the marker only
-    pin.classList.toggle('has-label', this.game.cameraRig.follow === ref || kind === 'building');
+    // (round 37: a selected vehicle keeps its name tag too: at 26-30 tiles a
+    // selected bus was a 12 px ring among its loop's stop rings)
+    pin.classList.toggle('has-label', this.game.cameraRig.follow === ref || kind === 'building' || kind === 'vessel');
   }
 
   update(dt) {

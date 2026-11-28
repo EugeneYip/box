@@ -379,6 +379,10 @@ export class Game {
     v.zoom01 = Math.min(1, Math.max(0, (rig.cur.dist - rig.minDist) / Math.max(1, rig.maxDist - rig.minDist)));
     v.far = v.zoom01 > 0.62;
     this.world.flushDirty();
+    // (round 37) where people stand, for a click that comes a moment late
+    try {
+      this.picker?.noteFrame?.(draw);
+    } catch {}
     if (!draw) {
       this._heldDt = (this._heldDt || 0) + dt;
       for (const s of [this.ui, this.audio]) {

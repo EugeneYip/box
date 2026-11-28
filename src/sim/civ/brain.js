@@ -854,13 +854,18 @@ export const brain = {
     }
     const w = this.world;
     for (let k = 0; k < 6; k++) {
-      const tx = x + this.rng.float(-r, r),
+      let tx = x + this.rng.float(-r, r),
         tz = z + this.rng.float(-r, r);
       const ix = Math.floor(tx),
         iz = Math.floor(tz);
       if (!w.isWalkable(ix, iz)) continue;
       const use = this.use[iz * w.w + ix];
       if (use === USE.BUILDING) continue;
+      // (round 37) never to stand in a street's roadway: its sidewalk instead
+      if (use === USE.ROAD) {
+        const kb = this.game.units?._kerbSpot?.(tx, tz, u.id);
+        if (kb) (tx = kb.x), (tz = kb.z);
+      }
       const res = this._pathTo(u, tx, tz);
       if (res === true) {
         u.state = 'walk';

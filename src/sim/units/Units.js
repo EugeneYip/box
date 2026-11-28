@@ -2187,7 +2187,16 @@ export class Units {
       try {
         brain(u, elapsed, g);
         // a village meal fills less in lean times (needs.js)
-        if (u.alive && u.species === 'human' && u.village >= 0) this._leanFloor(u);
+        if (u.alive && u.species === 'human' && u.village >= 0) {
+          this._leanFloor(u);
+          // (round 37) an idler left standing in a street's roadway steps
+          // onto the sidewalk (daily.js _kerbSpot)
+          if (u.state === 'idle' && !u.target && !u.moving && !u._dl && !u.activity && !u.sleeping && !u.combat && !u._offd && !u.data.civ?.task && now >= (u._kerbT || 0)) {
+            u._kerbT = now + 1.5;
+            const k = this._kerbSpot?.(u.x, u.z, u.id);
+            if (k && this.moveTo(u, k.x, k.z)) u.state = 'walk';
+          }
+        }
       } catch (err) {
         console.error('[brain]', u.species, err);
         this.brains.delete(u.species);

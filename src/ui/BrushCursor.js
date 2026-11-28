@@ -641,6 +641,13 @@ export class BrushCursor {
       const hpx = 17;
       tag.scale.set(hpx * ppx * (tex.userData.w / tex.userData.h), hpx * ppx, 1);
       tag.position.set(st.x, y0 + 10 * ppx, st.z);
+      // (round 37) the stop's name fades while the bus stands at (or rolls
+      // through) that stop: "Elm Street" was drawn right over the bus waiting
+      // there; the bus's own name pin (Inspector.updatePin) marks it instead
+      const near = Math.hypot(bus.x - st.x, bus.z - st.z) < Math.max(1.3, 34 * ppx);
+      const f = (tag.userData.fade ??= 1);
+      tag.userData.fade = f + ((near ? 0.12 : 1) - f) * Math.min(1, this._dt * 8);
+      tag.material.opacity = tag.userData.fade;
       tag.visible = true;
       void cam;
     }
@@ -649,6 +656,7 @@ export class BrushCursor {
   update(dt) {
     const g = this.game;
     this.t += dt;
+    this._dt = dt;
     const hit = g.input?.hover;
     const p = g.activePower;
     const dist = g.cameraRig.cur.dist;
