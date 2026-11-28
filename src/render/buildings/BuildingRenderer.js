@@ -2210,7 +2210,12 @@ export class BuildingRenderer {
     this.uniforms.uTime.value = this.t;
     const day = env.daylight ?? 1;
     const night = 1 - THREE.MathUtils.smoothstep(day, 0.12, 0.62);
-    this.uniforms.uNight.value += (night - this.uniforms.uNight.value) * Math.min(1, dt * 3 + (this._first ? 0 : 1));
+    // (round 37) a jump in the time of day (the clock set from 22:00 to
+    // 11:00, a skip) takes the windows with it at once: easing over a few
+    // slow frames left Atomic towers at noon with night-dark walls and lit
+    // window cells; dusk and dawn still ease
+    const jump = Math.abs(night - this.uniforms.uNight.value) > 0.25;
+    this.uniforms.uNight.value += (night - this.uniforms.uNight.value) * Math.min(1, dt * 3 + (this._first && !jump ? 0 : 1));
     this._first = true;
     this.uniforms.uWind.value = env.wind?.strength ?? 0.35;
     // roofs whiten through the winter (and in a snowfall), as the fields do
