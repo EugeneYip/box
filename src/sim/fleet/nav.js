@@ -186,6 +186,13 @@ export class WaterNav {
       y0 = Math.max(0, r.y0 - DMAX),
       x1 = Math.min(W - 1, r.x1 + DMAX),
       y1 = Math.min(H - 1, r.y1 + DMAX);
+    // (round 37) cells where water came or went, or a node moved: links are
+    // made again only next to them (a whole band of the Vast World Map's sea
+    // ice re-made every link across the map: up to 0.9 s in one update)
+    const n = this.cw * this.ch;
+    if (!this._chgAll || this._chgAll.length !== n) this._chgAll = new Uint8Array(n);
+    this._chg = globalThis.__navEdgesAll ? null : this._chgAll;
+    if (this._chg) this._chg.fill(0);
     this._distRect(x0, y0, x1, y1, r);
     const cx0 = Math.max(0, Math.floor(x0 / C) - 1),
       cy0 = Math.max(0, Math.floor(y0 / C) - 1),
@@ -195,7 +202,8 @@ export class WaterNav {
     const E = { x0: Math.max(0, cx0 - 1), y0: Math.max(0, cy0 - 1), x1: Math.min(this.cw - 1, cx1 + 1), y1: Math.min(this.ch - 1, cy1 + 1) };
     const snap = globalThis.__navFullComp ? null : this._snapEdges(E);
     this._cells(cx0, cy0, cx1, cy1);
-    this._edgesIn(E.x0, E.y0, E.x1, E.y1);
+    this._edgesIn(E.x0, E.y0, E.x1, E.y1, this._chg);
+    this._chg = null;
     // (round 37) the water bodies are labelled again only round the patch
     // (a whole relabel took 50-60 ms on Medium and up to half a second on
     // the Vast World Map in the round-36 profiles, every few seconds while
@@ -288,8 +296,18 @@ export class WaterNav {
       iy1 = Math.min(y1, inner.y1 + DMAX);
     }
     const d = this.dist;
+    const chg = this._chg;
+    const C = this.C,
+      cw = this.cw;
     for (let y = iy0; y <= iy1; y++)
-      for (let x = ix0; x <= ix1; x++) d[y * W + x] = f[(y - y0) * bw + x - x0];
+      for (let x = ix0; x <= ix1; x++) {
+        const i = y * W + x;
+        const v = f[(y - y0) * bw + x - x0];
+        // (round 37) the cells where a tile turned to water or to land: only
+        // links near them can have changed (_edgesIn)
+        if (chg && d[i] > 0 !== v > 0) chg[((y / C) | 0) * cw + ((x / C) | 0)] = 1;
+        d[i] = v;
+      }
   }
 
   // One node per cell, on the most open tile of its largest water patch.
@@ -350,6 +368,7 @@ export class WaterNav {
             }
           }
         void label;
+        if (this._chg && this.ntile[c] !== bestTile) this._chg[c] = 1;
         this.ntile[c] = bestTile;
         if (bestTile >= 0) {
           this.nx[c] = (bestTile % W) + 0.5;
@@ -359,7 +378,11 @@ export class WaterNav {
       }
   }
 
-  _edgesIn(cx0, cy0, cx1, cy1) {
+  // chg (round 37): only the links of a cell pair where either cell, or for
+  // a diagonal link either cell it passes between, is marked are made again;
+  // the rest keep their bits (nothing they run over changed)
+  _edgesIn(cx0, cy0, cx1, cy1, chg = null) {
+    if (chg) return this._edgesChanged(cx0, cy0, cx1, cy1, chg);
     const cw = this.cw,
       ch = this.ch;
     void ch;
@@ -390,6 +413,43 @@ export class WaterNav {
           if (!this.los(this.nx[c], this.nz[c], this.nx[o], this.nz[o], 0)) continue;
           this.edges[c] |= 1 << k;
           this.edges[o] |= 1 << ((k + 4) & 7);
+        }
+      }
+  }
+
+  _edgesChanged(cx0, cy0, cx1, cy1, chg) {
+    const cw = this.cw;
+    const edges = this.edges,
+      ntile = this.ntile;
+    for (let cy = cy0; cy <= cy1; cy++)
+      for (let cx = cx0; cx <= cx1; cx++) {
+        const c = cy * cw + cx;
+        for (let k = 0; k < 8; k++) {
+          const o = this._nb(cx, cy, k);
+          if (o < 0) continue;
+          // a pair inside the window is seen from both ends: take it once
+          const ox = o % cw,
+            oy = (o / cw) | 0;
+          const oIn = ox >= cx0 && ox <= cx1 && oy >= cy0 && oy <= cy1;
+          if (oIn && o < c) continue;
+          let hit = chg[c] || chg[o];
+          if (!hit && k & 1) {
+            // a diagonal link runs between the two other cells of its square
+            const a = this._nb(cx, cy, (k + 1) & 7),
+              b = this._nb(cx, cy, (k + 7) & 7);
+            hit = (a >= 0 && chg[a]) || (b >= 0 && chg[b]);
+          }
+          if (!hit) continue;
+          const bit = 1 << k,
+            back = 1 << ((k + 4) & 7);
+          const on = ntile[c] >= 0 && ntile[o] >= 0 && this.los(this.nx[c], this.nz[c], this.nx[o], this.nz[o], 0);
+          if (on) {
+            edges[c] |= bit;
+            edges[o] |= back;
+          } else {
+            edges[c] &= ~bit;
+            edges[o] &= ~back;
+          }
         }
       }
   }
