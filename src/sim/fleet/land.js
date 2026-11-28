@@ -98,9 +98,23 @@ export const land = {
   // street tile nearest the hall door that is off the square and the parade
   // pad (a truck set out from the hall door and crossed the paved square
   // among the people), refreshed now and then; the door with no such street.
-  _depot(v) {
+  // (round 37) toward: the other town of the run; the street is then picked
+  // on the side of the square that faces it (one of eight ways, each kept),
+  // so a cart bound east no longer sets out west of the square and crosses it
+  _depot(v, toward = null) {
     const now = this.game.time.total;
-    if (v._depot && now - v._depotT < 30) return v._depot;
+    let oct = -1,
+      ux = 0,
+      uz = 0;
+    if (toward && Number.isFinite(toward.cx) && Number.isFinite(v.cx)) {
+      const a = Math.atan2(toward.cz - v.cz, toward.cx - v.cx);
+      oct = ((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8;
+      ux = Math.cos((oct * Math.PI) / 4);
+      uz = Math.sin((oct * Math.PI) / 4);
+    }
+    const cache = (v._depots ||= {});
+    const c = oct < 0 ? (v._depot ? { p: v._depot, t: v._depotT } : null) : cache[oct];
+    if (c && now - c.t < 30) return c.p;
     const civ = this.game.civ;
     const w = this.world;
     const use = civ.use;
@@ -116,12 +130,15 @@ export const land = {
         const x = dx0 + dx,
           z = dz0 + dz;
         if (!off(x, z)) continue;
-        const d = dx * dx + dz * dz + (off(x + 1, z) || off(x - 1, z) || off(x, z + 1) || off(x, z - 1) ? 0 : 60);
+        const d = dx * dx + dz * dz + (off(x + 1, z) || off(x - 1, z) || off(x, z + 1) || off(x, z - 1) ? 0 : 60) - 6 * (dx * ux + dz * uz);
         if (d < bd) (bd = d), (best = [x, z]);
       }
-    v._depot = best || [dx0, dz0];
-    v._depotT = now;
-    return v._depot;
+    const at = best || [dx0, dz0];
+    if (oct < 0) {
+      v._depot = at;
+      v._depotT = now;
+    } else cache[oct] = { p: at, t: now };
+    return at;
   },
   // Road-loving route between two villages (tile centres), cached a while.
   // motor (round 31): a truck or a car keeps to the laid roads. A short gap
@@ -149,8 +166,8 @@ export const land = {
     // beside the square too, as a truck does: carts left from the hall door
     // and crossed the paved square at a trot among the people (24 of 67
     // samples of carts on a haul were on a village square)
-    const [sx, sy] = this._depot(a),
-      [gx, gy] = this._depot(b);
+    const [sx, sy] = this._depot(a, b),
+      [gx, gy] = this._depot(b, a);
     if (!w.inBounds(sx, sy) || !w.inBounds(gx, gy)) return null;
     // first along the laid roads only (cheap: few tiles), then across country
     const use = civ.use;
