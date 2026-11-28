@@ -56,6 +56,10 @@ const PIER_GAP = 1.6; // tiles between a bridge's piers
 // (round 35) ground edits are applied to the tracks they touch at most this
 // often (ms)
 const EDIT_GAP = 2500;
+// (round 37) edits are noted as the cells they touch: this many tiles
+// square, and this far round each edit (a stretch's highway and piers)
+const EDIT_CELL = 2,
+  EDIT_PAD = 2;
 // (round 37) the solid geometry is drawn in square chunks this many tiles
 // across (a change re-uploads its own chunk only), and at most this long
 // (ms) is spent a drawn frame emitting the parts that changed
@@ -302,7 +306,7 @@ export class InfraRenderer {
     this._pend = false;
     // (round 37) the solid geometry in square chunks: key -> {mesh, parts, sig}
     this._chunks = new Map();
-    this._edits = [];
+    this._editCells = new Set();
     this._editT = -1e9;
     game.events.on('world:height', (r) => this._edit(r));
   }
@@ -314,43 +318,27 @@ export class InfraRenderer {
     for (const ck of [...this._chunks.keys()]) this._setChunk(ck, null);
     this._swapLines();
     this._pend = false;
-    this._edits.length = 0;
+    this._editCells.clear();
   }
 
   // A building levelled its plot, or the gods reshaped the ground: noted
   // here, applied (to the tracks it touches only) at most every EDIT_GAP
   // (round 34: every such edit anywhere re-levelled and redrew the whole
-  // network, about 45 ms a drawn frame at Year 600)
+  // network, about 45 ms a drawn frame at Year 600). Round 37: as the
+  // square cells (EDIT_CELL tiles, padded EDIT_PAD round the edit) it
+  // touches; round 35 merged more than 48 edits into one rectangle round
+  // them all, which after a jump covered the map and redrew everything.
   _edit(r) {
-    const E = this._edits;
-    E.push([r.x0, r.y0, r.x1, r.y1]);
-    if (E.length > 48) {
-      // (many small edits: one rectangle round them all)
-      const u = [Infinity, Infinity, -Infinity, -Infinity];
-      for (const e of E) (u[0] = Math.min(u[0], e[0])), (u[1] = Math.min(u[1], e[1])), (u[2] = Math.max(u[2], e[2])), (u[3] = Math.max(u[3], e[3]));
-      E.length = 0;
-      E.push(u);
-    }
+    const C = this._editCells;
+    const x0 = Math.floor((r.x0 - EDIT_PAD) / EDIT_CELL),
+      x1 = Math.floor((r.x1 + 1 + EDIT_PAD) / EDIT_CELL),
+      z0 = Math.floor((r.y0 - EDIT_PAD) / EDIT_CELL),
+      z1 = Math.floor((r.y1 + 1 + EDIT_PAD) / EDIT_CELL);
+    for (let cx = x0; cx <= x1; cx++) for (let cz = z0; cz <= z1; cz++) C.add(cx * 65536 + cz);
   }
-  // the box round a stretch's track and highway, or a power line (tiles)
-  _bounds(o, pts, extra, pad) {
-    if (o._bb && o._bbN === pts.length) return o._bb;
-    let x0 = Infinity,
-      z0 = Infinity,
-      x1 = -Infinity,
-      z1 = -Infinity;
-    for (const P of [pts, extra])
-      for (let i = 0; P && i + 1 < P.length; i += 2) {
-        x0 = Math.min(x0, P[i]);
-        x1 = Math.max(x1, P[i]);
-        z0 = Math.min(z0, P[i + 1]);
-        z1 = Math.max(z1, P[i + 1]);
-      }
-    o._bbN = pts.length;
-    return (o._bb = [x0 - pad, z0 - pad, x1 + pad, z1 + pad]);
-  }
-  _touched(bb, edits) {
-    for (const e of edits) if (e[0] <= bb[2] && e[2] + 1 >= bb[0] && e[1] <= bb[3] && e[3] + 1 >= bb[1]) return true;
+  // a run of points [x, z, ...] with one in an edited cell
+  _touchedPts(P, C) {
+    for (let i = 0; P && i + 1 < P.length; i += 2) if (C.has(Math.floor(P[i] / EDIT_CELL) * 65536 + Math.floor(P[i + 1] / EDIT_CELL))) return true;
     return false;
   }
 
@@ -1051,8 +1039,10 @@ export class InfraRenderer {
       L.push(p);
     };
     // (the camera's own view is drawn at once whatever the budget: within
-    // this far of the point it looks at, tiles)
-    const near = (cam?.dist ?? 60) * 1.25 + 16;
+    // this far of the point it looks at, tiles; none at far zoom, where the
+    // thin lines are drawn instead)
+    const far = (cam?.dist ?? 60) > FAR || !!this.game.view?.far;
+    const near = far ? -1 : (cam?.dist ?? 60) * 1.25 + 16;
     const take = (key, map, obj, x, z, make, pts) => {
       if (used.has(key)) return;
       used.add(key);
@@ -1066,7 +1056,7 @@ export class InfraRenderer {
         if (dx > W / 2) dx = W - dx; // (a round world)
         d = Math.min(d, dx * dx + (pts[i + 1] - cz) ** 2);
       }
-      missing.push({ key, map, obj, ck, make, d, now: d < near * near });
+      missing.push({ key, map, obj, ck, make, d, now: near > 0 && d < near * near });
     };
     for (const seg of civ.railSegs?.() || []) {
       if (!seg.pts || seg.pts.length < 4) continue;
@@ -1313,26 +1303,26 @@ export class InfraRenderer {
     if (!civ) return;
     const ver = civ.infraVersion || 0;
     const now = performance.now();
-    const edits = this._edits;
+    const C = this._editCells;
     // the ground moved under some tracks: their levels are worked out again
     // and they alone are drawn again (batched: at most every EDIT_GAP, or
     // with the next change to the network)
     let dirty = false;
-    if (edits.length && (ver !== this._ver || now - this._editT > EDIT_GAP)) {
+    if (C.size && (ver !== this._ver || now - this._editT > EDIT_GAP)) {
       this._editT = now;
       const segs = [];
-      for (const s of civ.railSegs?.() || []) if (s.pts && s.pts.length >= 4 && this._touched(this._bounds(s, s.pts, null, 2.5), edits)) segs.push(s);
+      for (const s of civ.railSegs?.() || []) if (s.pts && s.pts.length >= 4 && this._touchedPts(s.pts, C)) segs.push(s);
       if (segs.length) {
         const set = civ.railRelevel?.(segs) || segs;
         for (const s of set) (s._redraw = true), (s._gk = null);
         dirty = true;
       }
       for (const l of civ.powerLines?.() || [])
-        if (this._touched(this._bounds(l, l.pts, l.pylons, 1.5), edits)) {
+        if (this._touchedPts(l.pts, C) || this._touchedPts(l.pylons, C)) {
           l._redraw = true;
           dirty = true;
         }
-      edits.length = 0;
+      C.clear();
     }
     // (round 37: or parts still waiting to be emitted)
     if (ver !== this._ver || dirty || this._pend) {
