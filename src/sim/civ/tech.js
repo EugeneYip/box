@@ -218,18 +218,19 @@ const BIG_LEAD = 0.8;
 const LATE_MIN = 10,
   LATE_MAX = 50,
   LATE_TOTAL = 100;
-// (round 37) ...and the slowest fifth of the realms by that same reckoning
-// (_lateRank: the living realms ranked by their share for the era times
-// their late reckoning) trail further, their own years 60 to LATE_SPREAD
-// years after the era's: on seed 7 every realm stood in the Industrial era
-// at Year 300 and in the Future at 600, the old realms' shares happening to
-// be small for those two eras. (Spreading every follower by rank put the
-// strongest courts' own years later too, and no realm could finish the
-// Atomic arts by Year 425.) The followers' own years count from the year
-// the first realm actually entered when that was late (a leader 31 years
-// late into the Industrial era had every follower in within 30 years of it).
-const LATE_SPREAD = 95,
-  LATE_TAIL = 0.8;
+// (round 37) ...and the slowest quarter of the realms by that same
+// reckoning (_lateRank: the living realms ranked by their share for the era
+// times their late reckoning) trail further: their own years lie from 15
+// years before the century mark after the era's year (Years 300, 400, 500
+// and 600) to LATE_TOTAL - 5 years after the era's year, so two or three
+// realms still trail at each mark (on seed 7 every realm stood in the
+// Industrial era at Year 300 and in the Future at 600, the old realms'
+// shares happening to be small for those two eras; spreading every follower
+// by rank put the strongest courts' own years later too, and no realm could
+// finish the Atomic arts by Year 425). The followers' own years count from
+// the year the first realm actually entered when that was late (a leader 31
+// years late into the Industrial era had every follower in within 30 years).
+const LATE_TAIL = 0.75;
 
 // Extra research on big maps (planner _bigMap: none on Medium): their realms
 // stay small and far apart, and on their own reached the Enlightened arts
@@ -718,13 +719,17 @@ export const tech = {
         // further out and a quick one's nearer (the follower's delay times
         // its late floor against the usual, 0.7-1.8), and what is left of its
         // late floor shrinks so it is in within LATE_TOTAL years of the era
-        // (round 37) ...the slowest fifth by rank up to LATE_SPREAD years,
-        // counted from the first realm's entry when that came late
+        // (round 37) ...the slowest quarter by rank trail past the century
+        // mark, counted from the first realm's entry when that came late
         const lateY = this._lateYears(k, lore);
         let delay = lead || open ? 0 : FOLLOW_YEARS * followShare(k.id, next) * (next >= 4 ? Math.max(0.7, Math.min(1.8, lateY / LATE_YEARS)) : 1);
         if (!(lead || open) && next >= 4) {
           const q = this._lateRank(k, next, lore, ranks);
-          if (q > LATE_TAIL) delay = Math.max(delay, LATE_SPREAD * (0.63 + (0.37 * (q - LATE_TAIL)) / (1 - LATE_TAIL)));
+          if (q > LATE_TAIL) {
+            const lo = Math.ceil((ERA_YEAR[next] + 1) / 100) * 100 - ERA_YEAR[next] - 15,
+              hi = LATE_TOTAL - 5;
+            delay = Math.max(delay, lo + ((hi - lo) * (q - LATE_TAIL)) / (1 - LATE_TAIL));
+          }
         }
         const first = lead ? null : this._eraFirstY?.[next];
         const target = Math.max(ERA_YEAR[next] / ts, first ?? 0) + delay / ts;
