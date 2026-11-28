@@ -933,6 +933,10 @@ export const land = {
       cz = village.cz;
     let ext = 0;
     for (const o of B) ext = Math.max(ext, Math.hypot(o.x - cx, o.z - cz) + Math.max(o.w || 1, o.h || 1) * 0.5);
+    // each building's distance from the town's centre and half its size
+    const dO = B.map((o) => Math.hypot(o.x - cx, o.z - cz)),
+      half = B.map((o) => Math.max(o.w || 1, o.h || 1) * 0.5);
+    const ring = [];
     for (const [lo, hi, strict] of [
       [4, 7, true],
       [3.5, 9, false],
@@ -941,14 +945,22 @@ export const land = {
         bs = Infinity;
       for (let r = 3; r <= ext + hi + 1; r += 1) {
         const n = Math.max(12, Math.min(48, Math.round(r * 1.6)));
+        // (round 37) only the buildings that can lie within hi of the ring
+        // count (the nearest of all is one of them whenever it is that
+        // close, and a candidate is refused otherwise): the same answer for
+        // a fraction of the work in a big town
+        ring.length = 0;
+        for (let j = 0; j < B.length; j++) if (Math.abs(dO[j] - r) <= hi + half[j]) ring.push(j);
+        if (!ring.length) continue;
         for (let k = 0; k < n; k++) {
           const ang = (k / n) * Math.PI * 2 + r * 0.37;
           const x = cx + Math.cos(ang) * r,
             z = cz + Math.sin(ang) * r;
           let near = Infinity,
             nb = null;
-          for (const o of B) {
-            const od = Math.hypot(o.x - x, o.z - z) - Math.max(o.w || 1, o.h || 1) * 0.5;
+          for (const j of ring) {
+            const o = B[j];
+            const od = Math.hypot(o.x - x, o.z - z) - half[j];
             if (od < near) (near = od), (nb = o);
           }
           if (near < lo || near > hi) continue;
