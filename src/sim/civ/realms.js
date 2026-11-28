@@ -884,11 +884,14 @@ export const realms = {
     if (!this._realMapOn?.() || !o || !v) return true;
     return geoDist(this.world, o.cx, o.cz, v.cx, v.cz) <= (kid === v.kingdom ? MOVE_OWN : MOVE_CROSS);
   },
-  // (round 37) Another town of the realm holding key city v within reach of it
+  // (round 37) Another town of the realm holding key city v, within reach of
+  // it and big enough to send families (as _refillKey and _refillBySea ask:
+  // 16 people, a key city 24, not in famine)
   _realmTownNear(v) {
     for (const vid of this.kingdoms[v.kingdom]?.villages || []) {
       const o = this.villages[vid];
-      if (o?.alive && o !== v && this._moveReach(o, v)) return true;
+      if (!o?.alive || o === v || o.starving || o.pop < 16 || (this._keyCity(o) && o.pop < KEY_SEAT_POP + 9)) continue;
+      if (this._moveReach(o, v)) return true;
     }
     return false;
   },
@@ -927,9 +930,10 @@ export const realms = {
     // city such as Anchorage is kept by newcomers up to KEY_MIN_POP)
     // (round 37) ...and no further (while the world had room they came up to
     // the seat's floor of 15), and only to a city with no town of its
-    // holder's realm within reach, whose families come instead once it can
-    // spare them; a city about to stand empty (urgent: _holdKeyCity) is kept
-    // by them all the same
+    // holder's realm within reach that could send families (they come by
+    // land or on the next crossing instead: newcomers stood in for a crossing
+    // twelve seconds off); a city about to stand empty (urgent: _holdKeyCity)
+    // is kept by them all the same
     const want = Math.min(4, n, KEY_MIN_POP - v.pop);
     if (!moved && want > 0 && (urgent || !this._realmTownNear(v)) && this.game.time.total < YEAR * KEY_YEARS && !(this.game.time.total - (v._newT ?? -1e9) < 8)) {
       v._newT = this.game.time.total;
