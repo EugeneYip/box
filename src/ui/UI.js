@@ -887,7 +887,8 @@ export class UI {
     // spot is scored and the best taken: 3 for each seventh of the name over
     // a neighbor's land (1 over its unclaimed land), 2 for the banner over the
     // sea or a neighbor's unclaimed land (4 over its own), 4 for a pinned
-    // spot, 1 for the smaller size, 5 for covering another realm's centre;
+    // spot while the centred one is free (else 1), 1 for the smaller size, 5
+    // for covering another realm's centre;
     // past 7 the name goes out with a leader line instead
     for (const it of items) {
       const e = it.e;
@@ -912,6 +913,9 @@ export class UI {
         for (let j = 0; j < OV_FLAG.length; j++) cand.push({ x: it.sx + w / 2 - bi, y: it.sy + OV_FLAG[j] * h, i: 50 + j, flag: true });
         const pi = prev != null && e._sc === sc ? cand.findIndex((c) => c.i === prev) : -1;
         if (pi > 0) cand.unshift(cand.splice(pi, 1)[0]);
+        // (round 37) is the spot centred on the realm free at this size?
+        const c0 = cand.find((c) => c.i === 0);
+        const zeroFree = !!c0 && free(c0.x - w / 2, c0.y - h / 2, c0.x + w / 2, c0.y + h / 2);
         for (let ci = 0; ci < cand.length; ci++) {
           const c = cand[ci];
           const l = c.x - w / 2,
@@ -920,15 +924,19 @@ export class UI {
             b = c.y + h / 2;
           if (!free(l, t, r, b)) continue;
           // (round 37) a name moved off its realm's centre keeps its middle
-          // over the realm's own land: SOUTH KOREA slid west over the Yellow
-          // Sea, its right end just touching the peninsula; with no such spot
-          // free it goes out with a leader line
-          if (!c.flag && c.i > 0 && ownerAt(c.x, c.y) !== it.kid) continue;
+          // over land, its realm's own or still unclaimed: SOUTH KOREA slid
+          // west over the Yellow Sea, its right end just touching the
+          // peninsula; with no such spot free it goes out with a leader line
+          if (!c.flag && c.i > 0) {
+            const mo = ownerAt(c.x, c.y);
+            if (mo !== it.kid && (mo < 0 || !isUnowned(c.x, c.y))) continue;
+          }
           const cov = coversOther(it, l, t, r, b);
           if (c.flag && cov) continue;
-          // (round 37: a pinned spot costs 4, so a name centred on its land
-          // with its ends over the sea or a neighbor's unclaimed land wins)
-          let cost = (sc === 1 ? 0 : 1) + (c.flag ? 4 : 0) + (cov ? 5 : 0) + ci * 0.01;
+          // (round 37: a pinned spot costs 4 while the centred spot is free,
+          // so a name centred on its land with its ends over the sea or a
+          // neighbor's unclaimed land wins; else 1, as before)
+          let cost = (sc === 1 ? 0 : 1) + (c.flag ? (zeroFree ? 4 : 1) : 0) + (cov ? 5 : 0) + ci * 0.01;
           const bo = ownerAt(l + bi, c.y);
           if (c.flag && bo !== it.kid && Math.hypot(l + bi - it.sx, c.y - it.sy) > 6) continue;
           if (bo !== it.kid) cost += bo >= 0 && !isUnowned(l + bi, c.y) ? 4 : 2;
