@@ -843,9 +843,25 @@ export class Civilization {
     // coarse steps every 6 s (a few tenths of a second of real time at 16x),
     // covering the interval (the smiths' work accrues by it), on a phase
     // apart from research and the unlocks
-    if ((T.inv = (T.inv ?? 1.5) + step) >= (coarse ? 6 : techEvery)) {
-      this._inventoryTick(T.inv);
-      T.inv = 0;
+    // (round 37) each realm on a phase of its own (they all came due on one
+    // tick: 16 ms calls on a Year 600 Medium map), as often as before, each
+    // pass covering the time since that realm's last
+    const invEvery = coarse ? 6 : techEvery;
+    if (globalThis.__invTurnsOff) {
+      if ((T.inv = (T.inv ?? 1.5) + step) >= invEvery) {
+        this._inventoryTick(T.inv);
+        T.inv = 0;
+      }
+    } else {
+      const now = g.time.total;
+      for (const k of this.kingdoms) {
+        if (!k.alive) continue;
+        if (k._invT == null) k._invT = now - 1.5 - ((k.id * 0.618034) % 1) * invEvery;
+        const due = now - k._invT;
+        if (due < invEvery) continue;
+        k._invT = now;
+        this._inventoryRealm(k, Math.min(due, invEvery * 3));
+      }
     }
     if ((T.unl = (T.unl ?? 1) + step) >= techEvery) {
       this._wonderFx();
@@ -1306,12 +1322,16 @@ export class Civilization {
   // knows; soldiers are armed and armoured first, workers get tools, and gear
   // recovered from the fallen is reissued (legendary pieces keep their story).
   _inventoryTick(dt) {
+    for (const k of this.kingdoms) if (k.alive) this._inventoryRealm(k, dt);
+  }
+  // (round 37) One realm's stores and gear, covering dt seconds (the tick
+  // calls each realm in turn: see tick)
+  _inventoryRealm(k, dt) {
     const g = this.game;
     const U = g.units;
     const real = typeof U.makeItem === 'function' && typeof U.equip === 'function';
     const gearOK = g.laws?.lifeEquipment !== false;
-    for (const k of this.kingdoms) {
-      if (!k.alive) continue;
+    {
       const inv = k.inventory || (k.inventory = { food: 0, wood: 0, stone: 0, ore: 0, gold: 0, tools: 0, weapons: 0, armor: 0, trinkets: 0 });
       const armory = k.armory || (k.armory = []);
       let food = 0,
